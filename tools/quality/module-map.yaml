@@ -251,6 +251,8 @@ modules:
   - services/asr-online-service/.env.example
   - services/asr-online-service/Dockerfile
   - services/asr-online-service/README.md
+  - services/asr-online-service/architecture-contract-requirements.in
+  - services/asr-online-service/architecture-contract-requirements.txt
   - services/asr-online-service/deploy_docker_desktop.bat
   - services/asr-online-service/docs/architecture.md
   - services/asr-online-service/docs/configuration.md
@@ -1241,6 +1243,7 @@ modules:
   - tools/quality/inspect_typescript.py
   - tools/quality/inspect_go.py
   - tools/quality/check_runtime_graph_policy.py
+  - tools/quality/run_isolated_python.py
   - tools/quality/module-map.yaml
   - tools/quality/probe_python_runtime.py
   - tools/quality/python-boundaries.yaml

@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: f726860d889b708e6528a5318e1eb157fe24686e
+head: e885ead1c0024dd379f9a1f91fb39df821bbc1e1
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -505,7 +505,7 @@ changes:
     unstaged: null
   - path: test/unit_test/rag/test_sync_data_source.py
     committed: M
-    staged: M
+    staged: null
     unstaged: null
 - id: CORE-api-files-chat
   owner: fork-maintainer
@@ -1523,7 +1523,7 @@ changes:
     unstaged: null
   - path: AGENTS.md
     committed: M
-    staged: M
+    staged: null
     unstaged: null
   - path: Dockerfile
     committed: M
@@ -1547,7 +1547,7 @@ changes:
     unstaged: null
   - path: pyproject.toml
     committed: M
-    staged: M
+    staged: null
     unstaged: null
   - path: ragflow_deps/download_deps.py
     committed: M
@@ -1667,5 +1667,5 @@ changes:
     unstaged: null
   - path: uv.lock
     committed: M
-    staged: M
+    staged: null
     unstaged: null

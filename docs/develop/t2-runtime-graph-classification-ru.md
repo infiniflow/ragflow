@@ -1,6 +1,6 @@
 # T2: классификация TypeScript/Go runtime-графов
 
-Дата обновления: 2026-09-08. Статус: объединяющий report-only срез T2 реализован. Он классифицирует сигналы двух широких наблюдателей на одном T0 snapshot, но не объявляет архитектуру, dead code, сборку или CI пройденными.
+Дата обновления: 2026-09-10. Статус: объединяющий report-only classifier `check_runtime_graph_policy.py` версии 0.4.0 реализован. Он классифицирует сигналы двух широких наблюдателей на одном T0 snapshot, но не объявляет архитектуру, dead code, сборку или CI пройденными.
 
 ## Запуск
 
@@ -46,8 +46,8 @@ Go-графы не содержат package cycles и недостижимых �
 
 Код 0 означает только полноту классификации текущего набора сигналов. Код 2 означает stale/mismatched observer, новый или устаревший собственный недостижимый path, локальный cycle candidate, неизвестный dynamic/directive/main root, изменившийся upstream gap, отсутствующее root evidence/embed asset либо конкурентное изменение снимка.
 
-Четырнадцать unit/negative fixtures проверяют допустимый набор; новое локальное ребро цикла; несовпадение type-only и call-phase upstream edge с eager module edge; fail-closed при отсутствии TypeScript parser; пропущенную и устаревшую запись пути; ложный type-only verdict; неизвестную регистрацию и source gap; изменение upstream gap на owned; новый Go main; отсутствующий embed asset; изменение root evidence; report-only схему и устойчивую сигнатуру цикла.
+Unit/negative fixtures проверяют допустимый набор; новое локальное ребро цикла; несовпадение type-only и call-phase upstream edge с eager module edge; fail-closed при отсутствии TypeScript parser; очистку control/secret/Node-injection переменных дочернего parser; пропущенную и устаревшую запись пути; ложный type-only verdict; неизвестную регистрацию и source gap; изменение upstream gap на owned; новый Go main; отсутствующий embed asset; изменение root evidence; report-only схему и устойчивую сигнатуру цикла.
 
 ## Граница T3
 
-Файл policy задаёт три будущих selector scope: owned TypeScript runtime graph, owned Go package graph и целостность runtime roots. Они остаются `report_only`: T2 не создаёт baseline/ignore и не меняет CI. На T3 нужно подключить неблокирующий aggregate job, проверить selector отрицательными PR-фикстурами, затем отдельно принять блокирующий режим и branch protection.
+T2 подготовил три исходных selector scope: owned TypeScript runtime graph, owned Go package graph и целостность runtime roots. Они остаются `report_only`: T2 не создаёт baseline/ignore и не меняет CI. Локальный T3 bootstrap уже включает точный selector, отрицательные PR-фикстуры и неблокирующий aggregate job, но остаётся `NOT_ENABLED`, пока protocol v1 не появится в comparison base; OS-level isolation, реальный CI run и Required Workflow/ruleset ещё не подтверждены.

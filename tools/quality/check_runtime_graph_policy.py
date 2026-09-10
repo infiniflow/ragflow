@@ -5,20 +5,31 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import yaml
-
 from capture_inventory import capture, git, paths, safe_path
+from run_isolated_python import sanitized_child_environment
 
-
-VERSION = "0.1.0"
+VERSION = "0.4.0"
 OWNED_ORIGINS = {"core_change", "extension"}
 UNREACHABLE_CLASSIFICATIONS = {"static_candidate", "type_only_contract"}
+OBSERVER_SOURCE_HASHES = {
+    "TypeScript": {
+        "tool_sha256": "typescript_tool_sha256",
+        "policy_sha256": "typescript_policy_sha256",
+        "worker_sha256": "typescript_worker_sha256",
+    },
+    "Go": {
+        "tool_sha256": "go_tool_sha256",
+        "policy_sha256": "go_policy_sha256",
+    },
+}
 
 
 _TYPESCRIPT_EDGE_SCANNER = r"""
@@ -133,6 +144,39 @@ def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _observer_source_hashes(typescript: dict, go_report: dict) -> dict[str, str]:
+    flattened = {}
+    for name, report in (("TypeScript", typescript), ("Go", go_report)):
+        report_input = report.get("input") if isinstance(report, dict) else None
+        if not isinstance(report_input, dict):
+            raise ValueError(f"{name} report omitted its input identity")
+        for source_key, output_key in OBSERVER_SOURCE_HASHES[name].items():
+            value = report_input.get(source_key)
+            if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise ValueError(f"{name} report input {source_key} is not a valid SHA-256")
+            flattened[output_key] = value
+    return flattened
+
+
+def _runtime_report_input(
+    snapshot: dict,
+    inputs: dict[str, bytes],
+    observer_source_hashes: dict[str, str],
+    selection_sha256: str | None = None,
+) -> dict:
+    return {
+        "head": snapshot["head"],
+        "upstream_base": snapshot["upstream_base"],
+        "snapshot_sha256": snapshot["snapshot_sha256"],
+        "selection_sha256": selection_sha256,
+        "policy_sha256": _sha256(inputs["policy"]),
+        "typescript_report_sha256": _sha256(inputs["typescript_report"]),
+        "go_report_sha256": _sha256(inputs["go_report"]),
+        "tool_sha256": _sha256(Path(__file__).read_bytes()),
+        **observer_source_hashes,
+    }
+
+
 def _canonical_cycle(cycle: dict) -> dict:
     edge_fields = ("source", "target", "specifier", "kind", "phase", "type_only")
     edges = [{field: edge.get(field) for field in edge_fields} for edge in cycle.get("edges", [])]
@@ -157,11 +201,15 @@ def _git_blob(root: Path, revision: str, path: str) -> bytes | None:
         return None
 
 
-def _scan_typescript_edge_semantics(sources: dict[str, str]) -> tuple[dict[str, list[dict]], dict[str, str]]:
+def _typescript_parser_path(root: Path) -> Path:
+    return safe_path(root, "web/node_modules/typescript/lib/typescript.js")
+
+
+def _scan_typescript_edge_semantics(root: Path, sources: dict[str, str]) -> tuple[dict[str, list[dict]], dict[str, str]]:
     if not sources:
         return {}, {}
     node = shutil.which("node")
-    typescript = Path(__file__).resolve().parents[2] / "web/node_modules/typescript/lib/typescript.js"
+    typescript = _typescript_parser_path(root)
     if node is None:
         detail = "Node.js is required to compare upstream TypeScript edge semantics"
         return {}, {path: detail for path in sources}
@@ -172,6 +220,7 @@ def _scan_typescript_edge_semantics(sources: dict[str, str]) -> tuple[dict[str, 
         completed = subprocess.run(
             [node, "-e", _TYPESCRIPT_EDGE_SCANNER, str(typescript)],
             input=json.dumps(sources, ensure_ascii=False),
+            env=sanitized_child_environment(),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -228,7 +277,7 @@ def _load_upstream_cycle_edges(
             sources[path] = blob.decode("utf-8")
         except UnicodeDecodeError:
             problems[path] = f"upstream source is not UTF-8: {path}"
-    edges, scan_problems = _scan_typescript_edge_semantics(sources)
+    edges, scan_problems = _scan_typescript_edge_semantics(root, sources)
     problems.update(scan_problems)
     return edges, problems
 
@@ -762,6 +811,7 @@ def main(argv=None) -> int:
         default=Path("output/quality/go-analysis.json"),
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--selection-sha256", help="Optional T3 selection digest binding this report to an architecture plan")
     args = parser.parse_args(argv)
     root = args.root.resolve()
     output = _resolve_input(root, args.output)
@@ -788,6 +838,7 @@ def main(argv=None) -> int:
         policy = _load_policy(policy_path)
         typescript = json.loads(inputs["typescript_report"])
         go_report = json.loads(inputs["go_report"])
+        observer_source_hashes = _observer_source_hashes(typescript, go_report)
         base_config = json.loads(safe_path(root, "tools/quality/upstream-base.json").read_text(encoding="utf-8"))
         mapping = yaml.safe_load(safe_path(root, "tools/quality/module-map.yaml").read_text(encoding="utf-8"))
         before = capture(root, base_config, mapping)
@@ -820,15 +871,7 @@ def main(argv=None) -> int:
                     "python": platform.python_version(),
                     "os": platform.system(),
                 },
-                "input": {
-                    "head": before["head"],
-                    "upstream_base": before["upstream_base"],
-                    "snapshot_sha256": expected_snapshot,
-                    "policy_sha256": _sha256(inputs["policy"]),
-                    "typescript_report_sha256": _sha256(inputs["typescript_report"]),
-                    "go_report_sha256": _sha256(inputs["go_report"]),
-                    "tool_sha256": _sha256(Path(__file__).read_bytes()),
-                },
+                "input": _runtime_report_input(before, inputs, observer_source_hashes, args.selection_sha256),
                 "command": sys.argv if argv is None else argv,
             }
         )

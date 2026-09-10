@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from io import BytesIO
 import json
 import os
-from pathlib import Path, PurePosixPath
 import platform
 import subprocess
 import sys
 import tempfile
 import tokenize
 import xml.etree.ElementTree as ET
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 
 import yaml
-
 from capture_inventory import capture, git, paths, safe_path
 from inspect_python import MARKERS, analyze, collect_import_graph
+from run_isolated_python import sanitized_child_environment
 
-
-VERSION = "0.6.0"
+VERSION = "0.8.0"
 REPORT_ONLY = "T2_REPORT_ONLY"
 MODULE_ACCESS = "<module>"
 STATIC_IMPORT_KINDS = {"import", "literal_dynamic_import"}
@@ -407,7 +406,7 @@ def _evaluate_pytest_contract(
         resolved_python_paths = [(root / path).resolve() for path in python_paths or ()]
         if any(not path.is_relative_to(root) or not path.is_dir() for path in resolved_python_paths):
             raise ValueError(f"Runtime probe {probe['id']} has a missing or unsafe profile python_path")
-        python_path = os.pathsep.join([*(str(path) for path in resolved_python_paths), os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+        python_path = os.pathsep.join(str(path) for path in resolved_python_paths)
         pytest_nodes = []
         for test_id in probe["test_ids"]:
             test_path, *node = test_id.split("::")
@@ -422,12 +421,13 @@ def _evaluate_pytest_contract(
                     "pytest",
                     *pytest_nodes,
                     "-q",
+                    "--noconftest",
                     "-p",
                     "pytest_asyncio.plugin",
                     f"--junitxml={report_path}",
                 ],
                 cwd=working_directory,
-                env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTHONPATH": python_path},
+                env=sanitized_child_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONPATH=python_path),
                 capture_output=True,
                 text=True,
                 timeout=probe["timeout_seconds"],
@@ -476,6 +476,7 @@ def _evaluate_pytest_contract(
                     "skipped": len(skipped),
                     "pytest_exit_code": completed.returncode,
                     "third_party_plugin_autoload": False,
+                    "conftest_loading": False,
                     "explicit_plugins": ["pytest_asyncio.plugin"],
                 }
             ]
@@ -577,6 +578,7 @@ def evaluate_runtime_probe(
             completed = subprocess.run(
                 [str(python_executable or sys.executable), "-I", "-B", str(worker)],
                 cwd=root,
+                env=sanitized_child_environment(),
                 input=json.dumps(request, ensure_ascii=False),
                 capture_output=True,
                 text=True,
@@ -1033,6 +1035,7 @@ def main(argv=None) -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--policy", type=Path, help="Boundary policy; defaults to tools/quality/python-boundaries.yaml")
     parser.add_argument("--base-ref", help="Optional PR base ref recorded as a resolved commit in the local report")
+    parser.add_argument("--selection-sha256", help="Optional T3 selection digest binding this report to an architecture plan")
     parser.add_argument("--boundary", action="append", dest="boundaries", help="Exact configured boundary ID; repeat to select more")
     parser.add_argument("--connection", action="append", dest="connections", help="Exact configured ARC-02 connection ID; repeat to select more")
     parser.add_argument("--cycle-check", action="append", dest="cycle_checks", help="Exact configured ARC-03 cycle check ID; repeat to select more")
@@ -1156,6 +1159,7 @@ def main(argv=None) -> int:
                 "pr_base_status": "RESOLVED" if pr_base_sha else "NOT_PROVIDED_LOCAL_REPORT",
                 "upstream_sha": before["upstream_base"],
                 "dirty_snapshot_sha256": before["snapshot_sha256"],
+                "selection_sha256": args.selection_sha256,
                 "policy_sha256": hashlib.sha256(policy_path.read_bytes()).hexdigest(),
                 "tool_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 "runtime_worker_sha256": hashlib.sha256(RUNTIME_WORKER.read_bytes()).hexdigest() if worker_probes else None,

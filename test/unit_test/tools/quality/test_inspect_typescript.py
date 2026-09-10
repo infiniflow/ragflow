@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[4]
 TYPESCRIPT = ROOT / "web/node_modules/typescript/lib/typescript.js"
@@ -268,6 +269,24 @@ class CommandTests(unittest.TestCase):
         profile = self.policy["profiles"][0]
         with patch.object(observer.shutil, "which", return_value=None), self.assertRaisesRegex(ValueError, "Node.js"):
             observer.run_worker(self.root, profile, ["web/src/main.ts"])
+
+    def test_worker_sanitizes_node_environment(self):
+        files = ["web/src/main.ts"]
+        completed = SimpleNamespace(returncode=0, stderr="", stdout=json.dumps(self.worker_result(files)))
+        poisoned = {
+            "PATH": "preserved",
+            "NODE_OPTIONS": "--require=attacker.js",
+            "GITHUB_ENV": "command-file",
+            "ARCHITECTURE_EVIDENCE_DIR": "evidence",
+            "API_TOKEN": "secret",
+        }
+        with (
+            patch.dict(os.environ, poisoned, clear=True),
+            patch.object(observer.shutil, "which", return_value="node"),
+            patch.object(observer.subprocess, "run", return_value=completed) as run,
+        ):
+            observer.run_worker(self.root, self.policy["profiles"][0], files)
+        self.assertEqual(run.call_args.kwargs["env"], {"PATH": "preserved"})
 
 
 if __name__ == "__main__":

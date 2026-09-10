@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import copy
 import importlib.util
-from pathlib import Path
+import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "tools/quality"))
@@ -262,7 +264,12 @@ class ClassificationTests(unittest.TestCase):
         return {
             "analysis_status": "INCOMPLETE",
             "profile": {"id": "frontend-web"},
-            "input": {"upstream_base": self.base},
+            "input": {
+                "upstream_base": self.base,
+                "tool_sha256": "1" * 64,
+                "policy_sha256": "2" * 64,
+                "worker_sha256": "3" * 64,
+            },
             "scope": {"entrypoints": ["web/src/main.ts"]},
             "nodes": nodes,
             "reverse_imports": [
@@ -332,7 +339,11 @@ class ClassificationTests(unittest.TestCase):
     def go_report(self) -> dict:
         return {
             "analysis_status": "OBSERVED",
-            "input": {"upstream_base": self.base},
+            "input": {
+                "upstream_base": self.base,
+                "tool_sha256": "4" * 64,
+                "policy_sha256": "5" * 64,
+            },
             "files": [
                 {"path": "cmd/server.go", "package": "main", "is_test": False},
                 {"path": "cmd/cli.go", "package": "main", "is_test": False},
@@ -361,12 +372,14 @@ class ClassificationTests(unittest.TestCase):
         }
 
     def classify(self, policy=None, typescript=None, go_report=None):
-        return checker.classify(
-            self.root,
-            policy or self.policy(),
-            typescript or self.typescript_report(),
-            go_report or self.go_report(),
-        )
+        parser = ROOT / "web/node_modules/typescript/lib/typescript.js"
+        with patch.object(checker, "_typescript_parser_path", return_value=parser):
+            return checker.classify(
+                self.root,
+                policy or self.policy(),
+                typescript or self.typescript_report(),
+                go_report or self.go_report(),
+            )
 
     def test_complete_classification_preserves_source_incomplete_status(self):
         result = self.classify()
@@ -380,6 +393,42 @@ class ClassificationTests(unittest.TestCase):
             "upstream_only_topology",
         )
         self.assertEqual(result["manual_review_required"]["automatic_deletions"], 0)
+
+    def test_observer_source_hashes_are_flat_and_exact(self):
+        source_hashes = checker._observer_source_hashes(self.typescript_report(), self.go_report())
+        self.assertEqual(
+            source_hashes,
+            {
+                "typescript_tool_sha256": "1" * 64,
+                "typescript_policy_sha256": "2" * 64,
+                "typescript_worker_sha256": "3" * 64,
+                "go_tool_sha256": "4" * 64,
+                "go_policy_sha256": "5" * 64,
+            },
+        )
+        report_input = checker._runtime_report_input(
+            {"head": "head", "upstream_base": "base", "snapshot_sha256": "snapshot"},
+            {"policy": b"policy", "typescript_report": b"typescript", "go_report": b"go"},
+            source_hashes,
+        )
+        self.assertEqual(report_input["policy_sha256"], checker._sha256(b"policy"))
+        self.assertEqual(report_input["tool_sha256"], checker._sha256(Path(checker.__file__).read_bytes()))
+        for name, value in source_hashes.items():
+            self.assertEqual(report_input[name], value)
+
+    def test_missing_observer_source_hash_fails_closed(self):
+        report = self.typescript_report()
+        del report["input"]["worker_sha256"]
+
+        with self.assertRaisesRegex(ValueError, "TypeScript report input worker_sha256 is not a valid SHA-256"):
+            checker._observer_source_hashes(report, self.go_report())
+
+    def test_invalid_observer_source_hash_fails_closed(self):
+        report = self.go_report()
+        report["input"]["policy_sha256"] = "not-a-sha256"
+
+        with self.assertRaisesRegex(ValueError, "Go report input policy_sha256 is not a valid SHA-256"):
+            checker._observer_source_hashes(self.typescript_report(), report)
 
     def test_cycle_with_edge_absent_upstream_is_unclassified(self):
         report = self.typescript_report()
@@ -427,6 +476,7 @@ class ClassificationTests(unittest.TestCase):
 
     def test_upstream_edge_scanner_preserves_semantic_fields(self):
         edges, problems = checker._scan_typescript_edge_semantics(
+            ROOT,
             {
                 "fixture.ts": (
                     "const marker = '≠';\n"
@@ -435,7 +485,7 @@ class ClassificationTests(unittest.TestCase):
                     "const eager = require('./eager');\n"
                     "export function load() { return import('./lazy'); }\n"
                 )
-            }
+            },
         )
 
         self.assertEqual(problems, {})
@@ -455,6 +505,33 @@ class ClassificationTests(unittest.TestCase):
             {"specifier": "./lazy", "kind": "dynamic_import", "phase": "call", "type_only": False},
             edges["fixture.ts"],
         )
+
+    def test_upstream_edge_scanner_sanitizes_node_environment(self):
+        completed = SimpleNamespace(
+            returncode=0,
+            stderr="",
+            stdout=json.dumps({"fixture.ts": {"edges": [], "parse_errors": []}}),
+        )
+        poisoned = {
+            "PATH": "preserved",
+            "NODE_OPTIONS": "--require=attacker.js",
+            "GITHUB_ENV": "command-file",
+            "ARCHITECTURE_EVIDENCE_DIR": "evidence",
+            "API_TOKEN": "secret",
+        }
+        with (
+            patch.dict(os.environ, poisoned, clear=True),
+            patch.object(checker.shutil, "which", return_value="node"),
+            patch.object(checker, "_typescript_parser_path", return_value=Path(__file__)),
+            patch.object(checker.subprocess, "run", return_value=completed) as run,
+        ):
+            edges, problems = checker._scan_typescript_edge_semantics(
+                ROOT,
+                {"fixture.ts": "export const value = 1;\n"},
+            )
+        self.assertEqual(edges, {"fixture.ts": []})
+        self.assertEqual(problems, {})
+        self.assertEqual(run.call_args.kwargs["env"], {"PATH": "preserved"})
 
     def test_missing_upstream_edge_parser_fails_closed(self):
         with patch.object(checker.shutil, "which", return_value=None):

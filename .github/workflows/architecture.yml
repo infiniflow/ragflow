@@ -5,7 +5,7 @@ permissions:
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [main]
   workflow_dispatch:
@@ -15,17 +15,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  architecture-policy:
-    name: architecture-policy
-    runs-on: [self-hosted, ragflow-test]
+  architecture-policy-plan:
+    name: architecture-policy / plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      comparison_base: ${{ steps.comparison.outputs.base }}
+      policy_source: ${{ steps.policy_source.outputs.source }}
+      selection_sha256: ${{ steps.selection.outputs.selection_sha256 }}
+      python_architecture_selected: ${{ steps.selection.outputs.python_architecture_selected }}
+      python_architecture: ${{ steps.selection.outputs.python_architecture }}
+      runtime_graph_selected: ${{ steps.selection.outputs.runtime_graph_selected }}
+      runtime_graph: ${{ steps.selection.outputs.runtime_graph }}
+      go_build_plan_selected: ${{ steps.selection.outputs.go_build_plan_selected }}
+      go_build_plan: ${{ steps.selection.outputs.go_build_plan }}
+      policy_fixtures_selected: ${{ steps.selection.outputs.policy_fixtures_selected }}
+      policy_fixtures: ${{ steps.selection.outputs.policy_fixtures }}
     steps:
-      - name: Ensure workspace ownership
-        run: sudo chown -R "${USER}" "${GITHUB_WORKSPACE}"
-
-      - name: Check out candidate
+      - name: Check out candidate for static planning
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Set up policy interpreter
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Create fresh plan directory
+        id: evidence
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/architecture-policy-plan-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ -e "${evidence_dir}" ]]; then
+            echo "Refusing stale architecture plan: ${evidence_dir}" >&2
+            exit 2
+          fi
+          mkdir -p "${evidence_dir}"
+          echo "directory=${evidence_dir}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve comparison base
         id: comparison
@@ -47,111 +74,505 @@ jobs:
           base=$(git rev-parse "${base}^{commit}")
           echo "base=${base}" >> "${GITHUB_OUTPUT}"
 
-      - name: Create fresh evidence directory
-        id: evidence
+      - name: Materialize authoritative policy bundle
+        id: policy_source
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
         run: |
           set -euo pipefail
-          evidence_dir="${RUNNER_TEMP}/architecture-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          if [[ -e "${evidence_dir}" ]]; then
-            echo "Refusing stale architecture evidence: ${evidence_dir}" >&2
-            exit 2
+          trusted_dir="${EVIDENCE_DIR}/trusted-base/tools/quality"
+          authority_dir="${EVIDENCE_DIR}/authority/tools/quality"
+          mkdir -p "${trusted_dir}" "${authority_dir}"
+          base_available=true
+          for path in tools/quality/check_architecture_policy.py tools/quality/capture_inventory.py tools/quality/architecture-policy.json; do
+            if ! git cat-file -e "${COMPARISON_BASE}:${path}" 2>/dev/null; then
+              base_available=false
+              continue
+            fi
+            git show "${COMPARISON_BASE}:${path}" > "${EVIDENCE_DIR}/trusted-base/${path}"
+          done
+          base_runner="${trusted_dir}/check_architecture_policy.py"
+          if [[ "${base_available}" == "true" ]] && grep -Fq "TRUSTED_BASE_PROTOCOL = 1" "${base_runner}"; then
+            cp "${trusted_dir}/check_architecture_policy.py" "${authority_dir}/check_architecture_policy.py"
+            cp "${trusted_dir}/capture_inventory.py" "${authority_dir}/capture_inventory.py"
+            cp "${trusted_dir}/architecture-policy.json" "${authority_dir}/architecture-policy.json"
+            source="base"
+          else
+            cp "${GITHUB_WORKSPACE}/tools/quality/check_architecture_policy.py" "${authority_dir}/check_architecture_policy.py"
+            cp "${GITHUB_WORKSPACE}/tools/quality/capture_inventory.py" "${authority_dir}/capture_inventory.py"
+            cp "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" "${authority_dir}/architecture-policy.json"
+            source="candidate-bootstrap"
+            echo "Base protocol v1 is unavailable; this run remains NOT_ENABLED." >&2
           fi
-          mkdir -p "${evidence_dir}"
-          echo "directory=${evidence_dir}" >> "${GITHUB_OUTPUT}"
+          echo "runner=${authority_dir}/check_architecture_policy.py" >> "${GITHUB_OUTPUT}"
+          echo "policy=${authority_dir}/architecture-policy.json" >> "${GITHUB_OUTPUT}"
+          echo "source=${source}" >> "${GITHUB_OUTPUT}"
 
-      - name: Select architecture lanes
+      - name: Select authoritative architecture lanes
         id: selection
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
           COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+          POLICY_FILE: ${{ steps.policy_source.outputs.policy }}
         run: |
           set -euo pipefail
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_architecture_policy.py \
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
             select --base "${COMPARISON_BASE}" --output "${EVIDENCE_DIR}/selection.json" \
             --github-output "${GITHUB_OUTPUT}"
 
-      - name: Prepare root Python contracts
-        if: steps.selection.outputs.python_architecture == 'true' || steps.selection.outputs.policy_fixtures == 'true'
-        run: uv sync --python 3.13 --group test --frozen
-
-      - name: Prepare ASR contract environment
-        if: steps.selection.outputs.python_architecture == 'true'
-        run: uv sync --project services/asr-online-service --python 3.13 --frozen
-
-      - name: Prepare locked TypeScript parser
-        if: steps.selection.outputs.python_architecture == 'true' || steps.selection.outputs.runtime_graph == 'true' || steps.selection.outputs.policy_fixtures == 'true'
-        run: pnpm --dir web install --frozen-lockfile
-
-      - name: Check configured Python architecture
-        if: steps.selection.outputs.python_architecture == 'true'
+      - name: Evaluate candidate policy with authoritative checker
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
           COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
         run: |
           set -euo pipefail
-          .venv/bin/python -B tools/quality/check_architecture.py --base-ref "${COMPARISON_BASE}" \
-            --output "${EVIDENCE_DIR}/architecture-python.json"
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            select --base "${COMPARISON_BASE}" --output "${EVIDENCE_DIR}/candidate-policy-selection.json"
 
-      - name: Classify TypeScript and Go runtime graphs
-        if: steps.selection.outputs.runtime_graph == 'true'
+      - name: Reject candidate policy coverage reduction
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+          POLICY_FILE: ${{ steps.policy_source.outputs.policy }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            compare --base-plan "${EVIDENCE_DIR}/selection.json" \
+            --candidate-plan "${EVIDENCE_DIR}/candidate-policy-selection.json" \
+            --candidate-policy "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" \
+            --output "${EVIDENCE_DIR}/policy-compatibility.json"
+
+      - name: Upload architecture plan
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-policy-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.directory }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+  architecture-policy-analysis:
+    name: architecture-policy / analysis
+    needs: architecture-policy-plan
+    if: needs.architecture-policy-plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out candidate for analysis
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download architecture plan
+        uses: actions/download-artifact@v4
+        with:
+          name: architecture-policy-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/architecture-policy-plan-input
+
+      - name: Create fresh analysis directory
+        id: evidence
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/architecture-policy-analysis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ -e "${evidence_dir}" ]]; then
+            echo "Refusing stale architecture analysis: ${evidence_dir}" >&2
+            exit 2
+          fi
+          mkdir -p "${evidence_dir}"
+          cp "${RUNNER_TEMP}/architecture-policy-plan-input/selection.json" "${evidence_dir}/selection.json"
+          echo "directory=${evidence_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Reject selected lanes with untrusted sources
+        env:
+          PYTHON_SELECTED: ${{ needs.architecture-policy-plan.outputs.python_architecture_selected }}
+          PYTHON_RUNNABLE: ${{ needs.architecture-policy-plan.outputs.python_architecture }}
+          RUNTIME_SELECTED: ${{ needs.architecture-policy-plan.outputs.runtime_graph_selected }}
+          RUNTIME_RUNNABLE: ${{ needs.architecture-policy-plan.outputs.runtime_graph }}
+          GO_SELECTED: ${{ needs.architecture-policy-plan.outputs.go_build_plan_selected }}
+          GO_RUNNABLE: ${{ needs.architecture-policy-plan.outputs.go_build_plan }}
+          FIXTURES_SELECTED: ${{ needs.architecture-policy-plan.outputs.policy_fixtures_selected }}
+          FIXTURES_RUNNABLE: ${{ needs.architecture-policy-plan.outputs.policy_fixtures }}
+        run: |
+          set -euo pipefail
+          for pair in \
+            "python:${PYTHON_SELECTED}:${PYTHON_RUNNABLE}" \
+            "runtime:${RUNTIME_SELECTED}:${RUNTIME_RUNNABLE}" \
+            "go:${GO_SELECTED}:${GO_RUNNABLE}" \
+            "fixtures:${FIXTURES_SELECTED}:${FIXTURES_RUNNABLE}"; do
+            IFS=: read -r lane selected runnable <<< "${pair}"
+            if [[ "${selected}" == "true" && "${runnable}" != "true" ]]; then
+              echo "Selected architecture lane has no trusted source bundle: ${lane}" >&2
+              exit 2
+            fi
+          done
+
+      - name: Set up pnpm
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.runtime_graph == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.runtime_graph == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Set up Python and uv
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.runtime_graph == 'true' || needs.architecture-policy-plan.outputs.go_build_plan == 'true' || needs.architecture-policy-plan.outputs.policy_fixtures == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Materialize protected producer sources
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.runtime_graph == 'true' || needs.architecture-policy-plan.outputs.go_build_plan == 'true' || needs.architecture-policy-plan.outputs.policy_fixtures == 'true'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          POLICY_RUNNER: ${{ runner.temp }}/architecture-policy-plan-input/authority/tools/quality/check_architecture_policy.py
+          POLICY_FILE: ${{ runner.temp }}/architecture-policy-plan-input/authority/tools/quality/architecture-policy.json
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            materialize --plan "${EVIDENCE_DIR}/selection.json" \
+            --output-directory "${EVIDENCE_DIR}/protected-sources"
+
+      - name: Prepare root Python contracts
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.policy_fixtures == 'true'
+        run: uv sync --python 3.13 --group test --frozen --no-install-project
+
+      - name: Prepare ASR architecture contract environment
+        if: needs.architecture-policy-plan.outputs.python_architecture == 'true'
+        run: |
+          uv venv --clear services/asr-online-service/.architecture-venv --python 3.13
+          uv pip sync --python services/asr-online-service/.architecture-venv/bin/python --require-hashes --strict services/asr-online-service/architecture-contract-requirements.txt
+
+      - name: Exercise architecture policy fixtures
+        if: ${{ success() && needs.architecture-policy-plan.outputs.policy_fixtures == 'true' }}
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          POLICY_RUNNER: ${{ runner.temp }}/architecture-policy-plan-input/authority/tools/quality/check_architecture_policy.py
+          POLICY_FILE: ${{ runner.temp }}/architecture-policy-plan-input/authority/tools/quality/architecture-policy.json
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            fixtures --plan "${EVIDENCE_DIR}/selection.json" --python .venv/bin/python \
+            --junit-output "${EVIDENCE_DIR}/policy-fixtures.xml" \
+            --output "${EVIDENCE_DIR}/policy-fixtures.json"
+
+      - name: Prepare locked TypeScript parser
+        if: ${{ success() && (needs.architecture-policy-plan.outputs.python_architecture == 'true' || needs.architecture-policy-plan.outputs.runtime_graph == 'true') }}
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
         run: |
           set -euo pipefail
+          trusted_web="${EVIDENCE_DIR}/protected-sources/web"
+          install_web="${RUNNER_TEMP}/architecture-typescript-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          candidate_modules="${GITHUB_WORKSPACE}/web/node_modules"
+          if [[ -e "${install_web}" || -e "${candidate_modules}" ]]; then
+            echo "Refusing stale TypeScript install or pre-existing candidate node_modules" >&2
+            exit 2
+          fi
+          mkdir -p "${install_web}"
+          cp "${trusted_web}/package.json" "${trusted_web}/pnpm-lock.yaml" "${trusted_web}/.npmrc" "${install_web}/"
+          pnpm --dir "${install_web}" install --frozen-lockfile --ignore-scripts --ignore-pnpmfile --ignore-workspace
+          test -f "${install_web}/node_modules/typescript/lib/typescript.js"
+          mkdir -p "${candidate_modules}"
+          cp -RL "${install_web}/node_modules/typescript" "${candidate_modules}/typescript"
+          test -f "${candidate_modules}/typescript/lib/typescript.js"
+
+      - name: Classify TypeScript and Go runtime graphs
+        if: ${{ success() && needs.architecture-policy-plan.outputs.runtime_graph == 'true' }}
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          SELECTION_SHA256: ${{ needs.architecture-policy-plan.outputs.selection_sha256 }}
+        run: |
+          set -euo pipefail
+          trusted_root="${EVIDENCE_DIR}/protected-sources"
+          isolated_runner="${trusted_root}/tools/quality/run_isolated_python.py"
           set +e
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/inspect_typescript.py \
+          uv run --no-project --with PyYAML==6.0.3 python -I -B "${isolated_runner}" \
+            "${trusted_root}" tools/quality/inspect_typescript.py --root "${GITHUB_WORKSPACE}" \
             --output "${EVIDENCE_DIR}/typescript-analysis.json"
           typescript_exit=$?
           set -e
           if [[ ${typescript_exit} -ne 0 && ${typescript_exit} -ne 2 ]]; then
             exit "${typescript_exit}"
           fi
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/inspect_go.py \
+          uv run --no-project --with PyYAML==6.0.3 python -I -B "${isolated_runner}" \
+            "${trusted_root}" tools/quality/inspect_go.py --root "${GITHUB_WORKSPACE}" \
             --output "${EVIDENCE_DIR}/go-analysis.json"
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_runtime_graph_policy.py \
+          uv run --no-project --with PyYAML==6.0.3 python -I -B "${isolated_runner}" \
+            "${trusted_root}" tools/quality/check_runtime_graph_policy.py --root "${GITHUB_WORKSPACE}" \
             --typescript-report "${EVIDENCE_DIR}/typescript-analysis.json" \
             --go-report "${EVIDENCE_DIR}/go-analysis.json" \
+            --selection-sha256 "${SELECTION_SHA256}" \
             --output "${EVIDENCE_DIR}/runtime-graph.json"
 
       - name: Plan changed Go build profiles
-        if: steps.selection.outputs.go_build_plan == 'true'
+        if: ${{ success() && needs.architecture-policy-plan.outputs.go_build_plan == 'true' }}
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          SELECTION_SHA256: ${{ needs.architecture-policy-plan.outputs.selection_sha256 }}
         run: |
           set -euo pipefail
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_go_build_profiles.py \
+          trusted_root="${EVIDENCE_DIR}/protected-sources"
+          isolated_runner="${trusted_root}/tools/quality/run_isolated_python.py"
+          uv run --no-project --with PyYAML==6.0.3 python -I -B "${isolated_runner}" \
+            "${trusted_root}" tools/quality/check_go_build_profiles.py --root "${GITHUB_WORKSPACE}" \
+            --selection-sha256 "${SELECTION_SHA256}" \
             --output "${EVIDENCE_DIR}/go-build-plan.json"
 
-      - name: Exercise architecture policy fixtures
-        if: steps.selection.outputs.policy_fixtures == 'true'
+      - name: Check configured Python architecture
+        if: ${{ success() && needs.architecture-policy-plan.outputs.python_architecture == 'true' }}
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          COMPARISON_BASE: ${{ needs.architecture-policy-plan.outputs.comparison_base }}
+          SELECTION_SHA256: ${{ needs.architecture-policy-plan.outputs.selection_sha256 }}
         run: |
           set -euo pipefail
-          .venv/bin/python -B -m pytest -p pytest_asyncio.plugin test/unit_test/tools/quality -q \
-            --junitxml="${EVIDENCE_DIR}/policy-fixtures.xml"
+          trusted_root="${EVIDENCE_DIR}/protected-sources"
+          isolated_runner="${trusted_root}/tools/quality/run_isolated_python.py"
+          .venv/bin/python -I -B "${isolated_runner}" \
+            "${trusted_root}" tools/quality/check_architecture.py --root "${GITHUB_WORKSPACE}" \
+            --base-ref "${COMPARISON_BASE}" --selection-sha256 "${SELECTION_SHA256}" \
+            --output "${EVIDENCE_DIR}/architecture-python.json"
 
-      - name: Aggregate architecture evidence
-        if: always() && steps.selection.outcome == 'success'
+      - name: Upload architecture analysis
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-policy-analysis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.directory }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+  architecture-policy:
+    name: architecture-policy
+    needs: [architecture-policy-plan, architecture-policy-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Create fresh final evidence directory
+        id: evidence
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/architecture-policy-final-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ -e "${evidence_dir}" ]]; then
+            echo "Refusing stale final architecture evidence: ${evidence_dir}" >&2
+            exit 2
+          fi
+          mkdir -p "${evidence_dir}"
+          printf 'plan=%s\nanalysis=%s\n' \
+            '${{ needs.architecture-policy-plan.result }}' \
+            '${{ needs.architecture-policy-analysis.result }}' \
+            > "${evidence_dir}/prerequisite-status.txt"
+          echo "directory=${evidence_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require a completed trusted plan
+        env:
+          PLAN_RESULT: ${{ needs.architecture-policy-plan.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${PLAN_RESULT}" != "success" ]]; then
+            echo "Architecture plan did not complete: ${PLAN_RESULT}" >&2
+            exit 2
+          fi
+
+      - name: Require completed analysis
+        env:
+          ANALYSIS_RESULT: ${{ needs.architecture-policy-analysis.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${ANALYSIS_RESULT}" != "success" ]]; then
+            echo "Architecture analysis did not complete: ${ANALYSIS_RESULT}" >&2
+            exit 2
+          fi
+
+      - name: Check out candidate for final static verification
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up final policy interpreter
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Download trusted plan
+        uses: actions/download-artifact@v4
+        with:
+          name: architecture-policy-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/architecture-policy-plan-final-input
+
+      - name: Download analysis reports
+        uses: actions/download-artifact@v4
+        with:
+          name: architecture-policy-analysis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/architecture-policy-analysis-final-input
+
+      - name: Resolve and verify comparison base
+        id: comparison
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PLANNED_BASE: ${{ needs.architecture-policy-plan.outputs.comparison_base }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            base="${PR_BASE_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && -n "${PUSH_BEFORE_SHA}" && ! "${PUSH_BEFORE_SHA}" =~ ^0+$ ]]; then
+            base="${PUSH_BEFORE_SHA}"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            base="HEAD^"
+          else
+            base="HEAD"
+          fi
+          base=$(git rev-parse "${base}^{commit}")
+          if [[ "${base}" != "${PLANNED_BASE}" ]]; then
+            echo "Comparison base changed between jobs: ${PLANNED_BASE} -> ${base}" >&2
+            exit 2
+          fi
+          echo "base=${base}" >> "${GITHUB_OUTPUT}"
+
+      - name: Re-materialize authoritative policy bundle
+        id: policy_source
         env:
           EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+          PLANNED_SOURCE: ${{ needs.architecture-policy-plan.outputs.policy_source }}
+        run: |
+          set -euo pipefail
+          trusted_dir="${EVIDENCE_DIR}/trusted-base/tools/quality"
+          authority_dir="${EVIDENCE_DIR}/authority/tools/quality"
+          mkdir -p "${trusted_dir}" "${authority_dir}"
+          base_available=true
+          for path in tools/quality/check_architecture_policy.py tools/quality/capture_inventory.py tools/quality/architecture-policy.json; do
+            if ! git cat-file -e "${COMPARISON_BASE}:${path}" 2>/dev/null; then
+              base_available=false
+              continue
+            fi
+            git show "${COMPARISON_BASE}:${path}" > "${EVIDENCE_DIR}/trusted-base/${path}"
+          done
+          base_runner="${trusted_dir}/check_architecture_policy.py"
+          if [[ "${base_available}" == "true" ]] && grep -Fq "TRUSTED_BASE_PROTOCOL = 1" "${base_runner}"; then
+            cp "${trusted_dir}/check_architecture_policy.py" "${authority_dir}/check_architecture_policy.py"
+            cp "${trusted_dir}/capture_inventory.py" "${authority_dir}/capture_inventory.py"
+            cp "${trusted_dir}/architecture-policy.json" "${authority_dir}/architecture-policy.json"
+            source="base"
+          else
+            cp "${GITHUB_WORKSPACE}/tools/quality/check_architecture_policy.py" "${authority_dir}/check_architecture_policy.py"
+            cp "${GITHUB_WORKSPACE}/tools/quality/capture_inventory.py" "${authority_dir}/capture_inventory.py"
+            cp "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" "${authority_dir}/architecture-policy.json"
+            source="candidate-bootstrap"
+            echo "Base protocol v1 is unavailable; final result remains NOT_ENABLED." >&2
+          fi
+          if [[ "${source}" != "${PLANNED_SOURCE}" ]]; then
+            echo "Authority source changed between jobs: ${PLANNED_SOURCE} -> ${source}" >&2
+            exit 2
+          fi
+          echo "runner=${authority_dir}/check_architecture_policy.py" >> "${GITHUB_OUTPUT}"
+          echo "policy=${authority_dir}/architecture-policy.json" >> "${GITHUB_OUTPUT}"
+          echo "source=${source}" >> "${GITHUB_OUTPUT}"
+
+      - name: Recompute authoritative selection
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+          POLICY_FILE: ${{ steps.policy_source.outputs.policy }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            select --base "${COMPARISON_BASE}" --output "${EVIDENCE_DIR}/selection.json"
+          cmp "${RUNNER_TEMP}/architecture-policy-plan-final-input/selection.json" "${EVIDENCE_DIR}/selection.json"
+
+      - name: Re-evaluate candidate policy
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            select --base "${COMPARISON_BASE}" --output "${EVIDENCE_DIR}/candidate-policy-selection.json"
+
+      - name: Recheck candidate policy coverage
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+          POLICY_FILE: ${{ steps.policy_source.outputs.policy }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            compare --base-plan "${EVIDENCE_DIR}/selection.json" \
+            --candidate-plan "${EVIDENCE_DIR}/candidate-policy-selection.json" \
+            --candidate-policy "${GITHUB_WORKSPACE}/tools/quality/architecture-policy.json" \
+            --output "${EVIDENCE_DIR}/policy-compatibility.json"
+          cmp "${RUNNER_TEMP}/architecture-policy-plan-final-input/policy-compatibility.json" "${EVIDENCE_DIR}/policy-compatibility.json"
+
+      - name: Stage downloaded reports beside fresh plan
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+        run: |
+          set -euo pipefail
+          analysis_dir="${RUNNER_TEMP}/architecture-policy-analysis-final-input"
+          for report in architecture-python.json runtime-graph.json go-build-plan.json policy-fixtures.json policy-fixtures.xml; do
+            if [[ -f "${analysis_dir}/${report}" ]]; then
+              cp "${analysis_dir}/${report}" "${EVIDENCE_DIR}/${report}"
+            fi
+          done
+
+      - name: Aggregate architecture evidence
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          POLICY_RUNNER: ${{ steps.policy_source.outputs.runner }}
+          POLICY_FILE: ${{ steps.policy_source.outputs.policy }}
         run: |
           set -euo pipefail
           reports=()
           [[ ! -f "${EVIDENCE_DIR}/architecture-python.json" ]] || reports+=(--report "python-architecture=${EVIDENCE_DIR}/architecture-python.json")
           [[ ! -f "${EVIDENCE_DIR}/runtime-graph.json" ]] || reports+=(--report "runtime-graph=${EVIDENCE_DIR}/runtime-graph.json")
           [[ ! -f "${EVIDENCE_DIR}/go-build-plan.json" ]] || reports+=(--report "go-build-plan=${EVIDENCE_DIR}/go-build-plan.json")
-          [[ ! -f "${EVIDENCE_DIR}/policy-fixtures.xml" ]] || reports+=(--report "policy-fixtures=${EVIDENCE_DIR}/policy-fixtures.xml")
-          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_architecture_policy.py \
-            aggregate --plan "${EVIDENCE_DIR}/selection.json" "${reports[@]}" \
+          [[ ! -f "${EVIDENCE_DIR}/policy-fixtures.json" ]] || reports+=(--report "policy-fixtures=${EVIDENCE_DIR}/policy-fixtures.json")
+          uv run --no-project --with PyYAML==6.0.3 python -B "${POLICY_RUNNER}" \
+            --root "${GITHUB_WORKSPACE}" --policy "${POLICY_FILE}" \
+            --policy-repository-path tools/quality/architecture-policy.json \
+            aggregate --plan "${EVIDENCE_DIR}/selection.json" \
+            --candidate-plan "${EVIDENCE_DIR}/candidate-policy-selection.json" \
+            --compatibility "${EVIDENCE_DIR}/policy-compatibility.json" "${reports[@]}" \
             --output "${EVIDENCE_DIR}/aggregate.json"
 
-      - name: Upload architecture evidence
+      - name: Upload final architecture evidence
         if: always() && steps.evidence.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: architecture-policy-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.evidence.outputs.directory }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14

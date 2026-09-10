@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import argparse
-from collections import deque
 import hashlib
 import json
-from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
+from collections import deque
+from pathlib import Path
 
 import yaml
-
 from capture_inventory import capture, git, paths, safe_path
+from run_isolated_python import sanitized_child_environment
 
-
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 LIMITS = [
     "Observations only: no approved TypeScript layer allowlist, baseline or architecture acceptance.",
     "Static reachability includes literal dynamic imports but is not an execution trace or dead-code verdict.",
@@ -189,6 +188,7 @@ def run_worker(root: Path, profile: dict, files: list[str]) -> dict:
         [node, str(worker)],
         cwd=root,
         input=json.dumps(payload),
+        env=sanitized_child_environment(),
         capture_output=True,
         text=True,
         timeout=120,

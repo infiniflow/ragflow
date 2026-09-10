@@ -5,19 +5,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import platform
 import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path, PurePosixPath
 
 import yaml
-
 from capture_inventory import capture, git, safe_path
 
-
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 REPORT_ONLY = "T2_REPORT_ONLY"
 
 
@@ -380,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", action="append", dest="profiles", help="Exact profile ID; repeat to select more")
     parser.add_argument("--execute", action="store_true", help="Run the selected packages through build.sh --test")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--selection-sha256", help="Optional T3 selection digest binding this report to an architecture plan")
     args = parser.parse_args(argv)
     root = args.root.resolve()
     output = args.output.resolve()
@@ -401,6 +400,7 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_sha": snapshot["head"],
                 "upstream_sha": snapshot["upstream_base"],
                 "dirty_snapshot_sha256": snapshot["snapshot_sha256"],
+                "selection_sha256": args.selection_sha256,
                 "policy_sha256": _sha(policy_path),
                 "tool_sha256": _sha(tool_path),
                 "build_driver_sha256": _sha(root / "build.sh") if (root / "build.sh").is_file() else None,

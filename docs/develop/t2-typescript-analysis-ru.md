@@ -1,6 +1,6 @@
 # T2: широкий наблюдательный анализ TypeScript
 
-Дата обновления: 2026-09-08. Статус: report-only наблюдатель реализован для браузерного приложения `web/src`; это часть T2, а не архитектурный gate, проверка мёртвого кода или завершение T2.
+Дата обновления: 2026-09-10. Статус: report-only наблюдатель `inspect_typescript.py` версии 0.2.0 реализован для браузерного приложения `web/src`; это часть T2, а не архитектурный gate, проверка мёртвого кода или завершение T2.
 
 ## Запуск
 
@@ -31,7 +31,7 @@ node --check tools/quality/inspect_typescript.cjs
 
 ## Проверки реализации
 
-Девять фикстур проверяют runtime/type-only/lazy imports, re-exports и assets; aliases и exports; литеральный glob; eager cycle; reverse consumers; отсутствие ложного dead-code verdict; вычисляемую загрузку и неразрешённую локальную цель; выход за source profile; отсутствие Node; защиту T0 provenance, output path, исходных байтов и конкурентных изменений. Worker дополнительно проходит `node --check`, Python wrapper — Ruff.
+Десять фикстур проверяют runtime/type-only/lazy imports, re-exports и assets; aliases и exports; литеральный glob; eager cycle; reverse consumers; отсутствие ложного dead-code verdict; вычисляемую загрузку и неразрешённую локальную цель; выход за source profile; отсутствие Node; очистку control/secret/Node-injection переменных дочернего процесса; защиту T0 provenance, output path, исходных байтов и конкурентных изменений. Worker дополнительно проходит `node --check`, Python wrapper — Ruff.
 
 Инструмент проверяет SHA всех входных TypeScript-файлов, policy, Python wrapper и Node worker, а также HEAD, upstream base и T0 snapshot fingerprint. Отчёт разрешён только в игнорируемом пути репозитория и записывается лишь после повторной проверки исходных байтов; исходники он не меняет.
 

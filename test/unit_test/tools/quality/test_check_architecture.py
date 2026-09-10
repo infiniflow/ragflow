@@ -2,14 +2,15 @@
 
 import importlib.util
 import json
-from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "tools/quality"))
@@ -368,6 +369,20 @@ class RuntimeProbeTests(unittest.TestCase):
             "test_ids": ["test_contract.py::test_contract"],
             "expected_tests": 1,
         }
+        self.write("conftest.py", "raise RuntimeError('candidate conftest must not load')\n")
+        with patch.dict(
+            os.environ,
+            {
+                "GITHUB_ENV": "command-file",
+                "ARCHITECTURE_EVIDENCE_DIR": "evidence",
+                "API_TOKEN": "secret",
+                "PYTHONPATH": "attacker",
+                "SAFE_VALUE": "kept",
+            },
+            clear=True,
+        ):
+            environment = checker.sanitized_child_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
+        self.assertEqual(environment, {"SAFE_VALUE": "kept", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
         cases = (
             ("def test_contract():\n    assert True\n", "PASS", set()),
             ("def test_contract():\n    assert False, 'broken contract'\n", "FAIL", {"contract_test_failure"}),
@@ -381,6 +396,7 @@ class RuntimeProbeTests(unittest.TestCase):
                 self.assertEqual({item["kind"] for item in result["findings"]}, finding_kinds)
                 self.assertEqual(result["scope"]["selected_paths"], ["test_contract.py"])
                 self.assertFalse(result["observations"][0]["third_party_plugin_autoload"])
+                self.assertFalse(result["observations"][0]["conftest_loading"])
                 self.assertEqual(result["observations"][0]["explicit_plugins"], ["pytest_asyncio.plugin"])
                 if status == "INCOMPLETE":
                     self.assertTrue(any(item["kind"] == "pytest_contract_skipped" for item in result["incomplete_reasons"]))
