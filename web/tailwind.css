@@ -136,6 +136,13 @@
     --cable-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
     --cable-shadow-hover: 0 10px 15px -3px rgba(15, 23, 42, 0.1),
       0 4px 6px -4px rgba(15, 23, 42, 0.1);
+
+    /* Top navigation states: quiet by default, brand-blue and bold when active. */
+    --cable-nav-text: #64748b;
+    --cable-nav-text-hover: #0f172a;
+    --cable-nav-active-text: #1d4ed8;
+    --cable-nav-active-bg: rgba(239, 246, 255, 0.8);
+    --cable-nav-indicator: #2563eb;
   }
 
   .dark {
@@ -252,6 +259,12 @@
     --cable-muted: #94a3b8;
     --cable-shadow: none;
     --cable-shadow-hover: none;
+
+    --cable-nav-text: #94a3b8;
+    --cable-nav-text-hover: #f1f5f9;
+    --cable-nav-active-text: #38bdf8;
+    --cable-nav-active-bg: rgba(23, 37, 84, 0.4);
+    --cable-nav-indicator: #38bdf8;
   }
 }
 
@@ -293,6 +306,36 @@
     /* Make this default */
     scrollbar-width: thin;
     scrollbar-color: var(--border-default) var(--bg-card);
+  }
+}
+
+@layer components {
+  /* Site-wide content gutters. The header, every page header, every card grid
+     and the home page column share this one class so their left and right
+     edges always land on the same vertical lines, at every breakpoint. */
+  .page-gutter {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 1280px;
+    padding-inline: 1rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .page-gutter {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .page-gutter {
+    padding-inline: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .page-gutter {
+    padding-inline: 3rem;
   }
 }
 

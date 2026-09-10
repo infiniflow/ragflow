@@ -71,7 +71,7 @@ export function Header({
         ref={headerRef}
         key="app-navbar"
         className={cn(
-          'mx-auto flex w-full max-w-[1280px] min-w-0 items-center gap-2 px-6 py-4 sm:gap-4 md:px-12',
+          'page-gutter flex min-w-0 items-center gap-2 py-4 sm:gap-4',
           className,
         )}
         {...props}
