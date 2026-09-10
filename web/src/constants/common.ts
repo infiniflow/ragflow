@@ -56,41 +56,11 @@ export const LanguageMap = {
 export enum LanguageAbbreviation {
   En = 'en',
   Zh = 'zh-Hans',
-  ZhTraditional = 'zh-Hant',
-  Ru = 'ru',
-  Id = 'id',
-  Ja = 'ja',
-  Es = 'es',
-  Vi = 'vi',
-  PtBr = 'pt-BR',
-  De = 'de',
-  Fr = 'fr',
-  It = 'it',
-  Bg = 'bg',
-  Ar = 'ar',
-  Tr = 'tr',
-  Ko = 'ko',
-  Nl = 'nl',
 }
 
 export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.En]: 'English',
   [LanguageAbbreviation.Zh]: '简体中文',
-  [LanguageAbbreviation.ZhTraditional]: '繁體中文',
-  [LanguageAbbreviation.Ru]: 'Русский',
-  [LanguageAbbreviation.Id]: 'Bahasa Indonesia',
-  [LanguageAbbreviation.Es]: 'Español',
-  [LanguageAbbreviation.Vi]: 'Tiếng việt',
-  [LanguageAbbreviation.Ja]: '日本語',
-  [LanguageAbbreviation.PtBr]: 'Português BR',
-  [LanguageAbbreviation.De]: 'Deutsch',
-  [LanguageAbbreviation.Fr]: 'Français',
-  [LanguageAbbreviation.It]: 'Italiano',
-  [LanguageAbbreviation.Bg]: 'Български',
-  [LanguageAbbreviation.Ar]: 'العربية',
-  [LanguageAbbreviation.Tr]: 'Türkçe',
-  [LanguageAbbreviation.Ko]: '한국어',
-  [LanguageAbbreviation.Nl]: 'Nederlands',
 };
 
 export const LanguageTranslationMap = {

@@ -2567,6 +2567,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       variableDescription: 'Variable description',
       defaultValue: 'Default value',
       conversationVariable: 'Conversation variable',
+      cableIndustry: 'Cable industry',
       recommended: 'Recommended',
       customerSupport: 'Customer support',
       marketing: 'Marketing',

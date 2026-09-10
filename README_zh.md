@@ -7,15 +7,6 @@
 <p align="center">
   <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DFE0E5"></a>
   <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DBEDFA"></a>
-  <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
-  <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
-  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
-  <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
-  <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
-  <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
-  <a href="./README_ru.md"><img alt="Русская версия README" src="https://img.shields.io/badge/Русский-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -318,83 +309,85 @@ docker build --platform linux/amd64 \
 
 ## 🔨 以源代码启动服务
 
+本仓库在 Windows + PowerShell 环境下开发和运行，下述流程为本仓库标准的本地启动方式，请保持 Docker
+依赖服务在后台常驻运行。
+
+> [!IMPORTANT]
+> 首次克隆仓库后，请在仓库根目录执行一次 `git config --local --unset core.hooksPath`、`uv tool install lefthook` 和 `lefthook install`，以启用本地 Git hooks。
+
+### 首次环境准备
+
 1. 安装 `uv`。如已经安装，可跳过本步骤：
 
-   ```bash
+   ```powershell
    pipx install uv
-   export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
-2. 下载源代码并安装 Python 依赖：
+2. 安装 Python 依赖并下载 native 依赖库：
 
-   ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   uv sync --python 3.13
+   uv run python ragflow_deps/download_deps.py
    ```
 
-3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：
+3. 安装前端依赖：
 
-   ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
-   ```
-
-   在 `/etc/hosts` 中添加以下代码，目的是将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
-
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
-
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-
-5. 如果你的操作系统没有 jemalloc，请按照如下方式安装：
-
-   ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
-   ```
-
-6. 启动后端服务：
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-
-7. 安装前端依赖：
-
-   ```bash
-   cd web
+   ```powershell
+   cd C:\Projects\RAG\ragflow\web
    npm install
    ```
 
-8. 启动前端服务：
+### 启动服务
 
-   ```bash
+1. 确认 Docker 依赖服务已启动：执行 `docker ps` 应能看到 `docker-mysql-1`、`docker-es01-1`、
+   `docker-redis-1` 和 `docker-minio-1`。如果尚未启动，请先执行以下命令（下次可直接跳过本步骤）：
+
+   ```powershell
+   docker compose -f docker/docker-compose-base.yml up -d
+   ```
+
+2. 终端 1 —— Task Executor 任务后台，负责文档解析与索引：
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   $env:PYTHONPATH="."
+   $env:HF_ENDPOINT="https://hf-mirror.com"
+   $env:PYTHONUTF8="1"
+   uv run python rag/svr/task_executor.py
+   ```
+
+3. 终端 2 —— Web API 服务，监听 9380 端口：
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   $env:PYTHONPATH="."
+   $env:HF_ENDPOINT="https://hf-mirror.com"
+   $env:PYTHONUTF8="1"
+   uv run python api/ragflow_server.py
+   ```
+
+4. 终端 3 —— 前端 UI，监听 9222 端口，并把 `/api`、`/v1` 代理到 9380 端口：
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow\web
    npm run dev
    ```
 
-   _以下界面说明系统已经成功启动：_
+5. 浏览器访问 <http://localhost:9222> 即可使用 RAGFlow：
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
-9. 开发完成后停止 RAGFlow 前端和后端服务：
+   `$env:PYTHONUTF8="1"` 用于避免中文日志触发控制台编码报错（乱码），
+   `$env:HF_ENDPOINT="https://hf-mirror.com"` 用于把模型下载指向 HuggingFace 镜像站。
 
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+### 停止服务
+
+在每个终端按 `Ctrl+C` 即可。Docker 依赖服务会继续运行，如需一并停止请执行
+`docker compose -f docker/docker-compose-base.yml down`。
+
+在 Linux 或 macOS 上，把 `$env:X="..."` 换成 `export X=...` 即可；这两个平台上
+`bash docker/launch_backend_service.sh` 可以在一个终端内同时启动两个后端进程。
 
 
 ## 📚 技术文档

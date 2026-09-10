@@ -2178,6 +2178,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       variableDescription: '变量的描述',
       defaultValue: '默认值',
       conversationVariable: '会话变量',
+      cableIndustry: '线缆行业',
       recommended: '推荐',
       customerSupport: '客户支持',
       marketing: '营销',
