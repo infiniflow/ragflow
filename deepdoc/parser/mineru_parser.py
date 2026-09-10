@@ -56,6 +56,11 @@ class MinerUContentType(StrEnum):
     FOOTER = "footer"
     PAGE_NUMBER = "page_number"
     DISCARDED = "discarded"
+    # MinerU 3.4.x VLM backend emits chart blocks for figures whose visual is a
+    # chart rather than a plain image. They carry chart_caption / chart_footnote
+    # / sub_type / img_path / bbox / page_idx — the same shape as IMAGE blocks —
+    # so they are routed through the image pipeline instead of being dropped.
+    CHART = "chart"
 
 
 # Mapping from language names to MinerU language codes
@@ -86,15 +91,13 @@ LANGUAGE_TO_MINERU_MAP = {
 
 
 class MinerUBackend(StrEnum):
-    """MinerU processing backend options."""
+    """MinerU processing backend options (current public API names)."""
 
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
-    VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
-    VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
-    VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
-    VLM_VLLM_ASYNC_ENGINE = "vlm-vllm-async-engine"  # Asynchronous vLLM engine, new in MinerU API
-    VLM_LMDEPLOY_ENGINE = "vlm-lmdeploy-engine"  # LMDeploy engine
-    VLM_HTTP_CLIENT = "vlm-http-client"  # HTTP client for remote vLLM server (CPU only)
+    PIPELINE = "pipeline"
+    VLM_ENGINE = "vlm-engine"
+    HYBRID_ENGINE = "hybrid-engine"
+    VLM_HTTP_CLIENT = "vlm-http-client"
+    HYBRID_HTTP_CLIENT = "hybrid-http-client"
 
 
 class MinerULanguage(StrEnum):
@@ -234,7 +237,7 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = [b.value for b in MinerUBackend]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -257,17 +260,17 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(reason)
             return False, reason
 
-        if backend == "vlm-http-client":
+        if backend in (MinerUBackend.VLM_HTTP_CLIENT, MinerUBackend.HYBRID_HTTP_CLIENT):
             resolved_server = server_url or self.mineru_server_url
             if not resolved_server:
-                reason = "[MinerU] MINERU_SERVER_URL required for vlm-http-client backend."
+                reason = f"[MinerU] MINERU_SERVER_URL required for {backend} backend."
                 self.logger.warning(reason)
                 return False, reason
             try:
                 server_ok = self._is_http_endpoint_valid(resolved_server)
-                self.logger.info(f"[MinerU] vlm-http-client server check reachable={server_ok} url={resolved_server}")
+                self.logger.info(f"[MinerU] {backend} server check reachable={server_ok} url={resolved_server}")
             except Exception as exc:
-                self.logger.warning(f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}")
+                self.logger.warning(f"[MinerU] {backend} server probe failed: {resolved_server}: {exc}")
 
         return True, reason
 
@@ -848,7 +851,9 @@ class MinerUParser(RAGFlowPdfParser):
             output_type = output.get("type")
             # These chunkers consume tables and images separately, so exclude
             # media from their text sections. Raw consumers keep legacy sections.
-            if parse_method in {"naive", "manual", "paper"} and (output_type == MinerUContentType.IMAGE or (output_type == MinerUContentType.TABLE and table_enable)):
+            # Charts are routed the same way as images: MinerU emits them as
+            # visual blocks that _transfer_to_tables turns into image chunks.
+            if parse_method in {"naive", "manual", "paper"} and (output_type in {MinerUContentType.IMAGE, MinerUContentType.CHART} or (output_type == MinerUContentType.TABLE and table_enable)):
                 continue
 
             match output_type:
@@ -864,6 +869,11 @@ class MinerUParser(RAGFlowPdfParser):
                     # If a vision model enriched this image with a semantic
                     # description (see _enhance_images_with_vlm), embed it in
                     # the chunk so it becomes searchable / retrievable.
+                    vlm_description = (output.get("vlm_description") or "").strip()
+                    if vlm_description:
+                        section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
+                case MinerUContentType.CHART:
+                    section = "".join(output.get("chart_caption", [])) + "\n" + "".join(output.get("chart_footnote", []))
                     vlm_description = (output.get("vlm_description") or "").strip()
                     if vlm_description:
                         section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
@@ -886,7 +896,7 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.HEADER | MinerUContentType.FOOTER | MinerUContentType.PAGE_NUMBER | MinerUContentType.DISCARDED:
                     continue
                 case _:
-                    self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
+                    self.logger.warning("[MinerU] Skip unsupported section type=%s", output.get("type"))
                     continue
 
             # Only flatten table HTML when table extraction is disabled; the
@@ -915,7 +925,7 @@ class MinerUParser(RAGFlowPdfParser):
         tables = []
         for output in outputs:
             output_type = output.get("type")
-            if output_type not in {MinerUContentType.TABLE, MinerUContentType.IMAGE}:
+            if output_type not in {MinerUContentType.TABLE, MinerUContentType.IMAGE, MinerUContentType.CHART}:
                 continue
             if output_type == MinerUContentType.TABLE and not table_enable:
                 continue
@@ -933,7 +943,12 @@ class MinerUParser(RAGFlowPdfParser):
                 tables.append(((None, text), positions))
                 continue
 
-            texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
+            # IMAGE and CHART share the same visual pipeline; only the caption
+            # field names differ (image_caption/image_footnote vs chart_*).
+            if output_type == MinerUContentType.CHART:
+                texts = [*output.get("chart_caption", []), *output.get("chart_footnote", [])]
+            else:
+                texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
             vlm_description = (output.get("vlm_description") or "").strip()
             if vlm_description:
                 texts.append(vlm_description)
@@ -957,15 +972,17 @@ class MinerUParser(RAGFlowPdfParser):
     def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None, language: str = "English"):
         """Generate semantic descriptions for image blocks via the tenant's
         VISION model, mirroring deepdoc's VisionFigureParser. Each
-        IMAGE block with a readable img_path gets a ``vlm_description``
-        field that ``_transfer_to_sections`` then folds into the chunk
-        text — closing issue #14869.
+        IMAGE or CHART block with a readable img_path gets a
+        ``vlm_description`` field that ``_transfer_to_sections`` then folds
+        into the chunk text — closing issue #14869.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from rag.app.picture import vision_llm_chunk
         from rag.prompts.generator import vision_llm_figure_describe_prompt
 
-        image_jobs = [(idx, item) for idx, item in enumerate(outputs) if item.get("type") == MinerUContentType.IMAGE and item.get("img_path") and os.path.exists(item["img_path"])]
+        image_jobs = [
+            (idx, item) for idx, item in enumerate(outputs) if item.get("type") in {MinerUContentType.IMAGE, MinerUContentType.CHART} and item.get("img_path") and os.path.exists(item["img_path"])
+        ]
         if not image_jobs:
             return
 

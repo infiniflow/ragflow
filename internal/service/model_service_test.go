@@ -83,6 +83,19 @@ func TestValidateBedrockAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestMonkeyOCRv2EnvConfig(t *testing.T) {
+	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
+	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")
+
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	if config[common.EnvMonkeyOCRv2ServerURL] != "http://monkeyocrv2:8000" {
+		t.Fatalf("server URL = %#v", config[common.EnvMonkeyOCRv2ServerURL])
+	}
+	if config[common.EnvMonkeyOCRv2Timeout] != "120" {
+		t.Fatalf("timeout = %#v", config[common.EnvMonkeyOCRv2Timeout])
+	}
+}
+
 func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
 	maxBatchSize := 128
@@ -484,6 +497,21 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != "sk-test" {
 		t.Fatalf("apiConfig.ApiKey = %v, want %q", apiConfig.ApiKey, "sk-test")
+	}
+}
+
+func TestMaxTokensFromModelInfo(t *testing.T) {
+	maxTokens := 4096
+	maxOutput := 1024
+	modelInfo := &modelModule.Model{MaxTokens: &maxTokens, MaxOutput: &maxOutput}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeRerank); got != maxTokens {
+		t.Fatalf("rerank max tokens = %d, want %d", got, maxTokens)
+	}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeEmbedding); got != maxTokens {
+		t.Fatalf("embedding max tokens = %d, want %d", got, maxTokens)
+	}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeChat); got != maxOutput {
+		t.Fatalf("chat max tokens = %d, want max output %d", got, maxOutput)
 	}
 }
 

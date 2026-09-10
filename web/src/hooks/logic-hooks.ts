@@ -705,6 +705,12 @@ export const useSelectDerivedMessages = () => {
 
   const addPrologue = useCallback((prologue: string) => {
     setDerivedMessages((pre) => {
+      // The prologue is the conversation opener. Once the user has said
+      // something, the first message is real history — never overwrite or
+      // retro-inject the prologue into it.
+      if (pre.some((x) => x.role === MessageType.User)) {
+        return pre;
+      }
       if (pre.length > 0) {
         return [
           {
@@ -909,28 +915,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-const ChunkTokenNumMap = {
-  naive: 128,
-  knowledge_graph: 8192,
-};
-
-export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
-  // const form = Form.useFormInstance();
-  const handleChange = useCallback(
-    (value: string) => {
-      if (value in ChunkTokenNumMap) {
-        form.setFieldValue(
-          ['parser_config', 'chunk_token_num'],
-          ChunkTokenNumMap[value as keyof typeof ChunkTokenNumMap],
-        );
-      }
-    },
-    [form],
-  );
-
-  return handleChange;
 };
 
 // reset form fields when modal is form, closed

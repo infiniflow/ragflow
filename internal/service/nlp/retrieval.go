@@ -156,7 +156,10 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
-	sim, termSimilarity, vectorSimilarity := s.scoreSearchResult(ctx, req, searchResult)
+	sim, termSimilarity, vectorSimilarity, err := s.scoreSearchResult(ctx, req, searchResult)
+	if err != nil {
+		return nil, err
+	}
 	if len(sim) == 0 {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
@@ -408,7 +411,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}, nil
 }
 
-func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64) {
+func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64, error) {
 	// sim = tkWeight*tsim + vtWeight*vsim
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
@@ -445,11 +448,11 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 				}
 			}
 		}
-		return sim, sim, sim
+		return sim, sim, sim, nil
 	}
 
 	if useOceanBase {
-		return RerankStandard(
+		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
 			searchResult.QueryVector,
@@ -460,12 +463,13 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			qb,
 			*req.RankFeature,
 		)
+		return sim, tsim, vsim, nil
 	}
 
 	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
 	if err != nil {
 		common.Warn("KNNScores failed for ES, falling back to local computation", zap.Error(err))
-		return RerankStandard(
+		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
 			searchResult.QueryVector,
@@ -476,9 +480,10 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			qb,
 			*req.RankFeature,
 		)
+		return sim, tsim, vsim, nil
 	}
 	knnScores := s.docEngine.GetScores(knnResult)
-	return RerankWithKNN(
+	sim, tsim, vsim := RerankWithKNN(
 		searchResult.Chunks,
 		searchResult.IDs,
 		searchResult.Field,
@@ -490,6 +495,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		qb,
 		*req.RankFeature,
 	)
+	return sim, tsim, vsim, nil
 }
 
 // RetrievalSearchRequest is the request struct for RetrievalService.Search()
@@ -777,7 +783,12 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}}, embModel.APIConfig, embeddingConfig, nil)
+	// Query: true mirrors Python Dealer.get_vector (rag/nlp/search.py:75-82),
+	// which embeds the search text with emb_mdl.encode_queries — the asymmetric
+	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
+	// / NVIDIA query). Embedding it as a document would put the query vector in
+	// the wrong space for those providers.
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

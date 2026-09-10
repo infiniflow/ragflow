@@ -138,11 +138,22 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
+        """Upload bytes, creating a missing bucket in the client's region.
+
+        Omit the location constraint for the default AWS region and services
+        that use ``auto`` to select their own location.
+        """
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
                 if not self.bucket_exists(bucket):
-                    self.conn[0].create_bucket(Bucket=bucket)
+                    bucket_config = {"Bucket": bucket}
+                    region = self.conn[0].meta.region_name
+                    # AWS requires a location constraint outside us-east-1.
+                    # "auto" lets globally distributed S3 services choose it.
+                    if region and region not in ("us-east-1", "auto"):
+                        bucket_config["CreateBucketConfiguration"] = {"LocationConstraint": region}
+                    self.conn[0].create_bucket(**bucket_config)
                     logging.info(f"create bucket {bucket} ********")
                 r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
 
