@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -295,6 +296,27 @@ func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *t
 
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestHandleAndExecute_MemoryPersistedRetryAcks verifies an execution error is
+// still acknowledged after the service durably schedules its retry.
+func TestHandleAndExecute_MemoryPersistedRetryAcks(t *testing.T) {
+	ingestor := newUnitIngestor("test-mem-retry", 1, nil)
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
+		return servicepkg.MemoryTaskAcknowledge, errors.New("retry scheduled")
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{
+		TaskID:   "mem-retry-1",
+		TaskType: common.TaskTypeMemory,
+	}}
+
+	ingestor.handleAndExecute(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

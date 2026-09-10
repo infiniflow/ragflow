@@ -57,9 +57,14 @@ import (
 const memoryTimeLayout = "2006-01-02 15:04:05"
 
 const (
-	memoryTaskLeaseTTL           = 2 * time.Minute
-	memoryTaskLeaseRenewInterval = 30 * time.Second
+	memoryTaskLeaseTTL            = 2 * time.Minute
+	memoryTaskLeaseRenewInterval  = 30 * time.Second
+	memoryTaskRetryInitialDelay   = 5 * time.Second
+	memoryTaskRetryMaxDelay       = 5 * time.Minute
+	memoryTaskFailureWriteTimeout = 5 * time.Second
 )
+
+var errPermanentMemoryTask = errors.New("memory: permanent task failure")
 
 // memoryNow is the wall clock behind every memory timestamp. Tests pin it
 // to a fixed instant in a fixed location so the server-local assertions are
@@ -121,7 +126,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 		case entity.MemoryTaskStateCompleted, entity.MemoryTaskStateFailed:
 			return MemoryTaskAcknowledge, nil
 		case entity.MemoryTaskStatePending, entity.MemoryTaskStateExtracted, entity.MemoryTaskStateStored:
-			return MemoryTaskLeaveUnsettled, nil
+			return MemoryTaskAcknowledge, nil
 		default:
 			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s has unknown state %q", taskID, task.State)
 		}
@@ -149,11 +154,53 @@ func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *e
 	select {
 	case leaseErr := <-renewErr:
 		if leaseErr != nil {
-			return MemoryTaskLeaveUnsettled, leaseErr
+			err = leaseErr
 		}
 	default:
 	}
-	return MemoryTaskLeaveUnsettled, err
+	return s.persistMemoryTaskFailure(ctx, task, leaseOwner, err)
+}
+
+// persistMemoryTaskFailure records the recovery decision before allowing the
+// broker delivery to be acknowledged. If the write cannot be proven, the
+// delivery remains unsettled and the expired lease is recovered later.
+func (s *MemoryMessageService) persistMemoryTaskFailure(ctx context.Context, task *entity.MemoryTask, leaseOwner string, runErr error) (MemoryTaskDisposition, error) {
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memoryTaskFailureWriteTimeout)
+	defer cancel()
+
+	var (
+		updated bool
+		err     error
+		action  string
+	)
+	if errors.Is(runErr, errPermanentMemoryTask) {
+		action = "mark failed"
+		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, runErr.Error())
+	} else {
+		action = "schedule retry"
+		nextRetryAt := memoryNow().Add(memoryTaskRetryDelay(task.AttemptCount))
+		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, nextRetryAt, runErr.Error())
+	}
+	if err != nil {
+		return MemoryTaskLeaveUnsettled, errors.Join(runErr, fmt.Errorf("memory: %s for task %s: %w", action, task.TaskID, err))
+	}
+	if !updated {
+		return MemoryTaskLeaveUnsettled, errors.Join(runErr, fmt.Errorf("memory: %s for task %s: lease is no longer owned by this worker", action, task.TaskID))
+	}
+	return MemoryTaskAcknowledge, runErr
+}
+
+// memoryTaskRetryDelay applies bounded exponential backoff using the attempt
+// count incremented when the task lease was claimed.
+func memoryTaskRetryDelay(attemptCount int) time.Duration {
+	delay := memoryTaskRetryInitialDelay
+	for attempt := 1; attempt < attemptCount && delay < memoryTaskRetryMaxDelay; attempt++ {
+		delay *= 2
+		if delay >= memoryTaskRetryMaxDelay {
+			return memoryTaskRetryMaxDelay
+		}
+	}
+	return delay
 }
 
 // renewMemoryTaskLease cancels execution when the worker can no longer prove
@@ -197,7 +244,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 		var err error
 		msg, err = memoryMessageFromTaskInput(task.Input)
 		if err != nil {
-			return fmt.Errorf("memory: decode task %s input: %w", task.TaskID, err)
+			return fmt.Errorf("%w: decode task %s input: %v", errPermanentMemoryTask, task.TaskID, err)
 		}
 		inputLoaded = true
 		return nil
@@ -263,7 +310,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 		case entity.MemoryTaskStateCompleted, entity.MemoryTaskStateFailed:
 			return nil
 		default:
-			return fmt.Errorf("memory: task %s has unknown state %q", task.TaskID, task.State)
+			return fmt.Errorf("%w: task %s has unknown state %q", errPermanentMemoryTask, task.TaskID, task.State)
 		}
 	}
 }
@@ -299,7 +346,7 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, task *entity.MemoryTask, msg MemoryMessage) error {
 	extracted, err := decodeMemoryExtraction(task.Extraction)
 	if err != nil {
-		return fmt.Errorf("memory: decode task %s extraction: %w", task.TaskID, err)
+		return fmt.Errorf("%w: decode task %s extraction: %v", errPermanentMemoryTask, task.TaskID, err)
 	}
 	if len(extracted) == 0 {
 		return nil

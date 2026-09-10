@@ -191,6 +191,117 @@ func TestHandleSaveToMemoryTaskResumesStoredCheckpoint(t *testing.T) {
 	}
 }
 
+// TestHandleSaveToMemoryTaskSchedulesRetryFromStoredCheckpoint verifies a
+// completion write failure preserves the stored checkpoint and is durably
+// scheduled before the current delivery is acknowledged.
+func TestHandleSaveToMemoryTaskSchedulesRetryFromStoredCheckpoint(t *testing.T) {
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:   "task-retry",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input:    entity.JSONMap{},
+		State:    entity.MemoryTaskStateStored,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	svc := NewMemoryMessageService(nil)
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-retry", "worker-1")
+	if err == nil || disposition != MemoryTaskAcknowledge {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged failure", disposition, err)
+	}
+	stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, "task-retry")
+	if err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStateStored {
+		t.Fatalf("memory task state = %q, want stored", stored.State)
+	}
+	wantRetryAt := now.Add(memoryTaskRetryInitialDelay)
+	if stored.NextRetryAt == nil || !stored.NextRetryAt.Equal(wantRetryAt) {
+		t.Fatalf("next retry at = %v, want %v", stored.NextRetryAt, wantRetryAt)
+	}
+	if stored.LeaseOwner != "" || stored.LeaseExpiresAt != nil {
+		t.Fatalf("lease = %q/%v, want released", stored.LeaseOwner, stored.LeaseExpiresAt)
+	}
+	if stored.AttemptCount != 1 || stored.LastError == "" {
+		t.Fatalf("attempt/error = %d/%q, want one failed attempt", stored.AttemptCount, stored.LastError)
+	}
+}
+
+// TestHandleSaveToMemoryTaskMarksInvalidInputFailed verifies corrupt durable
+// input reaches the terminal state and updates the UI progress projection.
+func TestHandleSaveToMemoryTaskMarksInvalidInputFailed(t *testing.T) {
+	pinMemoryNow(t, time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC))
+	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	progressMsg := "queued"
+	if err := db.Create(&entity.Task{
+		ID:          "task-invalid",
+		DocID:       "memory-1",
+		TaskType:    "memory",
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("create generic task: %v", err)
+	}
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:   "task-invalid",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input:    entity.JSONMap{},
+		State:    entity.MemoryTaskStatePending,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	svc := NewMemoryMessageService(nil)
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-invalid", "worker-1")
+	if err == nil || disposition != MemoryTaskAcknowledge {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged terminal failure", disposition, err)
+	}
+	stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, "task-invalid")
+	if err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStateFailed || stored.NextRetryAt != nil {
+		t.Fatalf("memory task state/retry = %q/%v, want failed without retry", stored.State, stored.NextRetryAt)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", "task-invalid").Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != -1 || task.ProgressMsg == nil || !strings.Contains(*task.ProgressMsg, "agent_id is required") {
+		t.Fatalf("generic task progress/message = %v/%v, want terminal input error", task.Progress, task.ProgressMsg)
+	}
+}
+
+// TestMemoryTaskRetryDelay verifies retries use bounded exponential backoff.
+func TestMemoryTaskRetryDelay(t *testing.T) {
+	for _, test := range []struct {
+		attemptCount int
+		want         time.Duration
+	}{
+		{attemptCount: 0, want: 5 * time.Second},
+		{attemptCount: 1, want: 5 * time.Second},
+		{attemptCount: 2, want: 10 * time.Second},
+		{attemptCount: 7, want: 5 * time.Minute},
+		{attemptCount: 100, want: 5 * time.Minute},
+	} {
+		if got := memoryTaskRetryDelay(test.attemptCount); got != test.want {
+			t.Errorf("memoryTaskRetryDelay(%d) = %v, want %v", test.attemptCount, got, test.want)
+		}
+	}
+}
+
 // TestUpdateTaskProgressReturnsPersistenceError verifies UI projection writes
 // surface persistence failures without becoming execution checkpoints.
 func TestUpdateTaskProgressReturnsPersistenceError(t *testing.T) {
