@@ -62,7 +62,7 @@ export interface IProviderInstance {
   status: string;
   /**
    * Optional: only returned by the showProviderInstance endpoint. Used
-   * to pre-fill the base_url/api_base form field when opening a saved
+   * to pre-fill the base_url form field when opening a saved
    * instance.
    */
   base_url?: string;
@@ -108,6 +108,14 @@ export interface IInstanceModel {
    * without relying solely on the (possibly unfetched) catalog.
    */
   is_tools?: boolean;
+  /**
+   * Per-model extra config persisted in `tenant_model.extra`.
+   * Carries provider-specific fields such as SoMark's element-format
+   * selects and feature-config toggles. Echoed back by the backend's
+   * `_hybrid_get_instance_models` so the frontend can pre-fill the
+   * edit dialog.
+   */
+  extra?: Record<string, any>;
 }
 
 export interface IDefaultModel {

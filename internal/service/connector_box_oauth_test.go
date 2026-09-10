@@ -140,15 +140,16 @@ func TestExchangeBoxAuthorizationCodeRequestBody(t *testing.T) {
 
 func TestStartBoxWebOAuthRequiresClientCredentials(t *testing.T) {
 	svc := NewConnectorService()
+	ctx := t.Context()
 
-	_, code, err := svc.StartBoxWebOAuth("user-1", &StartBoxWebOAuthRequest{ClientID: "client-1"})
+	_, code, err := svc.StartBoxWebOAuth(ctx, "user-1", &StartBoxWebOAuthRequest{ClientID: "client-1"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if code != common.CodeArgumentError {
 		t.Fatalf("code=%v want=%v", code, common.CodeArgumentError)
 	}
-	if err.Error() != "Box client_id and client_secret are required." {
+	if err.Error() != "box client_id and client_secret are required" {
 		t.Fatalf("error=%q", err.Error())
 	}
 }
@@ -157,15 +158,16 @@ func TestPollBoxWebOAuthResultPendingWithoutRedis(t *testing.T) {
 	forceNilConnectorRedis(t)
 
 	svc := NewConnectorService()
+	ctx := t.Context()
 
-	_, code, err := svc.PollBoxWebOAuthResult("user-1", &PollBoxWebOAuthResultRequest{FlowID: "flow-1"})
+	_, code, err := svc.PollBoxWebOAuthResult(ctx, "user-1", &PollBoxWebOAuthResultRequest{FlowID: "flow-1"})
 	if err == nil {
 		t.Fatal("expected pending error")
 	}
 	if code != common.CodeRunning {
 		t.Fatalf("code=%v want=%v", code, common.CodeRunning)
 	}
-	if err.Error() != "Authorization is still pending." {
+	if err.Error() != "authorization is still pending" {
 		t.Fatalf("error=%q", err.Error())
 	}
 }

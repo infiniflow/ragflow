@@ -46,11 +46,7 @@ class Begin(UserFillUp):
             return {}
 
         if isinstance(query, dict):
-            return {
-                key: value if isinstance(value, dict) else {"value": value}
-                for key, value in query.items()
-                if key in fields
-            }
+            return {key: value if isinstance(value, dict) else {"value": value} for key, value in query.items() if key in fields}
 
         if len(fields) == 1:
             return {next(iter(fields)): {"value": query}}

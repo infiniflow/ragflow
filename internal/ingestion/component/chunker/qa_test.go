@@ -17,7 +17,6 @@
 package chunker
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -39,7 +38,7 @@ func TestQAChunker_Registered(t *testing.T) {
 }
 
 func TestQAChunker_DelimiterTab(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +47,7 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 		"output_format": "text",
 		"text":          "What is Go?\tGo is a programming language.",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -57,14 +56,14 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
+	cww, _ := chunk["text"].(string)
 	if cww != "Question: What is Go?\tAnswer: Go is a programming language." {
 		t.Fatalf("unexpected content: %q", cww)
 	}
 }
 
 func TestQAChunker_DelimiterComma(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +72,7 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 		"output_format": "text",
 		"text":          "What is Rust?,Rust is a systems language.",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -82,7 +81,7 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
+	cww, _ := chunk["text"].(string)
 	if cww != "Question: What is Rust?\tAnswer: Rust is a systems language." {
 		t.Fatalf("unexpected content: %q", cww)
 	}
@@ -98,7 +97,7 @@ func TestQAChunker_Markdown(t *testing.T) {
 		"output_format": "markdown",
 		"markdown":      "# What is Go?\nGo is a programming language.\n\n# What is Rust?\nRust is a systems language.",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -118,7 +117,7 @@ func TestQAChunker_HTMLTable(t *testing.T) {
 		"output_format": "html",
 		"html":          "<table><tr><td>Q1</td><td>A1</td></tr><tr><td>Q2</td><td>A2</td></tr></table>",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -128,8 +127,79 @@ func TestQAChunker_HTMLTable(t *testing.T) {
 	}
 }
 
+func TestQAChunker_CSVStrictPairRejectsThreeCells(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.CSV",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 0 {
+		t.Fatalf("expected 0 chunks, got %d", len(chunks))
+	}
+}
+
+func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.csv",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td>answer</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["text"].(string)
+	if cww != "Question: question\tAnswer: answer" {
+		t.Fatalf("unexpected content: %q", cww)
+	}
+}
+
+// Non-CSV names keep the old "first two non-empty cells" rule on the HTML
+// table path. Since #18800 an .xlsx file reaches the chunker as "json", not
+// "html", so this covers the shared HTML branch and not the XLSX pipeline.
+func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.xls",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["text"].(string)
+	if cww != "Question: question\tAnswer: extra" {
+		t.Fatalf("unexpected content: %q", cww)
+	}
+}
+
 func TestQAChunker_RmQAPrefix(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,12 +208,12 @@ func TestQAChunker_RmQAPrefix(t *testing.T) {
 		"output_format": "text",
 		"text":          "Question: What is Go?\tAnswer: Go is a language.",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: What is Go?\tAnswer: Go is a language." {
 		t.Fatalf("prefix not stripped: %q", cww)
 	}
@@ -159,7 +229,7 @@ func TestQAChunker_Empty(t *testing.T) {
 		"output_format": "text",
 		"text":          "",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -170,7 +240,7 @@ func TestQAChunker_Empty(t *testing.T) {
 }
 
 func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +249,7 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 		"output_format": "text",
 		"text":          "QUESTION: Hello\tANSWER: World",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -187,14 +257,14 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: Hello\tAnswer: World" {
 		t.Fatalf("case-insensitive prefix not stripped: %q", cww)
 	}
 }
 
-func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
-	comp, err := NewQAChunker(nil)
+func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +273,7 @@ func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
 		"output_format": "text",
 		"text":          "A language model is useful\tQ How does it work",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -211,9 +281,11 @@ func TestQAChunker_PrefixRequiresColonOrTab(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: A language model is useful\tAnswer: Q How does it work" {
-		t.Fatalf("space-only separator should not strip prefix: %q", cww)
+	cww, _ := chunks[0]["text"].(string)
+	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
+	// a leading "A"/"Q" followed by a space is stripped.
+	if cww != "Question: language model is useful\tAnswer: How does it work" {
+		t.Fatalf("space-separator prefix not stripped: %q", cww)
 	}
 }
 
@@ -227,7 +299,7 @@ func TestQAChunker_HeadingNoTrailingSpace(t *testing.T) {
 		"output_format": "markdown",
 		"markdown":      "#Hello\nWorld\n",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -247,7 +319,7 @@ func TestQAChunker_ChineseLang(t *testing.T) {
 		"output_format": "text",
 		"text":          "什么是Go？\tGo是一种编程语言。",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -255,7 +327,7 @@ func TestQAChunker_ChineseLang(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if want := "问题：什么是Go？\t回答：Go是一种编程语言。"; cww != want {
 		t.Fatalf("unexpected content: %q, want %q", cww, want)
 	}
@@ -271,7 +343,7 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 		"output_format": "markdown",
 		"markdown":      "# Title\nThis is **bold** text.\n",
 	}
-	out, err := comp.Invoke(context.Background(), inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -279,7 +351,7 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if !strings.Contains(cww, "<strong>bold</strong>") &&
 		!strings.Contains(cww, "<b>bold</b>") {
 		t.Fatalf("markdown not rendered to HTML: %q", cww)

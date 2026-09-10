@@ -15,6 +15,7 @@
 package handler
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,11 +26,12 @@ import (
 )
 
 type ChatChannelService interface {
-	CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
-	List(tenantID string) ([]*entity.ChatChannelListResponse, error)
-	GetChatChannel(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
-	UpdateChatChannel(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
-	DeleteChatChannel(userID, channelID string) (bool, common.ErrorCode, error)
+	CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error)
+	GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
+	UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
+	GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error)
+	DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error)
 }
 
 type ChatChannelHandler struct {
@@ -48,7 +50,7 @@ func NewChatChannel() *ChatChannelHandler {
 type CreateChatChannelRequest struct {
 	Name    string         `json:"name" binding:"required"`
 	Channel string         `json:"channel" binding:"required"`
-	Config  entity.JSONMap `json:"config" binding:"required"`
+	Config  entity.JSONMap `json:"config"`
 	ChatID  *string        `json:"chat_id"`
 }
 
@@ -65,8 +67,14 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
 		return
 	}
+	if req.Config == nil {
+		req.Config = entity.JSONMap{}
+	}
+
+	ctx := c.Request.Context()
 
 	row, err := h.chatChannelService.CreateChatChannel(
+		ctx,
 		user.ID,
 		req.Name,
 		req.Channel,
@@ -88,7 +96,8 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.chatChannelService.List(user.ID)
+	ctx := c.Request.Context()
+	rows, err := h.chatChannelService.List(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -116,7 +125,8 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 		return
 	}
 
-	channel, code, err := h.chatChannelService.GetChatChannel(userID, channelID)
+	ctx := c.Request.Context()
+	channel, code, err := h.chatChannelService.GetChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
@@ -151,12 +161,42 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatChannelService.UpdateChatChannel(userID, channelID, unwrapChatChannelPayload(request))
+	ctx := c.Request.Context()
+	result, code, err := h.chatChannelService.UpdateChatChannel(ctx, userID, channelID, unwrapChatChannelPayload(request))
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
 	}
 
+	common.SuccessWithData(c, result, "success")
+}
+
+// GetChatChannelRuntime returns live runtime metadata for a running chat channel.
+func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
+		return
+	}
+
+	channelID := strings.TrimSpace(c.Param("channel_id"))
+	if channelID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "channel_id is required")
+		return
+	}
+
+	ctx := c.Request.Context()
+	result, code, err := h.chatChannelService.GetChatChannelRuntime(ctx, userID, channelID)
+	if code != common.CodeSuccess || err != nil {
+		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
+		return
+	}
 	common.SuccessWithData(c, result, "success")
 }
 
@@ -180,7 +220,8 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatChannelService.DeleteChatChannel(userID, channelID)
+	ctx := c.Request.Context()
+	result, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
@@ -197,7 +238,7 @@ func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interfa
 }
 
 func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string) {
-	if code == common.CodeAuthenticationError && message == "No authorization." {
+	if code == common.CodeAuthenticationError && message == "no authorization" {
 		common.ResponseWithCodeData(c, code, false, message)
 		return
 	}

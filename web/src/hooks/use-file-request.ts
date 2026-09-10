@@ -1,4 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
@@ -12,8 +29,14 @@ import {
 import fileManagerService from '@/services/file-manager-service';
 import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import request from '@/utils/request';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -62,7 +85,10 @@ export const useUploadFile = () => {
       const formData = new FormData();
       formData.append('parent_id', params.parentId);
       fileList.forEach((file: any, index: number) => {
-        formData.append('file', file);
+        // Explicitly set filename to file.name (base name) to prevent the
+        // browser from using webkitRelativePath (e.g. "folder/file.txt")
+        // which would cause the backend to create an extra folder.
+        formData.append('file', file, file.name);
         formData.append('path', pathList[index]);
       });
       try {
@@ -174,7 +200,8 @@ export interface IListResult {
 }
 
 export const useFetchFileList = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const id = useGetFolderId();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -213,6 +240,7 @@ export const useFetchFileList = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
@@ -231,16 +259,24 @@ export const useDeleteFile = () => {
   } = useMutation({
     mutationKey: [FileApiAction.DeleteFile],
     mutationFn: async (params: { fileIds: string[]; parentId: string }) => {
-      const { data } = await fileManagerService.removeFile({
-        ids: params.fileIds,
-      });
-      if (data.code === 0) {
-        message.success(t('message.deleted'));
+      try {
+        const { data } = await fileManagerService.removeFile({
+          ids: params.fileIds,
+        });
+        if (data.code === 0) {
+          message.success(t('message.deleted'));
+          markListItemsDeleted(ListDeletionKey.FileList);
+        }
+        queryClient.invalidateQueries({
+          queryKey: [FileApiAction.FetchFileList],
+        });
+        return data.code;
+      } catch {
+        // Swallow request failures so callers awaiting the mutation never
+        // produce an unhandled rejection; a failed delete simply returns no
+        // code and the selection state stays untouched.
+        return;
       }
-      queryClient.invalidateQueries({
-        queryKey: [FileApiAction.FetchFileList],
-      });
-      return data.code;
     },
   });
 
@@ -290,6 +326,49 @@ export const useRenameFile = () => {
   return { data, loading, renameFile: mutateAsync };
 };
 
+const LinkedDatasetsPollIntervalMs = 500;
+const LinkedDatasetsPollMaxAttempts = 6;
+
+// Returns true when every affected file row on the current page carries all the
+// newly linked datasets. Rows that are not on the current page, or folder rows
+// (which never carry kbs_info), cannot be verified and are treated as done.
+const areDatasetsLinked = (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+) => {
+  const cached = queryClient.getQueriesData<IFetchFileListResult>({
+    queryKey: [FileApiAction.FetchFileList],
+  })[0]?.[1] ?? { files: [] };
+  const verifiableFiles = (cached.files ?? []).filter(
+    (file) => fileIds.includes(file.id) && file.type !== 'folder',
+  );
+  if (verifiableFiles.length === 0) return true;
+  return verifiableFiles.every((file) =>
+    kbIds.every((kbId) => file.kbs_info?.some((kb) => kb.kb_id === kbId)),
+  );
+};
+
+// Both backends respond to link-to-datasets before the file↔dataset mappings
+// are written (the conversion runs in the background), so the refetch right
+// after success can still see stale kbs_info. Poll until the newly linked
+// datasets show up in the list data; give up after a bounded window.
+const waitUntilDatasetsLinked = async (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+) => {
+  for (let attempt = 0; attempt < LinkedDatasetsPollMaxAttempts; attempt++) {
+    if (areDatasetsLinked(queryClient, fileIds, kbIds)) return;
+    await new Promise((resolve) =>
+      setTimeout(resolve, LinkedDatasetsPollIntervalMs),
+    );
+    await queryClient.refetchQueries({
+      queryKey: [FileApiAction.FetchFileList],
+    });
+  }
+};
+
 export const useConnectToKnowledge = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -312,38 +391,14 @@ export const useConnectToKnowledge = () => {
       });
       if (data.code === 0) {
         message.success(t('message.operated'));
-        const fileIdSet = new Set(params.fileIds);
-        queryClient.setQueriesData<IFetchFileListResult>(
-          {
-            queryKey: [FileApiAction.FetchFileList],
-          },
-          (oldData) => {
-            if (!oldData?.files) return oldData;
-            return {
-              ...oldData,
-              files: oldData.files.map((file) => {
-                if (!fileIdSet.has(file.id)) return file;
-                const kbsInfo =
-                  params.mode === 'replace'
-                    ? params.kbsInfo
-                    : [
-                        ...(file.kbs_info ?? []),
-                        ...params.kbsInfo.filter(
-                          (kb) =>
-                            !(file.kbs_info ?? []).some(
-                              (item) => item.kb_id === kb.kb_id,
-                            ),
-                        ),
-                      ];
-                return { ...file, kbs_info: kbsInfo };
-              }),
-            };
-          },
-        );
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
-          refetchType: 'none',
         });
+        await waitUntilDatasetsLinked(
+          queryClient,
+          params.fileIds,
+          params.kbIds,
+        );
       }
       return data.code;
     },

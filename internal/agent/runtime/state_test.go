@@ -26,10 +26,10 @@ import (
 // interrupt path's "failed to marshal state: unknown type:
 // runtime.CanvasState" error). Every field on CanvasState must
 // round-trip without losing the map values, the CancelFlag bool,
-// and the RunID / TaskID strings.
+// and the RunID / SessionID strings.
 func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	t.Parallel()
-	src := NewCanvasState("run-1", "task-1")
+	src := NewCanvasState("run-1", "session-1")
 	src.Sys["query"] = "hello"
 	src.Env["counter"] = 0.0
 	src.CancelFlag.Store(true)
@@ -58,8 +58,8 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	if dst.RunID != "run-1" {
 		t.Errorf("RunID = %q, want %q", dst.RunID, "run-1")
 	}
-	if dst.TaskID != "task-1" {
-		t.Errorf("TaskID = %q, want %q", dst.TaskID, "task-1")
+	if dst.SessionID != "session-1" {
+		t.Errorf("SessionID = %q, want %q", dst.SessionID, "session-1")
 	}
 	if len(dst.Path) != 2 || dst.Path[0] != "begin_0" || dst.Path[1] != "message_0" {
 		t.Errorf("Path = %v, want [begin_0 message_0]", dst.Path)

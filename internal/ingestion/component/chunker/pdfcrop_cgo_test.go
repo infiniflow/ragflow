@@ -71,7 +71,7 @@ func TestNeedsCrop(t *testing.T) {
 	}{
 		{"image with positions", schema.ChunkDoc{CKType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"table with positions", schema.ChunkDoc{CKType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		{"text with positions", schema.ChunkDoc{CKType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
+		{"text with positions", schema.ChunkDoc{CKType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"image without positions", schema.ChunkDoc{CKType: "image"}, false},
 		{"unknown type", schema.ChunkDoc{CKType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
 	}
@@ -82,7 +82,7 @@ func TestNeedsCrop(t *testing.T) {
 	}
 }
 
-func TestCropImageChunks_CropsImageAndTable(t *testing.T) {
+func TestCropImageChunks_CropsImageTableAndText(t *testing.T) {
 	ctx := context.Background()
 	// 1-based JSON position (1) must be rendered as 0-based page 0.
 	eng := assertZeroPageEngine{}
@@ -91,7 +91,7 @@ func TestCropImageChunks_CropsImageAndTable(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{CKType: "image", PDFPositions: pos},
 		{CKType: "table", PDFPositions: pos},
-		{CKType: "text", PDFPositions: pos},                           // skipped (not image/table)
+		{CKType: "text", PDFPositions: pos},                           // restored preview (Chunker-1.3)
 		{CKType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
 	}
 	out := cropImageChunks(ctx, eng, chunks)
@@ -101,8 +101,10 @@ func TestCropImageChunks_CropsImageAndTable(t *testing.T) {
 	for i, ck := range out {
 		switch ck.CKType {
 		case "text":
-			if ck.Image != "" {
-				t.Errorf("chunk %d (text): image should stay empty, got %q", i, ck.Image)
+			// Chunker-1.3: text chunks with PDF positions get a rendered
+			// preview, mirroring Python restore_pdf_text_previews.
+			if !strings.HasPrefix(ck.Image, "data:image/png;base64,") {
+				t.Errorf("chunk %d (text): image = %q, want data:image/png;base64, prefix (preview restored)", i, ck.Image)
 			}
 		case "image":
 			if ck.Image == "data:image/png;base64,preexisting" {
@@ -116,6 +118,30 @@ func TestCropImageChunks_CropsImageAndTable(t *testing.T) {
 				t.Errorf("chunk %d (table): image = %q, want data:image/png;base64, prefix", i, ck.Image)
 			}
 		}
+	}
+}
+
+// TestRestorePDFTextPreview covers Chunker-1.3 directly: a text chunk that
+// carries PDF positions must receive a rendered preview image, while a text
+// chunk without positions must be left untouched (no spurious preview). The
+// img_id upload is owned by imageUploadDecorator (image_upload.go) and is
+// not asserted here.
+func TestRestorePDFTextPreview(t *testing.T) {
+	ctx := context.Background()
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+
+	withPos := schema.ChunkDoc{CKType: "text", PDFPositions: pos}
+	withoutPos := schema.ChunkDoc{CKType: "text", Text: "plain text, no coordinates"}
+
+	out := cropImageChunks(ctx, mockCropEngine{}, []schema.ChunkDoc{withPos, withoutPos})
+	if len(out) != 2 {
+		t.Fatalf("len(out) = %d, want 2", len(out))
+	}
+	if !strings.HasPrefix(out[0].Image, "data:image/png;base64,") {
+		t.Errorf("chunk with positions: image = %q, want data:image/png;base64, prefix", out[0].Image)
+	}
+	if out[1].Image != "" {
+		t.Errorf("chunk without positions: image = %q, want empty", out[1].Image)
 	}
 }
 

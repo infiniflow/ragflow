@@ -72,8 +72,8 @@ type TenantInfoResponse struct {
 }
 
 // GetTenantInfo get tenant information for the current user (owner tenant)
-func (s *TenantService) GetTenantInfo(userID string) (*TenantInfoResponse, error) {
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+func (s *TenantService) GetTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -152,16 +152,16 @@ func NewTenantLLMService() *TenantLLMService {
  *	// Get API key for model without factory
  *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
  */
-func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*entity.TenantLLM, error) {
+func (s *TenantLLMService) GetAPIKey(ctx context.Context, tenantID, modelName string) (*entity.TenantLLM, error) {
 	modelName, factory := s.SplitModelNameAndFactory(modelName)
 
 	var tenantLLM *entity.TenantLLM
 	var err error
 
 	if factory == "" {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(tenantID, modelName)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(ctx, dao.DB, tenantID, modelName)
 	} else {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(tenantID, modelName, factory)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(ctx, dao.DB, tenantID, modelName, factory)
 	}
 
 	if err != nil {
@@ -186,7 +186,7 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
 // GetAPIKeyFromInstance returns the API key for the given composite model name
 // by looking it up in the tenant_model_instance table. compositeModelName is in
 // "model@instance@provider" or "model@provider" format.
-func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName string) (string, error) {
+func (s *TenantLLMService) GetAPIKeyFromInstance(ctx context.Context, tenantID, compositeModelName string) (string, error) {
 	parts := strings.Split(compositeModelName, "@")
 	if len(parts) < 2 {
 		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
@@ -204,7 +204,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
 		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return "", fmt.Errorf("provider %q not found: %w", providerName, err)
 	}
@@ -212,7 +212,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
 		return "", fmt.Errorf("provider %q not found", providerName)
 	}
 
-	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return "", fmt.Errorf("instance %q not found: %w", instanceName, err)
 	}
@@ -260,7 +260,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
  *	//     "tenant_embd_id": 456,   // ID from tenant_llm table
  *	// }
  */
-func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params map[string]interface{}) map[string]interface{} {
+func (s *TenantLLMService) EnsureTenantModelIDForParams(ctx context.Context, tenantID string, params map[string]interface{}) map[string]interface{} {
 	paramKeys := []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
 
 	for _, key := range paramKeys {
@@ -273,7 +273,7 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params 
 					continue
 				}
 
-				tenantLLM, err := s.GetAPIKey(tenantID, modelName)
+				tenantLLM, err := s.GetAPIKey(ctx, tenantID, modelName)
 				if err == nil && tenantLLM != nil {
 					params[tenantKey] = tenantLLM.ID
 				} else {
@@ -287,8 +287,8 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params 
 }
 
 // GetTenantList get tenant list for a user
-func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) {
-	tenants, err := s.userTenantDAO.GetTenantsByUserID(userID)
+func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*TenantListItem, error) {
+	tenants, err := s.userTenantDAO.GetTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -320,9 +320,9 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 }
 
 // CreateMetadataStore creates the metadata store for a tenant
-func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) CreateMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to create doc meta table
-	err := s.docEngine.CreateMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.CreateMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
 	}
@@ -331,9 +331,9 @@ func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, 
 }
 
 // DeleteMetadataStore deletes the metadata store for a tenant
-func (s *TenantService) DeleteMetadataStore(tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteMetadataStore(ctx context.Context, tenantID string) (common.ErrorCode, error) {
 	// Call document engine to delete doc meta table
-	err := s.docEngine.DropMetadataStore(context.Background(), tenantID)
+	err := s.docEngine.DropMetadataStore(ctx, tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}
@@ -356,12 +356,12 @@ type CreateChunkStoreResponse struct {
 }
 
 // CreateChunkStore creates a chunk store in the document engine for a knowledge base
-func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
 	if req == nil {
 		return nil, common.CodeDataError, fmt.Errorf("request is required")
 	}
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(req.KBID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, req.KBID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
@@ -380,7 +380,7 @@ func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*Creat
 
 	// Call document engine to create table
 	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
+	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -393,9 +393,9 @@ func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*Creat
 }
 
 // DeleteChunkStore deletes the chunk store in the document engine for a knowledge base
-func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteChunkStore(ctx context.Context, kbID string) (common.ErrorCode, error) {
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(kbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
@@ -404,7 +404,7 @@ func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) 
 	}
 
 	// Call document engine to delete table
-	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+	err = s.docEngine.DropChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
@@ -449,22 +449,11 @@ func ptrStringValue(s *string) string {
 	return *s
 }
 
-func factoryModelTypeName(modelType string) string {
-	switch modelType {
-	case "image2text":
-		return "vision"
-	case "speech2text":
-		return "asr"
-	default:
-		return modelType
-	}
-}
-
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set
-func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.ModelType) (string, error) {
-	tenant, err := s.tenantDAO.GetByID(tenantID)
+func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return "", err
 	}
@@ -492,7 +481,7 @@ func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.Mo
 	return modelID, nil
 }
 
-func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
+func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
 	// Mirror Python's _get_model_info: right-anchored rsplit so that model
 	// names containing '@' (e.g. LM Studio IDs like
 	// "text-embedding-nomic-embed-text-v1.5@q8_0") remain intact.
@@ -526,29 +515,21 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 	}
 
 	// Check if the provider exists for the tenant.
-	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
 	// Check if the instance exists.
-	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, instanceName)
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
-	// Validate that the factory model supports this model type.
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return nil, nil, nil, false, err
-	}
-	factoryModelType := factoryModelTypeName(modelType)
-	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return nil, nil, nil, false, fmt.Errorf("model %s isn't a %s model", modelName, modelType)
-	}
-
-	// Check if the model exists and is active.
-	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
+	// Check if the model exists and is active. Model type validity is
+	// enforced on the save path against the tenant_model record, so models
+	// added online that are absent from the static catalog still resolve.
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {
 			return nil, nil, nil, false, err
@@ -592,9 +573,9 @@ func rsplitN(s, sep string, n int) []string {
 	return result
 }
 
-func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, error) {
+func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
 
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +587,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 
 	var result []ModelItem
 
-	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.LLMID, "chat")
+	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.LLMID, "chat")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultChatModelProvider,
@@ -618,7 +599,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
+	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultEmbeddingModelProvider,
@@ -630,7 +611,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
+	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultRerankModelProvider,
@@ -642,7 +623,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.ASRID, "asr")
+	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.ASRID, "asr")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultASRModelProvider,
@@ -654,7 +635,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 		})
 	}
 
-	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
+	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultImage2TextModelProvider,
@@ -667,7 +648,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 	}
 
 	if ownedTenant.OCRID != "" {
-		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
+		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
 		if err == nil {
 			result = append(result, ModelItem{
 				ModelProvider: defaultOCRModelProvider,
@@ -681,7 +662,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 	}
 
 	if ownedTenant.TTSID != "" {
-		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.TTSID, "tts")
+		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.TTSID, "tts")
 		if err == nil {
 			result = append(result, ModelItem{
 				ModelProvider: defaultTTSModelProvider,
@@ -697,7 +678,7 @@ func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, err
 	return result, nil
 }
 
-func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName, modelName, modelType string) error {
+func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, providerName, instanceName, modelName, modelType string) error {
 	_, _, modelTypeBit, err := tenantDefaultModelFields(modelType)
 	if err != nil {
 		return err
@@ -709,7 +690,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	}
 
 	// Static bypass: OCR with infiniflow@default@deepdoc is always enabled (mirrors Python _check_model_available).
-	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" {
 		return nil
 	}
 
@@ -722,27 +703,18 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	}
 
 	// Check if the provider and instance exists
-	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return err
 	}
 
-	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, instanceName)
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
 	if err != nil {
 		return err
 	}
 
-	modelSchema, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	if err != nil {
-		return err
-	}
-
-	factoryModelType := factoryModelTypeName(modelType)
-	if !modelSchema.ModelTypeMap[factoryModelType] {
-		return fmt.Errorf("model %s isn't a %s model", modelName, modelType)
-	}
-
-	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
+	// Validate model availability through the DB (TenantModel table)
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return fmt.Errorf("model %s isn't available", modelName)
@@ -759,9 +731,9 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	return nil
 }
 
-func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
+func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
 
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return err
 	}
@@ -778,15 +750,15 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 
 	var tenantModelID interface{}
 	if modelID != "" {
-		modelEntity, err := s.modelDAO.GetByID(modelID)
+		modelEntity, err := s.modelDAO.GetByID(ctx, dao.DB, modelID)
 		if err != nil {
 			return fmt.Errorf("model ID %s is invalid", modelID)
 		}
-		instanceEntity, err := s.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+		instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 		if err != nil {
 			return fmt.Errorf("instance for model %s not found: %w", modelID, err)
 		}
-		providerEntity, err := s.modelProviderDAO.GetByID(instanceEntity.ProviderID)
+		providerEntity, err := s.modelProviderDAO.GetByID(ctx, dao.DB, instanceEntity.ProviderID)
 		if err != nil {
 			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
 		}
@@ -811,7 +783,7 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 		defaultModel = ""
 		tenantModelID = nil
 	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
-		err = s.checkModelAvailable(ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
+		err = s.checkModelAvailable(ctx, ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
 		if err != nil {
 			return err
 		}
@@ -821,15 +793,15 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 			if modelProvider == "Builtin" {
 				tenantModelID = nil
 			} else {
-				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
+				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, ownedTenant.TenantID, modelProvider)
 				if err != nil {
 					return err
 				}
-				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
+				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProviderEntity.ID, modelInstance)
 				if err != nil {
 					return err
 				}
-				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
 				if err != nil {
 					return err
 				}
@@ -841,12 +813,12 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 		return fmt.Errorf("model provider, instance and name must be specified together")
 	}
 
-	err = s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
+	err = s.tenantDAO.Update(ctx, dao.DB, ownedTenant.TenantID, map[string]interface{}{
 		modelTypeID:       defaultModel,
 		tenantModelTypeID: tenantModelID,
 	})
 
-	return nil
+	return err
 }
 
 // Tenant member role constants.
@@ -876,11 +848,11 @@ type TenantMemberResponse struct {
 
 // ListMembers returns all non-owner members of tenantID.
 // Only the tenant owner (userID == tenantID) may call this.
-func (s *TenantService) ListMembers(userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
+func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
 	if userID != tenantID {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
-	rows, err := s.userTenantDAO.GetMembersByTenantID(tenantID)
+	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -921,7 +893,7 @@ type AddMemberResponse struct {
 
 // AddMember invites a user (by email) to the tenant.
 // Only the tenant owner (userID == tenantID) may call this.
-func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
+func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
 	if userID != tenantID {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
@@ -929,13 +901,13 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
 	}
 
-	invitee, err := s.userDAO.GetByEmail(req.Email)
+	invitee, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("user not found")
 	}
 
 	// Reject if already a member or has a pending invitation.
-	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(invitee.ID, tenantID)
+	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
 	if existing != nil {
 		switch existing.Role {
 		case TenantRoleOwner:
@@ -956,7 +928,7 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	if err = s.userTenantDAO.Create(ut); err != nil {
+	if err = s.userTenantDAO.Create(ctx, dao.DB, ut); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
@@ -975,7 +947,7 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 // RemoveMember removes a user from the tenant.
 // Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
 // The tenant owner (targetUserID == tenantID) cannot be removed.
-func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
 	if userID != tenantID && userID != targetUserID {
 		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
@@ -985,25 +957,25 @@ func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (com
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	if err := s.userTenantDAO.DeleteByUserAndTenant(targetUserID, tenantID); err != nil {
+	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
 
 // AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
-func (s *TenantService) AcceptInvite(userID, tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, tenantID)
+	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
 	if err != nil || existing == nil {
 		return common.CodeDataError, fmt.Errorf("no pending invitation found")
 	}
 	if existing.Role != TenantRoleInvite {
 		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
 	}
-	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(userID, tenantID, TenantRoleNormal); err != nil {
+	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(ctx, dao.DB, userID, tenantID, TenantRoleNormal); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 	return common.CodeSuccess, nil

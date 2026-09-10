@@ -46,7 +46,7 @@ export function InstanceNameSection({
         htmlFor="instance-name-input"
         className="text-sm font-medium text-text-primary"
       >
-        <span className="text-destructive mr-0.5">*</span>
+        <span className="text-state-error mr-0.5">*</span>
         {tSetting('instanceName')}
       </label>
       <div className="flex items-center">

@@ -106,7 +106,7 @@ export function ProviderHeaderBar({
         ) : (
           <Save className="size-4" />
         )}
-        {tSetting('saveAll')}
+        {tSetting('save')}
       </Button>
     </div>
   );

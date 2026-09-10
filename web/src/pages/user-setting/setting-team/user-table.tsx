@@ -1,8 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { SearchHighlight } from '@/components/search-highlight';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,9 +40,12 @@ import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
-  [TenantRole.Normal]: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  [TenantRole.Invite]: 'bg-accent-primary-5 bg-accent-primary rounded-sm',
-  [TenantRole.Owner]: 'bg-red-100 text-red-800',
+  [TenantRole.Normal]:
+    'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  [TenantRole.Invite]:
+    'bg-accent-primary-5 text-accent-primary hover:bg-accent-primary/10 rounded-sm',
+  [TenantRole.Owner]:
+    'bg-red-100 text-red-800 hover:bg-red-200 hover:text-red-800',
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
@@ -34,7 +54,6 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();
   const sortedData = useMemo(() => {
-    console.log('sortedData', data, searchUser);
     if (!data || data.length === 0) return data;
     let filtered = data;
     if (searchUser) {
@@ -121,13 +140,18 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                       avatar={record.avatar}
                       name={record.nickname}
                     />
-                    {record.nickname}
+                    <SearchHighlight
+                      text={record.nickname}
+                      query={searchUser}
+                    />
                   </div>
                 </TableCell>
                 <TableCell className="p-4">
                   {formatDate(record.update_date)}
                 </TableCell>
-                <TableCell className="p-4">{record.email}</TableCell>
+                <TableCell className="p-4">
+                  <SearchHighlight text={record.email} query={searchUser} />
+                </TableCell>
                 <TableCell className="p-4">
                   {record.role === TenantRole.Normal && (
                     <Badge className={ColorMap[record.role]}>

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 type mockCanvasStage struct {
@@ -37,7 +39,7 @@ type mockCanvasStage struct {
 	calls  int
 }
 
-func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	m.called = true
 	m.calls++
 	out := cloneMapOrEmpty(inputs)
@@ -58,12 +60,12 @@ type oneShotErrStage struct {
 	n int
 }
 
-func (s *oneShotErrStage) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *oneShotErrStage) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	s.n++
 	if s.n == 1 {
 		return nil, errors.New("simulated crash")
 	}
-	return s.mockCanvasStage.Invoke(ctx, inputs)
+	return s.mockCanvasStage.Invoke(ctx, db, inputs)
 }
 func (s *oneShotErrStage) Inputs() map[string]string  { return s.mockCanvasStage.Inputs() }
 func (s *oneShotErrStage) Outputs() map[string]string { return s.mockCanvasStage.Outputs() }
@@ -98,7 +100,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc-canvas"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -119,7 +121,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 
 func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	if _, err := p.Run(context.Background(), nil, nil); err == nil {
+	if _, err := p.Run(t.Context(), nil, nil); err == nil {
 		t.Fatal("expected error for nil pipeline")
 	}
 }
@@ -144,7 +146,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}, nil); err == nil {
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "x"}, nil); err == nil {
 		t.Fatal("expected stage error")
 	}
 }
@@ -171,7 +173,7 @@ func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
 
 type errCanvasStage struct{}
 
-func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (e *errCanvasStage) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
@@ -181,7 +183,7 @@ type factorySentinelStage struct {
 	marker string
 }
 
-func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *factorySentinelStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out := cloneMapOrEmpty(inputs)
 	out["marker"] = s.marker
 	return out, nil
@@ -250,7 +252,7 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 		return &factorySentinelStage{marker: "instance"}, nil
 	})
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -304,7 +306,7 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	results := make(chan result, 2)
 	run := func(pipe *Pipeline) {
 		defer wg.Done()
-		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+		out, err := pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 		if err != nil {
 			results <- result{err: err}
 			return
@@ -364,7 +366,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"}, nil)
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "doc-resume"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -427,7 +429,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	// Run 1: terminal B errors (oneShotErrStage n=1), simulating a crash.
 	// Non-terminal A's checkpoint + interrupt persist because the error path
 	// does not call ClearInterruptID or store.Delete.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err == nil {
 		t.Fatal("Run 1: expected error from simulated crash, got nil")
 	}
@@ -441,7 +443,7 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 
 	// Run 2: resume from after A via tracker.GetInterruptID. A is skipped;
 	// B's oneShotErrStage (n=2) delegates to its embedded mock successfully.
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc-cross-run"}, nil)
 	if err != nil {
 		t.Fatalf("Run 2: expected recovery success, got error: %v", err)
 	}
@@ -450,6 +452,459 @@ func TestPipelineRunResumableCrossRunResume(t *testing.T) {
 	}
 	if termStage.calls != 1 {
 		t.Fatalf("Run 2: expected B (embedded mock) calls=1 (delegated once), got %d", termStage.calls)
+	}
+}
+
+// docIDGuardStage mirrors the File component's contract: it requires
+// doc_id (or an explicit file descriptor) in its input and fails otherwise.
+// It lets the resume tests observe whether the graph was re-entered with the
+// original run input or with a nil input (the "inputs missing" failure).
+type docIDGuardStage struct {
+	mockCanvasStage
+	mu            sync.Mutex
+	guardCalls    int
+	missingInputs int
+}
+
+func (m *docIDGuardStage) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	m.mu.Lock()
+	m.guardCalls++
+	m.mu.Unlock()
+	if inputs == nil || inputs["doc_id"] == nil {
+		m.mu.Lock()
+		m.missingInputs++
+		m.mu.Unlock()
+		return nil, errors.New("file: inputs missing doc_id or file[0].name")
+	}
+	return m.mockCanvasStage.Invoke(ctx, db, inputs)
+}
+
+func (m *docIDGuardStage) snapshot() (calls, missing int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.guardCalls, m.missingInputs
+}
+
+// TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint covers the
+// cancel-race state: the interrupt id survives in the RunTracker but the
+// checkpoint payload is gone. Before the fix, runResumable treated the
+// orphaned id as "resume" and invoked the graph with nil input, which
+// re-entered the source node (docIDGuardStage) and failed with
+// "inputs missing doc_id". The fix keeps passing the full original input on
+// resume rounds, so the graph starts fresh with doc_id intact instead of
+// re-entering the source node with nil input.
+func TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint(t *testing.T) {
+	guard := &docIDGuardStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"a": 1}}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.OrphanA"
+		nameB = "p.OrphanB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return guard, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-orphan-interrupt"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("client.Close: %v", err)
+		}
+	})
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	newPipe := func() *Pipeline {
+		pipe, err := NewPipelineFromDSL([]byte(`{
+			"dsl": {
+				"components": {
+					"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+					"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+					"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+				},
+				"path": ["begin", "a", "b"],
+				"graph": {"nodes": []}
+			}
+		}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+		if err != nil {
+			t.Fatalf("NewPipelineFromDSL: %v", err)
+		}
+		return pipe
+	}
+
+	// Run 1: terminal B errors, leaving a checkpoint + interrupt id.
+	pipe1 := newPipe()
+	_, err := pipe1.Run(context.Background(), map[string]any{"doc_id": "d1"}, nil)
+	if err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if calls, missing := guard.snapshot(); calls != 1 || missing != 0 {
+		t.Fatalf("Run 1: guard.calls=%d missing=%d, want 1/0", calls, missing)
+	}
+
+	// Simulate the cancel-race: the checkpoint payload vanishes but the
+	// interrupt id stays behind (cleanup used a cancelled ctx and failed).
+	if err := store.Delete(context.Background(), taskID); err != nil {
+		t.Fatalf("store.Delete: %v", err)
+	}
+	if _, ok, _ := tracker.GetInterruptID(context.Background(), taskID); !ok {
+		t.Fatal("precondition: interrupt id must still be present after checkpoint deletion")
+	}
+
+	// Run 2: must start fresh with the full input preserved (no nil-input
+	// re-entry). The guard stage must see doc_id on every invocation
+	// (no "inputs missing").
+	pipe2 := newPipe()
+	_, err = pipe2.Run(context.Background(), map[string]any{"doc_id": "d1"}, nil)
+	if err != nil {
+		t.Fatalf("Run 2: expected success after checkpoint loss, got: %v", err)
+	}
+	calls, missing := guard.snapshot()
+	if missing != 0 {
+		t.Fatalf("Run 2: source stage ran %d times with missing doc_id, want 0 (orphan interrupt id must not nil the input)", missing)
+	}
+	if calls != 2 {
+		t.Fatalf("Run 2: source stage calls=%d, want 2 (fresh run after checkpoint loss)", calls)
+	}
+}
+
+// longRunCancelStage simulates a long-running component (e.g. a PDF parser):
+// it blocks until the run ctx is cancelled, then returns a cancellation error
+// so runResumable takes the cancel branch. The started channel lets the test
+// coordinate the cancel so it lands AFTER the entry-derived stateCtx's 5s
+// window would have expired — reproducing the "run took longer than the
+// detached-cleanup budget" failure mode.
+type longRunCancelStage struct {
+	started chan struct{}
+}
+
+func (m *longRunCancelStage) Invoke(ctx context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if m.started != nil {
+		close(m.started)
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (m *longRunCancelStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
+func (m *longRunCancelStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
+
+// TestPipelineRunResumableCancelCleanupAfterLongRun covers the detached-ctx
+// timing defect: the previous "unified" stateCtx was derived once at the top
+// of runResumable with a 5s timeout, so any run lasting longer than 5s
+// reached the cancel branch with an already-expired ctx and the cleanup
+// (checkpoint delete + ClearInterruptID + MarkCancelled) silently failed —
+// reintroducing the exact leak this PR fixes. Each terminal branch must
+// derive its own detached ctx at the point of cleanup.
+func TestPipelineRunResumableCancelCleanupAfterLongRun(t *testing.T) {
+	started := make(chan struct{})
+	longStage := &longRunCancelStage{started: started}
+	termStage := &mockCanvasStage{output: map[string]any{"b": 2}}
+
+	const (
+		nameA = "p.LongCancelA"
+		nameB = "p.LongCancelB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return longStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-long-run-cancel"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("client.Close: %v", err)
+		}
+	})
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		// Simulate a long parse: cancel only after the entry-derived 5s
+		// cleanup window would have expired. 6s > 5s. Keep the test fast by
+		// timing the sleep from component start rather than from Run entry.
+		time.Sleep(6 * time.Second)
+		cancel()
+	}()
+
+	_, err = pipe.Run(runCtx, map[string]any{"doc_id": "d1"}, nil)
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+
+	// The cancel branch must have cleaned up with a fresh detached ctx.
+	if _, ok, _ := store.Get(context.Background(), taskID); ok {
+		t.Error("checkpoint was not deleted after cancellation (detached-ctx cleanup failed)")
+	}
+	if _, ok, _ := tracker.GetInterruptID(context.Background(), taskID); ok {
+		t.Error("interrupt id was not cleared after cancellation (detached-ctx cleanup failed)")
+	}
+	fields, err := tracker.Get(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("tracker.Get: %v", err)
+	}
+	if status := fields["status"]; status != "3" {
+		t.Errorf("tracker status = %q, want %q (cancelled)", status, "3")
+	}
+}
+
+// TestPipelineRunResumableDSLChanged discards a stale checkpoint when the DSL
+// is edited between the failed run and the resume. Run 1 fails on the terminal
+// stage, persisting a checkpoint keyed by taskID. Run 2 re-runs the SAME
+// taskID but with a modified DSL (a param edit, enough to change the
+// fingerprint). The guard must detect the mismatch, discard the checkpoint,
+// and start fresh — so every stage re-executes (A runs on both runs) instead
+// of erroring while resuming an incompatible graph (the original bug).
+func TestPipelineRunResumableDSLChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.DSLChangedA"
+		nameB = "p.DSLChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-dsl-changed"
+
+	// Shared store + tracker across both runs (same taskID).
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	// Run 1: original DSL; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt for the original DSL fingerprint.
+	pipe1, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(t.Context(), map[string]any{"name": "doc-dsl-changed"}, nil); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME taskID, but a modified DSL (param added to "a" → different
+	// fingerprint). Without the guard this would resume the stale checkpoint
+	// against an incompatible graph and error; with the guard it discards and
+	// re-runs from scratch.
+	pipe2, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {"chunk_size": 128}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(t.Context(), map[string]any{"name": "doc-dsl-changed"}, nil); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after DSL edit, got error: %v", err)
+	}
+
+	// Fresh run re-executed A (and B, which now delegates successfully at n=2).
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on DSL change, got deleteCount=%d", store.deleteCount())
+	}
+}
+
+// TestClassifyDSLChange is the table-driven unit test for the mismatch-reason
+// classifier used by the warning log. It isolates the "DSL file changed vs
+// runtime override changed" decision from the Run/resume plumbing so the
+// diagnostic label can be verified directly (the log text itself is not
+// asserted by capture).
+func TestClassifyDSLChange(t *testing.T) {
+	const (
+		dsl = "dslfp"
+		ovf = "ovrfp"
+	)
+	cases := []struct {
+		name       string
+		storedDsl  string
+		storedOvf  string
+		dslFP      string
+		ovfFP      string
+		wantReason string
+	}{
+		{"no change", dsl, ovf, dsl, ovf, ""},
+		{"dsl file changed", dsl + "x", ovf, dsl, ovf, "DSL/template changed"},
+		{"override changed", dsl, ovf + "x", dsl, ovf, "runtime override/parser-config changed"},
+		{"both changed", dsl + "x", ovf + "x", dsl, ovf, "DSL/template changed"},
+		// Caller only invokes classify when a checkpoint exists; a missing
+		// fingerprint is treated as "changed" (safe: discard + fresh run).
+		{"missing stored fingerprint", "", "", dsl, ovf, "DSL/template changed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := classifyDSLChange(c.storedDsl, c.storedOvf, c.dslFP, c.ovfFP)
+			if got != c.wantReason {
+				t.Fatalf("classifyDSLChange = %q, want %q", got, c.wantReason)
+			}
+		})
+	}
+}
+
+// errCheckpointStore fails every Get with getErr and records whether Set was
+// ever called. It lets us assert that guardDSLChange does NOT overwrite the
+// DSL/override fingerprints after a failed checkpoint lookup (which would mask
+// a real stale-checkpoint mismatch on a later resume).
+type errCheckpointStore struct {
+	getErr    error
+	setCalled bool
+}
+
+func (s *errCheckpointStore) Get(_ context.Context, _ string) ([]byte, bool, error) {
+	return nil, false, s.getErr
+}
+func (s *errCheckpointStore) Set(_ context.Context, _ string, _ []byte) error {
+	s.setCalled = true
+	return nil
+}
+func (s *errCheckpointStore) Delete(_ context.Context, _ string) error { return nil }
+
+// TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite verifies the
+// CodeRabbit finding: when store.Get(cpID) returns an error, guardDSLChange
+// bails out entirely and must NOT call Set on the fingerprint keys.
+func TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite(t *testing.T) {
+	const taskID = "task-lookup-err"
+	store := &errCheckpointStore{getErr: errors.New("redis temporarily unavailable")}
+	p := &Pipeline{
+		taskID: taskID,
+		rawDSL: []byte(`{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}}}}}}`),
+	}
+	// tracker is nil-safe (only used on the delete branch, which is skipped).
+	p.guardDSLChange(t.Context(), store, nil, taskID, map[string]any{"k": "v"})
+	if store.setCalled {
+		t.Fatal("guardDSLChange must not overwrite fingerprints after a failed checkpoint lookup")
+	}
+}
+
+// TestPipelineRunResumableOverrideChanged verifies that editing ONLY the
+// runtime override_params (same DSL file) between the failed run and the
+// resume is detected as a change and forces a fresh run (the checkpoint is
+// discarded) — it must NOT resume against stale override state. This is the
+// "runtime override/parser-config changed" branch of guardDSLChange.
+func TestPipelineRunResumableOverrideChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.OvfChangedA"
+		nameB = "p.OvfChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-override-changed"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	dsl := `{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "` + nameA + `", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "` + nameB + `", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`
+
+	// Run 1: override v1; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt. The DSL file fingerprint is recorded too.
+	pipe1, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(t.Context(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v1"}); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME DSL file, but override changed to v2. The guard must detect
+	// the override change, discard the stale checkpoint, and re-run from
+	// scratch (A runs again).
+	pipe2, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(t.Context(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v2"}); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after override edit, got error: %v", err)
+	}
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run on override change), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on override change, got deleteCount=%d", store.deleteCount())
 	}
 }
 
@@ -473,7 +928,7 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if !errors.Is(err, ErrResumeUnavailable) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
 	}
@@ -489,14 +944,14 @@ type recordingSink struct {
 	events   []ProgressEvent
 }
 
-func (r *recordingSink) OnComponentTotal(taskID string, total int) {
+func (r *recordingSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.total = total
 	r.totalSet = true
 }
 
-func (r *recordingSink) OnComponentProgress(ev ProgressEvent) {
+func (r *recordingSink) OnComponentProgress(ctx context.Context, ev ProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
@@ -534,7 +989,7 @@ func TestPipelineRunForwardsProgressToSink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}, nil); err != nil {
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "doc-sink"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -573,21 +1028,34 @@ func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
 	t.Cleanup(func() { client.Close() })
 
 	store := newMemCheckpointStore()
-	if err := store.Set(context.Background(), "cp-1", []byte("data")); err != nil {
+	if err := store.Set(t.Context(), "cp-1", []byte("data")); err != nil {
 		t.Fatalf("store.Set: %v", err)
 	}
+	// Fingerprint keys must share the checkpoint's lifecycle on cleanup.
+	if err := store.Set(t.Context(), "cp-1"+dslKeySuffix, []byte("dslfp")); err != nil {
+		t.Fatalf("store.Set dsl: %v", err)
+	}
+	if err := store.Set(t.Context(), "cp-1"+ovfKeySuffix, []byte("ovrfp")); err != nil {
+		t.Fatalf("store.Set ovf: %v", err)
+	}
 	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
-	if err := tracker.AttachInterrupt(context.Background(), "cp-1", "interrupt-1"); err != nil {
+	if err := tracker.AttachInterrupt(t.Context(), "cp-1", "interrupt-1"); err != nil {
 		t.Fatalf("AttachInterrupt: %v", err)
 	}
 
 	p := &Pipeline{}
-	p.cleanupCheckpoint(context.Background(), store, tracker, "cp-1")
+	p.cleanupCheckpoint(t.Context(), store, tracker, "cp-1")
 
-	if store.deleteCount() != 1 {
-		t.Fatalf("store.Delete was not called")
+	// checkpoint + dsl fingerprint + ovf fingerprint = 3 deletes.
+	if store.deleteCount() != 3 {
+		t.Fatalf("expected 3 store deletes (checkpoint + 2 fingerprints), got %d", store.deleteCount())
 	}
-	id, ok, err := tracker.GetInterruptID(context.Background(), "cp-1")
+	for _, k := range []string{"cp-1", "cp-1" + dslKeySuffix, "cp-1" + ovfKeySuffix} {
+		if _, found, _ := store.Get(t.Context(), k); found {
+			t.Fatalf("expected key %q to be deleted", k)
+		}
+	}
+	id, ok, err := tracker.GetInterruptID(t.Context(), "cp-1")
 	if err != nil {
 		t.Fatalf("GetInterruptID: %v", err)
 	}
@@ -626,7 +1094,7 @@ func TestRunPlain_WithTracker_Success(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -657,8 +1125,30 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
+	}
+}
+
+func TestValidatePipeline_DisallowMultipleExtractors(t *testing.T) {
+	dsl := []byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["Extractor:One"]},
+				"Extractor:One": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["begin"], "downstream": ["Extractor:Two"]},
+				"Extractor:Two": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["Extractor:One"]}
+			},
+			"path": ["begin", "Extractor:One", "Extractor:Two"],
+			"graph": {"nodes": []}
+		}
+	}`)
+
+	_, err := NewPipelineFromDSL(dsl, "test-task-dup-ext")
+	if err == nil {
+		t.Fatal("expected validation error for multiple Extractor components, got nil")
+	}
+	if !strings.Contains(err.Error(), "at most 1 Extractor component is allowed") {
+		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
 	}
 }
