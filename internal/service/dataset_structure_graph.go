@@ -1163,23 +1163,27 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[
 		if bucketKind == "" {
 			bucketKind = kindVal
 		}
-		return map[string]interface{}{
-				"template_id":   tid,
-				"template_name": bucketName,
-				"kind":          bucketKind,
-			}, graphBucketScope(documentID, map[string]interface{}{
-				"compilation_template_ids": []string{tid},
-			})
+		bucket := map[string]interface{}{
+			"template_id":   tid,
+			"template_name": bucketName,
+			"kind":          bucketKind,
+		}
+		scope := graphBucketScope(documentID, map[string]interface{}{
+			"compilation_template_ids": []string{tid},
+		})
+		return bucket, scope
 	}
 	bucketID := "legacy:" + compileKwd
-	return map[string]interface{}{
-			"template_id":   bucketID,
-			"template_name": "Legacy (" + compileKwd + ")",
-			"kind":          kindVal,
-		}, graphBucketScope(documentID, map[string]interface{}{
-			"compile_kwd": []string{compileKwd},
-			"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
-		})
+	legacyBucket := map[string]interface{}{
+		"template_id":   bucketID,
+		"template_name": "Legacy (" + compileKwd + ")",
+		"kind":          kindVal,
+	}
+	legacyScope := graphBucketScope(documentID, map[string]interface{}{
+		"compile_kwd": []string{compileKwd},
+		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
+	})
+	return legacyBucket, legacyScope
 }
 
 func graphBucketScope(documentID string, scope map[string]interface{}) map[string]interface{} {
