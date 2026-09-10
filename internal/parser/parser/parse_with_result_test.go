@@ -38,6 +38,7 @@ import (
 	"testing"
 
 	"golang.org/x/net/html"
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"ragflow/internal/utility"
 )
@@ -107,16 +108,28 @@ func TestTextParser_ParseWithResult_NoSizeCap(t *testing.T) {
 	}
 }
 
-// TestTextParser_ParseWithResult_InvalidUTF8 pins the UTF-8
-// validation rule. Invalid bytes produce an error in the result
-// (matching the python TxtParser's behaviour).
-func TestTextParser_ParseWithResult_InvalidUTF8(t *testing.T) {
+// TestTextParser_ParseWithResult_GBK pins that non-UTF-8 (e.g. GBK) text input
+// is decoded to valid UTF-8 rather than returning an error.
+func TestTextParser_ParseWithResult_GBK(t *testing.T) {
 	ctx := t.Context()
 	p := NewTextParser()
-	bad := []byte{0xff, 0xfe, 0xfd}
-	res := p.ParseWithResult(ctx, "bad.txt", bad)
-	if res.Err == nil {
-		t.Fatal("want error for invalid UTF-8, got nil")
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte("测试中文文本内容"))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+	res := p.ParseWithResult(ctx, "chinese_gbk.txt", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult(GBK): unexpected error %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("want non-empty items")
+	}
+	got, _ := res.JSON[0]["text"].(string)
+	if got != "测试中文文本内容" {
+		t.Errorf("got %q, want %q", got, "测试中文文本内容")
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" {
+		t.Errorf("File.encoding = %q, want gb18030 or gbk", enc)
 	}
 }
 

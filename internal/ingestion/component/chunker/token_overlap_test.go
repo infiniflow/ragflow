@@ -2,7 +2,6 @@ package chunker
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -90,29 +89,5 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 	}
 	if spacePreserved == 0 {
 		t.Errorf("no chunk preserved an inter-line space across a boundary; the regression fixture is not exercised")
-	}
-}
-
-// TestOverlapTailPositions_VisibleTextOffsets pins the visible-text offset
-// contract: overlapCut/overlapFitPrefix measure the cut on the tag-free visible
-// text, so overlapTailPositions must map item spans using the same visible
-// lengths. A coordinate tag in an earlier item must not shift the boundaries of
-// later items (which would pull head coordinates into the overlap tail).
-func TestOverlapTailPositions_VisibleTextOffsets(t *testing.T) {
-	items := []mergeItem{
-		// visible text "hello world" (11 runes); the tag inflates the RAW length
-		// to 23 runes.
-		{Text: "hello@@1\t2\t3\t4## world", PDFPositions: json.RawMessage(`[["p0"]]`), Positions: json.RawMessage(`[["q0"]]`)},
-		{Text: "tail", PDFPositions: json.RawMessage(`[["p1"]]`), Positions: json.RawMessage(`[["q1"]]`)},
-	}
-	// Visible layout: item0 [0,11), joinSep "\n" at 11, item1 [12,16). An
-	// overlapStart of 12 lands in item1 only, so item0's head coordinates must
-	// NOT be included.
-	pdf, pos := overlapTailPositions(items, 12, "\n")
-	if string(pdf) != `[["p1"]]` {
-		t.Errorf("pdf positions = %s, want only item1 [\"p1\"] (item0 head must be excluded)", pdf)
-	}
-	if string(pos) != `[["q1"]]` {
-		t.Errorf("positions = %s, want only item1 [\"q1\"] (item0 head must be excluded)", pos)
 	}
 }

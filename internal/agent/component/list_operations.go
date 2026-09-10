@@ -298,7 +298,25 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+		// A nil value means the referenced variable was never written in
+		// this run — typically an upstream node routed around by a
+		// conditional branch. That is "no variable passed in", not a
+		// misconfiguration: operate on an empty list so the canvas run
+		// survives. Non-nil non-list values remain a hard error.
+		if raw == nil {
+			items = []any{}
+		} else {
+			return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+		}
+	}
+	// A typed nil []any satisfies the assertion above (ok=true, items=nil)
+	// and bypasses the unset-variable branch — e.g. an upstream component
+	// that wrote a never-appended `var out []any` into state. Normalize it
+	// to the same empty list so both nil forms are indistinguishable for
+	// the operators and the non-nil result contract holds structurally,
+	// not by each operator's slice-construction style.
+	if items == nil {
+		items = []any{}
 	}
 
 	var out []any
@@ -538,7 +556,7 @@ func dedupKey(v any) string {
 
 // normValue is the Python _norm helper: "" for nil, else str(v).
 // Bools are rendered as "True" / "False" (Python's str() output) so
-// filter `=` comparisons match the Python DSL contract. Mirrors
+// filter `=` comparisons match the Python DSL  Mirrors
 // agent/component/list_operations.py:151-153.
 func normValue(v any) string {
 	if v == nil {

@@ -151,7 +151,10 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 
 	// Primary: semantic search over each dataset's nav tree.
 	for _, datasetID := range datasetIDs {
-		hits, err := ns.Search(ctx, tenantID, datasetID, query, nil, maxDocs)
+		// No doc scope: Python's dataset_navigation_by_tree applies
+		// tools.scoped_doc_ids(None), but this canvas tool's context carries no
+		// session document scope, so the read stays dataset-wide.
+		hits, err := ns.Search(ctx, tenantID, datasetID, query, nil, nil, maxDocs)
 		if err != nil {
 			continue
 		}

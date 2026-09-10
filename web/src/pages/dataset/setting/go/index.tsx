@@ -20,8 +20,9 @@ import {
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEqual } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { FieldErrors, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import ChunkMethodLearnMore from '../python/chunk-method-learn-more';
@@ -36,6 +37,7 @@ import {
   usePipelineDataList,
   useSaveDatasetSetting,
 } from './hooks';
+import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -128,6 +130,9 @@ export default function DatasetSetting() {
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 
+  const { scrollContainerRef, handleInvalidSubmit } =
+    useRevealSubmitErrors(setActiveTab);
+
   useEffect(() => {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
@@ -143,12 +148,23 @@ export default function DatasetSetting() {
     [handleSave],
   );
 
+  const { errors } = useFormState({
+    control: form.control,
+    name: 'parser_config',
+  });
+
   const { handleLinkOrEditSubmit, unbindFunc, handleAutoParse } =
     useConnectorHandlers(form, sourceDataState, setSourceDataState);
 
   const handleOperatorValuesChange = useCallback(
     (operatorId: string, values: any) => {
       const currentParserConfig = form.getValues('parser_config') || {};
+      // Skip no-op syncs (e.g. a remounted tab pushing back the values it was
+      // just initialized with) — otherwise each setValue re-renders the tabs,
+      // which re-fires the operator form's change callback in a loop.
+      if (isEqual(currentParserConfig[operatorId], values)) {
+        return;
+      }
       form.setValue('parser_config', {
         ...currentParserConfig,
         [operatorId]: values,
@@ -156,6 +172,11 @@ export default function DatasetSetting() {
     },
     [form],
   );
+
+  const parserConfigValues = useWatch({
+    control: form.control,
+    name: 'parser_config',
+  });
 
   const pipelineDataList = usePipelineDataList(sourceDataState);
 
@@ -181,10 +202,13 @@ export default function DatasetSetting() {
         <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
           <Form {...form}>
             <form
-              onSubmit={form.handleSubmit(handleSubmit)}
+              onSubmit={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
               className="flex flex-col"
             >
-              <div className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto">
+              <div
+                ref={scrollContainerRef}
+                className="flex-1 h-0 w-[768px] px-5 pt-5 overflow-y-auto scrollbar-auto"
+              >
                 <section className="space-y-5 text-text-secondary">
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
@@ -210,9 +234,15 @@ export default function DatasetSetting() {
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}
-                      value={activeTab}
-                      onValueChange={setActiveTab}
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
                       onOperatorValuesChange={handleOperatorValuesChange}
+                      operatorValues={parserConfigValues}
+                      operatorFormErrors={
+                        errors.parser_config as
+                          | Record<string, FieldErrors | undefined>
+                          | undefined
+                      }
                     />
                   )}
 
