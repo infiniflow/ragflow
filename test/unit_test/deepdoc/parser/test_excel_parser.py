@@ -24,7 +24,7 @@ import pytest
 
 # Import RAGFlowExcelParser directly by file path to avoid triggering
 # deepdoc/parser/__init__.py and rag.nlp, which pull in heavy dependencies.
-for _m in ["pandas", "rag.nlp", "rag.utils", "rag.utils.lazy_image"]:
+for _m in ["rag.nlp", "rag.utils", "rag.utils.lazy_image"]:
     if _m not in sys.modules:
         sys.modules[_m] = mock.MagicMock()
 
@@ -48,6 +48,20 @@ sys.modules["deepdoc.parser.excel_parser"] = _mod
 _spec.loader.exec_module(_mod)
 
 RAGFlowExcelParser = _mod.RAGFlowExcelParser
+
+
+def _test_find_codec(binary):
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            binary.decode(encoding)
+            return encoding
+        except UnicodeDecodeError:
+            continue
+    raise UnicodeDecodeError("test", binary, 0, 1, "undecodable")
+
+
+_mod.find_codec = _test_find_codec
+_mod.decode_text = lambda binary, document_type="text": (binary.decode(_test_find_codec(binary)), _test_find_codec(binary))
 
 
 def _make_xlsx(n_data_rows):
@@ -135,11 +149,53 @@ def test_call_keeps_zero_valued_cells():
 
 
 @pytest.mark.p2
+def test_call_omits_a_blank_header_instead_of_labelling_it_none():
+    # A blank header cell has no label to give. str(None) is "None", which is
+    # truthy, so it defeats the separator guard and the literal token "None" is
+    # indexed and shown alongside the value it pretends to describe.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", None, "city"], ["widget", "note-1", "paris"]))
+    joined = " ".join(text for text, _ in lines)
+    assert joined == "name：widget; note-1; city：paris", lines
+
+
+@pytest.mark.p2
+def test_call_keeps_a_zero_header():
+    # Guards the tempting shorter fix, str(ti[i].value or ""), which would drop
+    # a numeric 0 header the same way it drops a None one. 0 is a real label.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", 0], ["widget", "note-1"]))
+    joined = " ".join(text for text, _ in lines)
+    assert "0：note-1" in joined, lines
+
+
+@pytest.mark.p2
 def test_call_skips_truly_empty_cells():
     # None / empty-string cells carry no value and should still be skipped.
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "note"], ["widget", None]))
     joined = " ".join(text for text, _ in lines)
     assert "note" not in joined, lines
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "gbk", "gb18030"])
+def test_csv_encoding_is_detected_without_losing_unicode(encoding):
+    binary = "项目名称,备注\n核心系统重构,包含GBK语料导入测试\n".encode(encoding)
+    lines = RAGFlowExcelParser()(binary)
+    joined = " ".join(text for text, _ in lines)
+    assert "项目名称" in joined
+    assert "包含GBK语料导入测试" in joined
+
+
+@pytest.mark.p2
+def test_csv_accepts_gb18030_characters_not_supported_by_gbk():
+    binary = "项目名称,备注\n扩展字符,𠀀\n".encode("gb18030")
+    lines = RAGFlowExcelParser()(binary)
+    assert "备注：𠀀" in lines[0][0]
+
+
+@pytest.mark.p2
+def test_corrupt_csv_encoding_still_fails():
+    with pytest.raises(Exception, match="Failed to parse CSV"):
+        RAGFlowExcelParser()(b"\xff\xfe\xfa\xfb")
 
 
 def _make_two_sheet_xlsx():

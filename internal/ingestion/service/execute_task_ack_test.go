@@ -315,8 +315,10 @@ func TestSettleMessage_AckOnTerminal(t *testing.T) {
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, func(ctx context.Context) bool { return true })
+	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return true })
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("body=true: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -329,8 +331,10 @@ func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, func(ctx context.Context) bool { return false })
+	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return false })
 
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("body=false: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -355,6 +359,8 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(t.Context(), taskID, docID, handle)
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
 
 	panicked := false
 	func() {
@@ -363,7 +369,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 				panicked = true
 			}
 		}()
-		ingestor.settleMessage(ctx, taskCtx, func(ctx context.Context) bool {
+		ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool {
 			panic("boom")
 		})
 	}()
@@ -451,7 +457,9 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	ingestor.settleMessage(ctx, taskCtx, body)
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
+	ingestor.settleMessage(ctx, taskCtx, hb, body)
 
 	// DB shows FAILED → terminal → Ack, overriding body's false.
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
