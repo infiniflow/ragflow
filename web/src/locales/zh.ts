@@ -468,7 +468,7 @@ export default {
       chunkMethod: '切片方法',
       enabled: '启用',
       disabled: '禁用',
-      action: '动作',
+      action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
         '文本解析的时间取决于诸多因素。如果开启了 Graph、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
@@ -548,9 +548,9 @@ export default {
       html4excel: '表格转 HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoTags: '自动标签提取',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
       setMetaData: '设置元数据',
@@ -794,7 +794,7 @@ export default {
 `,
       useRaptor: '使用召回增强 RAPTOR 策略',
       useRaptorTip:
-        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
+        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
@@ -855,7 +855,7 @@ export default {
       addTag: '增加标签',
       useGraphRag: '提取 Graph',
       useGraphRagTip:
-        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：Entities 和 Relations 提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：Entities 和 Relations 提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
@@ -1272,6 +1272,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
       azureDevOpsContentTypesTip:
         '选择要索引的内容：源文件、拉取请求，或两者。',
+      sitemapDescription:
+        '连接公开的 sitemap.xml，将其中列出的网页和 PDF 文档同步到知识库。',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL 过滤（正则）',
+      dataSourceFieldFollowPdfLinks: '跟随 PDF 链接',
+      dataSourceFieldRestrictPdfToDomain: '仅限 sitemap 所在域名的 PDF',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapUrlTip:
+        '要抓取的 sitemap.xml 或 sitemap 索引的 URL，例如 https://example.com/sitemap.xml。sitemap 索引会被递归跟随（最多 5 层）。',
+      sitemapUrlFilterTip:
+        '可选的正则表达式。仅索引与之匹配的 URL，例如 ^https://example\\.com/docs/ 可将同步限制在站点的某个栏目。',
+      sitemapFollowPdfLinksTip: '同时索引已抓取 HTML 页面中链接的 PDF 文件。',
+      sitemapRestrictPdfToDomainTip: '仅跟随与 sitemap 同域名下的 PDF 链接。',
+      sitemapUserAgentTip:
+        '每次请求发送的 User-Agent 请求头。留空则使用 RAGFlow-SitemapConnector/1.0。',
+      sitemapBatchSizeTip: '每批抓取并发送到 RAGFlow 的页面数量。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -1554,12 +1570,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalTitle: '删除聊天渠道',
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
-      connectDialog: '关联助手',
-      connectDialogTitle: '将 {{name}} 关联到助手',
-      selectDialog: '选择助手',
+      connectDialog: '关联助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
+      selectDialog: '选择助手或智能体',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
-      notConnected: '未关联助手',
+        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+      notConnected: '未关联助手或智能体',
+      chatChannelAssistant: '聊天助手',
+      chatChannelAgent: '智能体',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
@@ -1833,7 +1851,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit: '仅在 backend 为 vlm-http-client 时可填写',
+        serverUrlBackendLimit:
+          '仅在 backend 为 vlm-http-client 或 hybrid-http-client 时可填写',
         apiserver: 'MinerU API 服务器配置',
         outputDir: 'MinerU 输出目录路径',
         backend: 'MinerU 处理后端类型',
@@ -1998,7 +2017,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       noStructureTimeline: '暂无 Timeline',
       contents: '导航',
       topics: 'Topic',
-      selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
       graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
@@ -2405,6 +2423,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2931,14 +2958,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
-      retrievalDatasetRequired: '请选择知识库',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
-      retrievalMemoryRequired: '请选择记忆库',
-      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+        '该模板包含 {{num}} 处未绑定知识库的数据集检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalDatasetRequired: '请先选择知识库',
+      retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',

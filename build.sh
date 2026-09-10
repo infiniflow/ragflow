@@ -458,7 +458,8 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
@@ -466,6 +467,7 @@ build_go() {
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
+    set +x
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
@@ -736,11 +738,21 @@ run_native_tests() {
 # in Go, which the detector covers. CGO_ENABLED=1 is required for both the build
 # and the race runtime.
 run_native_integration_tests() {
+    # Optional isolation: NATIVE_TEST_RUN forwards a -run filter and
+    # NATIVE_TEST_V adds -v so a single native test can be exercised in
+    # isolation (e.g. `NATIVE_TEST_RUN='TestNativeLoadsOrtModels$' NATIVE_TEST_V=1`).
+    local native_run_filter=()
+    if [ -n "${NATIVE_TEST_RUN:-}" ]; then
+        native_run_filter+=(-run "${NATIVE_TEST_RUN}")
+    fi
+    if [ -n "${NATIVE_TEST_V:-}" ]; then
+        native_run_filter+=(-v)
+    fi
     print_section "Running native integration tests (golden/comparison, no race)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
@@ -959,6 +971,11 @@ main() {
             if [ "${#pkgs[@]}" -eq 0 ]; then
                 pkgs=(./internal/deepdoc/parser/pdf/inference/native_analyzer/...)
             fi
+            # The in-process (Go) DeepDoc backend needs the .ort weights. Default
+            # MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so a
+            # local run needs no MODEL_DIR export after `download_go_deps.py`.
+            REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
             run_go_tests_tagged "cgo integration" "${pkgs[@]}"
             run_native_integration_tests
             ;;

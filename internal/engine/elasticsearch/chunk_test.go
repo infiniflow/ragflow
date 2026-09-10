@@ -424,6 +424,10 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 		"id": []interface{}{"a", "b", "c"},
 	}, []string{"id", "_id"})
 
+	check("string_list_value", map[string]interface{}{
+		"id": []string{"a", "b", "c"},
+	}, []string{"id", "_id"})
+
 	check("string_value", map[string]interface{}{
 		"id": "doc-42",
 	}, []string{"id", "_id"})

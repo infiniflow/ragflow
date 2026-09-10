@@ -9,6 +9,41 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.27.2
+
+Released on Sep 10, 2026.
+
+### New features
+- Agentic RAG: Refactored the Agentic RAG retrieval framework, significantly improving reasoning speed and benchmark performance. ([#19046](https://github.com/infiniflow/ragflow/pull/19046), [#19112](https://github.com/infiniflow/ragflow/pull/19112), [#19172](https://github.com/infiniflow/ragflow/pull/19172), [#19209](https://github.com/infiniflow/ragflow/pull/19209), [#19424](https://github.com/infiniflow/ragflow/pull/19424), [#19459](https://github.com/infiniflow/ragflow/pull/19459))
+- Knowledge compilation runtime settings ([#19254](https://github.com/infiniflow/ragflow/pull/19254))
+- Enforce a rate limit on the knowledge compilation pipeline ([#19156](https://github.com/infiniflow/ragflow/pull/19156))
+- Knowledge graph shows total and current node counts ([#19142](https://github.com/infiniflow/ragflow/pull/19142),[#19095](https://github.com/infiniflow/ragflow/pull/19095), [#19114](https://github.com/infiniflow/ragflow/pull/19114))
+- Graph search highlights the node when pressing Enter on an entity name ([#19320](https://github.com/infiniflow/ragflow/pull/19320))
+- New Sitemap data source for sitemap.xml-based web ingestion ([#19344](https://github.com/infiniflow/ragflow/pull/19344))
+- WebDAV connector supports custom CA certificates ([#16901](https://github.com/infiniflow/ragflow/pull/16901))
+- MonkeyOCRv2 parsing support ([#18887](https://github.com/infiniflow/ragflow/pull/18887))
+- Self-hosted PaddleOCR-VL deployment support ([#19011](https://github.com/infiniflow/ragflow/pull/19011))
+- New Sofya search tool for agent ([#19323](https://github.com/infiniflow/ragflow/pull/19323))
+- EPUB document preview ([#19242](https://github.com/infiniflow/ragflow/pull/19242))
+- Excel citation sources located in document preview ([#18853](https://github.com/infiniflow/ragflow/pull/18853))
+
+### Model Support
+- New Hubris model provider ([#19341](https://github.com/infiniflow/ragflow/pull/19341))
+- New llmman model provider ([#19030](https://github.com/infiniflow/ragflow/pull/19030))
+
+### Improvements
+- New RERANK_TOKEN_LIMIT_MODE configuration ([#19404](https://github.com/infiniflow/ragflow/pull/19404))
+- Highlight in retrieval testing and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
+- Similarity threshold displayed as a percentage ([#18974](https://github.com/infiniflow/ragflow/pull/18974))
+
+### UI/UX
+- Completed Turkish locale ([#19009](https://github.com/infiniflow/ragflow/pull/19009))
+- Search match highlighting in Team settings tables ([#15985](https://github.com/infiniflow/ragflow/pull/15985))
+
+### Bug fixes
+- Fixed images uploaded in chat being ignored by vision models ([#18884](https://github.com/infiniflow/ragflow/pull/18884))
+- Fixed non-UTF-8 encodings in CSV/TXT preview and document decoding ([#19222](https://github.com/infiniflow/ragflow/pull/19222), [#19253](https://github.com/infiniflow/ragflow/pull/19253))
+
 ## v0.27.1
 
 Released on Aug 28, 2026.

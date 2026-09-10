@@ -515,6 +515,7 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
+  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -547,6 +548,7 @@ curl --request POST \
   --header 'Authorization: Bearer <YOUR_API_KEY>' \
   --data '{
    "name": "test-sdk",
+   "language": "English",
    "parse_type": <NUMBER_OF_PARSERS_IN_YOUR_PARSER_COMPONENT>,
    "pipeline_id": "<PIPELINE_ID_32_HEX>"
   }'
@@ -567,6 +569,13 @@ curl --request POST \
 - `"description"`: (*Body parameter*), `string`
   A brief description of the dataset to create.
   - Maximum 65535 characters
+
+- `"language"`: (*Body parameter*), `string`
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
+  Leading and trailing whitespace are stripped.
+  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
+  No restricted list of language values is enforced.
+  If omitted, the server/database default is used.
 
 - `"embedding_model"`: (*Body parameter*), `string`
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
@@ -784,6 +793,7 @@ Updates configurations for a specified dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
+  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -820,6 +830,12 @@ curl --request PUT \
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
+- `"language"`: (*Body parameter*), `string`
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
+  Leading and trailing whitespace are stripped.
+  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
+  No restricted list of language values is enforced.
+  If omitted, the existing dataset language remains unchanged.
 - `"permission"`: (*Body parameter*), `string`
   The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
@@ -1139,7 +1155,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "run": "UNSTART",
             "size": 17966,
@@ -1221,7 +1237,7 @@ curl --request PATCH \
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
-    - `"layout_recognize"`: Defaults to `true`.
+    - `"layout_recognize"`: Defaults to `"DeepDOC"`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
@@ -1463,7 +1479,7 @@ Success:
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n",
-                    "layout_recognize": true,
+                    "layout_recognize": "DeepDOC",
                     "task_page_size": 12
                 },
                 "chunk_method": "naive",
@@ -1924,7 +1940,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
             "process_duration": 0.54213,
