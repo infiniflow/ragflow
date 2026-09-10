@@ -292,6 +292,21 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 	common.SuccessNoData(c, "success")
 }
 
+// splitQueryValues returns every value sent under the repeated query key,
+// splitting each occurrence on commas, trimming whitespace and dropping empty
+// entries. It returns nil when the key carries no values.
+func splitQueryValues(c *gin.Context, key string) []string {
+	var values []string
+	for _, item := range c.QueryArray(key) {
+		for _, value := range strings.Split(item, ",") {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				values = append(values, trimmed)
+			}
+		}
+	}
+	return values
+}
+
 // ListMemories handles GET request for listing Memories
 // API Path: GET /api/v1/memories
 //
@@ -301,8 +316,8 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 //   - Supports pagination and keyword search
 //
 // Query Parameters:
-//   - memory_type (optional): Memory type filter, supports comma-separated multiple types
-//   - tenant_id (optional): Tenant ID filter
+//   - memory_type (optional): Memory type filter, supports repeated keys and comma-separated multiple types
+//   - tenant_id (optional): Tenant ID filter, supports repeated keys and comma-separated multiple IDs
 //   - storage_type (optional): Storage type filter
 //   - keywords (optional): Keyword search (fuzzy match on name)
 //   - page (optional): Page number, default 1
@@ -322,8 +337,6 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	}
 
 	// Parse query parameters
-	memoryTypesParam := c.Query("memory_type")
-	tenantIDsParam := c.Query("tenant_id")
 	storageType := c.Query("storage_type")
 	keywords := c.Query("keywords")
 	pageStr := c.DefaultQuery("page", "1")
@@ -341,26 +354,12 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 		pageSize = 50
 	}
 
-	// Parse memory_type parameter (supports comma separation)
-	var memoryTypes []string
-	if memoryTypesParam != "" {
-		if strings.Contains(memoryTypesParam, ",") {
-			memoryTypes = strings.Split(memoryTypesParam, ",")
-		} else {
-			memoryTypes = []string{memoryTypesParam}
-		}
-	}
+	// Parse memory_type parameter (repeated query keys and comma separation)
+	memoryTypes := splitQueryValues(c, "memory_type")
 
-	// Parse tenant_id parameter
+	// Parse tenant_id parameter (repeated query keys and comma separation)
 	// If not specified, service will get all tenants associated with the user
-	var tenantIDs []string
-	if tenantIDsParam != "" {
-		if strings.Contains(tenantIDsParam, ",") {
-			tenantIDs = strings.Split(tenantIDsParam, ",")
-		} else {
-			tenantIDs = []string{tenantIDsParam}
-		}
-	}
+	tenantIDs := splitQueryValues(c, "tenant_id")
 
 	ctx := c.Request.Context()
 
@@ -459,17 +458,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	var agentIDs []string
-	values := c.QueryArray("agent_id")
-	for _, v := range values {
-		parts := strings.Split(v, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				agentIDs = append(agentIDs, p)
-			}
-		}
-	}
+	agentIDs := splitQueryValues(c, "agent_id")
 
 	keywords := strings.TrimSpace(c.DefaultQuery("keywords", ""))
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -792,17 +781,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
-	var memoryIDs []string
-	values := c.QueryArray("memory_id")
-	for _, v := range values {
-		parts := strings.Split(v, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				memoryIDs = append(memoryIDs, p)
-			}
-		}
-	}
+	memoryIDs := splitQueryValues(c, "memory_id")
 
 	query := c.Query("query")
 
@@ -865,17 +844,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	var memoryIDs []string
-	values := c.QueryArray("memory_id")
-	for _, v := range values {
-		parts := strings.Split(v, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				memoryIDs = append(memoryIDs, p)
-			}
-		}
-	}
+	memoryIDs := splitQueryValues(c, "memory_id")
 
 	agentID := c.DefaultQuery("agent_id", "")
 	sessionID := c.DefaultQuery("session_id", "")

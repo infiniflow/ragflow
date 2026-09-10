@@ -180,6 +180,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to run manual migrations: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
+	} else {
+		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
+		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
+			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
+		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
@@ -288,4 +293,19 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 	}
 
 	return err
+}
+
+// autoMigrateRuntimeModels ensures Go-exclusive runtime tables exist even if
+// the server starts without --migrate.
+func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
+	goRuntimeModels := []interface{}{
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+	}
+	for _, m := range goRuntimeModels {
+		if err := autoMigrateSafely(ctx, db, m); err != nil {
+			return fmt.Errorf("failed to auto-migrate runtime model %T: %w", m, err)
+		}
+	}
+	return nil
 }

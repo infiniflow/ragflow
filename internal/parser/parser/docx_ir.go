@@ -73,7 +73,11 @@ func (e docxIRElement) contentRuns() []docxIRRun {
 	return runs
 }
 
-// contentBlocks decodes Content as block-level elements (text_box type).
+// contentBlocks decodes Content as block-level elements (text_box type,
+// list-item content, or table-cell content). Blocks may be plain paragraphs
+// or compound elements (table, list, nested text_box); callers flatten each
+// block via docxElementText so non-paragraph blocks are not silently
+// dropped.
 func (e docxIRElement) contentBlocks() []docxIRElement {
 	var blocks []docxIRElement
 	if len(e.Content) > 0 {
@@ -84,7 +88,7 @@ func (e docxIRElement) contentBlocks() []docxIRElement {
 
 // docxIRListItem represents one item in an ordered/unordered list.
 type docxIRListItem struct {
-	Content []docxIRElement `json:"content"`          // block-level content (typically a single Paragraph)
+	Content []docxIRElement `json:"content"`          // block-level content (typically a single Paragraph; may also hold table/list/text_box)
 	Nested  *docxIRList     `json:"nested,omitempty"` // optional nested sub-list; null/absent when none
 }
 
@@ -106,7 +110,7 @@ type docxIRRow struct {
 }
 
 type docxIRCell struct {
-	Content []docxIRElement `json:"content"` // nested paragraphs inside table cell
+	Content []docxIRElement `json:"content"` // block-level content (typically paragraphs; may also hold list/table)
 }
 
 // joinDOCXIRRuns concatenates inline runs into plain text. Hard line
@@ -126,18 +130,16 @@ func joinDOCXIRRuns(runs []docxIRRun) string {
 }
 
 // extractTextFromListItem extracts the plain text content from a list item.
-// Each list item contains block-level elements (typically a Paragraph),
-// whose text runs are concatenated. Nested sub-lists (multi-level
-// bullets/numbered items) are decoded and recursed so their text is not
-// silently dropped. Mirrors office_oxide ir::ListItem { content, nested }.
+// Each block in the item is flattened via docxElementText so non-paragraph
+// blocks (e.g. a table nested in a list item) are not silently dropped.
+// Nested sub-lists (multi-level bullets/numbered items) are decoded and
+// recursed so their text is not silently dropped.
+// Mirrors office_oxide ir::ListItem { content, nested }.
 func extractTextFromListItem(item docxIRListItem) string {
 	var parts []string
 	for _, el := range item.Content {
-		if el.Type == "paragraph" || el.Type == "heading" {
-			t := joinDOCXIRRuns(el.contentRuns())
-			if t != "" {
-				parts = append(parts, t)
-			}
+		if t := strings.TrimSpace(docxElementText(el, "\n")); t != "" {
+			parts = append(parts, t)
 		}
 	}
 	if item.Nested != nil {
@@ -154,16 +156,15 @@ func extractTextFromListItem(item docxIRListItem) string {
 }
 
 // extractTextFromBlockElements extracts text from a slice of block-level
-// elements (paragraphs/headings), used by text_box and other compound
-// element types.
+// elements (e.g. the content of a text_box). Each block is flattened via
+// docxElementText so non-paragraph blocks (e.g. a table wrapped in a
+// text_box, as office_oxide emits for grouped slide shapes) are not
+// silently dropped.
 func extractTextFromBlockElements(blocks []docxIRElement) string {
 	var parts []string
 	for _, el := range blocks {
-		if el.Type == "paragraph" || el.Type == "heading" {
-			t := joinDOCXIRRuns(el.contentRuns())
-			if t != "" {
-				parts = append(parts, t)
-			}
+		if t := strings.TrimSpace(docxElementText(el, "\n")); t != "" {
+			parts = append(parts, t)
 		}
 	}
 	if len(parts) == 0 {
@@ -172,12 +173,13 @@ func extractTextFromBlockElements(blocks []docxIRElement) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-// joinCellText concatenates all paragraph texts inside a table cell,
-// joined by newlines.
+// joinCellText concatenates all block texts inside a table cell, joined by
+// newlines. Each block is flattened via docxElementText so non-paragraph
+// blocks (e.g. a nested list) are not silently dropped.
 func joinCellText(cell docxIRCell) string {
 	var parts []string
 	for _, el := range cell.Content {
-		if text := joinDOCXIRRuns(el.contentRuns()); text != "" {
+		if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
 			parts = append(parts, text)
 		}
 	}
@@ -209,22 +211,29 @@ func docxIRTableToHTML(el docxIRElement) string {
 // A bare "text" block is not part of the current IR schema, but is
 // passed through so its payload is never silently dropped. Returns ""
 // for image and unknown types.
-func docxElementText(el docxIRElement) string {
+//
+// For table elements, cellSep joins the cells within a single row. Pass
+// "\n" to put each cell on its own line (the pptx/docx flatten behavior,
+// equivalent to the previous flat-all-cells rendering), or " | " to keep a
+// row's cells on one line (the legacy .doc viewport).
+func docxElementText(el docxIRElement, cellSep string) string {
 	switch el.Type {
 	case "paragraph", "heading":
 		return joinDOCXIRRuns(el.contentRuns())
 	case "text":
 		return el.Text
 	case "table":
-		var lines []string
+		var rows []string
 		for _, row := range el.Rows {
+			var cells []string
 			for _, cell := range row.Cells {
 				if t := joinCellText(cell); t != "" {
-					lines = append(lines, t)
+					cells = append(cells, t)
 				}
 			}
+			rows = append(rows, strings.Join(cells, cellSep))
 		}
-		return strings.Join(lines, "\n")
+		return strings.Join(rows, "\n")
 	case "list":
 		var lines []string
 		for _, item := range el.Items {
@@ -339,7 +348,7 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 				flat = append(flat, flatBlock{image: b64})
 				continue
 			}
-			text := docxElementText(el)
+			text := docxElementText(el, "\n")
 			flat = append(flat, flatBlock{text: text})
 		}
 	}

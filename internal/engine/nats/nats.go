@@ -120,7 +120,8 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	// by any consumer and un-reparsable ("already exists, status: SCHEDULED").
 	// Duplicate delivery is instead made safe at the consumer level:
 	// StartRunning's CREATED/SCHEDULED→RUNNING CAS plus the in-process claim guard
-	// ack-skip any second copy (see Ingestor.processMessage).
+	// prevent a second copy from executing while the first owner is active (see
+	// Ingestor.handleAndExecute).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
 		return err
@@ -225,8 +226,7 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	// 60s AckWait is the effective schedule if BackOff is ever dropped.
 	// INVARIANT: the worker's InProgress heartbeat (Ingestor
 	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
-	// messages get redelivered mid-run and the claim-guard ack-skip acks the
-	// only live copy.
+	// messages get redelivered mid-run before the owning worker can settle them.
 	// Note: CreateOrUpdateConsumer is atomic. MaxWaiting is immutable after
 	// creation; if it mismatches the whole update fails (error "max waiting
 	// can not be updated") and NONE of AckWait/BackOff/MaxAckPending are
@@ -256,20 +256,52 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	}
 	return nil
 }
-func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) {
+
+// PullMessages fetches up to messageCount messages before ctx expires.
+func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
+	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
+		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
+	}
 	if n.consumer == nil {
 		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, errors.New("pull messages context must have a deadline")
+	}
 
-	resultMessages := make([]common.TaskHandle, 0)
-	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
-	for msg := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
+	for message := range messages.Messages() {
+		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
+	}
+	if batchErr := messages.Error(); batchErr != nil {
+		if errors.Is(batchErr, context.DeadlineExceeded) {
+			return resultMessages, nil
+		}
+		for _, message := range resultMessages {
+			if nackErr := message.Nack(); nackErr != nil {
+				common.Error("nack message after failed pull", nackErr)
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
 	}
 	return resultMessages, nil
+}
+
+// PullMessage returns one task handle from PullMessages. A nil handle
+// with a nil error means the pull expired without an available task.
+func (n *NatsEngine) PullMessage(ctx context.Context) (common.TaskHandle, error) {
+	messages, err := n.PullMessages(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	return messages[0], nil
 }
 
 func (n *NatsEngine) CheckStatus() string {

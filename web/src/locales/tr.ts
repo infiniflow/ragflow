@@ -124,7 +124,7 @@ export default {
       chat: 'Sohbet',
       register: 'Kayıt ol',
       signin: 'Giriş yap',
-      home: 'Ana Sayfa',
+      home: 'Ana sayfa',
       setting: 'Kullanıcı ayarları',
       logout: 'Çıkış yap',
       fileManager: 'Dosya',
@@ -562,6 +562,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       runningStatus2: 'İptal edildi',
       runningStatus3: 'Başarılı',
       runningStatus4: 'Başarısız',
+      runningStatusQueued: 'Kuyrukta',
       pageRanges: 'Sayfa aralıkları',
       pageRangesTip:
         'Ayrıştırılacak sayfa aralığı; bu aralığın dışındaki sayfalar işlenmeyecek.',
@@ -1304,7 +1305,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerUrl: "Konteyner URL'si",
       dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
-      dataSourceFieldPrefixOptional: 'Ön Ek (isteğe bağlı)',
+      dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
       dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldGcsAccessKeyId: 'GCS Erişim Anahtarı Kimliği',
       dataSourceFieldGcsSecretAccessKey: 'GCS Gizli Erişim Anahtarı',
@@ -1356,7 +1357,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldGithubAccessToken: "GitHub Erişim Token'ı",
       dataSourceFieldHost: 'Ana bilgisayar',
       dataSourceFieldPort: 'Bağlantı noktası',
-      dataSourceFieldMailboxes: 'Posta Kutuları',
+      dataSourceFieldMailboxes: 'Posta kutuları',
       dataSourceFieldPollRange: 'Yoklama Aralığı',
       dataSourceFieldZendeskDomain: 'Zendesk Alan Adı',
       dataSourceFieldZendeskEmail: 'Zendesk E-postası',
@@ -1433,8 +1434,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldJiraPassword: 'Jira Şifresi',
       dataSourceFieldUseScopedToken: 'Kapsamlı Token Kullan',
       dataSourceFieldRegion: 'Bölge',
-      dataSourceFieldPrefix: 'Ön Ek',
-      dataSourceFieldAuthentication: 'Kimlik Doğrulama',
+      dataSourceFieldPrefix: 'Ön ek',
+      dataSourceFieldAuthentication: 'Kimlik doğrulama',
       dataSourceFieldAwsAccessKeyId: 'AWS Erişim Anahtarı Kimliği',
       dataSourceFieldAwsSecretAccessKey: 'AWS Gizli Erişim Anahtarı',
       dataSourceFieldRoleArn: 'Rol ARN',
@@ -1449,7 +1450,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldDirectoryPath: 'Dizin Yolu',
       dataSourceFieldBitbucketAccountEmail: 'Bitbucket Hesap E-postası',
       dataSourceFieldBitbucketApiToken: "Bitbucket API Token'ı",
-      dataSourceFieldWorkspace: 'Çalışma Alanı',
+      dataSourceFieldWorkspace: 'Çalışma alanı',
       dataSourceFieldRepositorySlugs: 'Depo Kısa Adları',
       dataSourceFieldProjects: 'Projeler',
       dataSourceIncludePullRequests: 'Çekme İsteklerini Dahil Et',
@@ -1483,7 +1484,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceOptionSpecificDirectory: 'Belirli Dizin',
       dataSourceOptionRepositories: 'Depolar',
       dataSourceOptionProjects: 'Projeler',
-      dataSourceOptionWorkspace: 'Çalışma Alanı',
+      dataSourceOptionWorkspace: 'Çalışma alanı',
       dataSourceValidationFieldRequired: '{{label}} zorunludur',
       dataSourceValidationMinOne: '{{label}} en az 1 olmalıdır',
       dataSourceConfluenceEverythingTip:
@@ -1603,6 +1604,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Bu kuruluşta token'ın görebildiği her depo dizinlenecektir.",
       azureDevOpsContentTypesTip:
         'Neyin dizinleneceğini seçin: kaynak dosyalar, çekme istekleri veya her ikisi.',
+      sitemapDescription:
+        'Listelenen web sayfalarını ve PDF belgelerini bilgi tabanınıza eşitlemek için herkese açık bir sitemap.xml bağlayın.',
       azure_devopsDescription:
         "Depo dosyalarını ve pull request'leri senkronize etmek için Azure DevOps'u bağlayın.",
       bitbucketDescription:
@@ -3671,7 +3674,7 @@ Temel Talimatlar:
       changeStepModalConfirmText: 'Yine de Geç',
       changeStepModalCancelText: 'İptal',
       unlinkPipelineModalTitle: 'Alım hattı bağlantısını kes',
-      unlinkPipelineModalConfirmText: 'Bağlantıyı Kes',
+      unlinkPipelineModalConfirmText: 'Bağlantıyı kes',
       unlinkPipelineModalContent: `
       <p>Bağlantı kesildikten sonra bu Dataset artık geçerli alım hattına bağlı olmayacak.</p>
       <p>Zaten ayrıştırılmakta olan dosyalar tamamlanana kadar devam edecek</p>
@@ -3679,7 +3682,7 @@ Temel Talimatlar:
       <p>Devam etmek istediğinizden emin misiniz?</p>`,
       unlinkSourceModalTitle: 'Veri kaynağı bağlantısını kes',
       unlinkSourceModalContent: `<p>Bu veri kaynağının bağlantısını kesmek istediğinizden emin misiniz?</p>`,
-      unlinkSourceModalConfirmText: 'Bağlantıyı Kes',
+      unlinkSourceModalConfirmText: 'Bağlantıyı kes',
     },
     datasetOverview: {
       downloadTip: 'Veri kaynaklarından indirilen dosyalar.',
