@@ -1,19 +1,20 @@
 import { Button } from '@/components/ui/button';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
+import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from './constant';
-import { replaceLogText } from './log-text';
 
 interface IProps {
   record: IDocumentInfo;
   handleShowLog?: (record: IDocumentInfo) => void;
 }
 
-function Dot({ color }: { color: string }) {
+function Dot({ run }: { run: RunningStatus }) {
+  const runningStatus = RunningStatusMap[run];
   return (
     <span
       className={'size-1 inline-block rounded'}
-      style={{ backgroundColor: color }}
+      style={{ backgroundColor: runningStatus.color }}
     ></span>
   );
 }
@@ -21,6 +22,25 @@ function Dot({ color }: { color: string }) {
 export const PopoverContent = ({ record }: IProps) => {
   const { t } = useTranslation();
   const label = t(`knowledgeDetails.runningStatus${record.run}`);
+
+  const replaceText = (text: string) => {
+    // Remove duplicate \n
+    const nextText = text.replace(/(\n)\1+/g, '$1');
+
+    const replacedText = reactStringReplace(
+      nextText,
+      /(\[ERROR\].+\s)/g,
+      (match, i) => {
+        return (
+          <span key={i} className={'text-red-600'}>
+            {match}
+          </span>
+        );
+      },
+    );
+
+    return replacedText;
+  };
 
   const items = [
     {
@@ -36,14 +56,14 @@ export const PopoverContent = ({ record }: IProps) => {
     {
       key: 'progress_msg',
       label: t('knowledgeDetails.progressMsg'),
-      children: replaceLogText((record.progress_msg || '').trim()),
+      children: replaceText((record.progress_msg || '').trim()),
     },
   ];
 
   return (
     <section>
       <div className="flex gap-2 items-center pb-2">
-        <Dot color={RunningStatusMap[record.run].color}></Dot> {label}
+        <Dot run={record.run}></Dot> {label}
       </div>
       <div className="flex flex-col max-h-[50vh] overflow-auto">
         {items.map((x, idx) => {
@@ -68,7 +88,7 @@ export function ParsingCard({ record, handleShowLog }: IProps) {
       size="icon-xs"
       onClick={() => handleShowLog?.(record)}
     >
-      <Dot color={RunningStatusMap[record.run as RunningStatus].color}></Dot>
+      <Dot run={record.run}></Dot>
     </Button>
   );
 }

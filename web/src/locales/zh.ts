@@ -505,7 +505,6 @@ export default {
       runningStatus3: '成功',
       runningStatus4: '失败',
       runningStatusQueued: '排队中',
-      runningStatusStopping: '取消中',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',

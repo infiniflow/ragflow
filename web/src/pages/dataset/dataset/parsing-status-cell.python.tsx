@@ -1,8 +1,9 @@
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleX } from 'lucide-react';
+import { CircleQuestionMark, CircleX } from 'lucide-react';
 import { useMemo } from 'react';
 import { DocumentType, RunningStatus } from './constant';
 import { isDocumentProcessing } from './document-status.python';
@@ -48,8 +49,9 @@ export function ParsingStatusCellPython({
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
 } & UseChangeDocumentParserShowType) {
-  const { run, chunk_count, id } = record;
+  const { run, progress, chunk_count, id } = record;
   const operationIcon = IconMap[run];
+  const p = Number((progress * 100).toFixed(2));
   const {
     handleRunDocumentByIds,
     visible: reparseDialogVisible,
@@ -83,17 +85,48 @@ export function ParsingStatusCellPython({
         <div className="flex items-center gap-2">
           <Separator orientation="vertical" className="h-[1em]" />
 
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => {
-              showReparseDialogModal();
-            }}
-          >
-            {operationIcon}
-          </Button>
+          {isRunning ? (
+            <>
+              <Button
+                size="auto"
+                variant="static"
+                onClick={() => handleShowLog(record)}
+              >
+                <Progress value={p} className="h-1 flex-1 min-w-10" />
+                <div className="flex items-center gap-1">
+                  {p}%
+                  <span className="inline-flex items-center">
+                    <CircleQuestionMark className="size-[1em]" />
+                  </span>
+                </div>
+              </Button>
 
-          <ParsingCard record={record} handleShowLog={handleShowLog} />
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => showReparseDialogModal()}
+              >
+                <CircleX
+                  color="rgba(var(--state-error))"
+                  className="size-[1em]"
+                />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => {
+                  showReparseDialogModal();
+                }}
+              >
+                {operationIcon}
+              </Button>
+
+              <ParsingCard record={record} handleShowLog={handleShowLog} />
+            </>
+          )}
         </div>
       )}
       {reparseDialogVisible && (

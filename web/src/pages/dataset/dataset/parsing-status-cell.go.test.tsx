@@ -90,7 +90,7 @@ describe('ParsingStatusCellGo', () => {
     ).toBeInTheDocument();
   });
 
-  it('disables cancel while stopping and exposes the stopping state', () => {
+  it('disables cancel while stopping', () => {
     const { container } = render(
       React.createElement(ParsingStatusCellGo, {
         record: {
@@ -105,10 +105,7 @@ describe('ParsingStatusCellGo', () => {
 
     expect(
       container.querySelector('[data-testid="document-parse-status"]'),
-    ).toHaveAttribute('data-state', 'stopping');
-    expect(
-      screen.queryByText('knowledgeDetails.runningStatusStopping'),
-    ).not.toBeInTheDocument();
+    ).toHaveAttribute('data-state', 'running');
     expect(container.querySelector('svg.lucide-circle-x')).toBeInTheDocument();
     expect(container.querySelector('button[disabled]')).toBeInTheDocument();
   });

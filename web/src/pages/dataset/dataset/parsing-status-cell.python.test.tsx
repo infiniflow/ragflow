@@ -50,7 +50,7 @@ const baseRecord = {
 };
 
 describe('ParsingStatusCellPython', () => {
-  it('shows a cancel icon while running', () => {
+  it('shows progress while running', () => {
     const { container } = render(
       React.createElement(ParsingStatusCellPython, {
         record: { ...baseRecord, run: RunningStatus.RUNNING },
@@ -60,6 +60,9 @@ describe('ParsingStatusCellPython', () => {
     );
 
     expect(container.querySelector('svg.lucide-circle-x')).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-testid="document-parse-status"]'),
+    ).toHaveAttribute('data-state', 'running');
   });
 
   it('shows a reparse icon for terminal states', () => {

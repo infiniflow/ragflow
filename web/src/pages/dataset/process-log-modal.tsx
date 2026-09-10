@@ -10,8 +10,8 @@ import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
-import { replaceLogText } from './dataset/log-text';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -64,7 +64,24 @@ const InfoItem: React.FC<{
     </div>
   );
 };
-export const replaceText = replaceLogText;
+export const replaceText = (text: string) => {
+  // Remove duplicate \n
+  const nextText = text.replace(/(\n)\1+/g, '$1');
+
+  const replacedText = reactStringReplace(
+    nextText,
+    /(\[ERROR\].+\s)/g,
+    (match, i) => {
+      return (
+        <span key={i} className={'text-red-600'}>
+          {match}
+        </span>
+      );
+    },
+  );
+
+  return replacedText;
+};
 const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   visible,
   onCancel,
