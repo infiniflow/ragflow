@@ -63,7 +63,13 @@ func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
 	engine := &Engine{client: client}
 	_, err = engine.Search(t.Context(), &types.SearchRequest{
 		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
 		Limit:      30,
+		Filter: map[string]interface{}{
+			"doc_id":        []string{"doc-1"},
+			"available_int": 1,
+			"category_kwd":  "allowed",
+		},
 		MatchExprs: []interface{}{&types.MatchDenseExpr{
 			VectorColumnName: "q_2_vec",
 			EmbeddingData:    []float64{0.1, 0.2},
@@ -80,6 +86,19 @@ func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
 	}
 	if knn["k"] != float64(128) || knn["num_candidates"] != float64(4096) {
 		t.Fatalf("KNN parameters = (%v, %v), want (128, 4096)", knn["k"], knn["num_candidates"])
+	}
+	filterJSON, err := json.Marshal(knn["filter"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := string(filterJSON)
+	for _, scope := range []string{"kb-1", "doc-1", "available_int", "category_kwd", "allowed"} {
+		if !strings.Contains(filter, scope) {
+			t.Fatalf("KNN filter %s lost scope %q", filter, scope)
+		}
+	}
+	if strings.Contains(filter, "query_string") {
+		t.Fatalf("dense-only KNN filter contains lexical predicate: %s", filter)
 	}
 }
 

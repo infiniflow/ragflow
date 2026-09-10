@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import json
 import logging
 import re
@@ -239,7 +240,8 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                dense_template = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                matchDense = copy.deepcopy(dense_template)
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
@@ -270,12 +272,13 @@ class Dealer:
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
                 # If result is empty, try again with lower min_match
-                if total == 0:
+                if total == 0 and matchText:
                     if filters.get("doc_id"):
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
+                        matchDense = copy.deepcopy(dense_template)
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
                             self.dataStore.search,
@@ -291,6 +294,25 @@ class Dealer:
                             rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
+                        # Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
+                        if total == 0 and matchText:
+                            matchDense = copy.deepcopy(dense_template)
+                            matchDense.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only fallback after empty hybrid retries")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                [],
+                                filters,
+                                [matchDense],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
