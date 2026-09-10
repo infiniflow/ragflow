@@ -1,7 +1,5 @@
-import { CardSineLineContainer } from '@/components/card-singleline-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import { HomeIcon } from '@/components/svg-icon';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
@@ -10,6 +8,7 @@ import { useNavigate } from 'react-router';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
 import { ChatList } from './chat-list';
+import { HomeCardGrid, SectionHeading } from './home-layout';
 import { MemoryList } from './memory-list';
 import { SearchList } from './search-list';
 
@@ -62,29 +61,20 @@ export function Applications() {
   };
 
   return (
-    <section className="mt-12">
-      <header className="flex justify-between items-center mb-2.5">
-        <h2 className="text-2xl font-semibold">
-          <HomeIcon
-            imgClass="me-2.5"
-            name={`${IconMap[val as keyof typeof IconMap]}`}
-            width={24}
-          />
-          {options.find((x) => x.value === val)?.label}
-        </h2>
-
+    <section className="mt-12 border-t border-cable-divider pt-10">
+      <SectionHeading
+        iconName={IconMap[val as keyof typeof IconMap]}
+        label={options.find((x) => x.value === val)?.label ?? ''}
+      >
         <Segmented
           buttonSize="sm"
           options={options}
           value={val}
           onChange={handleChange}
-          // className="bg-bg-card border border-border-button rounded-lg"
-          // activeClassName="bg-text-primary border-none rounded-lg"
         />
-      </header>
+      </SectionHeading>
 
-      {/* <div className="flex flex-wrap gap-4"> */}
-      <CardSineLineContainer>
+      <HomeCardGrid>
         {val === Routes.Agents && (
           <Agents
             setListLength={(length: number) => setListLength(length)}
@@ -112,7 +102,7 @@ export function Applications() {
         {listLength > 0 && (
           <SeeAllAppCard click={() => handleNavigate({ isCreate: false })} />
         )}
-      </CardSineLineContainer>
+      </HomeCardGrid>
 
       {listLength <= 0 && !loading && (
         <div className="w-[210px]">
@@ -122,7 +112,6 @@ export function Applications() {
           />
         </div>
       )}
-      {/* </div> */}
     </section>
   );
 }

@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,13 +15,14 @@ import { cn } from '@/lib/utils';
 import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import {
-  LucideChevronDown,
   LucideCircleHelp,
   LucideLanguages,
 } from 'lucide-react';
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
+import { BrandMark } from './brand-mark';
 import { DesktopNavbar, MobileNavbar } from './global-navbar';
 import { MobileMenuFooter } from './mobile-menu-footer';
 import ThemeButton from './theme-button';
@@ -30,10 +30,18 @@ import { useHeaderNavLayout } from './use-header-nav-layout';
 
 import { supportedLanguages } from '@/locales/config';
 
+/**
+ * One shared shape for every header control, so the right-hand cluster reads as
+ * a single row of micro-components instead of a row of mixed buttons.
+ */
+const headerControlClass =
+  'size-8 shrink-0 rounded-lg p-0 text-text-secondary transition-colors hover:bg-cable-brand-soft hover:text-cable-brand focus-visible:text-cable-brand';
+
 export function Header({
   className,
   ...props
 }: React.HTMLAttributes<HTMLElement>) {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const changeLanguage = useChangeLanguage();
 
@@ -63,7 +71,7 @@ export function Header({
         ref={headerRef}
         key="app-navbar"
         className={cn(
-          'w-full min-w-0 flex items-center gap-2 sm:gap-4',
+          'mx-auto flex w-full max-w-[1280px] min-w-0 items-center gap-2 px-6 py-4 sm:gap-4 md:px-12',
           className,
         )}
         {...props}
@@ -78,9 +86,12 @@ export function Header({
             <Link
               to={Routes.Root}
               aria-current={pathname === Routes.Root ? 'page' : undefined}
-              className="flex size-10 shrink-0 items-center justify-center"
+              className="-m-1 flex shrink-0 items-center gap-3 rounded-xl p-1 transition-colors hover:bg-cable-brand-soft"
             >
-              <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+              <BrandMark label={t('header.brandShort')} />
+              <span className="hidden text-base font-semibold tracking-tight text-cable-brand md:inline">
+                {t('header.brandShort')}
+              </span>
             </Link>
           </div>
         </div>
@@ -96,49 +107,19 @@ export function Header({
         <div
           className={cn(
             'flex shrink-0 items-center justify-end text-text-badge',
-            isCompact ? 'gap-0.5' : 'gap-4',
+            isCompact ? 'gap-0.5' : 'gap-1',
           )}
           data-testid="auth-status"
         >
-          {!isCompact && (
-            <>
-              <a
-                className="inline-flex p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-                target="_blank"
-                href="https://discord.com/invite/NjYzJD3GM3"
-                rel="noreferrer noopener"
-              >
-                <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-              </a>
-
-              <a
-                className="inline-flex p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-                target="_blank"
-                href="https://github.com/infiniflow/ragflow"
-                rel="noreferrer noopener"
-              >
-                <IconFontFill name="GitHub" />
-              </a>
-            </>
-          )}
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className={cn(
-                  'size-10 shrink-0 px-0',
-                  !isCompact && 'size-auto gap-1 px-4',
-                )}
+                className={headerControlClass}
                 aria-label={currentLanguage?.displayName}
+                title={currentLanguage?.displayName}
               >
-                {isCompact && <LucideLanguages className="size-5" />}
-                {!isCompact && (
-                  <>
-                    {currentLanguage?.displayName}
-                    <LucideChevronDown className="size-[1em]" />
-                  </>
-                )}
+                <LucideLanguages className="size-[1.05rem]" />
               </Button>
             </DropdownMenuTrigger>
 
@@ -159,26 +140,28 @@ export function Header({
               <Button
                 asLink
                 variant="ghost"
-                size="icon"
-                className="size-8"
+                className={headerControlClass}
                 to="https://ragflow.io/docs/dev/category/user-guides"
                 target="_blank"
                 rel="noreferrer noopener"
+                aria-label={t('header.help')}
+                title={t('header.help')}
               >
-                <LucideCircleHelp className="size-[1em]" />
+                <LucideCircleHelp className="size-[1.05rem]" />
               </Button>
 
-              {hasNotification && <BellButton className="!size-8" />}
+              {hasNotification && <BellButton className={headerControlClass} />}
             </>
           )}
 
-          <ThemeButton className={cn(!isCompact && '!size-8')} />
+          <ThemeButton className={headerControlClass} />
 
           <Link
             to={Routes.UserSetting}
             className={cn(
-              'relative flex size-10 shrink-0 items-center justify-center',
-              !isCompact && 'ms-3',
+              'relative flex size-8 shrink-0 items-center justify-center rounded-full',
+              'ring-1 ring-cable-border transition-[box-shadow] hover:ring-2 hover:ring-cable-accent',
+              !isCompact && 'ms-2',
             )}
             data-testid="settings-entrypoint"
           >
@@ -199,26 +182,21 @@ export function Header({
         <div ref={navMeasureRef}>
           <DesktopNavbar />
         </div>
+        {/* Mirrors the expanded right-hand cluster so the compact/nav-overflow
+            measurement matches what actually renders. Keep the two in sync. */}
         <div
           ref={expandedRightMeasureRef}
-          className="inline-flex shrink-0 items-center justify-end gap-4 text-text-badge"
+          className="inline-flex shrink-0 items-center justify-end gap-1 text-text-badge"
         >
-          <a className="inline-flex p-2">
-            <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-          </a>
-          <a className="inline-flex p-2">
-            <IconFontFill name="GitHub" />
-          </a>
-          <Button variant="ghost" className="size-auto gap-1 px-4">
-            {currentLanguage?.displayName}
-            <LucideChevronDown className="size-[1em]" />
+          <Button variant="ghost" className={headerControlClass}>
+            <LucideLanguages className="size-[1.05rem]" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-8">
-            <LucideCircleHelp className="size-[1em]" />
+          <Button variant="ghost" className={headerControlClass}>
+            <LucideCircleHelp className="size-[1.05rem]" />
           </Button>
-          <ThemeButton className="!size-8" />
-          {hasNotification && <BellButton className="!size-8" />}
-          <div className="relative ms-3 flex size-10 shrink-0 items-center justify-center">
+          <ThemeButton className={headerControlClass} />
+          {hasNotification && <BellButton className={headerControlClass} />}
+          <div className="relative ms-2 flex size-8 shrink-0 items-center justify-center rounded-full">
             <RAGFlowAvatar
               name={nickname}
               avatar={avatar}
