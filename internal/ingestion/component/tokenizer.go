@@ -85,12 +85,15 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -111,6 +114,34 @@ var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
+// esKeywordMaxTermBytes is the upper bound for a single term stored in an
+// Elasticsearch keyword field.
+const esKeywordMaxTermBytes = 32766
+
+// sanitizeKeywordTerm returns a keyword that fits into an Elasticsearch keyword
+// field. Small terms are returned unchanged; oversized terms are truncated at a
+// UTF-8 character boundary and trailing whitespace is stripped.
+func sanitizeKeywordTerm(term string) string {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return ""
+	}
+	if len(term) <= esKeywordMaxTermBytes {
+		return term
+	}
+	length := 0
+	end := 0
+	for _, r := range term {
+		size := utf8.RuneLen(r)
+		if length+size > esKeywordMaxTermBytes {
+			break
+		}
+		length += size
+		end += size
+	}
+	return strings.TrimRightFunc(term[:end], unicode.IsSpace)
+}
+
 type EmbeddingResult struct {
 	Vector     []float64
 	TokenCount int
@@ -123,11 +154,14 @@ type Embedder interface {
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
-// EmbedderResolver resolves the embedder for one tokenizer invocation.
-// embeddingModel is the Tokenizer-scoped embedding-model identifier (from the
-// component's setups); an empty value tells the resolver to fall back to the
-// dataset's configured model.
-type EmbedderResolver func(ctx context.Context, tenantID, kbID, embeddingModel string) (Embedder, error)
+// EmbedderResolver resolves the embedder and its dataset-bound embedding-model
+// id for one tokenizer invocation. The resolver derives the model exclusively
+// from the knowledgebase's configured embd_id (see internal/ingestion/task/
+// embedder.go); it never reads any embedding identifier from the DSL. The
+// returned embdID is the stable string the tokenizer keys its per-chunk
+// embedding cache on, so a KB whose embedding model changes yields a different
+// key and never serves a stale vector.
+type EmbedderResolver func(ctx context.Context, tenantID, kbID string) (Embedder, string, error)
 
 // DefaultEmbedderResolver is the production embedder resolver. It is nil in
 // this leaf package — which must not import internal/service (see the
@@ -144,8 +178,9 @@ var DefaultEmbedderResolver EmbedderResolver
 // Inputs:
 //
 //	tenant_id  (string, optional) — used to resolve the embedding model
-//	kb_id      (string, optional) — dataset whose embd_id is used when the
-//	                             setups embedding_model is unset
+//	kb_id      (string, optional) — dataset whose embd_id selects the embedding
+//	                             model. The model always comes from the dataset;
+//	                             the DSL never configures it.
 //	output_format (string) — one of json/markdown/text/html/chunks
 //	chunks        (list[map]) — chunk list when output_format == "chunks"
 //	json          (list[map]) — structured parser payload when output_format == "json" or unset
@@ -161,9 +196,8 @@ var DefaultEmbedderResolver EmbedderResolver
 //	output_format                — always "chunks" (matches python set_output)
 //	_created_time / _elapsed_time — TrackElapsed bookkeeping
 type TokenizerComponent struct {
-	param          schema.TokenizerParam
-	resolver       EmbedderResolver
-	embeddingModel string
+	param    schema.TokenizerParam
+	resolver EmbedderResolver
 }
 
 // NewTokenizerComponent constructs a production TokenizerComponent from DSL
@@ -185,7 +219,6 @@ func NewTokenizerComponentWithResolver(params map[string]any, resolver EmbedderR
 
 func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (runtime.Component, error) {
 	p := schema.TokenizerParam{}.Defaults()
-	embeddingModel := ""
 	if params != nil {
 		if v, ok := params["search_method"]; ok {
 			// Replace (not append) so a caller-supplied
@@ -226,35 +259,18 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 				p.Fields = append(p.Fields, t...)
 			}
 		}
-		embeddingModel = embeddingModelFromSetups(params)
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("tokenizer: param check: %w", err)
 	}
-	return &TokenizerComponent{param: p, resolver: resolver, embeddingModel: embeddingModel}, nil
-}
-
-// embeddingModelFromSetups extracts the embedding-model identifier from the
-// component's setups map (params["setups"]["embedding_model"]). The embedding
-// model id is a Tokenizer-scoped setup rather than a run-level global so it is
-// never mistaken for, e.g., a chat model id shared across components. Empty
-// when unset — the resolver then falls back to the dataset's configured model.
-func embeddingModelFromSetups(params map[string]any) string {
-	setups, ok := params["setups"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	if v, ok := setups["embedding_model"].(string); ok {
-		return strings.TrimSpace(v)
-	}
-	return ""
+	return &TokenizerComponent{param: p, resolver: resolver}, nil
 }
 
 // Inputs returns the parameter metadata.
 func (c *TokenizerComponent) Inputs() map[string]string {
 	return map[string]string{
 		"tenant_id":     "Tenant identifier used to resolve the embedding model (mirrors python self._canvas._tenant_id).",
-		"kb_id":         "Optional knowledgebase identifier used to resolve the bound embedding model when the setups embedding_model is unset.",
+		"kb_id":         "Knowledgebase identifier used to resolve the bound embedding model (kb.embd_id). The embedding model is taken exclusively from the dataset; the DSL must not configure it.",
 		"output_format": "Upstream payload discriminator: json / markdown / text / html / chunks.",
 		"chunks":        "List of chunk maps when output_format == \"chunks\".",
 		"json":          "Structured parser payload when output_format == \"json\" or unset.",
@@ -297,10 +313,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	name := globals.GlobalOrInput(ctx, inputs, "name", "")
 	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
 	kbID := globals.GlobalOrInput(ctx, inputs, "kb_id", "")
-	// The embedding-model id is a Tokenizer-scoped setup (params["setups"]),
-	// resolved at construction, not a run-level global — see
-	// embeddingModelFromSetups.
-	embeddingModel := c.embeddingModel
 
 	// decodeTokenizerFromUpstream validates `name`; carry the resolved
 	// name into the decode input so both a Globals-backed run and a
@@ -344,6 +356,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
+	copyPipelineControlValues(out, inputs)
 
 	// Embedding requires a KB: the embedder (and its embd_id) is configured
 	// on the knowledgebase, so without kb_id there is nothing to resolve
@@ -351,7 +364,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// so embedding is skipped there — debug only exercises parse+chunk and
 	// must stay side-effect free.
 	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
-		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, name, chunks, chunkcache.Client())
 		if err != nil {
 			return nil, err
 		}
@@ -369,7 +382,15 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	return out, nil
 }
 
-func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
+func copyPipelineControlValues(output, input map[string]any) {
+	for _, key := range []string{"wiki_active_map_states"} {
+		if value, exists := input[key]; exists {
+			output[key] = value
+		}
+	}
+}
+
+func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, name string, chunks []schema.ChunkDoc, store chunkcache.Store) ([]schema.ChunkDoc, int, error) {
 	if len(chunks) == 0 {
 		return chunks, 0, nil
 	}
@@ -382,7 +403,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if resolver == nil {
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but no embedder resolver configured")
 	}
-	embedder, err := resolver(ctx, tenantID, kbID, embeddingModel)
+	embedder, embdID, err := resolver(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("tokenizer: resolve embedder: %w", err)
 	}
@@ -390,21 +411,60 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but encoder resolution returned nil")
 	}
 
+	// store may be nil (no redis configured / unit test); cache lookups then
+	// degrade to a no-op and every chunk is embedded normally.
+
+	// resolved[i] holds the content embedding vector for chunks[i] once known:
+	// either served from the per-chunk cache (isHit) or produced by the batch
+	// Encode below. nil means the chunk produced no embeddable text. trunc is the
+	// exact text fed to the model, carried so the Set-side key matches the
+	// Get-side key (the key includes the embedded text, not just the chunk id).
+	type resolvedVec struct {
+		content []float64
+		isHit   bool
+		trunc   string
+	}
+	resolved := make([]*resolvedVec, len(chunks))
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
+	// truncs[i] is the embedded text for texts[i] / pairs[i]; carried so the
+	// Set-side key matches the Get-side key for freshly embedded content.
+	truncs := make([]string, 0, len(chunks))
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if txt == "" {
 			continue
 		}
+		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
+		// text) triples reuse the previous content vector, skipping the embed
+		// round-trip on resume. The key includes the text that is actually
+		// embedded — after field selection (c.param.Fields) and truncation — not
+		// just the chunk id. A tokenizer-config or model change alters the
+		// embedded input; reusing the prior vector for that case would serve a
+		// stale embedding for up to the cache TTL. embdID must be non-empty or
+		// every model would collapse onto one key and served vectors could come
+		// from a different model.
+		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
+		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
+			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
+				var vec []float64
+				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
+					resolved[i] = &resolvedVec{content: vec, isHit: true, trunc: trunc}
+					continue
+				}
+			}
+		}
 		texts = append(texts, trunc)
+		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
 	if len(texts) == 0 {
-		return chunks, 0, nil
+		// Nothing to embed — but cache hits may still need to be written through.
+		if store == nil {
+			return chunks, 0, nil
+		}
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -413,6 +473,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		tokenCount  int
 		hasTitleVec bool
 	)
+	// go_intentional (A3): when the upstream name is empty we skip title
+	// weighting entirely (hasTitleVec stays false, so the merged vector is the
+	// content vector alone). From the end-user perspective an empty title must
+	// not contribute the filename embedding weight; the Python DSL instead
+	// computes 0.1*emb(""), injecting an undefined bias into every chunk. Go's
+	// skip is the correct behavior (go_intentional). Do NOT "align" this to
+	// the DSL.
 	if trimmedName == "" {
 		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
@@ -456,16 +523,38 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight
+	// Wire freshly embedded content into the resolved slice; cache hits already
+	// carry their vector from the loop above.
 	for i, idx := range pairs {
-		merged := append([]float64(nil), contentResults[i].Vector...)
+		resolved[idx] = &resolvedVec{content: contentResults[i].Vector, trunc: truncs[i]}
+	}
+	for i, re := range resolved {
+		if re == nil {
+			continue
+		}
+		merged := append([]float64(nil), re.content...)
 		if hasTitleVec {
-			merged, err = mergeEmbeddingVectors(titleVec, contentResults[i].Vector, titleWeight)
+			merged, err = mergeEmbeddingVectors(titleVec, re.content, titleWeight)
 			if err != nil {
 				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
-		if err := chunks[idx].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
+		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
+		}
+		// Backfill the per-chunk cache only for freshly embedded content; cache
+		// hits are left untouched. The key intentionally omits title weighting:
+		// the content vector is title-weight independent, so identical chunk
+		// content reuses across runs even when only the filename weight changes.
+		// The embedded text (trunc) is part of the key so a config/model change
+		// that alters the embedded input forces a fresh embed rather than serving
+		// a stale vector.
+		if !re.isHit {
+			if chunkID, ok := chunks[i].GetExtraString("id"); ok && embdID != "" && store != nil {
+				if b, merr := json.Marshal(re.content); merr == nil {
+					chunkcache.Set(ctx, store, chunkcache.Key("emb", embdID, chunkID, re.trunc), string(b))
+				}
+			}
 		}
 	}
 	return chunks, tokenCount, nil
@@ -680,14 +769,21 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			// A2: split on the ENGLISH COMMA only, matching the DSL tokenizer
-			// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`) and
-			// the keyword_prompt contract ("delimited by ENGLISH COMMA"). CJK
-			// commas/semicolons and newlines stay part of the keyword so the
-			// Go index is byte-compatible with the Python-DSL-built index.
-			// strings.Split preserves empty elements, matching Python's
-			// "a,,b".split(",") == ["a","","b"].
-			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
+			// Split keywords on the ENGLISH COMMA ONLY. The keyword_prompt
+			// contract specifies "delimited by ENGLISH COMMA", so CJK commas,
+			// semicolons and newlines stay part of the keyword rather than
+			// acting as separators. strings.Split also preserves empty
+			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
+			// Each piece is then bounded to the ES keyword field byte limit and
+			// truncated at a UTF-8 character boundary.
+			rawParts := strings.Split(kw, ",")
+			kwdParts := make([]string, len(rawParts))
+			for i, part := range rawParts {
+				// Empty parts are intentionally preserved to match the contract
+				// tested by TestTokenizerComponent_ImportantKwd_PreservesEmptyElements.
+				kwdParts[i] = sanitizeKeywordTerm(part)
+			}
+			if err = ck.SetExtraValue("important_kwd", kwdParts); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)
@@ -772,6 +868,13 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 
 // shouldHaveEmbedding reports whether the tokenizer must attach embedding
 // vectors: the search method requests embedding AND a KB is present.
+//
+// go_intentional (A4): the kbID != "" guard is deliberate. Each dataset
+// configures its own embedding model, so an empty kb_id (e.g. a canvas-debug
+// dry run) must NOT fall back to the tenant's default embedding model — doing
+// so would produce vectors a dataset cannot actually use at retrieval time.
+// This is a deliberate, go_intentional divergence. Do NOT "align" this to a
+// path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
 	return contains(searchMethods, "embedding") && kbID != ""
 }

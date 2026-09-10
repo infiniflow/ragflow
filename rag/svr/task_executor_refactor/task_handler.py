@@ -67,6 +67,22 @@ from rag.prompts.generator import run_toc_from_text
 from common import settings
 
 
+_EMBEDDING_FACTORIES_REQUIRING_API_KEY = frozenset(
+    {
+        "Azure-OpenAI",
+        "OpenAI",
+        "OpenAI-API-Compatible",
+    }
+)
+
+
+def _embedding_config_has_missing_credentials(model_config: dict) -> bool:
+    """Return whether a credentialed embedding factory has no usable credential."""
+    factory = model_config.get("llm_factory")
+    has_credential = bool(model_config.get("api_key") or model_config.get("api_key_payload"))
+    return factory in _EMBEDDING_FACTORIES_REQUIRING_API_KEY and not has_credential
+
+
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's parser_config to compile-template ids by
     looking up configured groups. Returns ``[]`` if the doc has no
@@ -85,28 +101,6 @@ def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> li
             seen.add(template_id)
             template_ids.append(template_id)
     return template_ids
-
-
-def _resolve_template_chat_llm_id(parser_cfg: dict, ctx) -> str:
-    """Pick the chat model id for a knowledge-compilation template.
-
-    Resolution order:
-      1. The template's own ``llm_id`` (what the user picked in the
-         compilation-template panel).
-      2. The doc's ``parser_config.llm_id`` (the doc-level chunking
-         model).
-      3. ``ctx.llm_id`` (the chunking task's default).
-    """
-    if isinstance(parser_cfg, dict):
-        tid = parser_cfg.get("llm_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
-    doc_cfg = getattr(ctx, "parser_config", None) or {}
-    if isinstance(doc_cfg, dict):
-        did = doc_cfg.get("llm_id")
-        if isinstance(did, str) and did.strip():
-            return did.strip()
-    return ctx.llm_id
 
 
 # Document-structure compilation tunables
@@ -260,8 +254,8 @@ class TaskHandler:
                     run_wiki_incremental,
                 )
 
-                # Parse plan: yes/no from the template config (default no-plan)
-                plan_enabled = False
+                # Parse the Wiki mode from the template config.
+                wiki_mode = None
                 try:
                     from api.db.services.compilation_template_service import (
                         CompilationTemplateService,
@@ -274,17 +268,17 @@ class TaskHandler:
                     for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
                         tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
                         cfg = (tpl.get("config") or {}) if tpl else {}
-                        if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
-                            plan_enabled = True
+                        if isinstance(cfg, dict) and cfg.get("mode") in ("entity", "topic"):
+                            wiki_mode = cfg["mode"]
                             break
                 except Exception:
-                    pass  # default to no-plan
+                    pass
 
                 await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
-                    plan=plan_enabled,
+                    mode=wiki_mode,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (
@@ -358,11 +352,35 @@ class TaskHandler:
                 try:
                     embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                    # The cached tenant-model binding may disappear after a task is queued; record the recovery context.
+                    logging.info(
+                        "Recovering stale embedding model binding for task %s in tenant %s with model %s",
+                        ctx.id,
+                        task_tenant_id,
+                        task_embedding_id or "tenant-default",
+                    )
+                    if task_embedding_id:
+                        embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                    else:
+                        embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+                else:
+                    if _embedding_config_has_missing_credentials(embd_model_config):
+                        logging.info(
+                            "Refreshing embedding model credentials for tenant %s with model %s",
+                            task_tenant_id,
+                            task_embedding_id or "tenant-default",
+                        )
+                        if task_embedding_id:
+                            embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                        else:
+                            # Queued tasks without a model name must follow the current tenant default.
+                            embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             elif task_embedding_id:
                 embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+            if _embedding_config_has_missing_credentials(embd_model_config):
+                raise LookupError("Embedding model credentials are missing after resolving the current configuration")
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
             vts, _ = embedding_model.encode(["ok"])
             return embedding_model, len(vts[0])
@@ -577,6 +595,11 @@ class TaskHandler:
         task_dataset_id = ctx.kb_id
         task_doc_id = ctx.doc_id
         task_start_ts = timer()
+
+        def on_chunking_start(wait_time):
+            nonlocal task_start_ts
+            task_start_ts += wait_time
+
         doc_task_llm_id = ctx.parser_config.get("llm_id") or ctx.llm_id
         ctx.raw_task["llm_id"] = doc_task_llm_id
 
@@ -590,7 +613,7 @@ class TaskHandler:
         if binary is None:
             raise FileNotFoundError(f"Can not find file <{ctx.name}> from minio. Could you try it again.")
 
-        chunks = await chunk_service.build_chunks(binary)
+        chunks = await chunk_service.build_chunks(binary, on_chunking_start)
         ctx.recording_context.record("chunks", chunks)
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         ctx.recording_context.record("chunk_ids_count", len(chunk_ids))
@@ -767,6 +790,7 @@ class TaskHandler:
             "compile_kwd",
         ]
         order_by = OrderByExpr()
+        order_by.asc("chunk_order_int")
         order_by.asc("page_num_int")
         order_by.asc("top_int")
 
@@ -798,6 +822,66 @@ class TaskHandler:
                 logging.exception("load_chunks_for_doc: failed to load chunks for doc=%s", doc_id)
                 return
             if not field_map:
+                # Recover rows damaged by the old doc-page-source upsert, which
+                # updated every row sharing ``doc_id`` and stamped source chunks
+                # with ``compile_kwd=wiki_doc_page_source``. Genuine tracking
+                # rows have no chunk body; MAP rows are unavailable. Source
+                # rows remain available and retain their content, so they can
+                # be identified without guessing from ids.
+                try:
+                    recovery_fields = [*select_fields, "available_int"]
+                    recovered_batch: List[Dict] = []
+                    recovery_offset = 0
+                    recovery_page_size = 1000
+                    while True:
+                        recovery_res = await thread_pool_exec(
+                            settings.docStoreConn.search,
+                            recovery_fields,
+                            [],
+                            {"doc_id": [doc_id], "available_int": 1},
+                            [],
+                            order_by,
+                            recovery_offset,
+                            recovery_page_size,
+                            index_nm,
+                            [kb_id],
+                        )
+                        recovery_rows = settings.docStoreConn.get_fields(recovery_res, recovery_fields) or {}
+                        for row_id, recovery_row in recovery_rows.items():
+                            marker = recovery_row.get("compile_kwd")
+                            if isinstance(marker, (list, tuple)):
+                                marker = marker[0] if marker else ""
+                            content = recovery_row.get("content_with_weight") or ""
+                            if marker != "wiki_doc_page_source" or not content:
+                                continue
+                            await thread_pool_exec(
+                                settings.docStoreConn.update,
+                                {"id": row_id},
+                                {"remove": "compile_kwd"},
+                                index_nm,
+                                kb_id,
+                            )
+                            recovered_batch.append(
+                                {
+                                    "id": row_id,
+                                    "doc_id": recovery_row.get("doc_id") or doc_id,
+                                    "content_with_weight": content,
+                                    "page_num_int": recovery_row.get("page_num_int", 0),
+                                    "top_int": recovery_row.get("top_int", 0),
+                                }
+                            )
+                        if len(recovery_rows) < recovery_page_size:
+                            break
+                        recovery_offset += recovery_page_size
+                    if recovered_batch:
+                        logging.warning(
+                            "load_chunks_for_doc: recovered %d source chunk(s) mislabeled as wiki_doc_page_source doc=%s",
+                            len(recovered_batch),
+                            doc_id,
+                        )
+                        yield recovered_batch
+                except Exception:
+                    logging.exception("load_chunks_for_doc: recovery query failed for doc=%s", doc_id)
                 return
 
             batch: List[Dict] = []

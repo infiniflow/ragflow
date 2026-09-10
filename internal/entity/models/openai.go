@@ -154,12 +154,12 @@ type openaiUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -176,7 +176,7 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -204,13 +204,17 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, texts []stri
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI embeddings API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var parsed openaiEmbeddingResponse
@@ -259,13 +263,17 @@ func (o *OpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Parse response
@@ -296,7 +304,7 @@ func (o *OpenAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 
 // Rerank calculates similarity scores between query and documents. OpenAI does
 // not expose a rerank API, so this is left unimplemented.
-func (o *OpenAIModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (o *OpenAIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", o.Name())
 }
 
@@ -318,13 +326,17 @@ func (o *OpenAIModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		respBody, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI ASR API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI ASR API error: %s, body: %s", resp.Status, string(respBody))
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI ASR API error: %s, body: %s", resp.Status, string(respBody))
 	}
 
 	return decodeOpenAIASRResponse(respBody, responseFormat)
@@ -348,7 +360,10 @@ func (o *OpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("OpenAI ASR stream API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
 		return fmt.Errorf("OpenAI ASR stream API error: %s, body: %s", resp.Status, string(respBody))
 	}
 
@@ -437,13 +452,17 @@ func (o *OpenAIModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI TTS API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI TTS API error: %s, body: %s", resp.Status, string(body))
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI TTS API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	return &TTSResponse{Audio: body}, nil
@@ -469,7 +488,10 @@ func (o *OpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("OpenAI TTS stream API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
 		return fmt.Errorf("OpenAI TTS stream API error: %s, body: %s", resp.Status, string(body))
 	}
 

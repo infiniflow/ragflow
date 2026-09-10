@@ -64,6 +64,30 @@ func (n *NvidiaModel) Name() string {
 	return "nvidia"
 }
 
+// resolveEndpoint returns the endpoint URL for modelName. When the
+// model's preset config in conf/models/nvidia.json carries an explicit
+// url, that full endpoint is used as-is because it does not follow the
+// standard baseURL + suffix assembly; otherwise the usual assembly
+// applies. Every endpoint (chat, embedding, rerank, models list) goes
+// through this path so the override is honored uniformly.
+func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, suffix string) (string, error) {
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if provider := pm.FindProvider("NVIDIA"); provider != nil {
+				if model := pm.FindModel(provider, modelName); model != nil && model.URL != "" {
+					return strings.TrimSuffix(model.URL, "/"), nil
+				}
+			}
+		}
+	}
+
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
+}
+
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -73,11 +97,10 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -108,11 +131,10 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(modelName, apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -139,12 +161,12 @@ type nvidiaEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -152,17 +174,21 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []stri
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
 
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Embedding)
-
+	// Python NvidiaEmbed.encode sends input_type="passage" for documents and
+	// encode_queries sends "query"; the NIM API embeds each side differently.
+	inputType := "passage"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"input":           texts,
-		"input_type":      "query",
+		"input":           request.Texts,
+		"input_type":      inputType,
 		"encoding_format": "float",
 		"truncate":        "END",
 	}
@@ -219,13 +245,11 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 // nvidiaRerankRequest mirrors the NIM /ranking request shape:
 // query is an object with a "text" field, passages is an array of
-// objects each with a "text" field. truncate=END matches the Python
-// NvidiaRerank reference at rag/llm/rerank_model.py.
+// objects each with a "text" field.
 type nvidiaRerankRequest struct {
 	Model    string             `json:"model"`
 	Query    nvidiaRerankText   `json:"query"`
 	Passages []nvidiaRerankText `json:"passages"`
-	Truncate string             `json:"truncate,omitempty"`
 	TopN     int                `json:"top_n"`
 }
 
@@ -252,11 +276,12 @@ type nvidiaRerankResponse struct {
 // RerankResult entries are in the API's ranking order; callers that
 // need original-input order should sort by Index. Same return-shape
 // contract as the Aliyun and ZhipuAI Rerank drivers.
-func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -264,12 +289,10 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query strin
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint(*modelName, apiConfig, n.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -285,7 +308,6 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, query strin
 		Model:    *modelName,
 		Query:    nvidiaRerankText{Text: query},
 		Passages: passages,
-		Truncate: "END",
 		TopN:     topN,
 	}
 
@@ -376,11 +398,10 @@ func (n *NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := n.resolveEndpoint("", apiConfig, n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(n.baseModel.URLSuffix.Models, "/"))
 
 	modelListCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -422,7 +443,7 @@ func (n *NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		provider = pm.FindProvider("NVIDIA")
 	}
 	models := parseNvidiaModelList(modelList, provider)
-	if n.usesHostedCatalog(resolvedBaseURL) {
+	if n.usesHostedCatalog(baseURL) {
 		catalogCtx, catalogCancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		catalog, catalogErr := n.fetchHostedCatalog(catalogCtx)
 		catalogCancel()

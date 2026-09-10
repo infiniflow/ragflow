@@ -246,7 +246,7 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
 		SimilarityThreshold:      &similarityThreshold,
-	}, []string{"tenant-a"}, 3, embeddingModel)
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
@@ -260,8 +260,8 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.Page != 1 || got.PageSize != 3 {
 		t.Fatalf("Page/PageSize=%d/%d want 1/3", got.Page, got.PageSize)
 	}
-	if got.Top == nil || *got.Top != 99 {
-		t.Fatalf("Top=%v want 99", got.Top)
+	if got.KNNTopK == nil || *got.KNNTopK != 99 {
+		t.Fatalf("KNNTopK=%v want 99", got.KNNTopK)
 	}
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0.42 {
 		t.Fatalf("SimilarityThreshold=%v want 0.42", got.SimilarityThreshold)
@@ -279,10 +279,10 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 		Query:      "hi",
 		DatasetIDs: []string{"kb-1"},
 		TopN:       3,
-	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
 
-	if got.Top == nil || *got.Top != 12 {
-		t.Fatalf("Top=%v want 12", got.Top)
+	if got.KNNTopK == nil || *got.KNNTopK != 12 {
+		t.Fatalf("KNNTopK=%v want 12", got.KNNTopK)
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
@@ -295,10 +295,38 @@ func TestNLPRequestFromRetrieval_PreservesExplicitZeroSimilarityThreshold(t *tes
 		Query:               "hi",
 		DatasetIDs:          []string{"kb-1"},
 		SimilarityThreshold: &similarityThreshold,
-	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
 
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0 {
 		t.Fatalf("SimilarityThreshold = %v; want explicit zero", got.SimilarityThreshold)
+	}
+}
+
+// TestNLPRequestFromRetrieval_ExcludeCompiled verifies the compiled-product
+// exclusion reaches the nlp request as must_not={"exists":"compile_kwd"},
+// mirroring Python hybrid_search (search.py:171).
+func TestNLPRequestFromRetrieval_ExcludeCompiled(t *testing.T) {
+	// excludeCompiled=false leaves Filter nil (no exclusion).
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1"},
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
+	if got.Filter != nil {
+		t.Fatalf("Filter = %v; want nil when not excluding compiled", got.Filter)
+	}
+	// excludeCompiled=true sets must_not exists compile_kwd.
+	got = nlpRequestFromRetrieval(RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1"},
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, true)
+	mustNot, ok := got.Filter["must_not"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Filter.must_not = %v; want map", got.Filter["must_not"])
+	}
+	// Python hybrid_search: must_not={"exists":"compile_kwd"} — the exists
+	// clause names the compile_kwd field, mirroring dataset/search.go:292.
+	if exists, ok := mustNot["exists"].(string); !ok || exists != "compile_kwd" {
+		t.Fatalf("must_not.exists = %v; want \"compile_kwd\"", mustNot["exists"])
 	}
 }
 
@@ -437,12 +465,34 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 func TestValidateEmbeddingModelsRejectsDifferentTenantModels(t *testing.T) {
 	firstID := "tenant-embedding-1"
 	secondID := "tenant-embedding-2"
-	err := validateEmbeddingModels([]*entity.Knowledgebase{
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
 		{ID: "kb-1", TenantID: "tenant-1", TenantEmbdID: &firstID},
 		{ID: "kb-2", TenantID: "tenant-1", TenantEmbdID: &secondID},
 	})
 	if err == nil {
 		t.Fatal("expected different tenant embedding models to be rejected")
+	}
+}
+
+func TestValidateEmbeddingModelsAllowsSameBaseAcrossInstances(t *testing.T) {
+	// Datasets using the same base embedding model through different provider
+	// instances must validate together, matching the chat/dataset-search rule.
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@renew@SILICONFLOW"},
+		{ID: "kb-2", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@COPY@SILICONFLOW"},
+	})
+	if err != nil {
+		t.Fatalf("expected same-base composites to be accepted, got %v", err)
+	}
+}
+
+func TestValidateEmbeddingModelsRejectsDifferentBases(t *testing.T) {
+	err := validateEmbeddingModels(t.Context(), nil, []*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", EmbdID: "BAAI/bge-m3@renew@SILICONFLOW"},
+		{ID: "kb-2", TenantID: "tenant-1", EmbdID: "Qwen/Qwen3-Embedding-0.6B@renew@SILICONFLOW"},
+	})
+	if err == nil {
+		t.Fatal("expected different base embedding models to be rejected")
 	}
 }
 

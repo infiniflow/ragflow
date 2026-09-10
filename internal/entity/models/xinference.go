@@ -139,12 +139,12 @@ type xinferenceEmbeddingResponse struct {
 }
 
 // Embed POSTs the input texts to the tenant's Xinference
-func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
@@ -163,7 +163,7 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -205,15 +205,15 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, d := range parsed.Data {
 		if d.Index == nil {
 			return nil, fmt.Errorf("xinference: missing embedding index in response item")
 		}
 		idx := *d.Index
-		if idx < 0 || idx >= len(texts) {
-			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(texts))
+		if idx < 0 || idx >= len(request.Texts) {
+			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(request.Texts))
 		}
 		if len(d.Embedding) == 0 {
 			return nil, fmt.Errorf("xinference: missing embedding vector for response item at index %d", idx)
@@ -247,10 +247,12 @@ type xinferenceRerankResponse struct {
 // in the API's ranking order. Caller may sort by Index to recover
 // original input order. Xinference rerank models are launched with
 // --model-type rerank and exposed under the OpenAI-compatible base URL.
-func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil

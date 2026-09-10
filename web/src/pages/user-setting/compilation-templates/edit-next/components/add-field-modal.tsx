@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
@@ -90,7 +106,7 @@ export function AddFieldModal({
   const handleNoMatchEnter = useCallback(
     (searchValue: string) => {
       if (isDuplicateType(searchValue)) {
-        message.warning(t('setting.fieldTypeExists'));
+        message.warning(t('knowledgeCompilation.fieldTypeExists'));
         return false;
       }
       return true;
@@ -102,7 +118,7 @@ export function AddFieldModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={`${initialField ? t('setting.editFieldModalTitle') : t('setting.addFieldModalTitle')} - ${startCase(sectionName)}`}
+      title={`${initialField ? t('knowledgeCompilation.editField') : t('knowledgeCompilation.addField')} - ${startCase(sectionName)}`}
       size="default"
       footer={
         <div className="flex justify-end gap-2">
@@ -125,7 +141,7 @@ export function AddFieldModal({
               rules={{
                 required: getRequiredMessage('type'),
                 validate: (value: string) =>
-                  !isDuplicateType(value) || t('setting.fieldTypeExists'),
+                  !isDuplicateType(value) || t('knowledgeCompilation.fieldTypeExists'),
               }}
             >
               {(field) => (
@@ -138,7 +154,7 @@ export function AddFieldModal({
                     handleTypeChange(value);
                   }}
                   onNoMatchEnter={handleNoMatchEnter}
-                  placeholder={t('setting.selectFieldType')}
+                  placeholder={t('knowledgeCompilation.selectFieldType')}
                   allowCustomValue
                 />
               )}
@@ -158,7 +174,7 @@ export function AddFieldModal({
               }
             >
               <Textarea
-                placeholder={t('setting.descriptionPlaceholder')}
+                placeholder={t('common.descriptionPlaceholder')}
                 rows={key === 'description' ? 4 : 10}
                 resize="vertical"
               />

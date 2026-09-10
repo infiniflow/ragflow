@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
@@ -193,7 +209,11 @@ export const useNavigatePage = () => {
       const params: string[] = [];
       Object.keys(props).forEach((key) => {
         if (props[key as keyof typeof props]) {
-          params.push(`${key}=${props[key as keyof typeof props]}`);
+          // Values may contain characters like `&`, `=` or `#` (e.g. file
+          // names), which would corrupt the query string without encoding.
+          params.push(
+            `${key}=${encodeURIComponent(props[key as keyof typeof props] as string)}`,
+          );
         }
       });
       navigate(
@@ -207,32 +227,6 @@ export const useNavigatePage = () => {
   const navigateToModelSetting = useCallback(() => {
     navigate(`${Routes.UserSetting}${Routes.Model}`);
   }, [navigate]);
-
-  const navigateToCompilationTemplates = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.CompilationTemplates}`);
-  }, [navigate]);
-
-  const navigateToCompilationTemplate = useCallback(
-    (id?: string) => () => {
-      if (id && id !== 'create') {
-        navigate(`${Routes.CompilationTemplatesCreateNext}/${id}`);
-      } else {
-        navigate(Routes.CompilationTemplatesCreateNext);
-      }
-    },
-    [navigate],
-  );
-
-  const navigateToCompilationTemplateEditNext = useCallback(
-    (id?: string) => () => {
-      if (id && id !== 'create') {
-        navigate(`${Routes.CompilationTemplatesEditNext}/${id}`);
-      } else {
-        navigate(Routes.CompilationTemplatesEditNext);
-      }
-    },
-    [navigate],
-  );
 
   return {
     navigateToDatasetList,
@@ -262,8 +256,5 @@ export const useNavigatePage = () => {
     navigateToMemory,
     navigateToMemoryList,
     navigateToModelSetting,
-    navigateToCompilationTemplates,
-    navigateToCompilationTemplate,
-    navigateToCompilationTemplateEditNext,
   };
 };

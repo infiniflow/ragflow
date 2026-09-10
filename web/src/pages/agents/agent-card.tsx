@@ -31,17 +31,17 @@ function AgentTypeIcon({
       ? FlowType.Compiler
       : CanvasCategoryToFlowType[data.canvas_category ?? ''];
 
-  const icon = flowType ? FlowTypeConfig[flowType].icon : null;
+  const config = flowType ? FlowTypeConfig[flowType] : null;
 
-  if (!icon) {
+  if (!config) {
     return null;
   }
 
-  const Icon = icon;
+  const Icon = config.icon;
 
   return (
     <Button variant={'ghost'} size={'sm'}>
-      <Icon />
+      <Icon style={{ color: config.color }} />
     </Button>
   );
 }

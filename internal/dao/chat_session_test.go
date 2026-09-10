@@ -67,6 +67,29 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 	}
 }
 
+func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID, name string, message json.RawMessage, updateTime int64) {
+	t.Helper()
+
+	updateDate := time.UnixMilli(updateTime).Local()
+	session := &entity.API4Conversation{
+		ID:        id,
+		Name:      &name,
+		DialogID:  agentID,
+		UserID:    userID,
+		Message:   message,
+		Reference: json.RawMessage(`[]`),
+		BaseModel: entity.BaseModel{
+			CreateTime: &updateTime,
+			CreateDate: &updateDate,
+			UpdateTime: &updateTime,
+			UpdateDate: &updateDate,
+		},
+	}
+	if err := db.Create(session).Error; err != nil {
+		t.Fatalf("failed to create session %s: %v", id, err)
+	}
+}
+
 func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name string, updateTime int64) {
 	t.Helper()
 
@@ -203,5 +226,47 @@ func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	}
 	if sessions[0].UserID != "user-1" {
 		t.Fatalf("expected user-1, got %s", sessions[0].UserID)
+	}
+}
+
+func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+
+	createNamedAgentSessionForDAOTest(t, db, "release-session-id", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary"}]`), 1000)
+	createNamedAgentSessionForDAOTest(t, db, "session-title", "agent-1", "user-1", "Release Notes", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
+	createNamedAgentSessionForDAOTest(t, db, "session-message", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"release details"}]`), 3000)
+	createNamedAgentSessionForDAOTest(t, db, "other-agent-release", "agent-2", "user-1", "Release Notes", json.RawMessage(`[{"content":"release details"}]`), 4000)
+
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
+		AgentID:  "agent-1",
+		Keywords: "release",
+		Page:     1,
+		PageSize: 10,
+		OrderBy:  "update_time",
+		Desc:     false,
+	})
+	if err != nil {
+		t.Fatalf("ListAgentSessions failed: %v", err)
+	}
+
+	if total != 3 {
+		t.Fatalf("expected total 3, got %d", total)
+	}
+	gotIDs := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		gotIDs = append(gotIDs, session.ID)
+		if session.DialogID != "agent-1" {
+			t.Fatalf("session %s leaked from agent %s", session.ID, session.DialogID)
+		}
+	}
+	wantIDs := []string{"release-session-id", "session-title", "session-message"}
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
+	}
+	for i := range wantIDs {
+		if gotIDs[i] != wantIDs[i] {
+			t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
+		}
 	}
 }

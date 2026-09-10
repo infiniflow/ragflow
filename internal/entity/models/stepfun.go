@@ -109,7 +109,7 @@ func (s *StepFunModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 }
 
 // Embed is left as a stub.
-func (s *StepFunModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (s *StepFunModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -179,7 +179,7 @@ func (s *StepFunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 
 // Rerank calculates similarity scores between query and documents. StepFun
 // does not expose a public rerank API, so this returns "no such method".
-func (s *StepFunModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (s *StepFunModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

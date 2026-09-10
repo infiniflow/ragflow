@@ -20,6 +20,7 @@ import re
 import time
 from abc import ABC
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -28,8 +29,10 @@ from common.connection_utils import timeout
 from common.http_client import DEFAULT_TIMEOUT
 
 QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search"
+QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents"
 QUERIT_MAX_ATTEMPTS = 3
 QUERIT_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+QUERIT_CONTENT_FORMATS = {"text", "markdown", "html"}
 TIME_RANGE_PATTERN = re.compile(r"^([dwmy][1-9][0-9]*|\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2})$")
 logger = logging.getLogger(__name__)
 
@@ -192,35 +195,7 @@ class QueritSearch(ToolBase, ABC):
             return self._fail(_safe_error_message(error, api_key))
 
     def _search(self, payload: dict[str, Any], api_key: str) -> Any:
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        for attempt in range(QUERIT_MAX_ATTEMPTS):
-            if self.check_if_canceled("QueritSearch processing"):
-                raise _QueritCanceled
-            try:
-                response = requests.post(
-                    QUERIT_SEARCH_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=DEFAULT_TIMEOUT,
-                )
-                if response.status_code in QUERIT_RETRYABLE_STATUS_CODES and attempt + 1 < QUERIT_MAX_ATTEMPTS:
-                    self._wait_before_retry()
-                    continue
-                response.raise_for_status()
-                return response.json()
-            except requests.JSONDecodeError:
-                raise
-            except requests.HTTPError:
-                raise
-            except requests.RequestException:
-                if attempt + 1 >= QUERIT_MAX_ATTEMPTS:
-                    raise
-                self._wait_before_retry()
-        raise RuntimeError("Querit request failed after three attempts.")
+        return _post_querit(self, QUERIT_SEARCH_URL, payload, api_key, "QueritSearch")
 
     def _wait_before_retry(self) -> None:
         if self.check_if_canceled("QueritSearch processing"):
@@ -234,6 +209,96 @@ class QueritSearch(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return "Searching Querit for `{}`.".format(self.get_input().get("query", "-_-!"))
+
+
+class QueritContentsParam(ToolParamBase):
+    def __init__(self):
+        self.meta: ToolMeta = {
+            "name": "querit_contents",
+            "description": "Crawl one or more web pages with Querit and return their contents.",
+            "parameters": {
+                "urls": {
+                    "type": "array",
+                    "description": "The absolute HTTP or HTTPS URLs to crawl. Supports 1 to 10 URLs.",
+                    "default": [],
+                    "items": {"type": "string"},
+                    "required": True,
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Content format: text, markdown, or html. Defaults to markdown.",
+                    "enum": ["text", "markdown", "html"],
+                    "default": "markdown",
+                    "required": False,
+                },
+                "crawl_timeout": {
+                    "type": "integer",
+                    "description": "Per-page crawl timeout in seconds. Must be between 1 and 60.",
+                    "default": 10,
+                    "required": False,
+                },
+                "extras_meta": {
+                    "type": "boolean",
+                    "description": "Whether to include page metadata in each result.",
+                    "default": False,
+                    "required": False,
+                },
+            },
+        }
+        super().__init__()
+        self.api_key = ""
+
+    def check(self):
+        self.urls = _normalize_contents_urls(self.urls)
+        _validate_contents_inputs(self.urls, self.format, self.crawl_timeout, self.extras_meta)
+
+    def get_input_form(self) -> dict[str, dict]:
+        return {"urls": {"name": "URLs", "type": "line"}}
+
+
+class QueritContents(ToolBase, ABC):
+    component_name = "QueritContents"
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", "70")))
+    def _invoke(self, **kwargs):
+        if self.check_if_canceled("QueritContents processing"):
+            return
+
+        values = {name: kwargs[name] if name in kwargs else getattr(self._param, name) for name in ("urls", "format", "crawl_timeout", "extras_meta")}
+        values["urls"] = _normalize_contents_urls(values["urls"])
+
+        node_api_key = (self._param.api_key or "").strip()
+        api_key = node_api_key or (os.environ.get("QUERIT_API_KEY") or "").strip()
+        if not api_key:
+            return self._fail("Querit API key is required. Configure api_key or set QUERIT_API_KEY.")
+
+        try:
+            _validate_contents_inputs(**values)
+            response_data = self._request(_build_contents_payload(**values), api_key)
+            _validate_contents_response(response_data)
+            self.set_output("json", response_data)
+            return self.output("json")
+        except _QueritCanceled:
+            return
+        except (requests.RequestException, RuntimeError, TypeError, ValueError) as error:
+            return self._fail(_safe_error_message(error, api_key))
+
+    def _request(self, payload: dict[str, Any], api_key: str) -> Any:
+        request_timeout = max(DEFAULT_TIMEOUT, payload["crawlTimeout"] + 5)
+        return _post_querit(self, QUERIT_CONTENTS_URL, payload, api_key, "QueritContents", request_timeout)
+
+    def _wait_before_retry(self) -> None:
+        if self.check_if_canceled("QueritContents processing"):
+            raise _QueritCanceled
+        time.sleep(self._param.delay_after_error)
+
+    def _fail(self, message: str) -> str:
+        self.set_output("_ERROR", message)
+        logger.error("Querit contents failed: %s", message)
+        return f"Querit contents error: {message}"
+
+    def thoughts(self) -> str:
+        return "Reading web page contents with Querit."
 
 
 def _build_payload(query: str, **values: Any) -> dict[str, Any]:
@@ -260,6 +325,72 @@ def _build_payload(query: str, **values: Any) -> dict[str, Any]:
     if filters:
         payload["filters"] = filters
     return payload
+
+
+def _post_querit(tool: Any, endpoint: str, payload: dict[str, Any], api_key: str, operation: str, request_timeout: float = DEFAULT_TIMEOUT) -> Any:
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    for attempt in range(QUERIT_MAX_ATTEMPTS):
+        if tool.check_if_canceled(f"{operation} processing"):
+            raise _QueritCanceled
+        try:
+            response = requests.post(endpoint, headers=headers, json=payload, timeout=request_timeout)
+            if response.status_code in QUERIT_RETRYABLE_STATUS_CODES and attempt + 1 < QUERIT_MAX_ATTEMPTS:
+                tool._wait_before_retry()
+                continue
+            response.raise_for_status()
+            return response.json()
+        except requests.JSONDecodeError:
+            raise
+        except requests.HTTPError:
+            raise
+        except requests.RequestException:
+            if attempt + 1 >= QUERIT_MAX_ATTEMPTS:
+                raise
+            tool._wait_before_retry()
+    raise RuntimeError("Querit request failed after three attempts.")
+
+
+def _build_contents_payload(urls: list[str], format: str, crawl_timeout: int, extras_meta: bool) -> dict[str, Any]:
+    return {
+        "urls": urls,
+        "format": format,
+        "crawlTimeout": crawl_timeout,
+        "extrasMeta": extras_meta,
+    }
+
+
+def _normalize_contents_urls(urls: Any) -> Any:
+    if isinstance(urls, str):
+        return [url.strip() for url in urls.split(",") if url.strip()]
+    return urls
+
+
+def _validate_contents_inputs(urls: Any, format: Any, crawl_timeout: Any, extras_meta: Any) -> None:
+    if not isinstance(urls, list) or not 1 <= len(urls) <= 10 or any(not isinstance(url, str) or not url.strip() for url in urls):
+        raise ValueError("Querit urls must contain between 1 and 10 non-empty strings.")
+    for url in urls:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Querit urls must be absolute HTTP or HTTPS URLs.")
+    if format not in QUERIT_CONTENT_FORMATS:
+        raise ValueError("Querit format must be text, markdown, or html.")
+    if type(crawl_timeout) is not int or not 1 <= crawl_timeout <= 60:
+        raise ValueError("Querit crawl_timeout must be an integer from 1 to 60.")
+    if type(extras_meta) is not bool:
+        raise ValueError("Querit extras_meta must be a boolean.")
+
+
+def _validate_contents_response(response_data: Any) -> None:
+    if not isinstance(response_data, dict):
+        raise TypeError("Querit API response must be a JSON object.")
+    if "results" in response_data and not isinstance(response_data["results"], list):
+        raise TypeError("Querit API response field results must be an array.")
+    if "statuses" in response_data and not isinstance(response_data["statuses"], list):
+        raise TypeError("Querit API response field statuses must be an array.")
 
 
 def _validate_search_inputs(

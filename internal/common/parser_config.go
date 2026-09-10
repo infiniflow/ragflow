@@ -70,7 +70,6 @@ func GetParserConfig(parserID string, parserConfig map[string]interface{}) map[s
 			"topn_tags":        3,
 		},
 		"qa":           nil,
-		"resume":       nil,
 		"manual":       nil,
 		"paper":        nil,
 		"book":         nil,

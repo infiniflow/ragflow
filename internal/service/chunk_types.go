@@ -64,6 +64,7 @@ type RetrievalTestRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -299,12 +300,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 		indexName := IndexName(kb.TenantID)
 
-		exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, datasetID)
+		var exists bool
+		exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to check chunk store %s/%s: %w", indexName, datasetID, err)
 		}
 		if exists {
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
+			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, datasetID); err != nil {
 				return nil, common.CodeServerError, fmt.Errorf("failed to delete chunks for document %s: %w", doc.ID, err)
 			}
 		} else {
@@ -327,12 +329,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
-	DatasetID    string `json:"dataset_id,omitempty"`
-	DocID        string `json:"doc_id" binding:"required"`
-	Page         *int   `json:"page,omitempty"`
-	Size         *int   `json:"size,omitempty"`
-	Keywords     string `json:"keywords,omitempty"`
-	AvailableInt *int   `json:"available_int,omitempty"`
+	DatasetID    string   `json:"dataset_id,omitempty"`
+	DocID        string   `json:"doc_id" binding:"required"`
+	ChunkIDs     []string `json:"chunk_ids,omitempty"`
+	Page         *int     `json:"page,omitempty"`
+	Size         *int     `json:"size,omitempty"`
+	Keywords     string   `json:"keywords,omitempty"`
+	AvailableInt *int     `json:"available_int,omitempty"`
 }
 
 // ListChunksResponse response for listing chunks
@@ -486,7 +489,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              chunkDocRunText(doc.Run),
+		"run":              ChunkDocRunText(doc.Run),
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -783,7 +786,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	}
 
 	if deletedCount > 0 {
-		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 	}
@@ -936,7 +939,7 @@ func isInternalField(k string) bool {
 // ListChunks. Returns true if the field was handled.
 // chunkDocRunText maps the document run code to its text form, mirroring
 // Python's _map_doc run_mapping.
-func chunkDocRunText(run *string) interface{} {
+func ChunkDocRunText(run *string) interface{} {
 	if run == nil {
 		return nil
 	}
@@ -951,6 +954,8 @@ func chunkDocRunText(run *string) interface{} {
 		return "DONE"
 	case "4":
 		return "FAIL"
+	case "5":
+		return "SCHEDULE"
 	}
 	return *run
 }

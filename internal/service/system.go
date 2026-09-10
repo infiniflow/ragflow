@@ -478,8 +478,10 @@ func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
 func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0)
 
+	globalConfig := server.GetConfig()
+
 	// DOC_ENGINE
-	docEngine := common.GetEnv(common.EnvDocEngine)
+	docEngine := globalConfig.GetEnvDocumentEngineType()
 	if docEngine == "" {
 		docEngine = "elasticsearch"
 	}

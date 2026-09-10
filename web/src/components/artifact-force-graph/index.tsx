@@ -1,6 +1,23 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 import {
   getNodeColor as defaultGetNodeColor,
@@ -33,7 +50,10 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   getNodeColor = defaultGetNodeColor,
   getNodeRadius = defaultGetNodeRadius,
   highlightNodeId,
+  totalEntities,
+  returnedEntities,
 }: ArtifactForceGraphProps<TNodeValue>) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
     undefined,
@@ -107,7 +127,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   return (
     <div
       ref={containerRef}
-      className={cn('flex-1 min-h-0 h-full', !show && 'hidden')}
+      className={cn('relative flex-1 min-h-0 h-full', !show && 'hidden')}
     >
       {hasDimensions && (
         <ForceGraph2D
@@ -130,6 +150,14 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           linkWidth={getLinkWidth}
           linkLabel={getLinkLabel}
         />
+      )}
+      {totalEntities !== undefined && returnedEntities !== undefined && (
+        <div className="absolute top-2 right-2 z-10 rounded-md border border-border-button bg-bg-card px-2 py-1 text-xs text-text-secondary">
+          {t('knowledgeCompilation.graphEntityCount', {
+            returned: returnedEntities,
+            total: totalEntities,
+          })}
+        </div>
       )}
     </div>
   );

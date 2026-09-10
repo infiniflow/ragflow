@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"strconv"
@@ -57,6 +58,50 @@ func IsDuplicateKeyErr(err error) bool {
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
+}
+
+// EmbeddingBaseName resolves a knowledge base's embedding model reference to
+// the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
+// can be selected and searched together. tenant_embd_id — or embd_id itself
+// when it stores a raw tenant_model id — is resolved through tenant_model;
+// legacy composite "model@instance@provider" values are reduced with
+// common.BaseModelName. An id that no longer resolves falls back to the
+// composite base name when embd_id holds one, otherwise to the id itself so
+// only exact matches group together.
+func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+	raw := strings.TrimSpace(kb.EmbdID)
+	id := ""
+	if kb.TenantEmbdID != nil {
+		id = strings.TrimSpace(*kb.TenantEmbdID)
+	}
+	if id == "" && raw != "" && !strings.Contains(raw, "@") {
+		id = raw
+	}
+	if id == "" {
+		return common.BaseModelName(raw)
+	}
+	if cache != nil {
+		if cached, ok := cache[id]; ok {
+			return cached
+		}
+	}
+	base := ""
+	if db != nil {
+		if model, err := NewTenantModelDAO().GetByID(ctx, db, id); err == nil && model != nil {
+			base = strings.TrimSpace(model.ModelName)
+		}
+	}
+	if base == "" {
+		if raw != "" && raw != id {
+			base = common.BaseModelName(raw)
+		} else {
+			base = id
+		}
+	}
+	if cache != nil {
+		cache[id] = base
+	}
+	return base
 }
 
 // Create creates a new knowledge base record
@@ -292,8 +337,8 @@ func (dao *KnowledgebaseDAO) GetDetail(ctx context.Context, db *gorm.DB, kbID st
 // This matches the Python accessible method:
 // 1. KB must exist and be VALID
 // 2. If user is the owner tenant, return true
-// 3. If permission is "me", only owner tenant can access
-// 4. If permission is "team", user must be a member of the tenant
+// 3. Non-owners require the explicit "team" permission
+// 4. Team members must have a valid user_tenant relationship
 func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datasetID, userID string) bool {
 	var kb entity.Knowledgebase
 	err := db.WithContext(ctx).Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).First(&kb).Error
@@ -306,14 +351,14 @@ func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datase
 		return true
 	}
 
-	// If permission is "me", only the owner can access
-	if kb.Permission == string(entity.TenantPermissionMe) {
+	// Fail closed for unknown, missing, or private permissions.
+	if kb.Permission != string(entity.TenantPermissionTeam) {
 		return false
 	}
 
 	var count int64
 	err = db.WithContext(ctx).Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 
 	if err != nil {

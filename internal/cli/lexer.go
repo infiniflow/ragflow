@@ -411,6 +411,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenAsync, Value: ident}
 	case "SYNC":
 		return Token{Type: TokenSync, Value: ident}
+	case "SYNC_LOGS":
+		return Token{Type: TokenSyncLogs, Value: ident}
 	case "BENCHMARK":
 		return Token{Type: TokenBenchmark, Value: ident}
 	case "PING":

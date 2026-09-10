@@ -47,9 +47,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserID := ""
+	parserID := string(entity.ParserTypeGeneral)
 	permission := "me"
 	embeddingModel := ""
+	var language *string
 	pipelineID := req.PipelineID
 
 	if req.Permission != nil {
@@ -59,10 +60,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if req.ParserID != nil {
-		parserID = strings.TrimSpace(*req.ParserID)
-		if err := validateParserID(parserID); err != nil {
+		canonicalID, err := canonicalDatasetParserID(strings.TrimSpace(*req.ParserID))
+		if err != nil {
 			return nil, common.CodeDataError, err
 		}
+		parserID = canonicalID
 		pipelineID = nil
 	}
 	if req.PipelineID != nil {
@@ -71,12 +73,22 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = normalizedPipelineID
+		if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+			parserID = ""
+		}
 	}
 	if req.EmbeddingModel != nil {
 		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)
 		if err = validateDatasetEmbeddingModel(embeddingModel); err != nil {
 			return nil, common.CodeDataError, err
 		}
+	}
+	if req.Language != nil {
+		normalized, err := normalizeDatasetLanguage(*req.Language)
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		language = &normalized
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
@@ -135,6 +147,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		PipelineID:   pipelineID,
 		ParserConfig: entity.JSONMap(parserConfigMap),
 		Permission:   permission,
+		Language:     language,
 		EmbdID:       embdID,
 		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
@@ -261,7 +274,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	successCount := 0
 	errorsList := make([]string, 0)
 	for _, kb := range kbs {
-		if err := d.deleteDataset(tenantID, kb); err != nil {
+		if err := d.deleteDataset(ctx, tenantID, kb); err != nil {
 			errorsList = append(errorsList, err.Error())
 			common.Warn("deleteDataset failed", zap.String("kb_id", kb.ID), zap.Error(err))
 			continue
@@ -275,7 +288,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
+func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
 	// Collect document IDs first so engine cleanup can run before the
 	// transaction (engine ops are not transactional).
 	var documents []entity.Document
@@ -284,7 +297,7 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	}
 	docIDs := extractDocIDs(documents)
 	if len(docIDs) > 0 {
-		d.deleteDatasetEngineData(kb, docIDs)
+		d.deleteDatasetEngineData(ctx, kb, docIDs)
 	}
 
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
@@ -552,11 +565,10 @@ func extractDocIDs(docs []entity.Document) []string {
 // deleteDatasetEngineData cleans up engine-level chunks and metadata for all
 // documents in a dataset being deleted. Called before the DB transaction
 // because engine operations are not transactional.
-func (d *DatasetService) deleteDatasetEngineData(kb *entity.Knowledgebase, docIDs []string) {
+func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity.Knowledgebase, docIDs []string) {
 	if d.docEngine == nil || len(docIDs) == 0 {
 		return
 	}
-	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {

@@ -32,12 +32,18 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/dao"
 
 	"go.uber.org/zap"
 )
+
+// Fields defined by the chat-completions message schema. Stored messages also
+// carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
+// which strict providers reject.
+var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
 
 // ChatPipelineService is the shared RAG chat pipeline engine used by both
 // the OpenAI-compatible endpoint (/api/v1/openai/<chat_id>/chat/completions)
@@ -190,7 +196,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, userID, chat, messages, stream)
+		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -316,15 +322,21 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Parse file attachments from the last message.
 		// Split text-file URLs (joined with "\n\n") and image URLs.
-		// Chat model: images → imageAttachments (multimodal conversion).
-		// Image2text model: images → imageFiles (raw URLs).
+		// Only vision-capable (image2text-typed) models receive image
+		// content blocks; text-only chat providers reject them (e.g.
+		// Zhipu GLM error 1210: messages.content.type only allows
+		// 'text'), so their images are dropped here — mirroring
+		// Python's dialog_model_vision_capable gate.
 		var textAttachmentsList []string
-		var imageAttachments []string
 		var imageFiles []string
+		// Whether the message carried image attachments before the
+		// vision gate (read by the empty-response fallback below).
+		var hasImageAttachments bool
 		// Joined text attachments (appended to system prompt).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
-		// from storage. When plain strings, falls back to string splitting.
+		// from storage. When plain strings, falls back to string splitting;
+		// raw only changes that split for pre-separated image payloads.
 		if files, hasFiles := lastMsg["files"]; hasFiles {
 			modelType := "chat"
 			if llmModelConfig != nil {
@@ -332,17 +344,16 @@ func (s *ChatPipelineService) AsyncChat(
 					modelType = mt
 				}
 			}
-			if modelType == "chat" {
-				textAttachmentsList, imageAttachments = splitFileAttachments(ctx, userID, files, false)
-			} else {
-				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
-			}
+			var images []string
+			textAttachmentsList, images = splitFileAttachments(ctx, userID, files, modelType == "image2text")
+			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
+			// Log counts only: attachment payloads are base64 images or
+			// full document contents.
 			common.Debug("Resolved attachments",
-				zap.Strings("text_attachments_list", textAttachmentsList),
-				zap.Strings("image_attachments", imageAttachments),
-				zap.Strings("image_files", imageFiles),
-				zap.String("attachments", attachments))
+				zap.Int("text_attachments", len(textAttachmentsList)),
+				zap.Int("image_files", len(imageFiles)),
+				zap.Int("attachment_bytes", len(attachments)))
 		}
 
 		// === Phase 6: SQL Retrieval ===
@@ -403,7 +414,7 @@ func (s *ChatPipelineService) AsyncChat(
 						}
 					}
 					kbinfos := map[string]interface{}{"chunks": chunks}
-					s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
 				out <- AsyncChatResult{
@@ -555,7 +566,7 @@ func (s *ChatPipelineService) AsyncChat(
 					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
-					if filtered, ok := ApplyMetaDataFilter(
+					if filtered, _ := ApplyMetaDataFilter(
 						ctx,
 						*chat.MetaDataFilter,
 						flattedMeta,
@@ -563,7 +574,7 @@ func (s *ChatPipelineService) AsyncChat(
 						chatModel,
 						docIDs,
 						kbIDs,
-					); ok {
+					); filtered != nil {
 						common.Debug("meta_data_filter applied",
 							zap.Int("filtered_count", len(filtered)),
 							zap.Int("pre_filter_count", len(docIDs)))
@@ -591,11 +602,14 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		promptReasoning, _ := chat.PromptConfig["reasoning"].(bool)
-		kwargReasoning, _ := kwargs["reasoning"].(bool)
-		useReasoning := promptReasoning || kwargReasoning
+		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
+		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
+		// agentic). It comes from the request kwargs first, then prompt_config.
+		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
+		useReasoning := reasoningLevel > 0
 		common.Info("Phase 9: Retrieval",
 			zap.Bool("has_knowledge_param", hasKnowledgeParam),
+			zap.Int("reasoning_level", reasoningLevel),
 			zap.Bool("reasoning", useReasoning))
 
 		timer.Enter(common.PhaseRetrieval)
@@ -606,6 +620,10 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		rerankCandidatesCount := int(chat.RerankCandidatesCount)
+		if rerankCandidatesCount <= 0 {
+			rerankCandidatesCount = 64
+		}
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
@@ -618,77 +636,137 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// DeepResearcher — replaces vector retrieval.
-				// Yields <retrieving> / </retrieving> markers + intermediate messages.
-				docEngine := engine.Get()
-				if docEngine != nil {
-					retSvc := nlp.NewRetrievalService(docEngine, dao.NewDocumentDAO())
-					tenantIDs := kbTenantIDStrings(kbs)
-					kbIDs := kbIDStrings(kbs)
-
-					// KB retrieval callback for the deep researcher
-					kbRetrieve := func(ctx context.Context, q string) (*nlp.RetrievalResult, error) {
-						return retSvc.Retrieval(ctx, &nlp.RetrievalRequest{
-							Question:       q,
-							TenantIDs:      tenantIDs,
-							KbIDs:          kbIDs,
-							DocIDs:         docIDs,
-							Page:           1,
-							PageSize:       int(chat.TopN),
-							EmbeddingModel: embModel,
+				// Reasoning chat (level 1..4): drive the agentic-RAG harness at
+				// the corresponding mode, mirroring Python's dialog_service →
+				// RAGTools → harness/*.
+				//
+				// The harness 'rag' tool composes the final cited answer itself
+				// (terminal tool, mirroring Python). When it returns a non-empty
+				// Answer we emit that answer directly (decorated per Python's
+				// decorate_answer: references resolved, prompt empty) and stop —
+				// there is no second-generation pass in Phase 10/11. Otherwise
+				// we keep its evidence as kbinfos and fall through.
+				thinkingMode := harnessModeForLevel(reasoningLevel)
+				question := strings.Join(questions, " ")
+				// Stream the answer as the harness composes it (Python
+				// tools.answer_sink). The final event below still carries the
+				// complete answer plus references, matching how the non-agentic
+				// path streams deltas and then re-sends the full answer
+				// (dialog_service.py:807).
+				//
+				// isThink marks pieces of the harness's hidden reasoning block
+				// (the final-answer model's native reasoning). Frame them like
+				// the tool path above (ChatStreamlyWithTools): StartToThink →
+				// Reasoning → EndToThink, so every SSE consumer (chat_session,
+				// bot_completion, openai_chat) sees the standard think framing.
+				// Reasoning text is deliberately kept on the Reasoning field
+				// (not Answer) so OpenAI-compat maps it to reasoning_content.
+				harnessThinking := false
+				// answerStreamed records that an answer delta already reached the
+				// client, which makes any LATER think delta unrenderable: the UI
+				// would show a stray "Thought" block after the finished answer.
+				//
+				// That is what the loop narration around the single harness call
+				// would otherwise do: "…produced the final answer, done." is emitted
+				// after retrieveViaHarness returns, but the answer itself streams
+				// DURING it. Python logs that line immediately before yielding the
+				// terminal tool's answer (chat_model.py:799-802), so its "done" line
+				// still belongs to the thinking phase. Same for late engine-progress
+				// lines (concurrent research slots); a thought block after the answer
+				// is never useful.
+				answerStreamed := false
+				// Engine progress (B) is pushed from concurrent research-slot
+				// goroutines while the final compose runs on the main goroutine, so
+				// serialize the think-framing state machine and the out<-send.
+				var sinkMu sync.Mutex
+				sink := func(delta string, isThink bool) {
+					sinkMu.Lock()
+					defer sinkMu.Unlock()
+					send := func(ev AsyncChatResult) {
+						select {
+						case out <- ev:
+						case <-ctx.Done():
+						}
+					}
+					if isThink {
+						if answerStreamed {
+							// Never reopen a thought block after the answer: drop the
+							// late narration/progress line instead.
+							return
+						}
+						if !harnessThinking {
+							harnessThinking = true
+							send(AsyncChatResult{
+								Reference:    map[string]interface{}{},
+								CreatedAt:    float64(time.Now().Unix()),
+								Final:        false,
+								StartToThink: true,
+							})
+						}
+						if delta != "" {
+							send(AsyncChatResult{
+								Reasoning: delta,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							})
+						}
+						return
+					}
+					if harnessThinking {
+						harnessThinking = false
+						send(AsyncChatResult{
+							Reference:  map[string]interface{}{},
+							CreatedAt:  float64(time.Now().Unix()),
+							Final:      false,
+							EndToThink: true,
 						})
 					}
-
-					dr := NewDeepResearcher(
-						chatModel,
-						map[string]interface{}(chat.PromptConfig),
-						kbRetrieve,
-						useWebSearch,
-						docEngine,
-						kbIDs,
-						tenantIDs,
-						embModel,
-					)
-					question := strings.Join(questions, " ")
-
-					drErr := dr.Research(ctx, kbinfos, question, question, func(msg string) {
-						switch {
-						case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "<retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
-							out <- AsyncChatResult{
-								Answer:      "</retrieving>",
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						default:
-							out <- AsyncChatResult{
-								Answer:      msg,
-								Reference:   map[string]interface{}{},
-								AudioBinary: nil,
-								Final:       false,
-							}
-						}
-					})
-					if drErr != nil {
-						common.Warn("DeepResearcher failed", zap.Error(drErr))
-					} else {
-						// kbinfos now contains real chunks with proper
-						// chunk_ids from the recursive tree search.
-						common.Debug("DeepResearcher completed",
-							zap.Int("chunks", len(kbinfos["chunks"].([]map[string]interface{}))))
+					if delta != "" {
+						answerStreamed = true
+						send(AsyncChatResult{
+							Answer:    delta,
+							Reference: map[string]interface{}{},
+							CreatedAt: float64(time.Now().Unix()),
+							Final:     false,
+						})
+					}
+				}
+				// The harness streams think-then-answer inside ONE compose call;
+				// if it never reached a non-think delta (reasoning-only output)
+				// close the block so no consumer sees an unpaired <think>.
+				defer func() {
+					if harnessThinking {
+						sink("", false)
+					}
+				}()
+				// Python dialog_service.py:2077 — the web provider is handed to
+				// RAGTools only when the internet flag enables web search;
+				// otherwise web_search stays off the agentic tool surface.
+				var webSearch func(context.Context, []string) ([]string, error)
+				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
+					webSearch = s.harnessWebSearchFunc(chat.PromptConfig)
+				}
+				hk, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink)
+				if hErr != nil {
+					common.Warn("harness retrieval failed", zap.Error(hErr))
+				} else {
+					kbinfos = hk
+					if harnessAnswer != "" {
+						common.Info("harness produced final cited answer; short-circuiting",
+							zap.Int("answer_chars", len(harnessAnswer)))
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos)
+						final.Final = true
+						out <- final
+						return
 					}
 				}
 			} else {
+				// Non-reasoning chat (level 0): regular RAG mirroring Python's
+				// async_chat — native docStore retrieval, then the TOC / child
+				// chunk / web search / KG enhancements below.
 				searchQuestion := strings.Join(questions, " ")
 				if embModel != nil {
-					// Retrieval
 					rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
 					{
 						tenantIDs := make([]string, 0)
@@ -714,7 +792,8 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
-							Top:                    &top,
+							RerankCandidatesCount:  &rerankCandidatesCount,
+							KNNTopK:                &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
 							RankFeature:            &rankFeature,
@@ -748,22 +827,22 @@ func (s *ChatPipelineService) AsyncChat(
 						common.Warn("Retrieval failed", zap.Error(err))
 						// Continue with empty kbinfos.
 					}
+				}
 
-					// TOC enhancement
-					if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-						enhancer := NewTOCEnhancer(
-							engine.Get(),
-							chatModel,
-							kbTenantIDStrings(kbs),
-							kbIDStrings(kbs),
-							searchQuestion,
-							int(chat.TopN),
-						)
-						if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-							common.Warn("TOC enhance failed", zap.Error(err))
-						} else if added > 0 {
-							common.Debug("TOC enhance added chunks", zap.Int("added", added))
-						}
+				// TOC enhancement
+				if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
+					enhancer := NewTOCEnhancer(
+						engine.Get(),
+						chatModel,
+						kbTenantIDStrings(kbs),
+						kbIDStrings(kbs),
+						searchQuestion,
+						int(chat.TopN),
+					)
+					if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
+						common.Warn("TOC enhance failed", zap.Error(err))
+					} else if added > 0 {
+						common.Debug("TOC enhance added chunks", zap.Int("added", added))
 					}
 				}
 
@@ -826,7 +905,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Enrich chunks with document metadata AFTER all retrieval adds.
 		// Request values (kwargs) take precedence over config values.
 		if includeRefMeta, metadataFields := s.resolveReferenceMetadata(promptConfig, kwargs); includeRefMeta {
-			s.enrichChunksWithMetadata(kbinfos, chat.TenantID, metadataFields)
+			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
 
@@ -848,9 +927,11 @@ func (s *ChatPipelineService) AsyncChat(
 		//
 		// EXCEPTION: when the user attached files to their message, the
 		// attachment text provides context that should be sent to the LLM
-		// even if KB retrieval returned nothing. In that case we skip the
-		// early return and fall through to the normal LLM call where
-		// attachments are appended to the system prompt.
+		// even if KB retrieval returned nothing — and image attachments
+		// must reach a vision model instead of being swallowed by the
+		// canned response. In that case we skip the early return and fall
+		// through to the normal LLM call where attachments are appended to
+		// the system prompt.
 		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
@@ -860,7 +941,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      final event (dialog_service.py:807); consumers that only look at
 		//      the final event (e.g. the OpenAI-compatible endpoint) would
 		//      otherwise see an empty reply.
-		if len(knowledges) == 0 && attachments == "" {
+		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
@@ -939,14 +1020,13 @@ func (s *ChatPipelineService) AsyncChat(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			llmMessages = append(llmMessages, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			llmMessages = append(llmMessages, llmMessage)
 		}
 
 		// Fit messages within token budget.
@@ -956,16 +1036,15 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Int("used_token_count", usedTokenCount),
 			zap.Int("msg_count", len(llmMessages)))
 
-		// Multimodal conversion
-		allImages := make([]string, 0, len(imageAttachments)+len(imageFiles))
-		allImages = append(allImages, imageAttachments...)
-		allImages = append(allImages, imageFiles...)
-		if len(llmMessages) >= 2 && len(allImages) > 0 {
+		// Multimodal conversion. imageFiles only survives the vision gate
+		// above, so only vision-capable (image2text) models reach this
+		// with images.
+		if len(llmMessages) >= 2 && len(imageFiles) > 0 {
 			lastIdx := len(llmMessages) - 1
 			if role, _ := llmMessages[lastIdx]["role"].(string); role == "user" {
 				if converted, err := common.ConvertLastUserMsgToMultimodal(
 					llmMessages[lastIdx],
-					allImages,
+					imageFiles,
 					factoryName,
 				); err == nil {
 					llmMessages[lastIdx] = converted
@@ -988,17 +1067,15 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		// Adjust max_tokens so the LLM has room within the total budget.
-		if chat.LLMSetting != nil {
-			if mt, ok := chat.LLMSetting["max_tokens"].(float64); ok {
-				original := int(mt)
-				adjusted := original
-				if adjusted > modelMaxTokens-usedTokenCount {
-					adjusted = modelMaxTokens - usedTokenCount
-				}
-				chat.LLMSetting["max_tokens"] = float64(adjusted)
-				common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
+		chatCfg := BuildChatConfig(chat, kwargs)
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+			out <- AsyncChatResult{
+				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+				Final:  true,
 			}
+			return
+		} else if ok {
+			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
 		}
 
 		// === Phase 11: Drive LLM + Decorate Answer ===
@@ -1060,8 +1137,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-
-			chatCfg := BuildChatConfig(chat, nil)
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1257,8 +1332,6 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously.
 			var answer string
 			var err error
-			chatCfg := BuildChatConfig(chat, nil)
-
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
@@ -1302,6 +1375,32 @@ func (s *ChatPipelineService) AsyncChat(
 	return out, nil
 }
 
+// deepResearchProgressCallback builds the progress callback handed to
+// DeepResearcher.Research. Progress deltas are non-essential: once the
+// consumer is gone (ctx canceled) they are dropped instead of blocking, so
+// parallel sub-research goroutines can drain before Research returns and
+// the pipeline goroutine closes the channel.
+func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, out chan<- AsyncChatResult) func(string) {
+	return func(msg string) {
+		answer := msg
+		switch {
+		case strings.HasPrefix(msg, "<START_DEEP_RESEARCH>"):
+			answer = "<retrieving>"
+		case strings.HasPrefix(msg, "<END_DEEP_RESEARCH>"):
+			answer = "</retrieving>"
+		}
+		select {
+		case out <- AsyncChatResult{
+			Answer:      answer,
+			Reference:   map[string]interface{}{},
+			AudioBinary: nil,
+			Final:       false,
+		}:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // AsyncChatSolo is the LLM-only chat path (no KBs, no web search).
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
@@ -1310,6 +1409,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
+	config map[string]interface{},
 ) (<-chan AsyncChatResult, error) {
 
 	out := make(chan AsyncChatResult, 16)
@@ -1338,7 +1438,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
 
-		// 2. Process file attachments (chat → data URIs, image2text → raw URLs).
+		// 2. Process file attachments. Only vision-capable (image2text)
+		// models receive image content; text-only chat models reject
+		// image blocks at the provider (e.g. Zhipu GLM error 1210:
+		// messages.content.type only allows 'text'), so their image
+		// attachments are dropped here.
 		attachmentsStr := ""
 		var imageFiles []string
 		modelType := "chat"
@@ -1350,12 +1454,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(ctx, userID, files)
-				if isImage2Text {
-					imageFiles = s.extractRawImageURLs(files)
-				} else {
-					imageFiles = s.extractImageFiles(ctx, userID, files)
-				}
+				var images []string
+				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
+				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				common.Info("AsyncChatSolo: file attachments resolved",
+					zap.Bool("vision_model", isImage2Text),
+					zap.Int("image_files", len(imageFiles)),
+					zap.Int("text_attachment_bytes", len(attachmentsStr)))
 			}
 		}
 
@@ -1366,14 +1471,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			msg = append(msg, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			msg = append(msg, llmMessage)
 		}
 		// Append text attachments to the last user message (no separator).
 		if attachmentsStr != "" && len(msg) > 0 {
@@ -1431,17 +1535,15 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					content = converted["content"]
 				}
 			}
-			chatMessages = append(chatMessages, modelModule.Message{
-				Role:    role,
-				Content: content,
-			})
+			m["content"] = content
+			chatMessages = append(chatMessages, modelMessageFromMap(m))
 		}
 
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
 		if stream {
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
 			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
@@ -1568,7 +1670,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		} else {
 			// Non-streaming: one-shot call.
-			chatCfg := BuildChatConfig(chat, nil)
+			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 			resp, err := chatModel.ModelDriver.ChatWithMessages(
 				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
@@ -1608,90 +1710,71 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// extractImageFiles extracts data-URI image attachments from the files list.
-// Mirrors Python split_file_attachments raw mode.
-func (s *ChatPipelineService) extractImageFiles(ctx context.Context, userID string, files interface{}) []string {
+// splitChatAttachments resolves the last message's file attachments into
+// text content (entries joined by "\n\n") and image data URIs, reading
+// each blob from storage at most once.
+//
+//   - File-dict mode (the chat UI's upload_info flow): FileService.
+//     GetFileContents fetches the blobs; non-visual files are parsed to
+//     text, visual files come back as base64 data URIs.
+//   - String mode (pre-resolved content): data:-prefixed entries become
+//     images; the remaining non-empty entries become text.
+//
+// Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
+// returned data URIs directly.
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		// Use raw=false to get base64 data URIs for images.
-		_, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
-			common.Warn("GetFileContents failed in extractImageFiles",
+			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
-			return nil
+			return "", nil
 		}
-		return images
+		if len(texts) == 0 {
+			return "", images
+		}
+		return strings.Join(texts, "\n\n"), images
 	}
 
-	// ── String fallback ──
+	// ── String mode ──
+	var texts []string
 	var images []string
 	switch v := files.(type) {
 	case []string:
 		for _, f := range v {
+			if f = strings.TrimSpace(f); f == "" {
+				continue
+			}
 			if strings.HasPrefix(f, "data:") {
 				images = append(images, f)
+			} else {
+				texts = append(texts, f)
 			}
 		}
 	case []interface{}:
 		for _, f := range v {
-			if s, ok := f.(string); ok && strings.HasPrefix(s, "data:") {
-				images = append(images, s)
+			str, ok := f.(string)
+			if !ok {
+				continue
+			}
+			if str = strings.TrimSpace(str); str == "" {
+				continue
+			}
+			if strings.HasPrefix(str, "data:") {
+				images = append(images, str)
+			} else {
+				texts = append(texts, str)
 			}
 		}
 	}
-	return images
-}
-
-// extractRawImageURLs extracts image references as raw URLs/data-URIs from
-// the string-mode files list, WITHOUT fetching blobs and WITHOUT filtering
-// to data: prefixes. Used for image2text models that expect URLs in the
-// multimodal content (matches Python's `image_files` from
-// `split_file_attachments(files, raw=True)` at
-// dialog_service.py:371-392).
-//
-// The downstream ConvertLastUserMsgToMultimodal calls parseDataURIOrB64
-// (multimodal.go:63-92) which correctly handles all three forms:
-//   - data: URI → base64 source
-//   - http:// or https:// URL → URL source
-//   - raw base64 → base64 source (default media type)
-//
-// File-dict mode is a known limitation: returns empty for now. A future
-// FileService.GetFileURLsForChat (mirror of GetFileContents with
-// raw=true) would be needed to fully cover the file-dict + image2text
-// combination. The Python equivalent has the same limitation
-// (split_file_attachments calls FileService.get_files which doesn't
-// fetch blobs in raw mode).
-func (s *ChatPipelineService) extractRawImageURLs(files interface{}) []string {
-	if fileDicts, ok := parseFileDicts(files); ok {
-		_ = fileDicts // see file-dict limitation comment above
-		common.Debug("AsyncChatSolo: file-dict + image2text not yet supported; image refs dropped",
-			zap.Int("file_dict_count", len(fileDicts)))
-		return nil
+	if len(texts) == 0 {
+		return "", images
 	}
-
-	// String-mode: return all entries as-is. The downstream
-	// ConvertLastUserMsgToMultimodal + parseDataURIOrB64 will
-	// dispatch on prefix (data: → base64, http(s): → url, else →
-	// raw base64).
-	var urls []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if f != "" {
-				urls = append(urls, f)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && s != "" {
-				urls = append(urls, s)
-			}
-		}
-	}
-	return urls
+	return strings.Join(texts, "\n\n"), images
 }
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1853,39 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	}
 	normalized := normalizeInternetFlag(internet)
 	return normalized != nil && *normalized
+}
+
+// harnessWebSearchFunc builds the callback the agentic harness' web_search tool
+// invokes (Python RAGTools(web_search=...)). It resolves the provider once and
+// runs one provider query per requested query, flattening each result's chunk
+// text. A per-query failure is logged and skipped — mirroring Python
+// _exec_web_search, where one bad query must not fail the whole tool call.
+// Returns nil when no provider is configured so the tool stays hidden.
+func (s *ChatPipelineService) harnessWebSearchFunc(promptConfig map[string]interface{}) func(context.Context, []string) ([]string, error) {
+	provider := resolveWebSearchProvider(promptConfig)
+	if provider == nil {
+		return nil
+	}
+	return func(ctx context.Context, queries []string) ([]string, error) {
+		out := make([]string, 0, len(queries)*6)
+		for _, q := range queries {
+			if strings.TrimSpace(q) == "" {
+				continue
+			}
+			res, err := s.retrieveWebSearch(ctx, provider, q)
+			if err != nil {
+				common.Warn("harness web search failed for a query", zap.Error(err))
+				continue
+			}
+			chunks, _ := res["chunks"].([]map[string]interface{})
+			for _, c := range chunks {
+				if text := getMapString(c, "content_with_weight", "content"); text != "" {
+					out = append(out, text)
+				}
+			}
+		}
+		return out, nil
+	}
 }
 
 // tavilyRetrieve calls the Tavily API and returns results in the same chunk
@@ -1865,36 +1981,44 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
+// extended so the tenant-default branch also probes vision capability:
 //
 //	if chat.llm_id:
 //	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
 //	    else:                                            → CHAT
-//	else:                                                → tenant default CHAT
+//	else:                                                → tenant default
+//	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
-// The returned `cfg` map's "model_type" field carries the chosen type
-// so downstream code (e.g. the multimodal-conversion guard in AsyncChat
-// at async_chat.go:632) can skip chat-only logic for image2text dialogs.
+// The returned `cfg` map's "model_type" field carries the chosen type.
+// Downstream code gates image attachments on it: only image2text
+// (vision-capable) models receive image content blocks; text-only chat
+// models reject them at the provider (e.g. Zhipu GLM error 1210:
+// messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
-		return s.buildLLMModelConfig(
+		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
 			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
 		)
+		if err != nil {
+			return nil, "", "", "", err
+		}
+		// Probe the default model's enrolled types so a vision-capable
+		// default dispatches as image2text (same rule as the explicit-LLM
+		// branches below).
+		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
+			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
+		}
+		return cfg, modelName, factoryName, baseURL, nil
 	}
 
 	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
 	// when the LLM is registered as such, otherwise CHAT.
+	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
 	modelType := entity.ModelTypeChat
-	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(ctx, chat.TenantID, chat.LLMID); mtErr == nil {
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				modelType = entity.ModelTypeImage2Text
-				modelTypeStr = "image2text"
-				break
-			}
-		}
+	if modelTypeStr == "image2text" {
+		modelType = entity.ModelTypeImage2Text
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
 		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
@@ -1904,6 +2028,26 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	}
 	cfg["model_type"] = modelTypeStr
 	return cfg, modelName, factoryName, baseURL, nil
+}
+
+// resolveChatModelType probes the enrolled model types for llmRef and
+// returns "image2text" when the model is vision-capable (enrolled with an
+// image2text / "vision" type), "chat" otherwise. Probe failures are
+// conservative: they yield "chat", which drops image attachments instead
+// of risking a provider-side rejection.
+func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
+	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
+	if err != nil {
+		return "chat"
+	}
+	for _, mt := range modelTypes {
+		// ModelType is a bitmask: a model enrolled as chat+image2text
+		// reports a combined value, so test membership, not equality.
+		if mt.Has(entity.ModelTypeImage2Text) {
+			return "image2text"
+		}
+	}
+	return "chat"
 }
 
 // buildLLMModelConfig collapses the (driver, modelName, apiConfig,
@@ -1971,7 +2115,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Embedding model.
 	var embModel *modelModule.EmbeddingModel
 	if len(kbs) > 0 {
-		if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+		if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
 		if kbs[0].EmbdID != "" {
@@ -2000,11 +2144,11 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
+		rerankDriver, rerankName, rerankConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
 			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
-			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
+			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig, maxTokens)
 		}
 	}
 
@@ -2064,51 +2208,32 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 	return ""
 }
 
-// processFileAttachments extracts text content from file attachments.
-// Mirrors Python's split_file_attachments (dialog_service.py:371-392)
-// in raw=false mode: returns text attachments joined by "\n\n",
-// filtering out data-URI image attachments.
-//
-// When files are file dicts (Python-compatible format), calls
-// FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID string, files interface{}) string {
-	// ── File-dict mode ──
-	if fileDicts, ok := parseFileDicts(files); ok {
-		// Only used for GetFileContents (read-only); nil DocRemover means
-		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, _, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
-		if err != nil {
-			common.Warn("GetFileContents failed in processFileAttachments",
-				zap.Error(err))
-			return ""
-		}
-		if len(texts) == 0 {
-			return ""
-		}
-		return strings.Join(texts, "\n\n")
+// gateImageAttachments applies the vision-capability policy to split
+// attachments: images survive only for vision-capable (image2text-typed)
+// models — text-only chat providers reject image content blocks (e.g.
+// Zhipu GLM error 1210: messages.content.type only allows 'text'), so
+// their images are dropped with a warning instead of failing the whole
+// request. It returns the surviving images and whether any image was
+// attached before the drop, so callers can still route image-bearing
+// questions past the empty-response fallback. Mirrors Python's
+// dialog_model_vision_capable gate in dialog_service.py.
+func gateImageAttachments(llmID, modelType string, images []string) (kept []string, attached bool) {
+	attached = len(images) > 0
+	if attached && modelType != "image2text" {
+		common.Warn("dropping image attachments for text-only chat model",
+			zap.String("llm_id", llmID),
+			zap.Int("dropped_images", len(images)))
+		return nil, attached
 	}
+	return images, attached
+}
 
-	// ── String fallback ──
-	var texts []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if s := strings.TrimSpace(f); s != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && strings.TrimSpace(s) != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	}
-	if len(texts) == 0 {
-		return ""
-	}
-	return strings.Join(texts, "\n\n")
+// emptyResponseApplies reports whether the configured empty-response
+// fallback should short-circuit the LLM call: only when retrieval found
+// nothing AND the message carries no attachment context (text or images)
+// the model could still answer from.
+func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachments bool) bool {
+	return knowledgeCount == 0 && attachments == "" && !imageAttachments
 }
 
 // splitFileAttachments mirrors Python's `split_file_attachments` at
@@ -2119,8 +2244,8 @@ func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID
 //
 //  1. File-dict mode: When `files` is `[]map[string]interface{}` (each dict
 //     with keys "id", "created_by", "mime_type", "name"), the method calls
-//     FileService.GetFileContents to fetch actual file blobs from
-//     storage, mirroring Python's FileService.get_files().
+//     FileService.GetFileContents to fetch actual file blobs from storage;
+//     images come back as base64 data URIs.
 //
 //  2. String-fallback mode: When `files` is `[]string` or `[]interface{}` of
 //     strings (pre-resolved content), the method does simple string splitting:
@@ -2134,7 +2259,7 @@ func splitFileAttachments(ctx context.Context, userID string, files interface{},
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, raw)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2358,7 +2483,7 @@ func (s *ChatPipelineService) resolveReferenceMetadata(promptConfig map[string]i
 // enrichChunksWithMetadata enriches chunk records in kbinfos with document-level
 // metadata. Mirrors Python's enrich_chunks_with_document_metadata() in
 // api/utils/reference_metadata_utils.py.
-func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interface{}, tenantID string, fields []string) {
+func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbinfos map[string]interface{}, tenantID string, fields []string) {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 	if !ok || len(chunksRaw) == 0 {
 		return
@@ -2370,7 +2495,7 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(kbinfos map[string]interf
 		return
 	}
 
-	s.MetadataSvc.EnrichChunksWithDocMetadata(chunks, tenantID, fields)
+	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks.
@@ -2543,13 +2668,38 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	}
 	for _, m := range messages {
 		role, _ := m["role"].(string)
-		content := m["content"]
-		if role == "" || content == nil {
+		if role == "" {
 			continue
 		}
-		result = append(result, modelModule.Message{Role: role, Content: content})
+		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(llmMessageFields))
+	for _, field := range llmMessageFields {
+		if value, ok := message[field]; ok {
+			normalized[field] = value
+		}
+	}
+	return normalized
+}
+
+func modelMessageFromMap(message map[string]interface{}) modelModule.Message {
+	msg := modelModule.Message{Role: stringFromMap(message, "role"), Content: message["content"], Name: message["name"], FunctionCall: message["function_call"], Refusal: message["refusal"], Audio: message["audio"]}
+	msg.ToolCallID, _ = message["tool_call_id"].(string)
+	switch toolCalls := message["tool_calls"].(type) {
+	case []map[string]interface{}:
+		msg.ToolCalls = toolCalls
+	case []interface{}:
+		for _, toolCall := range toolCalls {
+			if value, ok := toolCall.(map[string]interface{}); ok {
+				msg.ToolCalls = append(msg.ToolCalls, value)
+			}
+		}
+	}
+	return msg
 }
 
 // buildChatDriver creates a ChatModel wrapper from the chat.
@@ -2658,7 +2808,7 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, texts, e.embModel.APIConfig, config, nil)
+	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2895,14 +3045,114 @@ func (s *ChatPipelineService) decorateAnswer(
 		Answer:      think + ans,
 		Reference:   refs,
 		AudioBinary: audioBinary,
-		// Fix 7: Apply the markdown line-break substitution
+		// Fix 7: Apply the Markdown line-break substitution
 		// re.sub(r"\n", "  \n", prompt) at the very end, matching
 		// dialog_service.py:865. This converts single \n to "  \n"
-		// so multi-line prompt text renders as a single markdown
+		// so multi-line prompt text renders as a single Markdown
 		// paragraph instead of being broken into separate lines.
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
+	}
+}
+
+// decorateHarnessAnswer mirrors Python's rag_agent decorate_answer used on the
+// reasoning>=1 path (dialog_service.py:2092-2137). The harness 'rag' tool
+// already composed the final answer WITH its own [ID:N] citations, so — unlike
+// decorateAnswer for the native async_chat path — we never run insert_citations
+// here. We only resolve the existing markers, repair bad formats, filter
+// doc_aggs to the cited docs, and build the reference from the harness citation
+// pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}) AsyncChatResult {
+	think := ""
+	ans := answer
+	if strings.Contains(answer, "</think>") {
+		if parts := strings.Split(answer, "</think>"); len(parts) == 2 {
+			think = parts[0] + "</think>"
+			ans = strings.TrimSpace(parts[1])
+		}
+	}
+
+	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
+
+	// Collect existing [ID:N] markers from the harness answer. Python runs
+	// normalize_arabic_digits then CITATION_MARKER_PATTERN (dialog_service.py:
+	// 2103-2107) and bounds each index by len(chunks).
+	citationIdx := make(map[int]struct{})
+	for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
+		if ci >= 0 && ci < len(chunksRaw) {
+			citationIdx[ci] = struct{}{}
+		}
+	}
+	// repair_bad_citation_formats (dialog_service.py:2109), then re-scan so any
+	// repaired markers are also honoured.
+	ans = RepairBadCitationFormats(ans)
+	for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
+		if ci >= 0 && ci < len(chunksRaw) {
+			citationIdx[ci] = struct{}{}
+		}
+	}
+
+	// Map cited chunk indices to doc_ids (dialog_service.py:2111-2122).
+	citedDocIDs := make(map[string]struct{})
+	for ci := range citationIdx {
+		if ci >= 0 && ci < len(chunksRaw) {
+			if docID, ok := chunksRaw[ci]["doc_id"].(string); ok && docID != "" {
+				citedDocIDs[docID] = struct{}{}
+			}
+		}
+	}
+
+	// recall_docs = cited docs, or all when nothing cited (dialog_service.py:
+	// 2124-2127). Only rewrite doc_aggs when we actually found cited docs.
+	if len(citedDocIDs) > 0 {
+		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+			filtered := make([]interface{}, 0, len(docAggsRaw))
+			for _, da := range docAggsRaw {
+				if dam, ok := da.(map[string]interface{}); ok {
+					if docID, ok := dam["doc_id"].(string); ok {
+						if _, cited := citedDocIDs[docID]; cited {
+							filtered = append(filtered, da)
+						}
+					}
+				}
+			}
+			if len(filtered) > 0 {
+				kbinfos["doc_aggs"] = filtered
+			}
+		}
+	}
+
+	// refs = deepcopy(kbinfos) if doc_ids else [] ; drop each chunk's vector
+	// (dialog_service.py:2129-2132). AsyncChatResult.Reference is a map, so an
+	// empty Python [] maps to a nil map (callers/frontend already tolerate a
+	// missing reference).
+	var refs map[string]interface{}
+	if len(citedDocIDs) > 0 {
+		ref := make(map[string]interface{})
+		for k, v := range kbinfos {
+			ref[k] = v
+		}
+		if cRaw, ok := ref["chunks"].([]map[string]interface{}); ok {
+			for _, cm := range cRaw {
+				delete(cm, "vector")
+			}
+			ref["chunks"] = cRaw
+		}
+		refs = ref
+	}
+
+	// Invalid-key hint (dialog_service.py:2134-2135).
+	if strings.Contains(strings.ToLower(ans), "invalid key") ||
+		strings.Contains(strings.ToLower(ans), "invalid api") {
+		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+	}
+
+	return AsyncChatResult{
+		Answer:    think + ans,
+		Reference: refs,
+		Prompt:    "",
+		CreatedAt: float64(time.Now().Unix()),
 	}
 }
 
@@ -2966,8 +3216,8 @@ RULES:
    - Question mentions "not null" or "excluding null"
    - Add NULL check for count specific column
    - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. json_extract_string() returns JSON-quoted strings ("value"), so WHERE comparisons MUST wrap values in double-quotes inside single-quotes (no spaces between quotes): '"value"' (e.g. WHERE json_extract_string(chunk_data, '$.name') = '"Alice"')
-8. For partial text search, use LIKE with wildcards: '"%value%"' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '"%Alice%"')
+7. json_extract_string() returns plain (unquoted) strings, so WHERE comparisons use plain single-quoted values: 'value' (e.g. WHERE json_extract_string(chunk_data, '$.name') = 'Alice')
+8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
 // infinitySQLUserPromptTemplate has 4 %s placeholders:
@@ -3142,6 +3392,23 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
+//
+// StructuredQuery is the exported narrow entrypoint for the agentic-search
+// structured_query tool: translate a natural-language question to SQL over the
+// given tabular KBs and return the answer + reference chunks. It forwards to the
+// internal useSQL with quote=false (the agent tool returns the answer directly,
+// not a cited natural-language response).
+func (s *ChatPipelineService) StructuredQuery(
+	ctx context.Context,
+	chat *entity.Chat,
+	kbs []*entity.Knowledgebase,
+	question string,
+	chatModel *modelModule.ChatModel,
+	fieldMap map[string]interface{},
+) (ans map[string]interface{}, err error) {
+	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
+}
+
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3425,7 +3692,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase":
+	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
 		bullets := strings.Builder{}
 		for _, n := range names {
@@ -3533,7 +3800,7 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // OpenSearch share the direct-column template. expectedCol is
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -3562,7 +3829,7 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // buildExecutionErrorRepairPrompt returns the engine-specific user
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engineName == "oceanbase"
+	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
 	names := sortedFieldNames(fieldMap)
 	bullets := strings.Builder{}
 	if isJSONEngine {
@@ -4186,14 +4453,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(dialog.LLMSetting["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
@@ -4226,14 +4493,14 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
 		}
-		if v, ok := config["max_tokens"].(float64); ok {
-			i := int(v)
+		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
+			i := v
 			cfg.MaxTokens = &i
 		}
-		if v, ok := config["temperature"].(float64); ok {
+		if v, ok := chatConfigFloat(config["temperature"]); ok {
 			cfg.Temperature = &v
 		}
-		if v, ok := config["top_p"].(float64); ok {
+		if v, ok := chatConfigFloat(config["top_p"]); ok {
 			cfg.TopP = &v
 		}
 		if v, ok := config["do_sample"].(bool); ok {
@@ -4260,6 +4527,64 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
+	if usedTokenCount >= modelMaxTokens {
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+	}
+	if cfg == nil || cfg.MaxTokens == nil {
+		return 0, false, nil
+	}
+	adjusted := *cfg.MaxTokens
+	if adjusted <= 0 {
+		cfg.MaxTokens = nil
+		return 0, false, nil
+	}
+	remainingTokens := modelMaxTokens - usedTokenCount
+	if adjusted > remainingTokens {
+		adjusted = remainingTokens
+	}
+	cfg.MaxTokens = &adjusted
+	return adjusted, true, nil
+}
+
+func chatConfigPositiveInt(value interface{}) (int, bool) {
+	v, ok := chatConfigInt(value)
+	if !ok || v <= 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+func chatConfigInt(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func chatConfigFloat(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {
@@ -4314,4 +4639,237 @@ func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
 		return v
 	}
 	return chunk[k2]
+}
+
+// HarnessRequest carries the minimal inputs the chat pipeline hands to the
+// agentic-RAG harness for evidence collection.
+type HarnessRequest struct {
+	Question   string
+	DatasetIDs []string
+	// DocIDs scopes the agentic search to these document ids (Python
+	// dialog_service.py doc_scope). chat_pipeline folds the chat-level
+	// meta_data_filter into docIDs before calling, so forwarding this alone
+	// restores both doc_ids and meta_data_filter scoping without double-filtering.
+	DocIDs       []string
+	ThinkingMode string
+	TenantID     string
+	// ModelID is the tenant-scoped chat model id (dialog llm_id). The harness
+	// driver uses it as the default model name for agentic LLM turns.
+	ModelID string
+	// SessionID scopes cross-turn state such as the near-duplicate answer cache
+	// (Python RAGTools._rag_cache lives on an instance spanning the dialog).
+	SessionID string
+	// AnswerSink receives the answer as the model produces it (Python
+	// tools.answer_sink), so the caller can stream instead of waiting for the
+	// whole answer. Nil disables streaming; the full answer is still returned.
+	AnswerSink func(delta string, isThink bool)
+	// Images are vision-gated base64 data URIs (Python image_attachments) that
+	// survive gateImageAttachments. They ride the last user message into the
+	// outer react loop so a vision model can see them. chat_pipeline drops them
+	// for text-only models, so only surviving URIs reach here.
+	Images []string
+	// TextAttachments is the joined text-file content (Python
+	// text_attachments_content); it is appended to the last user message so the
+	// model reads attached documents even in the reasoning path.
+	TextAttachments string
+	// WebSearch runs an open-web search for the harness' web_search tool
+	// (Python RAGTools(web_search=create_web_search_provider(...))). Nil hides
+	// the tool from the agentic surface, mirroring Python's provider gate
+	// (action_session.py:463 discards web_search when tools.web_search is None).
+	WebSearch func(ctx context.Context, queries []string) ([]string, error)
+}
+
+// HarnessResult is the evidence the harness returns, normalized to the map
+// shape chat_pipeline's downstream phases already consume.
+type HarnessResult struct {
+	Chunks     []map[string]any
+	DocAggs    []map[string]any
+	Memory     []map[string]any
+	PreSummary string
+	// Answer is the harness's own composed final cited answer (RunResponse.Answer),
+	// populated when a model was available. When non-empty, the chat pipeline uses
+	// it directly as the reply instead of re-generating via a second model pass —
+	// mirroring Python's terminal `rag` tool.
+	Answer string
+}
+
+// harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
+// the agentic-RAG entry point advanced_rag.Rag (:1022). The advanced_rag package
+// imports internal/service (e.g. harness/tool_exploration.go), so the service
+// layer cannot import it back without an import cycle; the function is injected
+// instead. When nil, retrieveViaHarness reports an error and the pipeline
+// continues with empty kbinfos.
+var harnessRetriever func(ctx context.Context, req HarnessRequest) (HarnessResult, error)
+
+// SetHarnessRetriever injects the agentic-RAG harness driver. Call once at
+// server bootstrap.
+func SetHarnessRetriever(fn func(ctx context.Context, req HarnessRequest) (HarnessResult, error)) {
+	harnessRetriever = fn
+}
+
+// retrieveViaHarness collects evidence chunks for the chat question by driving
+// the agentic-RAG harness, mirroring Python's dialog_service → RAGTools →
+// harness/* path. It returns the same map shape the downstream phases
+// (TOC/child-chunk/web/KG/enrich/kbPrompt) already consume, so the rest of the
+// chat pipeline is unaffected by where the chunks came from.
+//
+// thinkingMode is "naive" (reasoning disabled) or one of the agentic levels
+// ("low"/"medium"/"high"/"ultra", reasoning enabled).
+// toolLoopLine forwards one Python "[Tool loop]" line into the chat think
+// block. Mirrors rag/llm/chat_model.py:689 ("Deciding what to do next
+// (step N); available tools: ..."), :782 ("Step N: running X...") and
+// :799/:804 ("The X tool produced the final answer, done." / "produced an
+// observation for step N."), which Python forwarded via the
+// "rag.llm.chat_model" namespace in _SCOPED_PREFIXES.
+//
+// ARCHITECTURAL NOTE. Python's outer model calls rag() as a @tool inside a
+// for-loop, and those lines narrate that loop. Go's chat pipeline invokes the
+// harness DIRECTLY (there is no outer tool-calling loop for it; the only
+// ReAct loop in Go is the canvas Agent component, which drives different
+// tools). So the faithful Go equivalent is to bracket the single harness
+// invocation here rather than to instrument a loop that does not exist.
+//
+// Python emitted "<br>" + msg for its HTML think block (think_log.py:69); the
+// chat UI renders the block as HTML/markdown, where a bare "\n" collapses into
+// a space and the stage lines merge. Keep the same separator here. The literal
+// is spelled out instead of reusing advanced_rag.ThinkLineBreak because
+// advanced_rag/harness imports this package (import cycle).
+const thinkLineBreak = "<br>"
+
+func toolLoopLine(sink func(delta string, isThink bool), line string) {
+	if sink == nil {
+		return
+	}
+	sink(line+thinkLineBreak, true)
+}
+
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool)) (map[string]interface{}, string, error) {
+	if harnessRetriever == nil {
+		return nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
+	}
+	kbIDs := kbIDStrings(kbs)
+	// Only non-naive modes run the agentic loop these lines describe, and only
+	// reasoning chats stream a think block at all.
+	narrate := thinkingMode != "naive"
+	if narrate {
+		toolLoopLine(answerSink, "[Tool loop] Deciding what to do next (step 1); available tools: rag")
+		toolLoopLine(answerSink, "[Tool loop] Step 1: running rag...")
+	}
+	res, err := harnessRetriever(ctx, HarnessRequest{
+		Question:        question,
+		DatasetIDs:      kbIDs,
+		DocIDs:          docIDs,
+		ThinkingMode:    thinkingMode,
+		TenantID:        tenantID,
+		ModelID:         modelID,
+		SessionID:       sessionID,
+		AnswerSink:      answerSink,
+		Images:          images,
+		TextAttachments: textAttachments,
+		WebSearch:       webSearch,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if narrate {
+		// Python distinguishes the terminal tool from an observation: an answer
+		// ends the loop, otherwise the result feeds the next round.
+		if res.Answer != "" {
+			toolLoopLine(answerSink, "[Tool loop] The rag tool produced the final answer, done.")
+		} else {
+			toolLoopLine(answerSink, "[Tool loop] The rag tool produced an observation for step 1.")
+		}
+	}
+
+	kbinfos := map[string]interface{}{
+		"total":    len(res.Chunks),
+		"chunks":   res.Chunks,
+		"doc_aggs": toAnySlice(res.DocAggs),
+	}
+	if res.Memory != nil {
+		kbinfos["memory"] = res.Memory
+	}
+	if res.PreSummary != "" {
+		kbinfos["pre_summary"] = res.PreSummary
+	}
+	return kbinfos, res.Answer, nil
+}
+
+// toAnySlice widens a []map[string]any to []interface{} so the doc_aggs field
+// keeps the element type the downstream phases expect from the native pipeline.
+func toAnySlice(in []map[string]any) []interface{} {
+	out := make([]interface{}, 0, len(in))
+	for _, m := range in {
+		out = append(out, m)
+	}
+	return out
+}
+
+// asInt64 coerces a JSON-decoded value (float64/json.Number/int/string/bool) to
+// an int64, returning ok=false when the value is absent or not numeric.
+func asInt64(v interface{}) (int64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return int64(t), true
+	case int:
+		return int64(t), true
+	case int64:
+		return t, true
+	case json.Number:
+		if n, err := t.Int64(); err == nil {
+			return n, true
+		}
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(t, "%d", &n); err == nil {
+			return n, true
+		}
+	case bool:
+		if t {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+// resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
+// level is taken from the request kwargs first, falling back to the chat
+// prompt_config, and is an integer in 0..4 (0 = off, 1..4 = low/medium/high/
+// ultra). Frontend sends Number(getThinkingLevel()), so the raw value is
+// numeric, not a bool.
+func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
+	if kwargs != nil {
+		if v, ok := kwargs["reasoning"]; ok {
+			if n, ok2 := asInt64(v); ok2 {
+				return int(n)
+			}
+		}
+	}
+	if promptConfig != nil {
+		if v, ok := promptConfig["reasoning"]; ok {
+			if n, ok2 := asInt64(v); ok2 {
+				return int(n)
+			}
+		}
+	}
+	return 0
+}
+
+// harnessModeForLevel maps a Python-style reasoning level to the harness
+// thinking mode. Python uses THINKING_MODES = [low, medium, high, ultra] and
+// falls back to "medium" when n is out of range.
+func harnessModeForLevel(level int) string {
+	switch {
+	case level >= 4:
+		return "ultra"
+	case level == 3:
+		return "high"
+	case level == 2:
+		return "medium"
+	case level == 1:
+		return "low"
+	default:
+		return "medium"
+	}
 }

@@ -72,11 +72,12 @@ func realEngineRow(id, kbID, docID, name, slug string, source []string) map[stri
 }
 
 func TestEngineService_QueryPages_NormalizesEngineRowShape(t *testing.T) {
+	ctx := t.Context()
 	eng := &fakeDocEngine{searchRows: []map[string]interface{}{
 		realEngineRow("wiki/alpha", "kb1", "d1", "Alpha", "entity/alpha", []string{"c1", "c2"}),
 	}}
 	svc := NewEngineService(eng)
-	res, err := svc.QueryPages(context.Background(), "t1", []string{"kb1"}, "alpha", "", 5)
+	res, err := svc.QueryPages(ctx, "t1", []string{"kb1"}, "alpha", "", 5)
 	if err != nil {
 		t.Fatalf("QueryPages err = %v", err)
 	}
@@ -128,6 +129,7 @@ func TestEngineService_QueryPages_NormalizesEngineRowShape(t *testing.T) {
 // array-shaped engine keyword fields: the document engine returns slug_kwd /
 // docnm_kwd as arrays, and those must not be dropped.
 func TestEngineService_QueryPages_ArrayShapedFields(t *testing.T) {
+	ctx := t.Context()
 	eng := &fakeDocEngine{searchRows: []map[string]interface{}{
 		{
 			"id": "wiki/alpha", "kb_id": "kb1", "compile_kwd": "wiki_page",
@@ -138,7 +140,7 @@ func TestEngineService_QueryPages_ArrayShapedFields(t *testing.T) {
 		},
 	}}
 	svc := NewEngineService(eng)
-	res, err := svc.QueryPages(context.Background(), "t1", []string{"kb1"}, "alpha", "", 5)
+	res, err := svc.QueryPages(ctx, "t1", []string{"kb1"}, "alpha", "", 5)
 	if err != nil {
 		t.Fatalf("QueryPages err = %v", err)
 	}
@@ -157,27 +159,29 @@ func TestEngineService_QueryPages_ArrayShapedFields(t *testing.T) {
 }
 
 func TestEngineService_QueryPages_DegradesEmpty(t *testing.T) {
+	ctx := t.Context()
 	svc := NewEngineService(nil)
-	res, err := svc.QueryPages(context.Background(), "t1", []string{"kb1"}, "alpha", "", 5)
+	res, err := svc.QueryPages(ctx, "t1", []string{"kb1"}, "alpha", "", 5)
 	if err != nil || len(res.Chunks) != 0 {
 		t.Fatalf("got chunks=%d err=%v, want empty/noerr (no engine)", len(res.Chunks), err)
 	}
 	svc2 := NewEngineService(&fakeDocEngine{searchRows: []map[string]interface{}{
 		realEngineRow("x", "kb1", "d", "D", "s", nil),
 	}})
-	res2, _ := svc2.QueryPages(context.Background(), "t1", []string{"kb1"}, "  ", "", 5)
+	res2, _ := svc2.QueryPages(ctx, "t1", []string{"kb1"}, "  ", "", 5)
 	if len(res2.Chunks) != 0 {
 		t.Fatalf("chunks = %d, want 0 for blank query", len(res2.Chunks))
 	}
 }
 
 func TestEngineService_BackfillChunks_ByIDScoped(t *testing.T) {
+	ctx := t.Context()
 	eng := &fakeDocEngine{chunks: map[string]interface{}{
 		"c1": map[string]interface{}{"id": "c1", "content_with_weight": "raw 1", "doc_id": "d1", "docnm_kwd": "D", "kb_id": "kb1"},
 		"c2": map[string]interface{}{"id": "c2", "content_with_weight": "raw 2", "doc_id": "d1", "docnm_kwd": "D", "kb_id": "kb1"},
 	}}
 	svc := NewEngineService(eng)
-	out, err := svc.BackfillChunks(context.Background(), "t1", []string{"kb1", "kb2"}, []string{"c1", "c2", "c1", "missing"})
+	out, err := svc.BackfillChunks(ctx, "t1", []string{"kb1", "kb2"}, []string{"c1", "c2", "c1", "missing"})
 	if err != nil {
 		t.Fatalf("BackfillChunks err = %v", err)
 	}
@@ -205,14 +209,16 @@ func TestEngineService_BackfillChunks_ByIDScoped(t *testing.T) {
 }
 
 func TestEngineService_BackfillChunks_DegradesNoEngine(t *testing.T) {
+	ctx := t.Context()
 	svc := NewEngineService(nil)
-	out, err := svc.BackfillChunks(context.Background(), "t1", []string{"kb1"}, []string{"c1"})
+	out, err := svc.BackfillChunks(ctx, "t1", []string{"kb1"}, []string{"c1"})
 	if err != nil || len(out) != 0 {
 		t.Fatalf("got %d err=%v, want empty/noerr (no engine)", len(out), err)
 	}
 }
 
 func TestEngineService_AvailableFor_BoundedExistenceSearch(t *testing.T) {
+	ctx := t.Context()
 	// A KB carrying wiki pages => AvailableFor true, and the request must be a
 	// bounded (Limit=1) search on the tenant index, filtered to
 	// compile_kwd="wiki_page" and the dataset KBs.
@@ -220,7 +226,7 @@ func TestEngineService_AvailableFor_BoundedExistenceSearch(t *testing.T) {
 		realEngineRow("wiki/p1", "kb1", "d1", "P", "p1", nil),
 	}}
 	svc := NewEngineService(eng)
-	if !svc.AvailableFor(context.Background(), "t1", []string{"kb1"}) {
+	if !svc.AvailableFor(ctx, "t1", []string{"kb1"}) {
 		t.Errorf("AvailableFor should be true when a wiki page row exists")
 	}
 	if eng.searchReq == nil {
@@ -239,13 +245,13 @@ func TestEngineService_AvailableFor_BoundedExistenceSearch(t *testing.T) {
 		t.Errorf("existence KbIDs = %v, want [kb1]", eng.searchReq.KbIDs)
 	}
 	// No engine / empty tenant / no datasets -> false.
-	if NewEngineService(nil).AvailableFor(context.Background(), "t1", []string{"kb1"}) {
+	if NewEngineService(nil).AvailableFor(ctx, "t1", []string{"kb1"}) {
 		t.Errorf("AvailableFor should be false with no engine")
 	}
-	if NewEngineService(eng).AvailableFor(context.Background(), "", []string{"kb1"}) {
+	if NewEngineService(eng).AvailableFor(ctx, "", []string{"kb1"}) {
 		t.Errorf("AvailableFor should be false with empty tenant")
 	}
-	if NewEngineService(eng).AvailableFor(context.Background(), "t1", nil) {
+	if NewEngineService(eng).AvailableFor(ctx, "t1", nil) {
 		t.Errorf("AvailableFor should be false with no datasets")
 	}
 	// No wiki page rows (only ordinary chunks) -> false, even though a chunk
@@ -253,7 +259,7 @@ func TestEngineService_AvailableFor_BoundedExistenceSearch(t *testing.T) {
 	svcNoWiki := NewEngineService(&fakeDocEngine{searchRows: []map[string]interface{}{
 		{"id": "c1", "kb_id": "kb1", "content_with_weight": "plain chunk"}, // no compile_kwd
 	}})
-	if svcNoWiki.AvailableFor(context.Background(), "t1", []string{"kb1"}) {
+	if svcNoWiki.AvailableFor(ctx, "t1", []string{"kb1"}) {
 		t.Errorf("AvailableFor should be false for a KB with no wiki page rows")
 	}
 }

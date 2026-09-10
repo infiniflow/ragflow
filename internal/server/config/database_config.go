@@ -18,6 +18,7 @@ package config
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 
 	"github.com/spf13/viper"
 )
@@ -41,13 +42,56 @@ type MySQLConfig struct {
 
 func (c *Config) ParseDatabaseConfig(v *viper.Viper) error {
 	databaseType := c.general.Database
+	if envType := common.GetEnvSmall(common.EnvDBType); envType != "" {
+		databaseType = envType
+	}
 	switch databaseType {
 	case "mysql":
 		c.parseMySQLConfig(v)
+	case "oceanbase":
+		c.parseOceanBaseDatabaseConfig(v)
 	default:
 		return fmt.Errorf("database type %s is not supported", databaseType)
 	}
 	return nil
+}
+
+func (c *Config) parseOceanBaseDatabaseConfig(v *viper.Viper) {
+	// OceanBase uses the MySQL wire protocol, so the existing DAO can keep
+	// consuming MySQLConfig. Support both the flat DB_TYPE=oceanbase section and
+	// the document-engine nested config.
+	c.parseMySQLConfig(v)
+	sub := v.Sub("oceanbase")
+	if sub == nil {
+		return
+	}
+	if nested := sub.Sub("config"); nested != nil {
+		if nested.IsSet("db_name") {
+			c.database.MySQL.DatabaseName = nested.GetString("db_name")
+		}
+		sub = nested
+	}
+	if sub.IsSet("name") {
+		c.database.MySQL.DatabaseName = sub.GetString("name")
+	}
+	if sub.IsSet("db_name") {
+		c.database.MySQL.DatabaseName = sub.GetString("db_name")
+	}
+	if sub.IsSet("user") {
+		c.database.MySQL.User = sub.GetString("user")
+	}
+	if sub.IsSet("password") {
+		c.database.MySQL.Password = sub.GetString("password")
+	}
+	if sub.IsSet("host") {
+		c.database.MySQL.Host = sub.GetString("host")
+	}
+	if sub.IsSet("port") {
+		c.database.MySQL.Port = sub.GetInt("port")
+	}
+	if sub.IsSet("max_connections") {
+		c.database.MySQL.MaxConnections = sub.GetInt("max_connections")
+	}
 }
 
 func (c *Config) parseMySQLConfig(v *viper.Viper) {

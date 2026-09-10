@@ -305,7 +305,7 @@ func TestPPIOEmbedRecordsUsage(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "embedding-model"
 	usage := &common.ModelUsage{}
-	embeddings, err := newPPIOForTest(srv.URL).Embed(ctx, &modelName, []string{"document"}, &APIConfig{ApiKey: &apiKey}, nil, usage)
+	embeddings, err := newPPIOForTest(srv.URL).Embed(ctx, &modelName, EmbedRequest{Texts: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, nil, usage)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestPPIORerankRecordsUsage(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "rerank-model"
 	usage := &common.ModelUsage{}
-	reranked, err := newPPIOForTest(srv.URL).Rerank(ctx, &modelName, "query", []string{"document"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, usage)
+	reranked, err := newPPIOForTest(srv.URL).Rerank(ctx, &modelName, RerankRequest{Query: "query", Documents: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, usage)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}

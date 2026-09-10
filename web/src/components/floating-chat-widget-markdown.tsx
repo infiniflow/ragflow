@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 
@@ -18,6 +34,7 @@ import {
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
@@ -26,7 +43,6 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -38,6 +54,7 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
@@ -52,6 +69,7 @@ const FloatingChatWidgetMarkdown = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -91,12 +109,15 @@ const FloatingChatWidgetMarkdown = ({
     ) =>
       () => {
         if (!documentId) return;
-        if (fileExtension !== 'pdf' && documentUrl) {
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else if (clickDocumentButton) {
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -219,7 +240,9 @@ const FloatingChatWidgetMarkdown = ({
                         fileExtension,
                         documentUrl,
                       )}
-                      disabled={!documentUrl && fileExtension !== 'pdf'}
+                      disabled={
+                        !documentUrl && !supportsSourceLocate(fileExtension)
+                      }
                       style={{ whiteSpace: 'normal' }}
                     >
                       <span className="truncate">
@@ -228,7 +251,7 @@ const FloatingChatWidgetMarkdown = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {!documentUrl && fileExtension !== 'pdf'
+                    {!documentUrl && !supportsSourceLocate(fileExtension)
                       ? 'Document link unavailable'
                       : document.doc_name}
                   </TooltipContent>
@@ -252,9 +275,11 @@ const FloatingChatWidgetMarkdown = ({
           return (
             <Tooltip key={`err-tooltip-${i}`}>
               <TooltipTrigger asChild>
-                <Info className={styles.referenceIcon} />
+                <InfoCircleOutlined className={styles.referenceIcon} />
               </TooltipTrigger>
-              <TooltipContent>Reference unavailable</TooltipContent>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
             </Tooltip>
           );
         }
@@ -295,15 +320,26 @@ const FloatingChatWidgetMarkdown = ({
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
 
   return (
-    <div className="floating-chat-widget" dir={dir}>
+    <div className={styles['floating-chat-widget']} dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={

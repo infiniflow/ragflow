@@ -97,6 +97,47 @@ func TestDeduperDecideBatchFoldsGroups(t *testing.T) {
 	}
 }
 
+// TestSplitWikiGroupsMapsStructureIndexes locks the Critical fix in
+// llmDeduper.DecideBatch: structIdx[i] must hold the ORIGINAL position in the
+// batch, not the position inside the structure-only slice. When a wiki group
+// appears before a structure group, a buggy len(structGroups) mapping would make
+// structIdx[0]==0 and fold structure results back into the wiki group instead of
+// the structure group at index 1.
+func TestSplitWikiGroupsMapsStructureIndexes(t *testing.T) {
+	groups := []MergeGroup{
+		{Existing: kccommon.Product{ID: "wiki", Variant: kccommon.VariantWiki, Content: "w"}},
+		{Existing: kccommon.Product{ID: "struct-0", Variant: kccommon.Variant("structure"), Content: "s0"}},
+		{Existing: kccommon.Product{ID: "wiki-2", Variant: kccommon.VariantWiki, Content: "w2"}},
+		{Existing: kccommon.Product{ID: "struct-1", Variant: kccommon.Variant("structure"), Content: "s1"}},
+	}
+	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
+
+	if len(wikiIdx) != 2 || wikiIdx[0] != 0 || wikiIdx[1] != 2 {
+		t.Fatalf("wikiIdx = %v, want [0 2]", wikiIdx)
+	}
+	if len(structIdx) != 2 {
+		t.Fatalf("structIdx = %v, want two structure entries", structIdx)
+	}
+	// The structure groups appear at original batch indices 1 and 3.
+	wantStructIdx := []int{1, 3}
+	for i, gi := range structIdx {
+		if gi != wantStructIdx[i] {
+			t.Fatalf("structIdx[%d] = %d, want %d (original batch index)", i, gi, wantStructIdx[i])
+		}
+		// groups[structIdx[i]] must be the exact element copied into structGroups[i],
+		// so folding back via groups[structIdx[i]] lands on the correct group.
+		if groups[gi].Existing.ID != structGroups[i].Existing.ID {
+			t.Fatalf("groups[%d] (%s) is not the same element as structGroups[%d] (%s)",
+				gi, groups[gi].Existing.ID, i, structGroups[i].Existing.ID)
+		}
+	}
+	// The buggy mapping would have produced structIdx == [0 1], pointing at the
+	// wiki groups; assert we did NOT regress to that.
+	if structIdx[0] == 0 || structIdx[1] == 1 {
+		t.Fatalf("structIdx mapped to the wiki groups' positions: %v", structIdx)
+	}
+}
+
 func TestNoopDeduperDecideBatchNoMerge(t *testing.T) {
 	d := NewNoopDeduper()
 	existing := kccommon.Product{ID: "row-1", DocID: "kb1", Content: "base"}

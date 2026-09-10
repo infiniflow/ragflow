@@ -17,6 +17,7 @@ package nlp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"regexp"
 	"sort"
@@ -66,7 +67,7 @@ func Rerank(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
-) (sim []float64, tsim []float64, vsim []float64) {
+) (sim []float64, tsim []float64, vsim []float64, err error) {
 	// If reranker model is provided and there are results, use model reranking
 	if rerankModel != nil && total > 0 {
 		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
@@ -77,14 +78,16 @@ func Rerank(
 		// For Infinity: scores are already normalized before fusion
 		// Just extract the scores from results
 		if chunks == nil || total == 0 || len(chunks) == 0 {
-			return []float64{}, []float64{}, []float64{}
+			return []float64{}, []float64{}, []float64{}, nil
 		}
 
-		return RerankInfinityFallback(chunks)
+		sim, tsim, vsim = RerankInfinityFallback(chunks)
+		return sim, tsim, vsim, nil
 	}
 
 	// For Elasticsearch: need to perform reranking and apply rank features
-	return RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+	return sim, tsim, vsim, nil
 }
 
 // RerankByModel performs reranking using a reranker model
@@ -99,9 +102,9 @@ func RerankByModel(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
-) (sim []float64, tsim []float64, vsim []float64) {
+) (sim []float64, tsim []float64, vsim []float64, err error) {
 	if chunks == nil || len(chunks) == 0 {
-		return []float64{}, []float64{}, []float64{}
+		return []float64{}, []float64{}, []float64{}, nil
 	}
 
 	chunkCount := len(chunks)
@@ -134,12 +137,16 @@ func RerankByModel(
 		contentLtks := extractContentTokens(chunk, cfield)
 		titleTks := extractTitleTokens(chunk)
 		importantKwd := extractImportantKeywords(chunk)
+		questionTks := extractQuestionTokens(chunk)
 
-		// Combine tokens without repetition (simpler version for model reranking)
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd))
+		// Unlike RerankStandard/RerankWithKNN, the fields are not repeated here:
+		// these tokens are joined back into `docs` for a cross-encoder, where
+		// duplicating a field would distort the model's own scoring.
+		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd)+len(questionTks))
 		tks = append(tks, contentLtks...)
 		tks = append(tks, titleTks...)
 		tks = append(tks, importantKwd...)
+		tks = append(tks, questionTks...)
 		insTw = append(insTw, tks)
 
 		// Build document text for model reranking
@@ -151,8 +158,11 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.ModelDriver.Rerank(ctx, rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
+		if errors.Is(err, models.ErrRerankTokenLimitPolicy) {
+			return nil, nil, nil, err
+		}
 		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		rerankResponse = &models.RerankResponse{}
@@ -189,7 +199,7 @@ func RerankByModel(
 	sim = applyRankFeatureScoresForIDs(ids, field, sim, rankFeature)
 
 	common.Info("RerankByModel completed")
-	return sim, tsim, modelSim
+	return sim, tsim, modelSim, nil
 }
 
 // NormalizeRerankScores rescales reranker scores into [0, 1] for the
@@ -536,7 +546,7 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 	// Split by whitespace to get individual tokens
 	seen := make(map[string]bool)
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if !seen[t] {
 			seen[t] = true
 			result = append(result, t)
@@ -553,7 +563,7 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	}
 	// NOTE: Do NOT call RemoveRedundantSpaces here - it removes spaces between Chinese chars
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}
@@ -568,7 +578,7 @@ func extractQuestionTokens(fields map[string]interface{}) []string {
 		return []string{}
 	}
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}

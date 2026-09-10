@@ -103,21 +103,23 @@ func DefaultPublisher() Publisher { return defaultPublisher }
 func DefaultClaimer() Claimer { return defaultClaimer }
 
 // PublishCompleted records a doc_completed event: it appends the doc to the
-// KB's durable MySQL backlog and wakes idle workers over NATS. It is a no-op
-// when no Publisher has been installed (e.g. DB unavailable). A failure is
+// KB's durable MySQL backlog and wakes idle workers over NATS. variants carries
+// the doc-level compile types (tree/structure/wiki/mindmap) produced by this
+// doc so the consumer can dispatch to the matching dataset-level path. It is a
+// no-op when no Publisher has been installed (e.g. DB unavailable). A failure is
 // returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string) error {
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted))
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), variants)
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
-// append + notify pairing).
+// append + notify pairing). Deleted events carry no compile types.
 func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted))
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil)
 }

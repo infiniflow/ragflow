@@ -90,19 +90,20 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 
 func TestServerInputValidation(t *testing.T) {
 	s := &MCPService{}
+	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer("id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer("id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer("id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }

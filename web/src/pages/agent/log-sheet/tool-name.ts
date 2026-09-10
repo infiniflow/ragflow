@@ -9,6 +9,9 @@ export function getToolOperatorName(toolName?: string | null) {
   if (normalizedName === Operator.QueritSearch.toLowerCase()) {
     return Operator.QueritSearch;
   }
+  if (normalizedName === Operator.QueritContents.toLowerCase()) {
+    return Operator.QueritContents;
+  }
 
   return toolName
     .split('_')

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -241,74 +242,6 @@ func TestNormalizeDatasetID_StripsHyphens(t *testing.T) {
 	}
 }
 
-// --- normalizeDatasetUpdateExt ---
-
-func TestNormalizeDatasetUpdateExt_Nil(t *testing.T) {
-	if result := normalizeDatasetUpdateExt(nil); result != nil {
-		t.Fatalf("expected nil for nil input")
-	}
-}
-
-func TestNormalizeDatasetUpdateExt_PassesThrough(t *testing.T) {
-	ext := map[string]interface{}{
-		"description": "test",
-		"language":    "English",
-	}
-	result := normalizeDatasetUpdateExt(ext)
-	if result["description"] != "test" {
-		t.Errorf("expected description preserved, got %v", result["description"])
-	}
-	if result["language"] != "English" {
-		t.Errorf("expected language preserved, got %v", result["language"])
-	}
-}
-
-func TestNormalizeDatasetUpdateExt_RenamesChunkMethod(t *testing.T) {
-	ext := map[string]interface{}{
-		"chunk_method": "book",
-	}
-	result := normalizeDatasetUpdateExt(ext)
-	if result["parser_id"] != "book" {
-		t.Errorf("expected parser_id=book, got %v", result["parser_id"])
-	}
-	if _, ok := result["chunk_method"]; ok {
-		t.Error("expected chunk_method to be renamed to parser_id")
-	}
-}
-
-func TestNormalizeDatasetUpdateExt_SkipsTokenAndChunkNum(t *testing.T) {
-	ext := map[string]interface{}{
-		"token_num":     float64(1000),
-		"chunk_num":     float64(50),
-		"parser_config": map[string]interface{}{"key": "val"},
-	}
-	result := normalizeDatasetUpdateExt(ext)
-	if len(result) != 0 {
-		t.Errorf("expected empty map, got %v", result)
-	}
-}
-
-func TestNormalizeDatasetUpdateExt_ConvertsPagerank(t *testing.T) {
-	ext := map[string]interface{}{
-		"pagerank": float64(3),
-	}
-	result := normalizeDatasetUpdateExt(ext)
-	if result["pagerank"] != int64(3) {
-		t.Errorf("expected pagerank=int64(3), got %T(%v)", result["pagerank"], result["pagerank"])
-	}
-}
-
-func TestNormalizeDatasetUpdateExt_NonFloatPagerankSkipped(t *testing.T) {
-	// Non-float64 pagerank values are not convertible and are dropped.
-	ext := map[string]interface{}{
-		"pagerank": "auto",
-	}
-	result := normalizeDatasetUpdateExt(ext)
-	if _, ok := result["pagerank"]; ok {
-		t.Error("expected non-float pagerank to be skipped")
-	}
-}
-
 // --- normalizeMetadataConfigFields ---
 
 func TestNormalizeMetadataConfigFields_EmptyKey(t *testing.T) {
@@ -393,5 +326,59 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 	}
 	if result[0]["key"] != "my_field" {
 		t.Errorf("expected trimmed key 'my_field', got %v", result[0]["key"])
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_FallsBackWhenIncomingNotMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	cases := map[string]interface{}{
+		"null":  nil,
+		"array": []any{},
+	}
+	for name, incomingMetadata := range cases {
+		t.Run(name, func(t *testing.T) {
+			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+			meta, ok := got["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
+			}
+			fields, ok := meta["metadata"].([]any)
+			if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "existing_field" {
+				t.Fatalf("expected existing_field preserved, got %#v", meta["metadata"])
+			}
+		})
+	}
+}
+
+func TestPreserveDatasetParserConfigMetadata_UsesValidIncomingMap(t *testing.T) {
+	existing := entity.JSONMap{
+		"metadata": map[string]any{
+			"enabled":           false,
+			"metadata":          []any{},
+			"built_in_metadata": []any{},
+		},
+	}
+	incoming := map[string]interface{}{
+		"metadata": map[string]any{
+			"enabled":           true,
+			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+			"built_in_metadata": []any{},
+		},
+	}
+	got := preserveDatasetParserConfigMetadata(entity.JSONMap{}, existing, incoming)
+	meta, ok := got["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])
+	}
+	fields, ok := meta["metadata"].([]any)
+	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "incoming_field" {
+		t.Fatalf("expected incoming_field to be used, got %#v", meta["metadata"])
 	}
 }

@@ -46,7 +46,7 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 		{"id": "c2", "vector": []float64{4, 5, 6}},
 	}
 	// No zero vectors → nothing to hydrate.
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	if !reflect.DeepEqual(chunks[0]["vector"], []float64{1, 2, 3}) {
 		t.Error("non-zero vector should not be changed")
 	}
@@ -57,15 +57,15 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 
 func TestHydrateChunkVectors_EmptyChunks(t *testing.T) {
 	// Should not panic on empty or nil.
-	hydrateChunkVectors(context.Background(), nil, nil, nil, nil)
-	hydrateChunkVectors(context.Background(), nil, []map[string]interface{}{}, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, nil, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, []map[string]interface{}{}, nil, nil)
 }
 
 func TestHydrateChunkVectors_MissingIDs(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"vector": []float64{1.0}}, // no id — skipped
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	// Should not change anything when engine is nil (FetchChunkVectors returns zero vectors).
 	// The function doesn't panic — it just can't hydrate because dim is 0.
 	// With nil engine, FetchChunkVectors returns zero vectors, so the zero stays zero.
@@ -75,12 +75,13 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"id": "c1", "vector": []float64{}},
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, []string{"kb1"}, []string{"t1"})
+	hydrateChunkVectors(t.Context(), nil, chunks, []string{"kb1"}, []string{"t1"})
 	// Empty vectors have dim=0 → early return. No crash.
 }
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 	tenantEmbdID := "42"
+	staleTenantEmbdID := "stale-id"
 
 	tests := []struct {
 		name     string
@@ -89,12 +90,20 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "uses tenant embedding id before embd id",
+			name: "resolves tenant embedding id to base model name",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
 				TenantEmbdID: &tenantEmbdID,
 			},
-			want: "tenant:42",
+			want: "embd:BAAI/bge-m3",
+		},
+		{
+			name: "stale tenant embedding id falls back to composite base name",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "BAAI/bge-m3@1@SILICONFLOW",
+				TenantEmbdID: &staleTenantEmbdID,
+			},
+			want: "embd:BAAI/bge-m3",
 		},
 		{
 			name: "uses embd id without tenant embedding id",
@@ -117,11 +126,29 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			},
 			want: "embd:shared-model",
 		},
+		{
+			name: "legacy composite reduces to base model name",
+			kb: &entity.Knowledgebase{
+				EmbdID: "BAAI/bge-m3@2@SILICONFLOW",
+			},
+			want: "embd:BAAI/bge-m3",
+		},
+	}
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to migrate test schema: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{ID: "42", ModelName: "BAAI/bge-m3"}).Error; err != nil {
+		t.Fatalf("failed to seed tenant_model: %v", err)
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, map[string]string{}); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
@@ -356,6 +383,7 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
 		Page:      &page,
 		Size:      &size,
 		Keywords:  "  invoice terms  ",
@@ -377,6 +405,13 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if got := engine.searchReq.Filter["id"]; !reflect.DeepEqual(got, []string{"chunk-1", "chunk-2"}) {
+		t.Fatalf("id filter = %#v, want %#v", got, []string{"chunk-1", "chunk-2"})
+	}
+	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
+	if !ok || mustNot["exists"] != "compile_kwd" {
+		t.Fatalf("must_not filter = %#v, want compile_kwd existence exclusion", engine.searchReq.Filter["must_not"])
 	}
 	if slices.Contains(engine.searchReq.SelectFields, "content") {
 		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
@@ -401,6 +436,83 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if matchText.TopN != size {
 		t.Fatalf("TopN = %d, want %d", matchText.TopN, size)
+	}
+}
+
+func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	insertChunkTestDoc(t, "doc-b", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err == nil {
+		t.Fatal("expected UpdateChunk to reject a chunk from another document")
+	}
+	if !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("UpdateChunk error = %q, want chunk not found", err)
+	}
+	if len(engine.updateCalls) != 0 {
+		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+	}
+}
+
+func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	call := engine.updateCalls[0]
+	if !reflect.DeepEqual(call.condition, map[string]interface{}{
+		"id":     "chunk-1",
+		"doc_id": "doc-a",
+	}) {
+		t.Fatalf("UpdateChunks condition = %#v", call.condition)
+	}
+	if call.indexName != "ragflow_tenant-1" || call.datasetID != "kb-1" {
+		t.Fatalf("UpdateChunks target index=%q dataset=%q", call.indexName, call.datasetID)
 	}
 }
 
@@ -1179,6 +1291,26 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 	}, nil
 }
 
+type updateChunkTestEngine struct {
+	parseTestDocEngine
+	existingChunk interface{}
+	updateCalls   []updateChunksCall
+}
+
+func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.existingChunk, nil
+}
+
+func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	e.updateCalls = append(e.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
+	return nil
+}
+
 type chunkImageStorage struct {
 	exists    bool
 	oldBinary []byte
@@ -1248,10 +1380,10 @@ func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(context.Context, *string, []string, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(context.Context, *string, string, []string, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import ArtifactForceGraph from '@/components/artifact-force-graph';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -32,6 +48,8 @@ interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
   onNodeClick?: (node: ClickableNode) => void;
   highlightNodeId?: string | null;
+  totalEntities?: number;
+  returnedEntities?: number;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -39,7 +57,7 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
 
   return (
     <div className="flex items-center justify-center h-full text-text-secondary">
-      {t('chunk.representationUnsupported', {
+      {t('knowledgeCompilation.representationUnsupported', {
         kind,
         defaultValue: 'This representation type is not supported yet.',
       })}
@@ -51,6 +69,8 @@ export function RepresentationRenderer({
   template,
   onNodeClick,
   highlightNodeId,
+  totalEntities,
+  returnedEntities,
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
@@ -156,6 +176,8 @@ export function RepresentationRenderer({
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
             highlightNodeId={highlightNodeId}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );
@@ -187,6 +209,8 @@ export function RepresentationRenderer({
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );
@@ -208,6 +232,8 @@ export function RepresentationRenderer({
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );

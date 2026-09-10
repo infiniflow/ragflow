@@ -21,6 +21,7 @@ export interface ICompilationTemplateRaptorConfig {
 export interface ICompilationTemplateConfig {
   kind?: string;
   llm_id?: string;
+  mode?: 'entity' | 'topic';
   entity?: ICompilationTemplateSection;
   relation?: ICompilationTemplateSection;
   raptor?: ICompilationTemplateRaptorConfig;

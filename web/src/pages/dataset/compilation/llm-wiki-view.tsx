@@ -4,25 +4,28 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
-import { GenerateStatus, GenerateType } from '@/constants/knowledge';
+import { GenerateType } from '@/constants/knowledge';
 import {
   useGenerateStatus,
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
+  ArtifactAlterationKeys,
   ArtifactKeys,
   ArtifactTopicKeys,
   useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'react-router';
 
 import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
+import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
+import { canGenerateWiki } from './wiki-generation-eligibility';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
 
@@ -44,23 +47,24 @@ export function LlmWikiView() {
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
   const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
-  useEffect(() => {
-    if (artifactStatus === GenerateStatus.Completed) {
-      setUpdateSheetOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: ArtifactKeys.listByDataset(id!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: ArtifactTopicKeys.listByDataset(id!),
-      });
-    }
-  }, [artifactStatus, queryClient, id]);
+  const handleRunEnd = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(id!, 'wiki'),
+    });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactKeys.listByDataset(id!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactTopicKeys.listByDataset(id!),
+    });
+  }, [queryClient, id]);
+  useRunEndEffect(artifactStatus, handleRunEnd);
 
   const handleLeftTabChange = useCallback((value: string) => {
     setLeftTab(value as LeftPanelTab);
   }, []);
 
-  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
+  const canGenerate = canGenerateWiki(knowledgeBase);
   const isLoading = topicListLoading && topics.length === 0;
   const isEmpty = topics.length === 0 && !topicListLoading;
 
@@ -81,7 +85,7 @@ export function LlmWikiView() {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <ResizablePanelGroup direction="horizontal" className="flex-1">
-        <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+        <ResizablePanel id="wiki-left" order={1} defaultSize={50}>
           <WikiLeftPanel
             tab={leftTab}
             onTabChange={handleLeftTabChange}
@@ -94,15 +98,19 @@ export function LlmWikiView() {
             traceData={artifactRunData}
           />
         </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <WikiDetailContent
-            selectedArtifact={selectedArtifact}
-            selectedVersion={selectedVersion}
-            onSelectVersion={selectVersion}
-            onSelectArtifact={handleSelectArtifact}
-          />
-        </ResizablePanel>
+        {selectedArtifact && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="wiki-detail" order={2}>
+              <WikiDetailContent
+                selectedArtifact={selectedArtifact}
+                selectedVersion={selectedVersion}
+                onSelectVersion={selectVersion}
+                onSelectArtifact={handleSelectArtifact}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </Card>
   );

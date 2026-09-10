@@ -98,8 +98,9 @@ const sampleESResponse = `{
 func TestRunSQL_NoFilterAdded(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -130,10 +131,11 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
 	// Input SQL has multiple backticks/spaces and trailing % characters.
 	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", in, nil, "json")
+	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -186,7 +188,7 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	// the retry loop or the timeout is broken; the test will report
 	// a clear "did not return within 15s" message rather than a
 	// fragile absolute wall-clock assertion.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
 	type result struct {
@@ -252,7 +254,8 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	})
 
 	e := newTestEngine(t, srv.URL)
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -286,7 +289,8 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	e := newTestEngine(t, srv.URL)
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT bad", nil, "json")
+	ctx := t.Context()
+	_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT bad", nil, "json")
 	if err == nil {
 		t.Fatalf("RunSQL: got nil error, want error")
 	}
@@ -311,7 +315,8 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -339,7 +344,8 @@ func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
 	srv, _ := newCapturingServer(t, http.StatusOK, empty)
 	e := newTestEngine(t, srv.URL)
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -358,7 +364,8 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()

@@ -57,6 +57,8 @@ def validate_template_payload(req: dict, require_all: bool = True) -> str:
                 if len(str((field or {}).get("rule") or "")) > 1024:
                     return f"{section.capitalize()} field rule is too long."
         if config.get("kind") == "wiki" or req.get("kind") == "wiki":
+            if config.get("mode") not in ("entity", "topic"):
+                return "Wiki mode must be either 'entity' or 'topic'."
             for field in (config.get("claim") or {}).get("fields") or []:
                 if not str((field or {}).get("statement") or "").strip():
                     return "Claim statement is required."

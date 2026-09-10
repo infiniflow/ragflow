@@ -58,9 +58,18 @@ type TaskContext struct {
 	File       any
 
 	// MemoryPayload carries the raw task_type="memory" message body for
-	// memory tasks (id/memory_id/source_id/message_dict). Only set for
+	// memory tasks (memory_id/source_id/message_dict). Only set for
 	// TaskKindMemory.
 	MemoryPayload map[string]any
+
+	// taskID is the envelope task identifier (TaskMessage.TaskID) that the
+	// scheduler claims and later releases. It is the authoritative identity
+	// for claim, release, and logging across both task kinds. Unexported so
+	// the claim key cannot be mutated between admission (claim) and
+	// settlement (release), which would leak the claim and permanently block
+	// redelivery. There is deliberately no fallback chain in ID(): identity
+	// lives only here, never re-derived from IngestionTask or MemoryPayload.
+	taskID string
 
 	// Handle is the message-queue ack handle for the task message that scheduled
 	// this context. The scheduler sets it before queueing; the worker decides
@@ -77,12 +86,15 @@ type TaskContext struct {
 }
 
 // NewMemoryTaskContextForScheduling creates a lightweight TaskContext for a
-// memory-extraction task. It only sets the scheduling-related fields, not the
-// full ingestion business data.
-func NewMemoryTaskContextForScheduling(ctx context.Context, payload map[string]any, handle common.TaskHandle) *TaskContext {
+// memory-extraction task. taskID is the envelope TaskMessage.TaskID that the
+// scheduler claims and will release; it is the authoritative identity for the
+// whole memory task lifecycle. Only the scheduling-related fields are set, not
+// the full ingestion business data.
+func NewMemoryTaskContextForScheduling(ctx context.Context, taskID string, payload map[string]any, handle common.TaskHandle) *TaskContext {
 	return &TaskContext{
 		Ctx:           ctx,
 		Kind:          TaskKindMemory,
+		taskID:        taskID,
 		MemoryPayload: payload,
 		Handle:        handle,
 	}
@@ -94,8 +106,20 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 	return &TaskContext{
 		Ctx:           ctx,
 		Kind:          TaskKindIngestion,
+		taskID:        task.ID,
 		IngestionTask: task,
 	}
+}
+
+// ID returns the task identifier for claim/release and logging. It is the
+// envelope TaskMessage.TaskID captured at construction — there is deliberately
+// no fallback to IngestionTask or MemoryPayload, so identity is never
+// re-derived from a source that could disagree with the claim key.
+func (c *TaskContext) ID() string {
+	if c == nil {
+		return ""
+	}
+	return c.taskID
 }
 
 // LoadFromIngestionTask loads the full task context from an IngestionTask.
@@ -119,10 +143,11 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}
 
-	pipelineID := resolvePipelineID(doc, kb)
+	pipelineID := resolvePipelineID(doc)
 
 	return &TaskContext{
 		Ctx:           ctx,
+		taskID:        ingestionTask.ID,
 		IngestionTask: ingestionTask,
 		PipelineID:    pipelineID,
 		Doc:           *doc,
@@ -131,16 +156,10 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 	}, nil
 }
 
-func resolvePipelineID(doc *entity.Document, kb *entity.Knowledgebase) string {
+// resolvePipelineID resolves the pipeline selected for a document.
+func resolvePipelineID(doc *entity.Document) string {
 	if doc != nil && doc.PipelineID != nil {
-		if pipelineID := strings.TrimSpace(*doc.PipelineID); pipelineID != "" {
-			return pipelineID
-		}
-	}
-	if kb != nil && kb.PipelineID != nil {
-		if pipelineID := strings.TrimSpace(*kb.PipelineID); pipelineID != "" {
-			return pipelineID
-		}
+		return strings.TrimSpace(*doc.PipelineID)
 	}
 	return ""
 }

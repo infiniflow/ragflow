@@ -19,7 +19,8 @@ type CompilationTemplateCardProps = {
   onDelete: (id: string) => void;
 };
 
-const CompilerIcon = FlowTypeConfig[FlowType.Compiler].icon;
+const CompilerConfig = FlowTypeConfig[FlowType.Compiler];
+const CompilerIcon = CompilerConfig.icon;
 
 export function CompilationTemplateCard({
   data,
@@ -45,14 +46,14 @@ export function CompilationTemplateCard({
           <section className="flex items-center justify-between gap-2">
             <TruncatedText
               as="h3"
-              className="flex-1 min-w-0 truncate"
+              className="flex-1 min-w-0 truncate text-base font-bold leading-snug"
               tooltip={data.name}
             >
               {data.name}
             </TruncatedText>
 
             <Button variant="ghost" size="sm">
-              <CompilerIcon />
+              <CompilerIcon style={{ color: CompilerConfig.color }} />
             </Button>
 
             <CompilationTemplateDropdown data={data} onDelete={onDelete}>

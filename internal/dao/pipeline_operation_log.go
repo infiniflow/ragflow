@@ -25,6 +25,30 @@ import (
 	"gorm.io/gorm"
 )
 
+var legacyPipelineOperationStatuses = map[string]string{
+	"0": "UNSTART",
+	"1": "RUNNING",
+	"2": "CANCEL",
+	"3": "DONE",
+	"4": "FAIL",
+	"5": "SCHEDULE",
+}
+
+func normalizePipelineOperationStatuses(statuses []string) []string {
+	if len(statuses) == 0 {
+		return statuses
+	}
+	normalized := make([]string, len(statuses))
+	for i, status := range statuses {
+		if canonical, ok := legacyPipelineOperationStatuses[status]; ok {
+			normalized[i] = canonical
+		} else {
+			normalized[i] = status
+		}
+	}
+	return normalized
+}
+
 // graphRaptorFakeDocID is the placeholder document_id used for dataset-level
 // (graph/raptor/mindmap) pipeline logs, mirroring GRAPH_RAPTOR_FAKE_DOC_ID in
 // api/db/services/task_service.py.
@@ -77,7 +101,7 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 
 // GetDatasetLogsByKBID lists dataset-level (graph/raptor/mindmap) ingestion
 // logs for a knowledge base. Pagination is only applied when both page and
-// pageSize are positive, matching peewee's paginate behaviour.
+// pageSize are positive, matching peewee's paginate behavior.
 func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
@@ -86,7 +110,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", operationStatus)
+		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)
@@ -166,6 +190,27 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 		return nil, err
 	}
 	return &log, nil
+}
+
+// GetByID fetches a single pipeline operation log by id, regardless of
+// knowledge base. Callers that must scope to a dataset use
+// GetByIDAndKBID instead.
+func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
+	var log entity.PipelineOperationLog
+	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// UpdateDSL replaces the DSL stored on a pipeline operation log. Used by the
+// dataflow rerun endpoint to persist the front-end's edited component
+// configuration plus the rerun entry point (dsl.path = [component_id]),
+// mirroring Python's PipelineOperationLogService.update_by_id(id, {"dsl": dsl}).
+func (dao *PipelineOperationLogDAO) UpdateDSL(ctx context.Context, db *gorm.DB, logID string, dsl entity.JSONMap) error {
+	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ?", logID).
+		Update("dsl", dsl).Error
 }
 
 // Create inserts a new pipeline operation log.

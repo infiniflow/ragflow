@@ -242,6 +242,33 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 	if p.EnableHistoricalDedup {
 		t.Errorf("EnableHistoricalDedup default = true, want false")
 	}
+	if p.Plan != nil {
+		t.Errorf("Plan = %v, want nil when omitted from DSL", *p.Plan)
+	}
+
+	for _, tc := range []struct {
+		name string
+		plan bool
+	}{
+		{name: "mode_a", plan: false},
+		{name: "mode_b", plan: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := kc.ParseParam(map[string]any{
+				"compilation_template_id": "t1",
+				"plan":                    tc.plan,
+			})
+			if err != nil {
+				t.Fatalf("ParseParam: %v", err)
+			}
+			if parsed.Plan == nil || *parsed.Plan != tc.plan {
+				t.Fatalf("Plan = %v, want explicit %t", parsed.Plan, tc.plan)
+			}
+			if parsed.PlanEnabled() != tc.plan {
+				t.Errorf("PlanEnabled() = %t, want %t", parsed.PlanEnabled(), tc.plan)
+			}
+		})
+	}
 }
 
 // TestKnowledgeCompilerDSL_KindToVariant locks the compilation_template.kind ->

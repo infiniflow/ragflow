@@ -37,11 +37,7 @@
 
     --background-inverse-standard: rgba(230, 227, 246, 0.15);
     --background-inverse-standard-foreground: rgb(92, 81, 81);
-    --colors-background-inverse-standard: rgba(29, 26, 44, 0.1);
-    --colors-background-inverse-strong: rgba(11, 10, 18, 0.8);
-    --colors-background-inverse-weak: rgba(17, 16, 23, 0.1);
     --colors-background-neutral-standard: white;
-    --colors-background-neutral-strong: rgba(226, 223, 246, 1);
 
     --button-blue-text: rgb(22, 119, 255);
 
@@ -49,14 +45,8 @@
     --colors-outline-neutral-strong: rgba(112, 107, 107, 0.15);
     --colors-outline-neutral-standard: rgba(53, 51, 65, 0.1);
 
-    --colors-text-core-standard: rgba(127, 105, 255, 1);
     --colors-text-neutral-strong: rgba(17, 16, 23, 1);
     --colors-text-neutral-standard: rgba(152, 148, 176, 1);
-    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
-    --colors-text-functional-danger: rgba(255, 81, 81, 1);
-    --colors-text-inverse-strong: rgba(255, 255, 255, 1);
-    --colors-text-persist-light: rgba(255, 255, 255, 1);
-    --colors-text-inverse-weak: rgba(184, 181, 203, 1);
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -69,7 +59,6 @@
 
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
 
-    --background-badge: rgba(22, 22, 24, 0.5);
     --text-badge: rgba(151, 154, 171, 1);
 
     --text-title: rgba(22, 22, 24, 1);
@@ -79,8 +68,6 @@
     --background-header-bar: rgba(0, 0, 0, 0.05);
     --text-title-invert: rgba(255, 255, 255, 1);
     --background-card: rgba(22, 22, 24, 0.05);
-
-    --background-note: rgba(22, 22, 24, 0.1);
 
     --background-highlight: rgba(76, 164, 231, 0.1);
 
@@ -104,8 +91,6 @@
     --text-primary: 22 22 24;
     --text-secondary: 117 120 122;
     --text-disabled: #b2b5b7;
-    /* input placeholder color */
-    --text-input-tip: #b2b5b7;
     /* Input  default color */
     --border-default: rgba(0, 0, 0, 0.2);
     /* Input accent color */
@@ -125,9 +110,7 @@
     --team-group: #5ab77e;
     --team-member: #5c96c8;
     --team-department: #8866d3;
-    --bg-group: rgba(90, 183, 126, 0.1);
     --bg-member: rgba(92, 150, 200, 0.1);
-    --bg-department: rgba(136, 102, 211, 0.1);
 
     /* --*-inverse: colors in dark mode */
     --text-primary-inverse: 246 246 247;
@@ -169,39 +152,21 @@
     --background-inverse-standard: rgba(230, 227, 246, 0.15);
     --background-inverse-standard-foreground: rgba(255, 255, 255, 1);
 
-    --background-inverse-weak: rgba(184, 181, 203, 0.15);
-    --background-inverse-weak-foreground: rgba(255, 255, 255, 1);
-
-    --background-core-standard: rgba(137, 126, 255, 1);
-    --background-core-standard-foreground: rgba(255, 255, 255, 1);
-
     --background-inverse-strong: rgba(255, 255, 255, 0.15);
     --background-inverse-strong-foreground: rgba(255, 255, 255, 1);
 
     --background-core-weak: rgb(101, 75, 248);
-    --background-core-weak-foreground: rgba(255, 255, 255, 1);
 
-    --background-badge: rgba(22, 22, 24, 0.5);
     --text-badge: rgba(151, 154, 171, 1);
 
-    --colors-background-inverse-standard: rgba(230, 227, 246, 0.15);
-    --colors-background-inverse-strong: rgba(255, 255, 255, 0.8);
     --colors-background-neutral-standard: rgba(11, 10, 18, 1);
-    --colors-background-neutral-strong: rgba(29, 26, 44, 1);
-    --colors-background-neutral-weak: rgba(17, 16, 23, 1);
 
     --colors-outline-sentiment-primary: rgba(146, 118, 255, 1);
     --colors-outline-neutral-strong: rgba(255, 255, 255, 0.15);
     --colors-outline-neutral-standard: rgba(230, 227, 246, 0.1);
 
-    --colors-text-core-standard: rgba(137, 126, 255, 1);
     --colors-text-neutral-strong: rgba(255, 255, 255, 1);
     --colors-text-neutral-standard: rgba(230, 227, 246, 1);
-    --colors-text-neutral-weak: rgba(170, 160, 197, 1);
-    --colors-text-functional-danger: rgba(255, 81, 81, 1);
-    --colors-text-inverse-strong: rgba(17, 16, 23, 1);
-    --colors-text-persist-light: rgba(255, 255, 255, 1);
-    --colors-text-inverse-weak: rgba(84, 80, 106, 1);
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -220,7 +185,6 @@
     --text-title-invert: rgba(22, 22, 24, 1);
 
     --background-card: rgba(255, 255, 255, 0.05);
-    --background-note: rgba(255, 255, 255, 0.05);
 
     --background-highlight: rgba(76, 164, 231, 0.1);
 
@@ -242,7 +206,6 @@
     --text-primary: 246 246 247;
     --text-secondary: 178 181 183;
     --text-disabled: #75787a;
-    --text-input-tip: #75787a;
     --border-default: rgba(255, 255, 255, 0.2);
     --border-accent: #ffffff;
     --border-button: rgba(255, 255, 255, 0.1);
@@ -295,6 +258,12 @@
 }
 
 @layer utilities {
+  .bg-card-soft {
+    /* First line is the fallback for browsers without color-mix() */
+    background-color: var(--bg-card);
+    background-color: color-mix(in srgb, var(--bg-card) 50%, transparent);
+  }
+
   .scrollbar-auto {
     /* hide scrollbar */
     scrollbar-width: thin;

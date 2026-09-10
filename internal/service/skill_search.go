@@ -680,7 +680,9 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 	truncatedText := truncate(text, maxLen-10)
 
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil, nil)
+	// Query: true — getEmbedding is used only by the skill search legs
+	// (vectorSearch / hybridSearch) to embed the user's query.
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{truncatedText}, Query: true}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}

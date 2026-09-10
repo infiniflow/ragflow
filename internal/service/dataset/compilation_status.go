@@ -25,6 +25,9 @@ import (
 type CompilationStatus struct {
 	State           string     `json:"state"`                       // idle | pending | running | completed
 	Error           string     `json:"error,omitempty"`             // most recent batch diagnostic (empty when none)
+	Progress        float64    `json:"progress"`                    // current claimed batch progress
+	CurrentPhase    string     `json:"current_phase,omitempty"`     // current compiler phase
+	ProgressMsg     string     `json:"progress_msg,omitempty"`      // bounded phase log for the UI
 	Inflight        int        `json:"inflight"`                    // entries currently claimed (in-flight batch)
 	Backlog         int        `json:"backlog"`                     // entries still waiting to be claimed
 	LastCompletedAt *time.Time `json:"last_completed_at,omitempty"` // last backlog drain
@@ -61,6 +64,9 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 		st.State = entity.DatasetStateIdle
 	}
 	st.Error = row.ErrorMsg
+	st.Progress = row.Progress
+	st.CurrentPhase = row.CurrentPhase
+	st.ProgressMsg = row.ProgressMsg
 	st.Inflight = jsonArrayLen(row.InflightDocIDs)
 	st.Backlog = jsonArrayLen(row.BacklogDocIDs)
 	st.LastCompletedAt = row.LastCompletedAt

@@ -47,10 +47,18 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) Tre
 		validSet[id] = true
 	}
 	checkValid := len(validSet) > 0
-	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
+	m := TreeMetrics{AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
 	maxLevel := -1
 	for _, c := range chunks {
 		kind, _ := c.GetExtraString("kc_kind")
+		// Auxiliary tree-graph rows (kind entity/relation/graph, from the
+		// structure-graph projection) are not part of the RAPTOR tree structure,
+		// so they are excluded from the structural metrics (ProductCount,
+		// AllParented, SchemaOK, ...). The tree itself is the root/summary set.
+		if kind != "root" && kind != "summary" {
+			continue
+		}
+		m.ProductCount++
 		level := 0
 		if lf, ok := extraFloat(c, "kc_level"); ok {
 			level = int(lf)

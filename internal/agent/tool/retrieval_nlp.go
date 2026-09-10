@@ -29,8 +29,8 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
-//                                       (fallback Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.KNNTopK
+//                                       (fallback KNNTopK=TopN*4 so rerank
 //                                        has headroom)
 //   tool.RetrievalRequest.KeywordsSimilarityWeight
 //                                    → nlp.RetrievalRequest.VectorSimilarityWeight
@@ -215,7 +215,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if len(datasets.tenantIDs) != 1 {
 		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
 	}
-	if err := validateEmbeddingModels(datasets.kbs); err != nil {
+	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
 	}
 	embeddingModel, err := a.resolveEmbeddingModel(ctx, datasets.kbs[0])
@@ -254,8 +254,14 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		}
 	}
 	query = retrievalUserPrefixPattern.ReplaceAllString(query, "")
+	// rank_feature (Python retrieve: rank_feature=label_question(question,
+	// self.kbs)). Prefer a feature supplied on the request (computed by RAGTools
+	// from its own KB objects) so the agentic tool stays authoritative; fall
+	// back to the enhancer, which resolves the KB objects itself.
 	var rankFeature map[string]float64
-	if a.enhancer != nil {
+	if req.RankFeature != nil && len(*req.RankFeature) > 0 {
+		rankFeature = *req.RankFeature
+	} else if a.enhancer != nil {
 		rankFeature = a.enhancer.LabelQuestion(ctx, query, datasets.kbs)
 	}
 	rerankModel, err := a.resolveRerankModel(ctx, req, datasets.kbs[0].TenantID)
@@ -266,7 +272,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	preparedReq.Query = query
 	preparedReq.DocScope = docIDs
 	preparedReq.DatasetIDs = append([]string(nil), datasets.kbIDs...)
-	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel)
+	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
 	nlpReq.RerankModel = rerankModel
 	if rankFeature != nil {
 		nlpReq.RankFeature = &rankFeature
@@ -313,6 +319,7 @@ func nlpRequestFromRetrieval(
 	tenantIDs []string,
 	topN int,
 	embeddingModel *modelModule.EmbeddingModel,
+	excludeCompiled bool,
 ) *nlp.RetrievalRequest {
 	nlpReq := &nlp.RetrievalRequest{
 		Question:       req.Query,
@@ -325,11 +332,23 @@ func nlpRequestFromRetrieval(
 		Aggs:           boolPtr(false),
 		Highlight:      boolPtr(false),
 	}
+	if excludeCompiled {
+		// Python hybrid_search excludes compiled products from plain retrieval
+		// via must_not={"exists":"compile_kwd"} (search.py:171). Compiled rows
+		// carry the compile_kwd field; the nlp backend merges req.Filter into
+		// the doc-store term filter, so a must_not.exists excludes them.
+		nlpReq.Filter = map[string]interface{}{
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
+		}
+	}
+	if req.RerankCandidatesCount != 0 {
+		nlpReq.RerankCandidatesCount = &req.RerankCandidatesCount
+	}
 	if req.TopK > 0 {
-		nlpReq.Top = &req.TopK
+		nlpReq.KNNTopK = &req.TopK
 	} else if topN > 0 {
 		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
+		nlpReq.KNNTopK = &rerankBudget
 	}
 	if req.SimilarityThreshold != nil {
 		nlpReq.SimilarityThreshold = req.SimilarityThreshold
@@ -412,7 +431,7 @@ func (a *NLPRetrievalAdapter) resolveDatasets(
 	return &resolvedDatasets{kbs: kbs, kbIDs: resolvedKBIDs, tenantIDs: tenantIDs}, nil
 }
 
-func validateEmbeddingModels(kbs []*entity.Knowledgebase) error {
+func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Knowledgebase) error {
 	if len(kbs) == 0 {
 		return fmt.Errorf("retrieval: no datasets selected")
 	}
@@ -421,23 +440,26 @@ func validateEmbeddingModels(kbs []*entity.Knowledgebase) error {
 			return fmt.Errorf("retrieval: dataset record is nil")
 		}
 	}
-	firstKey := knowledgebaseEmbeddingKey(kbs[0])
+	embdNameCache := make(map[string]string)
+	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNameCache)
 	for _, kb := range kbs[1:] {
-		if knowledgebaseEmbeddingKey(kb) != firstKey {
+		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNameCache) != firstKey {
 			return fmt.Errorf("retrieval: datasets use different embedding models")
 		}
 	}
 	return nil
 }
 
-func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase) string {
-	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
-		return "tenant:" + strings.TrimSpace(*kb.TenantEmbdID)
+// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
+// model name (e.g. "BAAI/bge-m3"), matching the chat/dataset-search
+// validation, so datasets pointing at the same model through different
+// provider instances or storage forms (tenant_model id vs legacy composite
+// name) retrieve together.
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
+		return "default:" + strings.TrimSpace(kb.TenantID)
 	}
-	if strings.TrimSpace(kb.EmbdID) != "" {
-		return "embedding:" + strings.TrimSpace(kb.EmbdID)
-	}
-	return "default:" + strings.TrimSpace(kb.TenantID)
+	return "embedding:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
 }
 
 func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
@@ -512,15 +534,16 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 		driver    modelModule.ModelDriver
 		modelName string
 		apiConfig *modelModule.APIConfig
+		maxTokens int
 		err       error
 	)
-	driver, modelName, apiConfig, _, err = a.modelResolver.ResolveModelConfig(
+	driver, modelName, apiConfig, maxTokens, err = a.modelResolver.ResolveModelConfig(
 		ctx, tenantID, entity.ModelTypeRerank, req.RerankID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve rerank model: %w", err)
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.
@@ -537,6 +560,7 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
 		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
 		Positions:        firstValueFromMap(raw, "positions", "position_int"),
+		MomID:            stringFromMap(raw, "mom_id"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),

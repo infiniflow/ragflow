@@ -261,12 +261,12 @@ type volcenginePromptTokensDetails struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (v *VolcEngine) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
@@ -283,7 +283,7 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 	var totalUsage TokenUsage
 	var requestID string
 
-	for i, text := range texts {
+	for i, text := range request.Texts {
 
 		reqBody := map[string]interface{}{
 			"model":           *modelName,
@@ -361,7 +361,7 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, texts []strin
 }
 
 // Rerank calculates similarity scores between query and documents
-func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", v.Name())
 }
 

@@ -101,20 +101,27 @@ class Graph:
 
     def load(self):
         self.components = self.dsl["components"]
-        cpn_nms = set([])
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
+        for cpn in self.components.values():
             cpn["obj"]["params"]["custom_header"] = self.custom_header
+
+        component_params = self.validate_component_parameters(self.dsl)
+        for k, cpn in self.components.items():
+            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, component_params[k])
+
+        self.path = self.dsl.get("path", [])
+
+    @staticmethod
+    def validate_component_parameters(dsl):
+        component_params = {}
+        for k, cpn in dsl["components"].items():
+            param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
                 param.check()
             except Exception as e:
-                raise ValueError(self.get_component_name(k) + f": {e}")
-
-            cpn["obj"] = component_class(cpn["obj"]["component_name"])(self, k, param)
-
-        self.path = self.dsl["path"]
+                raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
+            component_params[k] = param
+        return component_params
 
     def __str__(self):
         self.dsl["path"] = self.path
@@ -161,25 +168,30 @@ class Graph:
             logging.exception(e)
 
     def close(self):
-        from common.mcp_tool_call_conn import MCPToolCallSession
+        from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession
 
         seen = set()
         for cpn in self.components.values():
             obj = cpn.get("obj")
             if obj and hasattr(obj, "tools"):
                 for tool in obj.tools.values():
-                    if isinstance(tool, MCPToolCallSession) and id(tool) not in seen:
-                        seen.add(id(tool))
+                    session = tool if isinstance(tool, MCPToolCallSession) else (tool.session if isinstance(tool, MCPToolBinding) else None)
+                    if isinstance(session, MCPToolCallSession) and id(session) not in seen:
+                        seen.add(id(session))
                         try:
-                            tool.close_sync(timeout=3)
+                            session.close_sync(timeout=3)
                         except Exception:
-                            pass
+                            logging.exception("Error closing MCP session for server %s", session._mcp_server.id)
 
-    def get_component_name(self, cid):
-        for n in self.dsl.get("graph", {}).get("nodes", []):
+    @staticmethod
+    def _get_component_name(dsl, cid):
+        for n in dsl.get("graph", {}).get("nodes", []):
             if cid == n["id"]:
                 return n["data"]["name"]
         return ""
+
+    def get_component_name(self, cid):
+        return self._get_component_name(self.dsl, cid)
 
     def run(self, **kwargs):
         raise NotImplementedError()
@@ -203,30 +215,19 @@ class Graph:
         # Reference the canonical pre-compiled regex from ComponentBase so
         # the source-pattern and the runtime-pattern can never drift apart.
         pat = ComponentBase.variable_ref_patt_re
-        out_parts = []
-        last = 0
 
-        for m in pat.finditer(value):
-            out_parts.append(value[last : m.start()])
+        def replace(m):
             key = m.group(1)
             v = self.get_variable_value(key)
             if v is None:
-                rep = ""
+                return ""
             elif isinstance(v, partial):
-                buf = []
-                for chunk in v():
-                    buf.append(chunk)
-                rep = "".join(buf)
+                return "".join(v())
             elif isinstance(v, str):
-                rep = v
-            else:
-                rep = json.dumps(v, ensure_ascii=False)
+                return v
+            return json.dumps(v, ensure_ascii=False)
 
-            out_parts.append(rep)
-            last = m.end()
-
-        out_parts.append(value[last:])
-        return "".join(out_parts)
+        return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
@@ -335,7 +336,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": [],
             "sys.history": [],
-            "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self.variables = {}
         # Aggregated provider token usage (prompt/completion/total) across every LLM
@@ -354,7 +355,7 @@ class Canvas(Graph):
             if "sys.history" not in self.globals:
                 self.globals["sys.history"] = []
             if "sys.date" not in self.globals:
-                self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             self.globals = {
                 "sys.query": "",
@@ -362,7 +363,7 @@ class Canvas(Graph):
                 "sys.conversation_turns": 0,
                 "sys.files": [],
                 "sys.history": [],
-                "sys.date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sys.date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         if "variables" in self.dsl:
             self.variables = self.dsl["variables"]
@@ -378,10 +379,12 @@ class Canvas(Graph):
         self.dsl["memory"] = self.memory
         return super().__str__()
 
-    def clear_history(self):
+    def start_new_session(self):
+        """Discard replica state that must not leak into a fresh session."""
         self.history = []
-        if isinstance(self.globals.get("sys.history"), list):
-            self.globals["sys.history"] = []
+        self.globals["sys.history"] = []
+        self.path = []
+        _logger.debug("Canvas conversation history and execution path reset for a new session")
 
     def reset(self, mem=False):
         super().reset()
@@ -389,7 +392,6 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
-        print(self.variables)
         for k in self.globals.keys():
             if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
@@ -467,8 +469,67 @@ class Canvas(Graph):
                 langfuse_run_attrs.set(None)
             reset_llm_request_context(_req_ctx_token)
 
+    def _schedulable(self, f: int, t: int) -> int:
+        """Reorder the batch window ``path[f:t]`` so it only holds runnable nodes.
+
+        Everything in the window is dispatched concurrently, so a node may only read
+        output a component produced in an earlier batch. A node waiting on another
+        member of the window is moved behind it and runs in the next batch; a node
+        waiting on something that was never scheduled is dropped, as before, and so
+        is anything left waiting on what was dropped. A cycle, where every candidate
+        left waits on another candidate, is failed rather than run. Returns the new
+        end of the window.
+        """
+        if self.path[0].lower().find("userfillup") >= 0:
+            return t
+
+        finished = set(self.path[:f])
+        window = set(self.path[f:t])
+        waiting_on = {}
+        for cpn_id in self.path[f:t]:
+            cpn = self.get_component_obj(cpn_id)
+            if cpn.component_name.lower() in ["begin", "userfillup"]:
+                waiting_on[cpn_id] = []
+            else:
+                waiting_on[cpn_id] = [c for c in cpn.get_dependency_ids() if c != cpn_id]
+
+        while True:
+            # A dependency that is neither finished nor still in the window will never
+            # produce output, so its dependents cannot run either.
+            unavailable = {c for c in window if any(d not in finished and d not in window for d in waiting_on[c])}
+            if not unavailable:
+                break
+            window -= unavailable
+
+        ready, deferred = [], []
+        for cpn_id in self.path[f:t]:
+            if cpn_id not in window:
+                _logger.debug("[Canvas] Dropping '%s', upstream %s never ran", cpn_id, [d for d in waiting_on[cpn_id] if d not in finished])
+                continue
+            if any(c in window for c in waiting_on[cpn_id]):
+                _logger.debug("[Canvas] Holding '%s' for the next batch, it reads %s", cpn_id, [c for c in waiting_on[cpn_id] if c in window])
+                deferred.append(cpn_id)
+            else:
+                ready.append(cpn_id)
+
+        if not ready and deferred:
+            # Every candidate waits on another candidate, which takes a cycle in the
+            # canvas. Dispatching them would have each read the other's output
+            # before it is written, so both would run on an empty value and an LLM
+            # node would spend a real request on an empty prompt. Fail them
+            # instead: the window still advances, so the run terminates, and the
+            # reason reaches whoever reads the node.
+            for cpn_id in deferred:
+                blocked_by = [c for c in waiting_on[cpn_id] if c in window]
+                self.get_component_obj(cpn_id).set_unrunnable(f"'{cpn_id}' and {blocked_by} reference each other, so neither can be given its input.")
+            _logger.debug("[Canvas] %s reference each other, none of them can run", deferred)
+            ready, deferred = deferred, []
+
+        self.path[f:t] = ready + deferred
+        return f + len(ready)
+
     async def _run_impl(self, **kwargs):
-        self.globals["sys.date"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()
@@ -567,33 +628,18 @@ class Canvas(Graph):
                     call_ctx = contextvars.copy_context()
                     await loop.run_in_executor(self._thread_pool, partial(call_ctx.run, bound_call))
 
-            i = f
-            while i < t:
+            for i in range(f, t):
                 cpn = self.get_component_obj(self.path[i])
-                task_fn = None
-                call_kwargs = None
 
                 if cpn.component_name.lower() in ["begin", "userfillup"]:
                     call_kwargs = {"inputs": kwargs.get("inputs", {})}
-                    task_fn = cpn.invoke
-                    i += 1
                 else:
-                    for _, ele in cpn.get_input_elements().items():
-                        if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i] and self.path[0].lower().find("userfillup") < 0:
-                            self.path.pop(i)
-                            t -= 1
-                            break
-                    else:
-                        call_kwargs = cpn.get_input()
-                        task_fn = cpn.invoke
-                        i += 1
-
-                if task_fn is None:
-                    continue
+                    call_kwargs = cpn.get_input()
+                task_fn = cpn.invoke
 
                 _logger.debug(
                     "[Canvas] Invoking component '%s' (%s) with inputs: %s",
-                    self.get_component_name(self.path[i - 1]),
+                    self.get_component_name(self.path[i]),
                     cpn.component_name,
                     json.dumps(call_kwargs, ensure_ascii=False, default=str)[:500],
                 )
@@ -607,12 +653,15 @@ class Canvas(Graph):
 
         def _node_finished(cpn_obj):
             outputs = cpn_obj.output()
+            logged_outputs = dict(outputs)
+            if logged_outputs.get("_ERROR"):
+                logged_outputs["_ERROR"] = "<redacted>"
             _logger.debug(
                 "[Canvas] Component '%s' (%s) finished. Outputs: %s, Error: %s",
                 self.get_component_name(cpn_obj._id),
                 self.get_component_type(cpn_obj._id),
-                json.dumps(outputs, ensure_ascii=False, default=str)[:500],
-                cpn_obj.error(),
+                json.dumps(logged_outputs, ensure_ascii=False, default=str)[:500],
+                bool(cpn_obj.error()),
             )
             return decorate(
                 "node_finished",
@@ -633,7 +682,7 @@ class Canvas(Graph):
         partials = []
         tts_mdl = None
         while idx < len(self.path):
-            to = len(self.path)
+            to = self._schedulable(idx, len(self.path))
             for i in range(idx, to):
                 yield decorate(
                     "node_started",
@@ -647,15 +696,23 @@ class Canvas(Graph):
                     },
                 )
             await _run_batch(idx, to)
-            to = len(self.path)
             # post-processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
                 cpn_obj = self.get_component_obj(self.path[i])
-                if cpn_obj.component_name.lower() == "message":
+                is_message = cpn_obj.component_name.lower() == "message"
+                streamed_message_content = None
+                if is_message:
                     if cpn_obj.get_param("auto_play"):
-                        tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        try:
+                            tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
+                            tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        except Exception as e:
+                            # A missing/unresolvable default TTS model must not
+                            # fail the whole run: skip auto play and keep the
+                            # textual answer flowing.
+                            _logger.warning("Auto play skipped: default TTS model is not available: %s", e)
+                            tts_mdl = None
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""
@@ -759,7 +816,6 @@ class Canvas(Graph):
                                 await tts_queue.join()
                                 for ev in await _drain_ready_tts():
                                     yield ev
-                                cpn_obj.set_output("content", _m)
                             finally:
                                 for worker in tts_workers:
                                     worker.cancel()
@@ -768,9 +824,28 @@ class Canvas(Graph):
 
                         async for ev in _stream_events():
                             yield ev
+                        streamed_message_content = _m
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
 
+                other_branch = False
+                component_error = cpn_obj.error()
+                if component_error:
+                    if is_message and isinstance(cpn_obj.output("content"), partial):
+                        cpn_obj.set_output("content", None)
+                    ex = cpn_obj.exception_handler()
+                    if ex and ex["goto"]:
+                        self.path.extend(ex["goto"])
+                        other_branch = True
+                    elif ex and ex["default_value"]:
+                        yield decorate("message", {"content": ex["default_value"]})
+                        yield decorate("message_end", {})
+                    else:
+                        self.error = component_error if "Task has been canceled" in component_error else f"Component execution failed: {cpn_obj._id}"
+
+                if is_message and not component_error:
+                    if streamed_message_content is not None:
+                        cpn_obj.set_output("content", streamed_message_content)
                     message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
 
@@ -780,18 +855,6 @@ class Canvas(Graph):
                             break
                         yield _node_finished(_cpn_obj)
                         partials.pop(0)
-
-                other_branch = False
-                if cpn_obj.error():
-                    ex = cpn_obj.exception_handler()
-                    if ex and ex["goto"]:
-                        self.path.extend(ex["goto"])
-                        other_branch = True
-                    elif ex and ex["default_value"]:
-                        yield decorate("message", {"content": ex["default_value"]})
-                        yield decorate("message_end", {})
-                    else:
-                        self.error = cpn_obj.error()
 
                 if cpn_obj.component_name.lower() not in ("iteration", "loop"):
                     if isinstance(cpn_obj.output("content"), partial):
@@ -807,7 +870,7 @@ class Canvas(Graph):
                     nonlocal other_branch
                     if other_branch:
                         return
-                    if self.path[-1] == cpn_id:
+                    if self.path[-1] == cpn_id or cpn_id in self.path[to:]:
                         return
                     self.path.append(cpn_id)
 
@@ -834,7 +897,7 @@ class Canvas(Graph):
                     _extend_path(cpn["downstream"])
 
             if self.error:
-                logging.error(f"Runtime Error: {self.error}")
+                logging.error("Runtime Error: %s", self.error)
                 break
             idx = to
 

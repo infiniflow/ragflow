@@ -19,7 +19,10 @@ package service
 import (
 	"context"
 	"fmt"
+	modelModule "ragflow/internal/entity/models"
 	"strings"
+
+	"ragflow/internal/entity"
 )
 
 // NavEmbedder is the production implementation of nlp.NavEmbedder. It resolves
@@ -38,14 +41,37 @@ func NewNavEmbedder(modelSvc *ModelProviderService, embdModelName string) *NavEm
 	return &NavEmbedder{modelSvc: modelSvc, embdModelName: embdModelName}
 }
 
-// Encode embeds texts for the tenant and returns float32 vectors.
+// Encode embeds texts as DOCUMENTS for the tenant and returns float32 vectors.
 func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
+	return e.encode(ctx, tenantID, texts, false)
+}
+
+// EncodeQueries is the query-side counterpart of Encode (Python
+// LLMBundle.encode_queries). Providers that embed queries and documents
+// asymmetrically — Cohere search_query, Voyage query, Jina retrieval.query,
+// NVIDIA query — only apply their query encoding when this method is used, so
+// every caller embedding a SEARCH QUERY must prefer it over Encode.
+func (e *NavEmbedder) EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
+	return e.encode(ctx, tenantID, texts, true)
+}
+
+func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []string, query bool) ([][]float32, error) {
 	if e.modelSvc == nil {
 		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
 	}
 	name := e.embdModelName
 	if name == "" {
-		name = tenantID // composite name falls back to tenant default resolution
+		// Resolve the tenant's default embedding model composite reference
+		// ("<model>@<instance>@<provider>") — NOT the tenant id. Passing the
+		// tenant id as the model ref makes ResolveModelConfig parse it as a
+		// "model@provider" key, which fails with "provider name missing in model
+		// name: <tenant_id>". Mirrors knowledge_compiler_wiring.go's chat-model
+		// default resolution.
+		ref, err := e.modelSvc.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeEmbedding)
+		if err != nil {
+			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		}
+		name = ref
 	}
 	model, err := e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
 	if err != nil {
@@ -60,7 +86,7 @@ func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, nonEmpty, model.APIConfig, nil, nil)
+	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
 	if err != nil {
 		return nil, err
 	}

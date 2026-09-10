@@ -264,7 +264,7 @@ def test_session_delete_requires_auth_and_invalid_target_contract(rest_client, c
     assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_session_delete_basic_scenarios(rest_client, create_chat):
     cases = [
         ("none payload", None, 0, 5, {}),
@@ -668,7 +668,7 @@ def test_chat_completion_nonstream_with_session(rest_client, create_chat):
     assert completion_payload["data"]["session_id"] == session_id, completion_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_completion_nonstream_with_chat_without_session(rest_client, create_chat):
     chat_id = create_chat("restful_completion_nonstream_without_session_chat")
 

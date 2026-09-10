@@ -30,6 +30,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
+import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
@@ -53,6 +54,9 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { removeSessions } = useRemoveSessions();
   const { setConversationBoth } = useChatUrlParams();
   const { conversationId } = useGetChatSearchParams();
+  const removeStreamSessions = useChatStreamStore(
+    (state) => state.removeSessions,
+  );
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -118,10 +122,12 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
       conversationList.filter((item) => item.is_new).map((item) => item.id),
     );
     const persistedIds: string[] = [];
+    const removedTemporaryIds: string[] = [];
 
     visibleSelectedIds.forEach((id) => {
       if (temporaryIdSet.has(id)) {
         removeTemporaryConversation(id);
+        removedTemporaryIds.push(id);
       } else {
         persistedIds.push(id);
       }
@@ -131,6 +137,13 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     if (persistedIds.length > 0) {
       removeCode = await removeSessions(persistedIds);
     }
+
+    // Purge the streaming store for every id that actually went away, aborting
+    // any in-flight stream so it can't keep writing into a dead session.
+    removeStreamSessions([
+      ...removedTemporaryIds,
+      ...(removeCode === 0 ? persistedIds : []),
+    ]);
 
     if (currentConversationDeleted && conversationId) {
       const currentIsTemporary = temporaryIdSet.has(conversationId);
@@ -148,6 +161,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     setConversationBoth,
     removeTemporaryConversation,
     removeSessions,
+    removeStreamSessions,
     exitSelectionMode,
   ]);
 

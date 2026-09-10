@@ -357,12 +357,12 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	return sender(&endOfStream, nil)
 }
 
-func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (c *CoHereModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -374,10 +374,15 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Embedding, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
+	inputType := "search_document"
+	if request.Query {
+		// Python CoHereEmbed.encode_queries uses input_type="search_query".
+		inputType = "search_query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"texts":           texts,
-		"input_type":      "search_document",
+		"texts":           request.Texts,
+		"input_type":      inputType,
 		"embedding_types": []string{"float"},
 	}
 	// This is only available for embed-v4 and newer models. Possible values are 256, 512, 1024, and 1536. The default is 1536.
@@ -449,11 +454,12 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	return embeddings, nil
 }
 
-func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

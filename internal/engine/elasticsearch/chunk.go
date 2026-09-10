@@ -36,13 +36,13 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
+	"github.com/bytedance/sonic"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
 
-var jsonIterator = jsoniter.Config{
+var jsonIterator = sonic.Config{
 	SortMapKeys: false,
 }.Froze()
 
@@ -209,6 +209,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
+			docCopy["tag_feas"] = raw
+		}
 		if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
@@ -608,6 +611,9 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	// Update document fields if any remain
 	if len(doc) > 0 {
+		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+			doc["tag_feas"] = raw
+		}
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
 		req := esapi.UpdateRequest{
@@ -782,6 +788,90 @@ func copyFields(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+// formatOrderedTagFeas formats tag_feas as json.RawMessage with keys ordered
+// strictly descending by score, preventing jsoniter map-key randomized output.
+func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
+	if v == nil {
+		return nil, false
+	}
+	if raw, ok := v.(json.RawMessage); ok {
+		return raw, true
+	}
+	if marshaler, ok := v.(json.Marshaler); ok {
+		b, err := marshaler.MarshalJSON()
+		if err == nil {
+			return json.RawMessage(b), true
+		}
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	var kvs []kv
+	roundScore := func(f float64) int {
+		if f < 0 {
+			return int(f - 0.5)
+		}
+		return int(f + 0.5)
+	}
+
+	switch m := v.(type) {
+	case map[string]int:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, val})
+		}
+	case map[string]float64:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, roundScore(val)})
+		}
+	case map[string]any:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			switch score := val.(type) {
+			case int:
+				kvs = append(kvs, kv{k, score})
+			case float64:
+				kvs = append(kvs, kv{k, roundScore(score)})
+			case int64:
+				kvs = append(kvs, kv{k, int(score)})
+			case json.Number:
+				if f, err := score.Float64(); err == nil {
+					kvs = append(kvs, kv{k, roundScore(f)})
+				}
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	if len(kvs) == 0 {
+		return json.RawMessage("{}"), true
+	}
+
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, item := range kvs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		kb, _ := json.Marshal(item.k)
+		buf.Write(kb)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(item.v))
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes()), true
+}
+
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
@@ -885,6 +975,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build the query
 	var qry map[string]interface{}
 	if len(filterClauses) == 0 && len(mustClauses) == 0 && len(mustNotClauses) == 0 {
+		if len(condition) > 0 {
+			return 0, fmt.Errorf("ES delete aborted: non-empty condition yielded match_all query on index %s", fullIndexName)
+		}
 		qry = map[string]interface{}{"match_all": map[string]interface{}{}}
 	} else {
 		boolMap := map[string]interface{}{}
@@ -1082,12 +1175,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if k <= 0 {
 			k = 1024
 		}
-		numCandidates := k * 2
+		k = min(k, 10000)
+		numCandidates := min(k*2, 10000)
 
 		similarity := 0.0
 		if matchDense.ExtraOptions != nil {
 			if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
 				similarity = sim
+			}
+			if n, ok := common.GetInt(matchDense.ExtraOptions["num_candidates"]); ok {
+				numCandidates = max(k, min(n, 10000))
 			}
 		}
 
@@ -1676,6 +1773,7 @@ func memoryMessageStatusBool(value interface{}) bool {
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
+	var mustNotClauses []interface{}
 	var filterClauses []interface{}
 	var shouldClauses []interface{}
 
@@ -1750,6 +1848,14 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "must_not" {
+			if condition, ok := v.(map[string]interface{}); ok {
+				if field, ok := condition["exists"].(string); ok && field != "" {
+					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
+				}
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue
@@ -1758,6 +1864,11 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 				shouldClauses = append(shouldClauses,
 					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
 					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
+				)
+			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
+				shouldClauses = append(shouldClauses,
+					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
+					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
 				)
 			} else if strVal, ok := v.(string); ok && strVal != "" {
 				shouldClauses = append(shouldClauses,
@@ -1815,6 +1926,9 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	if len(mustClauses) > 0 {
 		boolQuery["must"] = mustClauses
 	}
+	if len(mustNotClauses) > 0 {
+		boolQuery["must_not"] = mustNotClauses
+	}
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
 	}
@@ -1841,7 +1955,7 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 	minimumShouldMatch := "0%"
 	if matchText.ExtraOptions != nil {
 		if msm, ok := matchText.ExtraOptions["minimum_should_match"].(float64); ok {
-			minimumShouldMatch = fmt.Sprintf("%d%%", int(msm*100))
+			minimumShouldMatch = common.FormatMinimumShouldMatchPercent(msm)
 		}
 	}
 
@@ -2148,7 +2262,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
 				separator = "###"
 			}
-			for _, tag := range strings.Split(valueStr, separator) {
+			for tag := range strings.SplitSeq(valueStr, separator) {
 				countElasticsearchAggregationTag(tagCounts, tag)
 			}
 			continue
@@ -2877,51 +2991,6 @@ func getDefaultSkillMapping() map[string]interface{} {
 			},
 		},
 	}
-}
-
-// rerankWindow returns the candidate-window size shared by retrieval's
-// block fetch and slice. Mirrors Dealer._rerank_window in rag/nlp/search.py.
-//
-// `size` is the per-page size; the window MUST be an exact multiple of it,
-// otherwise the block fetched (offset // window) and the in-block page slice
-// (offset % window) drift apart and deep pagination silently drops results.
-//
-// The window targets a provider-friendly pool of ~64 candidates, bounded by
-// `topK` when given (i.e. when an external reranker is active), and is always
-// rounded UP to a whole number of pages to preserve the alignment invariant.
-func rerankWindow(size, topK int) int {
-	if size <= 1 {
-		if topK > 0 {
-			return min(30, topK)
-		}
-		return 30
-	}
-	window := ((64 + size - 1) / size) * size // ceil(64/size) * size
-	if topK > 0 {
-		if aligned := ((topK + size - 1) / size) * size; window > aligned {
-			window = aligned
-		}
-	}
-	return window
-}
-
-// calculatePagination calculates offset and limit based on page, size and topK
-func calculatePagination(page, size, topK int) (int, int) {
-	if page < 1 {
-		page = 1
-	}
-	if size <= 0 {
-		size = 30
-	}
-	if topK <= 0 {
-		topK = 1024
-	}
-
-	window := rerankWindow(size, topK)
-
-	offset := max((page-1)*window, 0)
-
-	return offset, window
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format

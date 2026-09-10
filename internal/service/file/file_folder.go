@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -44,12 +45,14 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 	}
 
 	// Check if parent folder exists
-	if _, err := s.fileDAO.GetByID(ctx, dao.DB, pfID); err != nil {
+	folder, err := s.fileDAO.GetByID(ctx, dao.DB, pfID)
+	if err != nil {
 		return nil, fmt.Errorf("folder not found")
 	}
 
 	// Get files by parent folder ID
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, orderby, desc, keywords)
+	excludeSkills := folder.ID == folder.ParentID
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, orderby, desc, keywords, excludeSkills)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +222,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get parent folder
@@ -241,7 +244,7 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get all parent folders
@@ -308,6 +311,13 @@ func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, ten
 
 // CreateFolder creates a new folder or virtual file
 func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID, fileType string) (map[string]interface{}, error) {
+	// "/" is the root folder name and the path separator used by recursive
+	// folder creation, so names containing it collide with the root folder
+	// and break path-based lookups.
+	if strings.Contains(name, "/") {
+		return nil, errors.New(`Folder name cannot contain "/"`)
+	}
+
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
@@ -425,6 +435,9 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 		if len(srcFileIDs) > 1 {
 			return false, "new name can only be used with a single file"
 		}
+		if strings.Contains(newName, "/") {
+			return false, `Name cannot contain "/"`
+		}
 
 		file := filesMap[srcFileIDs[0]]
 		// Check extension for non-folder files
@@ -489,18 +502,35 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 			return false, "Database error (File rename)!"
 		}
 
-		// Update associated document name if exists
-		informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, file.ID)
-		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
-			docID := *informs[0].DocumentID
-			documentDAO := dao.NewDocumentDAO()
-			if err = documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"name": newName}); err != nil {
-				return false, "Database error (Document rename)!"
-			}
+		// Update names of all linked documents if any exist
+		if err = s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
+			return false, "Database error (Document rename)!"
 		}
 	}
 
 	return true, ""
+}
+
+// renameLinkedDocuments renames every knowledgebase document linked to the
+// given file so the new name is reflected in all linked datasets. Only the
+// document name is synced: the Python reference (_rename_linked_documents in
+// api/apps/services/file_api_service.py) updates no other denormalized field
+// on rename.
+func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName string) error {
+	informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
+	if err != nil {
+		return err
+	}
+	documentDAO := dao.NewDocumentDAO()
+	for _, inform := range informs {
+		if inform.DocumentID == nil {
+			continue
+		}
+		if err := documentDAO.UpdateByID(ctx, dao.DB, *inform.DocumentID, map[string]interface{}{"name": newName}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // moveEntryRecursive recursively moves a file or folder entry
@@ -587,15 +617,10 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 		}
 	}
 
-	// Update associated document name if renamed
+	// Update names of all linked documents if renamed
 	if overrideName != "" {
-		informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, sourceFile.ID)
-		if err == nil && len(informs) > 0 && informs[0].DocumentID != nil {
-			docID := *informs[0].DocumentID
-			documentDAO := dao.NewDocumentDAO()
-			if err = documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"name": overrideName}); err != nil {
-				return fmt.Errorf("database error (Document rename): %w", err)
-			}
+		if err := s.renameLinkedDocuments(ctx, sourceFile.ID, overrideName); err != nil {
+			return fmt.Errorf("database error (Document rename): %w", err)
 		}
 	}
 

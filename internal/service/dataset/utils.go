@@ -6,6 +6,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 		"document_count":  kb.DocNum,
 		"token_num":       kb.TokenNum,
 		"chunk_count":     kb.ChunkNum,
-		"parser_id":       kb.ParserID,
+		"parser_id":       datasetParserIDForResponse(kb.ParserID),
 		"parser_config":   jsonMapValue(kb.ParserConfig),
 		"pagerank":        kb.Pagerank,
 		"embedding_model": kb.EmbdID,
@@ -56,7 +57,7 @@ func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 		"chunk_count":              kb.ChunkNum,
 		"similarity_threshold":     kb.SimilarityThreshold,
 		"vector_similarity_weight": kb.VectorSimilarityWeight,
-		"parser_id":                kb.ParserID,
+		"parser_id":                datasetParserIDForResponse(kb.ParserID),
 		"parser_config":            kb.ParserConfig,
 		"pagerank":                 kb.Pagerank,
 		"create_time":              kb.CreateTime,
@@ -163,43 +164,62 @@ func datasetStringSlice(value interface{}) []string {
 }
 
 func datasetGuessVecField(src map[string]interface{}) string {
-	var f64, f32 string
-	for k, v := range src {
-		if !strings.HasPrefix(k, "q_") && !strings.HasPrefix(k, "u_") {
-			continue
-		}
-		switch v.(type) {
-		case []float64:
-			f64 = k
-		case string:
-			f32 = k
+	for k := range src {
+		if strings.HasSuffix(k, "_vec") {
+			return k
 		}
 	}
-	if f64 != "" {
-		return f64
-	}
-	return f32
+	return ""
 }
 
 func datasetAsFloatVec(v interface{}) []float64 {
 	switch val := v.(type) {
 	case []float64:
 		return val
+	case []float32:
+		vec := make([]float64, len(val))
+		for i, n := range val {
+			vec[i] = float64(n)
+		}
+		return vec
 	case []interface{}:
 		vec := make([]float64, 0, len(val))
 		for _, item := range val {
 			switch n := item.(type) {
 			case float64:
 				vec = append(vec, n)
+			case float32:
+				vec = append(vec, float64(n))
 			case int:
 				vec = append(vec, float64(n))
 			case int64:
 				vec = append(vec, float64(n))
 			case json.Number:
-				if f, err := n.Float64(); err == nil {
-					vec = append(vec, f)
+				f, err := n.Float64()
+				if err != nil {
+					return nil
 				}
+				vec = append(vec, f)
+			case string:
+				f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+				if err != nil {
+					return nil
+				}
+				vec = append(vec, f)
+			default:
+				return nil
 			}
+		}
+		return vec
+	case string:
+		parts := strings.FieldsFunc(strings.Trim(val, "[]{}"), func(r rune) bool { return r == '\t' || r == ',' })
+		vec := make([]float64, 0, len(parts))
+		for _, part := range parts {
+			f, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+			if err != nil {
+				return nil
+			}
+			vec = append(vec, f)
 		}
 		return vec
 	}
@@ -236,7 +256,7 @@ func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.Emb
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, modelModule.EmbedRequest{Texts: cleaned}, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +325,11 @@ func datasetRoundFloat(value float64, places int) float64 {
 
 func datasetChunkID(chunk map[string]interface{}) string {
 	if id, ok := chunk["chunk_id"]; ok {
+		if s, ok := id.(string); ok {
+			return s
+		}
+	}
+	if id, ok := chunk["id"]; ok {
 		if s, ok := id.(string); ok {
 			return s
 		}

@@ -64,12 +64,13 @@ func TestPhase3_6_ToolDSLLoading(t *testing.T) {
 		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
 	})
 
+	ctx := t.Context()
 	c := NewAgentComponent(AgentParam{
 		ModelID:   "stub",
 		MaxRounds: 1,
 		Tools:     []string{"retrieval"}, // known tool
 	})
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"user_prompt": "test",
 	})
 	if err != nil {

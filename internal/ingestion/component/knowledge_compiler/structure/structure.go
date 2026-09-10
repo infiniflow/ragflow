@@ -87,7 +87,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
-		i, batch := i, batch
 		jobs = append(jobs, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
@@ -157,16 +156,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// ---- GRAPH ----
-	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
-	if err != nil {
-		return common.Outputs{}, err
-	}
+	// graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
+	// if err != nil {
+	// 	return common.Outputs{}, err
+	// }
 
 	// Buffer every product (plus the graph) in one slice; the component merges
 	// them into the upstream chunk stream (matching Python, which appends
 	// compiled units onto the chunk list).
 	products := append([]common.Product{}, prods...)
-	products = append(products, graphProduct)
+	// products = append(products, graphProduct)
 
 	out := common.Outputs{
 		Products:          products,

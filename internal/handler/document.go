@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -69,7 +70,7 @@ type documentServiceIface interface {
 	DeleteDocumentAllMetadata(ctx context.Context, docID string) error
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
-	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
+	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
@@ -82,6 +83,7 @@ type documentServiceIface interface {
 	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
+	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
 }
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
@@ -253,6 +255,12 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
 	docID := c.Param("id")
 
 	if docID == "" {
@@ -261,9 +269,23 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
+	preview, err := h.documentService.GetDocumentPreview(ctx, user.ID, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "document not found")
+		switch {
+		case errors.Is(err, document.ErrPreviewDocumentNotFound):
+			common.ErrorWithCode(c, common.CodeDataError, "document not found")
+		case errors.Is(err, document.ErrPreviewFileEmpty):
+			common.ErrorWithCode(c, common.CodeDataError, "This file is empty.")
+		default:
+			// Surface the failure as a distinct server error (storage
+			// unreachable, missing object, bad address) instead of masking
+			// it as a missing document, while keeping the raw detail --
+			// which names the object-store bucket/key -- in the server
+			// log only.
+			common.Error("GetDocumentPreview failed", err,
+				zap.String("doc_id", docID), zap.String("user_id", user.ID))
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to load document preview")
+		}
 		return
 	}
 
@@ -614,7 +636,14 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		docs = append(docs, mapDocumentListItem(doc, metaFields))
 	}
 
-	common.SuccessWithData(c, gin.H{"total": total, "docs": docs}, "success")
+	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
+	if err != nil {
+		common.Warn("failed to check active ingestion tasks", zap.Error(err))
+		// Keep polling when the authoritative dataset-wide check is unavailable;
+		// otherwise an active task on another page could be missed.
+		hasActiveTasks = true
+	}
+	common.SuccessWithData(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -1107,6 +1136,13 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	processDuration := doc.ProcessDuration
+	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
+		if processDuration < 0 {
+			processDuration = 0
+		}
+	}
 	item := map[string]interface{}{
 		"id":               doc.ID,
 		"dataset_id":       doc.KbID,
@@ -1121,7 +1157,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"progress":         doc.Progress,
 		"progress_msg":     stringValue(doc.ProgressMsg),
 		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": doc.ProcessDuration,
+		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),
@@ -1136,6 +1172,9 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"create_date":      "",
 		"update_time":      int64(0),
 		"update_date":      "",
+	}
+	if doc.IngestionStatus != nil {
+		item["ingestion_status"] = *doc.IngestionStatus
 	}
 
 	if doc.CreateTime != nil {

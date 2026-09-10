@@ -63,7 +63,7 @@ func TestInvoke_GET(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
@@ -101,7 +101,7 @@ func TestInvoke_POST(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "POST",
 		"url":    srv.URL,
 		"body":   `{"k":"v"}`,
@@ -139,7 +139,7 @@ func TestInvoke_UsesNodeParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewInvokeComponent: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestInvoke_BadMethod(t *testing.T) {
 	setupAllowAnyHost(t, true)
 
 	c, _ := NewInvokeComponent(nil)
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "PATCH",
 		"url":    "http://localhost:1",
 	})
@@ -193,7 +193,7 @@ func TestInvoke_MissingURL(t *testing.T) {
 	setupAllowAnyHost(t, true)
 
 	c, _ := NewInvokeComponent(nil)
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 	})
 	if err == nil {
@@ -222,7 +222,7 @@ func TestInvoke_SSRFGuard_BlocksLoopback(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
@@ -252,7 +252,7 @@ func TestInvoke_SSRFGuard_BlocksMetadataIP(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    "http://169.254.169.254/latest/meta-data/",
 	})
@@ -288,7 +288,7 @@ func TestInvoke_SSRFGuard_BlocksProxy(t *testing.T) {
 	// (without a side-effect on the local server) is still
 	// caught. PR review round 5 / duplicate fix from the
 	// serverHit-only assertion in the earlier review.
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    "https://example.com/api",
 		"proxy":  "http://127.0.0.1:8080",
@@ -320,7 +320,7 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
@@ -388,7 +388,7 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	// resolver below). The SSRF guard validates against
 	// the validated public IP, then the dialer is
 	// expected to use that IP — even if the hostname
-	// "rebinds" to a different answer afterwards.
+	// "rebinds" to a different answer afterward.
 	// We achieve "rebinding" by stubbing the DNS lookup
 	// to return a different IP on a second call.
 	originalLookup := utility.LookupHost
@@ -401,7 +401,7 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	t.Cleanup(func() { utility.LookupHost = originalLookup })
 
 	c, _ := NewInvokeComponent(nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	_, err = c.Invoke(ctx, nil, map[string]any{
 		"method":  "GET",
@@ -429,7 +429,7 @@ func TestInvoke_ProxyRejectsHostnameTarget(t *testing.T) {
 	setupAllowAnyHost(t, false)
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"method": "GET",
 		"url":    "http://example.com/api",
 		"proxy":  "http://proxy.example.invalid:9999",

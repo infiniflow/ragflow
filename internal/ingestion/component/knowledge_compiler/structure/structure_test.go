@@ -463,8 +463,8 @@ func TestStructureRunGraphKind(t *testing.T) {
 			graphs++
 		}
 	}
-	if entities != 3 || relations != 2 || graphs != 1 {
-		t.Fatalf("products = %d entities + %d relations + %d graph, want 3+2+1", entities, relations, graphs)
+	if entities != 3 || relations != 2 || graphs != 0 {
+		t.Fatalf("products = %d entities + %d relations + %d graph, want 3+2+0", entities, relations, graphs)
 	}
 	if out.DuplicatesDropped != 1 {
 		t.Fatalf("DuplicatesDropped = %d, want 1 (the cross-chunk Beta)", out.DuplicatesDropped)
@@ -479,17 +479,6 @@ func TestStructureRunGraphKind(t *testing.T) {
 	// The merged entity keeps the LLM-merged payload content (parseable JSON).
 	if parsePayload(betaProduct.Content) == nil {
 		t.Fatalf("entity content is not payload JSON: %q", betaProduct.Content)
-	}
-
-	// Graph summary mirrors Python's {entities, relations} shape.
-	g := parsePayload(graphContentOf(out))
-	if g == nil {
-		t.Fatal("graph product missing/unparseable")
-	}
-	gEnts, _ := g["entities"].([]any)
-	gRels, _ := g["relations"].([]any)
-	if len(gEnts) != 3 || len(gRels) != 2 {
-		t.Fatalf("graph = %d entities + %d relations, want 3+2", len(gEnts), len(gRels))
 	}
 }
 
@@ -678,9 +667,23 @@ func TestLLMMergeDeciderDecideBatchEmpty(t *testing.T) {
 func TestLLMMergeDeciderDecideBatchSplitsByTokenBudget(t *testing.T) {
 	chat := &graphChat{}
 	d := NewLLMMergeDecider(chat, "llm1", hashEmbedder{dim: 8}, 0.99)
+	submittedBatches := 0
+	submittedChunks := 0
+	d.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
+		submittedBatches++
+		submittedChunks = len(jobs)
+		for _, job := range jobs {
+			if err := job(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	// Tiny model budget → one pair per sub-batch (exercises the split path).
-	// 20 * (1-0.15) = 17 token budget, well under each ~40-token pair.
-	d.SetMaxBatchTokens(20)
+	// Combined budget = 20 * 0.6 = 12 tokens, well under each ~40-token pair's
+	// (input+output) estimate. Output budget disabled (0) → combined-budget-only
+	// batching.
+	d.SetMaxBatchTokens(20, 0)
 
 	alpha := common.Product{
 		ID:      "row-alpha",
@@ -710,6 +713,9 @@ func TestLLMMergeDeciderDecideBatchSplitsByTokenBudget(t *testing.T) {
 	// Budget=1 → one LLM call per pair.
 	if chat.mergeCalls != before+3 {
 		t.Errorf("token-split DecideBatch made %d LLM calls, want 3", chat.mergeCalls-before)
+	}
+	if submittedBatches != 1 || submittedChunks != 3 {
+		t.Fatalf("token-split DecideBatch submitted %d batches/%d chunks, want one batch containing all chunks", submittedBatches, submittedChunks)
 	}
 	if len(results) != 3 {
 		t.Fatalf("want 3 results, got %d", len(results))
@@ -761,15 +767,4 @@ func TestCosineDecider(t *testing.T) {
 	if got != DecisionKeepBoth {
 		t.Fatalf("expected keep at 0.5, got %v", got)
 	}
-}
-
-// ---- helpers ----
-
-func graphContentOf(out common.Outputs) string {
-	for _, p := range out.Products {
-		if p.Meta["kind"] == "graph" {
-			return p.Content
-		}
-	}
-	return ""
 }

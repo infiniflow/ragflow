@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -193,15 +194,25 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil {
-		return nil, err
+	if err != nil || doc == nil {
+		return nil, ErrPreviewDocumentNotFound
+	}
+
+	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
+	// the same page uses — so the two panels can never disagree: the owning
+	// tenant always, and tenant members only when the dataset's permission
+	// is TEAM. A denial stays indistinguishable from a missing document so
+	// an unauthorized caller cannot probe document IDs (mirrors Python
+	// DocumentService.accessible in the preview path).
+	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+		return nil, ErrPreviewDocumentNotFound
 	}
 
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -211,10 +222,10 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 
 	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read document object %s/%s: %w", bucket, name, err)
 	}
 	if len(data) == 0 {
-		return nil, ErrArtifactNotFound
+		return nil, ErrPreviewFileEmpty
 	}
 
 	fileName := ""
@@ -225,9 +236,28 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 	ext := utility.GetFileExtension(fileName)
 	contentType := utility.GetContentType(ext, doc.Type)
 
+	// Legacy .doc (OLE2) documents cannot be rendered by the
+	// .docx-only web previewer; serve extracted plain text instead.
+	if ext == "doc" {
+		if text, cerr := extractDOCPreviewText(ctx, fileName, data); cerr == nil {
+			data = []byte(text)
+			contentType = "text/plain; charset=utf-8"
+		}
+	}
+
 	return &DocumentPreview{
 		Data:        data,
 		ContentType: contentType,
 		FileName:    fileName,
 	}, nil
+}
+
+// extractDOCPreviewText extracts plain text from a legacy .doc
+// document via the office_oxide-backed DOCParser.
+func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
+	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	if res.Err != nil {
+		return "", res.Err
+	}
+	return res.Text, nil
 }

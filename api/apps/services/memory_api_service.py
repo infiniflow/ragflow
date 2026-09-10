@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from api.apps import current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
@@ -251,6 +253,7 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     :param filter_params: {
         "memory_type": list[str],
         "tenant_id": list[str],
+        "ids": list[str],
         "storage_type": str
     }
     :param keywords: str
@@ -259,6 +262,18 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     """
     filter_dict: dict = {"storage_type": filter_params.get("storage_type"), "accessible_user_id": current_user.id}
     allowed_tenant_ids = _joined_tenant_ids(current_user.id)
+
+    memory_ids = _split_filter_values(filter_params.get("ids"))
+    if memory_ids:
+        accessible_memories = _filter_accessible_memories(memory_ids)
+        accessible_memory_ids = [m.id for m in accessible_memories]
+        denied_ids = [mid for mid in memory_ids if mid not in accessible_memory_ids]
+        if denied_ids:
+            logging.warning("User '%s' lacks permission for memories: '%s'", current_user.id, ", ".join(denied_ids))
+        filter_dict["ids"] = accessible_memory_ids
+        if not accessible_memory_ids:
+            return {"memory_list": [], "total_count": 0}
+
     tenant_ids = _split_filter_values(filter_params.get("tenant_id") or filter_params.get("owner_ids"))
     if tenant_ids:
         filter_dict["tenant_id"] = [tenant_id for tenant_id in tenant_ids if tenant_id in allowed_tenant_ids]

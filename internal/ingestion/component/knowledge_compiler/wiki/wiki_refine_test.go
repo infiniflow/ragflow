@@ -11,7 +11,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// refineChatStub returns per-page markdown keyed by the page title in the
+// refineChatStub returns per-page Markdown keyed by the page title in the
 // writer prompt so each page's result is distinct and deterministic.
 type refineChatStub struct{}
 
@@ -152,5 +152,14 @@ func TestRunRefine_CancelledCtxAborts(t *testing.T) {
 	}}
 	if _, err := p.runRefine(); err == nil {
 		t.Fatalf("runRefine err = nil, want context cancelled")
+	}
+}
+
+func TestShouldReportRefineProgress(t *testing.T) {
+	for completed := 1; completed <= 12; completed++ {
+		want := completed == 5 || completed == 10 || completed == 12
+		if got := shouldReportRefineProgress(completed, 12); got != want {
+			t.Fatalf("completed=%d: got %t, want %t", completed, got, want)
+		}
 	}
 }

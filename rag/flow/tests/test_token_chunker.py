@@ -1,9 +1,11 @@
-import importlib.util
 import asyncio
+import importlib.util
 import sys
 import types
 from contextlib import contextmanager
 from pathlib import Path
+
+import pytest
 
 
 @contextmanager
@@ -107,7 +109,7 @@ def _load_token_chunker_with_stubs():
             schema_module = importlib.util.module_from_spec(schema_spec)
             _install("rag.flow.chunker.schema", schema_module)
             schema_spec.loader.exec_module(schema_module)
-        except Exception:
+        except Exception:  # noqa: BLE001
             schema_module = types.ModuleType("rag.flow.chunker.schema")
 
             class TokenChunkerFromUpstream:
@@ -303,11 +305,8 @@ def test_token_size_mode_normalized_to_delimiter():
 
         bad = token_chunker_module.TokenChunkerParam()
         bad.delimiter_mode = "nope"
-        try:
+        with pytest.raises(ValueError):
             bad.check()
-            raise AssertionError("expected check() to reject unknown delimiter_mode")
-        except Exception:
-            pass
 
 
 def test_json_no_delimiter_mode_merges_to_token_cap():
@@ -375,7 +374,7 @@ def test_json_delimiter_mode_pdf_positions_per_segment_not_broadcast():
                 if key in preview_cache:
                     chunk["img_id"] = preview_cache[key]
                 else:
-                    new_id = "img-%d" % len(preview_cache)
+                    new_id = f"img-{len(preview_cache)}"
                     chunk["img_id"] = new_id
                     preview_cache[key] = new_id
 
@@ -410,6 +409,95 @@ def test_json_delimiter_mode_pdf_positions_per_segment_not_broadcast():
         assert len(set(img_ids)) == len(img_ids), img_ids
 
 
+def test_json_no_delimiter_mode_overlap_prefix_carries_prev_positions():
+    # TDD test for #18148. When the JSON path merges to the token cap with
+    # overlapped_percent>0, a fresh chunk starts with an overlap prefix copied
+    # from the previous chunk's tail (token_chunker.py:_merge_text_chunks_by_
+    # token_size, the should_start_new branch). That overlap text is part of the
+    # chunk's displayed content, so its PDF coordinates MUST also be carried
+    # forward into the new chunk's _pdf_positions -- exactly like the merge-into-
+    # prev path extends positions (token_chunker.py:277). Today the overlap
+    # branch only keeps cur's coordinates, so the overlap head is shown but not
+    # highlighted. Mirrors the Go test
+    # TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions.
+    #
+    # overlapped_percent=100 makes the overlap prefix the ENTIRE previous chunk,
+    # so the expectation is crisp: every new chunk must carry the previous
+    # chunk's full coordinates. RED until the overlap branch carries coordinates.
+    for _module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5, "overlapped_percent": 100}):
+        kwargs = {
+            "name": "token_chunker",
+            "output_format": "json",
+            "json_result": [
+                {"text": "alpha", "doc_type_kwd": "text", "positions": [[1, 0, 10, 0, 5]]},
+                {"text": "beta", "doc_type_kwd": "text", "positions": [[2, 0, 20, 0, 8]]},
+                {"text": "gamma", "doc_type_kwd": "text", "positions": [[3, 0, 30, 0, 12]]},
+            ],
+        }
+        asyncio.run(chunker._invoke(**kwargs))
+        chunks = chunker._outputs["chunks"]
+        # Each unit starts a fresh chunk at overlapped_percent=100.
+        assert len(chunks) == 3, f"want 3 chunks, got {len(chunks)}"
+
+        # chunk[1] starts with the overlap prefix copied from chunk[0] ("alpha").
+        assert "alpha" in chunks[1]["text"], f"chunk[1] missing overlap prefix: {chunks[1]['text']!r}"
+        # The overlap prefix is shown, so chunk[1] must also carry chunk[0]'s
+        # coordinates. BUG: only chunk[1]'s own (posB) coordinates survive.
+        pos1 = chunks[1].get("pdf_positions") or []
+        assert [1, 0, 10, 0, 5] in pos1, f"chunk[1] dropped overlap-head coords (prev posA): {pos1}"
+        assert [2, 0, 20, 0, 8] in pos1, f"chunk[1] lost its own coords: {pos1}"
+
+        # chunk[2]'s overlap prefix is the full chunk[1] text; its coordinates
+        # must include chunk[0], chunk[1], and its own (overlap chain carried).
+        assert "alphabeta" in chunks[2]["text"], f"chunk[2] missing overlap prefix: {chunks[2]['text']!r}"
+        pos2 = chunks[2].get("pdf_positions") or []
+        for want in ([1, 0, 10, 0, 5], [2, 0, 20, 0, 8], [3, 0, 30, 0, 12]):
+            assert want in pos2, f"chunk[2] missing coords {want} (overlap chain not carried): {pos2}"
+
+
+def test_json_no_delimiter_mode_partial_overlap_prefix_carries_only_tail_positions():
+    # Partial-overlap companion to
+    # test_json_no_delimiter_mode_overlap_prefix_carries_prev_positions (#18148).
+    # overlapped_percent=100 (the full-overlap test) forces the ENTIRE previous
+    # chunk into the overlap prefix; here overlapped_percent=20 means the
+    # overlap prefix is only the TAIL ~20% of the previous chunk. The
+    # coordinates carried must be exactly the previous chunk's tail items whose
+    # span intersects that tail -- NOT the whole previous chunk. This locks the
+    # per-item tail-selection in _overlap_tail_positions (token_chunker.py:233):
+    # a regression that carried the entire previous chunk's coordinates
+    # (over-inflating the highlight box) or dropped overlap coordinates entirely
+    # would both fail this test.
+    for _module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5, "overlapped_percent": 20}):
+        kwargs = {
+            "name": "token_chunker",
+            "output_format": "json",
+            "json_result": [
+                {"text": "aaaaa", "doc_type_kwd": "text", "positions": [[1, 0, 10, 0, 5]]},
+                {"text": "bbbbb", "doc_type_kwd": "text", "positions": [[2, 0, 20, 0, 8]]},
+                {"text": "ccccc", "doc_type_kwd": "text", "positions": [[3, 0, 30, 0, 12]]},
+                {"text": "ddddd", "doc_type_kwd": "text", "positions": [[4, 0, 40, 0, 16]]},
+                {"text": "eeeee", "doc_type_kwd": "text", "positions": [[5, 0, 50, 0, 20]]},
+                {"text": "fffff", "doc_type_kwd": "text", "positions": [[6, 0, 60, 0, 24]]},
+            ],
+        }
+        asyncio.run(chunker._invoke(**kwargs))
+        chunks = chunker._outputs["chunks"]
+        # 5 items merge into one chunk (tk reaches 5); the 6th starts fresh with
+        # a partial overlap prefix.
+        assert len(chunks) == 2, f"want 2 chunks, got {len(chunks)}"
+
+        # The new chunk's overlap text is the tail of the previous chunk.
+        assert "eeeee" in chunks[1]["text"], f"chunk[1] missing overlap tail text: {chunks[1]['text']!r}"
+        pos1 = chunks[1].get("pdf_positions") or []
+        # The tail item's coordinates MUST be carried.
+        assert [5, 0, 50, 0, 20] in pos1, f"chunk[1] dropped tail-item coords (prev posE): {pos1}"
+        assert [6, 0, 60, 0, 24] in pos1, f"chunk[1] lost its own coords (posF): {pos1}"
+        # Partial overlap: the head items of the previous chunk must NOT be
+        # carried (that would over-inflate the highlight box).
+        for absent in ([1, 0, 10, 0, 5], [2, 0, 20, 0, 8], [3, 0, 30, 0, 12], [4, 0, 40, 0, 16]):
+            assert absent not in pos1, f"chunk[1] over-carried non-overlap head coords {absent}: {pos1}"
+
+
 def test_json_delimiter_mode_consecutive_delimiter_keeps_boundary():
     # Regression for #17723: "A####B" with pattern "##" must yield ["A", "B"],
     # both boundary-adjacent segments preserved (the bug collapsed it to "A##B").
@@ -438,7 +526,7 @@ def test_text_delimiter_mode_one_no_atom_split():
             "text": "aaa|bbb|ccc",
         }
         chunk_token_size = 1
-        setattr(chunker._param, "chunk_token_size", chunk_token_size)
+        chunker._param.chunk_token_size = chunk_token_size
         asyncio.run(chunker._invoke(**kwargs))
         chunks = chunker._outputs["chunks"]
         texts = [c["text"] for c in chunks]

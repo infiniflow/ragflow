@@ -39,12 +39,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	rediscli "ragflow/internal/engine/redis"
 )
@@ -107,6 +109,7 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
 		return errWebhookFailClosed
 	}
@@ -116,7 +119,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -242,7 +245,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -277,16 +280,21 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -455,7 +463,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -491,13 +499,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

@@ -203,7 +203,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		RerankID:  rerankID,
 		TTSID:     &ttsID,
 		OCRID:     &ocrID,
-		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
+		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
 	userTenantID := utility.GenerateToken()
@@ -781,6 +781,8 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
+			invalidToken := "INVALID_" + utility.GenerateToken()
+			user.AccessToken = &invalidToken
 		}
 	}
 	if req.Nickname != nil {
@@ -827,6 +829,8 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
+		invalidToken := "INVALID_" + utility.GenerateToken()
+		user.AccessToken = &invalidToken
 	}
 
 	// Save updated user

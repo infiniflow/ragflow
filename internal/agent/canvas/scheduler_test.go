@@ -2,7 +2,6 @@
 package canvas
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -32,7 +31,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 		Path: []string{"begin_0", "llm_0", "message_0"},
 	}
 
-	wf, err := BuildWorkflow(context.Background(), c)
+	wf, err := BuildWorkflow(t.Context(), c)
 	if err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
@@ -41,7 +40,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	}
 
 	// Compile to a Runnable to confirm the topology is internally consistent.
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -84,12 +83,44 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0", "d_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile diamond: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled diamond workflow")
+	}
+}
+
+// TestBuildWorkflow_DuplicateUpstreamSucceeds verifies that multiple output
+// handles from one branching node may converge on the same downstream node.
+// The DSL records one upstream entry per handle, while eino requires only one
+// control edge between the two nodes.
+func TestBuildWorkflow_DuplicateUpstreamSucceeds(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"categorize_0"},
+			},
+			"categorize_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Categorize", Params: map[string]any{}},
+				Downstream: []string{"message_0", "message_0"},
+				Upstream:   []string{"begin_0"},
+			},
+			"message_0": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Upstream: []string{"categorize_0", "categorize_0"},
+			},
+		},
+	}
+
+	cc, err := Compile(t.Context(), c)
+	if err != nil {
+		t.Fatalf("Compile duplicate upstream: %v", err)
+	}
+	if cc == nil || cc.Workflow == nil {
+		t.Fatal("Compile produced nil workflow")
 	}
 }
 
@@ -124,7 +155,7 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile multi-terminal canvas: %v", err)
 	}
@@ -192,7 +223,7 @@ func TestBuildWorkflow_ParallelGroupWithOuterFollowerSucceeds(t *testing.T) {
 		},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile parallel canvas: %v", err)
 	}
@@ -218,7 +249,7 @@ func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for unknown upstream")
 	}
@@ -238,7 +269,7 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for self-edge")
 	}
@@ -249,7 +280,7 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 
 func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 	events := make(chan RunEvent, 2)
-	ctx := WithRunMeta(context.Background(), &RunMeta{
+	ctx := WithRunMeta(t.Context(), &RunMeta{
 		Events:    events,
 		MessageID: "msg-1",
 		SessionID: "session-1",
@@ -280,7 +311,7 @@ func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s inputs = %T %v, want object", wantType, payload["inputs"], payload["inputs"])
 			}
-			if _, ok := in["callback"]; !ok {
+			if _, ok = in["callback"]; !ok {
 				t.Fatalf("%s inputs missing sanitized callback key: %v", wantType, in)
 			}
 			if in["callback"] != nil {
@@ -294,7 +325,7 @@ func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 
 func TestNodeLifecycleEventsFallbackMarshalErrorPreservesIdentity(t *testing.T) {
 	events := make(chan RunEvent, 2)
-	ctx := WithRunMeta(context.Background(), &RunMeta{
+	ctx := WithRunMeta(t.Context(), &RunMeta{
 		Events:    events,
 		MessageID: "msg-2",
 		SessionID: "session-2",
