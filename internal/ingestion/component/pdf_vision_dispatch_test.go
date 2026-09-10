@@ -106,8 +106,16 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" {
+	if result.OutputFormat != "json" || result.Markdown != "hello" || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
+	}
+
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+		t.Fatalf("resultMD=%+v", resultMD)
 	}
 }
 
@@ -160,14 +168,10 @@ func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ 
 	return &modelModule.OCRFileResponse{Text: &d.text}, nil
 }
 
-// TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown guards against the
-// format-mismatch bug: PaddleOCR backends always return markdown text via
-// OCRFile.Text, so the dispatch result MUST be labelled OutputFormat
-// "markdown" regardless of what setup["output_format"] says (the pdf default
-// is "json"). If the setup value leaked into OutputFormat, buildParserOutputs
-// would emit a nil "json" payload and the downstream TokenChunker would
-// consume an empty JSONResult -> "completed with 0 chunks".
-func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
+// TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs verifies PaddleOCR output
+// parses markdown text into structured JSON items when output_format is "json"
+// (default), while also supporting output_format="markdown".
+func TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs(t *testing.T) {
 	orig := resolvePaddleOCRModelForDispatch
 	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
 
@@ -177,29 +181,49 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 		return &paddleOCRFakeDriver{text: md}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
 	}
 
-	// The real run had output_format=json in the pdf setup; the payload must
-	// still be labelled markdown because that is what the backend produced.
+	// 1. output_format="json": parses into structured JSON items
 	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "json"}, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf: %v", err)
 	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
+	if res.OutputFormat != "json" {
+		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("res.JSON should not be empty")
 	}
 	if res.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
 	}
 
-	// Default setup (no output_format key) must behave identically.
-	res, err = dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
+	// 2. output_format="markdown": emits markdown format while populating JSON items
+	resMD, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "markdown"}, "some-uuid")
+	if err != nil {
+		t.Fatalf("dispatchPaddleOCRPdf (markdown): %v", err)
+	}
+	if resMD.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resMD.OutputFormat)
+	}
+	if resMD.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resMD.Markdown, md)
+	}
+	if len(resMD.JSON) == 0 {
+		t.Errorf("resMD.JSON should also be populated")
+	}
+
+	// 3. Default setup (no output_format key) defaults to "json"
+	resDef, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf (default setup): %v", err)
 	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
+	if resDef.OutputFormat != "json" {
+		t.Errorf("OutputFormat = %q, want json", resDef.OutputFormat)
 	}
-	if res.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
+	if len(resDef.JSON) == 0 {
+		t.Fatal("resDef.JSON should not be empty")
+	}
+	if resDef.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resDef.Markdown, md)
 	}
 }
 

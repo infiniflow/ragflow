@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -219,7 +220,37 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	if err != nil {
 		return parserDispatchResult{}, err
 	}
-	return parserDispatchResult{OutputFormat: "markdown", Markdown: strings.Join(sections, "\n\n")}, nil
+	md := strings.Join(sections, "\n\n")
+	return buildMarkdownOCRDispatchResult(ctx, filename, md, setup), nil
+}
+
+func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
+	mp, err := parser.NewMarkdownParser("goldmark")
+	if err != nil {
+		return []map[string]any{parser.NewTextJSONItem(mdText)}
+	}
+	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
+	if res.Err != nil || len(res.JSON) == 0 {
+		return []map[string]any{parser.NewTextJSONItem(mdText)}
+	}
+	return res.JSON
+}
+
+func buildMarkdownOCRDispatchResult(ctx context.Context, filename, md string, setup schema.ParserSetup) parserDispatchResult {
+	items := parseMarkdownToJSONItems(ctx, filename, md)
+	format := strings.TrimSpace(getStringOr(setup, "output_format", "json"))
+	if strings.EqualFold(format, "markdown") {
+		return parserDispatchResult{
+			OutputFormat: "markdown",
+			Markdown:     md,
+			JSON:         items,
+		}
+	}
+	return parserDispatchResult{
+		OutputFormat: "json",
+		JSON:         items,
+		Markdown:     md,
+	}
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -447,7 +478,7 @@ func getAnyString(object map[string]any, keys ...string) string {
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
-	_ string,
+	filename string,
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
@@ -494,17 +525,7 @@ func dispatchMinerUPDF(
 	}
 	md := strings.Join(parts, "\n")
 
-	// MinerU always returns rendered markdown text (md), regardless of
-	// the requested output_format; label the payload as markdown so the
-	// downstream chunker consumes it instead of a nil JSONResult.
-	if format := strings.TrimSpace(getStringOr(setup, "output_format", "markdown")); !strings.EqualFold(format, "markdown") {
-		common.Warn("mineru parser: output_format %q requested but backend only returns markdown; treating result as markdown",
-			zap.String("output_format", format))
-	}
-	return parserDispatchResult{
-		OutputFormat: "markdown",
-		Markdown:     md,
-	}, nil
+	return buildMarkdownOCRDispatchResult(ctx, filename, md, setup), nil
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
@@ -620,19 +641,7 @@ func dispatchPaddleOCRPdf(
 		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
 
-	// PaddleOCR backends always return rendered markdown text
-	// (OCRFile.Text), regardless of the requested output_format. The
-	// payload MUST be labelled markdown so the downstream chunker
-	// consumes the text; a non-markdown setup value only means this
-	// backend cannot produce the requested layout format.
-	if format := strings.TrimSpace(getStringOr(setup, "output_format", "markdown")); !strings.EqualFold(format, "markdown") {
-		common.Warn("paddleocr parser: output_format %q requested but backend only returns markdown; treating result as markdown",
-			zap.String("output_format", format))
-	}
-	return parserDispatchResult{
-		OutputFormat: "markdown",
-		Markdown:     *resp.Text,
-	}, nil
+	return buildMarkdownOCRDispatchResult(ctx, filename, *resp.Text, setup), nil
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.
