@@ -73,3 +73,54 @@ it.each(['authorization_token', 'Authorization_Token'])(
     });
   },
 );
+
+it.each(['${auth_header}', '$auth_header', '${prefix}ization', '${go header}'])(
+  'removes authentication resolved from %s while preserving unrelated templates',
+  (header) => {
+    const saved = {
+      headers: {
+        [header]: 'Bearer old-secret',
+        '${agent_header}': '${agent}',
+        $$literal: 'keep',
+      },
+      variables: {
+        authorization_token: 'old-secret',
+        auth_header: 'Authorization',
+        prefix: 'Author',
+        'go header': 'Authorization',
+        agent_header: 'User-Agent',
+        agent: 'ragflow',
+      },
+    };
+    expect(connectionFields(TokenMask, saved)).toEqual(saved);
+    expect(connectionFields('', saved).headers).toEqual({
+      '${agent_header}': '${agent}',
+      $$literal: 'keep',
+    });
+    expect(connectionFields('new-secret', saved).headers).toEqual({
+      '${agent_header}': '${agent}',
+      $$literal: 'keep',
+      Authorization: 'Bearer ${authorization_token}',
+    });
+  },
+);
+
+it('classifies token-dependent names before and after replacement without recursive expansion', () => {
+  const saved = {
+    headers: {
+      '${authorization_token}': 'old-secret',
+      '$${auth}': 'keep',
+      '${alias}': 'keep',
+    },
+    variables: {
+      authorization_token: 'X-Old',
+      auth: 'Authorization',
+      alias: '${auth}',
+    },
+  };
+  expect(connectionFields('Authorization', saved).headers).toEqual({
+    '$${auth}': 'keep',
+    '${alias}': 'keep',
+    Authorization: 'Bearer ${authorization_token}',
+  });
+});
