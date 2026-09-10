@@ -17,6 +17,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -57,5 +59,36 @@ func TestReconcileMemoryTasksPublishesDueWakeups(t *testing.T) {
 	message := publisher.messages[0]
 	if message.TaskID != "due" || message.TaskType != common.TaskTypeMemory {
 		t.Fatalf("published wake-up = %+v", message)
+	}
+}
+
+// TestReconcileMemoryTasksStopsPublishingWhenCanceled verifies shutdown stops
+// the current recovery batch before another wake-up is published.
+func TestReconcileMemoryTasksStopsPublishingWhenCanceled(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	db := testutil.SetupTestDB(t, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	for _, taskID := range []string{"due-1", "due-2"} {
+		if err := db.Create(&entity.MemoryTask{
+			TaskID: taskID, MemoryID: "memory-1", SourceID: 1,
+			Input: entity.JSONMap{}, State: entity.MemoryTaskStatePending,
+		}).Error; err != nil {
+			t.Fatalf("create memory task %s: %v", taskID, err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	publisher := &recordingTaskPublisher{beforeReturn: func(string) { cancel() }}
+	svc := NewMemoryMessageService(nil)
+	svc.taskPublisher = publisher
+	err := svc.ReconcileMemoryTasks(ctx, 100)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReconcileMemoryTasks error = %v, want context canceled", err)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("published messages = %d, want 1 before cancellation", len(publisher.messages))
 	}
 }

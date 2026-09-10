@@ -35,6 +35,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// errModelConfigUnavailable marks model configuration failures that cannot be
+// repaired by retrying the same task.
+var errModelConfigUnavailable = errors.New("model configuration unavailable")
+
+// decodeModelInstanceExtra treats an unset instance configuration as an empty
+// object while preserving JSON errors for malformed persisted values.
+func decodeModelInstanceExtra(raw string) (map[string]string, error) {
+	if raw == "" {
+		return map[string]string{}, nil
+	}
+
+	var extra map[string]string
+	if err := json.Unmarshal([]byte(raw), &extra); err != nil {
+		return nil, err
+	}
+	return extra, nil
+}
+
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
 // Returns modelName, instanceName, providerName separately.
 //
@@ -3531,26 +3549,26 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 	modelEntity, err := m.modelDAO.GetByID(ctx, dao.DB, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("tenant model id=%s not found", modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s not found", errModelConfigUnavailable, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 	if modelEntity.Status != "active" {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s is disabled", modelID)
+		return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s is disabled", errModelConfigUnavailable, modelID)
 	}
 	if !entity.ModelType(modelEntity.ModelType).Has(modelType) {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
+		return nil, "", nil, 0, fmt.Errorf("%w: tenant model id=%s cannot be used as %s model", errModelConfigUnavailable, modelID, modelType.String())
 	}
 
 	providerEntity, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: provider id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.ProviderID, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 	if providerEntity == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.ProviderID, modelID)
 	}
 
 	if providerEntity.TenantID != userID {
@@ -3566,33 +3584,33 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 			}
 		}
 		if !allowed {
-			return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", userID, providerEntity.TenantID)
+			return nil, "", nil, 0, fmt.Errorf("%w: tenant %s has no access to provider owned by tenant %s", errModelConfigUnavailable, userID, providerEntity.TenantID)
 		}
 	}
 
 	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("instance id=%s not found for model id=%s", modelEntity.InstanceID, modelID)
+			return nil, "", nil, 0, fmt.Errorf("%w: instance id=%s not found for model id=%s", errModelConfigUnavailable, modelEntity.InstanceID, modelID)
 		}
 		return nil, "", nil, 0, err
 	}
 
 	apiKey := instanceEntity.APIKey
-	var extra map[string]string
-	if err := json.Unmarshal([]byte(instanceEntity.Extra), &extra); err != nil {
-		return nil, "", nil, 0, err
+	extra, err := decodeModelInstanceExtra(instanceEntity.Extra)
+	if err != nil {
+		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
 	region := extra["region"]
 	baseURL := extra["base_url"]
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
 	if providerInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerEntity.ProviderName)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerEntity.ProviderName)
 	}
 	modelDriver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerEntity.ProviderName, region, baseURL)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
 
 	maxTokens := 0
@@ -3601,7 +3619,7 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, err)
 	}
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -3634,7 +3652,7 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 
 func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if strings.TrimSpace(modelRef) == "" {
-		return nil, "", nil, 0, fmt.Errorf("model ref is required")
+		return nil, "", nil, 0, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
 	}
 	if _, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
 		return m.GetModelConfigByID(ctx, tenantID, modelType, modelRef)
@@ -4036,7 +4054,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if modelName == teiModel {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", modelName)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, modelName)
 			}
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, modelName, apiConfig, 0, nil
@@ -4048,7 +4066,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", teiPure)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, teiPure)
 			}
 			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
 			return builtinDriver, teiPure, apiConfig, 0, nil
@@ -4084,7 +4102,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		if pureModelName != "" {
 			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
 			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
+				return nil, "", nil, 0, fmt.Errorf("%w: builtin embedding model %q not found", errModelConfigUnavailable, pureModelName)
 			}
 			apiKey := ""
 			region := ""
@@ -4099,31 +4117,39 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 
 	pureModelName, instanceName, providerName, err := parseModelName(modelName)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}
 
 	// Direct provider lookup
 	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if provErr != nil {
+		if errors.Is(provErr, gorm.ErrRecordNotFound) {
+			return nil, "", nil, 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelName)
+		}
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
 	}
 	if provider == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q not found for model %q", providerName, modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelName)
 	}
 
 	// Direct instance lookup
 	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if instErr != nil {
+		if errors.Is(instErr, gorm.ErrRecordNotFound) {
+			return nil, "", nil, 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelName)
+		}
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
 	}
 	if instance == nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelName)
 	}
 
 	// Decode api_key and extra fields from the instance row
 	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := decodeModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
+	}
 	region := extra["region"]
 	baseURL := extra["base_url"]
 
@@ -4136,16 +4162,16 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		// Happy path: tenant enrolled this model.
 		// INACTIVE check
 		if modelObj.Status == "inactive" {
-			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
+			return nil, "", nil, 0, fmt.Errorf("%w: model %q is disabled", errModelConfigUnavailable, modelName)
 		}
 
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
+			return nil, "", nil, 0, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerName)
 		}
 		driver, driverErr := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)
 		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
+			return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
@@ -4153,7 +4179,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
 		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
+			return nil, "", nil, 0, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, driverErr)
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
@@ -4185,7 +4211,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	// casing). The rest of the Go codebase uses these helpers too.
 	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 	if targetProvider == nil {
-		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
+		return nil, "", nil, 0, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
 	var llmInfo *modelModule.Model
 	for i := range targetProvider.Models {
@@ -4195,11 +4221,11 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 	}
 	if llmInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("model config not found: %s", modelName)
+		return nil, "", nil, 0, fmt.Errorf("%w: model config not found: %s", errModelConfigUnavailable, modelName)
 	}
 	driver, driverErr := newModelDriverForBaseURL(targetProvider.ModelDriver, providerName, region, baseURL)
 	if driverErr != nil {
-		return nil, "", nil, 0, driverErr
+		return nil, "", nil, 0, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := maxTokensFromModelInfo(llmInfo, modelType)

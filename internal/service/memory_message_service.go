@@ -65,6 +65,8 @@ import (
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
@@ -148,7 +150,14 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// (1) Look up the memory (no access control — trusted internal queue processing).
 		mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 		if err != nil {
-			res.NotFound = append(res.NotFound, memoryID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				res.NotFound = append(res.NotFound, memoryID)
+			} else {
+				res.Failed = append(res.Failed, MemoryFailure{
+					MemoryID: memoryID,
+					FailMsg:  err.Error(),
+				})
+			}
 			continue
 		}
 		// (2) + (3) build the raw_message envelope. The Go port
@@ -201,6 +210,9 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 	}
 	var reconcileErr error
 	for _, task := range tasks {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return errors.Join(reconcileErr, ctxErr)
+		}
 		if err = publishMemoryTaskWakeup(s.taskPublisher, task.TaskID); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
 		}

@@ -70,6 +70,15 @@ var (
 
 var errPermanentMemoryTask = errors.New("memory: permanent task failure")
 
+// classifyMemoryTaskDependencyError marks confirmed missing or unusable
+// dependencies as permanent while preserving transient lookup failures.
+func classifyMemoryTaskDependencyError(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errModelConfigUnavailable) {
+		return fmt.Errorf("%w: %w", errPermanentMemoryTask, err)
+	}
+	return err
+}
+
 // memoryNow is the wall clock behind every memory timestamp. Tests pin it
 // to a fixed instant in a fixed location so the server-local assertions are
 // deterministic on any host, including UTC CI runners.
@@ -141,12 +150,16 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 
 // runClaimedMemoryTask renews the DB lease while the state machine advances.
 func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *entity.MemoryTask, leaseOwner string) (MemoryTaskDisposition, error) {
+	if task.LeaseExpiresAt == nil {
+		return MemoryTaskLeaveUnsettled, fmt.Errorf("memory: claimed task %s has no lease expiration", task.TaskID)
+	}
+	leaseExpiresAt := *task.LeaseExpiresAt
 	runCtx, cancel := context.WithCancel(ctx)
 	renewErr := make(chan error, 1)
 	renewDone := make(chan struct{})
 	go func() {
 		defer close(renewDone)
-		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, renewErr)
+		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, leaseExpiresAt, renewErr)
 	}()
 	defer func() {
 		cancel()
@@ -183,13 +196,14 @@ func (s *MemoryMessageService) persistMemoryTaskFailure(ctx context.Context, tas
 		err     error
 		action  string
 	)
+	now := memoryNow()
 	if errors.Is(runErr, errPermanentMemoryTask) {
 		action = "mark failed"
-		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, runErr.Error())
+		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, runErr.Error(), now)
 	} else {
 		action = "schedule retry"
-		nextRetryAt := memoryNow().Add(memoryTaskRetryDelay(task.AttemptCount))
-		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, nextRetryAt, runErr.Error())
+		nextRetryAt := now.Add(memoryTaskRetryDelay(task.AttemptCount))
+		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, now, nextRetryAt, runErr.Error())
 	}
 	if err != nil {
 		return MemoryTaskLeaveUnsettled, errors.Join(runErr, fmt.Errorf("memory: %s for task %s: %w", action, task.TaskID, err))
@@ -213,9 +227,10 @@ func memoryTaskRetryDelay(attemptCount int) time.Duration {
 	return delay
 }
 
-// renewMemoryTaskLease cancels execution when the worker can no longer prove
-// ownership of the durable task.
-func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel context.CancelFunc, taskID, leaseOwner string, errCh chan<- error) {
+// renewMemoryTaskLease retries transient renewal failures while the last
+// confirmed lease has time for another attempt, and cancels execution when
+// ownership is lost or the lease is too close to expiry.
+func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel context.CancelFunc, taskID, leaseOwner string, leaseExpiresAt time.Time, errCh chan<- error) {
 	ticker := time.NewTicker(memoryTaskLeaseRenewInterval)
 	defer ticker.Stop()
 	for {
@@ -223,10 +238,16 @@ func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			renewedAt := memoryNow()
 			renewCtx, renewCancel := context.WithTimeout(ctx, memoryTaskLeaseRenewTimeout)
-			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, renewedAt, memoryTaskLeaseTTL)
 			renewCancel()
 			if err == nil && renewed {
+				leaseExpiresAt = renewedAt.Add(memoryTaskLeaseTTL)
+				continue
+			}
+			if err != nil && memoryNow().Add(memoryTaskLeaseRenewInterval).Before(leaseExpiresAt) {
+				common.Warn(fmt.Sprintf("memory: renew task %s lease failed, will retry", taskID), zap.Error(err))
 				continue
 			}
 			if err == nil {
@@ -334,7 +355,7 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 	}
 	mem, err := s.memories.getMemoryConfig(ctx, task.MemoryID)
 	if err != nil {
-		return nil, err
+		return nil, classifyMemoryTaskDependencyError(err)
 	}
 	memoryTypes := mem.MemoryType
 	if len(memoryTypes) == 0 {
@@ -368,14 +389,14 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	}
 	mem, err := s.memories.getMemoryConfig(ctx, task.MemoryID)
 	if err != nil {
-		return err
+		return classifyMemoryTaskDependencyError(err)
 	}
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(task.SourceID, task.MemoryID, msg, item))
 	}
 	if err = s.embedAndSaveMessages(ctx, mem, messages); err != nil {
-		return err
+		return classifyMemoryTaskDependencyError(err)
 	}
 	return nil
 }
@@ -412,7 +433,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	}
 	driver, modelName, apiConfig, _, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
 	if err != nil {
-		return nil, fmt.Errorf("resolve chat model: %w", err)
+		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
 	}
 	chatModel := models.NewChatModel(driver, &modelName, apiConfig)
 

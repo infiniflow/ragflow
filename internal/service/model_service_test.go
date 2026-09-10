@@ -500,6 +500,49 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
+// TestModelProviderServiceAcceptsEmptyInstanceExtra verifies both model
+// resolution paths use the same empty-configuration semantics.
+func TestModelProviderServiceAcceptsEmptyInstanceExtra(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	if err := db.Model(&entity.TenantModelInstance{}).
+		Where("id = ?", "instance-1").
+		Update("extra", "").Error; err != nil {
+		t.Fatalf("clear instance extra: %v", err)
+	}
+
+	svc := NewModelProviderService()
+	tests := []struct {
+		name    string
+		resolve func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	}{
+		{
+			name: "model ID",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.GetModelConfigByID(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			},
+		},
+		{
+			name: "provider instance",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			driver, _, apiConfig, _, err := tt.resolve()
+			if err != nil {
+				t.Fatalf("resolve model config: %v", err)
+			}
+			if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != "" || apiConfig.BaseURL == nil || *apiConfig.BaseURL != "" {
+				t.Fatalf("resolved driver/config = %v/%+v, want empty region and base URL", driver, apiConfig)
+			}
+		})
+	}
+}
+
 func TestMaxTokensFromModelInfo(t *testing.T) {
 	maxTokens := 4096
 	maxOutput := 1024

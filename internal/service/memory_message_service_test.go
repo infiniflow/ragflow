@@ -25,6 +25,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // TestQueueSaveToMemoryTask_NilService: a nil receiver surfaces
@@ -65,6 +68,42 @@ func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	if !strings.Contains(err.Error(), "AgentID") {
 		t.Errorf("error = %v, want AgentID-required error", err)
 	}
+}
+
+// TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors keeps confirmed missing
+// memories separate from transient database failures.
+func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
+	t.Run("missing memory", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Memory{}, &entity.User{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"missing-memory"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 1 || res.NotFound[0] != "missing-memory" || len(res.Failed) != 0 {
+			t.Fatalf("result = %+v, want missing memory in NotFound only", res)
+		}
+	})
+
+	t.Run("database failure", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Task{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 0 || len(res.Failed) != 1 || res.Failed[0].MemoryID != "memory-1" || res.Failed[0].FailMsg == "" {
+			t.Fatalf("result = %+v, want database lookup failure in Failed only", res)
+		}
+	})
 }
 
 // TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
