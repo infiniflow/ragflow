@@ -28,9 +28,12 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
+
+	"go.uber.org/zap"
 )
 
 // parserDispatchResult is the typed outcome of dispatchParse. The
@@ -343,12 +346,25 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 		if res.Err == nil && len(res.JSON) > 0 {
 			return res.JSON
 		}
+		if res.Err != nil {
+			warnParserNormalizationFallback(filename, "html", res.Err)
+		} else {
+			warnParserNormalizationFallback(filename, "html", fmt.Errorf("parser returned no JSON items"))
+		}
 		return []map[string]any{parser.NewTextJSONItem(dispatched.HTML)}
 	}
 	if dispatched.Text != "" {
 		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
 	}
 	return []map[string]any{}
+}
+
+func warnParserNormalizationFallback(filename, source string, err error) {
+	common.Warn("parser normalization fell back to text",
+		zap.String("filename", filename),
+		zap.String("normalized_from", source),
+		zap.Error(err),
+	)
 }
 
 func parserInputName(inputs map[string]any, docID string) string {

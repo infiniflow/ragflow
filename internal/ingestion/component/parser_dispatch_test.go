@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,8 @@ import (
 	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -162,6 +165,84 @@ func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
 	}, "sample.md", utility.FileTypeMarkdown, nil, "")
 
 	requireJSONText(t, out, "Recovered title")
+}
+
+func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
+	originalResolver := net.DefaultResolver
+	dnsLookup := make(chan struct{}, 1)
+	net.DefaultResolver = &net.Resolver{
+		PreferGo:     true,
+		StrictErrors: true,
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			select {
+			case dnsLookup <- struct{}{}:
+			default:
+			}
+			return nil, fmt.Errorf("unexpected DNS lookup")
+		},
+	}
+	t.Cleanup(func() { net.DefaultResolver = originalResolver })
+
+	items := parseMarkdownToJSONItems(t.Context(), "ocr.md", "![remote](https://images.example.invalid/figure.png)")
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one Markdown image block", items)
+	}
+	select {
+	case <-dnsLookup:
+		t.Fatal("Markdown-to-JSON normalization performed a remote image DNS lookup")
+	default:
+	}
+}
+
+func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	logParserOutput(parserDispatchResult{
+		OutputFormat: "markdown",
+		Markdown:     "# Title\n\nBody",
+	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
+
+	entries := logs.FilterMessage("parser stage output").All()
+	if len(entries) != 1 {
+		t.Fatalf("parser output log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if got := fields["output_format"]; got != "json" {
+		t.Errorf("output_format = %v, want json", got)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["json_items"]; got != int64(2) {
+		t.Errorf("json_items = %v, want 2", got)
+	}
+}
+
+func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	warnParserNormalizationFallback("broken.md", "markdown", fmt.Errorf("parse failed"))
+
+	entries := logs.FilterMessage("parser normalization fell back to text").All()
+	if len(entries) != 1 {
+		t.Fatalf("normalization fallback log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if got := fields["filename"]; got != "broken.md" {
+		t.Errorf("filename = %v, want broken.md", got)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["error"]; got != "parse failed" {
+		t.Errorf("error = %v, want parse failed", got)
+	}
 }
 
 func TestDispatch_JSONOutput(t *testing.T) {

@@ -494,15 +494,36 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
 	items, _ := out["json"].([]map[string]any)
-	common.Debug("parser stage output",
-		zap.String("component", "Parser"),
-		zap.String("output_format", "json"),
-		zap.Int("json_items", len(items)),
-	)
+	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
 	return out, nil
+}
+
+func logParserOutput(dispatched parserDispatchResult, items []map[string]any) {
+	common.Debug("parser stage output",
+		zap.String("component", "Parser"),
+		zap.String("output_format", "json"),
+		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
+		zap.Int("json_items", len(items)),
+	)
+}
+
+func resolveParserNormalizationSource(dispatched parserDispatchResult) string {
+	if len(dispatched.JSON) > 0 {
+		return "json"
+	}
+	if dispatched.Markdown != "" {
+		return "markdown"
+	}
+	if dispatched.HTML != "" {
+		return "html"
+	}
+	if dispatched.Text != "" {
+		return "text"
+	}
+	return "raw"
 }
 
 func reportParserWarnings(ctx context.Context, warnings []string) {
