@@ -25,7 +25,7 @@
 // QueueSaveToMemoryTask persists the raw message and publishes a
 // task_type="memory" TaskMessage on the NATS tasks.RAGFLOW subject. The
 // Ingestor's shared consumer + worker pool dispatches it by TaskType to
-// HandleSaveToMemoryTask (see internal/ingestion/service/processMessage and
+// HandleSaveToMemoryTask (see internal/ingestion/service/handleAndExecute and
 // executeMemoryTask), which runs LLM extraction for the non-raw memory types
 // configured on the memory and persists the extracted messages with source_id
 // pointing at the raw message so listMemoryMessages can aggregate them under
@@ -36,7 +36,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -247,30 +246,22 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 // logical message fields are set here; the doc engine maps them to
 // storage fields (including tokenization) at insert time.
 func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory, now time.Time) map[string]any {
-	validAt, hasExplicitValidAt := normalizeMemoryTime(item.ValidAt)
-	if !hasExplicitValidAt {
+	validAt, ok := normalizeMemoryTime(item.ValidAt)
+	if !ok {
 		validAt = now.Format(memoryTimeLayout)
 	}
-	// invalid_at mirrors Python's memory_message_service (which passes
-	// fallback="" and stores None): an empty or unparseable value persists as
-	// null so the memory stays valid. Falling back to now here would persist
-	// every unparseable value as "expired at extraction time" — the opposite
-	// semantic on the same LLM output.
-	invalidAt, hasExplicitInvalidAt := normalizeMemoryTime(item.InvalidAt)
-	var storedInvalidAt any
+
+  invalidAt, ok := normalizeMemoryTime(item.InvalidAt)
+	if strings.TrimSpace(item.InvalidAt) != "" && !ok {
+		invalidAt = now.Format(memoryTimeLayout)
+	}
+
+  var storedInvalidAt any
 	if invalidAt != "" {
 		storedInvalidAt = invalidAt
 	}
-	fingerprintValidAt := ""
-	if hasExplicitValidAt {
-		fingerprintValidAt = validAt
-	}
-	fingerprintInvalidAt := ""
-	if hasExplicitInvalidAt {
-		fingerprintInvalidAt = invalidAt
-	}
 	return map[string]any{
-		"id":           extractedMessageDocumentID(memoryID, sourceID, item.MessageType, item.Content, fingerprintValidAt, fingerprintInvalidAt),
+		"id":           fmt.Sprintf("%s_%d", memoryID, messageID),
 		"message_id":   messageID,
 		"message_type": item.MessageType,
 		"source_id":    sourceID,
@@ -284,17 +275,6 @@ func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg Memor
 		"forget_at":    nil,
 		"status":       true,
 	}
-}
-
-// extractedMessageDocumentID returns the chunk-store id for an extracted item.
-// sourceID identifies the immutable raw message, while the normalized content
-// fingerprint distinguishes multiple extracts from that source. Only explicit,
-// parseable timestamps participate, so a runtime fallback cannot change the
-// identity on retry. Repeated task executions therefore upsert the same chunk
-// instead of creating duplicates.
-func extractedMessageDocumentID(memoryID string, sourceID int64, messageType, content, validAt, invalidAt string) string {
-	fingerprint := sha256.Sum256([]byte(strings.Join([]string{messageType, content, validAt, invalidAt}, "\x00")))
-	return fmt.Sprintf("%s_%d_%x", memoryID, sourceID, fingerprint[:8])
 }
 
 // parseMemoryExtraction ports memory.utils.msg_util.get_json_result_from_llm_response

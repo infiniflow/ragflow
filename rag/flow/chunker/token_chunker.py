@@ -28,6 +28,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     restore_pdf_text_previews,
 )
 from rag.nlp import naive_merge
+from rag.nlp.delim import DEFAULT_DELIMITER
 
 # _TAG_RE matches parser-emitted coordinate tags of the form
 # ``@@<page>\t<left>\t<right>\t<top>\t<bottom>##``. Mirrors Go's
@@ -51,7 +52,7 @@ class TokenChunkerParam(ProcessParamBase):
         super().__init__()
         self.delimiter_mode = "delimiter"
         self.chunk_token_size = 512
-        self.delimiters = ["\n"]
+        self.delimiters = list(DEFAULT_DELIMITER)
         self.overlapped_percent = 0
         self.children_delimiters = []
         self.table_context_size = 0

@@ -901,41 +901,79 @@ type mergeItem struct {
 	Positions    json.RawMessage
 }
 
-// overlapTailPositions returns the coordinate boxes of the previous chunk's
-// source items whose visible span intersects the overlap tail
-// [overlapStart, total). PDF positions are per-item (coarse), so an item is
-// included wholesale once any part of it falls in the overlap tail. This keeps
-// the overlap prefix highlighted without over-inflating the box set with the
-// previous chunk's non-overlap (head) coordinates (#18148). Offsets are in
-// rune units to match computeOverlapPrefix's visible-text indexing.
-func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep string) (json.RawMessage, json.RawMessage) {
+// overlapTailItems returns the previous chunk's source items whose visible span
+// intersects the overlap tail [overlapStart, total), each truncated to exactly
+// the portion that lies within the overlap tail. Storing them as SEPARATE
+// merged_items entries (alongside cur) lets the next overlap select only the
+// true tail and converge to a sliding window, instead of carrying the previous
+// chunk's HEAD coordinates forward again -- the chained over-carry defect that
+// the old fused single-item storage (superseded by this function, #18148)
+// suffers from.
+//
+// Offset model: the overlap path stores the previous chunk's merged_items as
+// [tailItems..., cur] and builds cp.Text = overlap + cp.Text. So the source
+// items are concatenated with joinSep BETWEEN consecutive items, but there is
+// NO separator before the final (cur) item. The offsets below reproduce exactly
+// that layout for an overlap-built predecessor, so they line up with
+// overlapCut/overlapFitPrefix, which carve the overlap from removeTag'd text.
+// Inserting a separator before cur (as the raw "concatenate all items with
+// joinSep" model does) would inflate the offsets by one rune on the JSON path
+// (joinSep="\n") and over-truncate the tail -- the chained-overlap convergence
+// defect flagged by CodeRabbit #1 on #19068.
+//
+// Limitation: a chunk may also have been built via the non-overlap merge path
+// (mergeUnits appends cur with "prev.Text + joinSep + ck.Text"), in which case
+// its items DO carry a joinSep before the final cur item. For such a
+// predecessor the last item's reconstructed start is short by one rune
+// (joinSep length), so a final item that is partially inside the overlap tail
+// is truncated one rune too short. This is a 1-rune approximation of the
+// highlight box only; it does not affect the head-exclusion property this
+// function exists to enforce.
+func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) []mergeItem {
 	if len(prevItems) == 0 {
-		return nil, nil
+		return nil
 	}
-	// Items are concatenated with joinSep (a single "\n" for the JSON path),
-	// matching the merge join at mergeUnits. Offsets are measured on the
-	// TAG-FREE visible text so they line up with overlapCut/overlapFitPrefix,
-	// which carve the overlap from removeTag'd text; a coordinate tag in an
-	// earlier item must not shift the boundaries of later items.
+	// Measure the TAG-FREE visible text of each item so a coordinate tag in an
+	// earlier item does not shift the boundaries of later items.
 	visible := make([]string, len(prevItems))
-	total := 0
 	for i, it := range prevItems {
 		visible[i] = removeTag(it.Text)
-		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
 	}
-	total -= utf8.RuneCountInString(joinSep)
-	var pdfAcc, posAcc json.RawMessage
+	n := len(prevItems)
+	sepLen := utf8.RuneCountInString(joinSep)
+	// Reconstruct prev.Text: items joined by joinSep between consecutive items,
+	// but with NO separator before the final (cur) item.
+	starts := make([]int, n)
+	ends := make([]int, n)
 	offset := 0
-	for i, it := range prevItems {
-		start := offset
-		end := offset + utf8.RuneCountInString(visible[i])
-		if start < total && end > overlapStart {
-			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
-			posAcc = extendRawJSONArray(posAcc, it.Positions)
+	for i := 0; i < n; i++ {
+		if i > 0 && i < n-1 {
+			offset += sepLen
 		}
-		offset = end + utf8.RuneCountInString(joinSep)
+		starts[i] = offset
+		ends[i] = offset + utf8.RuneCountInString(visible[i])
+		offset = ends[i]
 	}
-	return pdfAcc, posAcc
+	total := offset
+	var out []mergeItem
+	for i, it := range prevItems {
+		start := starts[i]
+		end := ends[i]
+		if start < total && end > overlapStart {
+			lo := start
+			if lo < overlapStart {
+				lo = overlapStart
+			}
+			hi := end
+			if hi > total {
+				hi = total
+			}
+			runes := []rune(visible[i])
+			slice := string(runes[lo-start : hi-start])
+			out = append(out, mergeItem{Text: slice, PDFPositions: it.PDFPositions, Positions: it.Positions})
+		}
+	}
+	return out
 }
 
 func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
@@ -1011,13 +1049,24 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 				// trimmed to fit so the hard cap still holds.
 				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
 				overlap, trimRunes := overlapFitPrefix(overlap, cp.Text, target)
-				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				// Keep the previous chunk's tail as SEPARATE merged_items
+				// entries (truncated to the overlap portion, #18148) so the
+				// next overlap selects only the true tail and the window
+				// converges instead of accumulating head coordinates (chained
+				// over-carry fix). The flattened tail boxes are still carried
+				// into the output chunk so the overlap region stays highlighted.
+				tailItems := overlapTailItems(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				var pdfTail, posTail json.RawMessage
+				for _, it := range tailItems {
+					pdfTail = extendRawJSONArray(pdfTail, it.PDFPositions)
+					posTail = extendRawJSONArray(posTail, it.Positions)
+				}
 				cp.Text = overlap + cp.Text
 				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
 				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
-				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				mergedItems = append(mergedItems, append(append([]mergeItem{}, tailItems...), cur))
 				prevIdx = len(merged) - 1
 				continue
 			}
