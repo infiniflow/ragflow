@@ -87,7 +87,7 @@ export default function MemoryList() {
           className="size-full min-w-0 flex flex-col"
           data-testid="memory-list"
         >
-          <header className="mb-4 min-w-0 px-5 pt-8">
+          <header className="page-gutter mb-4 min-w-0 pt-8">
             <ListFilterBar
               icon="memory"
               title={t('memory')}
@@ -106,7 +106,7 @@ export default function MemoryList() {
 
           {list?.data?.memory_list?.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
+              <CardContainer className="page-gutter flex-1 overflow-auto">
                 {list?.data.memory_list.map((x) => (
                   <MemoryCard
                     key={x.id}
@@ -119,7 +119,7 @@ export default function MemoryList() {
                 ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="page-gutter mt-4 pb-5">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
                   total={list?.data.total_count}
@@ -128,7 +128,7 @@ export default function MemoryList() {
               </footer>
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center px-5">
+            <div className="page-gutter flex flex-1 items-center justify-center">
               <EmptyAppCard
                 showIcon
                 size="large"
@@ -141,7 +141,7 @@ export default function MemoryList() {
         </article>
       ) : (
         <article
-          className="size-full min-w-0 flex items-center justify-center px-5"
+          className="page-gutter size-full min-w-0 flex items-center justify-center"
           data-testid="memory-list"
         >
           <EmptyAppCard

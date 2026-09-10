@@ -95,7 +95,7 @@ export default function Datasets() {
           className="size-full min-w-0 flex flex-col"
           data-testid="datasets-list"
         >
-          <header className="mb-4 min-w-0 px-5 pt-8">
+          <header className="page-gutter mb-4 min-w-0 pt-8">
             <ListFilterBar
               title={t('header.dataset')}
               searchString={searchString}
@@ -114,7 +114,7 @@ export default function Datasets() {
 
           {kbs?.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
+              <CardContainer className="page-gutter flex-1 overflow-auto">
                 {kbs.map((dataset) => (
                   <DatasetCard
                     dataset={dataset}
@@ -124,7 +124,7 @@ export default function Datasets() {
                 ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="page-gutter mt-4 pb-5">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
                   total={total_datasets}

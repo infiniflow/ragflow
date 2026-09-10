@@ -611,7 +611,7 @@ const SkillsPage: React.FC = () => {
           className="size-full flex flex-col"
           data-testid="skill-space-list"
         >
-          <header className="px-5 pt-8 mb-4">
+          <header className="page-gutter mb-4 pt-8">
             <ListFilterBar
               leftPanel={hubListBreadcrumb}
               searchString={spaceSearchString}
@@ -652,7 +652,7 @@ const SkillsPage: React.FC = () => {
             )}
           </header>
 
-          <div className="flex-1 px-5 flex flex-col overflow-hidden">
+          <div className="page-gutter flex flex-1 flex-col overflow-hidden">
             {spaceLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <Spin size="large" />
@@ -909,7 +909,7 @@ const SkillsPage: React.FC = () => {
   // Inside a space (skills list page)
   return (
     <article className="size-full flex flex-col" data-testid="skills-list">
-      <header className="px-5 pt-8 mb-4">
+      <header className="page-gutter mb-4 pt-8">
         <ListFilterBar
           leftPanel={skillsListBreadcrumb}
           showFilter={false}
@@ -1005,7 +1005,7 @@ const SkillsPage: React.FC = () => {
         </ListFilterBar>
       </header>
 
-      <div className="flex-1 px-5 flex flex-col overflow-hidden">
+      <div className="page-gutter flex flex-1 flex-col overflow-hidden">
         {/* Skills List */}
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">

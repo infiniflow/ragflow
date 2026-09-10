@@ -130,7 +130,7 @@ export default function Agents() {
         className="size-full min-w-0 flex flex-col"
         data-testid="agents-list"
       >
-        <header className="mb-4 min-w-0 px-5 pt-8">
+        <header className="page-gutter mb-4 min-w-0 pt-8">
           <ListFilterBar
             title={t('flow.agents')}
             icon="agents"
@@ -176,7 +176,7 @@ export default function Agents() {
 
         {data.length ? (
           <>
-            <CardContainer className="flex-1 overflow-auto px-5">
+            <CardContainer className="page-gutter flex-1 overflow-auto">
               {data.map((x) =>
                 x.type === CompilationGroupCategory ? (
                   <CompilationTemplateCard
@@ -195,7 +195,7 @@ export default function Agents() {
               )}
             </CardContainer>
 
-            <footer className="mt-4 px-5 pb-5">
+            <footer className="page-gutter mt-4 pb-5">
               <RAGFlowPagination
                 {...pick(pagination, 'current', 'pageSize')}
                 total={pagination.total}

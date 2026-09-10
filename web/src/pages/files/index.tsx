@@ -112,7 +112,7 @@ export default function Files() {
       className="size-full min-w-0 flex flex-col"
       data-testid="files-list"
     >
-      <header className="mb-4 min-w-0 px-5 pt-8">
+      <header className="page-gutter mb-4 min-w-0 pt-8">
         <ListFilterBar
           leftPanel={leftPanel}
           searchString={searchString}
@@ -144,7 +144,7 @@ export default function Files() {
         )}
       </header>
 
-      <div className="flex-1 px-5 flex flex-col overflow-hidden">
+      <div className="page-gutter flex flex-1 flex-col overflow-hidden">
         <FilesTable
           files={files}
           total={total}

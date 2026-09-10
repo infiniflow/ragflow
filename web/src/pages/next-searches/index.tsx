@@ -105,7 +105,7 @@ export default function SearchList() {
           className="size-full min-w-0 flex flex-col"
           data-testid="search-list"
         >
-          <header className="mb-4 min-w-0 px-5 pt-8">
+          <header className="page-gutter mb-4 min-w-0 pt-8">
             <ListFilterBar
               icon="searches"
               title={t('searchApps')}
@@ -127,7 +127,7 @@ export default function SearchList() {
 
           {list?.data?.search_apps?.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
+              <CardContainer className="page-gutter flex-1 overflow-auto">
                 {list?.data.search_apps.map((x) => {
                   return (
                     <SearchCard
@@ -141,7 +141,7 @@ export default function SearchList() {
                 })}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="page-gutter mt-4 pb-5">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
                   total={list?.data.total}

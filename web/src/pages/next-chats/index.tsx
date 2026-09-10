@@ -126,7 +126,7 @@ export default function ChatList() {
           className="size-full min-w-0 flex flex-col"
           data-testid="chats-list"
         >
-          <header className="mb-4 min-w-0 px-5 pt-8">
+          <header className="page-gutter mb-4 min-w-0 pt-8">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"
@@ -145,7 +145,7 @@ export default function ChatList() {
 
           {data.chats?.length ? (
             <>
-              <CardContainer className="flex-1 overflow-auto px-5">
+              <CardContainer className="page-gutter flex-1 overflow-auto">
                 {data.chats.map((x) => (
                   <ChatCard
                     key={x.id}
@@ -155,7 +155,7 @@ export default function ChatList() {
                 ))}
               </CardContainer>
 
-              <footer className="mt-4 px-5 pb-5">
+              <footer className="page-gutter mt-4 pb-5">
                 <RAGFlowPagination
                   {...pick(pagination, 'current', 'pageSize')}
                   total={pagination.total}
