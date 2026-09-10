@@ -42,7 +42,7 @@ type Chat struct {
 	VectorSimilarityWeight float64   `gorm:"column:vector_similarity_weight" json:"vector_similarity_weight"`
 	TopN                   int64     `gorm:"column:top_n" json:"top_n"`
 	RerankCandidatesCount  int64     `gorm:"column:rerank_candidates_count" json:"rerank_candidates_count"`
-	TopK                   int64     `gorm:"column:top_k" json:"top_k"`
+	TopK                   int64     `gorm:"column:top_k;type:int" json:"top_k"`
 	DoRefer                string    `gorm:"column:do_refer;size:1;not null" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
 	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:32;index" json:"tenant_rerank_id,omitempty"`
