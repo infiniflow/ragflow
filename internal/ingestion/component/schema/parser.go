@@ -86,7 +86,7 @@ func (ParserParam) Defaults() ParserParam {
 			"text&code":   {"text", "json"},
 			"html":        {"text", "json"},
 			"audio":       {"text", "json"},
-			"video":       {},
+			"video":       {"json", "text"},
 			"epub":        {"text", "json"},
 			"json":        {"json"},
 		},
@@ -100,29 +100,22 @@ func (ParserParam) Defaults() ParserParam {
 func (ParserParam) Validate() error { return nil }
 
 // ParserOutputs is the result of invoking the Parser component. The
-// Python component calls `self.set_output(...)` with a mix of
-// string-typed, list-typed, and dict-typed values. The wire schema
-// below is the typed surface consumed by downstream components.
-//
-// Mirrors what Parser sets at rag/flow/parser/parser.py:_invoke. The
-// parser writes to EITHER ("json" | "markdown" | "text" | "html") and
-// always sets "output_format" + "file" + "_ERROR".
+// primary wire format is unified to "json". Companion payloads
+// (markdown, text, html) are preserved when available for previews and fallbacks.
 type ParserOutputs struct {
-	// OutputFormat is the active output format for this run
-	// (one of "json", "markdown", "text", "html"). The downstream
-	// Tokenizer branches on this field.
+	// OutputFormat is the active output format for this run (unified to "json").
 	OutputFormat string `json:"output_format,omitempty"`
 
-	// JSON holds the list of structured sections when output_format == "json".
+	// JSON holds the list of structured sections (primary payload).
 	JSON []map[string]any `json:"json,omitempty"`
 
-	// Markdown holds the rendered Markdown when output_format == "markdown".
+	// Markdown holds rendered Markdown when available as a companion payload.
 	Markdown string `json:"markdown,omitempty"`
 
-	// Text holds the rendered plain text when output_format == "text".
+	// Text holds rendered plain text when available as a companion payload.
 	Text string `json:"text,omitempty"`
 
-	// HTML holds the rendered HTML when output_format == "html".
+	// HTML holds rendered HTML when available as a companion payload.
 	HTML string `json:"html,omitempty"`
 
 	// File is the upstream file descriptor with parser-derived metadata

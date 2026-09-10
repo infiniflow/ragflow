@@ -112,9 +112,12 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 	allowedList, ok := allowed[family]
 	if !ok || len(allowedList) == 0 {
 		// No whitelist entry — accept what the setup asked for, or
-		// fall back to "text" for families without a whitelist.
+		// fall back to defaultOutputFormatForFamily or "json".
 		if format == "" {
-			format = "text"
+			if def, ok := defaultOutputFormatForFamily(family); ok {
+				return def, nil
+			}
+			format = "json"
 		}
 		return format, nil
 	}

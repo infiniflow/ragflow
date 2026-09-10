@@ -81,7 +81,9 @@ func maybeDispatchVideo(
 	// video_url. Returning an explicit error is safer than silently producing
 	// a description from the prompt text alone. The real implementation must
 	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
-	// Gemini: raw-bytes inline_data; Qwen: file://)
+	// Gemini: raw-bytes inline_data; Qwen: file://).
+	// When video analysis is implemented, it emits standard Text JSON items:
+	// [{"text": transcript, "doc_type_kwd": "text"}] with output_format "json".
 	return parserDispatchResult{}, true,
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }

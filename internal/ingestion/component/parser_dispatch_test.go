@@ -331,10 +331,10 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			want:   "json",
 		},
 		{
-			name:   "family with no whitelist empty → default text",
+			name:   "family with no whitelist empty → default json",
 			setups: map[string]schema.ParserSetup{"video": {}},
 			family: "video",
-			want:   "text",
+			want:   "json",
 		},
 	}
 	for _, tc := range cases {
@@ -391,7 +391,7 @@ func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
 		"json":        "json",
 		"email":       "json",
 		"audio":       "json",
-		"video":       "text",
+		"video":       "json",
 	} {
 		got, ok := defaultOutputFormatForFamily(family)
 		if !ok {
