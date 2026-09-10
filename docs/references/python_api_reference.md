@@ -858,8 +858,6 @@ try:
     finished = dataset.parse_documents(ids)
     for doc_id, status, chunk_count, token_count in finished:
         print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
-except KeyboardInterrupt:
-    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
 except Exception as e:
     print(f"Parsing failed: {e}")
 ```
