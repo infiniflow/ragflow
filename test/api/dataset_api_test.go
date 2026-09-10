@@ -40,7 +40,7 @@ func decodeResponseJSON(resp *http.Response) (map[string]interface{}, error) {
 		return nil, err
 	}
 	var payload map[string]interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err = json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -66,7 +66,21 @@ func requireCodeZero(t *testing.T, payload map[string]interface{}) {
 	}
 }
 
+func clearDatasets(t *testing.T) {
+	t.Helper()
+	resp, err := TestConfig.DeleteJSON("/datasets", map[string]interface{}{"ids": nil, "delete_all": true}, nil)
+	if err != nil {
+		t.Fatalf("clear datasets request failed: %v", err)
+	}
+	payload := requireStatusCode(t, resp, http.StatusOK)
+	code, _ := payload["code"].(float64)
+	if int(code) != 0 && int(code) != 102 {
+		t.Fatalf("clear datasets failed: code=%v, payload=%v", payload["code"], payload)
+	}
+}
+
 func TestDatasetCRUDCycle(t *testing.T) {
+	clearDatasets(t)
 	// Create
 	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "restful_dataset_crud"}, nil)
 	if err != nil {
@@ -154,6 +168,8 @@ func TestDatasetCRUDCycle(t *testing.T) {
 }
 
 func TestDatasetUpdateNameAndCaseInsensitiveContract(t *testing.T) {
+	clearDatasets(t)
+
 	// Create first dataset
 	firstResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_name_source"}, nil)
 	if err != nil {
@@ -242,6 +258,8 @@ func encodeAvatar() (string, error) {
 }
 
 func TestDatasetUpdateLanguageConnectorsAvatarAndDescriptionContract(t *testing.T) {
+	clearDatasets(t)
+
 	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_lang_connectors"}, nil)
 	if err != nil {
 		t.Fatalf("create dataset request failed: %v", err)
