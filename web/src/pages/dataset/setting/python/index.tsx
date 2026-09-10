@@ -41,20 +41,6 @@ export const DataSetContext = createContext<{
   knowledgeDetails: IDataset;
 }>({ loading: false, knowledgeDetails: {} as IDataset });
 
-const initialEntityTypes = [
-  'organization',
-  'person',
-  'geo',
-  'event',
-  'category',
-];
-
-const enum MethodValue {
-  General = 'general',
-  Light = 'light',
-  NER = 'ner',
-}
-
 export default function DatasetSettings() {
   const { t } = useTranslation();
 
@@ -82,23 +68,6 @@ export default function DatasetSettings() {
         mineru_formula_enable: true,
         mineru_table_enable: true,
         mineru_lang: 'English',
-        raptor: {
-          use_raptor: true,
-          max_token: 256,
-          threshold: 0.1,
-          max_cluster: 64,
-          random_seed: 0,
-          scope: 'file',
-          clustering_method: 'gmm',
-          tree_builder: 'raptor',
-          prompt: t('knowledgeConfiguration.promptText'),
-        },
-        graphrag: {
-          use_graphrag: true,
-          entity_types: initialEntityTypes,
-          method: MethodValue.Light,
-          batch_chunk_token_size: 4096,
-        },
         metadata: {
           type: 'object',
           properties: {},

@@ -17,9 +17,7 @@ import (
 // Run-count key for IngestionTaskLog.Checkpoint, consumed by
 // ListAllForAdmin and IncrementRunCount to track how many times
 // the task has been picked up by a worker.
-const (
-	stepKeyRunCount = "run_count"
-)
+const stepKeyRunCount = "run_count"
 
 type InvalidTaskTransitionError struct {
 	TaskID string
@@ -48,15 +46,20 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	taskPublisher       TaskPublisher
+	// supersedeTerminalWait bounds how long supersedeAndRetryTask waits for a
+	// live worker to finalize a requested stop before force-finalizing the
+	// task. Overridable so tests do not pay the full production wait.
+	supersedeTerminalWait time.Duration
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
 	return &IngestionTaskService{
-		documentDAO:         dao.NewDocumentDAO(),
-		userDAO:             dao.NewUserDAO(),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
-		taskPublisher:       NewMessageQueueTaskPublisher(),
+		documentDAO:           dao.NewDocumentDAO(),
+		userDAO:               dao.NewUserDAO(),
+		ingestionTaskDAO:      dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDAO:   dao.NewIngestionTaskLogDAO(),
+		taskPublisher:         NewMessageQueueTaskPublisher(),
+		supersedeTerminalWait: defaultSupersedeTerminalWait,
 	}
 }
 
@@ -206,7 +209,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		return nil, err
 	}
 	switch task.Status {
-	case common.CREATED:
+	case common.CREATED, common.SCHEDULED:
 		task, err = s.transition(ctx, taskID, common.RUNNING)
 		if err != nil {
 			return nil, err
@@ -252,7 +255,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		return nil, err
 	}
 	switch task.Status {
-	case common.CREATED:
+	case common.CREATED, common.SCHEDULED:
 		return s.transition(ctx, taskID, common.STOPPED)
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
@@ -328,6 +331,10 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 func validateTransition(from, to string) error {
 	switch from {
 	case common.CREATED:
+		if to == common.SCHEDULED || to == common.RUNNING || to == common.STOPPED {
+			return nil
+		}
+	case common.SCHEDULED:
 		if to == common.RUNNING || to == common.STOPPED {
 			return nil
 		}
@@ -339,7 +346,7 @@ func validateTransition(from, to string) error {
 		if to == common.STOPPED {
 			return nil
 		}
-	case common.FAILED, common.STOPPED:
+	case common.FAILED, common.STOPPED, common.COMPLETED:
 		if to == common.CREATED {
 			return nil
 		}
@@ -390,7 +397,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	}
 	if existing != nil {
 		switch existing.Status {
-		case common.FAILED, common.STOPPED:
+		case common.CREATED:
+			if err = s.enqueueTask(existing.ID); err != nil {
+				return nil, err
+			}
+			return s.markScheduledAfterPublish(ctx, existing.ID)
+		case common.FAILED, common.STOPPED, common.COMPLETED:
 			originalStatus := existing.Status
 			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {
@@ -407,11 +419,14 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 				}
 				return nil, err
 			}
-			return existing, nil
+			return s.markScheduledAfterPublish(ctx, existing.ID)
+		case common.SCHEDULED, common.RUNNING, common.STOPPING:
+			return s.supersedeAndRetryTask(ctx, existing)
 		default:
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
 	}
+	task.Status = common.CREATED
 	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
 	if err != nil {
 		return nil, err
@@ -422,7 +437,142 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 		}
 		return nil, err
 	}
-	return created, nil
+	return s.markScheduledAfterPublish(ctx, created.ID)
+}
+
+// defaultSupersedeTerminalWait bounds how long a re-parse request waits for a
+// live worker to finalize a requested stop before force-finalizing the task.
+// A live worker observes the stop (Redis cancel flag polled every 3s, plus the
+// DB STOPPING fallback) well within this window; only a worker stuck in a
+// non-cancellable section or a dead worker exceeds it.
+const defaultSupersedeTerminalWait = 8 * time.Second
+
+const supersedePollInterval = 250 * time.Millisecond
+
+// supersedeAndRetryTask finalizes an in-flight ingestion task
+// (SCHEDULED/RUNNING/STOPPING) and re-queues it for a fresh parse, mirroring
+// the Python /documents/ingest endpoint, which accepts a parse request
+// regardless of the previous task's in-flight state. Without this, a document
+// whose task lingers in a non-terminal state — for example a parse canceled at
+// progress 0 whose worker died before finalizing the stop (e.g. the service
+// restarted mid-parse), or a scheduled task whose queue message was lost —
+// could never be re-parsed: every attempt failed with "document id ... already
+// exists, status: ...".
+//
+// For a task a worker may still be executing (RUNNING/STOPPING) the stop is
+// requested first and the worker gets a bounded window to finalize on its own;
+// a live worker settles within its 3s cancel poll. Only when that window
+// expires is the task force-finalized. In every case the Redis cancel flag is
+// cleared before the re-arm: the replacement run's pre-start cancel check
+// (Ingestor.executeTask) reads the same flag and would abort the fresh parse
+// before it starts, silently reproducing the "cannot re-parse" symptom.
+func (s *IngestionTaskService) supersedeAndRetryTask(ctx context.Context, existing *entity.IngestionTask) (*entity.IngestionTask, error) {
+	inFlightStatus := existing.Status
+	if inFlightStatus == common.RUNNING {
+		// RequestStop moves RUNNING→STOPPING and sets the Redis cancel flag so
+		// a live worker aborts at its next cancellation checkpoint.
+		if _, err := s.RequestStop(ctx, existing.ID); err != nil {
+			// The worker may have finalized (stopped/completed/failed)
+			// concurrently; a terminal task is still supersedeable below.
+			refreshed, refreshErr := s.GetTask(ctx, existing.ID)
+			if refreshErr != nil || !isTerminalTaskStatus(refreshed.Status) {
+				return nil, fmt.Errorf("stop in-flight task %s before re-parse: %w", existing.ID, err)
+			}
+			existing = refreshed
+		}
+	}
+	if existing.Status == common.RUNNING || existing.Status == common.STOPPING {
+		final := s.awaitTerminalTask(ctx, existing.ID)
+		if final == nil {
+			var err error
+			if final, err = s.forceTerminalTask(ctx, existing.ID); err != nil {
+				return nil, fmt.Errorf("finalize in-flight task %s (%s) before re-parse: %w", existing.ID, inFlightStatus, err)
+			}
+		}
+		existing = final
+	}
+	if existing.Status == common.CREATED || existing.Status == common.SCHEDULED {
+		// Never claimed (or freshly re-armed by a concurrent request): no
+		// worker can be executing it, so finalize it immediately.
+		var err error
+		if existing, err = s.transition(ctx, existing.ID, common.STOPPED); err != nil {
+			return nil, fmt.Errorf("finalize in-flight task %s (%s) before re-parse: %w", existing.ID, inFlightStatus, err)
+		}
+	}
+	if !isTerminalTaskStatus(existing.Status) {
+		return nil, fmt.Errorf("task %s is in unexpected status %s before re-parse", existing.ID, existing.Status)
+	}
+	// The superseded run is final, so any leftover Redis cancel flag is stale
+	// for the replacement run (see the doc comment).
+	clearCancelFlag(ctx, existing.ID)
+	retried, err := s.transition(ctx, existing.ID, common.CREATED)
+	if err != nil {
+		return nil, fmt.Errorf("re-arm superseded task %s for re-parse: %w", existing.ID, err)
+	}
+	if err = s.enqueueTask(retried.ID); err != nil {
+		if rollbackErr := s.rollbackRetriedTask(ctx, retried.ID, existing.Status); rollbackErr != nil {
+			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", retried.ID, err, rollbackErr)
+		}
+		return nil, err
+	}
+	return s.markScheduledAfterPublish(ctx, retried.ID)
+}
+
+// awaitTerminalTask polls the task until it reaches a terminal status or the
+// supersede wait budget expires. Returns the terminal task, or nil on timeout.
+func (s *IngestionTaskService) awaitTerminalTask(ctx context.Context, taskID string) *entity.IngestionTask {
+	wait := s.supersedeTerminalWait
+	if wait <= 0 {
+		wait = defaultSupersedeTerminalWait
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		task, err := s.GetTask(ctx, taskID)
+		if err == nil && isTerminalTaskStatus(task.Status) {
+			return task
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(supersedePollInterval):
+		}
+	}
+}
+
+// forceTerminalTask drives a task that missed its bounded stop window to a
+// terminal state: STOPPING→STOPPED directly; RUNNING via RequestStop first (a
+// worker may still be inside a non-cancellable section — the flag that sets is
+// cleared by the caller right after the finalize, and the worker's late
+// terminal write is skipped by its run-count ownership check in the Ingestor);
+// CREATED/SCHEDULED→STOPPED because no worker is executing them.
+func (s *IngestionTaskService) forceTerminalTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	switch task.Status {
+	case common.STOPPING, common.CREATED, common.SCHEDULED:
+		return s.transition(ctx, taskID, common.STOPPED)
+	case common.RUNNING:
+		if _, err = s.RequestStop(ctx, taskID); err != nil {
+			if refreshed, refreshErr := s.GetTask(ctx, taskID); refreshErr == nil && isTerminalTaskStatus(refreshed.Status) {
+				return refreshed, nil
+			}
+			return nil, err
+		}
+		return s.transition(ctx, taskID, common.STOPPED)
+	case common.COMPLETED, common.STOPPED, common.FAILED:
+		return task, nil
+	default:
+		return nil, fmt.Errorf("task %s has unsupported status %s", taskID, task.Status)
+	}
+}
+
+func isTerminalTaskStatus(status string) bool {
+	return status == common.COMPLETED || status == common.STOPPED || status == common.FAILED
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
@@ -441,6 +591,52 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 	return err
 }
 
+// markScheduledAfterPublish records a successful NATS publish. A worker can
+// claim the CREATED task before this write and move it to RUNNING, which is
+// also a successful outcome.
+func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
+	if err != nil {
+		return nil, err
+	}
+	if updated {
+		return s.GetTask(ctx, taskID)
+	}
+
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	switch task.Status {
+	case common.SCHEDULED, common.RUNNING, common.STOPPING, common.COMPLETED, common.FAILED, common.STOPPED:
+		return task, nil
+	default:
+		return nil, s.newTaskStatusConflictError(ctx, taskID, common.CREATED, common.SCHEDULED)
+	}
+}
+
+// ScheduleCreatedTasks publishes the tasks that were persisted before a
+// process stopped but were not confirmed as scheduled. It is intended for the
+// single startup recovery pass; a publish error leaves the task CREATED for a
+// future startup or explicit parse request to retry.
+func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
+	tasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.CREATED)
+	if err != nil {
+		return err
+	}
+	var recoveryErr error
+	for _, task := range tasks {
+		if err := s.enqueueTask(task.ID); err != nil {
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("schedule created task %s: %w", task.ID, err))
+			continue
+		}
+		if _, err := s.markScheduledAfterPublish(ctx, task.ID); err != nil {
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("mark task %s scheduled: %w", task.ID, err))
+		}
+	}
+	return recoveryErr
+}
+
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
 // RequestStop sets for a RUNNING task. No-op when Redis is unavailable —
 // the DB STOPPING status remains the fallback cancel signal.
@@ -455,16 +651,7 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 		TaskID:   taskID,
 		TaskType: common.TaskTypeIngestionTask,
 	}
-	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
-}
-
-// EnqueueByID re-publishes the wake-up message for an existing task without
-// touching its status. Used by ingestor startup reconciliation to redeliver
-// CREATED orphans; duplicate delivery is made safe at the consumer level
-// (StartRunning CAS + in-process claim guard), not by broker dedup — see
-// NatsEngine.PublishTask for why publish-time MsgID dedup is harmful here.
-func (s *IngestionTaskService) EnqueueByID(taskID string) error {
-	return s.enqueueTask(taskID)
+	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
 }
 
 // UpdateComponentTotal records the number of components in the task's DSL
@@ -499,6 +686,14 @@ func (s *IngestionTaskService) ClearComponentProgress(ctx context.Context, taskI
 // task (done/failed/running/percent against the given total denominator).
 func (s *IngestionTaskService) AggregateTaskProgress(ctx context.Context, taskID string, total int) (*dao.TaskProgress, error) {
 	return s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, taskID, total)
+}
+
+// CurrentRunCount returns the run counter of the most recent started run for
+// the task. Workers capture it right after IncrementRunCount and use it to
+// detect that their run was superseded (a newer run bumped the counter)
+// before writing terminal state.
+func (s *IngestionTaskService) CurrentRunCount(ctx context.Context, taskID string) (int, bool) {
+	return s.lastRunCount(ctx, taskID)
 }
 
 // lastRunCount scans all task logs (newest first) for a run_count entry,

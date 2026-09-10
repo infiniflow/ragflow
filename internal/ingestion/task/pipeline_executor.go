@@ -31,7 +31,9 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -321,6 +323,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
 		s.taskCtx.Doc.ParserConfig,
 	)
+
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
@@ -755,13 +769,16 @@ func recordPipelineLog(
 	// selection runs on a builtin registry pipeline: its canvasID is the
 	// parser_id, not a canvas row, so the log is titled with the document's
 	// parser_id, reuses the document thumbnail as avatar, and leaves
-	// pipeline_id empty.
+	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
+	// failure/cancel logs are recorded without a DSL, and their pipeline title
+	// and avatar must still resolve from the canvas row (mirrors the Python
+	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
 	if input.PipelineID != "" {
 		pipelineID = &input.PipelineID
-		if db != nil && strings.TrimSpace(input.DSL) != "" {
+		if db != nil {
 			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title
@@ -959,6 +976,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -1039,3 +1064,20 @@ func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
+	}
+	return inputs
+}
