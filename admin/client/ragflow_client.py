@@ -687,7 +687,7 @@ class RAGFlowClient:
         response = self.http_client.request("GET", "/admin/license?check=true", use_api_base=True, auth_kind="admin")
         if response.status_code == 200:
             res_json = response.json()
-            if res_json["code"] == 0:
+            if res_json["code"] == 320:
                 print(res_json["data"])
             else:
                 print(f"Invalid, code: {res_json['code']}, message: {res_json['data']}")

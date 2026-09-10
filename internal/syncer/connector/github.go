@@ -19,6 +19,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,7 +76,7 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("github connector is nil")
 	}
 	if c.owner == "" {
-		return fmt.Errorf("Invalid connector settings: 'repo_owner' must be provided")
+		return fmt.Errorf("Invalid connector settings: 'repository_owner' must be provided")
 	}
 	if c.token == "" {
 		return fmt.Errorf("Missing github_access_token in credentials")
@@ -93,6 +94,121 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 	return nil
 }
 
+// ValidateConnectorSetting validates GitHub settings from an unsaved config.
+func (c *GitHubConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	if c == nil {
+		return &ConnectorValidationError{Message: "github connector is nil"}
+	}
+	if c.token == "" {
+		return &ConnectorMissingCredentialError{Message: "Missing github_access_token in credentials"}
+	}
+	if c.owner == "" {
+		return &ConnectorValidationError{Message: "Invalid connector settings: 'repo_owner' must be provided."}
+	}
+	if c.batchSize <= 0 {
+		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
+	}
+
+	return c.validateOwner(ctx)
+}
+
+// validateOwner validates the owner as an organization or a user with repositories.
+func (c *GitHubConnector) validateOwner(ctx context.Context) error {
+	err := c.validateOrgRepos(ctx)
+	if err == nil {
+		return nil
+	}
+	var apiErr *githubAPIError
+	if errors.As(err, &apiErr) {
+		if isGitHubMissingSSO(apiErr.Message) {
+			const ssoGuideLink = "https://docs.github.com/en/enterprise-cloud@latest/authentication/authenticating-with-saml-single-sign-on/authorizing-a-personal-access-token-for-use-with-saml-single-sign-on"
+			return &ConnectorValidationError{Message: fmt.Sprintf("Your GitHub token is missing authorization to access the `%s` organization. Please follow the guide to authorize your token: %s", c.owner, ssoGuideLink)}
+		}
+		if apiErr.Status != http.StatusNotFound {
+			return classifyGitHubError(apiErr)
+		}
+		// The owner is not accessible as an organization; try as a user.
+		userErr := c.validateUserRepos(ctx)
+		if userErr == nil {
+			return nil
+		}
+		var userAPIErr *githubAPIError
+		if errors.As(userErr, &userAPIErr) && userAPIErr.Status == http.StatusNotFound {
+			return &ConnectorValidationError{Message: fmt.Sprintf("GitHub user or organization not found: %s", c.owner)}
+		}
+		return classifyGitHubError(userErr)
+	}
+	return classifyGitHubError(err)
+}
+
+// validateOrgRepos validates the owner as a GitHub organization with repositories.
+func (c *GitHubConnector) validateOrgRepos(ctx context.Context) error {
+	var org map[string]any
+	if _, err := c.getJSON(ctx, c.apiURL("/orgs/"+url.PathEscape(c.owner), nil), &org); err != nil {
+		return err
+	}
+	hasRepos, err := c.ownerHasRepos(ctx, "/orgs/"+url.PathEscape(c.owner)+"/repos")
+	if err != nil {
+		return err
+	}
+	if !hasRepos {
+		return &ConnectorValidationError{Message: fmt.Sprintf("Found no repos for organization: %s. Does the credential have the right scopes?", c.owner)}
+	}
+	return nil
+}
+
+// validateUserRepos validates the owner as a GitHub user with repositories.
+func (c *GitHubConnector) validateUserRepos(ctx context.Context) error {
+	var user map[string]any
+	if _, err := c.getJSON(ctx, c.apiURL("/users/"+url.PathEscape(c.owner), nil), &user); err != nil {
+		return err
+	}
+	hasRepos, err := c.ownerHasRepos(ctx, "/users/"+url.PathEscape(c.owner)+"/repos")
+	if err != nil {
+		return err
+	}
+	if !hasRepos {
+		return &ConnectorValidationError{Message: fmt.Sprintf("Found no repos for user: %s. Does the credential have the right scopes?", c.owner)}
+	}
+	return nil
+}
+
+// ownerHasRepos reports whether an org or user owner has at least one visible repository.
+func (c *GitHubConnector) ownerHasRepos(ctx context.Context, path string) (bool, error) {
+	query := url.Values{"per_page": {"1"}}
+	var batch []githubRepo
+	if _, err := c.getJSON(ctx, c.apiURL(path, query), &batch); err != nil {
+		return false, err
+	}
+	return len(batch) > 0, nil
+}
+
+// classifyGitHubError maps a GitHub API error to a typed connector error.
+func classifyGitHubError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *githubAPIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	switch apiErr.Status {
+	case http.StatusUnauthorized:
+		return &ConnectorMissingCredentialError{Message: "GitHub credential appears to be invalid or expired (HTTP 401)."}
+	case http.StatusForbidden:
+		return &ConnectorValidationError{Message: "Your GitHub token does not have sufficient permissions for this repository (HTTP 403)."}
+	default:
+		return &ConnectorValidationError{Message: fmt.Sprintf("Unexpected GitHub error (status=%d): %s", apiErr.Status, apiErr.Message)}
+	}
+}
+
+// isGitHubMissingSSO reports whether a GitHub API error body requires organization SSO authorization.
+func isGitHubMissingSSO(body string) bool {
+	return strings.Contains(strings.ToLower(body), "you must grant your personal access token access to this organization")
+}
+
 // OpenSync opens one GitHub sync session.
 func (c *GitHubConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	repos, err := c.listRepos(ctx)
@@ -100,7 +216,9 @@ func (c *GitHubConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		return nil, err
 	}
 	session := &githubSyncSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1, windowStart: request.WindowStart, windowEnd: request.WindowEnd}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -286,7 +404,7 @@ func (c *GitHubConnector) getJSON(ctx context.Context, apiURL string, out any) (
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("GitHub API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &githubAPIError{Status: resp.StatusCode, Message: strings.TrimSpace(string(body))}
 	}
 	if err = json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return nil, err
@@ -436,7 +554,10 @@ func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(repo.FullName, githubStagePRs, s.page, docs)
+		docs, err = s.filterResumedDocuments(repo.FullName, githubStagePRs, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceStage()
 		} else {
@@ -452,7 +573,10 @@ func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]githubBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(repo.FullName, githubStageIssues, s.page, docs)
+		docs, err = s.filterResumedDocuments(repo.FullName, githubStageIssues, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceRepo()
 		} else {
@@ -521,17 +645,20 @@ func (s *githubSyncSession) advanceRepo() {
 }
 
 // applyResume advances a sync session to the last committed GitHub page.
-func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
 	}
 
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("github sync cursor is missing: %w", ErrSyncResumeInvalid)
+	}
 	var cursor githubSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("github sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.Repo == "" || cursor.Stage == "" || cursor.Page <= 0 {
-		return
+		return fmt.Errorf("github sync cursor has no resume anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, repo := range s.repos {
 		if repo.FullName != cursor.Repo {
@@ -545,35 +672,29 @@ func (s *githubSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.resumePage = cursor.Page
 		s.resumeOffset = cursor.Offset
 		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		if s.resumeSourceID == "" {
+			return fmt.Errorf("github sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+		}
+		return nil
 	}
+	return fmt.Errorf("github resume repo %q was not found in the current listing: %w", cursor.Repo, ErrSyncResumeInvalid)
 }
 
 // filterResumedDocuments drops documents through the committed checkpoint.
-func (s *githubSyncSession) filterResumedDocuments(repo, stage string, page int, candidates []githubBufferedDocument) []githubBufferedDocument {
+func (s *githubSyncSession) filterResumedDocuments(repo, stage string, page int, candidates []githubBufferedDocument) ([]githubBufferedDocument, error) {
 	if s.resumeRepo == "" || repo != s.resumeRepo || stage != s.resumeStage || page != s.resumePage {
-		return candidates
+		return candidates, nil
 	}
 	if s.resumeSourceID != "" {
 		for index, candidate := range candidates {
 			if candidate.sourceID == s.resumeSourceID {
 				s.clearResume()
-				return candidates[index+1:]
+				return candidates[index+1:], nil
 			}
 		}
+		return nil, fmt.Errorf("github resume anchor %q was not found on page %d: %w", s.resumeSourceID, page, ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= 0 {
-		s.clearResume()
-		return candidates
-	}
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset > s.resumeOffset {
-			filtered = append(filtered, candidate)
-		}
-	}
-	s.clearResume()
-	return filtered
+	return nil, fmt.Errorf("github sync cursor has no source anchor: %w", ErrSyncResumeInvalid)
 }
 
 func (s *githubSyncSession) clearResume() {
@@ -599,6 +720,19 @@ func (s *githubPruneSession) advanceRepo() {
 
 type githubRepo struct {
 	FullName string `json:"full_name"`
+}
+
+// githubAPIError is a GitHub API error with its HTTP status.
+type githubAPIError struct {
+	Status  int
+	Message string
+}
+
+func (e *githubAPIError) Error() string {
+	if e.Status == 0 {
+		return e.Message
+	}
+	return fmt.Sprintf("GitHub API returned HTTP %d: %s", e.Status, e.Message)
 }
 
 type githubSyncCursor struct {

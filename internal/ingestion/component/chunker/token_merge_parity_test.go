@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // mergeSourceLines is a fixed 29-line plain-text payload. The exact wording is
@@ -58,159 +59,96 @@ var mergeSourceLines = []string{
 	"Plugins extend parsing for proprietary formats.",
 }
 
-// pythonMergeGroups is a faithful transcription of the Python reference
-// chunker merge rag/nlp/__init__.py:_merge_paragraph_groups under
-// MergeStrategy.OVER_CAP. It is used here as the oracle for
-// TestTokenChunkerMergeMatchesPython. Because it is itself Go code, it only
-// proves that the Go TokenChunker reproduces THIS transcription; its fidelity
-// to the real Python algorithm is validated by hand against the source lines
-// noted below. Keep those line references in sync if the Python side moves.
+// goMergeGroupsOracle is the Go-side reference for the hard-cap merge contract
+// (方案 B): it builds text-path units ("\n" + paragraph) exactly like
+// mergeByTokenSize and runs them through the mergeUnits core, so the
+// component-vs-core comparison below validates the wiring (unitization,
+// formatting) while the merge semantics themselves are pinned by the
+// token_hardcap_test.go / token_strict_cap_test.go suites.
 //
-// Mapping to rag/nlp/__init__.py:_merge_paragraph_groups (OVER_CAP):
-//   - each paragraph is built as "\n" + sub_sec (naive_merge ~:1405), so the
-//     per-paragraph token count INCLUDES the leading "\n"; we mirror that with
-//     pt := tokenizeStr("\n" + p).
-//   - cur_t is the running sum of per-paragraph size("\n" + sub_sec); a
-//     paragraph merges when cur_t + pt <= cap.
-//   - an oversized paragraph (pt > cap) is emitted alone as its own chunk
-//     (Python: never combined with the previous chunk).
-//   - when cur_t + pt > cap, OVER_CAP merges the overflowing paragraph into the
-//     current group and then CLOSES the group (merge-then-close), so the next
-//     paragraph starts a fresh group.
-//   - empty/whitespace-only paragraphs are DROPPED before merging, mirroring
-//     the Python caller's `if not sub_sec` filter (rag/nlp/__init__.py:1403)
-//     and the Go chunker's TrimSpace skip (token.go:703). The oracle must model
-//     this so it stays a faithful reference for mergeByTokenSize.
-func pythonMergeGroups(paragraphs []string, cap int) [][]string {
-	groups := [][]string{}
-	cur, curT := []string{}, 0
+// The Python-side OVER_CAP contract this file previously mirrored is now a
+// deliberate Go divergence (go_intentional): Go never lets a text chunk exceed
+// the token target, whereas Python's OVER_CAP closes a group right after an
+// overflowing merge (a chunk may exceed the target by one unit) and keeps an
+// oversized unit whole. The hard-cap behavior is documented in token.go.
+//
+// Whitespace exactness is OUTSIDE this oracle's contract: every emitted chunk
+// is trimmed and the sanity check compares the normalized word stream, so a
+// space/newline rewrite inside a chunk is not detected here. Whitespace
+// preservation is pinned by the dedicated suites instead — token_oversize_split_test.go
+// (lossless concatenation) and token_overlap_test.go (no space-less boundaries).
+func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []string {
+	units := make([]schema.ChunkDoc, 0, len(paragraphs))
 	for _, p := range paragraphs {
-		// Empty fragments are dropped, exactly as the Python caller and the
-		// Go chunker do. Skipping here keeps the oracle faithful.
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		// Python's naive_merge builds each paragraph as "\n" + sub_sec
-		// (rag/nlp/__init__.py:1405), so the per-paragraph token count
-		// INCLUDES the leading "\n". Count it the same way so the running
-		// sum matches Python's size("\n" + sub_sec).
-		pt := tokenizeStr("\n" + p)
-		if pt > cap {
-			if len(cur) > 0 {
-				groups = append(groups, cur)
-			}
-			groups = append(groups, []string{p})
-			cur, curT = []string{}, 0
+		u := "\n" + p
+		units = append(units, schema.ChunkDoc{Text: u, TKNums: intPtr(tokenizeStr(u)), CKType: "text"})
+	}
+	merged := mergeUnits(units, cap, overlapPct, "")
+	out := make([]string, 0, len(merged))
+	for _, ck := range merged {
+		text := removeTag(strings.TrimSpace(ck.Text))
+		if text == "" {
 			continue
 		}
-		if len(cur) == 0 {
-			cur, curT = []string{p}, pt
-			continue
-		}
-		if curT+pt <= cap {
-			cur = append(cur, p)
-			curT += pt
-		} else {
-			// OVER_CAP: merge the overflowing paragraph, then close.
-			cur = append(cur, p)
-			curT += pt
-			groups = append(groups, cur)
-			cur, curT = []string{}, 0
-		}
+		out = append(out, text)
 	}
-	if len(cur) > 0 {
-		groups = append(groups, cur)
-	}
-	return groups
+	return out
 }
 
-// TestPythonMergeGroupsOracleSanity pins pythonMergeGroups itself, so the
-// oracle cannot silently drift in lock-step with the chunker under test
-// (which would make TestTokenChunkerMergeMatchesPython a no-op check). The
-// assertions are tokenizer-independent INVARIANTS of the naive_merge
-// (OVER_CAP) algorithm rather than hard-coded token magnitudes, so the test
-// is stable across tokenizer revisions:
-//  1. every input paragraph appears exactly once, in order (no loss/dup/reorder);
-//  2. every group is VALID: either its running sum is within cap (a normal
-//     group), or it is a maximal merge-then-close overflow (running sum >
-//     cap but dropping its last paragraph is within cap), or it is a single
-//     oversized paragraph that stands alone. The group's position in the slice
-//     (trailing or not) is irrelevant: an overflow group may be last when the
-//     input ends right after an overflow.
-func TestPythonMergeGroupsOracleSanity(t *testing.T) {
+// TestGoMergeGroupsOracleSanity pins the oracle output invariants that the
+// hard-cap merge must satisfy, so the component-vs-core comparison cannot
+// silently pass while the contract regresses: every emitted chunk is within the
+// token cap, and the concatenated chunk texts reconstruct the source paragraph
+// stream (order + no loss).
+func TestGoMergeGroupsOracleSanity(t *testing.T) {
 	const cap = 8
 	inputs := [][]string{
-		{"word word word word word word word word word word"},                            // clearly oversized -> own group
-		{"word", "word", "word", "word", "word", "word", "word", "word", "word", "word"}, // overflow path
+		{"word word word word word word word word word word"},                            // oversized -> hard split
+		{"word", "word", "word", "word", "word", "word", "word", "word", "word", "word"}, // pack boundary
 		{"", "x", "y", "z"},                 // empty + small
 		{"alpha", "beta", "gamma", "delta"}, // plain small
 	}
 	for ci, in := range inputs {
-		groups := pythonMergeGroups(in, cap)
-		// Python (rag/nlp:1403) and the Go chunker (token.go:703) drop
-		// empty/whitespace-only fragments, so the oracle does too. Compare
-		// against the non-empty partition of the input rather than `in`.
-		var nonEmpty []string
+		chunks := goMergeGroupsOracle(in, cap, 0)
+		if len(chunks) == 0 {
+			t.Fatalf("case %d: oracle produced no chunks", ci)
+		}
+		for gi, text := range chunks {
+			if n := tokenizeStr(text); n > cap {
+				t.Errorf("case %d chunk %d exceeds cap: tokens=%d (cap=%d)", ci, gi, n, cap)
+			}
+		}
+		// Source preservation: the concatenated chunk texts must reproduce the
+		// non-empty input paragraph stream (order + no loss). All whitespace is
+		// normalized away because paragraph boundaries are joined with "\n" and
+		// each emitted chunk is trimmed.
+		var wantNormalized strings.Builder
 		for _, p := range in {
-			if strings.TrimSpace(p) == "" {
-				continue
-			}
-			nonEmpty = append(nonEmpty, p)
-		}
-		var flat []string
-		for _, g := range groups {
-			flat = append(flat, g...)
-		}
-		if len(flat) != len(nonEmpty) {
-			t.Fatalf("case %d: paragraph count mismatch got=%d want=%d", ci, len(flat), len(nonEmpty))
-		}
-		for i := range nonEmpty {
-			if nonEmpty[i] != flat[i] {
-				t.Fatalf("case %d elem %d: order/loss mismatch got=%q want=%q", ci, i, flat[i], nonEmpty[i])
+			for _, w := range strings.Fields(p) {
+				wantNormalized.WriteString(w)
 			}
 		}
-		// An oversized paragraph (its own token count > cap) must stand
-		// alone: the oracle emits it as a single-element group.
-		for gi, g := range groups {
-			for _, p := range g {
-				if tokenizeStr("\n"+p) > cap {
-					if len(g) != 1 {
-						t.Errorf("case %d group %d: oversized paragraph not isolated (len=%d)", ci, gi, len(g))
-					}
-					break
-				}
+		var gotNormalized strings.Builder
+		for _, text := range chunks {
+			for _, w := range strings.Fields(text) {
+				gotNormalized.WriteString(w)
 			}
 		}
-		for gi, g := range groups {
-			if len(g) == 0 {
-				t.Fatalf("case %d group %d is empty", ci, gi)
-			}
-			sum := 0
-			for _, p := range g {
-				sum += tokenizeStr("\n" + p)
-			}
-			prefix := 0
-			for _, p := range g[:len(g)-1] {
-				prefix += tokenizeStr("\n" + p)
-			}
-			valid := sum <= cap || (sum > cap && prefix <= cap)
-			if !valid {
-				t.Errorf("case %d group %d invalid: sum=%d prefix=%d (cap=%d)", ci, gi, sum, prefix, cap)
-			}
+		if gotNormalized.String() != wantNormalized.String() {
+			t.Errorf("case %d: chunk stream dropped or reordered source text:\n got=%q\nwant=%q",
+				ci, gotNormalized.String(), wantNormalized.String())
 		}
 	}
 }
 
-// expectedPythonChunks returns the chunk texts Python's naive_merge produces
-// for mergeSourceLines at the given chunk_token_size.
-func expectedPythonChunks(t *testing.T, chunkTokenSize int) []string {
+// expectedGoChunks returns the chunk texts the hard-cap merge produces for
+// mergeSourceLines at the given chunk_token_size (overlap 0).
+func expectedGoChunks(t *testing.T, chunkTokenSize int) []string {
 	t.Helper()
-	groups := pythonMergeGroups(mergeSourceLines, chunkTokenSize)
-	want := make([]string, len(groups))
-	for i, g := range groups {
-		want[i] = strings.Join(g, "\n")
-	}
-	return want
+	return goMergeGroupsOracle(mergeSourceLines, chunkTokenSize, 0)
 }
 
 // invokeTokenChunker runs the real TokenChunker component on plain text and
@@ -252,30 +190,23 @@ func invokeTokenChunker(t *testing.T, text string, chunkTokenSize int, overlappe
 	return texts
 }
 
-// TestTokenChunkerMergeMatchesPython is the red test for the merge-boundary
-// divergence (ragflow chunker parity):
+// TestTokenChunkerMergeMatchesGoOracle validates that the real TokenChunker
+// component's text path reproduces the hard-cap merge contract chunk-for-chunk
+// (count AND per-chunk text). The oracle goMergeGroupsOracle runs the same
+// unitization as the component ("\n" + paragraph) through the mergeUnits core,
+// so this test guards the component wiring; the merge semantics themselves are
+// pinned by token_hardcap_test.go / token_strict_cap_test.go.
 //
-// The Go merge decision used tokenizeStr(prev + "\n" + incoming) — the BPE
-// token count of the JOINED string — while Python's naive_merge accumulates a
-// running sum of per-paragraph token counts (cur_t + size(p)). Because BPE
-// tokenization is not additive across the "\n" boundary, the two merge
-// decisions disagree: Go can merge one paragraph more (or fewer) than Python,
-// shifting every downstream boundary by a line and, once a budget is small
-// enough, changing the chunk count outright.
-//
-// This test asserts the Go TokenChunker output equals Python's naive_merge
-// output (verified chunk count AND per-chunk text) for two budgets:
-//   - chunk_token_size=32: Python emits 9 chunks (Go over-merged to 8 before
-//     the running-sum fix).
-//   - chunk_token_size=128: both emit 3 chunks, but Python closes chunk 0 one
-//     line earlier than Go (boundary offset before the fix).
-func TestTokenChunkerMergeMatchesPython(t *testing.T) {
+// Go intentionally diverges from Python's OVER_CAP here (go_intentional): Go
+// never lets a text chunk exceed the target, while Python closes a group right
+// after an overflowing merge and keeps oversized units whole.
+func TestTokenChunkerMergeMatchesGoOracle(t *testing.T) {
 	text := strings.Join(mergeSourceLines, "\n")
 	for _, cap := range []int{32, 128} {
-		want := expectedPythonChunks(t, cap)
+		want := expectedGoChunks(t, cap)
 		got := invokeTokenChunker(t, text, cap, 0)
 		if len(got) != len(want) {
-			t.Fatalf("chunk_token_size=%d: chunk count go=%d, python=%d", cap, len(got), len(want))
+			t.Fatalf("chunk_token_size=%d: chunk count go=%d, oracle=%d", cap, len(got), len(want))
 		}
 		for i := range got {
 			if got[i] != want[i] {
@@ -285,64 +216,31 @@ func TestTokenChunkerMergeMatchesPython(t *testing.T) {
 	}
 }
 
-// pythonMergeWithOverlap mirrors rag/flow/chunker/token_chunker.py:
-// _merge_text_chunks_by_token_size under the UNIFIED contract — scaled overlap
-// threshold + unconditional char-based overlap prefix (no fit-check), with the
-// #17799 over-budget unit standing alone. It is the Python-faithful oracle for
-// TestTokenChunkerOverlapMatchesPython.
-//
-// Like the fixed Python JSON path (and Go's computeOverlapPrefix) it strips
-// position tags before measuring the overlap cut, so the prefix is cut on the
-// tag-free visible text. The 29-line parity payload carries no tags, so the
-// strip is a no-op there; tag-bearing inputs are covered by the Python test
-// rag/flow/tests/test_token_chunker_tag_overlap.py and the unit-level oracle in
-// token_merge_units_test.go.
-func pythonMergeWithOverlap(paragraphs []string, chunkTokenSize int, overlappedPercent float64) []string {
-	threshold := float64(chunkTokenSize) * (100.0 - overlappedPercent) / 100.0
-	type ck struct {
-		text string
-		tk   int
-	}
-	merged := []ck{}
-	prev := -1
+// goMergeWithOverlapOracle mirrors the text path of the hard-cap merge with
+// overlap: it builds text-path units ("\n" + paragraph) and runs them through
+// the mergeUnits core (scaled overlap threshold + unconditional overlap prefix
+// trimmed to fit the hard cap). It is the Go-side oracle for the overlap
+// parity tests below.
+func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappedPercent float64) []string {
+	units := make([]schema.ChunkDoc, 0, len(paragraphs))
 	for _, p := range paragraphs {
-		// Mirror Go's text-path unitization: each paragraph is built as
-		// "\n" + p (rag/nlp naive_merge:1405); the leading newline is part of
-		// the token count so the running sum matches the Go component.
-		unit := "\n" + p
-		pt := tokenizeStr(unit)
-		cur := unit
-		curTk := pt
-		// #17799: an over-budget unit stands alone.
-		startNew := prev < 0 || (prev >= 0 && float64(merged[prev].tk) > threshold)
-		if pt > chunkTokenSize {
-			startNew = true
-		}
-		if startNew {
-			if prev >= 0 && overlappedPercent > 0 && merged[prev].text != "" {
-				vis := []rune(removeTag(merged[prev].text))
-				cut := int(float64(len(vis)) * (100.0 - overlappedPercent) / 100.0)
-				if cut < 0 {
-					cut = 0
-				}
-				if cut < len(vis) {
-					cur = string(vis[cut:]) + cur
-					curTk = tokenizeStr(cur)
-				}
-			}
-			merged = append(merged, ck{cur, curTk})
-			prev = len(merged) - 1
+		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		merged[prev].text += cur
-		merged[prev].tk += curTk
+		u := "\n" + p
+		units = append(units, schema.ChunkDoc{Text: u, TKNums: intPtr(tokenizeStr(u)), CKType: "text"})
 	}
-	out := make([]string, len(merged))
-	for i := range merged {
-		// Mirror production token.go:465 (removeTag first, then TrimSpace) so
+	merged := mergeUnits(units, chunkTokenSize, overlappedPercent, "")
+	out := make([]string, 0, len(merged))
+	for _, ck := range merged {
+		// Mirror production token.go: removeTag first, then TrimSpace, so
 		// whitespace between visible text and a trailing position tag survives
 		// exactly as the Go TokenChunker emits it.
-		out[i] = removeTag(strings.TrimSpace(merged[i].text))
+		text := removeTag(strings.TrimSpace(ck.Text))
+		if text == "" {
+			continue
+		}
+		out = append(out, text)
 	}
 	return out
 }
@@ -360,11 +258,11 @@ func pythonMergeWithOverlap(paragraphs []string, chunkTokenSize int, overlappedP
 // prefix) against Go/Python drift at overlap>0, which #17948 (overlap=0) does
 // not exercise.
 // TestTokenChunkerOverlapStripsTagsTrimOrder guards the final-strip ORDER for
-// tag-bearing text: production (token.go:465) does removeTag(TrimSpace(text)),
-// so whitespace that sits BETWEEN visible text and a trailing position tag is
-// PRESERVED (TrimSpace cannot see past the tag). The oracle
-// pythonMergeWithOverlap must use the SAME order, otherwise the parity test
-// would assert a text that the production code never emits.
+// tag-bearing text: production (token.go) does removeTag(TrimSpace(text)), so
+// whitespace that sits BETWEEN visible text and a trailing position tag is
+// PRESERVED (TrimSpace cannot see past the tag). The oracle goMergeWithOverlap
+// must use the SAME order, otherwise the parity test would assert a text that
+// the production code never emits.
 //
 // Input: every paragraph ends with "<space><space>@@page...##", so each merged
 // chunk's tail has two spaces before its closing tag. With the production
@@ -378,10 +276,10 @@ func TestTokenChunkerOverlapStripsTagsTrimOrder(t *testing.T) {
 	text := strings.Join(tagged, "\n")
 	const overlap = 20.0
 	for _, cap := range []int{8, 32} {
-		want := pythonMergeWithOverlap(tagged, cap, overlap)
+		want := goMergeWithOverlapOracle(tagged, cap, overlap)
 		got := invokeTokenChunker(t, text, cap, overlap)
 		if len(got) != len(want) {
-			t.Fatalf("chunk_token_size=%d overlap=%v: chunk count go=%d, python=%d", cap, overlap, len(got), len(want))
+			t.Fatalf("chunk_token_size=%d overlap=%v: chunk count go=%d, oracle=%d", cap, overlap, len(got), len(want))
 		}
 		for i := range got {
 			if got[i] != want[i] {
@@ -391,14 +289,14 @@ func TestTokenChunkerOverlapStripsTagsTrimOrder(t *testing.T) {
 	}
 }
 
-func TestTokenChunkerOverlapMatchesPython(t *testing.T) {
+func TestTokenChunkerOverlapMatchesGoOracle(t *testing.T) {
 	text := strings.Join(mergeSourceLines, "\n")
 	const overlap = 20.0
 	for _, cap := range []int{32, 64, 128} {
-		want := pythonMergeWithOverlap(mergeSourceLines, cap, overlap)
+		want := goMergeWithOverlapOracle(mergeSourceLines, cap, overlap)
 		got := invokeTokenChunker(t, text, cap, overlap)
 		if len(got) != len(want) {
-			t.Fatalf("chunk_token_size=%d overlap=%v: chunk count go=%d, python=%d", cap, overlap, len(got), len(want))
+			t.Fatalf("chunk_token_size=%d overlap=%v: chunk count go=%d, oracle=%d", cap, overlap, len(got), len(want))
 		}
 		for i := range got {
 			if got[i] != want[i] {

@@ -24,7 +24,7 @@ func (f *navRoutingFake) UpsertDoc(context.Context, nav.UpsertDocInput) error { 
 func (f *navRoutingFake) RemoveDoc(context.Context, string, string, string) error {
 	return nil
 }
-func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, _ int) ([]nav.NavHit, error) {
+func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, _ []string, _ int) ([]nav.NavHit, error) {
 	f.mu.Lock()
 	f.searched = append(f.searched, query)
 	f.mu.Unlock()
@@ -35,6 +35,9 @@ func (f *navRoutingFake) ListClusters(context.Context, string, string, int, int)
 }
 func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name string, _, _ int) ([]nav.NavNode, int64, error) {
 	return f.children[name], int64(len(f.children[name])), nil
+}
+func (f *navRoutingFake) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {
+	return map[string]string{}
 }
 func (f *navRoutingFake) searchedTopics() []string {
 	f.mu.Lock()
@@ -58,7 +61,7 @@ func TestDatasetNavigation_UsesTopicRouting(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	tool := NewDatasetNavigationByTree()
 	out, err := tool.InvokableRun(ctx, `{"topic":"rocket propulsion","keywords":"engine","dataset_ids":["kb1"]}`)
@@ -82,7 +85,7 @@ func TestDatasetNavigation_UsesTopicRouting(t *testing.T) {
 // TestCanvasDatasetIDs_MultiKB asserts all explicit dataset ids are preserved
 // (a multi-KB session must not collapse to the first KB).
 func TestCanvasDatasetIDs_MultiKB(t *testing.T) {
-	ids := canvasDatasetIDs(context.Background(), []string{"kb1", "kb2", "kb3"})
+	ids := canvasDatasetIDs(t.Context(), []string{"kb1", "kb2", "kb3"})
 	if len(ids) != 3 || ids[0] != "kb1" || ids[1] != "kb2" || ids[2] != "kb3" {
 		t.Errorf("canvasDatasetIDs = %v, want all three KBs", ids)
 	}
@@ -98,7 +101,7 @@ func TestDatasetNavigation_MultiKB(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	tool := NewDatasetNavigationByTree()
 	_, err := tool.InvokableRun(ctx, `{"topic":"X","dataset_ids":["kb1","kb2","kb3"]}`)
@@ -114,7 +117,7 @@ func TestDatasetNavigation_MultiKB(t *testing.T) {
 
 // TestCanvasDatasetIDs_DedupEmpty asserts empty ids are dropped.
 func TestCanvasDatasetIDs_DedupEmpty(t *testing.T) {
-	ids := canvasDatasetIDs(context.Background(), []string{"kb1", "", "kb2"})
+	ids := canvasDatasetIDs(t.Context(), []string{"kb1", "", "kb2"})
 	if len(ids) != 2 || ids[0] != "kb1" || ids[1] != "kb2" {
 		t.Errorf("canvasDatasetIDs = %v, want [kb1 kb2]", ids)
 	}

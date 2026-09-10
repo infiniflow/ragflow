@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"time"
 
-	"gorm.io/gorm"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // Option configures a Consumer.
@@ -77,6 +79,12 @@ func WithWriter(w Writer) Option { return func(c *Consumer) { c.writer = w } }
 // WithDeduperFactory overrides the per-tenant Deduper factory.
 func WithDeduperFactory(f DeduperFactory) Option { return func(c *Consumer) { c.factory = f } }
 
+// withWikiContributionStore overrides the durable document-contribution store
+// in package tests.
+func withWikiContributionStore(store wikiContributionStore) Option {
+	return func(c *Consumer) { c.contributions = store }
+}
+
 // defaultLLMID / defaultEmbedding are the model ids used when resolving LLM
 // deps for the dataset-level deduper. Set via SetModelConfig (typically from the
 // server bootstrap). Empty strings make the factory fall back to the noop
@@ -90,6 +98,16 @@ var (
 func SetModelConfig(llmID, embedding string) {
 	defaultLLMID = llmID
 	defaultEmbedding = embedding
+}
+
+// InitializePublisher installs the process-wide publisher used by document
+// lifecycle events. API processes publish events but do not own the dataset
+// consumer, so they need this producer-only initialization without starting a
+// worker.
+func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
+	if defaultPublisher == nil {
+		SetScheduler(newScheduler(db, mq, generateHolder(), 2*time.Minute))
+	}
 }
 
 // defaultDeduperFactory resolves the per-tenant LLM deps and builds the
@@ -128,11 +146,16 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on
 	// shutdown).
+	runCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.Provision(ctx); err != nil {
 		return err
 	}
+	if err := db.WithContext(ctx).AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
+		return err
+	}
 	SetScheduler(s)
+	go runWikiDirtyWorker(runCtx, db, s.holder)
 	return nil
 }

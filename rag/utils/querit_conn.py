@@ -76,14 +76,17 @@ class Querit:
                     }
                 )
             return normalized_results
+        except requests.HTTPError as error:
+            status = error.response.status_code if error.response is not None else "unknown"
+            logger.error("Querit search failed: HTTP %s", status)
+            return []
         except (requests.RequestException, TypeError, ValueError) as error:
-            logger.error("Querit search failed: %s", _safe_error_message(error, self.api_key))
+            logger.error("Querit search failed: %s", type(error).__name__)
             return []
 
     def retrieve_chunks(self, question: str) -> dict[str, list]:
         chunks = []
         doc_aggs = []
-        logger.info("[Querit]Q: %s", question)
         for result in self.search(question):
             chunk_id = get_uuid()
             chunks.append(
@@ -112,14 +115,10 @@ class Querit:
                     "url": result["url"],
                 }
             )
-            logger.info("[Querit]R: %s...", result["content"][:128])
+        # Counts only: the query and the retrieved page text are user data.
+        logger.info("Querit search returned %d chunks", len(chunks))
         return {"chunks": chunks, "doc_aggs": doc_aggs}
 
 
 def _querit_text(value: Any) -> str:
     return "" if value is None else str(value)
-
-
-def _safe_error_message(error: Exception, api_key: str) -> str:
-    message = str(error) or error.__class__.__name__
-    return message.replace(api_key, "[REDACTED]") if api_key else message

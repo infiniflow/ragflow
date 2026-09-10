@@ -18,6 +18,7 @@ package common
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,9 +32,9 @@ func GetEnvSmall(key string) string {
 
 // environment variables
 const (
-	EnvDeepDocURL                        = "DEEPDOC_URL"
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
+	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
@@ -104,6 +105,7 @@ const (
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
 	EnvSandboxExecutorManagerPoolSize    = "SANDBOX_EXECUTOR_MANAGER_POOL_SIZE"
 	EnvSandboxExecutorManagerMaxRetries  = "SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES"
+	EnvSandboxExecutorManagerAPIToken    = "SANDBOX_EXECUTOR_MANAGER_API_TOKEN"
 	EnvSandboxBasePythonImage            = "SANDBOX_BASE_PYTHON_IMAGE"
 	EnvSandboxBaseNodeJSImage            = "SANDBOX_BASE_NODEJS_IMAGE"
 	EnvSandboxArtifactBucket             = "SANDBOX_ARTIFACT_BUCKET"
@@ -134,14 +136,14 @@ const (
 	EnvBatchSingle                       = "BATCH_SINGLE"
 	EnvBatchCount                        = "BATCH_COUNT"
 	EnvBatchLogLevel                     = "BATCH_LOG_LEVEL"
-	EnvBatchSkipOCR                      = "BATCH_SKIP_OCR"
 	EnvBatchCompareOnly                  = "BATCH_COMPARE_ONLY"
 	EnvBatchCompareFilter                = "BATCH_COMPARE_FILTER"
 	EnvBatchCompareCSV                   = "BATCH_COMPARE_CSV"
 	EnvPYOCRSuffix                       = "PY_OCR_SUFFIX"
-	EnvOSSDeepDocURL                     = "OSSDEEPDOC_URL"
 	EnvUpdateGolden                      = "UPDATE_GOLDEN"
 	EnvBatchParityFilter                 = "BATCH_PARITY_FILTER"
+	EnvBatchParityVariant                = "BATCH_PARITY_VARIANT"
+	EnvBatchParityDataRoot               = "BATCH_PARITY_DATA_ROOT"
 	EnvDumpCount                         = "DUMP_COUNT"
 	EnvBatchCSV                          = "BATCH_CSV"
 	EnvESTest                            = "ES_TEST"
@@ -159,6 +161,8 @@ const (
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
+	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
+	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
@@ -209,4 +213,77 @@ const (
 	EnvGmailWebOAuthRedirectURI          = "GMAIL_WEB_OAUTH_REDIRECT_URI"
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
+
+	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
+	// model snapshot (see common.DeepDocModelFiles); mirrors
+	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
+	// EnvDeepDocDropScore overrides the confidence threshold below which the
+	// in-process (Go) DeepDoc backend blanks recognized text while preserving
+	// the real score. It MUST match the Python inference service's
+	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
+	// backends apply the same text-blanking contract.
+	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 )
+
+// DeepDocModelFiles is the single source of truth for the weights the
+// in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
+// the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
+// into the Go binary supports .ort only, not the protobuf .onnx format. The
+// Python DeepDoc service keeps the legacy .onnx files and lists them
+// independently (see deepdoc/server/download_deps.py), so this slice must NOT
+// re-add the .onnx names; it is the Go presence check, not a shared list.
+// cmd/ resolves the model directory against it; the native analyzer validates
+// file presence against it via HasModelFiles. Order is insignificant (callers
+// do set-membership checks); keep it stable so logs and diffs stay readable.
+//
+// External consumers that re-list these names must stay in sync:
+//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//     (it fetches the files one by one, so it MUST be edited by hand when this
+//     slice changes);
+//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
+//     (so .ort lands in the model dir automatically — no FILES edit needed);
+//   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
+//     image) keeps the .onnx list and must NOT be changed to .ort.
+var DeepDocModelFiles = []string{
+	"det.ort",
+	"layout.ort",
+	"tsr.ort",
+	"rec.ort",
+	"ocr.res",
+}
+
+// HasModelFiles reports whether dir contains every file listed in
+// DeepDocModelFiles. It is the single presence check shared by the server
+// (cmd/ragflow_server.go) and the in-process analyzer (infnative:
+// NewAnalyzer / canServe); those call sites must not re-roll this loop.
+func HasModelFiles(dir string) bool {
+	for _, f := range DeepDocModelFiles {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// DeepDocORTVersion is the onnxruntime native release the in-process (Go)
+// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
+// THREE raw version declarations that must stay equal (the other two are
+// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
+// — NOT a single source of truth. The download URL and extracted dir name are
+// built from those ORT_VERSION constants, not from this one. The Go binding
+// (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
+// and the pip onnxruntime== pin must
+// track this MINOR version: the binding uses its own release numbering
+// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
+// so there is no .so / SONAME at runtime.
+//
+// To bump ORT, ALL of the following must change together (drift breaks the
+// static link or the runtime OrtGetApiBase lookup):
+//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
+//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
+//   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
+//     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
+//   - the onnxruntime_go binding minor in go.mod.
+const DeepDocORTVersion = "1.23.2"

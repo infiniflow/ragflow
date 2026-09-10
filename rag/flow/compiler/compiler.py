@@ -30,6 +30,7 @@ from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
+    DOC_STRUCTURE_LLM_POOL_SIZE,
     load_active_templates,
     resolve_template_ids_from_groups,
     run_structure_compile_over_batches,
@@ -371,6 +372,7 @@ class Compiler(ProcessBase, LLM):
         kb_id: str,
         doc_id: str,
         doc_name: str,
+        llm_pool,
     ) -> None:
         """Build and persist tree graphs from the pipeline's in-memory chunks.
 
@@ -418,6 +420,12 @@ class Compiler(ProcessBase, LLM):
         raptor_service = RaptorService(tree_context)
 
         for idx, (template_id, parser_cfg) in enumerate(templates):
+            pooled_chat_mdl = llm_pool.wrap(
+                chat_mdl_by_tid[template_id],
+                priority=30,
+                label=f"tree:{template_id}",
+                context=f"{doc_id}:{template_id}:tree",
+            )
             raptor_cfg = (parser_cfg or {}).get("raptor") or {}
             raptor_config = {
                 "prompt": raptor_cfg.get("prompt")
@@ -432,7 +440,7 @@ class Compiler(ProcessBase, LLM):
                 tree = await raptor_service.build_doc_tree(
                     chunks=tree_chunks,
                     raptor_config=raptor_config,
-                    chat_mdl=chat_mdl_by_tid[template_id],
+                    chat_mdl=pooled_chat_mdl,
                     embd_mdl=embedding_model,
                     max_errors=3,
                 )
@@ -445,7 +453,7 @@ class Compiler(ProcessBase, LLM):
             if bool(raptor_cfg.get("rechunk")):
                 self._compile_progress(msg="Compiler: tree rechunking is not supported for in-memory pipeline chunks; keeping original chunks.")
 
-            await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
+            await rewrite_duplicate_tree_names(tree, pooled_chat_mdl)
             after_graph = raptor_tree_to_graph(tree)
             try:
                 await _struct_upsert_tree_graph_rows(
@@ -489,7 +497,7 @@ class Compiler(ProcessBase, LLM):
                     doc_id,
                     {"title": tree.get("title"), "graph_text": nav_graph_text},
                     embd_mdl=embedding_model,
-                    chat_mdl=chat_mdl_by_tid[template_id],
+                    chat_mdl=pooled_chat_mdl,
                 )
             except Exception:
                 logging.exception("Compiler: tree-template %s dataset navigation upsert failed for doc %s", template_id, doc_id)
@@ -552,52 +560,16 @@ class Compiler(ProcessBase, LLM):
             self.set_output("chunks", chunks)
             return
 
-        # Per-template chat model: a template may pin its own ``llm_id``;
-        # otherwise fall back to this component's configured chat model.
-        llm_bundle_cache: dict[str, LLMBundle] = {}
-        chat_mdl_by_tid: dict[str, LLMBundle] = {}
-        filtered_templates: list[tuple[str, dict]] = []
-        default_chat_mdl = None
-        for template_id, parser_cfg in active_templates:
-            tpl_llm_id = parser_cfg.get("llm_id") if isinstance(parser_cfg, dict) else None
-            if isinstance(tpl_llm_id, str) and tpl_llm_id.strip():
-                chat_llm_id = tpl_llm_id.strip()
-                if chat_llm_id not in llm_bundle_cache:
-                    try:
-                        cfg = resolve_model_config(tenant_id, LLMType.CHAT, chat_llm_id)
-                        llm_bundle_cache[chat_llm_id] = LLMBundle(
-                            tenant_id,
-                            cfg,
-                            lang=language,
-                            max_retries=self._param.max_retries,
-                            retry_interval=self._param.delay_after_error,
-                        )
-                    except Exception:
-                        logging.exception(
-                            "Compiler: cannot resolve chat model %s for template %s; skipping",
-                            chat_llm_id,
-                            template_id,
-                        )
-                        continue
-                chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-            else:
-                if default_chat_mdl is None:
-                    default_chat_mdl = LLMBundle(
-                        tenant_id,
-                        self.chat_mdl.model_config,
-                        lang=language,
-                        max_retries=self._param.max_retries,
-                        retry_interval=self._param.delay_after_error,
-                    )
-                chat_mdl_by_tid[template_id] = default_chat_mdl
-            filtered_templates.append((template_id, parser_cfg))
-
-        if not filtered_templates:
-            if chunks is None:
-                chunks = self._normalize_upstream_chunks(kwargs)
-            self.set_output("chunks", chunks)
-            return
-        active_templates = filtered_templates
+        # Compilation templates describe output structure, not model selection.
+        # Every template in this pipeline must use the Compiler component's LLM.
+        chat_mdl = LLMBundle(
+            tenant_id,
+            self.chat_mdl.model_config,
+            lang=language,
+            max_retries=self._param.max_retries,
+            retry_interval=self._param.delay_after_error,
+        )
+        chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
         def _template_requests_rechunk(cfg: dict) -> bool:
             if not isinstance(cfg, dict):
@@ -651,6 +623,9 @@ class Compiler(ProcessBase, LLM):
             max_retries=self._param.max_retries,
             retry_interval=self._param.delay_after_error,
         )
+        from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+
+        llm_pool = LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
 
         tree_templates, non_tree_templates = split_tree_templates(active_templates)
         if tree_templates:
@@ -663,6 +638,7 @@ class Compiler(ProcessBase, LLM):
                 kb_id,
                 doc_id,
                 doc_name,
+                llm_pool,
             )
 
         if non_tree_templates:
@@ -699,6 +675,7 @@ class Compiler(ProcessBase, LLM):
                     chunk_batches=_chunk_batches(),
                     progress_cb=self._compile_progress,
                     cancel_check=_cancelled,
+                    llm_pool=llm_pool,
                 )
 
             if first_rechunk_index is None:

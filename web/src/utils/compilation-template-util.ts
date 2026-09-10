@@ -25,6 +25,12 @@ export function formatKindLabel(t: TFunction, kind: string): string {
   if (kind === CompilationTemplateKind.KnowledgeGraph) {
     return t('knowledgeCompilation.graph');
   }
+  if (kind === CompilationTemplateKind.PageIndex) {
+    return 'PageIndex';
+  }
+  if (kind === CompilationTemplateKind.MindMap) {
+    return 'Mindmap';
+  }
   return capitalize(lowerCase(kind));
 }
 export const isCreateCompilationTemplateGroup = (

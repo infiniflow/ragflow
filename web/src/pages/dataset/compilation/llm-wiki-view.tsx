@@ -25,6 +25,7 @@ import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
+import { canGenerateWiki } from './wiki-generation-eligibility';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
 
@@ -63,7 +64,7 @@ export function LlmWikiView() {
     setLeftTab(value as LeftPanelTab);
   }, []);
 
-  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
+  const canGenerate = canGenerateWiki(knowledgeBase);
   const isLoading = topicListLoading && topics.length === 0;
   const isEmpty = topics.length === 0 && !topicListLoading;
 
@@ -84,7 +85,7 @@ export function LlmWikiView() {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <ResizablePanelGroup direction="horizontal" className="flex-1">
-        <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+        <ResizablePanel id="wiki-left" order={1} defaultSize={50}>
           <WikiLeftPanel
             tab={leftTab}
             onTabChange={handleLeftTabChange}
@@ -97,15 +98,19 @@ export function LlmWikiView() {
             traceData={artifactRunData}
           />
         </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <WikiDetailContent
-            selectedArtifact={selectedArtifact}
-            selectedVersion={selectedVersion}
-            onSelectVersion={selectVersion}
-            onSelectArtifact={handleSelectArtifact}
-          />
-        </ResizablePanel>
+        {selectedArtifact && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="wiki-detail" order={2}>
+              <WikiDetailContent
+                selectedArtifact={selectedArtifact}
+                selectedVersion={selectedVersion}
+                onSelectVersion={selectVersion}
+                onSelectArtifact={handleSelectArtifact}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </Card>
   );

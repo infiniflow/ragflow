@@ -666,6 +666,12 @@ class NotionConnector(LoadConnector, PollConnector):
         if slim_batch:
             yield slim_batch
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "NotionConnector":
+        connector = cls(root_page_id=config["root_page_id"])
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Applies integration token to headers."""
         self.headers["Authorization"] = f"Bearer {credentials['notion_integration_token']}"

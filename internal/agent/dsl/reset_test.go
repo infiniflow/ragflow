@@ -21,6 +21,55 @@ import (
 	"testing"
 )
 
+func TestResetForNewSession_ClearsOnlySessionOwnedState(t *testing.T) {
+	in := map[string]any{
+		"history":   []any{"old turn"},
+		"path":      []any{"begin", "fillup"},
+		"memory":    []any{"reusable memory"},
+		"retrieval": []any{"reusable retrieval"},
+		"globals": map[string]any{
+			"sys.history": []any{"old rendered turn"},
+			"sys.files":   []any{"keep.pdf"},
+			"env.topic":   "keep",
+		},
+	}
+
+	got := ResetForNewSession(in)
+
+	for _, key := range []string{"history", "path"} {
+		if value, ok := got[key].([]any); !ok || len(value) != 0 {
+			t.Errorf("%s = %#v, want empty []any", key, got[key])
+		}
+	}
+	globals := got["globals"].(map[string]any)
+	if history, ok := globals["sys.history"].([]any); !ok || len(history) != 0 {
+		t.Errorf("sys.history = %#v, want empty []any", globals["sys.history"])
+	}
+	if !reflect.DeepEqual(got["memory"], []any{"reusable memory"}) ||
+		!reflect.DeepEqual(got["retrieval"], []any{"reusable retrieval"}) ||
+		!reflect.DeepEqual(globals["sys.files"], []any{"keep.pdf"}) ||
+		globals["env.topic"] != "keep" {
+		t.Fatalf("reusable state was changed: %#v", got)
+	}
+
+	if !reflect.DeepEqual(in["history"], []any{"old turn"}) ||
+		!reflect.DeepEqual(in["path"], []any{"begin", "fillup"}) ||
+		!reflect.DeepEqual(in["globals"].(map[string]any)["sys.history"], []any{"old rendered turn"}) {
+		t.Fatalf("input DSL was mutated: %#v", in)
+	}
+}
+
+func TestResetForNewSession_NormalizesMissingGlobals(t *testing.T) {
+	got := ResetForNewSession(map[string]any{})
+	globals, ok := got["globals"].(map[string]any)
+	if !ok {
+		t.Fatalf("globals = %#v, want map", got["globals"])
+	}
+	if history, ok := globals["sys.history"].([]any); !ok || len(history) != 0 {
+		t.Fatalf("sys.history = %#v, want empty []any", globals["sys.history"])
+	}
+}
+
 // TestResetForCanvas_ClearsPerRunState asserts the four top-level
 // accumulators are reset to fresh empty slices, matching the Python
 // `self.history = []` / `self.retrieval = []` / `self.memory = []`

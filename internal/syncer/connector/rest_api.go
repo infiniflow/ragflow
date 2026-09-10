@@ -520,6 +520,13 @@ func (c *RestAPIConnector) ValidateLive(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates REST API settings from an unsaved config.
+func (c *RestAPIConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.ValidateLive(ctx)
+}
+
 // OpenSync opens one sync session. Incremental runs filter documents to the
 // request window (start <= updated_at < end).
 func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
@@ -539,7 +546,9 @@ func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		windowStart:   windowStart,
 		windowEnd:     request.WindowEnd.UTC(),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -976,7 +985,7 @@ func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, e
 	if restAPISSRFAllowLoopback {
 		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 		if err != nil {
-			return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+			return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 		}
 		if len(addrs) == 0 {
 			return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
@@ -986,7 +995,7 @@ func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, e
 
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 	}
 	var first net.IP
 	for _, addr := range addrs {
@@ -1098,18 +1107,20 @@ func (c *RestAPIConnector) applyCursorPagination(params map[string]any, cursor s
 // restAPIItemIterator mirrors _iter_items: it walks pages applying the
 // configured pagination and stopping when the source reports no more items.
 type restAPIItemIterator struct {
-	c         *RestAPIConnector
-	pageCount int
-	page      int
-	offset    int
-	limit     int
-	perPage   int
-	cursor    string
-	finished  bool
+	c           *RestAPIConnector
+	pageCount   int
+	page        int
+	offset      int
+	limit       int
+	perPage     int
+	cursor      string
+	finished    bool
+	lastPos     *restAPISyncCursor
+	seenCursors map[string]struct{}
 }
 
 func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
-	it := &restAPIItemIterator{c: c}
+	it := &restAPIItemIterator{c: c, seenCursors: map[string]struct{}{}}
 	if perPage, err := c.resolvePageSize(); err == nil {
 		it.perPage = perPage
 	} else {
@@ -1131,6 +1142,9 @@ func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
 		it.limit = it.perPage
 	}
 	it.cursor = strings.TrimSpace(stringConfig(c.cfg.PaginationConfig["initial_cursor"]))
+	if it.cursor != "" {
+		it.seenCursors[it.cursor] = struct{}{}
+	}
 	return it
 }
 
@@ -1139,6 +1153,7 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	if it.finished || it.pageCount >= it.c.cfg.MaxPages {
 		return nil, nil
 	}
+	it.lastPos = it.positionCursor()
 	params := map[string]any{}
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
@@ -1171,7 +1186,8 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	}
 
 	items := restAPIExtractItems(response, it.c.cfg.ItemsPath)
-	if len(items) == 0 {
+	hasNext, reportsHasNext := restAPIExtractHasNextPage(response, it.c.cfg.PaginationConfig)
+	if len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
 		it.finished = true
 		return nil, nil
 	}
@@ -1193,29 +1209,45 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.offset += it.limit
 		}
 	case restAPIPaginationCursor:
+		if reportsHasNext && !hasNext {
+			it.finished = true
+			break
+		}
 		next := restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
 		if next == "" {
 			it.finished = true
+		} else if _, repeated := it.seenCursors[next]; repeated {
+			return nil, fmt.Errorf("rest api pagination repeated cursor %q: %w", next, ErrSyncResumeInvalid)
 		} else {
+			it.seenCursors[next] = struct{}{}
 			it.cursor = next
 		}
 	}
 	return items, nil
 }
 
-// positionAfterPage returns the resume position after the page that was just
-// consumed, i.e. the next page to fetch. It is nil for pagination_type=none,
-// which never emits checkpoints.
-func (it *restAPIItemIterator) positionAfterPage() *restAPISyncCursor {
+// positionCursor returns the position of the page that was just fetched. It is
+// nil for pagination_type=none, which never emits checkpoints.
+func (it *restAPIItemIterator) positionCursor() *restAPISyncCursor {
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
-		return &restAPISyncCursor{Page: it.page}
+		return &restAPISyncCursor{Page: it.page, SourceID: ""}
 	case restAPIPaginationOffset:
-		return &restAPISyncCursor{Offset: it.offset}
+		return &restAPISyncCursor{Offset: it.offset, SourceID: ""}
 	case restAPIPaginationCursor:
-		return &restAPISyncCursor{Cursor: it.cursor}
+		return &restAPISyncCursor{Cursor: it.cursor, SourceID: ""}
 	}
 	return nil
+}
+
+// currentPagePosition returns the position of the page fetched by the most
+// recent nextPage call. It keeps the page position, not the next page.
+func (it *restAPIItemIterator) currentPagePosition() *restAPISyncCursor {
+	if it.lastPos == nil {
+		return nil
+	}
+	pos := *it.lastPos
+	return &pos
 }
 
 // ---------------------------------------------------------------------------
@@ -1270,6 +1302,19 @@ func restAPIExtractItems(response any, itemsPath string) []map[string]any {
 		}
 	}
 	return out
+}
+
+func restAPIExtractHasNextPage(response any, paginationConfig map[string]any) (bool, bool) {
+	field := strings.TrimSpace(stringConfig(paginationConfig["has_next_page_field"]))
+	if field == "" {
+		return false, false
+	}
+	dict, ok := response.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	value, ok := dict[field].(bool)
+	return value, ok
 }
 
 // restAPIExtractNextCursor mirrors _extract_next_cursor.
@@ -2076,68 +2121,131 @@ func restAPITimeISO(t time.Time) string {
 // Sync session
 // ---------------------------------------------------------------------------
 
-// restAPISyncCursor is the page-boundary resume position serialized into
-// SyncCheckpoint.Cursor. It stores the next page to fetch for the configured
-// pagination type; pagination_type=none never produces a checkpoint.
+// restAPISyncCursor is the resume position serialized into SyncCheckpoint.Cursor.
+// It stores the current page to fetch and the source document that was last
+// committed from that page; pagination_type=none never produces a checkpoint.
 type restAPISyncCursor struct {
-	Page   int    `json:"page,omitempty"`
-	Offset int    `json:"offset,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
+	Page     int    `json:"page,omitempty"`
+	Offset   int    `json:"offset,omitempty"`
+	Cursor   string `json:"cursor,omitempty"`
+	SourceID string `json:"source_id,omitempty"`
 }
 
-// restAPIPageState tracks one fetched page until all of its documents have
-// been handed out in emitted batches. nextPos is the resume position after the
-// page (nil for pagination_type=none).
-type restAPIPageState struct {
-	remaining int
-	nextPos   *restAPISyncCursor
+// restAPIBufferedDocument carries the checkpoint position for an individual
+// source document so a retried task can resume at the last emitted document.
+type restAPIBufferedDocument struct {
+	document   SourceDocument
+	checkpoint *SyncCheckpoint
 }
 
 // restAPISyncSession streams items lazily so large APIs are not fully
 // materialized in memory.
 type restAPISyncSession struct {
-	connector     *RestAPIConnector
-	iterator      *restAPIItemIterator
-	batchSize     int
-	fromBeginning bool
-	windowStart   *time.Time
-	windowEnd     time.Time
-	pending       []SourceDocument
-	pages         []restAPIPageState
-	drained       *restAPISyncCursor
+	connector      *RestAPIConnector
+	iterator       *restAPIItemIterator
+	batchSize      int
+	fromBeginning  bool
+	windowStart    *time.Time
+	windowEnd      time.Time
+	pending        []restAPIBufferedDocument
+	resumePosition *restAPISyncCursor
+	resumeSourceID string
 }
 
-// applyResume restores the next page to fetch from a saved checkpoint. Invalid
-// or empty cursors are ignored, mirroring the tolerant resume of other
-// connectors.
-func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) {
+// applyResume restores the checkpoint page and source anchor. Cursors that are
+// malformed, mismatch the configured pagination type, or carry no source anchor
+// are invalid because resuming would silently skip changed data.
+func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+		if checkpoint == nil {
+			return nil
+		}
+		return fmt.Errorf("rest api sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor restAPISyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("rest api sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("rest api sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	switch s.connector.cfg.PaginationType {
 	case restAPIPaginationPage:
-		if cursor.Page > 0 {
-			s.iterator.page = cursor.Page
+		if cursor.Page <= 0 || cursor.Offset != 0 || cursor.Cursor != "" {
+			return fmt.Errorf("rest api sync cursor does not match page pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.page = cursor.Page
 	case restAPIPaginationOffset:
-		if cursor.Offset > 0 {
-			s.iterator.offset = cursor.Offset
+		if cursor.Page != 0 || cursor.Cursor != "" {
+			return fmt.Errorf("rest api sync cursor does not match offset pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.offset = cursor.Offset
 	case restAPIPaginationCursor:
-		if cursor.Cursor != "" {
-			s.iterator.cursor = cursor.Cursor
+		if cursor.Page != 0 || cursor.Offset != 0 {
+			return fmt.Errorf("rest api sync cursor does not match cursor pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.cursor = cursor.Cursor
+	default:
+		return fmt.Errorf("rest api sync checkpoint cannot resume pagination_type=none: %w", ErrSyncResumeInvalid)
+	}
+	position := cursor
+	position.SourceID = ""
+	s.resumePosition = &position
+	s.resumeSourceID = sourceID
+	return nil
+}
+
+// filterResumedDocuments drops every document at or before the checkpoint anchor.
+// The anchor must still exist on the checkpoint page, otherwise the listing has
+// changed and the runner should restart the whole fixed window.
+func (s *restAPISyncSession) filterResumedDocuments(candidates []SourceDocument) ([]SourceDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
+	}
+	if s.resumePosition == nil || !restAPISyncCursorPositionEqual(s.iterator.currentPagePosition(), s.resumePosition) {
+		return nil, fmt.Errorf("rest api sync resume page no longer matches checkpoint: %w", ErrSyncResumeInvalid)
+	}
+	for index, doc := range candidates {
+		if doc.SourceID == s.resumeSourceID {
+			s.resumePosition = nil
+			s.resumeSourceID = ""
+			return candidates[index+1:], nil
+		}
+	}
+	return nil, fmt.Errorf("rest api resume anchor %q was not found on the checkpoint page: %w", s.resumeSourceID, ErrSyncResumeInvalid)
+}
+
+func restAPISyncCursorPositionEqual(left, right *restAPISyncCursor) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.Page == right.Page && left.Offset == right.Offset && left.Cursor == right.Cursor
+}
+
+// restAPISyncCheckpoint records the current page position plus the document
+// that was last emitted from it.
+func restAPISyncCheckpoint(position *restAPISyncCursor, doc SourceDocument) *SyncCheckpoint {
+	if position == nil {
+		return nil
+	}
+	cursor := *position
+	cursor.SourceID = doc.SourceID
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return nil
+	}
+	updatedAt := doc.UpdatedAt.UTC()
+	return &SyncCheckpoint{
+		Cursor:    string(raw),
+		SourceID:  doc.SourceID,
+		UpdatedAt: &updatedAt,
 	}
 }
 
-// NextBatch returns the next batch of source documents. The batch carries a
-// checkpoint only when at least one page has been fully handed out: the
-// checkpoint points at the next page to fetch, so a retried task re-fetches at
-// most the page where the last batch ended.
+// NextBatch returns the next batch of source documents. The batch checkpoint
+// points back to the page of its last document, so a retried task re-fetches
+// that page and skips through the saved source anchor.
 func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	for len(s.pending) < s.batchSize {
 		items, err := s.iterator.nextPage(ctx)
@@ -2147,7 +2255,7 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		if items == nil {
 			break
 		}
-		pageDocs := 0
+		candidates := make([]SourceDocument, 0, len(items))
 		for _, item := range items {
 			doc, err := s.connector.itemToDocument(item)
 			if err != nil {
@@ -2159,10 +2267,19 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 					continue
 				}
 			}
-			s.pending = append(s.pending, doc)
-			pageDocs++
+			candidates = append(candidates, doc)
 		}
-		s.pages = append(s.pages, restAPIPageState{remaining: pageDocs, nextPos: s.iterator.positionAfterPage()})
+		candidates, err = s.filterResumedDocuments(candidates)
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		position := s.iterator.currentPagePosition()
+		for _, doc := range candidates {
+			s.pending = append(s.pending, restAPIBufferedDocument{
+				document:   doc,
+				checkpoint: restAPISyncCheckpoint(position, doc),
+			})
+		}
 	}
 	if len(s.pending) == 0 {
 		return SyncBatch{}, io.EOF
@@ -2171,32 +2288,16 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if end > len(s.pending) {
 		end = len(s.pending)
 	}
-	batch := SyncBatch{Documents: s.pending[:end]}
+	documents := make([]SourceDocument, 0, end)
+	var checkpoint *SyncCheckpoint
+	for _, buffered := range s.pending[:end] {
+		documents = append(documents, buffered.document)
+		if buffered.checkpoint != nil {
+			checkpoint = buffered.checkpoint
+		}
+	}
 	s.pending = s.pending[end:]
-
-	// Advance the resume point past every page fully covered by the batches
-	// emitted so far. A page whose tail is still pending keeps the checkpoint
-	// at the page start, so a retry re-fetches at most that one page.
-	for len(s.pages) > 0 {
-		if s.pages[0].remaining > end {
-			s.pages[0].remaining -= end
-			break
-		}
-		end -= s.pages[0].remaining
-		if s.pages[0].nextPos != nil {
-			s.drained = s.pages[0].nextPos
-		}
-		s.pages = s.pages[1:]
-		if end == 0 {
-			break
-		}
-	}
-	if s.drained != nil {
-		if raw, err := json.Marshal(s.drained); err == nil {
-			batch.Checkpoint = &SyncCheckpoint{Cursor: string(raw)}
-		}
-	}
-	return batch, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
 // Close releases the session.

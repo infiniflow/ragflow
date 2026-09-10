@@ -14,13 +14,20 @@
  *  limitations under the License.
  */
 
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
 import { Loader2, Plus, Search, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -55,6 +62,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
+    onInstanceModelsStatusChange,
   } = props;
 
   const isDraftInstance =
@@ -70,10 +78,25 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  const { data: instanceModels } = useFetchInstanceModels(
-    providerName,
-    instanceName,
-  );
+  const {
+    data: instanceModels,
+    loading: instanceModelsLoading,
+    isSuccess: instanceModelsSucceeded,
+  } = useFetchInstanceModels(providerName, instanceName);
+
+  useLayoutEffect(() => {
+    if (
+      !isDraftInstance &&
+      (instanceModelsLoading || !instanceModelsSucceeded)
+    ) {
+      onInstanceModelsStatusChange?.(false);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 3. Upstream catalog + auto-fetch on mount.
   const {
@@ -149,11 +172,24 @@ export function ModelsSection(props: ModelsSectionProps) {
   const { instanceItems, models, addedSet } = useModelsDerived({
     catalog,
     instanceModels,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
     draftModels,
     isDraftInstance,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
+
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
+      onInstanceModelsStatusChange?.(true);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 5. Search + tag filter.
   const { search, tag, setSearch, setTag, filteredModels, allTags } =
@@ -317,18 +353,28 @@ export function ModelsSection(props: ModelsSectionProps) {
             {tSetting('batchVerifyModels')}
           </Button>
           {!hideActions && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBatchToggleModels}
-              disabled={batchLoading || filteredModels.length === 0}
-              data-testid="models-batch-toggle"
+            // When the toggle is in "remove all" mode the click opens a
+            // confirmation dialog instead of mutating directly; the button
+            // acts as the dialog trigger, so the handler moves to `onOk`.
+            <ConfirmDeleteDialog
+              hidden={!allFilteredAdded}
+              onOk={handleBatchToggleModels}
+              title={t('common.removeModalTitle')}
+              okButtonText={t('common.remove')}
             >
-              {batchLoading && <Loader2 className="size-3 animate-spin" />}
-              {allFilteredAdded
-                ? tSetting('batchRemoveModels')
-                : tSetting('batchAddModels')}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={allFilteredAdded ? undefined : handleBatchToggleModels}
+                disabled={batchLoading || filteredModels.length === 0}
+                data-testid="models-batch-toggle"
+              >
+                {batchLoading && <Loader2 className="size-3 animate-spin" />}
+                {allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')}
+              </Button>
+            </ConfirmDeleteDialog>
           )}
         </div>
 

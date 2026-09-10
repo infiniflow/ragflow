@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -80,7 +81,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -93,7 +94,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
 	}
@@ -107,7 +108,7 @@ func TestDecorateAnswer_TimerFormatAlwaysEmitted(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"hello world",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -145,7 +146,7 @@ func TestDecorateAnswer_ThinkMarkersPreserved(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"<think>reasoning</think>visible answer",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -175,7 +176,7 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"oops: invalid api key",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -202,7 +203,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see [ID:12] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -229,7 +230,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -269,7 +270,7 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		kb,
 		"system prompt",
@@ -298,7 +299,7 @@ func TestDecorateAnswer_PreCheckSkipsInsertCitations(t *testing.T) {
 	timer, _ := newTimerAndPrompt()
 	in := "answer has [ID:3] already in it"
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		in,
 		map[string]interface{}{
 			// No chunks → insertCitations path is gated off anyway,
@@ -446,7 +447,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 // TestHydrateChunkVectors_NoChunksNoop pins the no-op behavior of
 // the hydration helper on empty input.
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(),
+	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
 		nil, nil, nil,
 	)
@@ -461,7 +462,7 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -524,7 +525,7 @@ func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "",
+		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
 		"", "", nil, nil,
 	)
@@ -551,7 +552,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "select id, name from t",
+		t.Context(), nil, "", "select id, name from t",
 		rows,
 		"sys", "elasticsearch", nil, nil,
 	)
@@ -644,7 +645,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"x",
 		kb,
 		"system prompt",
@@ -1192,7 +1193,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm", []string{"kb_a", "kb_b"},
 	)
@@ -1217,7 +1218,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1249,7 +1250,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1268,7 +1269,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1281,7 +1282,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "", nil,
+		t.Context(), nil, "", "", nil,
 		"", "", nil, nil,
 	)
 	if ans != "No results." {
@@ -1303,7 +1304,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", kbs, nil,
 	)
 	if !strings.Contains(ans, "Source|") {
@@ -1350,7 +1351,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		rows, "", "elasticsearch", kbs, nil,
 	)
@@ -1374,7 +1375,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select title from t",
+		t.Context(), nil, "t", "select title from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
@@ -1402,7 +1403,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", nil, fieldMap,
 	)
 	if !strings.Contains(ans, "|My Title|") {
@@ -1421,7 +1422,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if strings.Contains(ans, "T13:24:55") {
@@ -1442,15 +1443,22 @@ func TestBuildChatConfig_RequestOverrides(t *testing.T) {
 		LLMSetting: entity.JSONMap{
 			"temperature": 0.5,
 			"top_p":       0.9,
+			"max_tokens":  float64(512),
 		},
 	}
-	req := map[string]interface{}{"temperature": temp}
+	req := map[string]interface{}{
+		"temperature": temp,
+		"max_tokens":  128,
+	}
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected request temperature %v, got %v", temp, cfg.Temperature)
 	}
 	if cfg.TopP == nil || *cfg.TopP != 0.9 {
 		t.Fatalf("expected dialog top_p 0.9 to be preserved, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 128 {
+		t.Fatalf("expected request max_tokens 128, got %v", cfg.MaxTokens)
 	}
 }
 
@@ -1464,4 +1472,174 @@ func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected temperature %v, got %v", temp, cfg.Temperature)
 	}
+}
+
+func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(1024)},
+	}
+	cfg := BuildChatConfig(dialog, map[string]interface{}{"max_tokens": 700})
+
+	adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 450)
+	if err != nil {
+		t.Fatalf("clampChatConfigMaxTokens returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected max_tokens to be clamped")
+	}
+	if adjusted != 550 {
+		t.Fatalf("adjusted max_tokens = %d, want 550", adjusted)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 550 {
+		t.Fatalf("config max_tokens = %v, want 550", cfg.MaxTokens)
+	}
+	if dialog.LLMSetting["max_tokens"] != float64(1024) {
+		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
+	}
+}
+
+func TestBuildChatConfigIgnoresNonPositiveMaxTokens(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(0)},
+	}
+	cfg := BuildChatConfig(dialog, nil)
+	if cfg.MaxTokens != nil {
+		t.Fatalf("persisted max_tokens=0 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+
+	cfg = BuildChatConfig(&entity.Chat{}, map[string]interface{}{"max_tokens": -1})
+	if cfg.MaxTokens != nil {
+		t.Fatalf("request max_tokens=-1 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsNonPositive(t *testing.T) {
+	for _, value := range []int{0, -1} {
+		cfg := &modelModule.ChatConfig{MaxTokens: &value}
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 100); err != nil {
+			t.Fatalf("max_tokens=%d returned unexpected error: %v", value, err)
+		} else if ok {
+			t.Fatalf("max_tokens=%d unexpectedly clamped to %d", value, adjusted)
+		}
+		if cfg.MaxTokens != nil {
+			t.Fatalf("max_tokens=%d should be cleared before provider request, got %v", value, *cfg.MaxTokens)
+		}
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
+	for _, usedTokenCount := range []int{1000, 1001} {
+		maxTokens := 700
+		cfg := &modelModule.ChatConfig{MaxTokens: &maxTokens}
+
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, usedTokenCount); err == nil {
+			t.Fatalf("usedTokenCount=%d expected capacity error, got adjusted=%d ok=%t", usedTokenCount, adjusted, ok)
+		}
+		if cfg.MaxTokens == nil || *cfg.MaxTokens != maxTokens {
+			t.Fatalf("capacity error should not set max_tokens to zero, got %v", cfg.MaxTokens)
+		}
+	}
+}
+
+// stubHarness installs a fake harnessRetriever returning the given answer and
+// restores the previous one when the test ends.
+func stubHarness(t *testing.T, answer string) {
+	t.Helper()
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		return HarnessResult{Answer: answer}, nil
+	}
+}
+
+// collectSink records every delta with its isThink flag.
+func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
+	return func(delta string, isThink bool) {
+		*got = append(*got, delta)
+		*thinks = append(*thinks, isThink)
+	}
+}
+
+// TestRetrieveViaHarnessEmitsToolLoopLines covers the Python
+// rag/llm/chat_model.py "[Tool loop]" lines that think_log forwarded from the
+// "rag.llm.chat_model" namespace.
+func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
+	stubHarness(t, "the final cited answer")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks))
+	if err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if answer != "the final cited answer" {
+		t.Fatalf("answer = %q", answer)
+	}
+
+	joined := strings.Join(got, "")
+	for _, want := range []string{
+		"[Tool loop] Deciding what to do next (step 1); available tools: rag",
+		"[Tool loop] Step 1: running rag...",
+		// A non-empty answer is the terminal case in Python.
+		"[Tool loop] The rag tool produced the final answer, done.",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q; got:\n%s", want, joined)
+		}
+	}
+	// Every line must be tagged as thinking and ThinkLineBreak-terminated so
+	// the HTML think block does not glue the stages together.
+	if len(thinks) != 3 {
+		t.Fatalf("got %d deltas, want 3: %#v", len(thinks), got)
+	}
+	for i, isThink := range thinks {
+		if !isThink {
+			t.Errorf("delta %d (%q) not tagged as thinking", i, got[i])
+		}
+		if !strings.HasSuffix(got[i], thinkLineBreak) {
+			t.Errorf("delta %d (%q) missing trailing %s", i, got[i], thinkLineBreak)
+		}
+	}
+}
+
+// TestRetrieveViaHarnessToolLoopObservation covers the non-terminal case: an
+// empty answer means the tool fed the next round, not the final reply.
+func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
+	stubHarness(t, "")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	joined := strings.Join(got, "")
+	if !strings.Contains(joined, "[Tool loop] The rag tool produced an observation for step 1.") {
+		t.Errorf("missing observation line; got:\n%s", joined)
+	}
+	if strings.Contains(joined, "final answer") {
+		t.Errorf("empty answer must not claim a final answer:\n%s", joined)
+	}
+}
+
+// TestRetrieveViaHarnessNaiveSkipsToolLoop guards the naive path: no agentic
+// loop runs, so no [Tool loop] narration must appear.
+func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
+	stubHarness(t, "x")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
+	}
+}
+
+// TestToolLoopLineNilSink guards the nil-sink path (streaming disabled).
+func TestToolLoopLineNilSink(t *testing.T) {
+	toolLoopLine(nil, "[Tool loop] Step 1: running rag...") // must not panic
 }

@@ -362,7 +362,7 @@ class DocumentService(CommonService):
     def get_all_doc_ids_by_kb_ids(cls, kb_ids):
         fields = [cls.model.id, cls.model.kb_id]
         docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -436,7 +436,7 @@ class DocumentService(CommonService):
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
-        docs.order_by(cls.model.create_time.asc())
+        docs = docs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 100
         res = []
@@ -1223,11 +1223,12 @@ class DocumentService(CommonService):
         return {"processing": int(row["processing"]), "finished": int(row["finished"]), "failed": int(row["failed"]), "cancelled": int(cancelled), "downloaded": int(downloaded)}
 
     @classmethod
-    def run(cls, tenant_id: str, doc: dict, kb_table_num_map: dict):
+    def run(cls, tenant_id: str, doc: dict, kb_table_num_map: dict, user_id: str | None = None):
         from api.db.services.task_service import queue_dataflow, queue_tasks
         from api.db.services.file2document_service import File2DocumentService
 
         doc["tenant_id"] = tenant_id
+        llm_user_id = user_id or doc.get("llm_user_id")
         doc_parser = doc.get("parser_id", ParserType.NAIVE)
         if doc_parser == ParserType.TABLE:
             kb_id = doc.get("kb_id")
@@ -1239,10 +1240,10 @@ class DocumentService(CommonService):
                 if kb_table_num_map[kb_id] <= 0:
                     KnowledgebaseService.delete_field_map(kb_id)
         if doc.get("pipeline_id", ""):
-            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"])
+            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"], user_id=llm_user_id)
         else:
             bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-            queue_tasks(doc, bucket, name, 0)
+            queue_tasks(doc, bucket, name, 0, user_id=llm_user_id)
 
 
 def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=None):

@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"reflect"
 	"regexp"
 	"testing"
@@ -62,7 +61,7 @@ func TestSearchAppliesPaginationAfterMergingTables(t *testing.T) {
 	}
 
 	orderBy := (&types.OrderByExpr{}).Desc("create_timestamp_flt")
-	result, err := engine.Search(context.Background(), &types.SearchRequest{
+	result, err := engine.Search(t.Context(), &types.SearchRequest{
 		IndexNames:   []string{"ragflow_tenant_1", "ragflow_tenant_2"},
 		Offset:       1,
 		Limit:        2,

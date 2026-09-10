@@ -395,11 +395,11 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := retrievalArgs{}
 	for key := range params {
 		switch key {
-		case "dataset_ids", "kb_ids", "top_n", "top_k", "similarity_threshold",
+		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
 			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
-			"inputs", "outputs":
+			"inputs", "outputs", "user_id":
 		default:
 			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
 		}
@@ -423,8 +423,18 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	} else if ok {
 		defaults.MemoryIDs = ids
 	}
+	if v, ok := stringParam(params, "user_id"); ok {
+		defaults.UserID = v
+	}
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v
+	}
+	if raw, exists := params["rerank_candidates_count"]; exists {
+		value, ok := strictInt(raw)
+		if !ok || value <= 0 {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires positive integer node-level param rerank_candidates_count")
+		}
+		defaults.RerankCandidatesCount = value
 	}
 	if raw, exists := params["top_k"]; exists {
 		value, ok := strictInt(raw)

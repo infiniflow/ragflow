@@ -1,6 +1,7 @@
 package table
 
 import (
+	"fmt"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -32,7 +33,7 @@ func TestCrossPageTableMerge(t *testing.T) {
 	tables := []pdf.TableItem{pg0, pg1}
 
 	// mergeTablesAcrossPages merges tables on consecutive pages with X overlap.
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 820, 1: 820})
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(merged))
 	}
@@ -61,7 +62,7 @@ func TestMergeTablesAcrossPages_NoOverlap(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "right"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 820, 1: 820})
 	if len(merged) != 2 {
 		t.Fatalf("non-overlapping tables: expected 2 tables, got %d", len(merged))
 	}
@@ -82,7 +83,7 @@ func TestMergeTablesAcrossPages_NonConsecutive(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "page3"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 842, 3: 842})
 	if len(merged) != 2 {
 		t.Fatalf("non-consecutive pages: expected 2 tables, got %d", len(merged))
 	}
@@ -98,7 +99,7 @@ func TestMergeTablesAcrossPages_SingleTable(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "only"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 842})
 	if len(merged) != 1 {
 		t.Fatalf("single table: expected 1 table, got %d", len(merged))
 	}
@@ -117,7 +118,7 @@ func TestMergeTablesAcrossPages_EmptyPositions(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "normal"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 842})
 	if len(merged) != 2 {
 		t.Fatalf("empty Positions: expected 2 tables (preserved), got %d", len(merged))
 	}
@@ -148,7 +149,7 @@ func TestMergeTablesAcrossPages_LargeYGap(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "page1_far"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, medianHeights)
+	merged := MergeTablesAcrossPages(tables, medianHeights, map[int]float64{0: 842, 1: 842})
 	if len(merged) != 2 {
 		t.Fatalf("large Y gap: expected 2 tables (not merged), got %d", len(merged))
 	}
@@ -169,7 +170,7 @@ func TestMergeTablesAcrossPages_NoMedianHeights(t *testing.T) {
 			Cells:     []pdf.TSRCell{{Text: "page1_near"}},
 		},
 	}
-	merged := MergeTablesAcrossPages(tables, nil)
+	merged := MergeTablesAcrossPages(tables, nil, map[int]float64{0: 300})
 	if len(merged) != 1 {
 		t.Fatalf("no medianHeights: expected 1 merged table, got %d", len(merged))
 	}
@@ -208,7 +209,7 @@ func TestMergeTablesAcrossPages_RebuildsGridAcrossPages(t *testing.T) {
 		Grid:      pageGrid([][]string{{"e", "f"}, {"g", "h"}}),
 	}
 
-	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
+	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil, map[int]float64{0: 70})
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(merged))
 	}
@@ -231,15 +232,15 @@ func TestMergeTablesAcrossPages_RebuildsGridAcrossPages(t *testing.T) {
 	}
 }
 
-// TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid verifies
-// that when a continuation page's grid has a different number of columns than
-// the anchor (a jagged cross-page stack), MergeTablesAcrossPages does NOT
-// rebuild a non-uniform Grid. Instead it keeps the anchor-only Grid, so
-// ConstructTable emits a structurally valid (if continuation-dropping) table
-// rather than malformed HTML. This is the same safe degrade as the
-// len(anchor.Grid)==0 path, and keeps the merge decision (and the appended
-// continuation Cells) unchanged.
-func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testing.T) {
+// TestMergeTablesAcrossPages_JaggedContinuationPreservesRows verifies that
+// when a continuation page's grid is not column-uniform with the anchor (a
+// jagged cross-page stack), MergeTablesAcrossPages still preserves every
+// continuation row. It aligns both per-page grids to a shared column model
+// (the max column count, padding shorter rows by index) and stacks all rows,
+// instead of dropping the continuation page's Grid. Regression test for the
+// bug where a non-uniform cross-page grid silently deleted an entire
+// continuation page from the output.
+func TestMergeTablesAcrossPages_JaggedContinuationPreservesRows(t *testing.T) {
 	pageGrid := func(rows [][]string) [][]pdf.TSRCell {
 		g := make([][]pdf.TSRCell, len(rows))
 		for r, row := range rows {
@@ -267,44 +268,140 @@ func TestMergeTablesAcrossPages_JaggedContinuationFallsBackToAnchorGrid(t *testi
 		}
 		return cs
 	}
-	// Anchor: 3 columns. Continuation: 2 columns (jagged).
+	cases := []struct {
+		name         string
+		anchorRows   [][]string
+		contRows     [][]string
+		contCellText string
+	}{
+		{
+			name:         "first row column count differs",
+			anchorRows:   [][]string{{"a", "b", "c"}, {"d", "e", "f"}},
+			contRows:     [][]string{{"g", "h"}, {"i", "j"}},
+			contCellText: "g",
+		},
+		{
+			name:         "interior row column count differs",
+			anchorRows:   [][]string{{"a", "b", "c"}, {"d", "e", "f"}},
+			contRows:     [][]string{{"g", "h", "i"}, {"j", "k"}},
+			contCellText: "g",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pg0 := pdf.TableItem{
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
+				Scale:     1.0,
+				Grid:      pageGrid(tc.anchorRows),
+				Cells:     cells(tc.anchorRows),
+			}
+			pg1 := pdf.TableItem{
+				Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
+				Scale:     1.0,
+				Grid:      pageGrid(tc.contRows),
+				Cells:     cells(tc.contRows),
+			}
+
+			merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil, map[int]float64{0: 70})
+			if len(merged) != 1 {
+				t.Fatalf("expected 1 merged table, got %d", len(merged))
+			}
+			// Columns differ (anchor 3 vs continuation jagged) → aligned to
+			// uniCols=3, rows still stacked: anchor + continuation (no drop).
+			wantRows := len(tc.anchorRows) + len(tc.contRows)
+			if len(merged[0].Grid) != wantRows {
+				t.Fatalf("jagged continuation must preserve all rows (want %d), got %d", wantRows, len(merged[0].Grid))
+			}
+			// Aligned width is the max column count (3) for every row.
+			for r, row := range merged[0].Grid {
+				if len(row) != 3 {
+					t.Errorf("row %d: aligned grid width must be max cols (3), got %d", r, len(row))
+				}
+			}
+			// Anchor rows preserved first.
+			if merged[0].Grid[0][0].Text != tc.anchorRows[0][0] || merged[0].Grid[1][0].Text != tc.anchorRows[1][0] {
+				t.Errorf("anchor rows corrupted after alignment: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
+			}
+			// Continuation rows appended in page order, padded by index.
+			base := len(tc.anchorRows)
+			for r, crow := range tc.contRows {
+				for c, txt := range crow {
+					if merged[0].Grid[base+r][c].Text != txt {
+						t.Errorf("continuation cell lost after alignment: Grid[%d][%d]=%q want %q", base+r, c, merged[0].Grid[base+r][c].Text, txt)
+					}
+				}
+			}
+			// Continuation Cells are still appended (merge decision unchanged).
+			hasCont := false
+			for _, c := range merged[0].Cells {
+				if c.Text == tc.contCellText {
+					hasCont = true
+					break
+				}
+			}
+			if !hasCont {
+				t.Errorf("continuation Cells should still be appended after alignment")
+			}
+		})
+	}
+}
+
+// TestMergeTablesAcrossPages_MixedColumnCountsPreservesAllRows reproduces the
+// 中加纯债 cross-page table: page 0 has 27 rows × 6 cols and page 1 has 35
+// rows × 7 cols (TSR detects one extra spurious column on page 1). The merged
+// table must contain ALL 62 rows (27 + 35) at the shared width of 7 columns.
+func TestMergeTablesAcrossPages_MixedColumnCountsPreservesAllRows(t *testing.T) {
+	gridWithTag := func(rows, cols int, tag string) [][]pdf.TSRCell {
+		g := make([][]pdf.TSRCell, rows)
+		for r := 0; r < rows; r++ {
+			g[r] = make([]pdf.TSRCell, cols)
+			for c := 0; c < cols; c++ {
+				g[r][c] = pdf.TSRCell{
+					X0: float64(c) * 100, Y0: float64(r) * 30,
+					X1: float64(c)*100 + 100, Y1: float64(r)*30 + 30,
+					Text: fmt.Sprintf("%s_r%d_c%d", tag, r, c),
+				}
+			}
+		}
+		return g
+	}
 	pg0 := pdf.TableItem{
-		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 300, Top: 0, Bottom: 60}},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 600, Top: 0, Bottom: 810}},
 		Scale:     1.0,
-		Grid:      pageGrid([][]string{{"a", "b", "c"}, {"d", "e", "f"}}),
-		Cells:     cells([][]string{{"a", "b", "c"}, {"d", "e", "f"}}),
+		Grid:      gridWithTag(27, 6, "p0"),
 	}
 	pg1 := pdf.TableItem{
-		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 200, Top: 0, Bottom: 60}},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 700, Top: 0, Bottom: 1050}},
 		Scale:     1.0,
-		Grid:      pageGrid([][]string{{"g", "h"}, {"i", "j"}}),
-		Cells:     cells([][]string{{"g", "h"}, {"i", "j"}}),
+		Grid:      gridWithTag(35, 7, "p1"),
 	}
 
-	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
+	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil, map[int]float64{0: 510})
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(merged))
 	}
-	// Columns differ (3 vs 2) → rebuild must be skipped → Grid stays
-	// anchor-only (2 rows), NOT a 4-row jagged grid.
-	if len(merged[0].Grid) != 2 {
-		t.Fatalf("jagged continuation must fall back to anchor-only Grid (want 2 rows), got %d", len(merged[0].Grid))
+	// All 62 rows (27 + 35) must survive the cross-page merge.
+	if len(merged[0].Grid) != 62 {
+		t.Fatalf("merged Grid must contain all rows from both pages (want 62), got %d", len(merged[0].Grid))
 	}
-	// Anchor rows preserved; continuation NOT stacked into the Grid.
-	if merged[0].Grid[0][0].Text != "a" || merged[0].Grid[1][0].Text != "d" {
-		t.Errorf("anchor rows corrupted after jagged fallback: %s / %s", merged[0].Grid[0][0].Text, merged[0].Grid[1][0].Text)
-	}
-	// Continuation Cells are still appended (pre-fix behaviour) — the merge
-	// decision is unchanged; only the Grid stays uniform so HTML is valid.
-	hasCont := false
-	for _, c := range merged[0].Cells {
-		if c.Text == "g" {
-			hasCont = true
-			break
+	// Shared width is the max column count (7) for every row.
+	for r, row := range merged[0].Grid {
+		if len(row) != 7 {
+			t.Errorf("row %d: aligned grid width must be max cols (7), got %d", r, len(row))
 		}
 	}
-	if !hasCont {
-		t.Errorf("continuation Cells should still be appended even when Grid rebuild is skipped")
+	// Anchor rows first, continuation rows appended, both complete.
+	if merged[0].Grid[0][0].Text != "p0_r0_c0" {
+		t.Errorf("first anchor row lost: %s", merged[0].Grid[0][0].Text)
+	}
+	if merged[0].Grid[26][5].Text != "p0_r26_c5" {
+		t.Errorf("last anchor row lost: %s", merged[0].Grid[26][5].Text)
+	}
+	if merged[0].Grid[27][0].Text != "p1_r0_c0" {
+		t.Errorf("first continuation row lost: %s", merged[0].Grid[27][0].Text)
+	}
+	if merged[0].Grid[61][6].Text != "p1_r34_c6" {
+		t.Errorf("last continuation row lost: %s", merged[0].Grid[61][6].Text)
 	}
 }
 
@@ -336,7 +433,7 @@ func TestMergeTablesAcrossPages_ThreePageCumulativeShift(t *testing.T) {
 		{Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 0, Right: 200, Top: 0, Bottom: 60}}, Scale: 1.0, Grid: pageGrid([][]string{{"i", "j"}, {"k", "l"}})},
 	}
 
-	merged := MergeTablesAcrossPages(pages, nil)
+	merged := MergeTablesAcrossPages(pages, nil, map[int]float64{0: 70, 1: 70, 2: 70})
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(merged))
 	}
@@ -394,7 +491,7 @@ func TestMergeTablesAcrossPages_GridlessAnchorUnchanged(t *testing.T) {
 		Cells:     cells([]string{"e", "f", "g", "h"}),
 	}
 
-	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil)
+	merged := MergeTablesAcrossPages([]pdf.TableItem{pg0, pg1}, nil, map[int]float64{0: 70})
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 merged table, got %d", len(merged))
 	}
@@ -421,5 +518,103 @@ func TestMergeTablesAcrossPages_GridlessAnchorUnchanged(t *testing.T) {
 	}
 	if !pages[0] || !pages[1] {
 		t.Errorf("cross-page merge did not combine both pages' positions: %v", pages)
+	}
+}
+
+// TestMergeTablesAcrossPages_PageLocalYRepeatsButSeparatePages is the
+// regression test for the icbccs deployment.pdf over-merge (known_diffs.json
+// rule icbccs-crosspage-table-overmerge). Two API-parameter tables sit on
+// consecutive pages but their page-LOCAL Y coordinates happen to repeat every
+// page (anchor page 4 bottom=172, continuation page 5 local top=262) — the
+// same pattern that, evaluated as if continuous, yields yDis≈99 and wrongly
+// merges. Python keeps them separate because in absolute page-stacked
+// coordinates the gap is ~862pt. This test locks that Go must NOT merge them:
+// the Y proximity gate must be measured in a page-absolute frame using the
+// anchor page's height.
+func TestMergeTablesAcrossPages_PageLocalYRepeatsButSeparatePages(t *testing.T) {
+	// Anchor on page 4: near the top of the page (local bottom=172).
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 30, Right: 566, Top: 85, Bottom: 172}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "req_params_p4"}},
+		Caption:   "请求参数",
+	}
+	// Continuation on page 5: local top=262 (again near the top of its page).
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 30, Right: 566, Top: 262, Bottom: 350}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "req_params_p5"}},
+		Caption:   "请求参数",
+	}
+	pageHeights := map[int]float64{4: 842, 5: 842} // standard A4 point height
+	// Both with a realistic median char height AND with the nil (mh=10) default.
+	for _, mh := range []map[int]float64{nil, {4: 13, 5: 13}} {
+		merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, mh, pageHeights)
+		if len(merged) != 2 {
+			t.Fatalf("page-local Y repeats across pages: expected 2 SEPARATE tables (no merge), got %d (over-merge bug)", len(merged))
+		}
+	}
+}
+
+// TestMergeTablesAcrossPages_RealAdjacentAcrossPagesStillMerges locks that a
+// genuine cross-page split — anchor table near the BOTTOM of its page and the
+// continuation near the TOP of the next page — is still merged after the
+// page-absolute Y fix. This prevents the fix from over-correcting and
+// splitting real cross-page tables (e.g. the 13_crosspage_table case).
+func TestMergeTablesAcrossPages_RealAdjacentAcrossPagesStillMerges(t *testing.T) {
+	// Anchor page 4: near the bottom (local bottom=800).
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "head_p4"}},
+	}
+	// Continuation page 5: near the top (local top=50).
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "head_p5"}},
+	}
+	pageHeights := map[int]float64{4: 842, 5: 842}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, map[int]float64{4: 13, 5: 13}, pageHeights)
+	if len(merged) != 1 {
+		t.Fatalf("genuine adjacent cross-page split: expected 1 merged table, got %d", len(merged))
+	}
+	if len(merged[0].Positions) != 2 {
+		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
+	}
+}
+
+// TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights
+// locks the #18688 bond cross-page regression fix's core insight: the
+// page-absolute Y shift is now gated by the SIGN of the page-local yDis. A
+// genuine continuation sits at the top of the next page, so its page-local
+// yDis is NEGATIVE and must NOT be shifted — it merges even when medianHeights
+// is unavailable (replay char-height is 0, so mh falls back to the default 10).
+//
+// Geometry: anchor page 0 near the bottom (local bottom=800), continuation
+// page 1 near the top (local top=50), page height 842 → page-local
+// yDis = (50+110-800-800)/2 = -720 (< 0) ⇒ no shift ⇒ MERGE. Under the
+// pre-fix #18688 code the shift would make yDis=122 (< mh*23=230) and also
+// merge, so this test mainly guards that the merge no longer depends on
+// medianHeights being populated for a legitimate continuation.
+func TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "anchor_p0"}},
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cont_p1"}},
+	}
+	pageHeights := map[int]float64{0: 842, 1: 842}
+	// medianHeights=nil mimics the replay path (char-height 0).
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, pageHeights)
+	if len(merged) != 1 {
+		t.Fatalf("genuine cross-page continuation: expected 1 merged table, got %d", len(merged))
+	}
+	if len(merged[0].Positions) != 2 {
+		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
 	}
 }

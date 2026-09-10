@@ -442,7 +442,7 @@ func toStringSlice(v any) []string {
 // Without the deep copy, a caller that reuses the original
 // decoded DSL map (e.g. for re-validation or diffing) would
 // observe side effects that contradict the documented
-// "never mutates its input" contract.
+// "never mutates its input"
 //
 // Primitives and non-mutable values (string, number, bool) are
 // shared by reference; only the maps and slices that the
@@ -588,40 +588,40 @@ func stringsToAny(s []string) []any {
 // type is still rendered (just possibly in a generic shape). The user
 // can re-pick a type from the operator palette to refine.
 var componentNameToNodeTypeMap = map[string]string{
-	"Begin":               "beginNode",
-	"Retrieval":           "ragNode",
-	"Categorize":          "categorizeNode",
-	"Message":             "messageNode",
-	"Answer":              "messageNode",
-	"RewriteQuestion":     "rewriteNode",
-	"ExeSQL":              "toolNode",
-	"Switch":              "switchNode",
-	"Agent":               "agentNode",
-	"Tool":                "toolNode",
-	"File":                "fileNode",
-	"Parser":              "parserNode",
-	"Tokenizer":           "tokenizerNode",
-	"TokenChunker":        "chunkerNode",
-	"TitleChunker":        "chunkerNode",
-	"OneChunker":          "chunkerNode",
-	"TagChunker":          "chunkerNode",
-	"TableChunker":        "chunkerNode",
-	"PresentationChunker": "chunkerNode",
-	"Extractor":           "contextNode",
-	"Loop":                "loopNode",
-	"LoopStart":           "loopStartNode",
-	"ExitLoop":            "exitLoopNode",
-	"Iteration":           "iterationNode",
-	"IterationStart":      "iterationStartNode",
-	"Parallel":            "parallelNode",
-	"DataOperations":      "dataOperationsNode",
-	"ListOperations":      "listOperationsNode",
-	"VariableAssigner":    "variableAssignerNode",
-	"VariableAggregator":  "variableAggregatorNode",
-	"Keyword":             "keywordNode",
-	"Note":                "noteNode",
-	"Placeholder":         "placeholderNode",
-	"Code":                "toolNode",
+	"Begin":              "beginNode",
+	"Retrieval":          "ragNode",
+	"Categorize":         "categorizeNode",
+	"Message":            "messageNode",
+	"Answer":             "messageNode",
+	"RewriteQuestion":    "rewriteNode",
+	"ExeSQL":             "toolNode",
+	"Switch":             "switchNode",
+	"Agent":              "agentNode",
+	"Tool":               "toolNode",
+	"File":               "fileNode",
+	"Parser":             "parserNode",
+	"Tokenizer":          "tokenizerNode",
+	"TokenChunker":       "chunkerNode",
+	"TitleChunker":       "chunkerNode",
+	"OneChunker":         "chunkerNode",
+	"QAChunker":          "chunkerNode",
+	"TableChunker":       "chunkerNode",
+	"PageChunker":        "chunkerNode",
+	"Extractor":          "contextNode",
+	"Loop":               "loopNode",
+	"LoopStart":          "loopStartNode",
+	"ExitLoop":           "exitLoopNode",
+	"Iteration":          "iterationNode",
+	"IterationStart":     "iterationStartNode",
+	"Parallel":           "parallelNode",
+	"DataOperations":     "dataOperationsNode",
+	"ListOperations":     "listOperationsNode",
+	"VariableAssigner":   "variableAssignerNode",
+	"VariableAggregator": "variableAggregatorNode",
+	"Keyword":            "keywordNode",
+	"Note":               "noteNode",
+	"Placeholder":        "placeholderNode",
+	"Code":               "toolNode",
 }
 
 func componentNameToNodeType(name string) string {

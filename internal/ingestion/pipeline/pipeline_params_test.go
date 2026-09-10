@@ -239,15 +239,21 @@ func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
 			}
 			checked++
 			overrides := map[string]any{
-				s.CpnID: map[string]any{"tag_file_id": "file-123"},
+				s.CpnID: map[string]any{
+					"tags": map[string]any{"top_n": 5, "tag_file_id": "file-123"},
+				},
 			}
 			result := BuildParserConfig(dslJSON, overrides)
 			params, ok := result[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
-			if params["tag_file_id"] != "file-123" {
-				t.Errorf("template %q: expected tag_file_id to survive BuildParserConfig, got %v", ref, params["tag_file_id"])
+			var tagFileID any
+			if tags, ok := params["tags"].(map[string]any); ok {
+				tagFileID = tags["tag_file_id"]
+			}
+			if tagFileID != "file-123" {
+				t.Errorf("template %q: expected tag_file_id to survive BuildParserConfig, got %v", ref, tagFileID)
 			}
 		}
 	}
@@ -335,8 +341,11 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 			checked++
 			overrides := map[string]any{
 				s.CpnID: map[string]any{
-					"built_in_metadata": []any{
-						map[string]any{"key": "update_time", "type": "time"},
+					"metadata": map[string]any{
+						"enabled": true,
+						"built_in_metadata": []any{
+							map[string]any{"key": "update_time", "type": "time"},
+						},
 					},
 				},
 			}
@@ -345,12 +354,238 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
-			if _, ok := params["built_in_metadata"]; !ok {
-				t.Errorf("template %q: built_in_metadata dropped by CleanComponentParams; add \"built_in_metadata\": [] to the extractor node params", ref)
+			if _, ok := params["metadata"]; !ok {
+				t.Errorf("template %q: metadata dropped by CleanComponentParams", ref)
 			}
 		}
 	}
 	if checked == 0 {
 		t.Fatal("expected at least one builtin template with an Extractor component")
+	}
+}
+
+func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
+	// Builtin template with empty Extractor params: {}
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Extractor:AutoExtractDefault": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Extractor",
+					"params":         map[string]any{},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	overrides := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"summary": map[string]any{
+				"enabled":       true,
+				"system_prompt": "summary prompt",
+			},
+			"metadata": map[string]any{
+				"enabled": true,
+				"metadata": []any{
+					map[string]any{"key": "category", "type": "string"},
+				},
+			},
+			"keywords": map[string]any{
+				"top_n": 5,
+			},
+			"llm_id":         "gpt-4",
+			"temperature":    0.7,
+			"enable_summary": 1, // legacy flat param should be dropped
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, overrides)
+	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
+	}
+
+	if sum, ok := ext["summary"].(map[string]any); !ok || sum["enabled"] != true {
+		t.Errorf("expected summary.enabled == true, got: %v", ext["summary"])
+	}
+	if meta, ok := ext["metadata"].(map[string]any); !ok || meta["enabled"] != true {
+		t.Errorf("expected metadata.enabled == true, got: %v", ext["metadata"])
+	}
+	if kw, ok := ext["keywords"].(map[string]any); !ok || kw["top_n"] != 5 {
+		t.Errorf("expected keywords.top_n == 5, got: %v", ext["keywords"])
+	}
+	if ext["llm_id"] != "gpt-4" {
+		t.Errorf("expected llm_id == gpt-4, got: %v", ext["llm_id"])
+	}
+	if _, ok := ext["enable_summary"]; ok {
+		t.Errorf("expected legacy flat field enable_summary to be dropped, got: %v", ext["enable_summary"])
+	}
+}
+
+func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
+	dslJSON := []byte(`{
+		"components": {
+			"Extractor:AutoExtractDefault": {
+				"obj": {
+					"component_name": "Extractor",
+					"params": {
+						"outputs": {},
+						"metadata": {}
+					}
+				}
+			}
+		}
+	}`)
+
+	rawConfig := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"metadata": []map[string]any{
+					{"key": "custom_field", "type": "string"},
+				},
+				"built_in_metadata": []map[string]any{
+					{"key": "doc_name", "type": "string"},
+				},
+			},
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, rawConfig)
+	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
+	}
+
+	meta, ok := ext["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected metadata object, got: %#v", ext["metadata"])
+	}
+	if meta["enabled"] != true {
+		t.Errorf("expected enabled == true, got: %#v", meta["enabled"])
+	}
+	mFields, ok := meta["metadata"].([]map[string]any)
+	if !ok || len(mFields) != 1 {
+		t.Errorf("expected 1 metadata field, got: %#v", meta["metadata"])
+	}
+	bFields, ok := meta["built_in_metadata"].([]map[string]any)
+	if !ok || len(bFields) != 1 {
+		t.Errorf("expected 1 built_in_metadata field, got: %#v", meta["built_in_metadata"])
+	}
+}
+
+func TestNormalizeExtractorParams_TableDriven(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]any
+		validate func(t *testing.T, out map[string]any)
+	}{
+		{
+			name:  "nil input returns empty map",
+			input: nil,
+			validate: func(t *testing.T, out map[string]any) {
+				if len(out) != 0 {
+					t.Errorf("expected empty map for nil input, got %#v", out)
+				}
+			},
+		},
+		{
+			name: "modular keywords preserved",
+			input: map[string]any{
+				"keywords": map[string]any{
+					"top_n":         5,
+					"system_prompt": "custom kw prompt",
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				kw, ok := out["keywords"].(map[string]any)
+				if !ok || kw["top_n"] != 5 || kw["system_prompt"] != "custom kw prompt" {
+					t.Errorf("keywords mismatch: %#v", out["keywords"])
+				}
+			},
+		},
+		{
+			name: "modular questions preserved",
+			input: map[string]any{
+				"questions": map[string]any{
+					"top_n":         3,
+					"system_prompt": "custom q prompt",
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				q, ok := out["questions"].(map[string]any)
+				if !ok || q["top_n"] != 3 || q["system_prompt"] != "custom q prompt" {
+					t.Errorf("questions mismatch: %#v", out["questions"])
+				}
+			},
+		},
+		{
+			name: "modular tags preserved",
+			input: map[string]any{
+				"tags": map[string]any{
+					"top_n":       7,
+					"tag_file_id": "file-123",
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				tag, ok := out["tags"].(map[string]any)
+				if !ok || tag["top_n"] != 7 || tag["tag_file_id"] != "file-123" {
+					t.Errorf("tags mismatch: %#v", out["tags"])
+				}
+			},
+		},
+		{
+			name: "modular summary preserved",
+			input: map[string]any{
+				"summary": map[string]any{
+					"enabled":       true,
+					"system_prompt": "summary prompt",
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				sum, ok := out["summary"].(map[string]any)
+				if !ok || sum["enabled"] != true || sum["system_prompt"] != "summary prompt" {
+					t.Errorf("summary mismatch: %#v", out["summary"])
+				}
+			},
+		},
+		{
+			name: "modular metadata preserved",
+			input: map[string]any{
+				"metadata": map[string]any{
+					"enabled": true,
+					"metadata": []map[string]any{
+						{"key": "cat", "type": "string"},
+					},
+					"built_in_metadata": []map[string]any{
+						{"key": "file_name", "type": "string"},
+					},
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				meta, ok := out["metadata"].(map[string]any)
+				if !ok || meta["enabled"] != true {
+					t.Fatalf("expected enabled == true, got %#v", out["metadata"])
+				}
+				mList, ok := meta["metadata"].([]map[string]any)
+				if !ok || len(mList) != 1 {
+					t.Errorf("metadata slice mismatch: %#v", meta["metadata"])
+				}
+				bList, ok := meta["built_in_metadata"].([]map[string]any)
+				if !ok || len(bList) != 1 {
+					t.Errorf("built_in_metadata slice mismatch: %#v", meta["built_in_metadata"])
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := NormalizeExtractorParams(tc.input)
+			tc.validate(t, out)
+		})
 	}
 }

@@ -50,7 +50,7 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","doc_ids":["doc-1"],"top_k":7}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -65,8 +65,14 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	if fake.datasetID != "ds-1" || fake.userID != "user-1" {
 		t.Fatalf("call args = (%q,%q), want (ds-1,user-1)", fake.datasetID, fake.userID)
 	}
-	if fake.req == nil || fake.req.Question != "hello" || len(fake.req.DocIDs) != 1 || fake.req.DocIDs[0] != "doc-1" {
+	if fake.req == nil || fake.req.Question != "hello" || len(fake.req.DocumentIDs) != 1 || fake.req.DocumentIDs[0] != "doc-1" {
 		t.Fatalf("request = %#v", fake.req)
+	}
+	if fake.req.PageSize == nil || *fake.req.PageSize != 9 || fake.req.MetadataCondition["logic"] != "and" {
+		t.Fatalf("public request fields = %#v", fake.req)
+	}
+	if fake.req.KNNTopK == nil || *fake.req.KNNTopK != 7 || fake.req.KNNNumCandidates == nil || *fake.req.KNNNumCandidates != 14 {
+		t.Fatalf("KNN parameters = (%v, %v), want (7, 14)", fake.req.KNNTopK, fake.req.KNNNumCandidates)
 	}
 	if len(fake.req.ToSearchDatasetsRequest("ds-1").DatasetIDs) != 1 {
 		t.Fatal("request conversion failed")
@@ -157,7 +163,7 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetsService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"top_k":7,"include_knowledge_compilation":false}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[]},"top_k":7,"include_knowledge_compilation":false}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -173,6 +179,12 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 	if fake.req.IncludeCompiledChunks == nil || *fake.req.IncludeCompiledChunks {
 		t.Fatalf("include_knowledge_compilation=%v want false", fake.req.IncludeCompiledChunks)
+	}
+	if fake.req.TopK == nil || *fake.req.TopK != 7 {
+		t.Fatalf("legacy top_k alias=%v want 7", fake.req.TopK)
+	}
+	if fake.req.PageSize == nil || *fake.req.PageSize != 9 || len(fake.req.DocumentIDs) != 1 || fake.req.MetadataCondition["logic"] != "and" {
+		t.Fatalf("public request fields = %#v", fake.req)
 	}
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeSuccess) {
@@ -191,6 +203,11 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 		{name: "missing dataset ids", body: `{"question":"hello"}`},
 		{name: "empty dataset ids", body: `{"question":"hello","dataset_ids":[]}`},
 		{name: "invalid top k", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":0}`},
+		{name: "legacy top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":2049}`},
+		{name: "knn top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":2049}`},
+		{name: "invalid knn candidates", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":0}`},
+		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`},
+		{name: "knn candidates below top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":8,"knn_num_candidates":7}`},
 		{name: "invalid threshold", body: `{"question":"hello","dataset_ids":["ds-1"],"similarity_threshold":1.1}`},
 	}
 
@@ -216,6 +233,19 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 				t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeArgumentError, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestValidateSearchParamsKNNBounds(t *testing.T) {
+	knnTopK := 2048
+	if err := validateSearchParams(nil, nil, nil, &knnTopK, nil, nil, nil, nil); err != nil {
+		t.Fatalf("knn_top_k=2048 with default knn_num_candidates should be valid: %v", err)
+	}
+
+	legacyTopK := 2049
+	err := validateSearchParams(nil, nil, nil, nil, &legacyTopK, nil, nil, nil)
+	if err == nil || err.Error() != "top_k (alias for knn_top_k) must be between 1 and 2048" {
+		t.Fatalf("legacy top_k error = %v", err)
 	}
 }
 

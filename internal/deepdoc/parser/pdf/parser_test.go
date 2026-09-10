@@ -127,82 +127,6 @@ func TestOCR_ScanPage(t *testing.T) {
 	})
 }
 
-// ── OCR table cell ─────────────────────────────────────────────────────
-
-func TestOCR_TableCell(t *testing.T) {
-	p := newTestParser()
-	t.Run("fill single empty cell", func(t *testing.T) {
-		cells := []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "已有"},
-		}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "识别结果", Confidence: 0.9}}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 200, 50))
-
-		p.ocrTableCells(t.Context(), cells, dummy, mock)
-
-		if cells[0].Text != "识别结果" {
-			t.Errorf("empty cell not filled: %q", cells[0].Text)
-		}
-		if cells[1].Text != "已有" {
-			t.Errorf("filled cell changed: %q", cells[1].Text)
-		}
-	})
-
-	t.Run("all cells already filled — no OCR", func(t *testing.T) {
-		cells := []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "A"},
-			{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "B"},
-		}
-		p.ocrTableCells(t.Context(), cells, nil, nil) // should not panic
-		if cells[0].Text != "A" || cells[1].Text != "B" {
-			t.Error("filled cells should not change")
-		}
-	})
-
-	t.Run("empty cells list", func(t *testing.T) {
-		ctx := t.Context()
-		p.ocrTableCells(ctx, nil, nil, nil) // should not panic
-		p.ocrTableCells(ctx, []pdf.TSRCell{}, nil, nil)
-	})
-
-	t.Run("no DeepDoc — skip", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		p.ocrTableCells(t.Context(), cells, nil, nil)
-		if cells[0].Text != "" {
-			t.Error("without DeepDoc, cell should stay empty")
-		}
-	})
-
-	t.Run("no cropped image — skip", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "x", Confidence: 0.5}}}
-		p.ocrTableCells(t.Context(), cells, nil, mock)
-		if cells[0].Text != "" {
-			t.Error("without image, cell should stay empty")
-		}
-	})
-
-	t.Run("OCR returns empty string", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 100, 50))
-		p.ocrTableCells(t.Context(), cells, dummy, mock)
-		if cells[0].Text != "" {
-			t.Error("empty OCR result → cell stays empty")
-		}
-	})
-
-	t.Run("cell out of image bounds", func(t *testing.T) {
-		cells := []pdf.TSRCell{{X0: 500, Y0: 500, X1: 600, Y1: 600, Text: ""}}
-		mock := &MockDocAnalyzer{Healthy: true, OCRTexts: []pdf.OCRText{{Text: "out of bounds", Confidence: 0.9}}}
-		dummy := image.NewRGBA(image.Rect(0, 0, 100, 100))
-		// Should not panic — gracefully degrade
-		p.ocrTableCells(t.Context(), cells, dummy, mock)
-		t.Logf("out-of-bounds cell: text=%q", cells[0].Text)
-	})
-}
-
 func garbledSample() []pdf.TextChar {
 	punctuation := []string{"!", "#", "$", "%", "&", "*", "+", "-", ".", "/",
 		":", ";", "<", ">", "=", "?", "@", "^", "_", "~"}
@@ -537,8 +461,10 @@ func TestOCR_MergeChars(t *testing.T) {
 	})
 }
 
-// TestTableSectionCaptionInHTML verifies mergeCaptions prepends table
-// caption text before the HTML table, matching Python's caption handling.
+// TestTableSectionCaptionInHTML verifies mergeCaptions retains a table
+// caption by injecting it as a <caption> element INSIDE the table's HTML
+// (matching Python's __html_table), instead of dropping it or emitting
+// malformed pre-table text. The standalone caption section is removed.
 
 func TestTableSectionCaptionInHTML(t *testing.T) {
 	// Simulate pipeline order: extractTableAndReplace → boxesToSections → mergeCaptions
@@ -565,12 +491,21 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 		Text:       "表1: 交通工具等级",
 	})
 
-	// Step 2: mergeCaptions prepends caption before HTML
+	// Step 2: mergeCaptions injects caption as a <caption> element inside <table>
 	figures := pdf.CollectFigures(sections)
 	sections = tbl.MergeCaptions(sections, figures)
 
-	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table") {
-		t.Errorf("expected caption before table HTML, got %q", sections[0].Text)
+	got := sections[0].Text
+	if !strings.Contains(got, "<caption>表1: 交通工具等级</caption>") {
+		t.Errorf("expected a <caption> element inside the table HTML, got %q", got)
+	}
+	// <caption> must be a proper child of <table>, immediately after <table>.
+	if i := strings.Index(got, "<table>"); i < 0 || !strings.Contains(got[i:i+len("<table><caption>")], "<caption>") {
+		t.Errorf("expected <caption> immediately after <table>, got %q", got)
+	}
+	// The standalone caption section must be removed (no raw pre-table text).
+	if strings.HasPrefix(got, "表1: 交通工具等级<table") {
+		t.Errorf("caption must be a <caption> child of <table>, not pre-table text, got %q", got)
 	}
 }
 

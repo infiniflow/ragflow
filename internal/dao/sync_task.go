@@ -63,11 +63,6 @@ type SyncTaskContext struct {
 	Knowledgebase entity.Knowledgebase
 }
 
-// ConnectorSource returns the connector source name.
-func (c SyncTaskContext) ConnectorSource() string {
-	return c.Connector.Source
-}
-
 // SyncTaskDAO reads and updates sync_logs tasks.
 type SyncTaskDAO struct {
 	db *gorm.DB
@@ -101,17 +96,36 @@ type ScheduledSyncTask struct {
 	ConnectorConfig      entity.JSONMap
 }
 
-// ListScheduledTasks returns scheduled tasks with connector scheduling settings.
-func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int) ([]ScheduledSyncTask, error) {
+// ScheduledSyncTaskCursor identifies the last row from a scheduled task page.
+type ScheduledSyncTaskCursor struct {
+	UpdateTime int64
+	ID         string
+}
+
+// Cursor returns the keyset cursor for the task.
+func (t ScheduledSyncTask) Cursor() ScheduledSyncTaskCursor {
+	updateTime := int64(0)
+	if t.UpdateTime != nil {
+		updateTime = *t.UpdateTime
+	}
+	return ScheduledSyncTaskCursor{UpdateTime: updateTime, ID: t.ID}
+}
+
+// ListScheduledTasks returns one page of scheduled tasks with connector scheduling settings.
+func (d *SyncTaskDAO) ListScheduledTasks(ctx context.Context, limit int, cursor *ScheduledSyncTaskCursor) ([]ScheduledSyncTask, error) {
 	var rows []dueSyncTaskRow
-	if err := d.db.WithContext(ctx).
+	query := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
 		Select("sync_logs.*, connector.refresh_freq AS connector_refresh_freq, connector.prune_freq AS connector_prune_freq, connector.config AS connector_config").
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune}).
-		Order("sync_logs.update_time DESC").
+		Where("sync_logs.status = ? AND connector.status = ? AND sync_logs.task_type IN ?", SyncStatusSchedule, SyncStatusSchedule, []string{TaskTypeSync, TaskTypePrune})
+	if cursor != nil {
+		query = query.Where("COALESCE(sync_logs.update_time, 0) < ? OR (COALESCE(sync_logs.update_time, 0) = ? AND sync_logs.id < ?)", cursor.UpdateTime, cursor.UpdateTime, cursor.ID)
+	}
+	if err := query.
+		Order("COALESCE(sync_logs.update_time, 0) DESC, sync_logs.id DESC").
 		Limit(limit).
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -371,7 +385,7 @@ func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTas
 		if err := tx.Model(&entity.Connector{}).Where("id = ?", taskContext.Connector.ID).Update("status", SyncStatusDone).Error; err != nil {
 			return err
 		}
-		if !syncConnectorConfigBool(taskContext.Connector.Config, "sync_deleted_files") {
+		if !utility.ConfigBool(taskContext.Connector.Config, "sync_deleted_files") {
 			return nil
 		}
 		var err error
@@ -379,56 +393,6 @@ func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTas
 		return err
 	})
 	return nextTaskID, err
-}
-
-// RecoverStaleRunning restores timed-out running tasks to schedule.
-func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (int64, error) {
-	type staleRunningTaskRow struct {
-		ID                   string     `gorm:"column:id"`
-		ConnectorID          string     `gorm:"column:connector_id"`
-		TimeStarted          *time.Time `gorm:"column:time_started"`
-		ConnectorTimeoutSecs int64      `gorm:"column:connector_timeout_secs"`
-	}
-	var rows []staleRunningTaskRow
-	if err := d.db.WithContext(ctx).
-		Model(&entity.SyncLogs{}).
-		Select("sync_logs.id, sync_logs.connector_id, sync_logs.time_started, connector.timeout_secs AS connector_timeout_secs").
-		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
-		Where("sync_logs.status = ?", SyncStatusRunning).
-		Scan(&rows).Error; err != nil {
-		return 0, err
-	}
-	var recovered int64
-	connectorIDs := map[string]struct{}{}
-
-	for _, row := range rows {
-		if row.TimeStarted == nil {
-			continue
-		}
-		timeout := time.Duration(row.ConnectorTimeoutSecs) * time.Second
-		if timeout <= 0 {
-			timeout = time.Hour
-		}
-		if row.TimeStarted.Add(timeout).After(now) {
-			continue
-		}
-		if err := d.RescheduleClaimed(ctx, row.ID); err != nil {
-			return recovered, err
-		}
-		recovered++
-		connectorIDs[row.ConnectorID] = struct{}{}
-	}
-
-	if recovered == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(connectorIDs))
-
-	for connectorID := range connectorIDs {
-		ids = append(ids, connectorID)
-	}
-
-	return recovered, d.db.WithContext(ctx).Model(&entity.Connector{}).Where("id IN ? AND status = ?", ids, SyncStatusRunning).Update("status", SyncStatusSchedule).Error
 }
 
 // RecoverRunning restores running sync tasks during syncer startup.
@@ -523,20 +487,4 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
 	}).Error
-}
-
-// syncConnectorConfigBool reads a Python JSON bool/string flag.
-func syncConnectorConfigBool(config map[string]any, key string) bool {
-	value, ok := config[key]
-	if !ok {
-		return false
-	}
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case string:
-		return typed == "1" || typed == "true" || typed == "TRUE"
-	default:
-		return false
-	}
 }

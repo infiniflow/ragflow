@@ -205,6 +205,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["presence_penalty"] = *req.PresencePenalty
 	}
 	if req.MaxTokens != nil {
+		if *req.MaxTokens <= 0 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "`max_tokens` must be greater than 0.")
+			return
+		}
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 
@@ -237,7 +241,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		"llm_id",
 		"pass_all_history_messages", "pass_all_history",
 		"store_history_messages", "store_history",
-		"legacy", "stream",
+		"legacy", "stream", "thinking",
 		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
 	}
 	for _, key := range knownKeys {

@@ -16,6 +16,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from typing import Any, Dict, Generator, List, Optional, Tuple
@@ -47,6 +48,28 @@ _CURSOR_TYPE_KEY = "__ragflow_bq_cursor_type__"
 
 # Default cost guard: 1 GiB. Users can raise this explicitly.
 DEFAULT_MAXIMUM_BYTES_BILLED = 1024 * 1024 * 1024
+
+# Allowlist for standard BigQuery unquoted identifiers (columns, datasets, tables).
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# GCP project IDs may contain hyphens.
+_PROJECT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+
+
+def _validate_identifier(value: Optional[str], name: str) -> Optional[str]:
+    if not value:
+        return value
+    if not _IDENTIFIER_RE.fullmatch(value):
+        raise ConnectorValidationError(f"Invalid BigQuery identifier for {name!r}")
+    return value
+
+
+def _validate_project_id(value: str, name: str) -> str:
+    if not value:
+        return value
+    if not _PROJECT_ID_RE.fullmatch(value):
+        raise ConnectorValidationError(f"Invalid BigQuery identifier for {name!r}")
+    return value
+
 
 # Maps a BigQuery field type to the ScalarQueryParameter type used for cursors.
 _CURSOR_PARAM_TYPE_MAP = {
@@ -115,15 +138,27 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
             job_timeout_ms: Optional per-job timeout in milliseconds.
             use_query_cache: Whether to allow BigQuery's query result cache.
         """
-        self.project_id = (project_id or "").strip()
-        self.dataset_id = (dataset_id or "").strip()
-        self.table_id = (table_id or "").strip()
+        self.project_id = _validate_project_id((project_id or "").strip(), "project_id")
+        self.dataset_id = _validate_identifier((dataset_id or "").strip(), "dataset_id")
+        self.table_id = _validate_identifier((table_id or "").strip(), "table_id")
         self.location = (location or "").strip()
         self.query = (query or "").strip()
-        self.content_columns = [c.strip() for c in (content_columns or "").split(",") if c.strip()]
-        self.metadata_columns = [c.strip() for c in (metadata_columns or "").split(",") if c.strip()]
-        self.id_column = id_column.strip() if id_column else None
-        self.timestamp_column = timestamp_column.strip() if timestamp_column else None
+        _content_cols: List[str] = []
+        for _c in (content_columns or "").split(","):
+            _col = _c.strip()
+            if _col:
+                _validate_identifier(_col, f"content_columns[{_col!r}]")
+                _content_cols.append(_col)
+        self.content_columns = _content_cols
+        _meta_cols: List[str] = []
+        for _c in (metadata_columns or "").split(","):
+            _col = _c.strip()
+            if _col:
+                _validate_identifier(_col, f"metadata_columns[{_col!r}]")
+                _meta_cols.append(_col)
+        self.metadata_columns = _meta_cols
+        self.id_column = _validate_identifier(id_column.strip() if id_column else None, "id_column")
+        self.timestamp_column = _validate_identifier(timestamp_column.strip() if timestamp_column else None, "timestamp_column")
         self.batch_size = batch_size
         self.page_size = page_size
         self.maximum_bytes_billed = maximum_bytes_billed
@@ -138,6 +173,32 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
         self._pending_sync_cursor_value: Any = None
         self._pending_sync_cursor_id: Any = None
 
+    @classmethod
+    def build_connector(cls, config: Dict[str, Any]) -> "BigQueryConnector":
+        connector_kwargs: Dict[str, Any] = {
+            "project_id": config.get("project_id", ""),
+            "dataset_id": config.get("dataset_id") or None,
+            "table_id": config.get("table_id") or None,
+            "location": config.get("location") or None,
+            "query": config.get("query", ""),
+            "content_columns": config.get("content_columns", ""),
+            "metadata_columns": config.get("metadata_columns", ""),
+            "id_column": config.get("id_column") or None,
+            "timestamp_column": config.get("timestamp_column") or None,
+            "use_query_cache": config.get("use_query_cache", True),
+        }
+        if config.get("batch_size") is not None:
+            connector_kwargs["batch_size"] = int(config["batch_size"])
+        if config.get("page_size") is not None:
+            connector_kwargs["page_size"] = int(config["page_size"])
+        if config.get("maximum_bytes_billed") is not None:
+            connector_kwargs["maximum_bytes_billed"] = int(config["maximum_bytes_billed"])
+        if config.get("job_timeout_ms") is not None:
+            connector_kwargs["job_timeout_ms"] = int(config["job_timeout_ms"])
+        connector = cls(**connector_kwargs)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------ #
     # Credentials & client
     # ------------------------------------------------------------------ #
@@ -146,7 +207,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
 
         Accepts ``service_account_json`` as either a dict or a JSON string.
         """
-        logging.debug("Loading credentials for BigQuery project: %s", self.project_id)
+        logging.debug("Loading credentials for BigQuery connector.")
 
         raw = (credentials or {}).get("service_account_json")
         if not raw:
@@ -199,6 +260,7 @@ class BigQueryConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
     def _build_base_query(self) -> str:
         """Return the single base query (custom query takes precedence over table mode)."""
         if self.query:
+            # custom query is trusted, administrator-supplied SQL — not validated as an identifier.
             return self.query.rstrip(";")
         if self.dataset_id and self.table_id:
             return f"SELECT * FROM `{self.project_id}.{self.dataset_id}.{self.table_id}`"

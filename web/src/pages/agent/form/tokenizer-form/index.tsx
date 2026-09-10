@@ -1,4 +1,5 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Form } from '@/components/ui/form';
@@ -36,6 +37,7 @@ const TokenizerForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const { t } = useTranslation();
   const defaultValues = useFormValues(initialTokenizerValues, node);
@@ -56,6 +58,8 @@ const TokenizerForm = ({
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
