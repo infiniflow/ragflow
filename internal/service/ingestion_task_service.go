@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -45,6 +46,9 @@ type IngestionTaskService struct {
 	userDAO             *dao.UserDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	pipelineLogDAO      *dao.PipelineOperationLogDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	userCanvasDAO       *dao.UserCanvasDAO
 	taskPublisher       TaskPublisher
 }
 
@@ -54,6 +58,9 @@ func NewIngestionTaskService() *IngestionTaskService {
 		userDAO:             dao.NewUserDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		userCanvasDAO:       dao.NewUserCanvasDAO(),
 		taskPublisher:       NewMessageQueueTaskPublisher(),
 	}
 }
@@ -225,6 +232,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		}); err != nil {
 			common.Warn(fmt.Sprintf("StartRunning: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
 		}
+		s.advanceEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusRunning), "Task is running...")
 		return task, nil
 	case common.STOPPING:
 		task, err = s.transition(ctx, taskID, common.STOPPED)
@@ -251,7 +259,15 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		return s.transition(ctx, taskID, common.STOPPED)
+		stopped, err := s.transition(ctx, taskID, common.STOPPED)
+		if err != nil {
+			return nil, err
+		}
+		// The stop finalizes without a worker (no RUNNING phase, so no
+		// terminal pipeline-log writer will run). Advance the early row to
+		// CANCEL here, otherwise the detail page keeps a queued entry.
+		s.advanceEarlyLogBestEffort(ctx, stopped.DocumentID, string(entity.TaskStatusCancel), "Task stopped by user.")
+		return stopped, nil
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
 		if err != nil {
@@ -393,6 +409,10 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	if existing != nil {
 		switch existing.Status {
 		case common.CREATED:
+			// An existing CREATED task may already carry a queued row from
+			// before a crash; ensure one exists without duplicating it, then
+			// advance it through the schedule transition below.
+			s.createEarlyLogBestEffort(ctx, existing)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				return nil, err
 			}
@@ -408,7 +428,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			// RequestStop once the task is RUNNING again. Clear it so the
 			// re-queued task is not cancelled at the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
+			// A retry starts a fresh pipeline-operation-log row: the prior
+			// run's row is terminal and GetOpenLogByDocumentID no longer
+			// matches it, so this Create always opens a new row.
+			s.createEarlyLogBestEffort(ctx, existing)
 			if err = s.enqueueTask(existing.ID); err != nil {
+				s.deleteEarlyLogBestEffort(ctx, existing.DocumentID)
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
 					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
 				}
@@ -424,7 +449,11 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	if err != nil {
 		return nil, err
 	}
+	// Open the pre-terminal row the dataset detail page reads. The prior run
+	// (if any) is terminal, so no open row exists and this never duplicates.
+	s.createEarlyLogBestEffort(ctx, created)
 	if err = s.enqueueTask(created.ID); err != nil {
+		s.deleteEarlyLogBestEffort(ctx, created.DocumentID)
 		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
 			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
 		}
@@ -458,7 +487,12 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		return nil, err
 	}
 	if updated {
-		return s.GetTask(ctx, taskID)
+		task, err := s.GetTask(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		s.advanceOrCreateEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusSchedule), "Task is queued...")
+		return task, nil
 	}
 
 	task, err := s.GetTask(ctx, taskID)
@@ -477,6 +511,10 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 // process stopped but were not confirmed as scheduled. It is intended for the
 // single startup recovery pass; a publish error leaves the task CREATED for a
 // future startup or explicit parse request to retry.
+//
+// A recovered task may already carry a queued row written before the crash;
+// markScheduledAfterPublish advances it in place instead of opening a second
+// row, so startup recovery never duplicates the early row.
 func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
 	tasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.CREATED)
 	if err != nil {
@@ -510,6 +548,142 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 		TaskType: common.TaskTypeIngestionTask,
 	}
 	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
+}
+
+// createEarlyLogBestEffort opens the pre-terminal pipeline-operation-log row
+// the dataset detail page reads. All writes here are best-effort: a DB blip
+// must not fail task creation or enqueue and trigger a redelivery loop. When
+// an open row already exists (enqueue retry of an existing CREATED task), it
+// is left untouched so a run never owns two queued rows.
+func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil || s.pipelineLogDAO == nil {
+		return
+	}
+	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", task.DocumentID, err))
+		return
+	}
+	if open != nil {
+		return
+	}
+	input, err := s.buildEarlyLogInput(ctx, task)
+	if err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: build early pipeline log for document %s: %v", task.DocumentID, err))
+		return
+	}
+	if _, err = s.pipelineLogDAO.CreateEarlyLog(ctx, dao.DB, input); err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: create early pipeline log for document %s: %v", task.DocumentID, err))
+	}
+}
+
+// advanceEarlyLogBestEffort moves the open row to a later status. Best-effort:
+// a missing open row (legacy run that started before early rows existed) is
+// fine — the terminal writer falls back to Create.
+func (s *IngestionTaskService) advanceEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) {
+	if documentID == "" || s.pipelineLogDAO == nil {
+		return
+	}
+	if _, err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, documentID, operationStatus, progressMsg); err != nil {
+		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", documentID, operationStatus, err))
+	}
+}
+
+// advanceOrCreateEarlyLogBestEffort advances the open row when one exists and
+// opens a fresh row otherwise. Used by the SCHEDULED transition, which is the
+// funnel for recovered tasks whose queued row may predate the crash.
+func (s *IngestionTaskService) advanceOrCreateEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) {
+	if documentID == "" || s.pipelineLogDAO == nil {
+		return
+	}
+	advanced, err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, documentID, operationStatus, progressMsg)
+	if err != nil {
+		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", documentID, operationStatus, err))
+		return
+	}
+	if advanced {
+		return
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
+	if err != nil || task == nil {
+		if err != nil {
+			common.Warn(fmt.Sprintf("advance early pipeline log: load task for document %s: %v", documentID, err))
+		}
+		return
+	}
+	s.createEarlyLogBestEffort(ctx, task)
+}
+
+// deleteEarlyLogBestEffort removes the open rows for a document. Used when
+// task creation rolls back after the early row was already written, so the
+// detail page is not left with a permanently queued entry.
+func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, documentID string) {
+	if documentID == "" || s.pipelineLogDAO == nil {
+		return
+	}
+	if err := s.pipelineLogDAO.DeleteOpenLogsByDocumentID(ctx, dao.DB, documentID); err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: delete early pipeline log for document %s: %v", documentID, err))
+	}
+}
+
+// buildEarlyLogInput assembles the bookkeeping for the pre-terminal row from
+// the document and its knowledge base. It mirrors the identity resolution in
+// the terminal writer (parser_id fallback title, canvas title/avatar override,
+// source_from prefix) but leaves DSL and progress for the terminal write.
+func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *entity.IngestionTask) (dao.EarlyLogInput, error) {
+	var input dao.EarlyLogInput
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, task.DocumentID)
+	if err != nil {
+		return input, err
+	}
+	if doc == nil {
+		return input, fmt.Errorf("document %s not found", task.DocumentID)
+	}
+	kbID := task.DatasetID
+	if kbID == "" {
+		kbID = doc.KbID
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+	if err != nil {
+		return input, err
+	}
+	if kb == nil {
+		return input, fmt.Errorf("knowledgebase %s not found", kbID)
+	}
+	input = dao.EarlyLogInput{
+		DocumentID:      doc.ID,
+		KbID:            kbID,
+		TenantID:        kb.TenantID,
+		ParserID:        doc.ParserID,
+		DocumentSuffix:  doc.Suffix,
+		DocumentType:    doc.Type,
+		OperationStatus: string(entity.TaskStatusUnstart),
+		ProgressMsg:     "Task is queued...",
+		PipelineTitle:   doc.ParserID,
+		Avatar:          doc.Thumbnail,
+	}
+	if doc.Name != nil {
+		input.DocumentName = *doc.Name
+	}
+	if parts := strings.SplitN(doc.SourceType, "/", 2); len(parts) > 0 {
+		input.SourceFrom = parts[0]
+	} else {
+		input.SourceFrom = doc.SourceType
+	}
+	if doc.PipelineID != nil {
+		if pipelineID := strings.TrimSpace(*doc.PipelineID); pipelineID != "" {
+			input.PipelineID = pipelineID
+			if canvas, err := s.userCanvasDAO.GetByID(ctx, dao.DB, pipelineID); err == nil && canvas != nil {
+				if canvas.Title != nil && *canvas.Title != "" {
+					input.PipelineTitle = *canvas.Title
+				}
+				input.Avatar = canvas.Avatar
+			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+				common.Warn(fmt.Sprintf("CreateAndEnqueue: load pipeline %s for early log: %v", pipelineID, err))
+			}
+		}
+	}
+	return input, nil
 }
 
 // UpdateComponentTotal records the number of components in the task's DSL

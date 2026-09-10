@@ -718,9 +718,19 @@ type PipelineLogInput struct {
 // RecordPipelineLog persists a pipeline operation log without requiring
 // executor setup. Callers that already know a terminal state should pass it in
 // Status; otherwise the writer falls back to the latest document.run value.
+//
+// When the run opened an early queued row (CREATED/SCHEDULED), the terminal
+// write advances that same row so the dataset detail page shows one entry per
+// run. Without an open row (legacy runs, debug-adjacent paths) it creates a
+// new row, preserving the previous behavior.
 func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
+
+// nonTerminalOperationStatuses mirrors the DAO's open-row predicate so the
+// writer only reuses a row that is still in flight; a retry after a terminal
+// state starts a fresh row.
+var nonTerminalOperationStatuses = []string{"0", "5", "1"}
 
 func recordPipelineLog(
 	ctx context.Context,
@@ -806,6 +816,13 @@ func recordPipelineLog(
 	if doc.Name != nil {
 		documentName = *doc.Name
 	}
+	if db != nil {
+		if updated, err := reuseOpenLogRow(ctx, db, input.DocumentID, operationStatus, statusValue, dslMap, doc); err != nil {
+			common.Warn(fmt.Sprintf("failed to advance open pipeline log for document %s: %v", input.DocumentID, err))
+		} else if updated {
+			return nil
+		}
+	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
 		TenantID:        input.TenantID,
@@ -829,6 +846,45 @@ func recordPipelineLog(
 		Status:          &statusValue,
 	}
 	return createFunc(ctx, db, log)
+}
+
+// reuseOpenLogRow advances the newest in-flight row for a document to its
+// terminal state, filling in the DSL and the final progress snapshot. It
+// reports whether a row was reused; false means the caller must Create a new
+// row. The CAS on operation_status keeps a concurrent retry's fresh queued
+// row from being overwritten by this run's terminal write.
+func reuseOpenLogRow(ctx context.Context, db *gorm.DB, documentID, operationStatus, statusValue string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
+	var open entity.PipelineOperationLog
+	if err := db.WithContext(ctx).
+		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalOperationStatuses).
+		Order("create_time DESC").
+		Order("id DESC").
+		First(&open).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	updates := map[string]interface{}{
+		"operation_status": operationStatus,
+		"status":           statusValue,
+		"dsl":              dslMap,
+		"progress":         doc.Progress,
+		"progress_msg":     doc.ProgressMsg,
+		"process_begin_at": doc.ProcessBeginAt,
+		"process_duration": doc.ProcessDuration,
+		"parser_id":        doc.ParserID,
+	}
+	if doc.Name != nil {
+		updates["document_name"] = *doc.Name
+	}
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", open.ID, nonTerminalOperationStatuses).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {

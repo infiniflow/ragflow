@@ -19,8 +19,10 @@ package dao
 import (
 	"context"
 	"strings"
+	"time"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -181,6 +183,128 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 		return nil, 0, err
 	}
 	return logs, count, nil
+}
+
+// nonTerminalPipelineOperationStatuses are the operation_status values of a
+// pipeline operation log row that a run is still moving through. A run owns
+// exactly one such row from CREATED to its terminal write (DONE/FAIL/CANCEL),
+// so later stages advance the same row instead of inserting a new one.
+var nonTerminalPipelineOperationStatuses = []string{"0", "5", "1"}
+
+// GetOpenLogByDocumentID returns the newest non-terminal pipeline operation
+// log for a document, or nil when the document has no in-flight run. A retry
+// after a terminal state therefore starts a fresh row instead of resurrecting
+// the finished one.
+func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, db *gorm.DB, documentID string) (*entity.PipelineOperationLog, error) {
+	var log entity.PipelineOperationLog
+	err := db.WithContext(ctx).
+		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalPipelineOperationStatuses).
+		Order("create_time DESC").
+		Order("id DESC").
+		First(&log).Error
+	if err != nil {
+		if IsNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &log, nil
+}
+
+// EarlyLogInput carries the bookkeeping needed to open or advance the
+// pre-terminal row for a queued run. It mirrors the PipelineOperationLog
+// columns that are known before the pipeline finishes; the DSL and the final
+// progress/counters stay empty until the terminal writer fills them in.
+type EarlyLogInput struct {
+	DocumentID      string
+	KbID            string
+	TenantID        string
+	PipelineID      string
+	PipelineTitle   string
+	ParserID        string
+	DocumentName    string
+	DocumentSuffix  string
+	DocumentType    string
+	SourceFrom      string
+	Avatar          *string
+	OperationStatus string
+	ProgressMsg     string
+}
+
+// CreateEarlyLog opens the pre-terminal row for a queued run. Callers must
+// have verified no open row exists (or accept a best-effort duplicate on a
+// lost race); the error is returned so tests can assert it, while production
+// callers log and continue.
+func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm.DB, input EarlyLogInput) (*entity.PipelineOperationLog, error) {
+	now := time.Now().Local()
+	msg := input.ProgressMsg
+	log := &entity.PipelineOperationLog{
+		ID:              utility.GenerateUUID(),
+		DocumentID:      input.DocumentID,
+		TenantID:        input.TenantID,
+		KbID:            input.KbID,
+		ParserID:        input.ParserID,
+		DocumentName:    input.DocumentName,
+		DocumentSuffix:  input.DocumentSuffix,
+		DocumentType:    input.DocumentType,
+		SourceFrom:      input.SourceFrom,
+		Progress:        0,
+		ProgressMsg:     &msg,
+		ProcessBeginAt:  &now,
+		ProcessDuration: 0,
+		DSL:             entity.JSONMap{},
+		TaskType:        "Parse",
+		OperationStatus: input.OperationStatus,
+		Avatar:          input.Avatar,
+	}
+	statusValue := "1"
+	log.Status = &statusValue
+	if input.PipelineID != "" {
+		pipelineID := input.PipelineID
+		log.PipelineID = &pipelineID
+	}
+	if input.PipelineTitle != "" {
+		title := input.PipelineTitle
+		log.PipelineTitle = &title
+	}
+	if err := db.WithContext(ctx).Create(log).Error; err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+// AdvanceEarlyLog moves the open row for a document to a later pre-terminal
+// or terminal-queued status, refreshing its queued message. It is a no-op
+// returning false when no open row exists (e.g. a legacy run that started
+// before early rows existed); the terminal writer then falls back to Create.
+func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, documentID, operationStatus, progressMsg string) (bool, error) {
+	open, err := dao.GetOpenLogByDocumentID(ctx, db, documentID)
+	if err != nil {
+		return false, err
+	}
+	if open == nil {
+		return false, nil
+	}
+	updates := map[string]interface{}{
+		"operation_status": operationStatus,
+		"progress_msg":     progressMsg,
+	}
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", open.ID, nonTerminalPipelineOperationStatuses).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// DeleteOpenLogsByDocumentID removes the open (non-terminal) rows for a
+// document. Used to clean up the early row when task creation rolls back, so
+// the detail page is not left with a permanently queued entry.
+func (dao *PipelineOperationLogDAO) DeleteOpenLogsByDocumentID(ctx context.Context, db *gorm.DB, documentID string) error {
+	return db.WithContext(ctx).
+		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalPipelineOperationStatuses).
+		Delete(&entity.PipelineOperationLog{}).Error
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.

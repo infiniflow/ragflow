@@ -620,6 +620,119 @@ func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	queuedMsg := "Task is queued..."
+	early := &entity.PipelineOperationLog{
+		ID:              "early-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "test-doc.pdf",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "local",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := dao.DB.Create(early).Error; err != nil {
+		t.Fatalf("seed early log: %v", err)
+	}
+
+	run := "3"
+	progress := 1.0
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         strPtr("test-doc.pdf"),
+		Suffix:       ".pdf",
+		Run:          &run,
+		Progress:     progress,
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the queued row)", count)
+	}
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "early-log").Error; err != nil {
+		t.Fatalf("load early log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.Progress != progress {
+		t.Fatalf("Progress = %v, want %v", log.Progress, progress)
+	}
+	if log.ProgressMsg == nil || *log.ProgressMsg != finalMsg {
+		t.Fatalf("ProgressMsg = %v, want final message", log.ProgressMsg)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
+func TestRecordPipelineLog_CreatesRowWithoutOpenEarlyRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "legacy.pdf"
+	run := "1"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         &docName,
+		Suffix:       ".pdf",
+		Run:          &run,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "naive"
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called: expected Create fallback without an open row")
+	}
+}
+
 // =============================================================================
 // updateDocumentMetadata
 // =============================================================================
