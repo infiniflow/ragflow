@@ -18,9 +18,11 @@ package common
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -35,6 +37,9 @@ var (
 	Logger      *zap.Logger
 	Sugar       *zap.SugaredLogger
 	atomicLevel zap.AtomicLevel
+
+	stdLogOnce sync.Once
+	stdLogger  *log.Logger
 )
 
 // FileOutput describes the rotated log file destination.
@@ -217,6 +222,21 @@ func Warn(msg string, fields ...zap.Field) {
 		return
 	}
 	Logger.Warn(msg, fields...)
+}
+
+// StdLogger returns a *log.Logger that routes writes through the global zap
+// logger, so call sites that keep a *log.Logger facade still land in the
+// project's structured logs. When the project logger has not been initialized
+// yet (e.g. before InitLogger runs or in standalone tests) it falls back to the
+// standard-library default. The returned logger writes at Info level.
+func StdLogger() *log.Logger {
+	if Logger == nil {
+		return log.Default()
+	}
+	stdLogOnce.Do(func() {
+		stdLogger = zap.NewStdLog(Logger)
+	})
+	return stdLogger
 }
 
 // IsDebugEnabled returns true if debug logging is enabled.
