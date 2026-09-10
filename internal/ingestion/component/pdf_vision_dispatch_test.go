@@ -106,7 +106,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "json" || result.Markdown != "hello" || len(result.JSON) == 0 {
+	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
 		t.Fatalf("result=%+v", result)
 	}
 
@@ -116,6 +116,19 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	}
 	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
 		t.Fatalf("resultMD=%+v", resultMD)
+	}
+}
+
+func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
+	result := buildMarkdownOCRDispatchResult("# Heading")
+	if result.OutputFormat != "markdown" {
+		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
+	}
+	if result.Markdown != "# Heading" {
+		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
+	}
+	if result.JSON != nil {
+		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
 	}
 }
 
@@ -168,10 +181,10 @@ func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ 
 	return &modelModule.OCRFileResponse{Text: &d.text}, nil
 }
 
-// TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs verifies PaddleOCR output
-// parses markdown text into structured JSON items when output_format is "json"
-// (default), while also supporting output_format="markdown".
-func TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs(t *testing.T) {
+// TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization verifies
+// that PaddleOCR dispatch returns backend Markdown for the shared Parser
+// output normalizer, regardless of the normalized component setup format.
+func TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization(t *testing.T) {
 	orig := resolvePaddleOCRModelForDispatch
 	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
 
@@ -181,22 +194,22 @@ func TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs(t *testing.T) {
 		return &paddleOCRFakeDriver{text: md}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
 	}
 
-	// 1. output_format="json": parses into structured JSON items
+	// 1. output_format="json": preserve Markdown for central normalization.
 	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "json"}, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf: %v", err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if res.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
 	}
-	if len(res.JSON) == 0 {
-		t.Fatal("res.JSON should not be empty")
+	if res.JSON != nil {
+		t.Fatalf("res.JSON = %#v, want nil before central normalization", res.JSON)
 	}
 	if res.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
 	}
 
-	// 2. output_format="markdown": emits markdown format while populating JSON items
+	// 2. output_format="markdown": the backend payload is unchanged.
 	resMD, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "markdown"}, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf (markdown): %v", err)
@@ -207,20 +220,20 @@ func TestDispatchPaddleOCRPdf_JSONAndMarkdownOutputs(t *testing.T) {
 	if resMD.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", resMD.Markdown, md)
 	}
-	if len(resMD.JSON) == 0 {
-		t.Errorf("resMD.JSON should also be populated")
+	if resMD.JSON != nil {
+		t.Errorf("resMD.JSON = %#v, want nil before central normalization", resMD.JSON)
 	}
 
-	// 3. Default setup (no output_format key) defaults to "json"
+	// 3. Default setup (no output_format key) follows the same central path.
 	resDef, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf (default setup): %v", err)
 	}
-	if resDef.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", resDef.OutputFormat)
+	if resDef.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resDef.OutputFormat)
 	}
-	if len(resDef.JSON) == 0 {
-		t.Fatal("resDef.JSON should not be empty")
+	if resDef.JSON != nil {
+		t.Fatalf("resDef.JSON = %#v, want nil before central normalization", resDef.JSON)
 	}
 	if resDef.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", resDef.Markdown, md)

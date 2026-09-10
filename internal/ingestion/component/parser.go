@@ -115,7 +115,9 @@ type ParserComponent struct {
 // NewParserComponent constructs a Parser from a DSL param map.
 // The default setups are overlaid with the supplied values. Historical
 // output_format values are accepted but normalized to JSON so downstream
-// components consume one parser output protocol.
+// components consume one parser output protocol. This applies to every
+// family, including PDF and office documents: Markdown is an internal
+// backend representation only and is never a public Parser output.
 //
 // Param map shape (all keys optional):
 //
@@ -157,6 +159,9 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 }
 
 func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
+	// The Go Parser component intentionally exposes JSON only. Keep this
+	// normalization unconditional so PDF/office legacy Markdown settings
+	// cannot silently select a second public output path.
 	for _, setup := range setups {
 		setup["output_format"] = "json"
 	}

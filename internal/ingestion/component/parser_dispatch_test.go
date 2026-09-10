@@ -19,7 +19,8 @@
 //   - FileTypeOTHER + missing setups → text-page mode.
 //   - FileTypeMarkdown → JSON payload family on the matching output
 //     key.
-//   - Historical output_format values are accepted and normalized to JSON.
+//   - Historical output_format values, including PDF Markdown, are accepted
+//     and normalized to the single JSON payload.
 
 package component
 

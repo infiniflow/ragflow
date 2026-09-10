@@ -210,14 +210,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 		if res.Err != nil {
 			return "", res.Err
 		}
-		switch res.OutputFormat {
-		case "text":
-			content = res.Text
-		case "markdown":
-			content = res.Markdown
-		case "html":
-			content = res.HTML
-		case "json":
+		parsed, err := parseResultText(res)
+		if err != nil {
+			return "", err
+		}
+		content = parsed
+	}
+	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+// parseResultText converts a parser result into the readable text expected by
+// sys.files. JSON results are flattened in item order, preferring each item's
+// text field and serializing items without one as a final fallback.
+func parseResultText(res parser.ParseResult) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
+	case "text":
+		return res.Text, nil
+	case "markdown":
+		return res.Markdown, nil
+	case "html":
+		return res.HTML, nil
+	case "json":
+		if len(res.JSON) > 0 {
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
@@ -230,10 +244,20 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 				}
 				parts = append(parts, string(raw))
 			}
-			content = strings.Join(parts, "\n")
+			return strings.Join(parts, "\n"), nil
 		}
+		// Some legacy parsers mark the result as JSON while only populating a
+		// rendered companion field. Preserve that content instead of returning
+		// an empty sys.files value.
+		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+			if fallback != "" {
+				return fallback, nil
+			}
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
 	}
-	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -251,16 +275,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if res.Err != nil {
 		return string(data)
 	}
-	switch res.OutputFormat {
-	case "text":
-		return res.Text
-	case "markdown":
-		return res.Markdown
-	case "html":
-		return res.HTML
-	case "json":
-		return string(data)
-	default:
+	content, err := parseResultText(res)
+	if err != nil {
 		return string(data)
 	}
+	return content
 }

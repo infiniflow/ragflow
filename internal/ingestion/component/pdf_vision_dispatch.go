@@ -176,7 +176,7 @@ func maybeDispatchPDFVision(
 		return parserDispatchResult{}, true, fmt.Errorf(
 			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
 	}
-	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID, setup)
+	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID)
 	if err != nil {
 		return parserDispatchResult{}, true, err
 	}
@@ -221,7 +221,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parserDispatchResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return buildMarkdownOCRDispatchResult(ctx, filename, md, setup), nil
+	return buildMarkdownOCRDispatchResult(md), nil
 }
 
 func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
@@ -236,19 +236,11 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 	return res.JSON
 }
 
-func buildMarkdownOCRDispatchResult(ctx context.Context, filename, md string, setup schema.ParserSetup) parserDispatchResult {
-	items := parseMarkdownToJSONItems(ctx, filename, md)
-	format := strings.TrimSpace(getStringOr(setup, "output_format", "json"))
-	if strings.EqualFold(format, "markdown") {
-		return parserDispatchResult{
-			OutputFormat: "markdown",
-			Markdown:     md,
-			JSON:         items,
-		}
-	}
+func buildMarkdownOCRDispatchResult(md string) parserDispatchResult {
+	// Keep the backend's Markdown intact here. buildParserOutputs is the
+	// single normalization boundary for all non-JSON parser responses.
 	return parserDispatchResult{
-		OutputFormat: "json",
-		JSON:         items,
+		OutputFormat: "markdown",
 		Markdown:     md,
 	}
 }
@@ -525,7 +517,7 @@ func dispatchMinerUPDF(
 	}
 	md := strings.Join(parts, "\n")
 
-	return buildMarkdownOCRDispatchResult(ctx, filename, md, setup), nil
+	return buildMarkdownOCRDispatchResult(md), nil
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
@@ -641,7 +633,7 @@ func dispatchPaddleOCRPdf(
 		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
 
-	return buildMarkdownOCRDispatchResult(ctx, filename, *resp.Text, setup), nil
+	return buildMarkdownOCRDispatchResult(*resp.Text), nil
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.
@@ -882,7 +874,6 @@ func dispatchPDFVision(
 	binary []byte,
 	tenantID string,
 	modelID string,
-	setup schema.ParserSetup,
 ) (parserDispatchResult, error) {
 	renderedPages, err := pdfVisionPageRenderer(binary)
 	if err != nil {
@@ -898,7 +889,6 @@ func dispatchPDFVision(
 	}
 
 	items := make([]map[string]any, 0, len(renderedPages))
-	markdownParts := make([]string, 0, len(renderedPages))
 	for _, page := range renderedPages {
 		prompt := renderPDFVisionPrompt(promptTemplate, page.PageNumber)
 		resp, err := pdfVisionChatInvoker(ctx, driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
@@ -914,37 +904,19 @@ func dispatchPDFVision(
 			"_pdf_positions": positions,
 			"positions":      positions,
 		})
-		if text != "" {
-			markdownParts = append(markdownParts, text)
-		}
 	}
 
-	outputFormat := "json"
-	if v, ok := setup["output_format"].(string); ok && strings.TrimSpace(v) != "" {
-		outputFormat = strings.ToLower(strings.TrimSpace(v))
-	}
 	fileMeta := map[string]any{
 		"name":         filename,
 		"page_count":   len(renderedPages),
 		"outline":      []map[string]any{},
 		"parse_method": modelID,
 	}
-	switch outputFormat {
-	case "json":
-		return parserDispatchResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			JSON:         items,
-		}, nil
-	case "markdown":
-		return parserDispatchResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     strings.TrimSpace(strings.Join(markdownParts, "\n\n")),
-		}, nil
-	default:
-		return parserDispatchResult{}, fmt.Errorf("parser: unsupported PDF output_format %q for vision parse_method %q", outputFormat, modelID)
-	}
+	return parserDispatchResult{
+		OutputFormat: "json",
+		File:         fileMeta,
+		JSON:         items,
+	}, nil
 }
 
 func buildPDFVisionMessages(prompt string, imageURL string) []modelModule.Message {
