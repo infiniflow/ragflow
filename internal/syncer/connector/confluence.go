@@ -173,7 +173,6 @@ func (c *ConfluenceConnector) OpenSync(ctx context.Context, request SyncRequest)
 		windowEnd:     end,
 		fromBeginning: request.FromBeginning,
 		pageCursor:    newConfluenceSearchCursor(c, c.pageCQL(request.WindowStart, end, request.FromBeginning), strings.Join(confluencePageExpansionFields, ",")),
-		nameCounts:    map[string]int{},
 	}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
@@ -543,8 +542,6 @@ type confluenceSyncSession struct {
 	resumeSourceID  string
 	resumeMatched   bool
 	resumeUpdatedAt *time.Time
-
-	nameCounts map[string]int
 }
 
 // NextBatch returns the next Confluence document batch, fetching pages,
@@ -606,7 +603,7 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 				return nil, err
 			}
 			if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title, s.nameCounts)
+				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title)
 				return &doc, nil
 			}
 			continue
@@ -628,7 +625,7 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 			continue
 		}
 		if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), nil, s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment), s.nameCounts)
+			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), s.currentPage.ancestorTitles(), s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
 			return &doc, nil
 		}
 	}
@@ -851,7 +848,7 @@ func parseConfluenceTime(value string) time.Time {
 	return time.Time{}
 }
 
-func confluenceSemanticIdentifier(space string, ancestors []string, title string, counts map[string]int) string {
+func confluenceSemanticIdentifier(space string, ancestors []string, title string) string {
 	title = firstNonEmpty(title, "Untitled")
 	parts := make([]string, 0, len(ancestors)+2)
 	if space != "" {
@@ -859,12 +856,7 @@ func confluenceSemanticIdentifier(space string, ancestors []string, title string
 	}
 	parts = append(parts, ancestors...)
 	parts = append(parts, title)
-	fullPath := strings.Join(parts, " / ")
-	counts[title]++
-	if counts[title] > 1 && fullPath != "" {
-		return fullPath
-	}
-	return title
+	return strings.Join(parts, " / ")
 }
 
 func confluenceHTMLText(raw string) string {

@@ -32,6 +32,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
@@ -62,8 +63,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
@@ -173,12 +174,14 @@ export const useFetchDocumentList = (loop = true) => {
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
+    has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
-    initialData: { docs: [], total: 0 },
+    initialData: { docs: [], total: 0, has_active_tasks: false },
     refetchInterval: (query) =>
       loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+      (query.state.data?.has_active_tasks ||
+        !!query.state.data?.docs.some(isDocumentProcessing))
         ? 5000
         : false,
     enabled: !!knowledgeId || !!id,
@@ -200,7 +203,7 @@ export const useFetchDocumentList = (loop = true) => {
       const ret = await listDocument(
         {
           id: knowledgeId || id,
-          ext: { keywords: debouncedSearchString },
+          keywords: debouncedSearchString,
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -221,6 +224,7 @@ export const useFetchDocumentList = (loop = true) => {
       return {
         docs: [],
         total: 0,
+        has_active_tasks: false,
       };
     },
   });
@@ -568,7 +572,7 @@ export const useSetDocumentParser = () => {
       }
 
       if (parserConfig) {
-        updateData.parser_config = extractParserConfigExt(parserConfig);
+        updateData.parser_config = normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -633,7 +637,7 @@ export const useSetDocumentPipelineParser = () => {
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
-          : extractParserConfigExt(parserConfig);
+          : normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(

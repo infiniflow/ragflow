@@ -37,6 +37,7 @@ import numpy as np
 import pytest
 
 from rag.llm.embedding_model import (
+    BaiduYiyanEmbed,
     DEFAULT_MAX_TOKENS,
     AzureEmbed,
     BedrockEmbed,
@@ -49,6 +50,7 @@ from rag.llm.embedding_model import (
     OpenAIEmbed,
     RAGconEmbed,
     TogetherAIEmbed,
+    ReplicateEmbed,
     ZhipuEmbed,
 )
 from common.exceptions import ModelException
@@ -405,6 +407,22 @@ class TestNvidiaInputType:
 
 
 @pytest.mark.p2
+class TestReplicateEmbedding:
+    def test_query_uses_run_and_returns_single_vector(self):
+        embed = ReplicateEmbed.__new__(ReplicateEmbed)
+        embed.model_name = "owner/model:version"
+        embed.client = MagicMock(spec=["run"])
+        embed.client.run.return_value = [[1.0, 2.0, 3.0]]
+
+        vector, tokens = embed.encode_queries("hello")
+
+        embed.client.run.assert_called_once_with("owner/model:version", input={"texts": ["hello"]})
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == num_tokens_from_string("hello")
+
+
+@pytest.mark.p2
 class TestBedrockResponseParsing:
     """Bedrock Titan returns {"embedding": [...]}; Cohere returns
     {"embeddings": [[...]]}. Both must parse without KeyError."""
@@ -442,3 +460,60 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+    # The message must name the offending model and the expected prefixes so the
+    # error stays actionable; assert on it to catch future wording regressions.
+    _UNSUPPORTED_MSG = r"unsupported embedding model 'meta\.embed-model'.*amazon\..*cohere\."
+
+    def test_unknown_provider_raises_embedding_error(self):
+        # A model that is neither amazon.* nor cohere.* must surface a clear
+        # EmbeddingError instead of an UnboundLocalError on the unset `body`.
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode(["hello"])
+
+    def test_unknown_provider_query_raises_embedding_error(self):
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode_queries("q")
+
+
+@pytest.mark.p2
+class TestBaiduYiyanResponseParsing:
+    def test_query_returns_single_vector(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do.return_value = SimpleNamespace(
+            body={
+                "data": [{"embedding": [1.0, 2.0, 3.0]}],
+                "usage": {"total_tokens": 7},
+            }
+        )
+
+        vector, tokens = embed.encode_queries("hello")
+
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == 7
+
+
+@pytest.mark.p2
+class TestOpenAIUserForwarding:
+    """OpenAI-compatible embedding calls forward ``user`` when LLM context is set."""
+
+    def test_forwards_user_when_context_set(self):
+        from common.llm_request_context import reset_llm_request_context, set_llm_request_context
+
+        embed = _make_openai(total_tokens=3)
+        token = set_llm_request_context(user_id="end-user-1")
+        try:
+            embed.encode(["hello"])
+        finally:
+            reset_llm_request_context(token)
+        assert embed.client.embeddings.create.call_args.kwargs["user"] == "end-user-1"
+
+    def test_omits_user_when_no_context(self):
+        embed = _make_openai(total_tokens=3)
+        embed.encode(["hello"])
+        assert "user" not in embed.client.embeddings.create.call_args.kwargs

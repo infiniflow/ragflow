@@ -88,7 +88,8 @@ async def _ask_structure(tools, topic: str, entities: list[dict], relations: lis
         _LOG.exception(f"[{label}] Could not read the outline with the model.")
 
     is_sufficient = bool(verdict.get("is_sufficient"))
-    answer = (verdict.get("answer") or "").strip() if is_sufficient else ""
+    raw_answer = verdict.get("answer")
+    answer = str(raw_answer).strip() if is_sufficient and raw_answer is not None else ""
     relevant = [n for n in (verdict.get("relevant_entities") or []) if isinstance(n, str)]
     _LOG.info(
         "[%s] The %s %s the question; %d relevant entity(ies): %s",

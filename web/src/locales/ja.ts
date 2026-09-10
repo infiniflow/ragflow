@@ -184,7 +184,7 @@ export default {
       similarityThreshold: '類似度しきい値',
 
       similarityThresholdTip:
-        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は0.2に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
+        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は20に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
 
       vectorSimilarityWeight: 'ベクトル類似度の重み',
 
@@ -207,6 +207,7 @@ export default {
       runningStatus2: 'キャンセル',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '待機中',
       pageRanges: 'ページ範囲',
 
       pageRangesTip:
@@ -1338,6 +1339,8 @@ export default {
         'Microsoft Graph経由でSharePointサイトに接続し、ドキュメントライブラリを同期します。',
       sharepointSiteUrlTip:
         'インデックス対象のSharePointサイトの完全なURLです（例: https://contoso.sharepoint.com/sites/MySite）。Sites.Read.AllおよびFiles.Read.Allのアプリケーション権限（管理者の同意）を持つAzure ADアプリが必要です。',
+      sitemapDescription:
+        '公開されている sitemap.xml を接続し、記載されたウェブページと PDF ドキュメントをナレッジベースに同期します。',
       azure_devopsDescription:
         'Azure DevOps に接続し、リポジトリのファイルとプルリクエストを同期します。',
       bitbucketDescription: 'Bitbucketに接続し、PRの内容を同期します。',

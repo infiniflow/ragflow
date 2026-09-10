@@ -192,7 +192,7 @@ def test_chunks_add_requires_content(rest_client, create_document):
     assert payload["message"] == "`content` is required", payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_document):
     add_cases = [
         (
@@ -284,7 +284,7 @@ def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_doc
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_repeat_deleted.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -318,7 +318,7 @@ def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_do
     assert add_after_delete_payload["message"] == f"you don't own the document {document_id}", add_after_delete_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 @pytest.mark.parametrize("count", [20])
 def test_chunk_concurrent_add_contract(rest_client, create_document, count):
     dataset_id, document_id = create_document("chunk_concurrent_add.txt")
@@ -342,7 +342,7 @@ def test_chunk_concurrent_add_contract(rest_client, create_document, count):
     assert final_payload["data"]["doc"]["chunk_count"] == initial_count + count, final_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunks_list_empty_document(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_empty.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -387,7 +387,7 @@ def test_chunk_delete_basic_contract(rest_client, create_document):
         assert list_payload["data"]["total"] == remaining, (scenario_name, list_payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_detail.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -449,7 +449,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_web_legacy_basic_variants(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_web_legacy_again.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -506,7 +506,7 @@ def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document)
     assert bulk_payload["code"] == 0, bulk_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_core.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -563,7 +563,7 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
     if _is_infinity_doc_engine(rest_client):
         pytest.skip("infinity")
@@ -590,7 +590,7 @@ def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_docum
         assert len(payload["data"]["chunks"]) == expected_total, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
     if _is_infinity_doc_engine(rest_client):
         pytest.skip("infinity")
@@ -627,7 +627,7 @@ def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
             assert expected_message in payload["message"], (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_list_concurrent_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_concurrent.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -697,7 +697,7 @@ def test_chunk_update_content_and_available_contract(rest_client, create_documen
             assert expected_message in body["message"], (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_update_keywords_questions_and_tag_contract(rest_client, create_document):
     _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_fields.txt")
     cases = [
