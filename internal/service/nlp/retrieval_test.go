@@ -252,11 +252,180 @@ func (e *captureSearchDocEngine) GetAggregation(_ []map[string]interface{}, _ st
 func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []string, _ string) map[string]string {
 	return nil
 }
+func (e *captureSearchDocEngine) KNNScores(context.Context, []map[string]interface{}, []float64, int) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+func (e *captureSearchDocEngine) GetScores(map[string]interface{}) map[string]float64 {
+	return map[string]float64{}
+}
 
 type captureEmbeddingDriver struct{ modelModule.ModelDriver }
 
 func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
 	return []modelModule.EmbeddingData{{Embedding: []float64{0.1, 0.2}}}, nil
+}
+
+type retryCaptureEngine struct {
+	engine.DocEngine
+	totals   []int64
+	requests []*types.SearchRequest
+	mutate   bool
+}
+
+func (e *retryCaptureEngine) GetType() string { return string(engine.EngineElasticsearch) }
+func (e *retryCaptureEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	copyReq := *req
+	copyReq.MatchExprs = make([]interface{}, 0, len(req.MatchExprs))
+	for _, expr := range req.MatchExprs {
+		switch expr := expr.(type) {
+		case *types.MatchDenseExpr:
+			copyReq.MatchExprs = append(copyReq.MatchExprs, cloneDenseExpr(expr))
+		case *types.MatchTextExpr:
+			clone := *expr
+			copyReq.MatchExprs = append(copyReq.MatchExprs, &clone)
+		case *types.FusionExpr:
+			clone := *expr
+			clone.FusionParams = map[string]interface{}{}
+			for key, value := range expr.FusionParams {
+				clone.FusionParams[key] = value
+			}
+			copyReq.MatchExprs = append(copyReq.MatchExprs, &clone)
+		}
+	}
+	e.requests = append(e.requests, &copyReq)
+	if e.mutate {
+		for _, expr := range req.MatchExprs {
+			if dense, ok := expr.(*types.MatchDenseExpr); ok {
+				delete(dense.ExtraOptions, "num_candidates")
+				dense.ExtraOptions["backend"] = true
+			}
+		}
+	}
+	total := e.totals[0]
+	e.totals = e.totals[1:]
+	return &types.SearchResult{Total: total}, nil
+}
+func (e *retryCaptureEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }
+func (e *retryCaptureEngine) GetFields([]map[string]interface{}, []string) map[string]map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetAggregation([]map[string]interface{}, string) []map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
+	return nil
+}
+
+func TestSearchDenseRecoveryOnlyAfterEmptyLexicalAttempts(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	for _, test := range []struct {
+		name          string
+		totals        []int64
+		expectedCalls int
+		finalExprs    int
+	}{
+		{name: "hybrid hit", totals: []int64{1}, expectedCalls: 1, finalExprs: 3},
+		{name: "relaxed hit", totals: []int64{0, 1}, expectedCalls: 2, finalExprs: 3},
+		{name: "dense recovery", totals: []int64{0, 0, 1}, expectedCalls: 3, finalExprs: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			docEngine := &retryCaptureEngine{totals: append([]int64(nil), test.totals...), mutate: true}
+			service := NewRetrievalService(docEngine, nil)
+			_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+				Question: "risk", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+				KNNTopK: 7, KNNNumCandidates: 19, RankFeature: map[string]float64{"pagerank_fea": 2},
+				EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(docEngine.requests) != test.expectedCalls {
+				t.Fatalf("search calls = %d, want %d", len(docEngine.requests), test.expectedCalls)
+			}
+			last := docEngine.requests[len(docEngine.requests)-1]
+			if len(last.MatchExprs) != test.finalExprs {
+				t.Fatalf("final expressions = %d, want %d", len(last.MatchExprs), test.finalExprs)
+			}
+			for index, request := range docEngine.requests {
+				var dense *types.MatchDenseExpr
+				if len(request.MatchExprs) == 1 {
+					dense = request.MatchExprs[0].(*types.MatchDenseExpr)
+				} else {
+					dense = request.MatchExprs[1].(*types.MatchDenseExpr)
+				}
+				if dense.TopN != 7 || dense.ExtraOptions["num_candidates"] != 19 {
+					t.Fatalf("dense options lost on attempt %d: %#v", index+1, dense)
+				}
+				if _, contaminated := dense.ExtraOptions["backend"]; contaminated {
+					t.Fatalf("attempt %d inherited connector mutation", index+1)
+				}
+				wantSimilarity := 0.1
+				if index > 0 {
+					wantSimilarity = 0.17
+				}
+				if dense.ExtraOptions["similarity"] != wantSimilarity {
+					t.Fatalf("attempt %d similarity = %v, want %v", index+1, dense.ExtraOptions["similarity"], wantSimilarity)
+				}
+			}
+			if test.expectedCalls == 3 {
+				if last.Filter["kb_id"] == nil || last.Filter["available_int"] != 1 {
+					t.Fatalf("dense recovery lost scope filters: %#v", last.Filter)
+				}
+			}
+		})
+	}
+}
+
+func TestSearchWithoutUsableTextDoesNotRetryDenseSearch(t *testing.T) {
+	docEngine := &retryCaptureEngine{totals: []int64{0}}
+	service := NewRetrievalService(docEngine, nil)
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "!!!", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 1 || len(docEngine.requests[0].MatchExprs) != 1 {
+		t.Fatalf("dense-only query retried or retained lexical expressions: %#v", docEngine.requests)
+	}
+}
+
+func TestSearchDocIDKeepsFilterOnlyRetry(t *testing.T) {
+	docEngine := &retryCaptureEngine{totals: []int64{0, 1}}
+	service := NewRetrievalService(docEngine, nil)
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "risk", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, DocIDs: []string{"doc-1"}, Page: 1, PageSize: 10,
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 2 || len(docEngine.requests[1].MatchExprs) != 0 {
+		t.Fatalf("doc-scoped retry changed: %#v", docEngine.requests)
+	}
+	if got := docEngine.requests[1].Filter["doc_id"]; fmt.Sprint(got) != "[doc-1]" {
+		t.Fatalf("doc_id filter = %v", got)
+	}
+}
+
+func TestCloneDenseExprDeepCopiesOptions(t *testing.T) {
+	source := &types.MatchDenseExpr{
+		EmbeddingData: []float64{0.1},
+		ExtraOptions: map[string]interface{}{
+			"sentinel": map[string]any{"future": []any{1}},
+		},
+	}
+	clone := cloneDenseExpr(source)
+	clone.EmbeddingData[0] = 0.9
+	clone.ExtraOptions["sentinel"].(map[string]any)["future"].([]any)[0] = 2
+
+	if source.EmbeddingData[0] != 0.1 || source.ExtraOptions["sentinel"].(map[string]any)["future"].([]any)[0] != 1 {
+		t.Fatalf("clone mutated source: %#v", source)
+	}
 }
 
 func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
@@ -284,7 +453,7 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	top := 10
 	docEngine := &captureSearchDocEngine{
 		engineType: string(engine.EngineInfinity),
-		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 0},
+		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 1},
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	_, err := service.Retrieval(t.Context(), &RetrievalRequest{

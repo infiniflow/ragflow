@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -659,6 +660,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 				return nil, fmt.Errorf("GetVector failed: %w", err)
 			}
 
+			// Keep a pristine dense expression because connectors may rewrite its options.
+			denseTemplate := cloneDenseExpr(matchDense)
 			// Execute search with fusion
 			fusionExpr := buildRetrievalFusionExpr(s.docEngine.GetType(), knnTopK, req.VectorSimilarityWeight)
 
@@ -670,7 +673,11 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			}
 
 			searchRequest.SelectFields = searchSrc
-			searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+			if matchText == nil {
+				searchRequest.MatchExprs = []interface{}{matchDense}
+			} else {
+				searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+			}
 			searchRequest.RankFeature = req.RankFeature
 
 			engineResult, err = s.docEngine.Search(ctx, searchRequest)
@@ -678,7 +685,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 				return nil, fmt.Errorf("search failed: %w", err)
 			}
 			// If result is empty, retry with relaxed conditions
-			if engineResult.Total == 0 {
+			if engineResult.Total == 0 && matchText != nil {
 				_, hasDocIDFilter := filters["doc_id"]
 				if hasDocIDFilter {
 					// When a doc_id filter is present (e.g. from metadata filter like era=960)
@@ -707,13 +714,27 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					// This provides a second chance for queries that were too strict
 					// on the first attempt.
 					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", 0.1)
-					matchDense.ExtraOptions["similarity"] = 0.17
-					searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+					relaxedDense := cloneDenseExpr(denseTemplate)
+					relaxedDense.ExtraOptions["similarity"] = 0.17
+					searchRequest.MatchExprs = []interface{}{matchText, relaxedDense, buildRetrievalFusionExpr(s.docEngine.GetType(), knnTopK, req.VectorSimilarityWeight)}
 					searchRequest.RankFeature = req.RankFeature
 
 					engineResult, err = s.docEngine.Search(ctx, searchRequest)
 					if err != nil {
 						return nil, fmt.Errorf("search retry failed: %w", err)
+					}
+					if engineResult.Total == 0 && matchText != nil {
+						// Intentionally recover only after both lexical attempts return zero.
+						common.Debug("Retrieval dense-only recovery triggered after empty hybrid retries")
+						denseFallback := cloneDenseExpr(denseTemplate)
+						denseFallback.ExtraOptions["similarity"] = 0.17
+						searchRequest.SelectFields = src
+						searchRequest.MatchExprs = []interface{}{denseFallback}
+						searchRequest.RankFeature = req.RankFeature
+						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						if err != nil {
+							return nil, fmt.Errorf("dense-only recovery failed: %w", err)
+						}
 					}
 				}
 			}
@@ -776,6 +797,39 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		Aggregation: aggregation,
 		IndexNames:  searchRequest.IndexNames,
 	}, nil
+}
+
+func cloneDenseExpr(src *types.MatchDenseExpr) *types.MatchDenseExpr {
+	clone := *src
+	clone.EmbeddingData = slices.Clone(src.EmbeddingData)
+	clone.ExtraOptions = make(map[string]interface{}, len(src.ExtraOptions))
+	for key, value := range src.ExtraOptions {
+		clone.ExtraOptions[key] = cloneDenseOption(value)
+	}
+	return &clone
+}
+
+func cloneDenseOption(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		clone := make(map[string]any, len(value))
+		for key, item := range value {
+			clone[key] = cloneDenseOption(item)
+		}
+		return clone
+	case []any:
+		clone := make([]any, len(value))
+		for i, item := range value {
+			clone[i] = cloneDenseOption(item)
+		}
+		return clone
+	case []string:
+		return slices.Clone(value)
+	case []float64:
+		return slices.Clone(value)
+	default:
+		return value
+	}
 }
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import json
 import logging
 import re
@@ -243,7 +244,8 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                dense_template = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                matchDense = copy.deepcopy(dense_template)
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
@@ -261,12 +263,13 @@ class Dealer:
                         knn_top_k,
                         vector_similarity_weight,
                     )
-                    fusionExpr = build_fusion_expr(knn_top_k, vector_similarity_weight)
+                    fusion_template = build_fusion_expr(knn_top_k, vector_similarity_weight)
                 elif settings.DOC_ENGINE_GAUSSDB:
                     vector_weight = req.get("vector_similarity_weight", 0.3)
-                    fusionExpr = FusionExpr("weighted_sum", knn_top_k, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
+                    fusion_template = FusionExpr("weighted_sum", knn_top_k, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
                 else:
-                    fusionExpr = FusionExpr("weighted_sum", knn_top_k, {"weights": "0.001,1"})
+                    fusion_template = FusionExpr("weighted_sum", knn_top_k, {"weights": "0.001,1"})
+                fusionExpr = copy.deepcopy(fusion_template)
                 matchExprs = [matchText, matchDense, fusionExpr] if matchText else [matchDense]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -274,19 +277,20 @@ class Dealer:
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
                 # If result is empty, try again with lower min_match
-                if total == 0:
+                if total == 0 and matchText:
                     if filters.get("doc_id"):
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
-                        matchDense.extra_options["similarity"] = 0.17
+                        relaxed_dense = copy.deepcopy(dense_template)
+                        relaxed_dense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
                             self.dataStore.search,
                             src,
                             highlightFields,
                             filters,
-                            [matchText, matchDense, fusionExpr] if matchText else [matchDense],
+                            [matchText, relaxed_dense, copy.deepcopy(fusion_template)] if matchText else [relaxed_dense],
                             orderBy,
                             offset,
                             limit,
@@ -295,6 +299,24 @@ class Dealer:
                             rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
+                        if total == 0 and matchText:
+                            dense_fallback = copy.deepcopy(dense_template)
+                            dense_fallback.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only recovery triggered after empty hybrid retries")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                [],
+                                filters,
+                                [dense_fallback],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:

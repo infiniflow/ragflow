@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import sys
 import types
 from unittest.mock import AsyncMock, Mock
@@ -206,6 +207,103 @@ class FakeGaussDBStore:
 class FakeQueryer:
     def question(self, text, min_match=0.3):
         return MatchTextExpr(["content_with_weight"], text, 1024), [text]
+
+
+class RetryStore(FakeGaussDBStore):
+    def __init__(self, totals, mutate=False):
+        self.totals = iter(totals)
+        self.calls = []
+        self.mutate = mutate
+
+    def search(self, *args, **kwargs):
+        self.calls.append(copy.deepcopy((args, kwargs)))
+        if self.mutate:
+            for expr in args[3]:
+                if isinstance(expr, MatchDenseExpr):
+                    expr.extra_options.pop("num_candidates", None)
+                    expr.extra_options["threshold"] = expr.extra_options.pop("similarity", None)
+                    expr.extra_options["backend"] = True
+                elif isinstance(expr, FusionExpr):
+                    expr.fusion_params["normalize"] = "backend"
+        return type("SearchResult", (), {"total": next(self.totals), "chunks": []})()
+
+
+async def run_retry_search(dealer_cls, totals, queryer=None, mutate=False, doc_ids=None):
+    dealer = make_dealer(dealer_cls)
+    dealer.qryr = queryer or FakeQueryer()
+    dealer.dataStore = RetryStore(totals, mutate=mutate)
+
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr(
+            "q_4_vec",
+            [0.1, 0.2, 0.3, 0.4],
+            "float",
+            "cosine",
+            top_k,
+            {"similarity": similarity, "num_candidates": num_candidates, "sentinel": {"future": [1]}},
+        )
+
+    dealer.get_vector = fake_get_vector
+    req = {"question": "risk", "page": 1, "size": 5, "knn_top_k": 7, "knn_num_candidates": 19}
+    if doc_ids:
+        req["doc_ids"] = doc_ids
+    await dealer.search(req, "ragflow_tenant", ["kb1"], emb_mdl=object(), highlight=True)
+    return dealer.dataStore.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("totals", "expected_calls", "final_expr_count"),
+    [([1], 1, 3), ([0, 1], 2, 3), ([0, 0, 1], 3, 1)],
+)
+async def test_dense_recovery_runs_only_after_zero_lexical_results(dealer_cls, totals, expected_calls, final_expr_count):
+    calls = await run_retry_search(dealer_cls, totals)
+
+    assert len(calls) == expected_calls
+    assert len(calls[-1][0][3]) == final_expr_count
+    if expected_calls == 3:
+        final_args, _ = calls[-1]
+        dense = final_args[3][0]
+        assert isinstance(dense, MatchDenseExpr)
+        assert final_args[1] == []
+        assert dense.extra_options == {
+            "similarity": 0.17,
+            "num_candidates": 19,
+            "sentinel": {"future": [1]},
+        }
+
+
+@pytest.mark.asyncio
+async def test_dense_retries_are_isolated_from_connector_mutation(dealer_cls):
+    calls = await run_retry_search(dealer_cls, [0, 0, 1], mutate=True)
+
+    for index, (args, _) in enumerate(calls):
+        dense = next(expr for expr in args[3] if isinstance(expr, MatchDenseExpr))
+        assert dense.extra_options["num_candidates"] == 19
+        assert dense.extra_options["sentinel"] == {"future": [1]}
+        assert dense.extra_options["similarity"] == (0.1 if index == 0 else 0.17)
+        assert "threshold" not in dense.extra_options
+        assert "backend" not in dense.extra_options
+
+
+@pytest.mark.asyncio
+async def test_no_usable_text_stays_single_dense_search(dealer_cls):
+    queryer = types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, []))
+    calls = await run_retry_search(dealer_cls, [0], queryer=queryer)
+
+    assert len(calls) == 1
+    assert len(calls[0][0][3]) == 1
+    assert isinstance(calls[0][0][3][0], MatchDenseExpr)
+
+
+@pytest.mark.asyncio
+async def test_doc_id_zero_result_keeps_filter_only_retry(dealer_cls):
+    calls = await run_retry_search(dealer_cls, [0, 1], doc_ids=["doc-1"])
+
+    assert len(calls) == 2
+    assert calls[1][0][1] == []
+    assert calls[1][0][2]["doc_id"] == ["doc-1"]
+    assert calls[1][0][3] == []
 
 
 def retrieval_chunk(score, doc_id, doc_name, content="risk contract"):
