@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,101 +56,226 @@ import (
 // server-local wall-clock string ("YYYY-MM-DD HH:MM:SS"), never UTC-shifted.
 const memoryTimeLayout = "2006-01-02 15:04:05"
 
+const (
+	memoryTaskLeaseTTL           = 2 * time.Minute
+	memoryTaskLeaseRenewInterval = 30 * time.Second
+)
+
 // memoryNow is the wall clock behind every memory timestamp. Tests pin it
 // to a fixed instant in a fixed location so the server-local assertions are
 // deterministic on any host, including UTC CI runners.
 var memoryNow = time.Now
 
-// ErrMemoryTaskTerminal marks a memory-task failure that already has a durable
-// terminal outcome (task row absent, or progress already persisted as failed),
-// so the caller must Ack rather than Nack/redeliver. Transient failures (DB
-// read hiccup, LLM/network errors before any durable marker) return plain
-// errors so executeMemoryTask can Nack and let the message be redelivered.
-var ErrMemoryTaskTerminal = errors.New("memory: terminal task failure, do not redeliver")
+// MemoryTaskDisposition tells the broker consumer whether a durable memory
+// task delivery can be acknowledged. An unsettled delivery is recovered by
+// broker redelivery or the database reconciler.
+type MemoryTaskDisposition uint8
 
-// errMemoryTaskRetryable marks a failure that must leave the broker message
-// unsettled. It is used when extracted messages may already be stored but the
-// durable task state could not be recorded; stable chunk ids make that retry
-// safe.
-var errMemoryTaskRetryable = errors.New("memory: retryable task failure")
+const (
+	// MemoryTaskLeaveUnsettled preserves the delivery for durable recovery.
+	MemoryTaskLeaveUnsettled MemoryTaskDisposition = iota
+	// MemoryTaskAcknowledge permits the consumer to settle the delivery.
+	MemoryTaskAcknowledge
+)
 
 // extractedMemory is one LLM-extracted memory item ready for persistence.
 type extractedMemory struct {
-	MessageType string
-	Content     string
-	ValidAt     string
-	InvalidAt   string // empty means still valid
+	MessageID   int64  `json:"message_id"`
+	MessageType string `json:"message_type"`
+	Content     string `json:"content"`
+	ValidAt     string `json:"valid_at"`
+	InvalidAt   string `json:"invalid_at,omitempty"` // empty means still valid
 }
 
-// HandleSaveToMemoryTask processes one queued memory task. Mirrors
-// Python handle_save_to_memory_task: validate the task row, then
-// extract + persist, settling task progress on the way out.
-//
-// taskID is the authoritative identity passed explicitly by the Ingestor (the
-// envelope TaskID); it is never re-derived from the payload. The payload
-// carries only business parameters (memory_id / source_id / message_dict).
-//
-// The returned error is wrapped in ErrMemoryTaskTerminal when the failure has
-// already produced a durable terminal outcome (dependency/config error, task
-// row absent, task already failed, or extraction failed after progress=-1 was
-// persisted). Transient failures (a task-load DB error before any marker was
-// written) return an unwrapped error so the caller can Nack and redeliver.
-func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
-	if s == nil || s.taskDAO == nil || s.memories == nil {
-		return fmt.Errorf("%w: memory: nil MemoryMessageService or memory dependency", ErrMemoryTaskTerminal)
+type memoryExtractionCheckpoint struct {
+	MessageID   string `json:"message_id"`
+	MessageType string `json:"message_type"`
+	Content     string `json:"content"`
+	ValidAt     string `json:"valid_at"`
+	InvalidAt   string `json:"invalid_at,omitempty"`
+}
+
+// HandleSaveToMemoryTask claims and resumes one durable memory task. The NATS
+// delivery is only a wake-up; task input and checkpoints always come from the
+// memory_task row identified by taskID.
+func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskID, leaseOwner string) (MemoryTaskDisposition, error) {
+	if s == nil {
+		return MemoryTaskAcknowledge, errors.New("memory: nil MemoryMessageService")
 	}
-	memoryID, _ := payload["memory_id"].(string)
-	sourceID := payloadInt64(payload["source_id"])
-	msgDict, _ := payload["message_dict"].(map[string]any)
-	msg := MemoryMessage{
-		UserID:        payloadString(msgDict["user_id"]),
-		AgentID:       payloadString(msgDict["agent_id"]),
-		SessionID:     payloadString(msgDict["session_id"]),
-		UserInput:     payloadString(msgDict["user_input"]),
-		AgentResponse: payloadString(msgDict["agent_response"]),
+	if taskID == "" || leaseOwner == "" {
+		return MemoryTaskLeaveUnsettled, errors.New("memory: task id and lease owner are required")
+	}
+	if s.memoryTaskDAO == nil {
+		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
 
-	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
+	task, acquired, err := s.memoryTaskDAO.Claim(ctx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
 	if err != nil {
-		// Record-not-found is terminal: no row to retry against. Any other
-		// task-load error is transient and must be redelivered (no progress=-1
-		// marker was written).
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: memory: task %s is not found", ErrMemoryTaskTerminal, taskID)
+			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s is not found", taskID)
 		}
-		return fmt.Errorf("memory: load task %s: %w", taskID, err)
+		return MemoryTaskLeaveUnsettled, fmt.Errorf("memory: claim task %s: %w", taskID, err)
 	}
-	if task.Progress == -1 {
-		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
+	if !acquired {
+		switch task.State {
+		case entity.MemoryTaskStateCompleted, entity.MemoryTaskStateFailed:
+			return MemoryTaskAcknowledge, nil
+		case entity.MemoryTaskStatePending, entity.MemoryTaskStateExtracted, entity.MemoryTaskStateStored:
+			return MemoryTaskLeaveUnsettled, nil
+		default:
+			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s has unknown state %q", taskID, task.State)
+		}
 	}
-	// A task already extracted to completion (progress>=1.0) is a durable
-	// terminal outcome: a redelivery after restart (or a duplicate copy from
-	// another consumer) must not re-run the LLM extraction, which would insert
-	// duplicate memory entries. Short-circuit to success so the Ingestor Acks
-	// the message instead of re-executing the task.
-	if task.Progress >= 1.0 {
+
+	return s.runClaimedMemoryTask(ctx, task, leaseOwner)
+}
+
+// runClaimedMemoryTask renews the DB lease while the state machine advances.
+func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *entity.MemoryTask, leaseOwner string) (MemoryTaskDisposition, error) {
+	runCtx, cancel := context.WithCancel(ctx)
+	renewErr := make(chan error, 1)
+	renewDone := make(chan struct{})
+	go func() {
+		defer close(renewDone)
+		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, renewErr)
+	}()
+
+	err := s.resumeMemoryTask(runCtx, task, leaseOwner)
+	cancel()
+	<-renewDone
+	if err == nil {
+		return MemoryTaskAcknowledge, nil
+	}
+	select {
+	case leaseErr := <-renewErr:
+		if leaseErr != nil {
+			return MemoryTaskLeaveUnsettled, leaseErr
+		}
+	default:
+	}
+	return MemoryTaskLeaveUnsettled, err
+}
+
+// renewMemoryTaskLease cancels execution when the worker can no longer prove
+// ownership of the durable task.
+func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel context.CancelFunc, taskID, leaseOwner string, errCh chan<- error) {
+	ticker := time.NewTicker(memoryTaskLeaseRenewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewed, err := s.memoryTaskDAO.RenewLease(ctx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+			if err == nil && renewed {
+				continue
+			}
+			if err == nil {
+				err = errors.New("lease is no longer owned by this worker")
+			}
+			select {
+			case errCh <- fmt.Errorf("memory: renew task %s lease: %w", taskID, err):
+			default:
+			}
+			cancel()
+			return
+		}
+	}
+}
+
+// resumeMemoryTask advances from the last durable checkpoint through
+// completion without consulting the generic task progress projection.
+func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entity.MemoryTask, leaseOwner string) error {
+	var (
+		msg         MemoryMessage
+		inputLoaded bool
+	)
+	loadInput := func() error {
+		if inputLoaded {
+			return nil
+		}
+		var err error
+		msg, err = memoryMessageFromTaskInput(task.Input)
+		if err != nil {
+			return fmt.Errorf("memory: decode task %s input: %w", task.TaskID, err)
+		}
+		inputLoaded = true
 		return nil
 	}
 
-	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
-		if errors.Is(err, errMemoryTaskRetryable) {
+	for {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if progressErr := s.updateTaskProgress(ctx, taskID, -1, err.Error()); progressErr != nil {
-			return fmt.Errorf("%w: memory: mark task %s failed: %v", errMemoryTaskRetryable, taskID, progressErr)
+		switch task.State {
+		case entity.MemoryTaskStatePending:
+			if err := loadInput(); err != nil {
+				return err
+			}
+			extraction, extractErr := s.extractMemoryTask(ctx, task, msg)
+			if extractErr != nil {
+				return extractErr
+			}
+			encoded, encodeErr := encodeMemoryExtraction(extraction)
+			if encodeErr != nil {
+				return fmt.Errorf("memory: encode task %s extraction: %w", task.TaskID, encodeErr)
+			}
+			updated, persistErr := s.memoryTaskDAO.PersistExtraction(ctx, dao.DB, task.TaskID, leaseOwner, memoryNow(), encoded)
+			if persistErr != nil {
+				return fmt.Errorf("memory: persist task %s extraction: %w", task.TaskID, persistErr)
+			}
+			if !updated {
+				return fmt.Errorf("memory: task %s lost its lease before extraction checkpoint", task.TaskID)
+			}
+			task.Extraction = encoded
+			task.State = entity.MemoryTaskStateExtracted
+
+		case entity.MemoryTaskStateExtracted:
+			if err := loadInput(); err != nil {
+				return err
+			}
+			if err := s.storeMemoryTaskExtraction(ctx, task, msg); err != nil {
+				return err
+			}
+			updated, storeErr := s.memoryTaskDAO.MarkStored(ctx, dao.DB, task.TaskID, leaseOwner, memoryNow())
+			if storeErr != nil {
+				return fmt.Errorf("memory: mark task %s stored: %w", task.TaskID, storeErr)
+			}
+			if !updated {
+				return fmt.Errorf("memory: task %s lost its lease before storage checkpoint", task.TaskID)
+			}
+			task.State = entity.MemoryTaskStateStored
+
+		case entity.MemoryTaskStateStored:
+			progressMsg := "Message saved successfully."
+			if len(task.Extraction) == 0 {
+				progressMsg = "No memory extracted from raw message."
+			}
+			completed, completeErr := s.memoryTaskDAO.Complete(ctx, dao.DB, task.TaskID, leaseOwner, progressMsg, memoryNow())
+			if completeErr != nil {
+				return fmt.Errorf("memory: complete task %s: %w", task.TaskID, completeErr)
+			}
+			if !completed {
+				return fmt.Errorf("memory: task %s lost its lease before completion", task.TaskID)
+			}
+			return nil
+
+		case entity.MemoryTaskStateCompleted, entity.MemoryTaskStateFailed:
+			return nil
+		default:
+			return fmt.Errorf("memory: task %s has unknown state %q", task.TaskID, task.State)
 		}
-		return fmt.Errorf("%w: %w", ErrMemoryTaskTerminal, err)
 	}
-	return nil
 }
 
-// saveExtractedToMemory mirrors Python save_extracted_to_memory_only:
-// skip raw-only memories, run LLM extraction, embed and persist the
-// extracted messages under the raw message's id.
-func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memoryID string, msg MemoryMessage, sourceID int64, taskID string) error {
-	mem, err := s.memories.getMemoryConfig(ctx, memoryID)
+// extractMemoryTask executes the LLM stage and materializes retry-stable output.
+func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *entity.MemoryTask, msg MemoryMessage) ([]extractedMemory, error) {
+	if s.memories == nil {
+		return nil, errors.New("memory: memory service is not initialized")
+	}
+	mem, err := s.memories.getMemoryConfig(ctx, task.MemoryID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	memoryTypes := mem.MemoryType
 	if len(memoryTypes) == 0 {
@@ -157,35 +283,40 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	}
 	extractTypes := getTypesToExtract(memoryTypes)
 	if len(extractTypes) == 0 {
-		if err := s.updateTaskProgress(ctx, taskID, 1.0, fmt.Sprintf("Memory '%s' don't need to extract.", memoryID)); err != nil {
-			return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
-		}
-		return nil
+		return []extractedMemory{}, nil
 	}
 
-	extracted, err := s.extractByLLM(ctx, mem, extractTypes, msg, taskID)
+	extracted, err := s.extractByLLM(ctx, mem, extractTypes, msg, task.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow())
+	_ = s.updateTaskProgress(ctx, task.TaskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(materialized)))
+	return materialized, nil
+}
+
+// storeMemoryTaskExtraction embeds and stores a previously checkpointed result.
+func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, task *entity.MemoryTask, msg MemoryMessage) error {
+	extracted, err := decodeMemoryExtraction(task.Extraction)
+	if err != nil {
+		return fmt.Errorf("memory: decode task %s extraction: %w", task.TaskID, err)
+	}
+	if len(extracted) == 0 {
+		return nil
+	}
+	if s.memories == nil {
+		return errors.New("memory: memory service is not initialized")
+	}
+	mem, err := s.memories.getMemoryConfig(ctx, task.MemoryID)
 	if err != nil {
 		return err
 	}
-	if len(extracted) == 0 {
-		if err := s.updateTaskProgress(ctx, taskID, 1.0, "No memory extracted from raw message."); err != nil {
-			return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
-		}
-		return nil
-	}
-	_ = s.updateTaskProgress(ctx, taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
-
-	// conversation_time is stamped as server-local wall clock, not UTC.
-	now := memoryNow()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
-		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
+		messages = append(messages, buildExtractedMessage(task.SourceID, task.MemoryID, msg, item))
 	}
 	if err = s.embedAndSaveMessages(ctx, mem, messages); err != nil {
 		return err
-	}
-	if err := s.updateTaskProgress(ctx, taskID, 1.0, "Message saved successfully."); err != nil {
-		return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
 	}
 	return nil
 }
@@ -240,27 +371,103 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
 }
 
-// buildExtractedMessage builds the persisted envelope for one extracted
+// materializeMemoryExtraction assigns stable message ids and timestamp
+// fallbacks before the extraction checkpoint is persisted.
+func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemory, now time.Time) []extractedMemory {
+	materialized := make([]extractedMemory, len(extracted))
+	for i, item := range extracted {
+		item.MessageID = generateRawMessageID(ctx)
+		item.ValidAt = formatMemoryTime(item.ValidAt, now)
+		if strings.TrimSpace(item.InvalidAt) != "" {
+			item.InvalidAt = formatMemoryTime(item.InvalidAt, now)
+		}
+		materialized[i] = item
+	}
+	return materialized
+}
+
+// encodeMemoryExtraction converts typed extraction output to the JSON column type.
+func encodeMemoryExtraction(extracted []extractedMemory) (entity.JSONSlice, error) {
+	checkpoint := make([]memoryExtractionCheckpoint, len(extracted))
+	for i, item := range extracted {
+		checkpoint[i] = memoryExtractionCheckpoint{
+			MessageID:   strconv.FormatInt(item.MessageID, 10),
+			MessageType: item.MessageType,
+			Content:     item.Content,
+			ValidAt:     item.ValidAt,
+			InvalidAt:   item.InvalidAt,
+		}
+	}
+	data, err := json.Marshal(checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	var encoded entity.JSONSlice
+	if err = json.Unmarshal(data, &encoded); err != nil {
+		return nil, err
+	}
+	return encoded, nil
+}
+
+// decodeMemoryExtraction restores typed extraction output from its checkpoint.
+func decodeMemoryExtraction(encoded entity.JSONSlice) ([]extractedMemory, error) {
+	data, err := json.Marshal(encoded)
+	if err != nil {
+		return nil, err
+	}
+	var checkpoint []memoryExtractionCheckpoint
+	if err = json.Unmarshal(data, &checkpoint); err != nil {
+		return nil, err
+	}
+	extracted := make([]extractedMemory, len(checkpoint))
+	for i, item := range checkpoint {
+		messageID, parseErr := strconv.ParseInt(item.MessageID, 10, 64)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse message id %q: %w", item.MessageID, parseErr)
+		}
+		extracted[i] = extractedMemory{
+			MessageID:   messageID,
+			MessageType: item.MessageType,
+			Content:     item.Content,
+			ValidAt:     item.ValidAt,
+			InvalidAt:   item.InvalidAt,
+		}
+	}
+	return extracted, nil
+}
+
+// memoryMessageFromTaskInput reads the dialogue persisted with the durable task.
+func memoryMessageFromTaskInput(input entity.JSONMap) (MemoryMessage, error) {
+	msg := MemoryMessage{
+		UserID:        stringFromJSONMap(input, "user_id"),
+		AgentID:       stringFromJSONMap(input, "agent_id"),
+		SessionID:     stringFromJSONMap(input, "session_id"),
+		UserInput:     stringFromJSONMap(input, "user_input"),
+		AgentResponse: stringFromJSONMap(input, "agent_response"),
+	}
+	if msg.AgentID == "" {
+		return MemoryMessage{}, errors.New("agent_id is required")
+	}
+	return msg, nil
+}
+
+// stringFromJSONMap returns the named string value or an empty string.
+func stringFromJSONMap(values entity.JSONMap, key string) string {
+	value, _ := values[key].(string)
+	return value
+}
+
+// buildExtractedMessage builds the persisted envelope for one materialized
 // memory item. Field set matches buildRawMessage except message_type and
-// source_id, which listMemoryMessages uses to aggregate extracts. Only
-// logical message fields are set here; the doc engine maps them to
-// storage fields (including tokenization) at insert time.
-func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory, now time.Time) map[string]any {
-	validAt, ok := normalizeMemoryTime(item.ValidAt)
-	if !ok {
-		validAt = now.Format(memoryTimeLayout)
-	}
-	invalidAt, ok := normalizeMemoryTime(item.InvalidAt)
-	if strings.TrimSpace(item.InvalidAt) != "" && !ok {
-		invalidAt = now.Format(memoryTimeLayout)
-	}
+// source_id, which listMemoryMessages uses to aggregate extracts.
+func buildExtractedMessage(sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory) map[string]any {
 	var storedInvalidAt any
-	if invalidAt != "" {
-		storedInvalidAt = invalidAt
+	if item.InvalidAt != "" {
+		storedInvalidAt = item.InvalidAt
 	}
 	return map[string]any{
-		"id":           fmt.Sprintf("%s_%d", memoryID, messageID),
-		"message_id":   messageID,
+		"id":           fmt.Sprintf("%s_%d", memoryID, item.MessageID),
+		"message_id":   item.MessageID,
 		"message_type": item.MessageType,
 		"source_id":    sourceID,
 		"memory_id":    memoryID,
@@ -268,7 +475,7 @@ func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg Memor
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      item.Content,
-		"valid_at":     validAt,
+		"valid_at":     item.ValidAt,
 		"invalid_at":   storedInvalidAt,
 		"forget_at":    nil,
 		"status":       true,
@@ -343,9 +550,8 @@ func normalizeMemoryTime(value string) (string, bool) {
 	return "", false
 }
 
-// updateTaskProgress stamps and persists task progress, mirroring
-// Python TaskService.update_progress call sites. Callers that establish a
-// terminal task state must handle an error so the message can be retried.
+// updateTaskProgress stamps and persists the UI progress projection. Durable
+// execution decisions never read this value.
 func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID string, progress float64, msg string) error {
 	if s == nil || s.taskDAO == nil {
 		return errors.New("memory: nil task DAO")
@@ -359,28 +565,4 @@ func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID st
 		return err
 	}
 	return nil
-}
-
-func payloadInt64(v any) int64 {
-	switch n := v.(type) {
-	case float64:
-		return int64(n)
-	case int64:
-		return n
-	case int:
-		return int64(n)
-	case json.Number:
-		i, _ := n.Int64()
-		return i
-	case string:
-		var i int64
-		fmt.Sscanf(n, "%d", &i)
-		return i
-	}
-	return 0
-}
-
-func payloadString(v any) string {
-	s, _ := v.(string)
-	return s
 }

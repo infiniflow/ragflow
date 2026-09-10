@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -121,8 +120,9 @@ type Ingestor struct {
 	// runMemoryTask dispatches one async memory-extraction task. Tests may
 	// override this to inject a panicking/failing runner without a live DB or
 	// real MemoryMessageService. Defaults to defaultRunMemoryTask, which calls
-	// memorySvc.HandleSaveToMemoryTask with the envelope task id.
-	runMemoryTask func(ctx context.Context, taskID string, payload map[string]any) error
+	// memorySvc.HandleSaveToMemoryTask with the envelope task id and a unique
+	// database lease owner.
+	runMemoryTask func(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error)
 
 	// cancelCheck is polled periodically (every 3s) during task execution.
 	// When it returns true the task's context is cancelled, which causes the
@@ -412,18 +412,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			e.ackHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
-		var payload map[string]any
-		if len(taskMessage.Payload) == 0 || json.Unmarshal(taskMessage.Payload, &payload) != nil {
-			common.Warn(fmt.Sprintf("memory task %s has no parseable payload, ack", taskMessage.TaskID))
-			e.ackHandle(hb, handle, taskMessage.TaskID)
-			return
-		}
-		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
-		if !e.claimTask(taskMessage.TaskID) {
-			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, renew lease", taskMessage.TaskID))
-			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
-			return
-		}
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, handle)
 		e.executeMemoryTaskWithHeartbeat(e.ctx, taskCtx, hb)
 		return
 	}
@@ -589,30 +578,20 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat) {
 	taskID := taskCtx.ID()
 
-	var (
-		settleAck  bool
-		settleNack bool
-	)
+	settleAck := false
 	defer func() {
 		hb.Stop()
 		if r := recover(); r != nil {
 			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-			settleNack = true
 		}
 		if taskCtx.Handle == nil || e.leaseAbandoned(hb) {
-			e.releaseTask(taskID)
 			return
 		}
 		if settleAck {
 			if err := taskCtx.Handle.Ack(); err != nil {
 				common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 			}
-		} else if settleNack {
-			if err := taskCtx.Handle.Nack(); err != nil {
-				common.Error(fmt.Sprintf("nack memory task %s", taskID), err)
-			}
 		}
-		e.releaseTask(taskID)
 	}()
 
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
@@ -625,29 +604,24 @@ func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *
 		settleAck = true
 		return
 	}
-	if err := e.runMemoryTask(ctx, taskID, taskCtx.MemoryPayload); err != nil {
-		// defaultRunMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
-		// (durable progress=-1 written, completed progress>=1.0, or no row to
-		// retry). Everything else is transient and must be redelivered rather
-		// than dropped.
-		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
-			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
-			settleAck = true
-			return
-		}
-		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
-		settleNack = true
+	leaseOwner := fmt.Sprintf("%s:%s", e.id, utility.GenerateUUID())
+	disposition, err := e.runMemoryTask(ctx, taskID, leaseOwner)
+	if err != nil {
+		common.Error(fmt.Sprintf("memory task %s execution failed", taskID), err)
+	}
+	if disposition == servicepkg.MemoryTaskAcknowledge {
+		settleAck = true
+		common.Info(fmt.Sprintf("Memory task %s delivery acknowledged", taskID))
 		return
 	}
-	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
-	settleAck = true
+	common.Warn(fmt.Sprintf("memory task %s delivery left unsettled for durable recovery", taskID))
 }
 
 // defaultRunMemoryTask is the production memory-task runner. It is held behind
 // the runMemoryTask field so tests can substitute a panicking/failing runner
 // without a live DB or real MemoryMessageService.
-func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
-	return e.memorySvc.HandleSaveToMemoryTask(ctx, taskID, payload)
+func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error) {
+	return e.memorySvc.HandleSaveToMemoryTask(ctx, taskID, leaseOwner)
 }
 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {

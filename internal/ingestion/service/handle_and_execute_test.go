@@ -27,28 +27,30 @@ import (
 	servicepkg "ragflow/internal/service"
 )
 
-// TestHandleAndExecute_MalformedMemoryPayloadAcks verifies that a memory task with
-// an unparseable payload is acked and skipped without executing the runner.
-func TestHandleAndExecute_MalformedMemoryPayloadAcks(t *testing.T) {
+// TestHandleAndExecute_MemoryTaskIDInvokesRunner verifies memory deliveries
+// need only the task id because execution input lives in the database.
+func TestHandleAndExecute_MemoryTaskIDInvokesRunner(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-malformed", 1, nil)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
 
 	runnerCalled := false
-	ingestor.runMemoryTask = func(ctx context.Context, taskID string, payload map[string]any) error {
+	ingestor.runMemoryTask = func(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error) {
 		runnerCalled = true
-		return nil
+		if taskID != "mem-bad-payload" || leaseOwner == "" {
+			t.Fatalf("runner identity = %q/%q", taskID, leaseOwner)
+		}
+		return servicepkg.MemoryTaskAcknowledge, nil
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "mem-bad-payload",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{invalid-json`),
 	}}
 
 	ingestor.handleAndExecute(handle)
 
-	if runnerCalled {
-		t.Fatal("expected runMemoryTask to not be called for malformed payload")
+	if !runnerCalled {
+		t.Fatal("expected runMemoryTask to be called with task id only")
 	}
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -64,7 +66,6 @@ func TestHandleAndExecute_MemoryExtractorDisabledAcks(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "mem-disabled",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{"memory_id":"m1"}`),
 	}}
 
 	ingestor.handleAndExecute(handle)
@@ -83,7 +84,6 @@ func TestHandleAndExecute_MemoryEmptyTaskIDAcks(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{"memory_id":"m1"}`),
 	}}
 
 	ingestor.handleAndExecute(handle)
@@ -277,28 +277,22 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 }
 
-// TestHandleAndExecute_MemoryDuplicateClaimRenewsLease verifies duplicate delivery
-// protection for memory extraction tasks.
-func TestHandleAndExecute_MemoryDuplicateClaimRenewsLease(t *testing.T) {
+// TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery
+// verifies DB lease admission controls settlement for duplicate or failed work.
+func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-dup", 1, nil)
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
-
-	taskID := "mem-dup-1"
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("first claim should succeed")
+	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
+		return servicepkg.MemoryTaskLeaveUnsettled, nil
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
-		TaskID:   taskID,
+		TaskID:   "mem-dup-1",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{"memory_id":"m1","source_id":1,"message_dict":{"user_id":"u"}}`),
 	}}
 
 	ingestor.handleAndExecute(handle)
 
-	if handle.inProgress.Load() != 1 {
-		t.Fatalf("expected InProgress = 1 for duplicate memory delivery, got %d", handle.inProgress.Load())
-	}
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
