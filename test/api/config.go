@@ -153,7 +153,12 @@ func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
 	}
 	if c.AuthToken != "" && h.Get("Authorization") == "" {
 		h.Set("Authorization", "Bearer "+c.AuthToken)
+	} else {
+		if c.APIKey != "" && h.Get("Authorization") == "" {
+			h.Set("Authorization", "Bearer "+c.APIKey)
+		}
 	}
+
 	return h
 }
 
@@ -219,10 +224,10 @@ func (c *ServerTestConfig) decodeJSONBody(body io.Reader) (map[string]interface{
 
 func (c *ServerTestConfig) Login() error {
 	// Register (ignore already registered error)
-	registerResp, err := TestConfig.PostJSON("/users", map[string]interface{}{
-		"email":    TestConfig.Email,
+	registerResp, err := c.PostJSON("/users", map[string]interface{}{
+		"email":    c.Email,
 		"nickname": "qa",
-		"password": TestConfig.Password,
+		"password": c.Password,
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("register request failed: %w", err)
@@ -242,9 +247,9 @@ func (c *ServerTestConfig) Login() error {
 	}
 
 	// Login
-	loginResp, err := TestConfig.PostJSON("/auth/login", map[string]interface{}{
-		"email":    TestConfig.Email,
-		"password": TestConfig.Password,
+	loginResp, err := c.PostJSON("/auth/login", map[string]interface{}{
+		"email":    c.Email,
+		"password": c.Password,
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("login request failed: %w", err)
@@ -255,10 +260,10 @@ func (c *ServerTestConfig) Login() error {
 		return fmt.Errorf("login response missing Authorization header")
 	}
 
-	TestConfig.AuthToken = authToken
+	c.AuthToken = authToken
 
 	// Get system token
-	tokenResp, err := TestConfig.PostJSON("/system/tokens", nil, map[string]string{
+	tokenResp, err := c.PostJSON("/system/tokens", nil, map[string]string{
 		"Authorization": authToken,
 	})
 	if err != nil {
@@ -281,10 +286,35 @@ func (c *ServerTestConfig) Login() error {
 		return fmt.Errorf("system token response data.token is not a valid string: %v", tokenData)
 	}
 
-	TestConfig.APIKey = apiKey
+	c.APIKey = apiKey
 	return nil
 }
 
 func (c *ServerTestConfig) Logout() error {
+	resp, err := c.PostJSON("/auth/logout", nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read logout response: %w", err)
+	}
+	var payload map[string]interface{}
+	if err = json.Unmarshal(body, &payload); err != nil {
+		return fmt.Errorf("failed to decode logout response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("logout failed: status=%d, payload=%v", resp.StatusCode, payload)
+	}
+	code, _ := payload["code"].(float64)
+	if int(code) != 0 {
+		return fmt.Errorf("logout failed: code=%v, message=%v", payload["code"], payload["message"])
+	}
+
+	c.APIKey = ""
+	c.AuthToken = ""
 	return nil
 }
