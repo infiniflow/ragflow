@@ -588,6 +588,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     quart_mod = ModuleType("quart")
     quart_mod.request = SimpleNamespace(args=_DummyArgs())
+    quart_mod.g = SimpleNamespace()
     quart_mod.Response = _StubResponse
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
@@ -597,6 +598,7 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     apps_pkg = ModuleType("api.apps")
     apps_pkg.__path__ = [str(repo_root / "api" / "apps")]
+    apps_pkg.AUTH_API = "API"
     apps_pkg.current_user = SimpleNamespace(id="tenant-1")
     apps_pkg.login_required = _passthrough_login_required
     monkeypatch.setitem(sys.modules, "api.apps", apps_pkg)
