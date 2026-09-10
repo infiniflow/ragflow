@@ -18,8 +18,11 @@ package api
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var TestConfig *ServerTestConfig
@@ -39,6 +42,7 @@ type ServerTestConfig struct {
 	SiliconFlowAPIKey string
 	Email             string
 	Password          string
+	Token             string
 
 	InvalidAPIKey            string
 	InvalidID                string
@@ -121,4 +125,50 @@ func InitServerTestConfig() *ServerTestConfig {
 
 	fmt.Fprintf(os.Stderr, "InitServerTestConfig init successfully\n")
 	return &serverTestConfig
+}
+
+func (c *ServerTestConfig) apiBase() string {
+	return fmt.Sprintf("%s/api/%s", c.HostAddress, c.APIVersion)
+}
+
+func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
+	h := make(http.Header)
+	h.Set("Content-Type", "application/json")
+	for k, v := range extra {
+		h.Set(k, v)
+	}
+	if c.Token != "" && h.Get("Authorization") == "" {
+		h.Set("Authorization", "Bearer "+c.Token)
+	}
+	return h
+}
+
+func (c *ServerTestConfig) Request(method, path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+	normalizedPath := "/" + strings.TrimLeft(path, "/")
+	req, err := http.NewRequest(method, c.apiBase()+normalizedPath, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = c.buildHeaders(extraHeaders)
+	return http.DefaultClient.Do(req)
+}
+
+func (c *ServerTestConfig) Get(path string, extraHeaders map[string]string) (*http.Response, error) {
+	return c.Request(http.MethodGet, path, nil, extraHeaders)
+}
+
+func (c *ServerTestConfig) Post(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+	return c.Request(http.MethodPost, path, body, extraHeaders)
+}
+
+func (c *ServerTestConfig) Delete(path string, extraHeaders map[string]string) (*http.Response, error) {
+	return c.Request(http.MethodDelete, path, nil, extraHeaders)
+}
+
+func (c *ServerTestConfig) Put(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+	return c.Request(http.MethodPut, path, body, extraHeaders)
+}
+
+func (c *ServerTestConfig) Patch(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+	return c.Request(http.MethodPatch, path, body, extraHeaders)
 }
