@@ -1,5 +1,8 @@
 general:
   heartbeat_interval: 3s
+# Cable-domain fork switch: when true, only agent/templates/cable_templates/ is
+# seeded and served by GET /agents/templates; the official templates stay on disk.
+show_cable_only: ${SHOW_CABLE_ONLY:-true}
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380

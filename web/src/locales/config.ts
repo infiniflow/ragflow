@@ -14,20 +14,6 @@ import translation_en from './en';
 const languageImports: Record<string, () => Promise<{ default: any }>> = {
   [LanguageAbbreviation.En]: () => import('./en'),
   [LanguageAbbreviation.Zh]: () => import('./zh'),
-  [LanguageAbbreviation.ZhTraditional]: () => import('./zh-traditional'),
-  [LanguageAbbreviation.Id]: () => import('./id'),
-  [LanguageAbbreviation.Ja]: () => import('./ja'),
-  [LanguageAbbreviation.Es]: () => import('./es'),
-  [LanguageAbbreviation.Vi]: () => import('./vi'),
-  [LanguageAbbreviation.Ru]: () => import('./ru'),
-  [LanguageAbbreviation.PtBr]: () => import('./pt-br'),
-  [LanguageAbbreviation.De]: () => import('./de'),
-  [LanguageAbbreviation.Fr]: () => import('./fr'),
-  [LanguageAbbreviation.It]: () => import('./it'),
-  [LanguageAbbreviation.Bg]: () => import('./bg'),
-  [LanguageAbbreviation.Ar]: () => import('./ar'),
-  [LanguageAbbreviation.Tr]: () => import('./tr'),
-  [LanguageAbbreviation.Ko]: () => import('./ko'),
 };
 
 const supportedLanguageCodes: Intl.UnicodeBCP47LocaleIdentifier[] =
