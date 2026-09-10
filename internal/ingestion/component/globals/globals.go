@@ -53,10 +53,11 @@ func canvasStateFromContext(ctx context.Context) *runtime.CanvasState {
 // depends on (e.g. TokenChunker drops `name`, which Tokenizer consumes for
 // title embedding). Storing the shared fields in CanvasState.Globals restores
 // the Python behaviour without mutating every component output.
-// The embedding-model id is intentionally NOT a global: it is a
-// Tokenizer-scoped setup (params["setups"]["embedding_model"]). Keeping it out
-// of the shared bag prevents another component (e.g. one expecting a chat
-// model) from misreading a generic "model_id" global as its own.
+// The embedding-model id is intentionally NOT a global: the Tokenizer resolves
+// it from the dataset's own embd_id (kb_id) via its injected resolver, never
+// from a run input. Keeping it out of the shared bag prevents another component
+// (e.g. one expecting a chat model) from misreading a generic "model_id" global
+// as its own.
 var GlobalMetadataKeys = []string{
 	"name",
 	"doc_id",
@@ -71,6 +72,38 @@ var GlobalMetadataKeys = []string{
 	// / PublishGlobals only ever propagate it in a debug run — where the
 	// chunker decorator reads it to limit preview chunks.
 	DebugChunkCapKey,
+}
+
+// taskIDKey is the CanvasState.Globals slot carrying the ingestion task id of
+// the current run. It is deliberately unexported and absent from
+// GlobalMetadataKeys: the pipeline seeds it once via SetTaskID, so no run
+// input and no component output can overwrite the run's task scope.
+const taskIDKey = "task_id"
+
+// SetTaskID records the ingestion task id of the current run so components can
+// scope per-task bookkeeping (e.g. the per-chunk cache manifest). Called once
+// by the pipeline at run start. No-op when no CanvasState is attached.
+func SetTaskID(ctx context.Context, taskID string) {
+	if taskID == "" {
+		return
+	}
+	if st := canvasStateFromContext(ctx); st != nil {
+		st.SetGlobal(taskIDKey, taskID)
+	}
+}
+
+// TaskID returns the ingestion task id of the current run, or "" when the run
+// has no task scope (headless component tests, or a canvas invoked outside the
+// ingestion pipeline). Callers must treat "" as "skip per-task bookkeeping".
+func TaskID(ctx context.Context) string {
+	if st := canvasStateFromContext(ctx); st != nil {
+		if v, ok := st.GetGlobal(taskIDKey); ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // DebugChunkCapKey is the run-input key (seeded into CanvasState.Globals)

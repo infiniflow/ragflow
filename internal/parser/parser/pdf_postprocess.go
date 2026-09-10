@@ -73,6 +73,7 @@ func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOpt
 	normalizePDFLayoutTypes(result)
 	if opts.removeHeaderFooter {
 		filterPDFHeaderFooter(result)
+		removePDFRunningHeaderFooter(result)
 	}
 	assignPDFDocTypeKeywords(result, opts.flattenMediaToText)
 }
@@ -91,6 +92,117 @@ func filterPDFHeaderFooter(result *deepdoctype.ParseResult) {
 	filtered := result.Sections[:0]
 	for _, s := range result.Sections {
 		if pdfHeaderFooterPattern.MatchString(strings.TrimSpace(s.LayoutType)) {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+	result.Sections = filtered
+}
+
+const (
+	// pdfHeaderZoneRatio / pdfFooterZoneRatio bound the page zones where
+	// running headers/footers live: sections sitting entirely in the top
+	// or bottom fraction of a page are candidates.
+	pdfHeaderZoneRatio = 0.10
+	pdfFooterZoneRatio = 0.90
+	// pdfMinPagesForHeaderFooter guards against false positives on short
+	// documents: cross-page repetition only means "running header/footer"
+	// when the document has enough pages.
+	pdfMinPagesForHeaderFooter = 3
+)
+
+var pdfRunningDigitPattern = regexp.MustCompile(`\d+`)
+
+// normalizePDFRunningText collapses whitespace and replaces digit runs so
+// that per-page variants of the same running header/footer ("- 2 -",
+// "- 3 -", "Page 4 of 9") share one comparison key.
+func normalizePDFRunningText(text string) string {
+	t := strings.Join(strings.Fields(text), " ")
+	t = pdfRunningDigitPattern.ReplaceAllString(t, "#")
+	return strings.ToLower(strings.TrimSpace(t))
+}
+
+// removePDFRunningHeaderFooter drops sections whose normalized text repeats
+// in the same page zone (top 10% or bottom 10%) on at least half of the
+// document's pages — running headers, footers, and page numbers. Every
+// rendered page counts toward the total, including blank or image-only
+// pages that produced no sections. The
+// layout-type filter above only works when a DeepDoc inference service
+// (DEEPDOC_URL) types header/footer regions; in default deployments there
+// is none, every section stays "text", and 页眉页脚 removal silently does
+// nothing. This positional frequency pass makes the option work without an
+// inference service. Repetition — not position alone — is the guard that
+// keeps genuine body text: a section must recur on >= max(2, pages/2) pages
+// in the same zone to be removed.
+func removePDFRunningHeaderFooter(result *deepdoctype.ParseResult) {
+	sections := result.Sections
+	if len(sections) == 0 || len(result.PageHeight) == 0 {
+		return
+	}
+	numPages := len(result.PageHeight)
+	if numPages < pdfMinPagesForHeaderFooter {
+		return
+	}
+	type zoneKey struct {
+		header bool
+		text   string
+	}
+	keyPages := make(map[zoneKey]map[int]struct{})
+	keySections := make(map[zoneKey][]int)
+	for i := range sections {
+		s := &sections[i]
+		if layout := strings.TrimSpace(s.LayoutType); layout != "" && layout != deepdoctype.LayoutTypeText {
+			continue
+		}
+		if len(s.Positions) == 0 || len(s.Positions[0].PageNumbers) == 0 {
+			continue
+		}
+		page := s.Positions[0].PageNumbers[0]
+		pageHeight := result.PageHeight[page]
+		if pageHeight <= 0 {
+			continue
+		}
+		top, bottom := s.Positions[0].Top, s.Positions[0].Bottom
+		if bottom <= top {
+			continue
+		}
+		var isHeader, isFooter bool
+		switch {
+		case bottom <= pageHeight*pdfHeaderZoneRatio:
+			isHeader = true
+		case top >= pageHeight*pdfFooterZoneRatio:
+			isFooter = true
+		}
+		if !isHeader && !isFooter {
+			continue
+		}
+		norm := normalizePDFRunningText(s.Text)
+		if norm == "" {
+			continue
+		}
+		key := zoneKey{header: isHeader, text: norm}
+		if keyPages[key] == nil {
+			keyPages[key] = make(map[int]struct{})
+		}
+		keyPages[key][page] = struct{}{}
+		keySections[key] = append(keySections[key], i)
+	}
+	drop := make(map[int]struct{})
+	for key, pages := range keyPages {
+		n := len(pages)
+		if n < 2 || n*2 < numPages {
+			continue
+		}
+		for _, i := range keySections[key] {
+			drop[i] = struct{}{}
+		}
+	}
+	if len(drop) == 0 {
+		return
+	}
+	filtered := sections[:0]
+	for i, s := range sections {
+		if _, ok := drop[i]; ok {
 			continue
 		}
 		filtered = append(filtered, s)
@@ -200,6 +312,16 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 		}
 		if i >= len(sections) || prefix == "" {
 			break
+		}
+		// The first entry is formatted (leader run plus page number): the
+		// table is entry-shaped and the prefix scan below must not run —
+		// with a single formatted entry that scan would delete body text up
+		// to the next line sharing the entry's prefix. Drop the entry and
+		// resume the title scan; filterPDFTOCEntries removes the remaining
+		// entry lines.
+		if isPDFTOCEntrySection(sectionText(sections[i])) {
+			sections = append(sections[:i], sections[i+1:]...)
+			continue
 		}
 		sections = append(sections[:i], sections[i+1:]...)
 		if i >= len(sections) || prefix == "" {
