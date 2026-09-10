@@ -820,9 +820,9 @@ print("Async bulk parsing initiated.")
 DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
 ```
 
-*Asynchronously* parses documents in the current dataset.
+Starts parsing documents in the current dataset and synchronously waits for the results.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
+This method calls `async_parse_documents()` and blocks while polling until all requested documents reach a terminal state or report complete progress. It then returns the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), it requests cancellation for the requested documents and continues polling for their final statuses. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
 
 #### Parameters
 
@@ -840,7 +840,7 @@ A list of tuples with detailed parsing results:
   ...
 ]
 ```
-- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).
+- `status`: The final parsing state (e.g., `DONE`, `FAIL`, `CANCEL`). If a document has not reached a terminal state but reports `progress >= 1.0`, its status is returned as `DONE`.
 - `chunk_count`: The number of content chunks created from the document.
 - `token_count`: The total number of tokens processed.
 
