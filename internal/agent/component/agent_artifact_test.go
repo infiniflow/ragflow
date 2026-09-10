@@ -87,7 +87,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 	}
 
 	opt, future := react.WithMessageFuture()
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
 		ToolCallingModel: &artifactModel{
 			callID:   "call_1",
 			toolName: "artifact_tool",
@@ -103,7 +103,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 		t.Fatalf("react.NewAgent: %v", err)
 	}
 
-	_, err = agent.Generate(context.Background(), []*schema.Message{
+	_, err = agent.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("generate a test image"),
 	}, opt)
 	if err != nil {
@@ -118,7 +118,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 
 	// Re-create the same sequence in a context and call the collector.
 	fakeFuture := newSliceFuture(msgs)
-	ctx := setArtifactCollector(context.Background(), fakeFuture)
+	ctx := setArtifactCollector(t.Context(), fakeFuture)
 	got := collectArtifactsFromToolCalls(ctx, nil)
 
 	if len(got) != 1 {
@@ -135,6 +135,27 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 	want := "![agent_artifact_bug_demo.png](/api/v1/documents/artifact/1ae8d553478544628bb8be267d502371.png)"
 	if !strings.Contains(md, want) {
 		t.Errorf("markdown=%q, want substring %q", md, want)
+	}
+}
+
+func TestExtractArtifactsFromToolMessageAcceptsSandboxContent(t *testing.T) {
+	msg := &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`}
+	got := extractArtifactsFromToolMessage(msg)
+	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
+		t.Fatalf("got %#v, want sandbox data URL", got)
+	}
+}
+
+func TestArtifactCollectorPreparedByInvokeReceivesRunnerFuture(t *testing.T) {
+	ctx := prepareArtifactCollector(t.Context())
+	ctx = setArtifactCollector(ctx, newSliceFuture(nil))
+	if getArtifactCollector(ctx) == nil {
+		t.Fatal("runner future was not visible to Agent.Invoke")
+	}
+	recordArtifactsFromToolMessage(ctx, &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`})
+	got := collectArtifactsFromToolCalls(ctx, nil)
+	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
+		t.Fatalf("got %#v, want streamed sandbox artifact", got)
 	}
 }
 

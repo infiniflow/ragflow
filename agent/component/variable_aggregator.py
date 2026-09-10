@@ -54,6 +54,9 @@ class VariableAggregatorParam(ComponentParamBase):
 class VariableAggregator(ComponentBase):
     component_name = "VariableAggregator"
 
+    def param_refs(self) -> list[str]:
+        return [selector.get("value") if isinstance(selector, dict) else selector for group in self._param.groups for selector in group.get("variables", [])]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         # Group mode: for each group, pick the first available variable

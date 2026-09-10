@@ -27,7 +27,8 @@ from quart import Response, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
-from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
+from api.db.services.llm_service import resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
     get_composite_model_name_by_id,
@@ -199,6 +200,7 @@ def _build_default_completion_dialog():
         prompt_config=deepcopy(_DEFAULT_DIRECT_CHAT_PROMPT_CONFIG),
         kb_ids=[],
         top_n=6,
+        rerank_candidates_count=64,
         top_k=1024,
         rerank_id="",
         similarity_threshold=0.1,
@@ -394,12 +396,19 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
 
 def _apply_prompt_defaults(req):
     prompt_config = req.setdefault("prompt_config", {})
+    kb_ids = req.get("kb_ids") or []
     for key, value in _DEFAULT_PROMPT_CONFIG.items():
         temp = prompt_config.get(key)
         if (key == "system" and not temp) or key not in prompt_config:
-            prompt_config[key] = deepcopy(value)
+            if key == "system" and not kb_ids:
+                # No dataset bound: do not seed the dataset-oriented default system prompt.
+                # Its hard-coded "The answer you are looking for is not found in the dataset!"
+                # sentence would otherwise be sent verbatim to the model on the no-dataset path.
+                prompt_config[key] = ""
+            else:
+                prompt_config[key] = deepcopy(value)
 
-    if req.get("kb_ids") and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
+    if kb_ids and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
     if not any(p.get("key") == "date" for p in prompt_config.get("parameters", [])):
         prompt_config.setdefault("parameters", []).append({"key": "date", "optional": True})
@@ -460,6 +469,7 @@ async def create():
         req.setdefault("llm_setting", {})
         req.setdefault("description", "A helpful Assistant")
         req.setdefault("top_n", 6)
+        req.setdefault("rerank_candidates_count", 64)
         req.setdefault("top_k", 1024)
         req.setdefault("rerank_id", "")
         req.setdefault("similarity_threshold", 0.1)
@@ -1306,12 +1316,13 @@ async def session_completion(chat_id_in_arg=""):
             dia.llm_id = chat_model_id
             dia.tenant_llm_id = None
             dia.llm_setting = chat_model_config
-        elif not dia.llm_id:
-            logging.info("empty chat_model_id in req, use default chat model.")
-            _, tenant_info = TenantService.get_by_id(dia.tenant_id)
-            if not tenant_info or not tenant_info.llm_id:
-                raise LookupError("No default chat model for tenant.")
-            dia.llm_id = tenant_info.llm_id
+        else:
+            if not dia.llm_id:
+                logging.info("empty chat_model_id in req, use default chat model.")
+                _, tenant_info = TenantService.get_by_id(dia.tenant_id)
+                if not tenant_info or not tenant_info.llm_id:
+                    raise LookupError("No default chat model for tenant.")
+                dia.llm_id = tenant_info.llm_id
             merge_generation_config(dia, chat_model_config)
 
         legacy = _get_bool_request_flag(

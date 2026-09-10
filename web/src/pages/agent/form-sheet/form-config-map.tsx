@@ -21,6 +21,8 @@ import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
+import SofyaForm from '../form/sofya-form';
+import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
@@ -77,6 +79,12 @@ export const FormConfigMap = {
   },
   [Operator.KeenableSearch]: {
     component: KeenableForm,
+  },
+  [Operator.YouComSearch]: {
+    component: YouComForm,
+  },
+  [Operator.SofyaSearch]: {
+    component: SofyaForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,

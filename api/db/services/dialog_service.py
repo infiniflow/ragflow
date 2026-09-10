@@ -24,7 +24,6 @@ from rag.advanced_rag.agentic_rag import RAGTools
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
-from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse, propagate_attributes
 from peewee import fn
@@ -35,7 +34,8 @@ from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
+from api.db.services.user_service import TenantService
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -45,7 +45,6 @@ from api.db.joint_services.tenant_model_service import get_tenant_default_model_
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
-from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
@@ -222,6 +221,7 @@ class DialogService(CommonService):
             cls.model.similarity_threshold,
             cls.model.vector_similarity_weight,
             cls.model.top_n,
+            cls.model.rerank_candidates_count,
             cls.model.top_k,
             cls.model.do_refer,
             cls.model.rerank_id,
@@ -263,7 +263,7 @@ class DialogService(CommonService):
     def get_all_dialogs_by_tenant_id(cls, tenant_id):
         fields = [cls.model.id]
         dialogs = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
-        dialogs.order_by(cls.model.create_time.asc())
+        dialogs = dialogs.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -522,6 +522,11 @@ def convert_last_user_msg_to_multimodal(msg: list[dict], image_data_uris: list[s
         return
 
 
+# Keys the chat-completions message schema defines. Stored messages also carry
+# RAGFlow bookkeeping such as id, created_at and doc_ids, plus the conversationId
+# the web client stamps on every turn, and strict providers reject those.
+LLM_MESSAGE_FIELDS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"})
+
 BAD_CITATION_PATTERNS = [
     re.compile(r"\(\s*ID\s*[: ]*\s*(\d+)\s*\)"),  # (ID: 12)
     re.compile(r"\[\s*ID\s*[: ]*\s*(\d+)\s*\]"),  # [ID: 12]
@@ -576,6 +581,14 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
         find_and_replace(pattern)
 
     return answer, idx
+
+
+def _empty_response_applies(knowledges: list, text_attachments_content: str, image_attachments: list, image_files: list) -> bool:
+    """The configured empty-response fallback applies only when retrieval
+    found nothing AND the message carries no attachment context (text or
+    images) the model could still answer from — an attached image must
+    reach the model instead of being swallowed by the canned response."""
+    return not knowledges and not text_attachments_content and not image_attachments and not image_files
 
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
@@ -664,26 +677,44 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], llm_model_config["model_type"])
 
     prompt_config = dialog.prompt_config
+    rerank_candidates_count = getattr(dialog, "rerank_candidates_count", 64)
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
     if field_map:
-        logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
-        # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
-        if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
-            if include_reference_metadata and ans.get("reference", {}).get("chunks"):
-                if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
-                    logging.warning(
-                        "Skipping some _enrich_chunks_with_document_metadata results because dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
-                        len(dialog.kb_ids),
-                    )
-                _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
-            yield ans
-            return
+        # Derive the doc-store tenant/namespace from the referenced dataset's own
+        # owner, not from dialog.tenant_id: a team-shared dataset may be owned by a
+        # different tenant than the one who created this chat.
+        sql_kbs = [kb for kb in kbs if kb.parser_config and kb.parser_config.get("field_map")]
+        sql_tenant_ids = {kb.tenant_id for kb in sql_kbs}
+        if len(sql_tenant_ids) > 1:
+            # use_sql queries a single tenant's doc-store index per call, and
+            # re-running it once per tenant is too slow to do inline (each call
+            # round-trips an LLM to generate SQL). Skip SQL retrieval rather than
+            # silently querying only one tenant's index and dropping the rest.
+            logging.warning(
+                "Skipping SQL retrieval: field-map datasets span multiple tenants (%s); falling back to vector search.",
+                sql_tenant_ids,
+            )
         else:
-            logging.debug("SQL failed or returned no results, falling back to vector search")
+            sql_tenant_id = sql_kbs[0].tenant_id if sql_kbs else dialog.tenant_id
+            sql_kb_ids = [kb.id for kb in sql_kbs] if sql_kbs else dialog.kb_ids
+            logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
+            ans = await use_sql(questions[-1], field_map, sql_tenant_id, chat_mdl, prompt_config.get("quote", True), sql_kb_ids, doc_ids=scoped_doc_ids)
+            # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
+            if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+                if include_reference_metadata and ans.get("reference", {}).get("chunks"):
+                    if len(sql_kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
+                        logging.warning(
+                            "Skipping some _enrich_chunks_with_document_metadata results because sql_kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                            len(sql_kb_ids),
+                        )
+                    _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
+                yield ans
+                return
+            else:
+                logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
@@ -722,78 +753,40 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.debug("Proceeding with retrieval")
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
-        # replaced by extension of reasoning: 0, 1, 2
-        if False:  # prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
-            reasoner = DeepResearcher(
-                chat_mdl,
-                prompt_config,
-                partial(
-                    retriever.retrieval,
-                    embd_mdl=embd_mdl,
-                    tenant_ids=tenant_ids,
-                    kb_ids=dialog.kb_ids,
-                    page=1,
-                    page_size=dialog.top_n,
-                    similarity_threshold=0.2,
-                    vector_similarity_weight=0.3,
-                    doc_ids=scoped_doc_ids,
-                ),
-                internet_enabled=use_web_search,
+        if embd_mdl:
+            kbinfos = await retriever.retrieval(
+                " ".join(questions),
+                embd_mdl,
+                tenant_ids,
+                dialog.kb_ids,
+                1,
+                dialog.top_n,
+                dialog.similarity_threshold,
+                dialog.vector_similarity_weight,
+                doc_ids=scoped_doc_ids,
+                knn_top_k=dialog.top_k,
+                aggs=True,
+                rerank_mdl=rerank_mdl,
+                rank_feature=label_question(" ".join(questions), kbs),
+                rerank_candidates_count=rerank_candidates_count,
             )
-            queue = asyncio.Queue()
-
-            async def callback(msg: str):
-                nonlocal queue
-                await queue.put(msg + "<br/>")
-
-            await callback("<START_DEEP_RESEARCH>")
-            task = asyncio.create_task(reasoner.research(kbinfos, questions[-1], questions[-1], callback=callback))
-            while True:
-                msg = await queue.get()
-                if msg.find("<START_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "<retrieving>", "reference": {}, "audio_binary": None, "final": False}
-                elif msg.find("<END_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "</retrieving>", "reference": {}, "audio_binary": None, "final": False}
-                    break
-                else:
-                    yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
-
-            await task
-
-        else:
-            if embd_mdl:
-                kbinfos = await retriever.retrieval(
-                    " ".join(questions),
-                    embd_mdl,
-                    tenant_ids,
-                    dialog.kb_ids,
-                    1,
-                    dialog.top_n,
-                    dialog.similarity_threshold,
-                    dialog.vector_similarity_weight,
-                    doc_ids=scoped_doc_ids,
-                    top=dialog.top_k,
-                    aggs=True,
-                    rerank_mdl=rerank_mdl,
-                    rank_feature=label_question(" ".join(questions), kbs),
-                )
-                if prompt_config.get("toc_enhance"):
-                    cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
-                    if cks:
-                        kbinfos["chunks"] = cks
-                kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
-            if use_web_search:
-                web_search = create_web_search_provider(prompt_config)
-                web_res = web_search.retrieve_chunks(" ".join(questions))
-                kbinfos["chunks"].extend(web_res["chunks"])
-                kbinfos["doc_aggs"].extend(web_res["doc_aggs"])
-            if prompt_config.get("use_kg"):
-                default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(
-                    " ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id)
-                )
-                if ck["content_with_weight"]:
-                    kbinfos["chunks"].insert(0, ck)
+            if prompt_config.get("toc_enhance"):
+                cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
+                if cks:
+                    kbinfos["chunks"] = cks
+            kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
+        if use_web_search:
+            web_search = create_web_search_provider(prompt_config)
+            web_res = web_search.retrieve_chunks(" ".join(questions))
+            kbinfos["chunks"].extend(web_res["chunks"])
+            kbinfos["doc_aggs"].extend(web_res["doc_aggs"])
+        if prompt_config.get("use_kg"):
+            default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(
+                " ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model, trace_context=trace_context, langfuse_session_id=session_id)
+            )
+            if ck["content_with_weight"]:
+                kbinfos["chunks"].insert(0, ck)
 
     if include_reference_metadata:
         logging.debug(
@@ -807,7 +800,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
-    if not knowledges and prompt_config.get("empty_response"):
+    # Attachments (text or images) are context the model can still answer
+    # from, so the configured fallback must not eat the request before the
+    # images reach the model.
+    if _empty_response_applies(knowledges, text_attachments_content, image_attachments, image_files) and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
         logging.debug("async_chat empty_response path: empty_res=%r tts_mdl=%r", empty_res, tts_mdl)
         # HTML-escape for frontend display so DOMPurify does not strip
@@ -843,7 +839,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         msg[-1]["content"] += text_attachments_content
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
-        convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+        if dialog_model_vision_capable(dialog):
+            convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+        else:
+            # Text-only chat models reject image content blocks at the
+            # provider (e.g. Zhipu GLM error 1210: messages.content.type
+            # only allows 'text'); answer from the text alone instead.
+            logging.info("async_chat: dropping image attachments for text-only chat model")
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
 
@@ -1596,12 +1598,8 @@ def tts(tts_mdl, text):
 class _ThinkStreamState:
     def __init__(self) -> None:
         self.full_text = ""
-        self.last_idx = 0
         self.last_model_full = ""
         self.in_think = False
-        self.close_pending = False
-        self.pending_after_close = ""
-        self.think_buffer = ""
         self.answer_buffer = ""
 
 
@@ -1633,13 +1631,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             return out
         return None
 
-    def _flush_think_buffer():
-        if not state.think_buffer:
-            return None
-        out = state.think_buffer
-        state.think_buffer = ""
-        return out
-
     def _flush_answer_buffer():
         if not state.answer_buffer:
             return None
@@ -1660,26 +1651,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             continue
         state.full_text += new_part
         pending = new_part
-
-        if state.close_pending and "</think>" not in pending:
-            state.close_pending = False
-            think_piece = _flush_think_buffer()
-            if think_piece is not None:
-                yield ("text", think_piece, state)
-            state.in_think = False
-            yield ("marker", "</think>", state)
-            if state.pending_after_close:
-                answer_piece = state.pending_after_close
-                state.pending_after_close = ""
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            answer_piece = re.sub(r"</?think>", "", pending or "")
-            if answer_piece:
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            continue
 
         while pending:
             open_idx = pending.find("<think>")
@@ -1707,9 +1678,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                     answer_piece = _flush_answer_buffer()
                     if answer_piece is not None:
                         yield ("text", answer_piece, state)
-                    think_piece = _flush_think_buffer()
-                    if think_piece is not None:
-                        yield ("text", think_piece, state)
                     state.in_think = True
                     yield ("marker", "<think>", state)
                 continue
@@ -1723,32 +1691,15 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 if out is not None:
                     yield ("text", out, state)
             after_visible = re.sub(r"</?think>", "", after or "")
-            if after_visible.strip():
-                think_piece = _flush_think_buffer()
-                if think_piece is not None:
-                    yield ("text", think_piece, state)
+            if state.in_think:
                 state.in_think = False
                 yield ("marker", "</think>", state)
-                pending = after_visible
-                continue
-            state.close_pending = True
-            if after_visible:
-                state.pending_after_close += after_visible
-            pending = ""
-            break
+            pending = after_visible
+            continue
 
-    if state.think_buffer:
-        yield ("text", state.think_buffer, state)
-        state.think_buffer = ""
-    if state.close_pending:
-        state.in_think = False
-        yield ("marker", "</think>", state)
     if state.answer_buffer:
         yield ("text", state.answer_buffer, state)
         state.answer_buffer = ""
-    if state.pending_after_close:
-        yield ("text", state.pending_after_close, state)
-        state.pending_after_close = ""
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
@@ -1818,12 +1769,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.1),
         vector_similarity_weight=vector_similarity_weight,
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1859,7 +1811,10 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         refs["chunks"] = chunks_format(refs)
         return {"answer": answer, "reference": refs}
 
-    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, {"temperature": 0.1})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
+    if "parameter" in gen_conf:
+        del gen_conf["parameter"]
+    stream_iter = chat_mdl.async_chat_streamly_delta(sys_prompt, msg, gen_conf)
     last_state = None
     async for kind, value, state in _stream_with_think_delta(stream_iter):
         last_state = state
@@ -1917,15 +1872,118 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.2),
         vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
-        top=search_config.get("top_k", 1024),
+        knn_top_k=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=False,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
     return mind_map.output
+
+
+def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
+    """Render the dialog-level system prompt for the reasoning agent path.
+
+    Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
+    so that configured system prompts are honored when reasoning is enabled.
+    The ``{knowledge}`` placeholder is defaulted to an empty string because the
+    agentic graph supplies retrieved evidence through its own evidence block.
+    """
+    system = prompt_config.get("system", "")
+    if not system:
+        return ""
+
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    kwargs["date"] = sys_date
+
+    param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
+        param_keys.append("knowledge")
+        kwargs.setdefault("knowledge", "")
+
+    for p in prompt_config.get("parameters", []):
+        if p["key"] == "knowledge":
+            continue
+        if p["key"] not in kwargs and not p["optional"]:
+            raise KeyError("Miss parameter: " + p["key"])
+        if p["key"] not in kwargs:
+            system = system.replace("{%s}" % p["key"], " ")
+
+    fmt_kwargs = dict(kwargs)
+    fmt_kwargs.setdefault("knowledge", "")
+    return system.format(**fmt_kwargs)
+
+
+def message_has_image_attachments(message: dict) -> bool:
+    """True when the message carries at least one image attachment.
+
+    Covers both shapes the web client sends: file dicts with a ``mime_type``
+    produced by the upload flow, and legacy pre-resolved ``data:`` URI
+    strings. The detection mirrors the fetch path — ``FileService.get_files``
+    classifies images by a substring ``image`` match on ``mime_type`` and
+    ``split_file_attachments`` treats every ``data:`` URI as an image — so
+    the routing decision never disagrees with what the pipeline fetches.
+    """
+    files = message.get("files") or []
+    if isinstance(files, dict):
+        files = [files]
+    if not isinstance(files, list):
+        return False
+    for f in files:
+        if isinstance(f, dict):
+            if "image" in str(f.get("mime_type") or ""):
+                return True
+        elif isinstance(f, str) and f.strip().startswith("data:"):
+            return True
+    return False
+
+
+def _resolve_dialog_chat_model_types(dialog) -> list[str]:
+    """Enrolled model types of the chat model the dialog will actually use.
+
+    Mirrors the chat-model resolution in ``get_models``/``async_chat``: a
+    tenant-level override that can serve as a chat model wins over the
+    dialog's ``llm_id``, and an empty ``llm_id`` falls back to the tenant's
+    default chat model. Unresolvable references yield an empty list.
+    """
+    tenant_id = getattr(dialog, "tenant_id", "")
+    llm_id = getattr(dialog, "llm_id", "") or ""
+    tenant_llm_id = getattr(dialog, "tenant_llm_id", "") or ""
+    if llm_id:
+        try:
+            llm_types = resolve_model_type(tenant_id, llm_id)
+        except LookupError:
+            llm_types = []
+        if tenant_llm_id:
+            try:
+                override_types = resolve_model_type(tenant_id, tenant_llm_id)
+            except LookupError:
+                override_types = []
+            # The override replaces the chat model only when it is enrolled
+            # as one (the same check get_model_config_by_id applies).
+            if "chat" in override_types:
+                return override_types
+        return llm_types
+    exist, tenant = TenantService.get_by_id(tenant_id)
+    if not exist:
+        return []
+    default_ref = (getattr(tenant, "tenant_llm_id", "") or "") or getattr(tenant, "llm_id", "")
+    if not default_ref:
+        return []
+    try:
+        return resolve_model_type(tenant_id, default_ref)
+    except LookupError:
+        return []
+
+
+def dialog_model_vision_capable(dialog) -> bool:
+    """True when the chat model the dialog will use is enrolled as
+    vision-capable (``ModelTypeBinary.VISION`` bit). Unresolvable models are
+    conservatively treated as text-only."""
+    return "vision" in _resolve_dialog_chat_model_types(dialog)
 
 
 async def rag_agent(dialog, messages, stream=True, **kwargs):
@@ -1936,15 +1994,47 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
+    # The agentic loop below composes the final answer from retrieval results
+    # only: the terminal `rag` tool streams the inner graph's cited answer, so
+    # an image attached to the question can never influence it. When the chat
+    # model is vision-capable and the user attached images, answer through
+    # async_chat instead — it embeds the images into the model messages and
+    # still retrieves from the KBs and adds citations.
+    if message_has_image_attachments(messages[-1]) and dialog_model_vision_capable(dialog):
+        logging.info("rag_agent: vision-capable model with image attachments; routing to async_chat so the model sees the images")
+        async for ans in async_chat(dialog, messages, stream, **kwargs):
+            yield ans
+        return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+
+    # Agentic RAG depends on the outer model being able to call the bound
+    # ``rag`` tool. Models without tool-calling support would otherwise receive
+    # only the router prompt and could answer from their own knowledge without
+    # ever running retrieval. Reuse the regular RAG path for those models so
+    # the configured knowledge base and citation flow remain authoritative.
+    if not getattr(chat_mdl, "is_tools", False):
+        logging.info("LLM does not support tool calls; falling back to regular RAG chat")
+        fallback_kwargs = dict(kwargs)
+        if isinstance(fallback_kwargs.get("doc_ids"), list):
+            fallback_kwargs["doc_ids"] = ",".join(str(doc_id) for doc_id in fallback_kwargs["doc_ids"] if doc_id)
+        async for ans in async_chat(dialog, messages, stream, **fallback_kwargs):
+            yield ans
+        return
+
     model_type = chat_mdl.model_config["model_type"]
     factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
     text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
-    agent_messages = deepcopy(messages)
+    agent_messages = [{k: deepcopy(v) for k, v in m.items() if k in LLM_MESSAGE_FIELDS} for m in messages]
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
-        convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
+        if dialog_model_vision_capable(dialog):
+            convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
+        else:
+            # Text-only chat models reject image content blocks at the
+            # provider (e.g. Zhipu GLM error 1210: messages.content.type
+            # only allows 'text'); answer from the text alone instead.
+            logging.info("rag_agent: dropping image attachments for text-only chat model")
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s configured=%s internet=%r enabled=%s", bool(dialog.kb_ids), has_web_search_provider(prompt_config), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -1991,6 +2081,12 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         do_refer=False,
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
+        system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
+        similarity_threshold=dialog.similarity_threshold,
+        vector_similarity_weight=dialog.vector_similarity_weight,
+        top_n=dialog.top_n,
+        rerank_candidates_count=dialog.rerank_candidates_count,
+        top_k=dialog.top_k,
     )
 
     async def decorate_answer(answer):

@@ -86,7 +86,7 @@ func TestDefaultConfig_Enhanced(t *testing.T) {
 }
 
 func TestNewWithSubAgents_NilConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	flow, err := NewWithSubAgents(ctx, nil)
 	if err != nil {
 		t.Fatalf("NewWithSubAgents(nil): %v", err)
@@ -97,7 +97,7 @@ func TestNewWithSubAgents_NilConfig(t *testing.T) {
 }
 
 func TestNewWithSubAgents_NoSubs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := DefaultConfig()
 	cfg.Model = &mockModel{}
 	flow, err := NewWithSubAgents(ctx, cfg)
@@ -110,7 +110,7 @@ func TestNewWithSubAgents_NoSubs(t *testing.T) {
 }
 
 func TestNewWithSubAgents_WithSubs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := DefaultConfig()
 	cfg.Model = &mockModel{}
 	sub := core.NewReActAgent(&core.ReActConfig[*schema.Message]{

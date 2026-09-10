@@ -385,6 +385,24 @@ class TestGaussDBDatabase:
         assert GaussDBDatabaseLock("init_database_tables", timeout=1.0, db=db).lock()
         assert sleeps == [0.1, 0.1]
 
+    def test_gaussdb_lock_waits_indefinitely_with_blocking_lock(self):
+        db = SequenceLockDB([None])
+        lock = GaussDBDatabaseLock("update_progress", timeout=-1, db=db)
+
+        assert lock.lock()
+        assert lock.timeout == -1
+        assert db.calls == [("SELECT pg_advisory_lock(%s)", (lock.lock_id,))]
+
+    def test_gaussdb_lock_timeout_zero_only_tries_once(self, monkeypatch):
+        monkeypatch.setattr(db_models.time, "monotonic", lambda: 30.0)
+        db = SequenceLockDB([False])
+        lock = GaussDBDatabaseLock("update_progress", timeout=0, db=db)
+
+        with pytest.raises(Exception, match="acquire gaussdb lock update_progress timeout"):
+            lock.lock()
+
+        assert db.calls == [("SELECT pg_try_advisory_lock(%s)", (lock.lock_id,))]
+
     def test_gaussdb_lock_stops_at_timeout(self, monkeypatch):
         now = [20.0]
         monkeypatch.setattr(db_models.time, "monotonic", lambda: now[0])

@@ -47,6 +47,7 @@ func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 		Bottom:     bottom,
 		Text:       html,
 		PageNumber: pg,
+		Pages:      mergedTablePages(tbl),
 		LayoutType: pdf.LayoutTypeTable,
 	}
 }
@@ -286,9 +287,14 @@ func ExtractTableAndReplace(boxes []pdf.TextBox, tables []pdf.TableItem) []pdf.T
 	}
 
 	MarkNoMergeTables(boxes, tables)
-	tables = MergeTablesAcrossPages(tables, nil)
 
-	// Build replacements AFTER merge so tableIdx refers to the merged slice.
+	// Do NOT re-run MergeTablesAcrossPages here. The caller (Parser.buildLayout,
+	// parser.go:540) already merged tables with page-absolute Y coordinates and
+	// the real per-page medianHeights. Re-merging with nil page metadata would
+	// fall back to the legacy page-local formula and re-merge pairs that the
+	// page-absolute gate correctly rejected (icbccs pages 4-5 over-merge),
+	// silently undoing the fix. Build replacements against the already-merged
+	// slice so tableIdx refers to the correct (merged) table slot.
 	replacements := buildReplacementsAfterMerge(boxes, tables, removeSet)
 
 	if len(replacements) == 0 && len(boxes) == 0 {

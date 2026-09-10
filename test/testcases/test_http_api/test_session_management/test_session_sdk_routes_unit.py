@@ -422,6 +422,7 @@ def _load_session_module(monkeypatch):
             return "mock transcription"
 
     llm_service_mod.LLMBundle = _StubLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
@@ -568,6 +569,13 @@ def _load_session_module(monkeypatch):
     quart_mod.has_websocket_context = lambda: False
     quart_mod.websocket = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.AUTH_BETA = False
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
     quart_auth_mod = ModuleType("quart_auth")
 
@@ -1974,7 +1982,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["question"] == "translated-q-translated"
     assert retrieval_capture["similarity_threshold"] == 0.42
     assert retrieval_capture["vector_similarity_weight"] == 0.8
-    assert retrieval_capture["top"] == 7
+    assert retrieval_capture["knn_top_k"] == 7
     assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
@@ -2298,7 +2306,10 @@ def _load_chat_api_module(monkeypatch):
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     tenant_model_svc.get_model_config_from_provider_instance = lambda **_k: {}
+    tenant_model_svc.get_model_config_by_id = lambda **_k: {}
     tenant_model_svc.resolve_model_config = lambda **_k: {}
+    tenant_model_svc.resolve_model_id = lambda *_a, **_k: "model-id"
+    tenant_model_svc.get_composite_model_name_by_id = lambda *_a, **_k: "composite-model-name"
     tenant_model_svc.get_api_key = lambda **_k: "fake-api-key"
     tenant_model_svc.split_model_name = lambda model_name: (model_name, "", "")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
@@ -2353,6 +2364,7 @@ def _load_chat_api_module(monkeypatch):
     )
     dialog_svc_mod.async_chat = lambda *_a, **_k: None
     dialog_svc_mod.gen_mindmap = lambda *_a, **_k: None
+    dialog_svc_mod.rag_agent = lambda *_a, **_k: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_svc_mod)
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
@@ -2366,6 +2378,7 @@ def _load_chat_api_module(monkeypatch):
 
     llm_svc_mod = ModuleType("api.db.services.llm_service")
     llm_svc_mod.LLMBundle = _FakeLLMBundle
+    llm_svc_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_svc_mod)
 
     search_svc_mod = ModuleType("api.db.services.search_service")
@@ -2648,6 +2661,143 @@ def test_session_completion_merges_generation_params_for_existing_chat(monkeypat
         "presence_penalty": 0,
     }
     assert base_llm_setting == {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+
+
+@pytest.mark.p2
+def test_session_completion_keeps_dialog_settings_without_overrides(monkeypatch):
+    module = _load_chat_api_module(monkeypatch)
+
+    base_llm_setting = {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+    dia = SimpleNamespace(
+        id="chat-1",
+        tenant_id="tenant-1",
+        llm_id="model",
+        llm_setting=base_llm_setting,
+        prompt_config={"prologue": ""},
+        kb_ids=[],
+    )
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+    captured = {}
+
+    async def _fake_async_chat(captured_dia, _messages, stream=True, **_kwargs):
+        captured["llm_setting"] = dict(captured_dia.llm_setting)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, dia))
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "chat_id": "chat-1",
+                "session_id": "session-1",
+                "stream": False,
+                "messages": [{"role": "user", "content": "latest question"}],
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    # No per-request generation params were sent, so the merge is a no-op and the
+    # dialog's stored settings must be passed through untouched.
+    assert captured["llm_setting"] == {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+    assert base_llm_setting == {"temperature": 0.7, "top_p": 0.3, "custom": "keep"}
+
+
+@pytest.mark.p2
+def test_session_completion_assigns_default_model_then_merges_for_existing_chat(monkeypatch):
+    module = _load_chat_api_module(monkeypatch)
+
+    base_llm_setting = {"top_p": 0.3, "custom": "keep"}
+    dia = SimpleNamespace(
+        id="chat-1",
+        tenant_id="tenant-1",
+        llm_id="",
+        llm_setting=base_llm_setting,
+        prompt_config={"prologue": ""},
+        kb_ids=[],
+    )
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+    captured = {}
+
+    async def _fake_async_chat(captured_dia, _messages, stream=True, **_kwargs):
+        captured["llm_id"] = captured_dia.llm_id
+        captured["llm_setting"] = dict(captured_dia.llm_setting)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, dia))
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(
+        module.TenantService,
+        "get_by_id",
+        lambda _tenant_id: (True, SimpleNamespace(llm_id="tenant-default")),
+    )
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "chat_id": "chat-1",
+                "session_id": "session-1",
+                "stream": False,
+                "messages": [{"role": "user", "content": "latest question"}],
+                "temperature": 0,
+                "presence_penalty": 0,
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    # Dialog had no model yet: fall back to the tenant default and still merge the
+    # caller's per-request overrides onto the stored settings.
+    assert captured["llm_id"] == "tenant-default"
+    assert captured["llm_setting"] == {
+        "top_p": 0.3,
+        "custom": "keep",
+        "temperature": 0,
+        "presence_penalty": 0,
+    }
 
 
 @pytest.mark.p2

@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -49,6 +50,115 @@ func TestBegin_InjectsSys(t *testing.T) {
 	// Output passthrough
 	if out["query"] != "hello" {
 		t.Errorf("outputs[query]: got %v, want %q", out["query"], "hello")
+	}
+}
+
+func TestBegin_MapsQueryToDeclaredInput(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{"key": "customer_review"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-custom-input", "task-custom-input")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "The product arrived damaged."})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["customer_review"]; got != "The product arrived damaged." {
+		t.Errorf("outputs[customer_review] = %v, want original review", got)
+	}
+}
+
+func TestBegin_MapsNamedQueryInputs(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+			"language":        map[string]any{},
+		},
+	})
+	state := canvas.NewCanvasState("run-named-inputs", "task-named-inputs")
+	ctx := canvas.WithState(t.Context(), state)
+	query := map[string]any{
+		"customer_review": map[string]any{"value": "Damaged package"},
+		"language":        "English",
+	}
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": query})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["customer_review"] != "Damaged package" || out["language"] != "English" {
+		t.Errorf("named inputs = %#v", out)
+	}
+}
+
+func TestBegin_SeparatesNamedInputFromQuery(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-separated", "task-separated")
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, map[string]any{
+		"name":  "Alice",
+		"query": "Hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["name"] != "Alice" || state.Sys["query"] != "Hello" {
+		t.Fatalf("outputs = %#v, sys.query = %v", out, state.Sys["query"])
+	}
+}
+
+func TestBegin_PreservesStarterInputAcrossQueries(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-persistent", "task-persistent")
+	ctx := canvas.WithState(t.Context(), state)
+
+	first, err := c.Invoke(ctx, nil, map[string]any{"query": "Alice"})
+	if err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	if first["name"] != "Alice" || state.Sys["query"] != "Alice" {
+		t.Fatalf("first values = %#v, sys.query=%v", first, state.Sys["query"])
+	}
+
+	second, err := c.Invoke(ctx, nil, map[string]any{"query": "Hello"})
+	if err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+	if second["name"] != "Alice" {
+		t.Fatalf("name = %v, want Alice", second["name"])
+	}
+	if state.Sys["query"] != "Hello" {
+		t.Fatalf("sys.query = %v, want Hello", state.Sys["query"])
+	}
+}
+
+func TestBegin_InitializesNilGlobalsAfterRestore(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	var state canvas.CanvasState
+	if err := json.Unmarshal([]byte(`{"sys":{}}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, map[string]any{"query": "Alice"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["name"] != "Alice" {
+		t.Fatalf("name = %v, want Alice", out["name"])
+	}
+	if value, ok := state.GetGlobal("begin@name"); !ok || value != "Alice" {
+		t.Fatalf("begin@name = %v, %v; want Alice, true", value, ok)
 	}
 }
 
@@ -148,7 +258,7 @@ func TestBegin_AbsentWebhookPayload(t *testing.T) {
 func TestBegin_EmptyWebhookPayload(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	if _, err := c.Invoke(ctx, nil, map[string]any{
 		"query":           "",

@@ -29,7 +29,7 @@ import {
   runIndex,
   traceIndex,
 } from '@/services/knowledge-service';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -66,12 +66,13 @@ export interface ITraceInfo {
   to_page: number;
   update_date: string;
   update_time: number;
-  // Go scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid). These
+  // Go scheduler compile-status contract. These
   // replace the legacy task percentage for the Go backend: state is the raw
   // dataset-level lifecycle (idle/pending/running/completed), inflight/backlog
   // are the MySQL scheduling-entry counts, and error is the batch diagnostic
-  // (NOT a peer state). Only populated by the Go/hybrid branch of useTraceQuery.
+  // (NOT a peer state). Only populated by the Go branch of useTraceQuery.
   compilationState?: string;
+  currentPhase?: string;
   inflight?: number;
   backlog?: number;
   compilationError?: string;
@@ -83,15 +84,16 @@ const useTraceQuery = (
   open: boolean,
   id?: string,
 ) => {
+  const isGo = useIsGoBackend();
   return useQuery<ITraceInfo>({
     queryKey: DatasetGenerateKeys.trace(type, id, open),
     gcTime: 0,
     refetchInterval: (query) => {
       const progress = query.state.data?.progress;
-      // Go/hybrid: keep polling while the dataset compile is pending/running
+      // Go: keep polling while the dataset compile is pending/running
       // (a failed batch is left for retry, so the row stays running/pending and
       // we keep polling until it drains to completed).
-      if (isGoDatasetBackend()) {
+      if (isGo) {
         const state = query.state.data?.compilationState;
         return state === 'pending' || state === 'running'
           ? PollIntervalMs
@@ -105,7 +107,7 @@ const useTraceQuery = (
     retryDelay: 1000,
     enabled: open && !!id,
     queryFn: async () => {
-      if (isGoDatasetBackend()) {
+      if (isGo) {
         // Scheduler compile-status contract (dataset-level, variant-agnostic).
         // The status is NOT a task percentage: we carry the raw state, the
         // MySQL inflight/backlog entry counts and the error diagnostic, and
@@ -126,9 +128,10 @@ const useTraceQuery = (
         const state: string = st.state ?? 'idle';
         const error: string = st.error ?? '';
         return {
-          progress: state === 'completed' ? 1 : state === 'idle' ? 0 : 0,
-          progress_msg: error || state,
+          progress: state === 'completed' ? 1 : (st.progress ?? 0),
+          progress_msg: st.progress_msg || error || state,
           compilationState: state,
+          currentPhase: st.current_phase ?? '',
           inflight: st.inflight ?? 0,
           backlog: st.backlog ?? 0,
           compilationError: error,
@@ -188,6 +191,7 @@ export const useDatasetGenerate = () => {
   const { id } = useParams();
   const { handleUnbindTask } = useUnBindTask();
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -196,12 +200,12 @@ export const useDatasetGenerate = () => {
   } = useMutation({
     mutationKey: [DatasetKey.generate],
     mutationFn: async ({ type }: { type: GenerateType }) => {
-      // Go/hybrid: dataset compilation is driven automatically by the scheduler
+      // Go: dataset compilation is driven automatically by the scheduler
       // on document completion; there is no manual RunIndex trigger, so a manual
       // "generate" must NOT pretend to succeed. The UI hides/disables the
       // control; if it is ever invoked, reject loudly so callers don't mistake
       // it for a real run (plan v4.1 §4.2).
-      if (isGoDatasetBackend()) {
+      if (isGo) {
         throw new Error(t('message.compileNotSupported'));
       }
       const { data } = await runIndex(id!, TraceTypeMap[type]);
@@ -224,10 +228,10 @@ export const useDatasetGenerate = () => {
       task_id: string;
       type: GenerateType;
     }) => {
-      // Go/hybrid: the scheduler has no task-level cancel; dataset compilation
+      // Go: the scheduler has no task-level cancel; dataset compilation
       // is auto-driven. There is no pause to perform, so reject rather than
       // report success (the UI hides the pause control — plan v4.1 §4.2).
-      if (isGoDatasetBackend()) {
+      if (isGo) {
         throw new Error(t('message.compileNotSupported'));
       }
       const { data } = await agentService.cancelDataflow(task_id);
@@ -252,12 +256,13 @@ export const useDatasetGenerate = () => {
 };
 
 export function useGenerateStatus(data?: ITraceInfo) {
+  const isGo = useIsGoBackend();
   const status = useMemo(() => {
     if (!data) {
       return GenerateStatus.Start;
     }
-    if (isGoDatasetBackend()) {
-      // Go/hybrid: derive from the scheduler contract, not a fake task
+    if (isGo) {
+      // Go: derive from the scheduler contract, not a fake task
       // percentage. Error diagnostic takes priority; otherwise map the raw
       // dataset-level state (completed->Completed, idle->Start, running/pending
       // ->Running).
@@ -279,15 +284,13 @@ export function useGenerateStatus(data?: ITraceInfo) {
       return GenerateStatus.Running;
     }
     return GenerateStatus.Start;
-  }, [data]);
+  }, [data, isGo]);
 
   const percent = useMemo(() => {
-    if (isGoDatasetBackend()) {
-      // No stable terminal state and no DocTotal/DocProcessed, so there is no
-      // meaningful percentage. Failures render as a full error marker; active
-      // runs show the inflight/backlog counts instead of a percent (see the
-      // UpdateRunProgress / EmptyState components).
-      return status === GenerateStatus.Failed ? 100 : 0;
+    if (isGo) {
+      return status === GenerateStatus.Failed
+        ? 100
+        : (data?.progress ?? 0) * 100;
     }
     if (status === GenerateStatus.Failed) {
       return 100;
@@ -295,7 +298,7 @@ export function useGenerateStatus(data?: ITraceInfo) {
       return data!.progress * 100;
     }
     return 0;
-  }, [status, data]);
+  }, [status, data, isGo]);
 
   return { status, percent };
 }

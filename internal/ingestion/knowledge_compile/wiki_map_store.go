@@ -29,11 +29,59 @@ import (
 
 const (
 	wikiMapExtractCompileKWD = "wiki_map_extract"
+	wikiMapActiveCompileKWD  = "wiki_map_active"
 	wikiMapStoreBatchSize    = 500
 )
 
 type wikiMapVersionStore struct {
 	engine engine.DocEngine
+}
+
+func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error) {
+	if s == nil || s.engine == nil {
+		return nil, fmt.Errorf("wiki MAP active-state DocStore is not initialized")
+	}
+	result, err := s.engine.Search(ctx, &types.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		KbIDs:        []string{datasetID},
+		Limit:        1,
+		SelectFields: []string{"id", "compile_kwd", "content_with_weight"},
+		Filter: map[string]interface{}{
+			"id":            []string{key},
+			"compile_kwd":   wikiMapActiveCompileKWD,
+			"available_int": 0,
+		},
+	})
+	if err != nil || result == nil || len(result.Chunks) == 0 {
+		return nil, err
+	}
+	payload := mapStoreString(result.Chunks[0]["content_with_weight"])
+	if payload == "" {
+		return nil, nil
+	}
+	return []byte(payload), nil
+}
+
+func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state kccommon.WikiMapActiveState) error {
+	if s == nil || s.engine == nil {
+		return fmt.Errorf("wiki MAP active-state DocStore is not initialized")
+	}
+	if state.Key == "" || state.TenantID == "" || state.DatasetID == "" || state.DocumentID == "" {
+		return fmt.Errorf("save Wiki MAP active state: key and scope are required")
+	}
+	row := map[string]interface{}{
+		"id":                  state.Key,
+		"doc_id":              "wiki_map_active:" + state.DocumentID,
+		"tenant_id":           state.TenantID,
+		"kb_id":               state.DatasetID,
+		"compile_kwd":         wikiMapActiveCompileKWD,
+		"scope_kwd":           "doc",
+		"source_doc_ids":      []string{state.DocumentID},
+		"content_with_weight": string(state.Payload),
+		"available_int":       0,
+	}
+	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID)
+	return err
 }
 
 // NewWikiMapVersionStore returns the DocStore-backed immutable Wiki MAP cache.

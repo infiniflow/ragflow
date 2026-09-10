@@ -3,6 +3,7 @@ import {
   LlmSettingFieldSchema,
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
+import { rerankCandidatesCountSchema } from '@/components/rerank-candidates-count-item';
 import { rerankFormSchema } from '@/components/rerank';
 import {
   similarityThresholdSchema,
@@ -14,7 +15,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { z, ZodIssueCode } from 'zod';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
-export function useChatSettingSchema(staleDatasetIds: Set<string>) {
+export function useChatSettingSchema() {
   const { t } = useTranslate('chat');
 
   const promptConfigSchema = z.object({
@@ -44,7 +45,8 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
         WebSearchProvider.Serply,
         WebSearchProvider.YouCom,
       ])
-      .optional(),
+      .optional()
+      .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
     reference_metadata: z
@@ -71,6 +73,7 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
       ...vectorSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,
+      ...rerankCandidatesCountSchema,
       ...MetadataFilterSchema,
     })
     .superRefine((value, ctx) => {
@@ -83,15 +86,5 @@ export function useChatSettingSchema(staleDatasetIds: Set<string>) {
       }
     });
 
-  // A persisted dataset_ids value may reference datasets that have since been
-  // deleted or emptied of chunks — those stale ids are flagged here.
-  return formSchema.superRefine((data, ctx) => {
-    if (data.dataset_ids.some((id) => staleDatasetIds.has(id))) {
-      ctx.addIssue({
-        path: ['dataset_ids'],
-        message: t('datasetUnavailable'),
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  });
+  return formSchema;
 }

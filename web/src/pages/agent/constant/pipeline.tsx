@@ -1,6 +1,7 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { ModelTypeToField } from '@/constants/llm';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum FileType {
@@ -29,7 +30,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -78,19 +79,12 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-export const InitialOutputFormatMap = {
-  [FileType.PDF]: PdfOutputFormat.Json,
-  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
-  [FileType.Email]: EmailOutputFormat.Text,
-  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
-  [FileType.Code]: TextJsonOutputFormat.Json,
-  [FileType.Html]: TextJsonOutputFormat.Json,
-  [FileType.Doc]: DocxOutputFormat.Json,
-  [FileType.Docx]: DocxOutputFormat.Json,
-  [FileType.PowerPoint]: PptOutputFormat.Json,
-  [FileType.Video]: VideoOutputFormat.Text,
-  [FileType.Audio]: AudioOutputFormat.Text,
+// The video parser defaults to the tenant's VLM model and the audio parser to
+// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
+// type without a configured tenant default keeps its empty model id.
+export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
+  [FileType.Video]: ModelTypeToField.vision,
+  [FileType.Audio]: ModelTypeToField.asr,
 };
 
 export enum ContextGeneratorFieldName {
@@ -208,7 +202,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
@@ -256,6 +250,16 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
+    {
+      fileFormat: FileType.Video,
+      output_format: VideoOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
+    {
+      fileFormat: FileType.Audio,
+      output_format: AudioOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
   ],
 };
 
@@ -266,8 +270,19 @@ export const initialTokenChunkerValues = {
   delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
-  delimiters: [{ value: '\n' }],
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
 };
 
 export enum Hierarchy {
@@ -361,8 +376,8 @@ export const initialExtractorValues = {
   },
 };
 
-// Defaults for the Go backend extractor (nested per-feature configs plus
-// legacy flat fields, which the Go schema still accepts).
+// Defaults for the Go backend extractor: the LLM settings plus the nested
+// per-feature groups the Go schema reads (schema.ExtractorParam).
 export const initialGoExtractorValues = {
   ...initialLlmBaseValues,
   keywords: {
@@ -381,36 +396,28 @@ export const initialGoExtractorValues = {
     enabled: false,
     system_prompt: '',
   },
-  metadata_config: {
+  metadata: {
     enabled: false,
     metadata: [],
     built_in_metadata: [],
   },
-  metadata: [],
-  built_in_metadata: [],
-  field_name: '',
-  auto_keywords: 0,
-  auto_questions: 0,
-  auto_tags: 0,
-  tag_file_id: '',
-  enable_summary: 0,
-  enable_metadata: 0,
-  keywords_sys_prompt: '',
-  questions_sys_prompt: '',
-  sys_prompt: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
 };
 
 export function getInitialExtractorValues() {
-  return isGoBackend() ? initialGoExtractorValues : initialExtractorValues;
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
 }
 
 export const initialCompilationValues = {
   compilation_template_group_id: '',
   llm_id: '',
-  mode: 'entity',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

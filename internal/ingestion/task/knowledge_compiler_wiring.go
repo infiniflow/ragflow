@@ -23,12 +23,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	_ "ragflow/internal/ingestion/component/knowledge_compiler"
+	knowledgecompiler "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
@@ -54,6 +55,408 @@ func init() {
 	kc.SetDepsResolver(newKnowledgeCompilerDepsResolver())
 	kc.SetGroupResolver(newKnowledgeCompilerGroupResolver())
 	kc.SetTemplateResolver(newKnowledgeCompilerTemplateResolver())
+	knowledge_compile.SetWikiDirtyCompiler(compileDirtyWikiDocument)
+}
+
+func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.WikiDirtyRequest) error {
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, request.DocumentID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return fmt.Errorf("Wiki dirty compile: load document: %w", err)
+	}
+	if doc.KbID != request.DatasetID || (doc.Status != nil && *doc.Status == "0") {
+		return replaceDirtyWikiProducts(ctx, request, nil, nil, nil, nil, true)
+	}
+	compilerParams, err := loadWikiCompilerParams(ctx, doc)
+	if err != nil {
+		return err
+	}
+	templateIDs, err := resolveWikiTemplateIDs(ctx, request.TenantID, compilerParams)
+	if err != nil {
+		return err
+	}
+	if len(templateIDs) == 0 {
+		return replaceDirtyWikiProducts(ctx, request, nil, nil, nil, nil, true)
+	}
+	sourceChunks, err := loadActiveSourceChunks(ctx, request)
+	if err != nil {
+		return err
+	}
+	if len(sourceChunks) == 0 {
+		return replaceDirtyWikiProducts(ctx, request, nil, nil, nil, nil, true)
+	}
+	compiled := make([]map[string]any, 0)
+	affectedSlugs := make([]string, 0)
+	removedSlugs := make([]string, 0)
+	activeStates := make([]kc.WikiMapActiveState, 0)
+	for _, templateID := range templateIDs {
+		params := copyStringAnyMap(compilerParams)
+		delete(params, "compilation_template_group_id")
+		delete(params, "compilation_template_group_ids")
+		params["compilation_template_id"] = templateID
+		component, err := knowledgecompiler.NewKnowledgeCompilerComponent("Compiler", params)
+		if err != nil {
+			return err
+		}
+		output, err := component.Invoke(ctx, dao.DB, map[string]any{
+			"chunks":           sourceChunks,
+			"tenant_id":        request.TenantID,
+			"dataset_id":       request.DatasetID,
+			"kb_id":            request.DatasetID,
+			"doc_id":           request.DocumentID,
+			"wiki_incremental": true,
+		})
+		if err != nil {
+			return fmt.Errorf("Wiki dirty compile document %s: %w", request.DocumentID, err)
+		}
+		compiled = append(compiled, wikiCompiledRows(output)...)
+		affectedSlugs = append(affectedSlugs, stringValues(output["wiki_affected_slugs"])...)
+		removedSlugs = append(removedSlugs, stringValues(output["wiki_removed_slugs"])...)
+		states, err := wikiActiveStates(output)
+		if err != nil {
+			return fmt.Errorf("Wiki dirty compile document %s: %w", request.DocumentID, err)
+		}
+		activeStates = append(activeStates, states...)
+	}
+	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
+		return persistDirtyWikiActiveStates(ctx, request, activeStates)
+	}
+	return replaceDirtyWikiProducts(ctx, request, compiled, uniqueStrings(affectedSlugs), uniqueStrings(removedSlugs), activeStates, false)
+}
+
+func loadWikiCompilerParams(ctx context.Context, doc *entity.Document) (map[string]any, error) {
+	if params := findCompilerParams(map[string]any(doc.ParserConfig)); params != nil {
+		return params, nil
+	}
+	if doc.PipelineID == nil || strings.TrimSpace(*doc.PipelineID) == "" {
+		return map[string]any{}, nil
+	}
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, *doc.PipelineID)
+	if err != nil {
+		if err == dao.ErrUserCanvasNotFound {
+			return map[string]any{}, nil
+		}
+		return nil, err
+	}
+	if params := findCompilerParams(map[string]any(canvas.DSL)); params != nil {
+		return params, nil
+	}
+	return map[string]any{}, nil
+}
+
+func findCompilerParams(value any) map[string]any {
+	switch typed := value.(type) {
+	case entity.JSONMap:
+		return findCompilerParams(map[string]any(typed))
+	case map[string]any:
+		if _, hasGroup := typed["compilation_template_group_id"]; hasGroup {
+			return copyStringAnyMap(typed)
+		}
+		if _, hasGroups := typed["compilation_template_group_ids"]; hasGroups {
+			return copyStringAnyMap(typed)
+		}
+		if _, hasTemplate := typed["compilation_template_id"]; hasTemplate {
+			return copyStringAnyMap(typed)
+		}
+		for _, child := range typed {
+			if params := findCompilerParams(child); params != nil {
+				return params
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if params := findCompilerParams(child); params != nil {
+				return params
+			}
+		}
+	}
+	return nil
+}
+
+func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[string]any) ([]string, error) {
+	ids := make([]string, 0)
+	if templateID, ok := params["compilation_template_id"].(string); ok && strings.TrimSpace(templateID) != "" {
+		ids = append(ids, strings.TrimSpace(templateID))
+	}
+	groupIDs := stringValues(params["compilation_template_group_id"])
+	groupIDs = append(groupIDs, stringValues(params["compilation_template_group_ids"])...)
+	if len(groupIDs) > 0 {
+		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, dao.DB, tenantID, uniqueStrings(groupIDs))
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, resolved...)
+	}
+	ids = uniqueStrings(ids)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var templates []entity.CompilationTemplate
+	if err := dao.DB.WithContext(ctx).
+		Where("id IN ? AND status = ?", ids, string(entity.StatusValid)).Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	wikiIDs := make([]string, 0, len(templates))
+	for _, template := range templates {
+		kind := template.Kind
+		if configured, ok := template.Config["kind"].(string); ok && strings.TrimSpace(configured) != "" {
+			kind = configured
+		}
+		if strings.EqualFold(strings.TrimSpace(kind), "wiki") || strings.EqualFold(strings.TrimSpace(kind), "wiki_page") {
+			wikiIDs = append(wikiIDs, template.ID)
+		}
+	}
+	return uniqueStrings(wikiIDs), nil
+}
+
+func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiDirtyRequest) ([]map[string]any, error) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return nil, fmt.Errorf("Wiki dirty compile: document engine is unavailable")
+	}
+	chunks := make([]map[string]any, 0)
+	for offset := 0; ; offset += 1000 {
+		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
+			IndexNames: []string{fmt.Sprintf("ragflow_%s", request.TenantID)},
+			KbIDs:      []string{request.DatasetID},
+			Offset:     offset,
+			Limit:      1000,
+			SelectFields: []string{
+				"id", "doc_id", "docnm_kwd", "content_with_weight", "available_int", "compile_kwd",
+			},
+			Filter: map[string]any{
+				"doc_id":        []string{request.DocumentID},
+				"available_int": 1,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		if result == nil {
+			break
+		}
+		for _, row := range result.Chunks {
+			if strings.TrimSpace(anyString(row["compile_kwd"])) != "" {
+				continue
+			}
+			chunks = append(chunks, row)
+		}
+		if len(result.Chunks) == 0 || int64(offset+len(result.Chunks)) >= result.Total {
+			break
+		}
+	}
+	return chunks, nil
+}
+
+func wikiCompiledRows(output map[string]any) []map[string]any {
+	rows := make([]map[string]any, 0)
+	items, _ := output["chunks"].([]any)
+	for _, item := range items {
+		row, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		compileKWD := strings.TrimSpace(anyString(row["compile_kwd"]))
+		if compileKWD != "wiki_page" && compileKWD != "wiki_section" {
+			continue
+		}
+		row["available_int"] = 0
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
+	var dirty entity.WikiDocumentDirty
+	if err := dao.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return err
+	}
+	if dirty.Revision != request.Revision {
+		return nil
+	}
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
+	}
+	indexName := fmt.Sprintf("ragflow_%s", request.TenantID)
+	existing, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
+		IndexNames:   []string{indexName},
+		KbIDs:        []string{request.DatasetID},
+		Limit:        10000,
+		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
+		Filter: map[string]any{
+			"doc_id":        []string{request.DocumentID},
+			"compile_kwd":   []string{"wiki_page", "wiki_section"},
+			"available_int": 0,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	newIDs := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if id := anyString(row["id"]); id != "" {
+			newIDs[id] = struct{}{}
+		}
+	}
+	if len(rows) > 0 {
+		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID); err != nil {
+			return err
+		}
+	}
+	affected := make(map[string]struct{}, len(affectedSlugs)+len(removedSlugs))
+	for _, slug := range append(append([]string(nil), affectedSlugs...), removedSlugs...) {
+		affected[slug] = struct{}{}
+	}
+	affectedPageIDs := make(map[string]struct{})
+	if existing != nil && !fullReplace {
+		for _, row := range existing.Chunks {
+			if anyString(row["compile_kwd"]) != "wiki_page" {
+				continue
+			}
+			if _, ok := affected[anyString(row["slug_kwd"])]; ok {
+				affectedPageIDs[anyString(row["id"])] = struct{}{}
+			}
+		}
+	}
+	if existing != nil && fullReplace {
+		for _, row := range existing.Chunks {
+			if anyString(row["compile_kwd"]) == "wiki_page" {
+				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
+			}
+		}
+		removedSlugs = uniqueStrings(removedSlugs)
+	}
+	staleIDs := make([]string, 0)
+	if existing != nil {
+		for _, row := range existing.Chunks {
+			id := anyString(row["id"])
+			_, pageAffected := affectedPageIDs[id]
+			_, sectionAffected := affectedPageIDs[anyString(row["parent_id"])]
+			inScope := fullReplace || pageAffected || sectionAffected
+			if _, keep := newIDs[id]; id != "" && inScope && !keep {
+				staleIDs = append(staleIDs, id)
+			}
+		}
+	}
+	if len(staleIDs) > 0 {
+		if _, err := docEngine.DeleteChunks(ctx, map[string]any{"id": staleIDs, "kb_id": request.DatasetID}, indexName, request.DatasetID); err != nil {
+			return err
+		}
+	}
+	if fullReplace {
+		if err := clearWikiActiveStates(ctx, docEngine, request); err != nil {
+			return err
+		}
+	}
+	if err := putWikiActiveStates(ctx, docEngine, activeStates); err != nil {
+		return err
+	}
+	// Do not wake the dataset consumer when this document never had any Wiki
+	// products and the dirty replacement produced none. A full replacement with
+	// existing products still publishes so the consumer can retract them.
+	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
+		return nil
+	}
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"})
+}
+
+func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
+	_, err := docEngine.DeleteChunks(ctx, map[string]any{
+		"kb_id":          request.DatasetID,
+		"compile_kwd":    "wiki_map_active",
+		"available_int":  0,
+		"source_doc_ids": []string{request.DocumentID},
+	}, fmt.Sprintf("ragflow_%s", request.TenantID), request.DatasetID)
+	if err != nil {
+		return fmt.Errorf("clear Wiki active MAP state for document %s: %w", request.DocumentID, err)
+	}
+	return nil
+}
+
+func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile.WikiDirtyRequest, states []kc.WikiMapActiveState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	var dirty entity.WikiDocumentDirty
+	if err := dao.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return err
+	}
+	if dirty.Revision != request.Revision {
+		return nil
+	}
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
+	}
+	return putWikiActiveStates(ctx, docEngine, states)
+}
+
+func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states []kc.WikiMapActiveState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	store, ok := knowledge_compile.NewWikiMapVersionStore(docEngine).(kc.WikiMapActiveStateStore)
+	if !ok {
+		return fmt.Errorf("Wiki dirty compile: active MAP store is unavailable")
+	}
+	for _, state := range states {
+		if err := store.PutWikiMapActiveState(ctx, state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyStringAnyMap(source map[string]any) map[string]any {
+	result := make(map[string]any, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
+func stringValues(value any) []string {
+	switch typed := value.(type) {
+	case string:
+		return []string{typed}
+	case []string:
+		return typed
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value, ok := item.(string); ok {
+				result = append(result, value)
+			}
+		}
+		return result
+	}
+	return nil
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by
@@ -120,9 +523,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup so a stalled provider/instance DB read
 		// cannot block document ingestion indefinitely.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if ml, merr := svc.ResolveModelContextLength(ctx, tenantID, llmID); merr == nil && ml > 0 {
+		contextLengthCtx, cancelContextLength := context.WithTimeout(context.Background(), 30*time.Second)
+		ml, contextLengthErr := svc.ResolveModelContextLength(contextLengthCtx, tenantID, llmID)
+		cancelContextLength()
+		if contextLengthErr == nil && ml > 0 {
 			llmMax = ml
 		}
 		// Resolve the model's generation cap (max_output). Cross-document merge
@@ -132,12 +536,15 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// uses max_tokens (the generation cap), NOT content_length — see
 		// ResolveModelContextLength's comment.
 		llmMaxOutput := 0
-		if _, _, _, mo, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && mo > 0 {
+		modelConfigCtx, cancelModelConfig := context.WithTimeout(context.Background(), 30*time.Second)
+		_, _, _, mo, modelConfigErr := svc.ResolveModelConfig(modelConfigCtx, tenantID, entity.ModelTypeChat, llmID)
+		cancelModelConfig()
+		if modelConfigErr == nil && mo > 0 {
 			llmMaxOutput = mo
 		}
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
+			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID, maxTokens: llmMaxOutput},
 			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
 			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
@@ -153,9 +560,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 // kcChatInvoker adapts service.ModelProviderService.Chat to the
 // knowledge_compiler ChatInvoker seam.
 type kcChatInvoker struct {
-	svc      *service.ModelProviderService
-	tenantID string
-	llmID    string
+	svc       *service.ModelProviderService
+	tenantID  string
+	llmID     string
+	maxTokens int
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
@@ -170,15 +578,18 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil || req.MaxTokens != nil {
+	if req.Temperature != nil || req.MaxTokens != nil || c.maxTokens > 0 {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
 		}
-		// MaxTokens caps the generated summary length (mirrors Python's
-		// {"max_tokens": max(self._max_token, 512)}, issue #10235).
+		// Normal knowledge-compilation calls use the generation cap resolved
+		// from the selected model's max_output configuration. Specialized
+		// variants may still provide a smaller per-call cap.
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
+		} else if c.maxTokens > 0 {
+			config.MaxTokens = &c.maxTokens
 		}
 	}
 	// Retry transient transport/provider failures (HTTP timeout, reset,
@@ -187,15 +598,23 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	attempt := 0
 	call := func() error {
-		// Bound each attempt to a short deadline so a stalled LLM provider (e.g.
-		// MiniMax hanging on a large merge-judge prompt) surfaces a timeout
-		// quickly instead of blocking a compile sub-batch for minutes; the
-		// retry/backoff loop above then handles it as a transient failure.
+		attempt++
+		// Bound each attempt so a stalled LLM provider eventually releases its
+		// compile sub-batch. Knowledge compilation prompts can be large and some
+		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
+			if !req.DisableRetry {
+				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
+				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
+					message += "; retrying with exponential backoff"
+				}
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
 			return err
 		}
 		resp = r
@@ -220,10 +639,9 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 // stays small to avoid unbounded wall-clock latency inside one compile.
 const kcChatRetryMax = 5
 
-// kcChatAttemptTimeout bounds a single Chat call (per retry attempt). A stalled
-// provider must surface a timeout promptly rather than hold a compile sub-batch;
-// 3 minutes is long enough for a big merge-judge prompt yet short enough that
-// several failed attempts do not stall the pipeline for many minutes.
+// kcChatAttemptTimeout bounds a single Chat call per retry attempt. It matches
+// the non-streaming provider deadline so the knowledge-compiler adapter does
+// not cancel a valid long-running response before the provider does.
 const kcChatAttemptTimeout = 3 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
@@ -267,13 +685,13 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 		}
 		batchTexts := texts[start:end]
 		jobs = append(jobs, func() error {
-			if err = ctx.Err(); err != nil {
-				return err
+			if jobErr := ctx.Err(); jobErr != nil {
+				return jobErr
 			}
 			var embeds []models.EmbeddingData
-			embeds, err = mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
-			if err != nil {
-				return fmt.Errorf("knowledge_compiler: embed: %w", err)
+			embeds, jobErr := mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
+			if jobErr != nil {
+				return fmt.Errorf("knowledge_compiler: embed: %w", jobErr)
 			}
 			vecs := make([][]float32, len(embeds))
 			for i, v := range embeds {

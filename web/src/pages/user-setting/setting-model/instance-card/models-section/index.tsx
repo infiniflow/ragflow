@@ -21,7 +21,13 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
 import { Loader2, Plus, Search, ShieldCheck } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -56,6 +62,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
+    onInstanceModelsStatusChange,
   } = props;
 
   const isDraftInstance =
@@ -71,10 +78,25 @@ export function ModelsSection(props: ModelsSectionProps) {
   const currentCreds = resolveCreds();
 
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  const { data: instanceModels } = useFetchInstanceModels(
-    providerName,
-    instanceName,
-  );
+  const {
+    data: instanceModels,
+    loading: instanceModelsLoading,
+    isSuccess: instanceModelsSucceeded,
+  } = useFetchInstanceModels(providerName, instanceName);
+
+  useLayoutEffect(() => {
+    if (
+      !isDraftInstance &&
+      (instanceModelsLoading || !instanceModelsSucceeded)
+    ) {
+      onInstanceModelsStatusChange?.(false);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 3. Upstream catalog + auto-fetch on mount.
   const {
@@ -150,11 +172,24 @@ export function ModelsSection(props: ModelsSectionProps) {
   const { instanceItems, models, addedSet } = useModelsDerived({
     catalog,
     instanceModels,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
     draftModels,
     isDraftInstance,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
+
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
+      onInstanceModelsStatusChange?.(true);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 5. Search + tag filter.
   const { search, tag, setSearch, setTag, filteredModels, allTags } =

@@ -144,7 +144,9 @@ func (c *GitlabConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		session.stage = gitlabStageMRs
 		session.treeQueue = nil
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -473,7 +475,10 @@ func (s *gitlabSyncSession) nextDocumentPage(ctx context.Context) ([]gitlabBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(gitlabStageMRs, s.page, docs)
+		docs, err = s.filterResumedDocuments(gitlabStageMRs, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceStage()
 		} else {
@@ -489,7 +494,10 @@ func (s *gitlabSyncSession) nextDocumentPage(ctx context.Context) ([]gitlabBuffe
 		if err != nil {
 			return nil, err
 		}
-		docs = s.filterResumedDocuments(gitlabStageIssues, s.page, docs)
+		docs, err = s.filterResumedDocuments(gitlabStageIssues, s.page, docs)
+		if err != nil {
+			return nil, err
+		}
 		if done {
 			s.advanceStage()
 		} else {
@@ -579,7 +587,10 @@ func (s *gitlabSyncSession) nextCodeFilesPage(ctx context.Context) ([]gitlabBuff
 			sourceID:   doc.SourceID,
 		})
 	}
-	documents = s.filterResumedDocuments(gitlabStageCodeFiles, s.treePage, documents)
+	documents, err = s.filterResumedDocuments(gitlabStageCodeFiles, s.treePage, documents)
+	if err != nil {
+		return nil, err
+	}
 	if done {
 		s.treeQueue = s.treeQueue[1:]
 		s.treePage = 1
@@ -609,55 +620,52 @@ func (s *gitlabSyncSession) advanceStage() {
 }
 
 // applyResume advances a sync session to the last committed GitLab position.
-func (s *gitlabSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *gitlabSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("gitlab sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor gitlabSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("gitlab sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.Stage == "" || cursor.Page <= 0 {
-		return
+		return fmt.Errorf("gitlab sync cursor has no resume anchor: %w", ErrSyncResumeInvalid)
 	}
 	s.stage = cursor.Stage
 	s.resumeStage = cursor.Stage
 	s.resumePage = cursor.Page
 	s.resumeOffset = cursor.Offset
 	s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if s.resumeSourceID == "" {
+		return fmt.Errorf("gitlab sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
 	if cursor.Stage == gitlabStageCodeFiles {
 		s.treeQueue = append([]string{cursor.TreePath}, cursor.PendingPaths...)
 		s.treePage = cursor.Page
 	} else {
 		s.page = cursor.Page
 	}
+	return nil
 }
 
 // filterResumedDocuments drops documents through the committed checkpoint.
-func (s *gitlabSyncSession) filterResumedDocuments(stage string, page int, candidates []gitlabBufferedDocument) []gitlabBufferedDocument {
+func (s *gitlabSyncSession) filterResumedDocuments(stage string, page int, candidates []gitlabBufferedDocument) ([]gitlabBufferedDocument, error) {
 	if s.resumeStage == "" || stage != s.resumeStage || page != s.resumePage {
-		return candidates
+		return candidates, nil
 	}
 	if s.resumeSourceID != "" {
 		for index, candidate := range candidates {
 			if candidate.sourceID == s.resumeSourceID {
 				s.clearResume()
-				return candidates[index+1:]
+				return candidates[index+1:], nil
 			}
 		}
+		return nil, fmt.Errorf("gitlab resume anchor %q was not found on page %d: %w", s.resumeSourceID, page, ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= 0 {
-		s.clearResume()
-		return candidates
-	}
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset > s.resumeOffset {
-			filtered = append(filtered, candidate)
-		}
-	}
-	s.clearResume()
-	return filtered
+	return nil, fmt.Errorf("gitlab sync cursor has no source anchor: %w", ErrSyncResumeInvalid)
 }
 
 func (s *gitlabSyncSession) clearResume() {

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -104,6 +105,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
+	keywords := strings.TrimSpace(c.Query("keywords"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	if page < 1 {
@@ -115,7 +117,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	if pageSize > maxArtifactPageSize {
 		pageSize = maxArtifactPageSize
 	}
-	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, page, pageSize)
+	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -126,6 +128,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 }
 
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
+// The slug may contain nested path segments, such as location/长社.
 func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	user, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -133,7 +136,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	pageType := c.Param("page_type")
-	slug := c.Param("slug")
+	slug := strings.TrimPrefix(c.Param("slug"), "/")
 	var req struct {
 		ContentMd string   `json:"content_md"`
 		Title     string   `json:"title"`
@@ -196,6 +199,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 }
 
 // GetArtifact handles GET /artifacts/<page_type>/<slug> — single wiki page.
+// The slug may contain nested path segments, such as location/长社.
 func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
@@ -203,7 +207,7 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	}
 	datasetID := c.Param("dataset_id")
 	pageType := c.Param("page_type")
-	slug := c.Param("slug")
+	slug := strings.TrimPrefix(c.Param("slug"), "/")
 	detail, err := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -237,7 +241,8 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID)
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -277,8 +282,10 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	common.SuccessWithData(c, graph, "success")
 }
 
-// ListStructures handles GET /artifacts/structure?kind=<kind> — the dataset-scope
-// structure graph for a resolved kind (mirrors Python get_dataset_structure).
+// ListStructures handles GET /artifacts/structure?kind=<kind>&keywords=<query> —
+// the dataset-scope structure graph for a resolved kind (mirrors Python
+// get_dataset_structure). A non-empty keywords value returns the matching
+// entity subgraph.
 // kind is REQUIRED: missing or invalid → 400 ARGUMENT_ERROR.
 func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
@@ -291,7 +298,12 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
 		return
 	}
-	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind}
+	in := service.DatasetStructureGraphInput{
+		TenantID:  tenantID,
+		DatasetID: datasetID,
+		Kind:      kind,
+		Keywords:  strings.TrimSpace(c.Query("keywords")),
+	}
 	resp, err := h.svc.GetDatasetStructure(c.Request.Context(), in)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidStructureKind) {
