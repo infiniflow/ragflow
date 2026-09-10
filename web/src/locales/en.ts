@@ -1577,7 +1577,7 @@ Example: Virtual Hosted Style`,
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
       feishu_wikiDescription:
-        'Sync downloadable file nodes from Feishu Wiki with the Python backend.',
+        'Sync downloadable file nodes from a Feishu Wiki subtree.',
       gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:

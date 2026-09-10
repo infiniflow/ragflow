@@ -8,6 +8,7 @@ downloadable files nested below them are still found.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 from collections.abc import Iterator
@@ -30,6 +31,10 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
 MAX_BATCH_SIZE = 10
 DOWNLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+MAX_DOWNLOAD_ERROR_BODY_BYTES = 8 * 1024
+MAX_ERROR_DETAIL_LENGTH = 256
+MAX_DOWNLOAD_RETRIES = 3
+MAX_DOWNLOAD_RETRY_DELAY_SECONDS = 60
 SUPPORTED_EXTENSIONS = {
     "csv",
     "doc",
@@ -302,23 +307,79 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
             return False
         return end is None or timestamp <= end
 
-    def _download_file(self, object_token: str) -> bytes:
+    def _error_detail(self, value: Any) -> str:
+        """Bound diagnostic fields without exposing credentials or multiline text."""
+        if not isinstance(value, (str, int)):
+            return ""
+        text = str(value)
+        for credential in (self.app_secret, self._access_token):
+            if credential:
+                text = text.replace(credential, "[redacted]")
+        return " ".join(text.split())[:MAX_ERROR_DETAIL_LENGTH]
+
+    def _download_error(self, response: requests.Response) -> ConnectorValidationError:
+        """Extract only bounded JSON diagnostics from an unsuccessful download."""
+        payload: Any = None
+        body = bytearray()
         try:
-            response = self.session.request(
-                "GET",
-                f"{FEISHU_OPEN_BASE_URL}/open-apis/drive/v1/files/{quote(object_token, safe='')}/download",
-                headers={"Authorization": f"Bearer {self._get_access_token()}"},
-                timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
-                stream=True,
-            )
-        except requests.RequestException as exc:
-            raise ConnectorValidationError("Unable to connect to Feishu while downloading a Wiki file") from exc
+            for chunk in response.iter_content(chunk_size=1024):
+                body.extend(chunk[: MAX_DOWNLOAD_ERROR_BODY_BYTES - len(body)])
+                if len(body) >= MAX_DOWNLOAD_ERROR_BODY_BYTES:
+                    break
+            payload = json.loads(body)
+        except (ValueError, RecursionError, OSError, requests.RequestException):
+            payload = None
+
+        code = self._error_detail(payload.get("code")) if isinstance(payload, dict) else ""
+        message = self._error_detail(payload.get("msg")) if isinstance(payload, dict) else ""
+        if code and code != "0":
+            detail = f"Feishu API error {code} (HTTP {response.status_code}) while downloading a Wiki file"
+        elif response.status_code in {401, 403}:
+            detail = f"Feishu permission denied (HTTP {response.status_code}) while downloading a Wiki file"
+        else:
+            detail = f"Feishu HTTP {response.status_code} while downloading a Wiki file"
+        if message:
+            detail += f": {message}"
+        error = payload.get("error") if isinstance(payload, dict) else None
+        logid = self._error_detail(response.headers.get("x-tt-logid") or response.headers.get("x-request-id"))
+        if not logid and isinstance(error, dict):
+            logid = self._error_detail(error.get("logid"))
+        if logid:
+            detail += f" (logid={logid})"
+        return ConnectorValidationError(detail)
+
+    def _download_file(self, object_token: str) -> bytes:
+        """Download a file, retrying throttling without leaking streamed responses."""
+        for attempt in range(MAX_DOWNLOAD_RETRIES + 1):
+            try:
+                response = self.session.request(
+                    "GET",
+                    f"{FEISHU_OPEN_BASE_URL}/open-apis/drive/v1/files/{quote(object_token, safe='')}/download",
+                    headers={"Authorization": f"Bearer {self._get_access_token()}"},
+                    timeout=DEFAULT_REQUEST_TIMEOUT_SECONDS,
+                    stream=True,
+                )
+            except requests.RequestException as exc:
+                raise ConnectorValidationError("Unable to connect to Feishu while downloading a Wiki file") from exc
+
+            if response.status_code != 429 or attempt == MAX_DOWNLOAD_RETRIES:
+                break
+            # Feishu specifies a relative delay in seconds, not a Unix timestamp.
+            try:
+                delay = int(response.headers.get("x-ogw-ratelimit-reset", ""))
+            except (TypeError, ValueError):
+                delay = -1
+            if delay < 0:
+                delay = 2**attempt
+            if delay > MAX_DOWNLOAD_RETRY_DELAY_SECONDS:
+                # Fail rather than retry before the server's requested reset.
+                break
+            response.close()
+            time.sleep(max(1, delay))
 
         try:
-            if response.status_code in {401, 403}:
-                raise ConnectorValidationError("Feishu permission denied while downloading a Wiki file")
-            if response.status_code >= 400:
-                raise ConnectorValidationError(f"Feishu HTTP {response.status_code} while downloading a Wiki file")
+            if not 200 <= response.status_code < 300:
+                raise self._download_error(response)
 
             declared_size = response.headers.get("Content-Length")
             if declared_size:

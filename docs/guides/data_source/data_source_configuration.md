@@ -90,6 +90,10 @@ Configure the following fields:
 
 Extension and filename filters are applied before a file body is downloaded. Every periodic sync scans node metadata in the subtree, but downloads only matching files whose edit time falls within the completed sync window. An empty completed scan advances that window, so the same time interval is not treated as pending again.
 
+File downloads retry HTTP 429 responses up to three times. The connector honors the relative delay in seconds from Feishu's `x-ogw-ratelimit-reset` response header, with a minimum wait of one second. If the header is missing or invalid, retries wait one, two, then four seconds. A requested delay above 60 seconds stops the download instead of retrying before the server's reset. See [Feishu's rate-limit guide](https://open.feishu.cn/document/server-docs/api-call-guide/frequency-control).
+
+Unsuccessful downloads raise a connector validation error with the HTTP status and, when available, Feishu's error code, message, and request log ID. Error-body parsing is limited to 8 KiB; diagnostic fields are length-limited and credentials are redacted. Successful file bodies, including JSON files, are imported unchanged. After retries are exhausted, the sync fails without advancing its successful window.
+
 Normal periodic sync does not propagate source deletions: deleting a file in Feishu does not immediately delete the imported RAGFlow document. A manual rebuild follows the existing delete-then-import behavior, so previously imported files that are no longer present or no longer match the filters can be removed during the rebuild.
 
 ## OneDrive

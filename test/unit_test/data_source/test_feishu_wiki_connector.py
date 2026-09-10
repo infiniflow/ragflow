@@ -1,10 +1,12 @@
 import hashlib
 import importlib
+import json
 import sys
 from datetime import UTC, datetime
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from requests.structures import CaseInsensitiveDict
 
 import common
 from common.constants import FileSource
@@ -74,7 +76,7 @@ class FakeResponse:
         self._payload = payload
         self.content = content
         self.chunks = chunks
-        self.headers = headers or {}
+        self.headers = CaseInsensitiveDict(headers or {})
         self.status_code = status_code
         self.closed = 0
         self.iterated = 0
@@ -422,6 +424,225 @@ def test_download_permission_failure_uses_connector_validation_contract():
     assert response.closed == 1
 
 
+@pytest.mark.parametrize("status_code", [300, 400, 403, 404, 500])
+def test_download_surfaces_bounded_api_error_details(status_code):
+    response = FakeResponse(
+        status_code=status_code,
+        content=json.dumps({"code": 99991672, "msg": "Access denied", "data": {"private": "must-not-leak"}}).encode(),
+        headers={"X-Tt-Logid": "request-123"},
+    )
+    session = FakeSession([response])
+    connector = _build_connector(session)
+    _prepare_download(connector)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    detail = str(error.value)
+    assert f"Feishu API error 99991672 (HTTP {status_code})" in detail
+    assert "Access denied" in detail
+    assert "logid=request-123" in detail
+    assert "must-not-leak" not in detail
+    assert len(session.requests) == 1
+    assert response.closed == 1
+
+
+@pytest.mark.parametrize("body", [b"<html>gateway failed</html>", b"[]", b"\xff", b"{}"])
+def test_download_keeps_status_and_logid_for_invalid_error_bodies(body):
+    response = FakeResponse(status_code=502, content=body, headers={"x-tt-logid": "gateway-123"})
+    connector = _build_connector(FakeSession([response]))
+    _prepare_download(connector)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    assert "HTTP 502" in str(error.value)
+    assert "logid=gateway-123" in str(error.value)
+    assert "gateway failed" not in str(error.value)
+    assert response.closed == 1
+
+
+def test_download_does_not_read_an_unbounded_error_body():
+    def chunks():
+        for _ in range(8):
+            yield b"x" * 1024
+        pytest.fail("error response was read beyond the 8 KiB limit")
+
+    response = FakeResponse(status_code=503, chunks=chunks(), headers={"x-tt-logid": "large-error"})
+    connector = _build_connector(FakeSession([response]))
+    _prepare_download(connector)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    assert "HTTP 503" in str(error.value)
+    assert "logid=large-error" in str(error.value)
+    assert response.closed == 1
+
+
+def test_download_redacts_credentials_and_bounds_error_fields():
+    response = FakeResponse(
+        status_code=400,
+        content=json.dumps({"code": 123, "msg": "secret cached-access-token\n" + "x" * 2000}).encode(),
+        headers={"x-tt-logid": "secret\n" + "y" * 2000},
+    )
+    connector = _build_connector(FakeSession([response]))
+    _prepare_download(connector)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    detail = str(error.value)
+    assert "secret" not in detail
+    assert "cached-access-token" not in detail
+    assert "\n" not in detail
+    assert len(detail) < 700
+    assert response.closed == 1
+
+
+def test_download_preserves_successful_json_file_content():
+    content = b'{"code":123,"msg":"this is an actual user file"}'
+    response = FakeResponse(content=content, headers={"Content-Type": "application/json"})
+    connector = _build_connector(FakeSession([response]))
+    _prepare_download(connector)
+
+    assert connector._download_file("file-1") == content
+    assert response.closed == 1
+
+
+def test_download_retries_429_after_reset_and_closes_before_waiting(monkeypatch):
+    throttled = FakeResponse(status_code=429, headers={"X-Ogw-Ratelimit-Reset": "2"})
+    success = FakeResponse(content=b"downloaded file")
+    session = FakeSession([throttled, success])
+    connector = _build_connector(session)
+    _prepare_download(connector)
+    sleeps = []
+
+    def sleep(delay):
+        assert throttled.closed == 1
+        sleeps.append(delay)
+
+    monkeypatch.setattr("time.sleep", sleep)
+
+    assert connector._download_file("file-1") == b"downloaded file"
+    assert sleeps == [2]
+    assert session.downloaded_tokens == ["file-1", "file-1"]
+    assert session.requests[0] == session.requests[1]
+    assert throttled.iterated == 0
+    assert success.closed == 1
+
+
+@pytest.mark.parametrize("reset", [None, "invalid", "-10", "NaN", "Infinity"])
+def test_download_uses_bounded_backoff_when_reset_is_missing_or_invalid(monkeypatch, reset):
+    headers = {} if reset is None else {"x-ogw-ratelimit-reset": reset}
+    throttled = [FakeResponse(status_code=429, headers=headers) for _ in range(3)]
+    session = FakeSession([*throttled, FakeResponse(content=b"complete")])
+    connector = _build_connector(session)
+    _prepare_download(connector)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    assert connector._download_file("file-1") == b"complete"
+    assert sleeps == [1, 2, 4]
+    assert all(response.closed == 1 for response in throttled)
+
+
+def test_download_retry_exhaustion_preserves_final_error(monkeypatch):
+    responses = [
+        FakeResponse(
+            status_code=429,
+            content=b'{"code":99991400,"msg":"request limited"}',
+            headers={"x-tt-logid": f"attempt-{attempt}"},
+        )
+        for attempt in range(4)
+    ]
+    session = FakeSession(responses)
+    connector = _build_connector(session)
+    _prepare_download(connector)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    assert "99991400" in str(error.value)
+    assert "HTTP 429" in str(error.value)
+    assert "logid=attempt-3" in str(error.value)
+    assert sleeps == [1, 2, 4]
+    assert len(session.requests) == 4
+    assert all(response.closed == 1 for response in responses)
+
+
+def test_download_does_not_retry_before_an_excessive_server_reset(monkeypatch):
+    response = FakeResponse(status_code=429, headers={"x-ogw-ratelimit-reset": "3600"})
+    session = FakeSession([response])
+    connector = _build_connector(session)
+    _prepare_download(connector)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    with pytest.raises(ConnectorValidationError, match="HTTP 429"):
+        connector._download_file("file-1")
+
+    assert sleeps == []
+    assert len(session.requests) == 1
+    assert response.closed == 1
+
+
+@pytest.mark.parametrize("reset,expected_delay", [("0", 1), ("60", 60)])
+def test_download_retry_handles_reset_boundaries(monkeypatch, reset, expected_delay):
+    response = FakeResponse(status_code=429, headers={"x-ogw-ratelimit-reset": reset})
+    connector = _build_connector(FakeSession([response, FakeResponse(content=b"complete")]))
+    _prepare_download(connector)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    assert connector._download_file("file-1") == b"complete"
+    assert sleeps == [expected_delay]
+    assert response.closed == 1
+
+
+@pytest.mark.parametrize(
+    "headers,payload,logid",
+    [
+        ({"X-Request-Id": "request-id"}, {}, "request-id"),
+        ({}, {"error": {"logid": "body-log-id"}}, "body-log-id"),
+        ({"X-Tt-Logid": "header-id"}, {"error": {"logid": "body-id"}}, "header-id"),
+    ],
+)
+def test_download_preserves_available_request_identifiers(headers, payload, logid):
+    response = FakeResponse(status_code=400, headers=headers, content=json.dumps(payload).encode())
+    connector = _build_connector(FakeSession([response]))
+    _prepare_download(connector)
+
+    with pytest.raises(ConnectorValidationError) as error:
+        connector._download_file("file-1")
+
+    assert f"logid={logid}" in str(error.value)
+    assert response.closed == 1
+
+
+def test_full_sync_imports_file_after_a_throttled_download(monkeypatch):
+    session = FakeSession(
+        [
+            _auth_success(),
+            _success({"items": [{"node_token": "node-1", "obj_token": "file-1", "obj_type": "file", "title": "guide.pdf"}], "has_more": False}),
+            FakeResponse(status_code=429),
+            FakeResponse(content=b"file after retry"),
+        ]
+    )
+    connector = _build_connector(session)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    documents = [document for batch in connector.load_from_state() for document in batch]
+
+    assert len(documents) == 1
+    assert documents[0].blob == b"file after retry"
+    assert documents[0].semantic_identifier == "guide.pdf"
+    assert sleeps == [1]
+
+
 def test_validate_wraps_transport_failure_without_credentials():
     import requests
 
@@ -447,7 +668,7 @@ def test_batch_size_must_be_between_one_and_ten(batch_size):
 
 
 def test_default_limits_are_bounded():
-    connector = _build_connector(FakeSession([]))
+    connector = _build_connector(FakeSession([]), batch_size=None)
 
     assert connector.batch_size == 2
     assert connector.max_file_size_bytes == 50 * 1024 * 1024
