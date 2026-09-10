@@ -34,6 +34,7 @@ import {
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
@@ -42,7 +43,6 @@ import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import pipe from 'lodash/fp/pipe';
-import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Markdown from 'react-markdown';
@@ -69,6 +69,7 @@ const FloatingChatWidgetMarkdown = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -108,12 +109,15 @@ const FloatingChatWidgetMarkdown = ({
     ) =>
       () => {
         if (!documentId) return;
-        if (fileExtension !== 'pdf' && documentUrl) {
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else if (clickDocumentButton) {
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
           clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -236,7 +240,9 @@ const FloatingChatWidgetMarkdown = ({
                         fileExtension,
                         documentUrl,
                       )}
-                      disabled={!documentUrl && fileExtension !== 'pdf'}
+                      disabled={
+                        !documentUrl && !supportsSourceLocate(fileExtension)
+                      }
                       style={{ whiteSpace: 'normal' }}
                     >
                       <span className="truncate">
@@ -245,7 +251,7 @@ const FloatingChatWidgetMarkdown = ({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {!documentUrl && fileExtension !== 'pdf'
+                    {!documentUrl && !supportsSourceLocate(fileExtension)
                       ? 'Document link unavailable'
                       : document.doc_name}
                   </TooltipContent>
@@ -269,9 +275,11 @@ const FloatingChatWidgetMarkdown = ({
           return (
             <Tooltip key={`err-tooltip-${i}`}>
               <TooltipTrigger asChild>
-                <Info className={styles.referenceIcon} />
+                <InfoCircleOutlined className={styles.referenceIcon} />
               </TooltipTrigger>
-              <TooltipContent>Reference unavailable</TooltipContent>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
             </Tooltip>
           );
         }
@@ -312,7 +320,13 @@ const FloatingChatWidgetMarkdown = ({
         );
       });
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

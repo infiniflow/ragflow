@@ -18,7 +18,7 @@ import { FormLayout } from '@/constants/form';
 import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
+import { useOwnerTenantId } from '@/pages/dataset/contexts/knowledge-base-context';
 import { LLMModelItem } from '@/pages/dataset/setting/python/configuration/common-item';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
@@ -134,6 +134,7 @@ const GraphRagItems = function GraphRagItems({
 }: GraphRagItemsProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
 
   const useRaptor = useWatch({
     control: form.control,
@@ -161,7 +162,7 @@ const GraphRagItems = function GraphRagItems({
       <LLMModelItem
         label={t('globalIndexModel')}
         name={'parser_config.llm_id'}
-        ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+        ownerTenantId={ownerTenantId}
       />
       <UseGraphRagFormField
         data={data}

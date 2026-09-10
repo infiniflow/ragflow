@@ -190,8 +190,8 @@ func TestGitlabConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 }
 
-// TestGitlabConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument verifies offset fallback excludes the committed offset.
-func TestGitlabConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument(t *testing.T) {
+// TestGitlabConnectorOpenSyncResumeRejectsMissingSourceAnchor verifies a checkpoint without a source anchor is invalid.
+func TestGitlabConnectorOpenSyncResumeRejectsMissingSourceAnchor(t *testing.T) {
 	connector, err := NewGitlabConnector(map[string]any{
 		"project_owner":      "owner",
 		"project_name":       "repo",
@@ -225,18 +225,8 @@ func TestGitlabConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument(t *te
 
 	resumeCheckpoint := cloneGitlabCheckpointWithMissingSourceID(t, first.Checkpoint)
 	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: resumeCheckpoint})
-	if err != nil {
-		t.Fatalf("resume OpenSync failed: %v", err)
-	}
-	second, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
-	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "https://gitlab.com/owner/repo/-/issues/3" {
-		t.Fatalf("resume documents = %+v, want issue 3", second.Documents)
-	}
-	if second.Documents[0].SourceID == first.Documents[0].SourceID {
-		t.Fatalf("committed document was redelivered: %s", second.Documents[0].SourceID)
+	if resumed != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", resumed, err)
 	}
 }
 

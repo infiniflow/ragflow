@@ -435,6 +435,9 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 	if value, ok := intFromSearchConfig(searchConfig["top_k"]); ok {
 		opts.TopK = &value
 	}
+	if value, ok := intFromSearchConfig(searchConfig["rerank_candidates_count"]); ok {
+		opts.RerankCandidatesCount = &value
+	}
 	if value, ok := searchConfigMapValue(searchConfig["meta_data_filter"]); ok {
 		opts.Filter = value
 	}

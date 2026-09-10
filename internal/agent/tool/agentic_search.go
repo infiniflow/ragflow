@@ -28,12 +28,15 @@ import (
 )
 
 // Agentic search tool names mirror Python rag/advanced_rag/harness/tools/search.py.
+//
+// Only the three retrieval modes are canvas tools. The harness' other names
+// (web_search, structured_query) have no canvas counterpart and are therefore
+// deliberately absent: Python's canvas reaches the web through its provider
+// tools (tavily / duckduckgo / …) and registers neither name in agent/tools/.
 const (
-	toolHybridSearch    = "hybrid_search"
-	toolVectorSearch    = "vector_search"
-	toolBM25Search      = "bm25_search"
-	toolWebSearch       = "web_search"
-	toolStructuredQuery = "structured_query"
+	toolHybridSearch = "hybrid_search"
+	toolVectorSearch = "vector_search"
+	toolBM25Search   = "bm25_search"
 )
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.

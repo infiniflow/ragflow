@@ -38,9 +38,6 @@ import (
 // no-op'ing. The assertion is layout-independent: whether or not the reading
 // order differed from the physical order, the sorted result must be monotonic.
 func TestManualChunker_RealPDFResort(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
-
 	path := filepath.Join("..", "..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {

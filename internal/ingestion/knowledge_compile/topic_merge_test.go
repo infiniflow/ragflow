@@ -58,6 +58,13 @@ func TestMergeTopicProductsKeepsDifferentTopicsSeparate(t *testing.T) {
 	}
 }
 
+func TestTopicKeyNormalizesMaterializedPath(t *testing.T) {
+	want := topicKey("三国演义/人物/蜀汉人物")
+	if got := topicKey(" 三国演义 / 人物 / 蜀汉人物 "); got != want {
+		t.Fatalf("topicKey() = %q, want %q", got, want)
+	}
+}
+
 func TestMergeTopicProductsRemovesSupersededDatasetPage(t *testing.T) {
 	products := []kccommon.Product{
 		{ID: "old-page", DocID: "kb", Merged: true, Variant: kccommon.VariantWiki, Content: "old", Meta: map[string]any{

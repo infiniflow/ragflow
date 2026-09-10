@@ -185,6 +185,14 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 	if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
 		pg = tbl.Positions[0].PageNumbers[0]
 	}
+	// A table merged across consecutive pages (MergeTablesAcrossPages appends
+	// every spanned page to tbl.Positions) must record ALL its pages so the
+	// resulting section's Position spans them — otherwise a caption on a later
+	// page of the same table is wrongly treated as off-page and the
+	// cross-page caption continuation (e.g. 13's 'Table: Monthly financial
+	// summary FY2024') is dropped. PageNumber keeps the anchor page for
+	// single-page consumers (insertion, etc.).
+	pages := mergedTablePages(tbl)
 	// Use DLA region boundaries when set.
 	if tbl.RegionLeft != 0 || tbl.RegionRight != 0 || tbl.RegionTop != 0 || tbl.RegionBottom != 0 {
 		return pdf.TextBox{
@@ -194,6 +202,7 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 			Bottom:     tbl.RegionBottom,
 			Text:       html,
 			PageNumber: pg,
+			Pages:      pages,
 			LayoutType: pdf.LayoutTypeTable,
 		}
 	}
@@ -206,8 +215,32 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 		Bottom:     bot,
 		Text:       html,
 		PageNumber: pg,
+		Pages:      pages,
 		LayoutType: pdf.LayoutTypeTable,
 	}
+}
+
+// mergedTablePages returns the sorted, de-duplicated set of page numbers a
+// table spans, taken from every Position the (possibly cross-page-merged)
+// TableItem carries. A single-page table yields a one-element slice (or nil
+// when it has no positions), so callers can use it to decide whether the box
+// spans multiple pages.
+func mergedTablePages(tbl *pdf.TableItem) []int {
+	if len(tbl.Positions) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(tbl.Positions))
+	pages := make([]int, 0, len(tbl.Positions))
+	for _, p := range tbl.Positions {
+		for _, pn := range p.PageNumbers {
+			if !seen[pn] {
+				seen[pn] = true
+				pages = append(pages, pn)
+			}
+		}
+	}
+	sort.Ints(pages)
+	return pages
 }
 
 // minRectangleDistance computes the Euclidean distance between two rectangles.

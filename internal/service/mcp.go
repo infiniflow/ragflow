@@ -717,7 +717,7 @@ func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServ
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
 	if _, _, err := utility.AssertURLSafe(req.URL); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrMCPInvalidURL, err.Error())
+		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 
 	timeoutSec := req.Timeout
@@ -749,7 +749,7 @@ func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServ
 		Timeout:    timeout,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: Test MCP error (id=%s): %v", ErrMCPTestFailed, mcpID, err)
+		return nil, fmt.Errorf("%w: Test MCP error (id=%s): %w", ErrMCPTestFailed, mcpID, err)
 	}
 
 	out := make([]map[string]interface{}, 0, len(tools))

@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -273,42 +275,72 @@ func TestHardSplitByTokens_EnglishRemainderStaysWhole(t *testing.T) {
 	}
 }
 
-func TestEnforceTitleTokenCap_PlanAPositions(t *testing.T) {
+func TestEnforceTitleTokenCap_SubChunksHaveSlicedPositions(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
+	// Single 5-tuple row [page,left,right,top,bottom] with a height of 30.
 	pos := [][]float64{{1, 10, 200, 50, 80}}
-	body := strings.Join(joinSentences(12), "")
+	body := strings.Join(joinSentences(12), "") // 48 runes
 	chunks := []map[string]any{
 		{"text": body, "positions": pos},
+	}
+	got := enforceTitleTokenCap(chunks, 20)
+	if len(got) != 3 { // 20 + 20 + 8 runes
+		t.Fatalf("expected split into 3 chunks, got %d", len(got))
+	}
+	// Each sub-chunk's positions must be vertically sliced by its rune share
+	// of the whole body (heights 12.5 / 12.5 / 5 on the 30-high box).
+	wantBounds := [][2]float64{{50, 62.5}, {62.5, 75}, {75, 80}}
+	for i := range got {
+		v, ok := got[i]["positions"].([][]float64)
+		if !ok || len(v) != 1 {
+			t.Fatalf("sub-chunk %d positions = %#v, want one sliced row", i, got[i]["positions"])
+		}
+		row := v[0]
+		if row[0] != 1 || row[1] != 10 || row[2] != 200 {
+			t.Errorf("sub-chunk %d kept columns wrong: %v", i, row)
+		}
+		if math.Abs(row[3]-wantBounds[i][0]) > 1e-9 || math.Abs(row[4]-wantBounds[i][1]) > 1e-9 {
+			t.Errorf("sub-chunk %d bounds = [%v,%v], want [%v,%v]",
+				i, row[3], row[4], wantBounds[i][0], wantBounds[i][1])
+		}
+	}
+}
+
+// TestEnforceTitleTokenCap_MalformedPositionsFallbackKeepsOriginal pins the
+// fallback contract: a position matrix that cannot be sliced (no valid
+// [page,left,right,top,bottom] rows) is carried to every sub-chunk verbatim,
+// so the preview is degraded to the shared coarse bbox instead of being lost.
+func TestEnforceTitleTokenCap_MalformedPositionsFallbackKeepsOriginal(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Join(joinSentences(12), "")
+	src := []any{map[string]any{"page": float64(1)}}
+	chunks := []map[string]any{
+		{"text": body, "_pdf_positions": src},
 	}
 	got := enforceTitleTokenCap(chunks, 20)
 	if len(got) <= 1 {
 		t.Fatalf("expected split, got %d", len(got))
 	}
-	// First sub-chunk keeps the original position matrix.
-	first, ok := got[0]["positions"].([][]float64)
-	if !ok || len(first) == 0 || first[0][0] != 1 {
-		t.Errorf("first sub-chunk positions = %#v, want [[1 10 200 50 80]]", got[0]["positions"])
-	}
-	// Remaining sub-chunks carry an empty matrix (Plan A).
-	for i := 1; i < len(got); i++ {
-		v, ok := got[i]["positions"].([][]float64)
-		if !ok {
-			t.Errorf("sub-chunk %d positions type = %T, want [][]float64", i, got[i]["positions"])
-			continue
+	for i := range got {
+		v, ok := got[i]["_pdf_positions"].([]any)
+		if !ok || len(v) == 0 {
+			t.Fatalf("sub-chunk %d _pdf_positions = %#v, want the original matrix", i, got[i]["_pdf_positions"])
 		}
-		if len(v) != 0 {
-			t.Errorf("sub-chunk %d positions = %#v, want empty", i, v)
+		if !reflect.DeepEqual(v[0], src[0]) {
+			t.Errorf("sub-chunk %d _pdf_positions = %#v, want the source value verbatim", i, v[0])
 		}
 	}
 }
 
-func TestEnforceTitleTokenCap_PlanA_UnknownPositionsType(t *testing.T) {
+func TestEnforceTitleTokenCap_UnknownPositionsTypeCarriedAsIs(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	// An unknown position value type (not [][]float64 / json.RawMessage): the
-	// key must be DROPPED from later sub-chunks, never stored as a nil value.
+	// An unknown position value type (not [][]float64 / json.RawMessage) is
+	// shallow-copied to every sub-chunk verbatim; the cap split never inspects
+	// or normalizes position payloads.
 	chunks := []map[string]any{
 		{"text": body, "positions": "not-a-matrix"},
 	}
@@ -316,13 +348,10 @@ func TestEnforceTitleTokenCap_PlanA_UnknownPositionsType(t *testing.T) {
 	if len(got) <= 1 {
 		t.Fatalf("expected split, got %d", len(got))
 	}
-	// First sub-chunk keeps the value via shallow copy.
-	if _, ok := got[0]["positions"]; !ok {
-		t.Error("first sub-chunk lost its positions key")
-	}
-	for i := 1; i < len(got); i++ {
-		if _, ok := got[i]["positions"]; ok {
-			t.Errorf("sub-chunk %d kept unknown-type positions key, want deleted", i)
+	for i := range got {
+		v, ok := got[i]["positions"].(string)
+		if !ok || v != "not-a-matrix" {
+			t.Errorf("sub-chunk %d positions = %#v, want the source value carried as-is", i, got[i]["positions"])
 		}
 	}
 }
@@ -508,7 +537,7 @@ func TestTitleCap_GroupPipeline_MultiRecordMerged(t *testing.T) {
 	assertCapInvariants(t, chunks, 10, want.String())
 }
 
-func TestTitleCap_HierarchyPipeline_PlanAPositions(t *testing.T) {
+func TestTitleCap_HierarchyPipeline_SubChunksKeepPositions(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
@@ -527,21 +556,21 @@ func TestTitleCap_HierarchyPipeline_PlanAPositions(t *testing.T) {
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
-	first := chunks[0]["positions"]
-	if first == nil {
-		t.Fatalf("first sub-chunk missing positions")
-	}
-	if fm, ok := first.([][]float64); !ok || len(fm) == 0 || fm[0][0] != 1 {
-		t.Errorf("first positions = %#v, want [[1 10 200 50 80]]", first)
-	}
-	for i := 1; i < len(chunks); i++ {
+	// Every sub-chunk carries a sliced position row: the on-demand crop pass
+	// must attach a preview of its own vertical region, not the whole box.
+	for i := range chunks {
 		v, ok := chunks[i]["positions"]
 		if !ok {
 			t.Errorf("sub-chunk %d missing positions", i)
 			continue
 		}
-		if vm, ok := v.([][]float64); !ok || len(vm) != 0 {
-			t.Errorf("sub-chunk %d positions = %#v, want empty [][]float64", i, v)
+		vm, ok := v.([][]float64)
+		if !ok || len(vm) == 0 || vm[0][0] != 1 {
+			t.Errorf("sub-chunk %d positions = %#v, want a sliced [[1 ...]] matrix", i, v)
+			continue
+		}
+		if vm[0][4] > 80+1e-9 || vm[0][3] < 50-1e-9 {
+			t.Errorf("sub-chunk %d bounds out of source span: %v", i, vm[0])
 		}
 	}
 }

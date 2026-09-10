@@ -132,13 +132,40 @@ def test_serply_retrieve_chunks_returns_ragflow_reference_shape(monkeypatch):
     ]
 
 
-def test_serply_search_redacts_api_key_from_failures(monkeypatch, caplog):
+def test_serply_search_keeps_the_key_out_of_failure_logs(monkeypatch, caplog):
     class _FailedResponse:
         def raise_for_status(self):
             raise ValueError("request failed with serply-secret")
 
     monkeypatch.setattr(serply_conn.requests, "get", lambda *_args, **_kwargs: _FailedResponse())
 
-    assert serply_conn.Serply("serply-secret").search("RAGFlow") == []
+    with caplog.at_level("ERROR"):
+        assert serply_conn.Serply("serply-secret").search("RAGFlow") == []
+
     assert "serply-secret" not in caplog.text
-    assert "[REDACTED]" in caplog.text
+    assert "ValueError" in caplog.text
+
+
+def test_serply_search_never_logs_the_query_from_the_request_url(monkeypatch, caplog):
+    """Serply passes the query as a URL parameter, so the requests error
+    message contains it."""
+
+    class _ErrorResponse:
+        status_code = 429
+        url = "https://api.serply.io/v1/search/?q=my%20private%20query&num=6"
+
+        def raise_for_status(self):
+            raise serply_conn.requests.HTTPError(
+                f"429 Client Error: Too Many Requests for url: {self.url}",
+                response=self,
+            )
+
+    monkeypatch.setattr(serply_conn.requests, "get", lambda *_args, **_kwargs: _ErrorResponse())
+
+    with caplog.at_level("ERROR"):
+        assert serply_conn.Serply("serply-secret").search("my private query") == []
+
+    assert "my private query" not in caplog.text
+    assert "my%20private%20query" not in caplog.text
+    assert "serply-secret" not in caplog.text
+    assert "429" in caplog.text

@@ -192,33 +192,22 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		})
 	}
 	var grid [][]pdf.TSRCell
-	if len(cells) > 0 {
-		grid = tb.GroupCells(cells)
-		if len(grid) > 0 {
-			// Pass the original TSR "table row" bboxes to cell fill so the
-			// box→row matching uses the row component's own X range, exactly
-			// like Python's find_overlapped_with_threshold over the raw row
-			// components. Using the grid column union instead (wider X) can
-			// push a col-0 box that straddles a row pair into the lower row
-			// (13_crosspage_table page 2 rows 43/44: row 44's line starts at
-			// x=106.9 while the grid union starts at 90.8, so '2024-43
-			// 2024-44' overlaps row 44 ~21% against the true bbox but ~50%
-			// against the union; Python keeps it in row 43).
-			tsrRows := make([]pdf.TSRCell, 0, len(cells))
-			for _, c := range cells {
-				if strings.HasSuffix(c.Label, "table row") {
-					tsrRows = append(tsrRows, c)
-				}
-			}
-			tbl.SortYFirstly(tsrRows, 10)
-			flat := tbl.FlattenGrid(grid)
-			tbl.FillCellTextFromBoxesWithRows(flat, boxInCrop, tsrRows)
-			idx := 0
-			for ri := range grid {
-				for ci := range grid[ri] {
-					grid[ri][ci].Text = flat[idx].Text
-					idx++
-				}
+	if len(cells) > 0 && len(boxInCrop) > 0 {
+		// Cross-product grid (structure lines, de-duplicated like Python's
+		// gather) is used ONLY to derive per-box R/C annotations.
+		annotGrid := tb.GroupCells(cells)
+		if len(annotGrid) > 0 {
+			// Derive R/C/H/SP with Python's _table_transformer_job semantics
+			// (whole-row/whole-column line matching), in crop space.
+			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			// Rebuild the grid from the derived per-char R/C, exactly like
+			// Python's construct_table groups boxes by their R/C labels —
+			// rows are produced only for R values that carry boxes. Fall back
+			// to the cross-product grid when no box carries annotations.
+			if rcGrid := tbl.GroupBoxesByRC(boxInCrop); len(rcGrid) > 0 {
+				grid = rcGrid
+			} else {
+				grid = annotGrid
 			}
 		}
 	}
@@ -227,6 +216,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
+		Page: pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	return item

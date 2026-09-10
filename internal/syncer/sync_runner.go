@@ -37,8 +37,9 @@ const syncCancelCheckInterval = time.Second
 
 // SyncRunnerConfig controls per-task document processing.
 type SyncRunnerConfig struct {
-	ItemRetryCount     int
-	ItemRetryBaseDelay time.Duration
+	ItemRetryCount        int
+	ItemRetryBaseDelay    time.Duration
+	MaxAnchorRestartCount int
 }
 
 func checkTaskCanceled(taskDAO *dao.SyncTaskDAO, ctx context.Context, taskID string) error {
@@ -74,6 +75,9 @@ func NewSyncRunner(config SyncRunnerConfig, taskDAO *dao.SyncTaskDAO, taskServic
 	if config.ItemRetryBaseDelay <= 0 {
 		config.ItemRetryBaseDelay = time.Second
 	}
+	if config.MaxAnchorRestartCount <= 0 {
+		config.MaxAnchorRestartCount = 2
+	}
 	if checkpoints == nil {
 		checkpoints = newMemorySyncCheckpointStore()
 	}
@@ -104,21 +108,15 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	if err != nil {
 		return "", err
 	}
-	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{
-		TaskID:        taskContext.Task.ID,
-		ConnectorID:   taskContext.Connector.ID,
-		KBID:          taskContext.Knowledgebase.ID,
-		SourceType:    sourceType,
-		Fingerprints:  fingerprints,
-		FromBeginning: checkpointState.WindowStart == nil,
-		WindowStart:   checkpointState.WindowStart,
-		WindowEnd:     checkpointState.WindowEnd,
-		Resume:        checkpointState.Checkpoint,
-	})
+	session, err := r.openSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
 	if err != nil {
 		return "", err
 	}
-	defer session.Close()
+	defer func() {
+		if session != nil {
+			_ = session.Close()
+		}
+	}()
 
 	// prepare sourceType, waterline, stats, resultChan
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
@@ -138,6 +136,20 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		if nextErr != nil {
 			if err = r.collectResults(ctx, taskContext.Task.ID, resultChans, &checkpointState, &stats); err != nil {
 				return "", err
+			}
+			if errors.Is(nextErr, syncerconnector.ErrSyncResumeInvalid) {
+				if checkpointState.RestartCount >= r.config.MaxAnchorRestartCount {
+					return "", nextErr
+				}
+				_ = session.Close()
+				session = nil
+				resultChans = nil
+				session, err = r.restartSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
+				if err != nil {
+					return "", err
+				}
+				stats = service.SyncStats{}
+				continue
 			}
 			return "", nextErr
 		}
@@ -167,6 +179,52 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		common.Info("delete sync checkpoint completed", zap.String("task_id", taskContext.Task.ID))
 	}
 	return nextTaskID, nil
+}
+
+func (r *SyncRunner) openSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {
+	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{
+		TaskID:        taskContext.Task.ID,
+		ConnectorID:   taskContext.Connector.ID,
+		KBID:          taskContext.Knowledgebase.ID,
+		SourceType:    sourceType,
+		Fingerprints:  fingerprints,
+		FromBeginning: checkpointState.WindowStart == nil,
+		WindowStart:   checkpointState.WindowStart,
+		WindowEnd:     checkpointState.WindowEnd,
+		Resume:        checkpointState.Checkpoint,
+	})
+	if err != nil {
+		if errors.Is(err, syncerconnector.ErrSyncResumeInvalid) && checkpointState.RestartCount < r.config.MaxAnchorRestartCount {
+			restartErr := r.resetCheckpointForRestart(ctx, taskContext.Task.ID, checkpointState)
+			if restartErr != nil {
+				return nil, restartErr
+			}
+			return r.openSyncSession(ctx, taskContext, sourceType, fingerprints, checkpointState, connector)
+		}
+		return nil, err
+	}
+	return session, nil
+}
+
+func (r *SyncRunner) restartSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {
+	if err := r.resetCheckpointForRestart(ctx, taskContext.Task.ID, checkpointState); err != nil {
+		return nil, err
+	}
+	return r.openSyncSession(ctx, taskContext, sourceType, fingerprints, checkpointState, connector)
+}
+
+// resetCheckpointForRestart discards committed progress and restarts the same
+// source window when the resume anchor is no longer valid.
+func (r *SyncRunner) resetCheckpointForRestart(ctx context.Context, taskID string, checkpointState *syncerconnector.SyncCheckpointState) error {
+	checkpointState.RestartCount++
+	checkpointState.Checkpoint = nil
+	checkpointState.NextCommitSeq = 1
+	checkpointState.Added = 0
+	checkpointState.Updated = 0
+	checkpointState.Skipped = 0
+	checkpointState.ErrorCount = 0
+	checkpointState.ErrorMsg = ""
+	return r.checkpoints.SaveSyncCheckpoint(ctx, taskID, *checkpointState)
 }
 
 func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultChans []<-chan syncJobResult, checkpointState *syncerconnector.SyncCheckpointState, stats *service.SyncStats) error {

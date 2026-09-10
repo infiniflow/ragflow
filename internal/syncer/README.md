@@ -439,7 +439,7 @@ The models are defined in `internal/syncer/connector/models.go`.
 Here "retry/resume" refers to task-level continuation at batch/document granularity, not resumable byte-range downloads of a single HTTP download.
 
 > [!NOTE]
-> The current design guarantees continuation from after the last successfully committed batch after a task failure. It does not guarantee that a partially downloaded remote file resumes from a byte range.
+> The current design continues from after the last successfully committed batch only while the saved anchor still exists in the current source listing. It does not guarantee that a partially downloaded remote file resumes from a byte range.
 
 Happy path:
 
@@ -456,6 +456,17 @@ Resume after failure:
 - `OpenSync` should skip already-committed batches based on `request.Resume`.
 - The last batch that was not committed successfully is reprocessed. This is expected behavior.
 - The upsert path must stay idempotent; reprocessing the same `SourceID` must not produce duplicate documents.
+
+Anchor invalidation:
+
+Continuation is only trustworthy while the saved source anchor still exists in
+the current listing. If a connector returns `ErrSyncResumeInvalid` from
+`OpenSync` or `NextBatch`, `SyncRunner` clears the connector checkpoint, resets
+the accumulated stats, and restarts the same fixed sync window from the
+beginning with `Resume=nil`. The restart is bounded by
+`MaxAnchorRestartCount` (default 2); after that the task fails rather than
+guessing a new offset. Connectors enforce this through
+`ErrSyncResumeInvalid` in `connector/models.go`.
 
 Requirements when implementing checkpoints:
 
@@ -567,4 +578,3 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 > + [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
 > + [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
 > + [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
-

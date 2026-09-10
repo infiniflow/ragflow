@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
 )
 
@@ -158,9 +159,18 @@ type WikiPageItem struct {
 	Summary  string `json:"summary"`
 }
 
-// ListWikiPages lists wiki pages for a dataset with optional page_type/topic
-// filters and pagination.
-func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic string, page, pageSize int) ([]WikiPageItem, int64, error) {
+// wikiPageSelectFields are the engine fields ListWikiPages reads.
+var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
+
+// wikiPageOrderBy ranks wiki pages by connectivity then title.
+func wikiPageOrderBy() *types.OrderByExpr {
+	return (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd")
+}
+
+// ListWikiPages lists wiki pages for a dataset with optional page_type/topic/
+// keywords filters and pagination. keywords is a case-insensitive substring
+// match over title/slug/summary, mirroring Python list_wiki_pages.
+func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic, keywords string, page, pageSize int) ([]WikiPageItem, int64, error) {
 	// Only surface the merged dataset-level pages. Each unique (page_type, slug)
 	// can also have a per-document source row (available_int=0); without this
 	// filter the same entity/concept would appear once per source doc. Python's
@@ -174,34 +184,94 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 		filter["page_type_kwd"] = []string{pageType}
 	}
 	if topic != "" {
-		filter["topic_kwd"] = []string{topic}
+		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"},
-		offset, pageSize, (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"))
-	if err != nil {
-		return nil, 0, err
+	if keywords == "" {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
+			wikiPageSelectFields, offset, pageSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		return wikiPageItemsFromChunks(chunks), total, nil
 	}
+	// Wiki list search is intentionally metadata-based (substring over
+	// title/slug/summary): those fields exist on every row and behave the same
+	// across document-store backends, unlike full-text token fields. The engine
+	// has no cross-field substring filter, so scan the filtered rows in
+	// batches, match in memory, then apply the requested page slice — exactly
+	// what Python list_wiki_pages does for keywords.
+	kw := strings.ToLower(keywords)
+	matched := make([]WikiPageItem, 0)
+	const batchSize = 1000
+	for scanOffset := 0; ; scanOffset += batchSize {
+		batch, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
+			wikiPageSelectFields, scanOffset, batchSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, item := range wikiPageItemsFromChunks(batch) {
+			if wikiPageItemMatchesKeyword(item, kw) {
+				matched = append(matched, item)
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
+	}
+	total := int64(len(matched))
+	if offset >= len(matched) {
+		return []WikiPageItem{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
+}
+
+// wikiPageItemsFromChunks maps engine rows to wiki page summaries.
+func wikiPageItemsFromChunks(chunks []map[string]interface{}) []WikiPageItem {
 	items := make([]WikiPageItem, 0, len(chunks))
 	for _, c := range chunks {
-		pageType := firstStringValue(c["page_type_kwd"])
-		// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
-		// contract); expose the bare slug to the frontend so it can be placed in
-		// a single URL path segment (gin :slug does not match '/').
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		items = append(items, WikiPageItem{
-			Slug:     bareSlug,
-			Title:    firstStringValue(c["title_kwd"]),
-			PageType: pageType,
-			Topic:    firstStringValue(c["topic_kwd"]),
-			Summary:  firstStringValue(c["summary_with_weight"]),
-		})
+		items = append(items, wikiPageItemFromChunk(c))
 	}
-	return items, total, nil
+	return items
+}
+
+func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
+	pageType := firstStringValue(c["page_type_kwd"])
+	// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
+	// contract); expose the bare slug to the frontend so it can be placed in
+	// a single URL path segment (gin :slug does not match '/').
+	bareSlug := firstStringValue(c["slug_kwd"])
+	if pageType != "" {
+		bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
+	}
+	return WikiPageItem{
+		Slug:     bareSlug,
+		Title:    firstStringValue(c["title_kwd"]),
+		PageType: pageType,
+		Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
+		Summary:  firstStringValue(c["summary_with_weight"]),
+	}
+}
+
+// wikiPageItemMatchesKeyword reports whether the lowercased keyword occurs in
+// the page title, slug or summary.
+func wikiPageItemMatchesKeyword(item WikiPageItem, lowerKeyword string) bool {
+	return containsFold(item.Title, lowerKeyword) ||
+		containsFold(item.Slug, lowerKeyword) ||
+		containsFold(item.Summary, lowerKeyword)
+}
+
+// containsFold reports whether lowerKeyword (already lowercased) occurs in s,
+// case-insensitively.
+func containsFold(s, lowerKeyword string) bool {
+	return strings.Contains(strings.ToLower(s), lowerKeyword)
 }
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
@@ -264,7 +334,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Slug:           detailSlug,
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
-		Topic:          firstStringValue(c["topic_kwd"]),
+		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
 		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
@@ -334,43 +404,40 @@ type WikiTopicItem struct {
 	PageCount int    `json:"page_count"`
 }
 
-// ListWikiTopics aggregates wiki topics for a dataset.
-func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
+// ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
+// is the complete path and Title is its leaf segment; the frontend may derive a
+// navigation tree by splitting Topic on '/'. keywords keeps only topics whose
+// own path matches or that hold a concept/entity page matching by
+// title/slug/summary, mirroring Python list_wiki_topics.
+func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID, keywords string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
-		"page_type_kwd": []string{"concept", "entity"},
+		"page_type_kwd": []string{"concept", "entity", "topic"},
 		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"topic_kwd", "title_kwd", "slug_kwd", "page_type_kwd"}, 0, 1000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	counts := map[string]int{}
-	metas := map[string]WikiTopicItem{}
-	for _, c := range chunks {
-		t := firstStringValue(c["topic_kwd"])
-		if t == "" {
-			continue
+	const batchSize = 1000
+	fields := []string{"topic_kwd"}
+	chunks := make([]map[string]interface{}, 0, batchSize)
+	for offset := 0; ; offset += batchSize {
+		batch, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, 0, err
 		}
-		pageType := firstStringValue(c["page_type_kwd"])
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		counts[t]++
-		if _, ok := metas[t]; !ok {
-			metas[t] = WikiTopicItem{
-				Topic: t,
-				Title: firstStringValue(c["title_kwd"]),
-				Slug:  bareSlug,
-			}
+		chunks = append(chunks, batch...)
+		if len(batch) == 0 || int64(len(chunks)) >= total {
+			break
 		}
 	}
-	items := make([]WikiTopicItem, 0, len(metas))
-	for t, it := range metas {
-		it.PageCount = counts[t]
-		items = append(items, it)
+	items := aggregateWikiTopicItems(chunks)
+	if keywords != "" {
+		// The topic tree must survive searching by a page that lives under a
+		// topic (e.g. "Daisy" under "General"), so topics also match when any
+		// of their concept/entity pages matches the keyword.
+		pageTopics, err := s.wikiTopicsWithKeywordPages(ctx, tenantID, datasetID, strings.ToLower(keywords))
+		if err != nil {
+			return nil, 0, err
+		}
+		items = filterWikiTopicItemsByKeyword(items, strings.ToLower(keywords), pageTopics)
 	}
 	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
 	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
@@ -381,6 +448,93 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
 	})
 	return items, int64(len(items)), nil
+}
+
+// wikiTopicsWithKeywordPages scans the dataset's concept/entity wiki pages and
+// returns the normalized topic paths of the pages whose title, slug or summary
+// contains the keyword.
+func (s *DatasetArtifactService) wikiTopicsWithKeywordPages(ctx context.Context, tenantID, datasetID, lowerKeyword string) (map[string]bool, error) {
+	filter := map[string]interface{}{
+		"compile_kwd":   []string{CompileKwdWikiPage},
+		"page_type_kwd": []string{"concept", "entity"},
+	}
+	fields := []string{"topic_kwd", "title_kwd", "slug_kwd", "summary_with_weight"}
+	matching := make(map[string]bool)
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		batch, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, c := range batch {
+			topic := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+			if topic == "" {
+				continue
+			}
+			if containsFold(firstStringValue(c["title_kwd"]), lowerKeyword) ||
+				containsFold(firstStringValue(c["slug_kwd"]), lowerKeyword) ||
+				containsFold(firstStringValue(c["summary_with_weight"]), lowerKeyword) {
+				matching[topic] = true
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
+	}
+	return matching, nil
+}
+
+// filterWikiTopicItemsByKeyword keeps topics whose path or leaf title contains
+// the keyword, plus topics listed in pageMatched (topics holding a matching
+// page).
+func filterWikiTopicItemsByKeyword(items []WikiTopicItem, lowerKeyword string, pageMatched map[string]bool) []WikiTopicItem {
+	filtered := make([]WikiTopicItem, 0, len(items))
+	for _, item := range items {
+		if pageMatched[item.Topic] || wikiTopicItemMatchesKeyword(item, lowerKeyword) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// wikiTopicItemMatchesKeyword reports whether the lowercased keyword occurs in
+// the topic path or its leaf title.
+func wikiTopicItemMatchesKeyword(item WikiTopicItem, lowerKeyword string) bool {
+	return containsFold(item.Topic, lowerKeyword) || containsFold(item.Title, lowerKeyword)
+}
+
+func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
+	type aggregate struct {
+		topic string
+		count int
+	}
+	byKey := make(map[string]*aggregate)
+	for _, c := range chunks {
+		t := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		item := byKey[key]
+		if item == nil {
+			item = &aggregate{topic: t}
+			byKey[key] = item
+		}
+		item.count++
+	}
+	items := make([]WikiTopicItem, 0, len(byKey))
+	for _, aggregate := range byKey {
+		items = append(items, WikiTopicItem{
+			Topic:     aggregate.topic,
+			Title:     kccommon.WikiTopicLeaf(aggregate.topic),
+			Slug:      aggregate.topic,
+			PageCount: aggregate.count,
+		})
+	}
+	return items
 }
 
 // wikiTopicCollator is a process-wide collator for wiki topics. language.Chinese
@@ -433,11 +587,11 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// so the frontend can build artifact/<page_type>/<slug> links that
 		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
 		// "wiki_topic"); strip the prefix. slug_kwd stores the full
-		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		// "<page_type>/<slug>" form; preserve nested slug segments.
 		fullSlug := firstStringValue(c["slug_kwd"])
 		bareSlug := fullSlug
 		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
-		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+		if idx := strings.IndexByte(bareSlug, '/'); idx >= 0 {
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
@@ -949,13 +1103,12 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
-// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
-// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
-// returned unchanged.
+// bareWikiSlug strips only the first path segment from a full wiki slug
+// ("entity/location/长社" -> "location/长社"). Nested type/name segments are
+// preserved so distinct typed entities remain distinguishable in graph links.
 func bareWikiSlug(slug string) string {
 	s := strings.TrimSpace(slug)
-	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+	if idx := strings.IndexByte(s, '/'); idx >= 0 && idx < len(s)-1 {
 		return s[idx+1:]
 	}
 	return s

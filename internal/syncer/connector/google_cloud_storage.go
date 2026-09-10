@@ -117,7 +117,9 @@ func (c *GoogleCloudStorageConnector) OpenSync(ctx context.Context, request Sync
 		batchSize: c.batchSize,
 	}
 	if request.Resume != nil {
-		session.applyResume(request.Resume)
+		if err := session.applyResume(ctx, request.Resume); err != nil {
+			return nil, err
+		}
 	}
 	return session, nil
 }
@@ -333,13 +335,41 @@ func (s *googleCloudStorageSyncSession) Fetch(ctx context.Context, ref FetchRefe
 	return s.connector.Fetch(ctx, ref)
 }
 
-func (s *googleCloudStorageSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *googleCloudStorageSyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	prefix := googleCloudStorageSourceID(s.connector.bucketName, "")
 	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
-		return
+		return fmt.Errorf("google cloud storage sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
-	s.startAfter = strings.TrimPrefix(sourceID, prefix)
+	anchor := strings.TrimPrefix(sourceID, prefix)
+	if anchor == "" {
+		return fmt.Errorf("google cloud storage sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+
+	startAfter := ""
+	for {
+		objects, nextStartAfter, hasMore, err := s.connector.listObjectPage(ctx, startAfter, int32(s.batchSize))
+		if err != nil {
+			return err
+		}
+		for _, object := range objects {
+			if object.Key == anchor {
+				s.startAfter = anchor
+				return nil
+			}
+			if object.Key > anchor {
+				return fmt.Errorf("google cloud storage resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
+			}
+		}
+		if !hasMore {
+			break
+		}
+		startAfter = strings.TrimPrefix(nextStartAfter, prefix)
+	}
+	return fmt.Errorf("google cloud storage resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
 }
 
 func (c *GoogleCloudStorageConnector) sourceDocument(sourceID string, object googleCloudStorageObject) (SourceDocument, bool) {
