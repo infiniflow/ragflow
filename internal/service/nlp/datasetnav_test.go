@@ -241,7 +241,15 @@ type stubNavEmbedder struct{}
 func (stubNavEmbedder) Encode(_ context.Context, _ string, texts []string) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
-		dim := 8
+		// The ES document index template (mapping.json, the ragflow_*
+		// dynamic_templates) maps q_<dim>_vec to a dense_vector field only for
+		// the standard embedding dimensions 512/768/1024/1536. The integration
+		// test runs NavService.Search as a real knn query against that index,
+		// so the synthetic vector must use one of those dimensions — otherwise
+		// ES dynamically maps q_<dim>_vec as a plain float array and the knn
+		// query fails with "[knn] queries are only supported on [dense_vector]
+		// fields". 1024 is the canonical RAGFlow embedding size.
+		dim := 1024
 		v := make([]float32, dim)
 		for d := 0; d < dim; d++ {
 			v[d] = float32(int(t[0]) + d)
@@ -262,7 +270,7 @@ func newTestNav(eng *memNavEngine) *NavService {
 func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
 		t.Fatalf("UpsertDoc: %v", err)
 	}
 	if len(eng.rows) == 0 {
@@ -287,10 +295,10 @@ func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 func TestNavService_ListClusters_FiltersRoot(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, total, err := ns.ListClusters(context.Background(), "t1", "kb1", 0, 10)
+	clusters, total, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,10 +412,10 @@ func TestNodeFromRow_ReadableName(t *testing.T) {
 func TestNavService_Search_ReturnsHit(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	hits, err := ns.Search(context.Background(), "t1", "kb1", "aaa", nil, 5)
+	hits, err := ns.Search(t.Context(), "t1", "kb1", "aaa", nil, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,13 +437,13 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	ns := newTestNav(eng)
 	// Two docs that merge into one root cluster (same first char -> identical
 	// stub vectors -> sim=1.0 >= merge threshold).
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, _, err := ns.ListClusters(context.Background(), "t1", "kb1", 0, 10)
+	clusters, _, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +454,7 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 		t.Fatalf("cluster doc_count = %d, want 2 (both docs merged into the cluster)", clusters[0].DocCount)
 	}
 	name := clusters[0].Name
-	children, total, err := ns.ListChildren(context.Background(), "t1", "kb1", name, 0, 10)
+	children, total, err := ns.ListChildren(t.Context(), "t1", "kb1", name, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,10 +481,10 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 func TestNavService_NavDocDepth(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
 		t.Fatal(err)
 	}
 	// The nav_doc for d2 sits under the root cluster; its depth_int must be 1.
@@ -496,10 +504,10 @@ func TestNavService_RemoveDoc_CascadesToEmptyCluster(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
 	// d1 creates a root cluster (name derived from its summary hash).
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d1"); err != nil {
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d1"); err != nil {
 		t.Fatal(err)
 	}
 	// The nav_doc is gone, and the root cluster (now empty) is pruned.
@@ -550,10 +558,10 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 			"doc_count_int": 1,
 		})
 	}
-	if _, err := eng.InsertChunks(context.Background(), rows, idx, "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err != nil {
+	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {
 		t.Fatal(err)
 	}
 	splitA := clusterName + ":A"
@@ -609,7 +617,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	}
 	// A production nav_doc has doc_id but no doc_ids_kwd. Removing one after a
 	// split must update the replacement cluster that inherited its membership.
-	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d00"); err != nil {
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d00"); err != nil {
 		t.Fatalf("RemoveDoc after split: %v", err)
 	}
 	var remainingCount, remainingIDs int

@@ -70,6 +70,11 @@ type RetrievalRequest struct {
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
+	// UserID optionally filters memory messages by the user_id they were
+	// recorded with (the Retrieval node's "User ID" field, e.g. resolved
+	// from sys.user_id). Empty = no user filter. Only meaningful for
+	// retrieval_from=memory.
+	UserID string
 }
 
 // RetrievalService is the knowledge-base search interface used by the tool.

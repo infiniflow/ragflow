@@ -19,6 +19,7 @@ import { FormSchema as ParserFormSchema } from '../form/parser-form';
 import useGraphStore from '../store';
 import { getEmptyMessageNodeNames } from '../utils';
 import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
+import { findInvalidRetrievalBinding } from '../utils/find-invalid-retrieval';
 import { useBuildDslData } from './use-build-dsl';
 
 /**
@@ -39,6 +40,13 @@ function findInvalidNode(
   );
   if (invalidParserNode) {
     return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // Retrieval nodes and Agent-embedded Retrieval tools must carry a dataset
+  // or memory binding; see find-invalid-retrieval.ts for why emptiness is
+  // asserted directly instead of re-parsing the whole form schema.
+  const invalidRetrieval = findInvalidRetrievalBinding(nodes);
+  if (invalidRetrieval) {
+    return invalidRetrieval;
   }
   // Unlike the schema re-check above, the missing-model check is not gated on
   // editedNodeIds: a canvas loaded from storage with an empty model must warn

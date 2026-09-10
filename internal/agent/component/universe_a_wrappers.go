@@ -69,6 +69,7 @@ type retrievalParams struct {
 	KbIDs                    []string
 	MemoryIDs                []string
 	DocumentIDs              []string
+	UserID                   string
 	TopN                     int
 	TopK                     int
 	SimilarityThreshold      *float64
@@ -115,6 +116,9 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		}
 	} else {
 		out.DocumentIDs = toStringSlice(params["document_ids"])
+	}
+	if v, ok := params["user_id"].(string); ok {
+		out.UserID = v
 	}
 	if v, ok := params["top_n"]; ok {
 		out.TopN = toIntParam(v)
@@ -205,6 +209,25 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	query, _ := merged["query"].(string)
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
+			query = resolved
+		}
+	}
+	if query != "" && merged["retrieval_from"] == "dataset" {
+		rawIDs, present := merged["dataset_ids"]
+		emptySelection := !present || rawIDs == nil
+		switch ids := rawIDs.(type) {
+		case []string:
+			emptySelection = len(ids) == 0
+		case []any:
+			emptySelection = len(ids) == 0
+		}
+		if emptySelection {
+			return map[string]any{"_ERROR": "No dataset is selected."}, nil
+		}
+	}
 	common.Debug("agent retrieval component: invoke",
 		zap.Any("inputs", inputs),
 		zap.Any("merged", merged),
@@ -293,6 +316,9 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 		} else {
 			out["document_ids"] = []string{s}
 		}
+	}
+	if _, ok := out["user_id"]; !ok && c.params.UserID != "" {
+		out["user_id"] = c.params.UserID
 	}
 	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
 		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)

@@ -28,6 +28,7 @@ import (
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
+	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)
@@ -64,6 +65,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
 	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
+	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
