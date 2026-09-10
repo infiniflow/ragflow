@@ -475,7 +475,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		return nil, fmt.Errorf("parser: %w", err)
 	}
 	lang, _ := getString(inputs, "lang")
-	out := buildParserOutputs(dispatched, filename, fileTypeExt, binary, lang)
+	out := buildParserOutputs(ctx, dispatched, filename, fileTypeExt, binary, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.

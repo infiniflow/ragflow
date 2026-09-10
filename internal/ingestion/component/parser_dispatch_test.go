@@ -89,6 +89,52 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	t.Fatalf("json payload does not contain %q: %#v", want, items)
 }
 
+func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		dispatched parserDispatchResult
+		wantText   string
+	}{
+		{
+			name: "markdown",
+			dispatched: parserDispatchResult{
+				OutputFormat: "markdown",
+				Markdown:     "# Title\n\nBody",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "html",
+			dispatched: parserDispatchResult{
+				OutputFormat: "html",
+				HTML:         "<h1>Title</h1><p>Body</p>",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "text",
+			dispatched: parserDispatchResult{
+				OutputFormat: "text",
+				Text:         "plain body",
+			},
+			wantText: "plain body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, utility.FileTypeOTHER, nil, "")
+
+			requireJSONText(t, out, tt.wantText)
+			for _, key := range []string{"markdown", "html", "text"} {
+				if _, ok := out[key]; ok {
+					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])
+				}
+			}
+		})
+	}
+}
+
 func TestDispatch_JSONOutput(t *testing.T) {
 	setups := defaultSetups()
 	c := &ParserComponent{Setups: setups}
@@ -144,7 +190,7 @@ func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 // TestDispatch_TextPageMode_NoFileType pins the no-dispatch
 // path. When the upstream inputs supply neither file_type nor
 // file.name, the component degrades to text-page mode and
-// emits output_format=text. This is the documented behavior for
+// emits structured JSON items. This is the documented behavior for
 // canvas-bound invocations that wire the binary directly without
 // a family hint.
 func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
@@ -164,6 +210,9 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok || len(jsonItems) == 0 {
 		t.Fatalf("json items missing or empty: %T", out["json"])
+	}
+	if _, ok := out["text"]; ok {
+		t.Fatalf("output contains obsolete text payload: %#v", out["text"])
 	}
 }
 
@@ -524,10 +573,7 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Title") {
-		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Title")
 }
 
 func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
@@ -630,9 +676,7 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if out["output_format"] != "json" || out["markdown"] != "MonkeyOCRv2 title" {
-		t.Fatalf("output=%#v", out)
-	}
+	requireJSONText(t, out, "MonkeyOCRv2 title")
 }
 
 // mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
@@ -733,10 +777,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Paddle Title")
 }
 
 // TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload pins the cloud
@@ -797,10 +838,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Unwrapped Title") {
-		t.Fatalf("markdown payload = %#v, want Unwrapped Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Unwrapped Title")
 }
 
 func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
@@ -891,10 +929,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Cloud Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Cloud Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
 // TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod pins the routing of a
@@ -958,10 +993,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Cloud Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Cloud Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
 // paddleocrTestDriver is a minimal ModelDriver mock whose Name() returns "paddleocr".

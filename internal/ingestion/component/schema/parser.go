@@ -63,23 +63,13 @@ type Page map[string]any
 type ParserSetup map[string]any
 
 // ParserOutputs is the result of invoking the Parser component. The
-// wire format is "json", with structured JSON items as the primary payload.
-// Companion payloads (markdown, text, html) are preserved when available.
+// wire format is "json", with structured JSON items as the only payload.
 type ParserOutputs struct {
 	// OutputFormat is always "json". Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// JSON holds the list of structured sections (primary payload).
 	JSON []map[string]any `json:"json,omitempty"`
-
-	// Markdown holds rendered Markdown when available as a companion payload.
-	Markdown string `json:"markdown,omitempty"`
-
-	// Text holds rendered plain text when available as a companion payload.
-	Text string `json:"text,omitempty"`
-
-	// HTML holds rendered HTML when available as a companion payload.
-	HTML string `json:"html,omitempty"`
 
 	// File is the upstream file descriptor with parser-derived metadata
 	// (e.g., outlines) merged in. Mirrors the Python `set_output("file", ...)`

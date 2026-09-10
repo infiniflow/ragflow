@@ -41,7 +41,8 @@ import (
 //
 // File is the per-parser file metadata and may be nil.
 //
-// JSON is the primary payload. Rendered companion fields may also be populated.
+// JSON is the canonical payload. Markdown, Text, and HTML capture non-JSON
+// backend responses until buildParserOutputs normalizes them.
 type parserDispatchResult struct {
 	OutputFormat string
 	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
@@ -293,17 +294,11 @@ func ParserFileFamily(ext string) string {
 //   - name           string        — from the upstream file/document name
 //     (or doc_id when no filename is available)
 //   - file_type      string        — canonical parser-resolved file extension
-//   - output_format  string        — the dispatch's OutputFormat,
-//     or "json" for the raw-text fallback
-//   - json | markdown | text | html — the dispatched payload on
-//     the matching family key
+//   - output_format  string        — always "json"
+//   - json           []map[string]any — normalized parser items
 //   - file           map[string]any — the parser-enriched file
 //     metadata, when present
-//
-// This mirrors the Python Parser component's `set_output()` calls
-// at rag/flow/parser/parser.py:_invoke — the downstream chunker
-// / tokenizer / extractor components read the matching family key.
-func buildParserOutputs(dispatched parserDispatchResult, name string, fileType utility.FileType, rawBinary []byte, lang string) map[string]any {
+func buildParserOutputs(ctx context.Context, dispatched parserDispatchResult, name string, fileType utility.FileType, rawBinary []byte, lang string) map[string]any {
 	out := map[string]any{
 		"name": name,
 	}
@@ -314,50 +309,46 @@ func buildParserOutputs(dispatched parserDispatchResult, name string, fileType u
 		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
-		out["output_format"] = dispatched.OutputFormat
-		switch dispatched.OutputFormat {
-		case "json":
-			out["json"] = dispatched.JSON
-		case "markdown":
-			out["markdown"] = dispatched.Markdown
-		case "html":
-			out["html"] = dispatched.HTML
-		case "text":
-			out["text"] = dispatched.Text
-		}
-		if dispatched.JSON != nil {
-			out["json"] = dispatched.JSON
-		}
-		if dispatched.Markdown != "" {
-			out["markdown"] = dispatched.Markdown
-		}
-		if dispatched.HTML != "" {
-			out["html"] = dispatched.HTML
-		}
-		if dispatched.Text != "" {
-			out["text"] = dispatched.Text
-		}
+		out["output_format"] = "json"
+		out["json"] = normalizeParserJSON(ctx, name, dispatched)
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
 		}
 		return out
 	}
-	// Raw-text fallback path: emit output_format = "json", populating both json items and text.
+	// Raw-text fallback path: emit one JSON item per page.
 	rawPages := splitIntoPages(rawBinary)
 	if len(rawPages) == 0 {
 		rawPages = [][]byte{nil}
 	}
 	fallbackItems := make([]map[string]any, 0, len(rawPages))
-	var textParts []string
 	for _, pageBytes := range rawPages {
 		txt := string(pageBytes)
 		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
-		textParts = append(textParts, txt)
 	}
 	out["output_format"] = "json"
 	out["json"] = fallbackItems
-	out["text"] = strings.Join(textParts, "\n")
 	return out
+}
+
+func normalizeParserJSON(ctx context.Context, filename string, dispatched parserDispatchResult) []map[string]any {
+	if dispatched.JSON != nil {
+		return dispatched.JSON
+	}
+	if dispatched.Markdown != "" {
+		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
+	}
+	if dispatched.HTML != "" {
+		res := parser.NewHTMLParser().ParseWithResult(ctx, filename, []byte(dispatched.HTML))
+		if res.Err == nil && len(res.JSON) > 0 {
+			return res.JSON
+		}
+		return []map[string]any{parser.NewTextJSONItem(dispatched.HTML)}
+	}
+	if dispatched.Text != "" {
+		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
+	}
+	return []map[string]any{}
 }
 
 func parserInputName(inputs map[string]any, docID string) string {
