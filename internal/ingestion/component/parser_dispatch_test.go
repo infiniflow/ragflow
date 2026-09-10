@@ -95,6 +95,9 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
+	if got, want := out["file_type"], "md"; got != want {
+		t.Errorf("file_type = %v, want %v", got, want)
+	}
 	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok {
 		t.Fatalf("json payload missing or wrong type: %T", out["json"])

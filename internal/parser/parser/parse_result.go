@@ -100,3 +100,38 @@ type ParseResult struct {
 type ParseResultProducer interface {
 	ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
 }
+
+// Canonical document type identifiers used in structured JSON items.
+// These align directly with Python's doc_type_kwd contract.
+const (
+	DocTypeKey     = "doc_type_kwd"
+	DocTypeText    = "text"
+	DocTypeTable   = "table"
+	DocTypeImage   = "image"
+	DocTypeAudio   = "audio"
+	DocTypeHeading = "heading"
+)
+
+// NewTextJSONItem constructs a canonical text JSON item for parser output.
+func NewTextJSONItem(text string) map[string]any {
+	return map[string]any{
+		"text":     text,
+		DocTypeKey: DocTypeText,
+	}
+}
+
+// NewTableJSONItem constructs a canonical table JSON item for parser output.
+func NewTableJSONItem(html string, sheet string, positions [][]float64) map[string]any {
+	item := map[string]any{
+		"text":     html,
+		DocTypeKey: DocTypeTable,
+		"ck_type":  DocTypeTable,
+	}
+	if sheet != "" {
+		item["sheet"] = sheet
+	}
+	if len(positions) > 0 {
+		item["positions"] = positions
+	}
+	return item
+}

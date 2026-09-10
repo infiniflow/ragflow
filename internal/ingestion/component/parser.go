@@ -366,6 +366,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
+		"file_type":     "string: canonical parser-resolved file extension.",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",

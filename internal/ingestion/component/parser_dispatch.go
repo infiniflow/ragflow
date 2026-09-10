@@ -442,6 +442,9 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, n
 		"pages": toAnyPages(parsed),
 		"name":  name,
 	}
+	if fileType != "" && fileType != utility.FileTypeOTHER {
+		out["file_type"] = string(fileType)
+	}
 	if lang != "" {
 		out["lang"] = lang
 	}
@@ -465,7 +468,6 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, n
 	// Raw-text fallback path: emit output_format = "text" so a
 	// chunker branching on the format key still sees a sane value.
 	out["output_format"] = "text"
-	_ = fileType // reserved for a future "raw_text per-family" extension
 	return out
 }
 
