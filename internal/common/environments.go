@@ -34,6 +34,7 @@ func GetEnvSmall(key string) string {
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
+	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
@@ -160,6 +161,8 @@ const (
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
+	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
+	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
@@ -224,19 +227,29 @@ const (
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
-// in-process (Go) DeepDoc backend and the Python DeepDoc service both
-// require. cmd/ resolves the model directory against it; infnative
-// validates file presence against it. Order is insignificant (callers do
-// set-membership checks); keep it stable so logs and diffs stay readable.
+// in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
+// the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
+// into the Go binary supports .ort only, not the protobuf .onnx format. The
+// Python DeepDoc service keeps the legacy .onnx files and lists them
+// independently (see deepdoc/server/download_deps.py), so this slice must NOT
+// re-add the .onnx names; it is the Go presence check, not a shared list.
+// cmd/ resolves the model directory against it; the native analyzer validates
+// file presence against it via HasModelFiles. Order is insignificant (callers
+// do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - .github/workflows/deepdoc-drift.yml  (MODEL_FILES)
-//   - deepdoc/server/download_deps.py      (FILES)
+//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//     (it fetches the files one by one, so it MUST be edited by hand when this
+//     slice changes);
+//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
+//     (so .ort lands in the model dir automatically — no FILES edit needed);
+//   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
+//     image) keeps the .onnx list and must NOT be changed to .ort.
 var DeepDocModelFiles = []string{
-	"det.onnx",
-	"layout.onnx",
-	"tsr.onnx",
-	"rec.onnx",
+	"det.ort",
+	"layout.ort",
+	"tsr.ort",
+	"rec.ort",
 	"ocr.res",
 }
 
@@ -259,8 +272,8 @@ func HasModelFiles(dir string) bool {
 // ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
 // — NOT a single source of truth. The download URL and extracted dir name are
 // built from those ORT_VERSION constants, not from this one. The Go binding
-// (github.com/yalue/onnxruntime_go, forked to
-// github.com/xugangqiang/onnxruntime_go) and the pip onnxruntime== pin must
+// (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
+// and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
 // (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),

@@ -593,7 +593,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// Search and UpsertDoc can embed queries/summaries automatically.
 	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(service.NewModelProviderService(), "")))
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
-	// pool (task_type="memory" dispatched by processMessage -> executeMemoryTask),
+	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
@@ -1084,7 +1084,8 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
-// running binary — see the onnxruntime_go fork), so there is no external
+// running binary — see github.com/infiniflow/onnxruntime_go, the org mirror of
+// yalue/onnxruntime_go), so there is no external
 // DeepDoc HTTP service and no dynamic .so deployment.
 //
 // Fail-fast contract (P0): the in-process backend must be available at startup

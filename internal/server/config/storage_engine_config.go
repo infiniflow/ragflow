@@ -152,7 +152,11 @@ func (c *Config) parseS3Config(v *viper.Viper) {
 		c.storageEngine.S3.SecretKey = sub.GetString("secret_key")
 	}
 
-	if sub.IsSet("region") {
+	if sub.IsSet("region_name") {
+		c.storageEngine.S3.Region = sub.GetString("region_name")
+	}
+
+	if c.storageEngine.S3.Region == "" && sub.IsSet("region") {
 		c.storageEngine.S3.Region = sub.GetString("region")
 	}
 

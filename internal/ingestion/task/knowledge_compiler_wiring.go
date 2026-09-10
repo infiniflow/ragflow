@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
@@ -522,9 +523,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup so a stalled provider/instance DB read
 		// cannot block document ingestion indefinitely.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if ml, merr := svc.ResolveModelContextLength(ctx, tenantID, llmID); merr == nil && ml > 0 {
+		contextLengthCtx, cancelContextLength := context.WithTimeout(context.Background(), 30*time.Second)
+		ml, contextLengthErr := svc.ResolveModelContextLength(contextLengthCtx, tenantID, llmID)
+		cancelContextLength()
+		if contextLengthErr == nil && ml > 0 {
 			llmMax = ml
 		}
 		// Resolve the model's generation cap (max_output). Cross-document merge
@@ -534,12 +536,15 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// uses max_tokens (the generation cap), NOT content_length — see
 		// ResolveModelContextLength's comment.
 		llmMaxOutput := 0
-		if _, _, _, mo, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && mo > 0 {
+		modelConfigCtx, cancelModelConfig := context.WithTimeout(context.Background(), 30*time.Second)
+		_, _, _, mo, modelConfigErr := svc.ResolveModelConfig(modelConfigCtx, tenantID, entity.ModelTypeChat, llmID)
+		cancelModelConfig()
+		if modelConfigErr == nil && mo > 0 {
 			llmMaxOutput = mo
 		}
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
+			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID, maxTokens: llmMaxOutput},
 			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
 			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
@@ -555,9 +560,10 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 // kcChatInvoker adapts service.ModelProviderService.Chat to the
 // knowledge_compiler ChatInvoker seam.
 type kcChatInvoker struct {
-	svc      *service.ModelProviderService
-	tenantID string
-	llmID    string
+	svc       *service.ModelProviderService
+	tenantID  string
+	llmID     string
+	maxTokens int
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
@@ -572,15 +578,18 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil || req.MaxTokens != nil {
+	if req.Temperature != nil || req.MaxTokens != nil || c.maxTokens > 0 {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
 		}
-		// MaxTokens caps the generated summary length (mirrors Python's
-		// {"max_tokens": max(self._max_token, 512)}, issue #10235).
+		// Normal knowledge-compilation calls use the generation cap resolved
+		// from the selected model's max_output configuration. Specialized
+		// variants may still provide a smaller per-call cap.
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
+		} else if c.maxTokens > 0 {
+			config.MaxTokens = &c.maxTokens
 		}
 	}
 	// Retry transient transport/provider failures (HTTP timeout, reset,
@@ -589,15 +598,23 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	attempt := 0
 	call := func() error {
-		// Bound each attempt to a short deadline so a stalled LLM provider (e.g.
-		// MiniMax hanging on a large merge-judge prompt) surfaces a timeout
-		// quickly instead of blocking a compile sub-batch for minutes; the
-		// retry/backoff loop above then handles it as a transient failure.
+		attempt++
+		// Bound each attempt so a stalled LLM provider eventually releases its
+		// compile sub-batch. Knowledge compilation prompts can be large and some
+		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
+			if !req.DisableRetry {
+				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
+				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
+					message += "; retrying with exponential backoff"
+				}
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
 			return err
 		}
 		resp = r
@@ -622,10 +639,9 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 // stays small to avoid unbounded wall-clock latency inside one compile.
 const kcChatRetryMax = 5
 
-// kcChatAttemptTimeout bounds a single Chat call (per retry attempt). A stalled
-// provider must surface a timeout promptly rather than hold a compile sub-batch;
-// 3 minutes is long enough for a big merge-judge prompt yet short enough that
-// several failed attempts do not stall the pipeline for many minutes.
+// kcChatAttemptTimeout bounds a single Chat call per retry attempt. It matches
+// the non-streaming provider deadline so the knowledge-compiler adapter does
+// not cancel a valid long-running response before the provider does.
 const kcChatAttemptTimeout = 3 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
@@ -669,13 +685,13 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 		}
 		batchTexts := texts[start:end]
 		jobs = append(jobs, func() error {
-			if err = ctx.Err(); err != nil {
-				return err
+			if jobErr := ctx.Err(); jobErr != nil {
+				return jobErr
 			}
 			var embeds []models.EmbeddingData
-			embeds, err = mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
-			if err != nil {
-				return fmt.Errorf("knowledge_compiler: embed: %w", err)
+			embeds, jobErr := mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
+			if jobErr != nil {
+				return fmt.Errorf("knowledge_compiler: embed: %w", jobErr)
 			}
 			vecs := make([][]float32, len(embeds))
 			for i, v := range embeds {
