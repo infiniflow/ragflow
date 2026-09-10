@@ -349,7 +349,7 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 		t.Fatalf("read fixture: %v", err)
 	}
 
-	p := NewEmailParser() // text output; default fields
+	p := NewEmailParser() // json output; default fields
 	p.ConfigureFromSetup(map[string]any{
 		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
 	})
@@ -357,8 +357,11 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "text" {
-		t.Fatalf("output format = %q, want text", result.OutputFormat)
+	if result.OutputFormat != "json" {
+		t.Fatalf("output format = %q, want json", result.OutputFormat)
+	}
+	if len(result.JSON) == 0 {
+		t.Fatalf("expected non-empty JSON items")
 	}
 
 	if !strings.Contains(result.Text, "subject:asdf") {

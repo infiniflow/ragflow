@@ -47,7 +47,9 @@ type EmailParser struct {
 }
 
 func NewEmailParser() *EmailParser {
-	return &EmailParser{}
+	return &EmailParser{
+		outputFormat: "json",
+	}
 }
 
 func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
@@ -115,7 +117,7 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 
 	outputFormat := p.outputFormat
 	if outputFormat == "" {
-		outputFormat = "text"
+		outputFormat = "json"
 	}
 
 	// Re-chunk attachments so their content becomes retrievable within the
@@ -134,18 +136,9 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// discarded. Drop it from the result content.
 	delete(content, "attachments")
 
-	if outputFormat == "json" {
-		content["doc_type_kwd"] = "text"
-		items := []map[string]any{content}
-		items = append(items, extraItems...)
-		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename},
-			JSON:         items,
-		}
-	}
-
-	// Text output: flatten fields into a single string.
+	// Text representation: flatten fields into a single string.
+	// Built for both formats: in JSON mode, Text is preserved as a companion
+	// payload for previews and single-string chunker fallbacks.
 	var sb strings.Builder
 	for k, v := range content {
 		// The metadata map (every non-basic header: Received chains,
@@ -193,10 +186,24 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		sb.WriteString(attachmentText)
 		sb.WriteString("\n")
 	}
+	text := sb.String()
+
+	if outputFormat == "text" {
+		return ParseResult{
+			OutputFormat: "text",
+			File:         map[string]any{"name": filename},
+			Text:         text,
+		}
+	}
+
+	content["doc_type_kwd"] = "text"
+	items := []map[string]any{content}
+	items = append(items, extraItems...)
 	return ParseResult{
-		OutputFormat: "text",
+		OutputFormat: "json",
 		File:         map[string]any{"name": filename},
-		Text:         sb.String(),
+		JSON:         items,
+		Text:         text,
 	}
 }
 

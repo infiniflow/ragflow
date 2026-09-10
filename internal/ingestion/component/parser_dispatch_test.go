@@ -164,8 +164,8 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (text-page mode)", got, want)
+	if got, want := out["output_format"], "json"; got != want {
+		t.Errorf("output_format = %v, want %v (raw-text mode)", got, want)
 	}
 	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok || len(jsonItems) == 0 {
@@ -289,10 +289,10 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			want:   "json",
 		},
 		{
-			name:   "setup without output_format → per-family default (email→text)",
+			name:   "setup without output_format → per-family default (email→json)",
 			setups: map[string]schema.ParserSetup{"email": {}},
 			family: "email",
-			want:   "text",
+			want:   "json",
 		},
 		{
 			name:    "image explicit text (legacy) → strict reject",
@@ -372,11 +372,11 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 }
 
 // TestDefaultOutputFormatForFamily_Sync verifies the dispatch default
-// stays in sync with the allowed whitelist and, except for the two
-// intentional overrides (email:text, audio:json), with defaultSetups.
+// stays in sync with the allowed whitelist and, except for the
+// intentional override (audio:json), with defaultSetups.
 func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
 	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
-	overrides := map[string]string{"email": "text", "audio": "json"}
+	overrides := map[string]string{"audio": "json"}
 	for family, def := range map[string]string{
 		"pdf":         "json",
 		"spreadsheet": "html",
@@ -389,7 +389,7 @@ func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
 		"html":        "json",
 		"epub":        "json",
 		"json":        "json",
-		"email":       "text",
+		"email":       "json",
 		"audio":       "json",
 		"video":       "text",
 	} {

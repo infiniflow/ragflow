@@ -143,17 +143,11 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // output_format used when setups[family] exists but output_format is
 // empty. For most families it is the value in defaultSetups()
 // (which mirrors rag/flow/parser/parser.py ParserParam.setups).
-// Two families diverge intentionally and are overridden here:
-//   - email: defaultSetups is "json" (Python), but dispatch defaults
-//     to "text" to match frontend InitialOutputFormatMap, EmailParser
-//     text fallback, and ingestion_pipeline_email.json.
+// Audio is overridden here:
 //   - audio: defaultSetups is "text" (Python), but dispatch defaults
 //     to "json" to match media_dispatch json fallback and Python
 //     whitelist [json] (audio:text would be rejected if validated).
 func defaultOutputFormatForFamily(family string) (string, bool) {
-	if family == "email" {
-		return "text", true
-	}
 	if family == "audio" {
 		return "json", true
 	}
@@ -381,7 +375,7 @@ func ParserFileFamily(ext string) string {
 //     (or doc_id when no filename is available)
 //   - file_type      string        — canonical parser-resolved file extension
 //   - output_format  string        — the dispatch's OutputFormat,
-//     or "text" for the raw-text fallback
+//     or "json" for the raw-text fallback
 //   - json | markdown | text | html — the dispatched payload on
 //     the matching family key
 //   - file           map[string]any — the parser-enriched file
@@ -412,12 +406,24 @@ func buildParserOutputs(dispatched parserDispatchResult, name string, fileType u
 		case "text":
 			out["text"] = dispatched.Text
 		}
+		if dispatched.JSON != nil {
+			out["json"] = dispatched.JSON
+		}
+		if dispatched.Markdown != "" {
+			out["markdown"] = dispatched.Markdown
+		}
+		if dispatched.HTML != "" {
+			out["html"] = dispatched.HTML
+		}
+		if dispatched.Text != "" {
+			out["text"] = dispatched.Text
+		}
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
 		}
 		return out
 	}
-	// Raw-text fallback path: emit output_format = "text", populating both json items and text.
+	// Raw-text fallback path: emit output_format = "json", populating both json items and text.
 	rawPages := splitIntoPages(rawBinary)
 	if len(rawPages) == 0 {
 		rawPages = [][]byte{nil}
@@ -426,13 +432,10 @@ func buildParserOutputs(dispatched parserDispatchResult, name string, fileType u
 	var textParts []string
 	for _, pageBytes := range rawPages {
 		txt := string(pageBytes)
-		fallbackItems = append(fallbackItems, map[string]any{
-			"text":         txt,
-			"doc_type_kwd": "text",
-		})
+		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
 		textParts = append(textParts, txt)
 	}
-	out["output_format"] = "text"
+	out["output_format"] = "json"
 	out["json"] = fallbackItems
 	out["text"] = strings.Join(textParts, "\n")
 	return out
