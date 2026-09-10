@@ -172,8 +172,7 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
         logging.debug(
-            "Scanning %d instantiated cells for actual row count "
-            "(max_row=%d, max_col=%d)",
+            "Scanning %d instantiated cells for actual row count (max_row=%d, max_col=%d)",
             len(ws._cells),
             max_row,
             max_col,
