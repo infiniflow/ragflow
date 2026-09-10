@@ -45,7 +45,7 @@ func DecodeTableColumnConfig(setup map[string]any) (string, map[string]string) {
 }
 
 // DeduplicateColumnNames ports Python's _deduplicate_column_names (rag/app/table.py:43-60).
-// Ensures all column header names are unique by appending _1, _2, etc.,
+// Ensures all column header names are unique by appending _2, _3, etc.,
 // avoiding collisions with both already-used and existing reserved headers.
 func DeduplicateColumnNames(columns []string) []string {
 	reserved := make(map[string]struct{}, len(columns))
@@ -84,6 +84,11 @@ func DeduplicateColumnNames(columns []string) []string {
 // respecting column_mode and column_roles.
 // Text lines are formatted as "- col: val" and stored in the "text" field.
 // Structured metadata fields are stored in the "chunk_data" map.
+// Auto mode (the default, matching Python's table chunker where every column
+// defaults to "both") indexes every column into text and stores nothing in
+// chunk_data. Manual mode honors column_roles; columns without an explicit
+// role default to "both". Empty headers are named Column_N, matching Python's
+// _parse_simple_headers fallback.
 func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string, columnRoles map[string]string) ([]map[string]any, []string) {
 	if len(rows) == 0 {
 		return nil, nil
@@ -92,6 +97,9 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 	rawHeaders := make([]string, len(rows[0]))
 	for i, h := range rows[0] {
 		rawHeaders[i] = strings.TrimSpace(h)
+		if rawHeaders[i] == "" {
+			rawHeaders[i] = fmt.Sprintf("Column_%d", i+1)
+		}
 	}
 	headers := DeduplicateColumnNames(rawHeaders)
 
@@ -105,9 +113,6 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 
 		for j := 0; j < len(headers); j++ {
 			col := headers[j]
-			if col == "" {
-				continue
-			}
 			var val string
 			if j < len(row) {
 				val = strings.TrimSpace(row[j])
@@ -116,14 +121,17 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				continue
 			}
 
-			role := "indexing"
-			if isManual && columnRoles != nil {
+			role := "both"
+			if isManual {
 				if rVal, ok := columnRoles[col]; ok && strings.TrimSpace(rVal) != "" {
 					role = strings.ToLower(strings.TrimSpace(rVal))
 				}
+				if role == "vectorize" {
+					role = "indexing"
+				}
 			}
 
-			if role == "indexing" || role == "vectorize" || role == "both" {
+			if role == "indexing" || role == "both" {
 				textLines = append(textLines, fmt.Sprintf("- %s: %s", col, val))
 			}
 			if role == "metadata" || role == "both" {

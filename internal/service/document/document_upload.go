@@ -140,7 +140,9 @@ func tableDocumentConfigForFile(base entity.JSONMap, namesByFile []interface{}, 
 		return config
 	}
 	columns := make(map[string]struct{}, len(rawNames))
-	names := make([]string, 0, len(rawNames))
+	// Resolver parity: store names as []interface{} (the shape
+	// ResolveTableColumnConfig reads), matching what a DB round trip yields.
+	names := make([]interface{}, 0, len(rawNames))
 	for _, rawName := range rawNames {
 		name, ok := rawName.(string)
 		if !ok || name == "" {
@@ -153,6 +155,14 @@ func tableDocumentConfigForFile(base entity.JSONMap, namesByFile []interface{}, 
 	}
 	config["table_column_names"] = names
 	if roles, ok := config["table_column_roles"].(map[string]interface{}); ok {
+		filtered := make(map[string]interface{}, len(roles))
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
+			}
+		}
+		config["table_column_roles"] = filtered
+	} else if roles, ok := config["table_column_roles"].(map[string]string); ok {
 		filtered := make(map[string]interface{}, len(roles))
 		for column, role := range roles {
 			if _, exists := columns[column]; exists {

@@ -33,7 +33,7 @@ import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -118,9 +118,13 @@ function UploadForm({
   const [extractedColumns, setExtractedColumns] = useState<string[]>([]);
   const [columnMode, setColumnMode] = useState<'auto' | 'manual'>('auto');
   const [columnRoles, setColumnRoles] = useState<TableColumnRoles>({});
+  // Guards the async column-extraction loop: rapid file-list changes must not
+  // let a stale extraction overwrite the latest selection.
+  const extractionVersion = useRef(0);
 
   const handleFilesChange = useCallback(
     async (files: any[]) => {
+      const version = ++extractionVersion.current;
       if (!isTableParser || !files || files.length === 0) {
         setExtractedColumns([]);
         form.setValue('tableColumnNames', []);
@@ -141,6 +145,9 @@ function UploadForm({
         }
       }
       const columns = Array.from(allColumns);
+      if (version !== extractionVersion.current) {
+        return;
+      }
       setExtractedColumns(columns);
       form.setValue('tableColumnNames', columns);
       form.setValue('tableColumnNamesByFile', columnsByFile);
