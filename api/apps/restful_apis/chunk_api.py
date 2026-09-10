@@ -408,21 +408,24 @@ async def retrieval_test(tenant_id, dataset_id=None):
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
         )
     elif metadata_condition:
-        filtered_doc_ids = filter_doc_ids_by_metadata(
-            kb_ids,
-            convert_conditions(metadata_condition),
-            metadata_condition.get("logic", "and"),
-            lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-        )
-        if doc_ids:
-            filtered_doc_id_set = set(filtered_doc_ids)
-            doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
-        else:
-            doc_ids = filtered_doc_ids
-        if not doc_ids and metadata_condition.get("conditions"):
-            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-        if metadata_condition and not doc_ids:
-            doc_ids = ["-999"]
+        # Empty conditions means no metadata filtering. Match Go MetadataConditionToDocIDs:
+        # keep the caller's document_ids (or None), and never scope the search to "-999".
+        if metadata_condition.get("conditions"):
+            filtered_doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                convert_conditions(metadata_condition),
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
+            if doc_ids:
+                filtered_doc_id_set = set(filtered_doc_ids)
+                doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
+            else:
+                doc_ids = filtered_doc_ids
+            if not doc_ids:
+                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+        elif not doc_ids:
+            doc_ids = None
     elif not doc_ids:
         doc_ids = None
     try:
@@ -1270,7 +1273,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
-        d["available_int"] = int(req["available"])
+        try:
+            d["available_int"] = int(req["available"])
+        except (TypeError, ValueError):
+            return get_error_data_result("`available` should be an integer")
     if "positions" in req:
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
@@ -1336,7 +1342,13 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message="`chunk_ids` is required.")
     if "available_int" not in req and "available" not in req:
         return get_error_data_result(message="`available_int` or `available` is required.")
-    available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
+    try:
+        if "available_int" in req:
+            available_int = int(req["available_int"])
+        else:
+            available_int = 1 if req.get("available") else 0
+    except (TypeError, ValueError):
+        return get_error_data_result("`available_int` should be an integer")
 
     try:
 
