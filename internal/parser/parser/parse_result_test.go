@@ -21,6 +21,17 @@ import (
 	"testing"
 )
 
+func TestNewTableJSONItem_LeavesChunkTypeToChunker(t *testing.T) {
+	item := NewTableJSONItem("<table><tr><td>value</td></tr></table>", "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+
+	if got, want := item[DocTypeKey], DocTypeTable; got != want {
+		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
+	}
+	if _, ok := item["ck_type"]; ok {
+		t.Fatalf("table parser item must not set chunker-owned ck_type: %#v", item)
+	}
+}
+
 // TestParseResult_Contract pins the wire-shape guarantees
 // port-rag-flow-pipeline-to-go.md §6.5 requires:
 //

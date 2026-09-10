@@ -110,11 +110,11 @@ func NewTextJSONItem(text string) map[string]any {
 }
 
 // NewTableJSONItem constructs a canonical table JSON item for parser output.
+// Chunker-owned ck_type is derived from doc_type_kwd at the Chunker boundary.
 func NewTableJSONItem(html string, sheet string, positions [][]float64) map[string]any {
 	item := map[string]any{
 		"text":     html,
 		DocTypeKey: DocTypeTable,
-		"ck_type":  DocTypeTable,
 	}
 	if sheet != "" {
 		item["sheet"] = sheet
