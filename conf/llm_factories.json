@@ -1,6 +1,44 @@
 {
     "factory_llm_infos": [
         {
+            "name": "Synthorai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "50",
+            "url": "https://synthorai.io/v1",
+            "llm": [
+                {
+                    "llm_name": "claude-opus-5",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v4-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
+        },
+        {
             "name": "GreenPT",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT",
@@ -2973,6 +3011,13 @@
             "url": "https://integrate.api.nvidia.com/v1"
         },
         {
+            "name": "llmman",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "LM-Studio",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
@@ -4902,7 +4947,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TEXT RE-RANK",
             "status": "1",
-            "url": "https://ai.gitee.com/v1/",
+            "url": "https://api.moark.com/v1",
             "llm": [
                 {
                     "llm_name": "ERNIE-4.5-Turbo",
@@ -5289,14 +5334,14 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "bge-m3",
+                    "llm_name": "BAAI/bge-m3",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK",
                     "max_tokens": 8192,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "bge-reranker-v2-m3",
+                    "llm_name": "BAAI/bge-reranker-v2-m3",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 8192,
                     "model_type": "rerank",
@@ -5336,6 +5381,13 @@
             "name": "Google Cloud",
             "logo": "",
             "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "Hubris",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": []
         },
@@ -7689,13 +7741,6 @@
                     "llm_name": "mimo-v2.5",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "mimo-v2-flash",
-                    "tags": "LLM,CHAT,256K",
-                    "max_tokens": 262144,
                     "model_type": "chat",
                     "is_tools": true
                 }

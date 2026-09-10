@@ -437,12 +437,17 @@ func TestAzureDevOpsOpenSyncResumesFromCursor(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cursor, _ := json.Marshal(azureDevOpsSyncCursor{RepoKey: "iddaa/repo-a", Stage: azureDevOpsStageCode, FileOffset: 1})
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{
+		RepoKey:    "iddaa/repo-a",
+		Stage:      azureDevOpsStageCode,
+		FileOffset: 1,
+		SourceID:   "azure_devops:contoso:iddaa:repo-a:file:a.cs",
+	})
 	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
 	session, err := connector.OpenSync(context.Background(), SyncRequest{
 		FromBeginning: true,
 		WindowEnd:     time.Now().UTC(),
-		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+		Resume:        &SyncCheckpoint{Cursor: string(cursor), SourceID: "azure_devops:contoso:iddaa:repo-a:file:a.cs"},
 	})
 	if err != nil {
 		t.Fatalf("OpenSync returned error: %v", err)
@@ -458,6 +463,32 @@ func TestAzureDevOpsOpenSyncResumesFromCursor(t *testing.T) {
 	}
 	if listed == 0 {
 		t.Fatal("the file listing should have been requested once on resume")
+	}
+}
+
+func TestAzureDevOpsOpenSyncRejectsMissingSourceAnchor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/pullrequests"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		case strings.Contains(r.URL.Path, "/items"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		default:
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"name": "repo-a", "defaultBranch": "refs/heads/master", "project": map[string]any{"name": "iddaa"}},
+			}})
+		}
+	}))
+	defer server.Close()
+
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{RepoKey: "iddaa/repo-a", Stage: azureDevOpsStageCode, FileOffset: 1})
+	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 

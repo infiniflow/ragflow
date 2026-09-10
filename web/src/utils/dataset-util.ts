@@ -23,3 +23,13 @@ export function isKnowledgeGraphParser(parserId: DocumentParserType) {
 export function isNaiveParser(parserId: DocumentParserType) {
   return parserId === DocumentParserType.Naive;
 }
+
+/**
+ * Dataset ids are 32-char hex strings (uuid with dashes stripped, on both
+ * the Python and Go backends). Anything else found in a `dataset_ids` list
+ * is a variable reference (e.g. `begin@x`, `sys.query`, `node@output`) that
+ * no dataset endpoint can resolve.
+ */
+export function isDatasetId(value: string) {
+  return /^[0-9a-f]{32}$/i.test(value);
+}

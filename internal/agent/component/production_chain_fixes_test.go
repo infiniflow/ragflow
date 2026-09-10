@@ -629,7 +629,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"state": map[string]map[string]any{
 			"UserFillUp:CodeInput": {
 				"x": "8",
@@ -680,7 +680,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *test
 
 	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
 	state.Sys["query"] = "532"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
@@ -720,7 +720,7 @@ func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -760,9 +760,9 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
-	if err == nil {
-		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "Container pool is busy") {
+		t.Fatalf("CodeExec.Invoke error = %v, want terminal sandbox error", err)
 	}
 	if got, _ := out["_ERROR"].(string); got != "Container pool is busy" {
 		t.Errorf("CodeExec _ERROR = %v, want sandbox execution error", out["_ERROR"])
@@ -852,7 +852,7 @@ func TestLLM_RetryStackingSemantics(t *testing.T) {
 			}
 			// The retry chain always returns errLLMRetryTestAlwaysFail
 			// so we can count attempts deterministically.
-			_, _ = comp.Invoke(context.Background(), nil, nil)
+			_, _ = comp.Invoke(t.Context(), nil, nil)
 			if counter.calls < tc.wantMinAttempts {
 				t.Errorf("counter.calls = %d, want >= %d (MaxRetries=%d stacking regression?)",
 					counter.calls, tc.wantMinAttempts, tc.maxRetries)

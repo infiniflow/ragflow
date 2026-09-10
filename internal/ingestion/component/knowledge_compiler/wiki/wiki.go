@@ -65,29 +65,6 @@ const wikiMapTokenBudget = 2048
 
 const wikiRefineProgressStep = 5
 
-// wikiMapMaxTokens derives the extraction output budget from the model's
-// context length and the per-batch input budget: once the batch has consumed
-// wikiMapTokenBudget input tokens, the rest of the window is handed to the
-// output — but never below the input budget itself, so a small-input batch can
-// still get a proportionally large extraction payload. modelContextLen is the
-// model's total context window in tokens (0 means unknown).
-func wikiMapMaxTokens(modelContextLen int) int {
-	if modelContextLen <= 0 {
-		modelContextLen = common.DefaultLLMContextLength
-	}
-	return max(modelContextLen-wikiMapTokenBudget, wikiMapTokenBudget)
-}
-
-// wikiRefineMaxTokens gives the page writer (REFINE step) a generous but
-// bounded output cap so a long page body is not cut off mid-stream by a small
-// default completion limit. It reuses the map/extraction budget derivation:
-// once the input budget is consumed, the rest of the model window is handed to
-// the output. modelContextLen is the model's total context window in tokens (0
-// means unknown).
-func wikiRefineMaxTokens(modelContextLen int) int {
-	return wikiMapMaxTokens(modelContextLen)
-}
-
 type wikiPipeline struct {
 	ctx       context.Context
 	deps      common.Deps
@@ -300,17 +277,22 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		for i, p := range products {
 			texts[i] = p.Content
 		}
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki EMBEDDING Started: products=%d", len(texts)))
 		vectors, err := deps.Embed.Encode(ctx, texts)
 		if err != nil {
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("[ERROR] Wiki EMBEDDING Failed: products=%d error=%s", len(texts), common.CompactError(err)))
 			return common.Outputs{}, err
 		}
-		for i := range products {
-			if i < len(vectors) {
-				products[i].Vector = vectors[i]
-			}
+		if len(vectors) != len(texts) {
+			err = fmt.Errorf("wiki: embedder returned %d vectors for %d products", len(vectors), len(texts))
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("[ERROR] Wiki EMBEDDING Failed: products=%d error=%s", len(texts), common.CompactError(err)))
+			return common.Outputs{}, err
+		}
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki EMBEDDING Done: products=%d vectors=%d", len(texts), len(vectors)))
+		if err := assignWikiProductVectors(products, vectors); err != nil {
+			return common.Outputs{}, err
 		}
 	}
-
 	store := common.NewMemStore()
 	decider := structure.CosineDecider{Threshold: param.SimilarityThreshold}
 	stats := structure.MergeStats{}
@@ -347,6 +329,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		out.WikiActiveStates = append(out.WikiActiveStates, *p.pendingActiveState)
 	}
 	return out, nil
+}
+
+func assignWikiProductVectors(products []common.Product, vectors [][]float32) error {
+	if len(products) != len(vectors) {
+		return fmt.Errorf("wiki: embedder returned %d vectors for %d products", len(vectors), len(products))
+	}
+	for i := range products {
+		products[i].Vector = vectors[i]
+	}
+	return nil
 }
 
 // runKey returns a stable identity for this wiki run's log lines. In a
@@ -636,7 +628,14 @@ func pageResultsDebug(pages []wikiPageResult) []string {
 }
 
 func (p *wikiPipeline) runMap() error {
-	if p.deps.WikiMapVersions != nil {
+	// The versioned MAP cache is dataset-scoped: its DocStore rows live under
+	// ragflow_<tenant_id>/<kb_id>. A canvas debug (dataflow dry-run) run has no
+	// knowledgebase (NewDebugTaskContext forces kb_id == ""), so there is no
+	// scope to key cache rows on — the strict-scope store would fail the whole
+	// run with "tenant_id and dataset_id are required". Run the cache-less MAP
+	// there instead, mirroring how the debug tokenizer skips embedding and the
+	// debug executor skips persistence: a dry-run must stay side-effect free.
+	if p.deps.WikiMapVersions != nil && strings.TrimSpace(p.tenantID) != "" && strings.TrimSpace(p.datasetID) != "" {
 		err := p.runVersionedMap()
 		for i := range p.mapExtracts {
 			p.mapExtracts[i].Mode = p.wikiMode()
@@ -701,18 +700,10 @@ func runMapBatches(
 func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 	parserConfig, _ := p.inputs.VariantSpecific["parser_config"].(map[string]any)
 	user, _ := buildWikiMapPrompt(p.docID, batch, parserConfig, p.param.Language)
-	// Give the extraction step a generous output budget so the entity/relation
-	// JSON is not silently truncated by the model's default output cap (that
-	// produced "unexpected end of JSON input" from GenJSON). The output budget is
-	// tied to the per-batch input budget: once the batch consumes
-	// wikiMapTokenBudget tokens of the model's context, the remainder is left
-	// for the extraction payload (and never less than the input budget itself).
-	mt := wikiMapMaxTokens(p.deps.ModelContextLen)
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiMapSystem,
 		UserPrompt:   user,
-		MaxTokens:    &mt,
 	})
 	if err != nil {
 		return wikiExtract{}, err
@@ -738,7 +729,7 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 	for _, b := range batches {
 		totalItems += wikiExtractItemCount(b)
 	}
-	p.planBudget = deriveWikiPlanBudget(p.deps.ModelContextLen, totalItems)
+	p.planBudget = deriveWikiPlanBudget(p.deps.ModelMaxOutput, totalItems)
 	// Quota allocation must use the achievable cap (min(Target, Max)): when the
 	// model's output capacity is smaller than the item-count-derived target, the
 	// planner must be asked for at most Max pages so the sum of per-batch
@@ -771,7 +762,7 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 			if err := p.ctx.Err(); err != nil {
 				return err
 			}
-			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota, p.planBudget.MaxTokens)
+			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota)
 			if err != nil {
 				return err
 			}
@@ -927,15 +918,10 @@ func (p *wikiPipeline) runRefinePage(
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
 	})
-	// wikiRefineMaxTokens gives the page writer a generous but bounded output
-	// cap so a long page is not cut off mid-stream by a small default completion
-	// limit (which would yield an unusable/cut page body).
-	rmt := wikiRefineMaxTokens(p.deps.ModelContextLen)
 	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: buildWikiRefineWriterSystem(""),
 		UserPrompt:   user,
-		MaxTokens:    &rmt,
 	})
 	if err != nil {
 		return wikiPageResult{}, err
@@ -999,7 +985,7 @@ func maxPagesForBatch(quota int) int {
 	return quota
 }
 
-func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota, maxTokens int) (wikiPlan, error) {
+func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota int) (wikiPlan, error) {
 	planningModeRules := "Entity mode: create exactly one page for each extracted entity or concept. Do not merge multiple identities into one page, and each page's entity_names must contain only its own identity."
 	if p.wikiMode() == "topic" {
 		planningModeRules = "Topic mode: closely related extracted entities or concepts may be combined into one page when the source evidence supports it. Include every combined identity in entity_names."
@@ -1020,7 +1006,6 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, q
 		LLMID:        p.llmID,
 		SystemPrompt: wikiPlanSystem,
 		UserPrompt:   user,
-		MaxTokens:    &maxTokens,
 	})
 	if err != nil {
 		return wikiPlan{}, err

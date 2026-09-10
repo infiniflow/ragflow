@@ -105,7 +105,7 @@
             },
             "image": {
               "order_index": 2,
-              "output_format": "text",
+              "output_format": "json",
               "parse_method": "ocr",
               "suffix": [
                 "jpg",
@@ -299,7 +299,7 @@
               },
               {
                 "fileFormat": "image",
-                "output_format": "text",
+                "output_format": "json",
                 "parse_method": "ocr"
               },
               {

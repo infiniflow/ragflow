@@ -181,8 +181,10 @@ services:
       - sandbox
     image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
     privileged: true
+    # Bind to loopback only: the /run endpoint executes arbitrary sandboxed
+    # code. RAGFlow reaches this service over the shared `ragflow` network.
     ports:
-      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
+      - 127.0.0.1:${SANDBOX_EXECUTOR_MANAGER_PORT:-9385}:9385
     env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -197,6 +199,12 @@ services:
       - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
       - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
       - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
+      # Shared secret for the /run API. Set it in .env (same value is passed
+      # to the ragflow service); when empty the API stays open (backwards
+      # compatible) but a warning is logged.
+      - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
+      # Sandbox runner containers get no external network by default.
+      - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}
     healthcheck:
       test: ["CMD", "curl", "http://localhost:9385/healthz"]
       interval: 10s

@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -149,7 +148,7 @@ func (h *AgentHandler) streamOpenAICompat(
 	for ev := range events {
 		switch ev.Type {
 		case "error":
-			message := openAICompatRunEventMessage(ev, "Agent run failed.")
+			message := agentRunEventMessage(ev, "Agent run failed.")
 			chunk := newOpenAICompatStreamChunk(completionID, model, "**ERROR**: "+message, "error")
 			chunk.Choices[0].Delta.Error = map[string]string{
 				"message": message,
@@ -160,12 +159,12 @@ func (h *AgentHandler) streamOpenAICompat(
 			return
 		case "waiting_for_user":
 			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "waiting_for_user")
-			chunk.Choices[0].Delta.WaitingForUser = openAICompatWaitingForUser(ev)
+			chunk.Choices[0].Delta.WaitingForUser = agentWaitingForUser(ev)
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
 			_ = writeOpenAICompatSSE(c, chunk)
 			return
 		case "cancelled":
-			message := openAICompatRunEventMessage(ev, "Agent run was cancelled.")
+			message := agentRunEventMessage(ev, "Agent run was cancelled.")
 			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "cancelled")
 			chunk.Choices[0].Delta.Cancelled = map[string]string{"message": message}
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
@@ -226,24 +225,16 @@ func collectOpenAICompatCompletion(
 		if ev.Type == "error" {
 			return openAICompatCompletion{}, common.NewCodedError(
 				common.CodeServerError,
-				openAICompatRunEventMessage(ev, "Agent run failed."),
+				agentRunEventMessage(ev, "Agent run failed."),
 			)
 		}
 		if ev.Type == "waiting_for_user" {
-			waiting := openAICompatWaitingForUser(ev)
-			message := "Agent is waiting for user input."
-			if waiting.CpnID != "" {
-				message += " cpn_id: " + waiting.CpnID
-			}
-			if waiting.Tips != "" {
-				message += " " + waiting.Tips
-			}
-			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, message)
+			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, agentWaitingForUserMessage(ev))
 		}
 		if ev.Type == "cancelled" {
 			return openAICompatCompletion{}, common.NewCodedError(
 				common.CodeConflict,
-				openAICompatRunEventMessage(ev, "Agent run was cancelled."),
+				agentRunEventMessage(ev, "Agent run was cancelled."),
 			)
 		}
 		if ev.Type != "message" && ev.Type != "message_end" {
@@ -322,30 +313,6 @@ func openAICompatUsageForCompletion(promptTokens, completionTokens int) *openAIC
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
 	}
-}
-
-func openAICompatRunEventMessage(ev canvas.RunEvent, fallback string) string {
-	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil {
-		if payload.Kind == canvas.RunErrorKindInternal {
-			return canvas.InternalRunErrorMessage
-		}
-		if payload.Message != "" {
-			return payload.Message
-		}
-	}
-	if message := strings.TrimSpace(ev.Data); message != "" {
-		return message
-	}
-	return fallback
-}
-
-func openAICompatWaitingForUser(ev canvas.RunEvent) canvas.WaitingForUserEvent {
-	var waiting canvas.WaitingForUserEvent
-	if err := json.Unmarshal([]byte(ev.Data), &waiting); err != nil {
-		return canvas.WaitingForUserEvent{}
-	}
-	return waiting
 }
 
 func writeOpenAICompatSSE(c *gin.Context, payload any) error {

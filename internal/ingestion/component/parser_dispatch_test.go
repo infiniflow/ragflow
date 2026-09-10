@@ -42,6 +42,9 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -49,6 +52,20 @@ import (
 
 	"gorm.io/gorm"
 )
+
+// useMockDocAnalyzer installs a test-only MockDocAnalyzer as the in-process
+// DeepDoc backend via the public factory seam. MockDocAnalyzer is test
+// infrastructure and must never sit in the production fallback path; it is
+// injected here so the production parse path can be exercised without a real
+// DeepDoc service or ONNX Runtime models. The factory is reset to nil on
+// cleanup (it is nil in this test binary, which registers no real backend).
+func useMockDocAnalyzer(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
+}
 
 type captureSetupConfigurer struct {
 	setup map[string]any
@@ -223,12 +240,17 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 
 // TestResolveOutputFormat_DefaultsAndWhitelist pins the two-layer
 // behavior of resolveOutputFormat: it returns the setup's
-// output_format when present (or "text" when absent), and
-// rejects values not in the allowed_output_format list.
+// output_format when present (or the per-family default when absent,
+// e.g. markdown→json, spreadsheet→html), and rejects values not in
+// the allowed_output_format list. Explicit image:text is rejected.
 func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	allowed := map[string][]string{
-		"pdf":      {"json", "markdown"},
-		"markdown": {"text", "json"},
+		"pdf":         {"json", "markdown"},
+		"markdown":    {"text", "json"},
+		"image":       {"json"},
+		"spreadsheet": {"json", "markdown", "html"},
+		"email":       {"text", "json"},
+		"audio":       {"text", "json"},
 	}
 	cases := []struct {
 		name    string
@@ -256,10 +278,40 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			want:   "markdown",
 		},
 		{
-			name:   "setup without output_format → default text",
+			name:   "setup without output_format → per-family default (markdown→json)",
 			setups: map[string]schema.ParserSetup{"markdown": {}},
 			family: "markdown",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (spreadsheet→html)",
+			setups: map[string]schema.ParserSetup{"spreadsheet": {}},
+			family: "spreadsheet",
+			want:   "html",
+		},
+		{
+			name:   "setup without output_format → per-family default (image→json)",
+			setups: map[string]schema.ParserSetup{"image": {}},
+			family: "image",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (email→text)",
+			setups: map[string]schema.ParserSetup{"email": {}},
+			family: "email",
 			want:   "text",
+		},
+		{
+			name:    "image explicit text (legacy) → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "text"}},
+			family:  "image",
+			wantErr: true,
+		},
+		{
+			name:    "image explicit TEXT uppercase → strict reject",
+			setups:  map[string]schema.ParserSetup{"image": {"output_format": "TEXT"}},
+			family:  "image",
+			wantErr: true,
 		},
 		{
 			name:    "pdf asking for html (not allowed) → reject",
@@ -268,10 +320,28 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:   "setup without output_format → per-family default (audio→json)",
+			setups: map[string]schema.ParserSetup{"audio": {}},
+			family: "audio",
+			want:   "json",
+		},
+		{
+			name:   "setup without output_format → per-family default (pdf→json)",
+			setups: map[string]schema.ParserSetup{"pdf": {}},
+			family: "pdf",
+			want:   "json",
+		},
+		{
 			name:   "family with no whitelist → accept setup value",
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "json"}},
 			family: "video",
 			want:   "json",
+		},
+		{
+			name:   "family with no whitelist empty → default text",
+			setups: map[string]schema.ParserSetup{"video": {}},
+			family: "video",
+			want:   "text",
 		},
 	}
 	for _, tc := range cases {
@@ -305,6 +375,65 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 	}
 	if got != "json" {
 		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+
+// TestDefaultOutputFormatForFamily_Sync verifies the dispatch default
+// stays in sync with the allowed whitelist and, except for the two
+// intentional overrides (email:text, audio:json), with defaultSetups.
+func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
+	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+	overrides := map[string]string{"email": "text", "audio": "json"}
+	for family, def := range map[string]string{
+		"pdf":         "json",
+		"spreadsheet": "html",
+		"doc":         "json",
+		"docx":        "json",
+		"slides":      "json",
+		"image":       "json",
+		"markdown":    "json",
+		"text&code":   "json",
+		"html":        "json",
+		"epub":        "json",
+		"json":        "json",
+		"email":       "text",
+		"audio":       "json",
+		"video":       "text",
+	} {
+		got, ok := defaultOutputFormatForFamily(family)
+		if !ok {
+			t.Errorf("defaultOutputFormatForFamily(%q) missing", family)
+			continue
+		}
+		if got != def {
+			t.Errorf("defaultOutputFormatForFamily(%q)=%q, want %q", family, got, def)
+		}
+		if list, hasWL := allowed[family]; hasWL && len(list) > 0 {
+			found := false
+			for _, c := range list {
+				if strings.EqualFold(c, got) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("default %q for %q not in allowed %v", got, family, list)
+			}
+		}
+		if ov, isOverride := overrides[family]; isOverride {
+			if got != ov {
+				t.Errorf("override %q got %q want %q", family, got, ov)
+			}
+			continue
+		}
+		if ds, ok := defaultSetups()[family]; ok {
+			if want, ok := ds["output_format"].(string); ok && want != got {
+				t.Errorf("family %q dispatch default %q != defaultSetups %q (should be synced or listed as override)", family, got, want)
+			}
+		}
+	}
+	if _, ok := defaultOutputFormatForFamily("unknown"); ok {
+		t.Errorf("unknown family should return !ok")
 	}
 }
 
@@ -399,8 +528,7 @@ func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 }
 
 func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
+	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -671,6 +799,63 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	md, ok := out["markdown"].(string)
 	if !ok || !strings.Contains(md, "Title") {
 		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
+	}
+}
+
+func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if r.FormValue("start_page_id") != "0" || r.FormValue("end_page_id") != "99999" {
+			t.Fatalf("page range = %q:%q", r.FormValue("start_page_id"), r.FormValue("end_page_id"))
+		}
+		file, _, err := r.FormFile("files")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+
+		var output bytes.Buffer
+		archive := zip.NewWriter(&output)
+		entry, _ := archive.Create("sample/jsons/sample.json")
+		_, _ = entry.Write([]byte(`[{"label":"Title","content":"MonkeyOCRv2 title"}]`))
+		_ = archive.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(output.Bytes())
+	}))
+	defer server.Close()
+
+	original := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = original })
+	resolveTenantOCRModelByProvider = func(_ context.Context, _ *gorm.DB, tenantID, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if tenantID != "test-tenant" || providerName != "MonkeyOCRv2" {
+			t.Fatalf("tenant=%q provider=%q", tenantID, providerName)
+		}
+		return &monkeyOCRv2FakeDriver{}, "MonkeyOCRv2-Parsing", &models.APIConfig{BaseURL: &server.URL}, 0, nil
+	}
+
+	component, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"parse_method": "monkeyocrv2", "output_format": "markdown"},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["output_format"] != "markdown" || out["markdown"] != "MonkeyOCRv2 title" {
+		t.Fatalf("output=%#v", out)
 	}
 }
 

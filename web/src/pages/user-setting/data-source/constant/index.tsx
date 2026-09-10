@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Globe, Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -31,6 +31,7 @@ import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
+import { sitemapConstant } from './sitemap-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -50,6 +51,7 @@ export enum DataSourceKey {
   GITHUB = 'github',
   MOODLE = 'moodle',
   DISCORD = 'discord',
+  XQUIK = 'xquik',
   ZENDESK = 'zendesk',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
@@ -62,6 +64,7 @@ export enum DataSourceKey {
   BIGQUERY = 'bigquery',
   REST_API = 'rest_api',
   RSS = 'rss',
+  SITEMAP = 'sitemap',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
@@ -152,6 +155,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.RSS]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.SITEMAP]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
@@ -205,6 +211,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.RSS}Description`),
       icon: <Rss className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.SITEMAP]: {
+      name: 'Sitemap',
+      description: t(`setting.${DataSourceKey.SITEMAP}Description`),
+      icon: <Globe className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
       description: t(
@@ -236,6 +247,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Discord',
       description: t(`setting.${DataSourceKey.DISCORD}Description`),
       icon: <SvgIcon name={'data-source/discord'} width={38} />,
+    },
+    [DataSourceKey.XQUIK]: {
+      name: 'Xquik',
+      description: t(`setting.${DataSourceKey.XQUIK}Description`),
+      icon: <Search className="text-text-primary" size={22} />,
     },
     [DataSourceKey.CONFLUENCE]: {
       name: 'Confluence',
@@ -777,6 +793,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       },
     },
   ],
+  [DataSourceKey.SITEMAP]: sitemapConstant(t),
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: t('setting.dataSourceFieldGcsAccessKeyId'),
@@ -888,6 +905,73 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.channels',
       type: FormFieldType.Tag,
       required: false,
+    },
+  ],
+  [DataSourceKey.XQUIK]: [
+    {
+      label: t('setting.dataSourceFieldXquikApiKey'),
+      name: 'config.credentials.xquik_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.xquikApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQuery'),
+      name: 'config.query',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'ragflow lang:en',
+      tooltip: t('setting.xquikQueryTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQueryType'),
+      name: 'config.query_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Latest', value: 'Latest' },
+        { label: 'Top', value: 'Top' },
+      ],
+      defaultValue: 'Latest',
+    },
+    {
+      label: t('setting.dataSourceFieldXquikPageSize'),
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 100,
+      tooltip: t('setting.xquikPageSizeTip'),
+      validation: {
+        min: 1,
+        max: 10000,
+        message: t('setting.xquikPageSizeValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldMaxPages'),
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 10,
+      tooltip: t('setting.xquikMaxPagesTip'),
+      validation: {
+        min: 1,
+        max: 1000,
+        message: t('setting.xquikMaxPagesValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 32,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
     },
   ],
 
@@ -1125,6 +1209,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: '/',
       tooltip: t('setting.webdavRemotePathTip'),
+    },
+    {
+      label: 'Custom CA Certificate Path',
+      name: 'config.ca_cert_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/etc/ssl/certs/webdav-ca.pem',
+      tooltip: t('setting.webdavCaCertPathTip'),
     },
   ],
   [DataSourceKey.DROPBOX]: [
@@ -1994,6 +2086,18 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
     },
   },
+  [DataSourceKey.SITEMAP]: {
+    name: '',
+    source: DataSourceKey.SITEMAP,
+    config: {
+      sitemap_url: '',
+      url_filter: '',
+      follow_pdf_links: false,
+      restrict_pdf_to_domain: true,
+      user_agent: '',
+      batch_size: 10,
+    },
+  },
   [DataSourceKey.S3]: {
     name: '',
     source: DataSourceKey.S3,
@@ -2042,6 +2146,21 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         discord_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.XQUIK]: {
+    name: '',
+    source: DataSourceKey.XQUIK,
+    config: {
+      query: '',
+      query_type: 'Latest',
+      page_size: 100,
+      max_pages: 10,
+      batch_size: 32,
+      request_delay: 0.5,
+      credentials: {
+        xquik_api_key: '',
       },
     },
   },

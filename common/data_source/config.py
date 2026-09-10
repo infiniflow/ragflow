@@ -44,9 +44,11 @@ class DocumentSource(str, Enum):
     """Document sources"""
 
     RSS = "rss"
+    SITEMAP = "sitemap"
     S3 = "s3"
     NOTION = "notion"
     REST_API = "rest_api"
+    XQUIK = "xquik"
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"

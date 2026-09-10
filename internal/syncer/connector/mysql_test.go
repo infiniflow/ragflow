@@ -91,7 +91,7 @@ func TestMySQLConnectorOpenSyncCustomQuery(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestMySQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 
 	start := mustTime(t, "2026-01-01T00:00:00Z")
 	end := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestMySQLConnectorOpenPrune(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestMySQLConnectorMD5FallbackID(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}

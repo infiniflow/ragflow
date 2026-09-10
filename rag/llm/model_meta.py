@@ -997,6 +997,46 @@ class GreenPT(OpenAIAPICompatible):
         return models
 
 
+class Synthorai(OpenAIAPICompatible):
+    """Synthorai catalog lister.
+
+    ``/v1/models`` returns the whole catalog, which includes image, audio,
+    video and realtime entries alongside chat ones. The inherited formatter
+    infers the type from the model id and falls back to ``chat``, so those
+    non-chat entries would be offered as chat models and fail at the
+    chat-completions endpoint. Only the ids declared in
+    ``conf/models/synthorai.json`` are surfaced.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        allowed = self._allowed_model_names()
+        if not allowed:
+            return models
+        return [m for m in models if m.get("name") in allowed]
+
+    @staticmethod
+    def _allowed_model_names() -> set:
+        """Chat model ids declared for this provider, or an empty set."""
+        import json
+        import os
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "conf",
+            "models",
+            "synthorai.json",
+        )
+        try:
+            with open(path, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except (OSError, ValueError):
+            return set()
+        return {m["name"] for m in cfg.get("models", []) if isinstance(m, dict) and m.get("name") and "chat" in (m.get("model_types") or [])}
+
+
 class HuggingFace(Base):
     """Discover models served by Hugging Face inference endpoints.
 
@@ -1023,7 +1063,7 @@ class HuggingFace(Base):
         if isinstance(model_type, dict):
             if "embedding" in model_type:
                 return [LLMType.EMBEDDING.value]
-            if "rerank" in model_type:
+            if "reranker" in model_type:
                 return [LLMType.RERANK.value]
             return []
         # TGI format: "text-generation" / "text2text-generation"
@@ -1086,6 +1126,27 @@ class GPUStack(OpenAIAPICompatible):
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class Llmman(OpenAIAPICompatible):
+    _FACTORY_NAME = "llmman"
+
+
+class Hubris(OpenAIAPICompatible):
+    """Hubris model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat and
+    embedding classes pin their endpoint: the catalogue must be read from the
+    gateway itself, never from a host supplied by the tenant.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
 
 
 class NewAPI(OpenAIAPICompatible):

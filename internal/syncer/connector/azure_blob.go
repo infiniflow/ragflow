@@ -180,7 +180,9 @@ func (c *AzureBlobStorageConnector) OpenSync(ctx context.Context, request SyncRe
 		batchSize: c.batchSize,
 	}
 	if request.Resume != nil {
-		session.applyResume(request.Resume)
+		if err := session.applyResume(ctx, request.Resume); err != nil {
+			return nil, err
+		}
 	}
 	return session, nil
 }
@@ -512,10 +514,39 @@ func (s *azureBlobSyncSession) Fetch(ctx context.Context, ref FetchReference) ([
 }
 
 // applyResume configures the session to skip every blob at or before the
-// checkpoint cursor. Azure lists blobs in lexicographic name order, so skipping
-// <= cursor and re-listing guarantees no blob is dropped across a resume.
-func (s *azureBlobSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	s.skipUntil = firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+// checkpoint anchor. The anchor must still exist in the current container
+// listing; a missing anchor means the saved progress no longer describes the
+// same source state.
+func (s *azureBlobSyncSession) applyResume(ctx context.Context, checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	anchor := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
+	if anchor == "" {
+		return fmt.Errorf("azure blob sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+
+	marker := ""
+	for {
+		objects, next, hasMore, err := s.connector.listBlobPage(ctx, s.connector.prefix, marker, int32(s.batchSize))
+		if err != nil {
+			return err
+		}
+		for _, object := range objects {
+			if object.Name == anchor {
+				s.skipUntil = anchor
+				return nil
+			}
+			if object.Name > anchor {
+				return fmt.Errorf("azure blob resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
+			}
+		}
+		if !hasMore {
+			break
+		}
+		marker = next
+	}
+	return fmt.Errorf("azure blob resume anchor %q was not found in the current listing: %w", anchor, ErrSyncResumeInvalid)
 }
 
 type azureBlobPruneSession struct {

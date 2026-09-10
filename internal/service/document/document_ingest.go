@@ -37,7 +37,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 
 	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
 	if err != nil {
-		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %s", err.Error())
+		return common.CodeExceptionError, fmt.Errorf("fail to get documents: %w", err)
 	}
 
 	docsByID := make(map[string]*entity.Document, len(docs))
@@ -85,7 +85,8 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 
 		// Start parsing: delegates to the shared start-parse flow. The
 		// document run status is set by service.IngestionTaskService.StartRunning
-		// when the task transitions from CREATED, not here.
+		// when the task transitions from CREATED or SCHEDULED,
+		// not here.
 		if run == string(entity.TaskStatusRunning) {
 			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 				ApplyKB:         req.ApplyKB,

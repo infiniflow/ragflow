@@ -199,7 +199,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -400,7 +400,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
-			"content_length": model.ContentLength,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"thinking":       model.Thinking,
@@ -647,7 +647,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	// Add models to the instance.
@@ -730,7 +730,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -774,7 +774,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -789,7 +789,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -857,7 +857,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1332,7 +1331,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -1594,6 +1593,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1838,8 +1838,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1872,6 +1877,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -2052,7 +2065,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2554,6 +2567,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
 		model.MaxOutput = extra.MaxTokens
+		model.MaxTokens = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -2593,6 +2607,19 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 		return *extra.MaxTokens, nil
 	}
 	return fallback, nil
+}
+
+func maxTokensFromModelInfo(modelInfo *modelModule.Model, modelType entity.ModelType) int {
+	if modelInfo == nil {
+		return 0
+	}
+	if (modelType == entity.ModelTypeEmbedding || modelType == entity.ModelTypeRerank) && modelInfo.MaxTokens != nil {
+		return *modelInfo.MaxTokens
+	}
+	if modelInfo.MaxOutput != nil {
+		return *modelInfo.MaxOutput
+	}
+	return 0
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
@@ -3052,7 +3079,8 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
+	rerankModel := modelModule.NewRerankModel(modelDriver, &resolvedModelName, info.APIConfig, maxTokensFromModelInfo(info.ModelInfo, entity.ModelTypeRerank))
+	response, err = rerankModel.Rerank(ctx, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3432,11 +3460,11 @@ func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compo
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 type AddModelRequest struct {
@@ -3569,9 +3597,7 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
-		}
+		maxTokens = maxTokensFromModelInfo(mi, modelType)
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
 	if err != nil {
@@ -3619,7 +3645,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 }
 
 // ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. content_length is the total
+// (context_length) in tokens, or 0 when unknown. context_length is the total
 // context window and max_output is the generation cap; the
 // knowledge_compiler prompt-budget logic needs the context window, not the
 // output cap. modelRef accepts either a tenant model UUID or a
@@ -3627,13 +3653,95 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 //
 // The resolution is delegated to dao.ResolveModelContentLength so every
 // consumer shares one path: a tenant-configured "max_tokens" override in the
-// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// tenant_model.extra wins, otherwise the provider catalog's context_length is
 // used (D22/D23).
 func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return 0, fmt.Errorf("model ref is required")
 	}
 	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
+}
+
+// ResolveModelToolSupport reports whether the resolved chat model supports
+// function calling (tool calls). It mirrors Python dialog_service.rag_agent's
+// `if not getattr(chat_mdl, "is_tools", False)` gate: a model without tool
+// support must skip the outer rag_agent react loop and fall back to the direct
+// graph (Python falls back to async_chat).
+//
+// Precedence mirrors Python's tenant_model_service.get_model_config_by_id
+// (:363) `"is_tools": model_extra.get("is_tools", is_tool)`: the flag persisted
+// on the tenant model wins, and the provider catalog is only a default for
+// models enrolled without one. Reading the catalog first instead would send a
+// tenant-disabled model through the outer react loop — where a model that does
+// not actually call tools answers from its own knowledge and the retrieval
+// never runs.
+func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return false, fmt.Errorf("model ref is required")
+	}
+	// Tenant-model UUID path: the persisted extra flag first, then the catalog.
+	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
+		if ts, ok := extraToolSupport(modelObj.Extra); ok {
+			return ts, nil
+		}
+		if prov, perr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID); perr == nil && prov != nil {
+			return catalogToolSupport(prov.ProviderName, modelObj.ModelName), nil
+		}
+		return false, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	// Composite "model@instance@provider" path: parse and consult the catalog.
+	pureModelName, _, providerName, err := parseModelName(modelRef)
+	if err != nil {
+		return false, err
+	}
+	return catalogToolSupport(providerName, pureModelName), nil
+}
+
+// extraToolSupport reads the is_tools flag persisted on a tenant model's extra
+// JSON. The value is written as a JSON boolean (addModelToInstance stores
+// llm.Tools.Support verbatim) but has historically also been spelled as a
+// string, so both shapes are accepted. ok is false when the key is absent or
+// the extra blob is unreadable, letting the caller fall back to the catalog.
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	v, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true"), true
+	case float64:
+		return t != 0, true
+	}
+	return false, false
+}
+
+// catalogToolSupport reports whether a provider's catalog declares the named
+// model as supporting tool (function) calling. Returns false when the provider
+// or model is unknown. Mirrors RAGFlow's model_meta "is_tools" feature derived
+// from conf/models/*.json.
+func catalogToolSupport(providerName, modelName string) bool {
+	pm := dao.GetModelProviderManager()
+	provider := pm.FindProvider(providerName)
+	if provider == nil {
+		return false
+	}
+	mi := pm.FindModel(provider, modelName)
+	if mi == nil || mi.Tools == nil {
+		return false
+	}
+	return mi.Tools.Support
 }
 
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
@@ -3899,7 +4007,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil
@@ -3983,11 +4091,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxOutput == nil {
-					maxTokens = 0
-				} else {
-					maxTokens = *mi.MaxOutput
-				}
+				maxTokens = maxTokensFromModelInfo(mi, modelType)
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 		}
@@ -4045,11 +4149,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxOutput == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxOutput
-			}
+			maxTokens = maxTokensFromModelInfo(mi, modelType)
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
 		if driverErr != nil {
@@ -4102,10 +4202,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		return nil, "", nil, 0, driverErr
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
-	}
+	maxTokens := maxTokensFromModelInfo(llmInfo, modelType)
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
 

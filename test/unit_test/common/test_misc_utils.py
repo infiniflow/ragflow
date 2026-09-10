@@ -181,7 +181,7 @@ class TestGetUuid:
     def test_hex_format(self):
         """Test that returned string is in hex format"""
         result = get_uuid()
-        # UUID v1 hex should be 32 characters (without dashes)
+        # UUID hex should be 32 characters (without dashes)
         assert len(result) == 32
         # Should only contain hexadecimal characters
         assert all(c in "0123456789abcdef" for c in result)
@@ -214,15 +214,11 @@ class TestGetUuid:
         # The hex representation should match the original
         assert reconstructed_uuid.hex == result
 
-    def test_uuid1_specific_characteristics(self):
-        """Test that UUID v1 characteristics are present"""
+    def test_uuid1_characteristics(self):
+        """Generated identifiers are RFC 4122 UUIDv1 values."""
         result = get_uuid()
         uuid_obj = uuid.UUID(hex=result)
-
-        # UUID v1 should have version 1
         assert uuid_obj.version == 1
-
-        # Variant should be RFC 4122
         assert uuid_obj.variant == "specified in RFC 4122"
 
     def test_result_length_consistency(self):
@@ -235,8 +231,8 @@ class TestGetUuid:
         """Test that only valid hex characters are used"""
         for _ in range(100):
             result = get_uuid()
-            # Should only contain lowercase hex characters (UUID hex is lowercase)
-            assert result.islower()
+            # Should only contain lowercase hexadecimal characters
+            assert result == result.lower()
             assert all(c in "0123456789abcdef" for c in result)
 
 

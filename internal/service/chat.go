@@ -339,12 +339,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
-		return nil, common.CodeDataError, errors.New("failed to create chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
 
 	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to retrieve created chat: %w", err)
 	}
 
 	response, err := s.buildCreateChatResponse(ctx, chat)
@@ -471,8 +471,16 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 	if promptConfig == nil {
 		promptConfig = map[string]interface{}{}
 	}
+	kbIDs, _ := listFromValue(req["kb_ids"])
 	if system, ok := promptConfig["system"]; !ok || !isTruthy(system) {
-		promptConfig["system"] = pyDefaultSystemPrompt
+		if len(kbIDs) > 0 {
+			promptConfig["system"] = pyDefaultSystemPrompt
+		} else {
+			// No dataset bound: do not seed the dataset-oriented default system prompt. Its
+			// hard-coded "not found in the dataset" sentence would otherwise be sent verbatim
+			// to the model on the no-dataset chat path.
+			promptConfig["system"] = ""
+		}
 	}
 	if _, ok := promptConfig["prologue"]; !ok {
 		promptConfig["prologue"] = pyDefaultPrologue
@@ -493,7 +501,6 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 		promptConfig["refine_multiturn"] = true
 	}
 
-	kbIDs, _ := listFromValue(req["kb_ids"])
 	system, _ := promptConfig["system"].(string)
 	if len(kbIDs) > 0 && !isTruthy(promptConfig["parameters"]) && strings.Contains(system, "{knowledge}") {
 		promptConfig["parameters"] = []interface{}{map[string]interface{}{"key": "knowledge", "optional": false}}

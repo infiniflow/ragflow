@@ -16,7 +16,7 @@
 
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { forwardRef } from 'react';
+import { forwardRef, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import NumberInput from '../originui/number-input';
 import { SingleFormSlider } from '../ui/dual-range-slider';
@@ -64,6 +64,13 @@ export const SliderInputSwitchFormField = forwardRef<
     const form = useFormContext();
     const disabled = !form.watch(checkName);
     const { t } = useTranslate('chat');
+
+    // The typed value must stay on the slider's grid: a step of 0.01 allows two
+    // decimals, an integer step (or none) allows none.
+    const precision = useMemo(
+      () => String(step ?? '').split('.')[1]?.length ?? 0,
+      [step],
+    );
 
     return (
       <FormField
@@ -115,6 +122,7 @@ export const SliderInputSwitchFormField = forwardRef<
                   max={max}
                   min={min}
                   step={step}
+                  precision={precision}
                   {...field}
                   hideIcons
                   onChange={(value: number) => {

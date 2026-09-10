@@ -21,9 +21,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/utility"
 )
 
 func TestNewTeamsConnectorDefaults(t *testing.T) {
@@ -107,6 +110,39 @@ func TestTeamsConnectorValidateQueriesTeams(t *testing.T) {
 	}
 	if !probed {
 		t.Fatalf("Validate did not probe /teams")
+	}
+}
+
+func TestTeamsGetJSONReadsBodyBeforeCancel(t *testing.T) {
+	previousAllowAnyHost := utility.AllowAnyHostForTest
+	utility.AllowAnyHostForTest = true
+	t.Cleanup(func() { utility.AllowAnyHostForTest = previousAllowAnyHost })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte(`{"value":[]}`))
+	}))
+	defer server.Close()
+
+	connector := &TeamsConnector{
+		tenantID:     "tenant",
+		clientID:     "client",
+		clientSecret: "secret",
+		batchSize:    defaultTeamsBatchSize,
+		httpClient:   http.DefaultClient,
+		now:          time.Now,
+		acquireAccessToken: func(ctx context.Context) (string, error) {
+			return "token", nil
+		},
+	}
+	var page teamsPage
+	if err := connector.getJSON(context.Background(), server.URL+"/teams", &page); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
 	}
 }
 
@@ -278,6 +314,72 @@ func TestTeamsConnectorOpenSyncResume(t *testing.T) {
 	}
 	if _, err = resumed.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("resume NextBatch EOF = %v", err)
+	}
+}
+
+func TestTeamsConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureTeamsConnector()
+	connector.doJSON = teamsFixtureDoJSON(t)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+func TestTeamsConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) {
+	connector := newFixtureTeamsConnector()
+	connector.batchSize = 1
+	connector.doJSON = teamsFixtureDoJSON(t)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	first, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("first NextBatch failed: %v", err)
+	}
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "team-1__channel-1__msg-1" {
+		t.Fatalf("first documents = %+v", first.Documents)
+	}
+	if first.Checkpoint == nil {
+		t.Fatalf("first checkpoint is nil")
+	}
+
+	connector.doJSON = func(ctx context.Context, apiURL string, out any) error {
+		switch {
+		case strings.Contains(apiURL, "/channels/channel-1/messages/msg-2/replies"):
+			*out.(*teamsMessagesPage) = teamsMessagesPage{}
+		case strings.Contains(apiURL, "/channels/channel-1/messages"):
+			*out.(*teamsMessagesPage) = teamsMessagesPage{
+				Value: []teamsMessage{{
+					ID:                   "msg-2",
+					Body:                 teamsMessageBody{Content: "Second message", ContentType: "text"},
+					LastModifiedDateTime: "2026-01-03T02:00:00Z",
+					WebURL:               "https://teams.example/message/msg-2",
+				}},
+			}
+		case strings.Contains(apiURL, "/teams/team-1/channels"):
+			*out.(*teamsChannelsPage) = teamsChannelsPage{
+				Value: []teamsChannel{{ID: "channel-1", DisplayName: "General"}},
+			}
+		case strings.Contains(apiURL, "/teams"):
+			*out.(*teamsPage) = teamsPage{
+				Value: []teamsTeam{{ID: "team-1", DisplayName: "Engineering"}},
+			}
+		default:
+			t.Fatalf("unexpected api url %s", apiURL)
+		}
+		return nil
+	}
+
+	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	if err != nil {
+		t.Fatalf("resume OpenSync failed: %v", err)
+	}
+	if _, err = resumed.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 
