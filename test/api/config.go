@@ -45,7 +45,8 @@ type ServerTestConfig struct {
 	SiliconFlowAPIKey string
 	Email             string
 	Password          string
-	Token             string
+	AuthToken         string
+	APIKey            string
 
 	InvalidAPIKey            string
 	InvalidID                string
@@ -58,7 +59,7 @@ type ServerTestConfig struct {
 }
 
 func InitServerTestConfig() *ServerTestConfig {
-	fmt.Fprintf(os.Stderr, "InitServerTestConfig start\n")
+	//fmt.Fprintf(os.Stderr, "InitServerTestConfig start\n")
 	var priority int
 	var err error
 	testPriorityStr := os.Getenv("TEST_PRIORITY")
@@ -89,6 +90,16 @@ func InitServerTestConfig() *ServerTestConfig {
 		return nil
 	}
 
+	email := os.Getenv("RAGFLOW_TEST_EMAIL")
+	if email == "" {
+		email = "qa@infiniflow.org"
+	}
+
+	password := os.Getenv("RAGFLOW_TEST_PASSWORD")
+	if password == "" {
+		password = "ctAseGvejiaSWWZ88T/m4FQVOpQyUvP+x7sXtdv3feqZACiQleuewkUi35E16wSd5C5QcnkkcV9cYc8TKPTRZlxappDuirxghxoOvFcJxFU4ixLsD\nfN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXOu1wkWY6SsI8X70oF9aeLFp/PzQpjoe/YbSqpTq8qqrmHzn9vO+yvyYyvmDsphXe\nX8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhcbeQao6cFy1To8pE3RpmxnGnS8BsBn8w=="
+	}
+
 	invalidID := "00000000000000000000000000000000"
 
 	defaultParserConfig := map[string]interface{}{
@@ -115,8 +126,8 @@ func InitServerTestConfig() *ServerTestConfig {
 		APIVersion:               "v1",
 		ZhipuAPIKey:              zhipuAPIKey,
 		SiliconFlowAPIKey:        siliconFlowAPIKey,
-		Email:                    "test@example.com",
-		Password:                 "testpassword",
+		Email:                    email,
+		Password:                 password,
 		InvalidAPIKey:            "invalidapikey",
 		InvalidID:                invalidID,
 		DatasetNameLimit:         100,
@@ -126,7 +137,7 @@ func InitServerTestConfig() *ServerTestConfig {
 		DefaultDataSetParser:     defaultParserConfig,
 	}
 
-	fmt.Fprintf(os.Stderr, "InitServerTestConfig init successfully\n")
+	//fmt.Fprintf(os.Stderr, "InitServerTestConfig init successfully\n")
 	return &serverTestConfig
 }
 
@@ -140,41 +151,11 @@ func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
 	for k, v := range extra {
 		h.Set(k, v)
 	}
-	if c.Token != "" && h.Get("Authorization") == "" {
-		h.Set("Authorization", "Bearer "+c.Token)
+	if c.AuthToken != "" && h.Get("Authorization") == "" {
+		h.Set("Authorization", "Bearer "+c.AuthToken)
 	}
 	return h
 }
-
-//func (c *ServerTestConfig) Request(method, path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-//	normalizedPath := "/" + strings.TrimLeft(path, "/")
-//	req, err := http.NewRequest(method, c.apiBase()+normalizedPath, body)
-//	if err != nil {
-//		return nil, err
-//	}
-//	req.Header = c.buildHeaders(extraHeaders)
-//	return http.DefaultClient.Do(req)
-//}
-//
-//func (c *ServerTestConfig) Get(path string, extraHeaders map[string]string) (*http.Response, error) {
-//	return c.Request(http.MethodGet, path, nil, extraHeaders)
-//}
-//
-//func (c *ServerTestConfig) Post(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-//	return c.Request(http.MethodPost, path, body, extraHeaders)
-//}
-//
-//func (c *ServerTestConfig) Delete(path string, extraHeaders map[string]string) (*http.Response, error) {
-//	return c.Request(http.MethodDelete, path, nil, extraHeaders)
-//}
-//
-//func (c *ServerTestConfig) Put(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-//	return c.Request(http.MethodPut, path, body, extraHeaders)
-//}
-//
-//func (c *ServerTestConfig) Patch(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-//	return c.Request(http.MethodPatch, path, body, extraHeaders)
-//}
 
 func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
 	var bodyReader io.Reader
@@ -222,4 +203,88 @@ func (c *ServerTestConfig) PutJSON(path string, body map[string]interface{}, ext
 
 func (c *ServerTestConfig) PatchJSON(path string, body map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
 	return c.RequestJSON(http.MethodPatch, path, body, nil, extraHeaders)
+}
+
+func (c *ServerTestConfig) decodeJSONBody(body io.Reader) (map[string]interface{}, error) {
+	b, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]interface{}
+	if err = json.Unmarshal(b, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c *ServerTestConfig) Login() error {
+	// Register (ignore already registered error)
+	registerResp, err := TestConfig.PostJSON("/users", map[string]interface{}{
+		"email":    TestConfig.Email,
+		"nickname": "qa",
+		"password": TestConfig.Password,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("register request failed: %w", err)
+	}
+	registerPayload, err := c.decodeJSONBody(registerResp.Body)
+	registerResp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("failed to decode register response: %w", err)
+	}
+	if registerResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("register failed: status=%d, payload=%v", registerResp.StatusCode, registerPayload)
+	}
+	registerCode, _ := registerPayload["code"].(float64)
+	registerMessage, _ := registerPayload["message"].(string)
+	if int(registerCode) != 0 && !strings.Contains(registerMessage, "has already registered") {
+		return fmt.Errorf("register failed: code=%v, message=%s", registerPayload["code"], registerMessage)
+	}
+
+	// Login
+	loginResp, err := TestConfig.PostJSON("/auth/login", map[string]interface{}{
+		"email":    TestConfig.Email,
+		"password": TestConfig.Password,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("login request failed: %w", err)
+	}
+	authToken := loginResp.Header.Get("Authorization")
+	loginResp.Body.Close()
+	if authToken == "" {
+		return fmt.Errorf("login response missing Authorization header")
+	}
+
+	TestConfig.AuthToken = authToken
+
+	// Get system token
+	tokenResp, err := TestConfig.PostJSON("/system/tokens", nil, map[string]string{
+		"Authorization": authToken,
+	})
+	if err != nil {
+		return fmt.Errorf("system token request failed: %w", err)
+	}
+	tokenPayload, err := c.decodeJSONBody(tokenResp.Body)
+	tokenResp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("failed to decode token response: %w", err)
+	}
+	if tokenResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("system token failed: status=%d, payload=%v", tokenResp.StatusCode, tokenPayload)
+	}
+	tokenData, ok := tokenPayload["data"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("system token response data is not an object: %v", tokenPayload)
+	}
+	apiKey, ok := tokenData["token"].(string)
+	if !ok || apiKey == "" {
+		return fmt.Errorf("system token response data.token is not a valid string: %v", tokenData)
+	}
+
+	TestConfig.APIKey = apiKey
+	return nil
+}
+
+func (c *ServerTestConfig) Logout() error {
+	return nil
 }

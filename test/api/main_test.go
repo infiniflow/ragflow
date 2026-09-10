@@ -25,11 +25,23 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	fmt.Fprintln(os.Stderr, "TearUp")
+	fmt.Fprintln(os.Stderr, "Login")
+
+	err := TestConfig.Login()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to login: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Run the test cases
 	code := m.Run()
 
-	fmt.Fprintln(os.Stderr, "TearDown")
+	err = TestConfig.Logout()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to logout: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintln(os.Stderr, "Logout")
 	os.Exit(code)
 }
