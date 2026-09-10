@@ -974,13 +974,8 @@ func getChunkText(chunk map[string]any) string {
 
 	var parts []string
 
-	// 1. Main chunk content. "text" is preferred because every chunker writes
-	// the authoritative body there and derives the chunk id from it. Legacy
-	// chunks that only carry "content_with_weight" (parser-block output, many
-	// unit tests) are accepted as a fallback so detection/tagging still works.
+	// 1. Main chunk content — pre-index chunks must carry canonical "text".
 	if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
-		parts = append(parts, strings.TrimSpace(v))
-	} else if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
 		parts = append(parts, strings.TrimSpace(v))
 	}
 

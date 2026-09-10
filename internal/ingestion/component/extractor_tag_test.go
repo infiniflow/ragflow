@@ -49,7 +49,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "test"},
+			{"text": "test"},
 		},
 	})
 	if err != nil {
@@ -72,7 +72,7 @@ func TestExtractorTags_NoLLMID(t *testing.T) {
 	comp, _ := NewExtractorComponent(map[string]any{"tags": map[string]any{"top_n": 3}})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "some unrelated text"},
+			{"text": "some unrelated text"},
 		},
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	})
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "some unrelated textxyz"},
+			{"text": "some unrelated textxyz"},
 		},
 	})
 	if err != nil {
@@ -275,7 +275,7 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	capt := pushCapturingTagChat(t)
 
 	longText := longChunkText()
-	chunk := map[string]any{"content_with_weight": longText}
+	chunk := map[string]any{"text": longText}
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
@@ -298,7 +298,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	capt := pushCapturingTagChat(t)
 
 	longText := longChunkText()
-	chunk := map[string]any{"content_with_weight": longText}
+	chunk := map[string]any{"text": longText}
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
@@ -323,7 +323,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 		allTags: map[string]float64{"NLP": 0.33, "AI": 0.33, "Search": 0.33},
 	}
 
-	chunk := map[string]any{"content_with_weight": "some content"}
+	chunk := map[string]any{"text": "some content"}
 	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
 
 	if len(capt.req.Messages) != 2 {
@@ -543,7 +543,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 		},
 		{
 			name:  "content only",
-			chunk: map[string]any{"content_with_weight": "simple body text"},
+			chunk: map[string]any{"text": "simple body text"},
 			want:  "simple body text",
 		},
 		{
@@ -555,7 +555,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			name: "content present ignores docnm_kwd",
 			chunk: map[string]any{
 				"docnm_kwd":           "2026_Engineering_Bidding_Doc.pdf",
-				"content_with_weight": "contract guidelines",
+				"text": "contract guidelines",
 			},
 			want: "contract guidelines",
 		},
@@ -578,7 +578,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			name: "important_kwd string slice",
 			chunk: map[string]any{
 				"important_kwd":       []string{"Bidding", "Tender"},
-				"content_with_weight": "body",
+				"text": "body",
 			},
 			want: "body Bidding Tender",
 		},
@@ -586,7 +586,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			name: "important_kwd any slice",
 			chunk: map[string]any{
 				"important_kwd":       []any{"Alpha", "Beta"},
-				"content_with_weight": "body",
+				"text": "body",
 			},
 			want: "body Alpha Beta",
 		},
@@ -594,7 +594,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			name: "important_kwd string",
 			chunk: map[string]any{
 				"important_kwd":       "SingleKey",
-				"content_with_weight": "body",
+				"text": "body",
 			},
 			want: "body SingleKey",
 		},
@@ -603,7 +603,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			chunk: map[string]any{
 				"docnm_kwd":           "Project_Tender_Specification.pdf",
 				"important_kwd":       []string{"Procurement", "Compliance"},
-				"content_with_weight": "All bidders must follow instructions.",
+				"text": "All bidders must follow instructions.",
 			},
 			want: "All bidders must follow instructions. Procurement Compliance",
 		},
@@ -619,7 +619,7 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 			chunk: map[string]any{
 				"docnm_kwd":           "   ",
 				"important_kwd":       []string{"  ", ""},
-				"content_with_weight": "   ",
+				"text": "   ",
 			},
 			want: "",
 		},
@@ -718,7 +718,7 @@ func TestContainsCJK_LanguageAutoDetection(t *testing.T) {
 
 func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
 	capt := pushCapturingTagChat(t)
-	chunk := map[string]any{"content_with_weight": "some content"}
+	chunk := map[string]any{"text": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
 	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
@@ -789,7 +789,7 @@ func TestMatchAndTagChunk_TagKwdPopulated(t *testing.T) {
 	}
 
 	chunk := map[string]any{
-		"content_with_weight": "retrieval augmented generation system with vector search database",
+		"text": "retrieval augmented generation system with vector search database",
 	}
 
 	res := matchAndTagChunk(chunk, idx, tok, 5)
@@ -875,7 +875,7 @@ func TestMatchAndTagChunk_ChunkTFSaliencyGradient(t *testing.T) {
 	}, " ")
 
 	chunk := map[string]any{
-		"content_with_weight": chunkText,
+		"text": chunkText,
 	}
 
 	res := matchAndTagChunk(chunk, idx, tok, 5)
@@ -955,7 +955,7 @@ func TestMatchAndTagChunk_RankDecayScoreDistribution(t *testing.T) {
 
 	// Chunk containing repeated terms that match specific/rare tag (dominant topic) and 1 mention of medium tag
 	chunk := map[string]any{
-		"content_with_weight": strings.Join([]string{
+		"text": strings.Join([]string{
 			"retrieval augmented generation vector search algorithm indexing",
 			"retrieval augmented generation embedding chunk retrieval ranker",
 			"retrieval augmented generation vector search algorithm indexing",
@@ -1003,15 +1003,15 @@ func TestMatchAndTagChunk_RankDecayScoreDistribution(t *testing.T) {
 }
 
 func TestGetChunkText_NoTitlePollution(t *testing.T) {
-	// Case 1: When content_with_weight is present, docnm_kwd should NOT be prepended
+	// Case 1: When canonical text is present, docnm_kwd should NOT be prepended
 	chunkWithContent := map[string]any{
 		"docnm_kwd":           "Financial_Report_2026.pdf",
-		"content_with_weight": "Quarterly revenue increased by 15 percent.",
+		"text": "Quarterly revenue increased by 15 percent.",
 	}
 	got := getChunkText(chunkWithContent)
 	want := "Quarterly revenue increased by 15 percent."
 	if got != want {
-		t.Errorf("getChunkText with content_with_weight = %q, want %q", got, want)
+		t.Errorf("getChunkText with text = %q, want %q", got, want)
 	}
 
 	// Case 2: When text is present (fallback), docnm_kwd should NOT be prepended
@@ -1029,7 +1029,7 @@ func TestGetChunkText_NoTitlePollution(t *testing.T) {
 	chunkWithKwds := map[string]any{
 		"docnm_kwd":           "Internal_Guidelines.pdf",
 		"important_kwd":       []string{"Security", "Compliance"},
-		"content_with_weight": "All employees must follow access protocols.",
+		"text": "All employees must follow access protocols.",
 	}
 	gotKwds := getChunkText(chunkWithKwds)
 	wantKwds := "All employees must follow access protocols. Security Compliance"
@@ -1076,7 +1076,7 @@ func TestProbabilityMassConservation_MultiTag(t *testing.T) {
 
 	// Match a chunk that matches Example 1 with 100% coverage
 	chunk := map[string]any{
-		"content_with_weight": "quantum computing quantum algorithms superposition",
+		"text": "quantum computing quantum algorithms superposition",
 	}
 
 	res := matchAndTagChunk(chunk, idx, tok, 10)
@@ -1209,7 +1209,7 @@ func TestMatchAndTagChunk_ShortExampleMultiTokenRequirement(t *testing.T) {
 	// Chunk 1: Matches only 1 token ("machine") of the 2-token example "machine learning"
 	// Should NOT match on only 1 token
 	chunkSingleMatch := map[string]any{
-		"content_with_weight": "the coffee machine is broken today",
+		"text": "the coffee machine is broken today",
 	}
 	res1 := matchAndTagChunk(chunkSingleMatch, idx, tok, 5)
 	if res1 != nil {
@@ -1221,7 +1221,7 @@ func TestMatchAndTagChunk_ShortExampleMultiTokenRequirement(t *testing.T) {
 	// Chunk 2: Matches both tokens ("machine learning")
 	// Should match
 	chunkFullMatch := map[string]any{
-		"content_with_weight": "practical machine learning models and training",
+		"text": "practical machine learning models and training",
 	}
 	res2 := matchAndTagChunk(chunkFullMatch, idx, tok, 5)
 	if res2 == nil {
@@ -1341,7 +1341,7 @@ func TestDetectTextLanguage_CJK_Kana_Hangul(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			chunks := []map[string]any{
-				{"content_with_weight": tt.text},
+				{"text": tt.text},
 			}
 			got := detectTextLanguage(chunks)
 			if got != tt.want {
@@ -1367,7 +1367,7 @@ func TestMatchAndTagChunk_RankDecaySalienceBoost(t *testing.T) {
 
 	// Chunk has "indexing" repeated 5 times
 	chunk := map[string]any{
-		"content_with_weight": "vector database indexing indexing indexing indexing indexing",
+		"text": "vector database indexing indexing indexing indexing indexing",
 	}
 
 	res := matchAndTagChunk(chunk, idx, tok, 5)
@@ -1439,7 +1439,7 @@ func TestMatchAndTagChunk_RankDecayGradientScores(t *testing.T) {
 
 	// Chunk has high prominence with repeated terms for DeepLearning, secondary support for Database, minor mention of CloudInfra
 	chunk := map[string]any{
-		"content_with_weight": "neural network deep learning transformer model training deep learning transformer attention mechanism architecture deep learning transformer neural network deep learning transformer deep learning transformer database storage query index optimization postgresql cloud deployment devops kubernetes",
+		"text": "neural network deep learning transformer model training deep learning transformer attention mechanism architecture deep learning transformer neural network deep learning transformer deep learning transformer database storage query index optimization postgresql cloud deployment devops kubernetes",
 	}
 
 	res := matchAndTagChunk(chunk, idx, tok, 10)

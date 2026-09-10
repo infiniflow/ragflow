@@ -47,12 +47,12 @@ func TestTableChunker_OneChunkPerRow(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			{
-				"content_with_weight": "- name: Alice\n- age: 30",
-				"doc_type_kwd":        "table",
+				"text":           "- name: Alice\n- age: 30",
+				"doc_type_kwd":   "table",
 			},
 			{
-				"content_with_weight": "- name: Bob\n- age: 25",
-				"doc_type_kwd":        "table",
+				"text":           "- name: Bob\n- age: 25",
+				"doc_type_kwd":   "table",
 			},
 		},
 	})
@@ -60,11 +60,11 @@ func TestTableChunker_OneChunkPerRow(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(chunks))
 	}
-	if chunks[0]["content_with_weight"] != "- name: Alice\n- age: 30" {
-		t.Errorf("chunk0 content = %v", chunks[0]["content_with_weight"])
+	if chunks[0]["text"] != "- name: Alice\n- age: 30" {
+		t.Errorf("chunk0 text = %v", chunks[0]["text"])
 	}
-	if chunks[1]["content_with_weight"] != "- name: Bob\n- age: 25" {
-		t.Errorf("chunk1 content = %v", chunks[1]["content_with_weight"])
+	if chunks[1]["text"] != "- name: Bob\n- age: 25" {
+		t.Errorf("chunk1 text = %v", chunks[1]["text"])
 	}
 }
 

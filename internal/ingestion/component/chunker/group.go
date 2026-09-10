@@ -450,9 +450,6 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		if it.ContentSmLtks != "" {
 			meta["content_sm_ltks"] = it.ContentSmLtks
 		}
-		if it.ContentWithWeight != "" {
-			meta["content_with_weight"] = it.ContentWithWeight
-		}
 		if it.TitleTks != "" {
 			meta["title_tks"] = it.TitleTks
 		}

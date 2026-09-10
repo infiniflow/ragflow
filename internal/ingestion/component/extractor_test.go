@@ -1415,7 +1415,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Hello world content"},
+			{"text": "Hello world content"},
 		},
 	}
 
@@ -1528,7 +1528,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Written by Alice in 2026."},
+			{"text": "Written by Alice in 2026."},
 		},
 	}
 
@@ -1572,7 +1572,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+			{"text": "This is a detailed paragraph about artificial intelligence."},
 		},
 	}
 
@@ -1627,7 +1627,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Text to summarize."},
+			{"text": "Text to summarize."},
 		},
 	}
 
@@ -1685,7 +1685,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1741,7 +1741,7 @@ func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1783,7 +1783,7 @@ func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1826,7 +1826,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Some text."},
+			{"text": "Some text."},
 		},
 	}
 
@@ -2047,7 +2047,7 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 		"chunks": []map[string]any{
 			{
 				"docnm_kwd":           "Tender_Notice.pdf",
-				"content_with_weight": "General bidding notice content.",
+				"text": "General bidding notice content.",
 			},
 		},
 	}

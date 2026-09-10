@@ -507,21 +507,14 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 }
 
 // TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers A5 at the
-// pipeline level: a chunk is dropped only when BOTH text and
-// content_with_weight are empty. Blocks that carry only image / summary /
-// questions / nothing are dropped (they produce no retrievable content),
-// while a content_with_weight-only block is kept (Parser path; normalize
-// backfills text). Deliberate deviation from Python's "filter None only"
-// rule — user value (retrievable content) wins.
+// pipeline level: a chunk is dropped when canonical "text" is empty.
 func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
-	// JSON path: 6 items. Only the text block and the content_with_weight
-	// block survive; the other four are dropped by the A5 gate.
 	items := []map[string]any{
 		{"text": "valid chunk", "doc_type_kwd": "text"}, // keep
-		{"image": "data:image/png;base64,abc"},          // drop: no text, no content_with_weight
+		{"image": "data:image/png;base64,abc"},          // drop
 		{"summary": "a summary"},                        // drop
 		{"questions": "q1"},                             // drop
-		{"content_with_weight": "weighted"},             // keep (text backfilled by normalize)
+		{"content_with_weight": "weighted"},             // drop: storage field, not canonical text
 		{},                                              // drop: empty
 	}
 	// Use embedding-only mode to avoid CGo tokenizer dependency.
@@ -542,16 +535,11 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := out["chunks"].([]map[string]any)
-	// A5 keeps only the text block and the content_with_weight block.
-	if len(chunks) != 2 {
-		t.Fatalf("want 2 chunks (4 phantoms filtered), got %d: %#v", len(chunks), chunks)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk (5 phantoms filtered), got %d: %#v", len(chunks), chunks)
 	}
-	// Surviving chunks, in upstream order.
 	if chunks[0]["text"] != "valid chunk" {
 		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
-	}
-	if chunks[1]["text"] != "weighted" {
-		t.Errorf("chunk 1 text = %q, want %q (content_with_weight backfilled to text)", chunks[1]["text"], "weighted")
 	}
 }
 
