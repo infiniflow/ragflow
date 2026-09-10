@@ -924,7 +924,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
                 arr, tc = result
-                logging.info("arr: %s, tc: %s", arr, tc)
                 if len(arr) == 0 or tc == 0:
                     msg += f"\nFail to access {label}."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
