@@ -200,6 +200,15 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 			}
 		}
 	}
+	if value, ok := parserConfig["task_page_size"]; ok && value != nil {
+		n, ok := value.(float64)
+		if !ok || n != float64(int64(n)) {
+			return errors.New("Input should be a valid integer")
+		}
+		if n < 1 {
+			return errors.New("Input should be greater than or equal to 1")
+		}
+	}
 	if value, ok := parserConfig["delimiter"]; ok {
 		if s, ok := value.(string); !ok || len(s) == 0 {
 			return errors.New("String should have at least 1 character")

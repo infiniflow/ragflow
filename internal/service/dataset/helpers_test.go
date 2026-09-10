@@ -64,6 +64,17 @@ func TestValidateDatasetParserConfigPythonParity(t *testing.T) {
 	}
 }
 
+func TestValidateDatasetParserConfigTaskPageSize(t *testing.T) {
+	for _, value := range []any{float64(0), float64(3.14), "1"} {
+		if err := validateDatasetParserConfig(map[string]interface{}{"task_page_size": value}); err == nil {
+			t.Errorf("task_page_size=%v was accepted", value)
+		}
+	}
+	if err := validateDatasetParserConfig(map[string]interface{}{"task_page_size": float64(200000000)}); err != nil {
+		t.Fatalf("large task_page_size rejected: %v", err)
+	}
+}
+
 // --- validateDatasetAvatar ---
 
 func TestValidateDatasetAvatar_MissingPrefix(t *testing.T) {
