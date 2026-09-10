@@ -369,9 +369,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		}
 	}
 
-	bestName, sim, bestDepth, err := s.findBestCluster(ctx, in.TenantID, in.KbID, vec)
-	if err != nil {
-		return err
+	var bestName string
+	var sim float64
+	var bestDepth int
+	if !in.PreserveDocumentBoundary {
+		bestName, sim, bestDepth, err = s.findBestCluster(ctx, in.TenantID, in.KbID, vec)
+		if err != nil {
+			return err
+		}
 	}
 	idx := s.navIndexName(in.TenantID)
 

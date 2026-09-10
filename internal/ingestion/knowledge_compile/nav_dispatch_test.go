@@ -45,6 +45,9 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	if !reflect.DeepEqual(treeIn.Embedd, []float32{0.1, 0.2}) {
 		t.Errorf("tree embedd should be the root vector, got %v", treeIn.Embedd)
 	}
+	if !treeIn.PreserveDocumentBoundary {
+		t.Error("tree nav input must preserve the document boundary")
+	}
 	structIn, ok := byDoc["d2"]
 	if !ok {
 		t.Fatal("missing structure nav input for d2")
@@ -56,6 +59,9 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	// NavService embeds the folded summary text.
 	if len(structIn.Embedd) != 0 {
 		t.Errorf("structure embedd should be empty (NavService re-embeds), got %v", structIn.Embedd)
+	}
+	if structIn.PreserveDocumentBoundary {
+		t.Error("structure nav input should retain semantic clustering")
 	}
 }
 

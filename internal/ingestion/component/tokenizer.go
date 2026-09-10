@@ -431,6 +431,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// Set-side key matches the Get-side key for freshly embedded content.
 	truncs := make([]string, 0, len(chunks))
 	for i, ck := range chunks {
+		compileKWD, _ := ck.GetExtraString("compile_kwd")
+		if compileKWD != "" && hasEmbeddingVector(ck) {
+			continue
+		}
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)

@@ -240,6 +240,38 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	}
 }
 
+func TestTokenizerComponent_PreservesPrecomputedEmbedding(t *testing.T) {
+	stub := newStubEmbedder(4)
+	component, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(context.Context, string, string) (Embedder, string, error) {
+		return stub, "embd-test", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := component.(*TokenizerComponent)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"text":        strings.Repeat("large compiled graph ", 1000),
+			"compile_kwd": "tree",
+			"q_4_vec":     []float64{1, 2, 3, 4},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 0 {
+		t.Fatalf("embedder called %d times for a precomputed vector, want 0", got)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if !reflect.DeepEqual(chunks[0]["q_4_vec"], []float64{1, 2, 3, 4}) {
+		t.Fatalf("precomputed vector changed: %v", chunks[0]["q_4_vec"])
+	}
+}
+
 // TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero uses an
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {

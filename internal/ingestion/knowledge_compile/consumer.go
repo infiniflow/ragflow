@@ -1435,7 +1435,7 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 			}
 			a := byDoc[p.DocID]
 			if a == nil {
-				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
+				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID, PreserveDocumentBoundary: true}}
 				a = byDoc[p.DocID]
 			}
 			a.in.Summary = p.Content

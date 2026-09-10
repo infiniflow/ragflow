@@ -476,6 +476,33 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	}
 }
 
+func TestNavService_UpsertDoc_PreservesTreeDocumentBoundaries(t *testing.T) {
+	for _, docs := range [][]string{{"A"}, {"A", "B", "C"}, {"C", "B", "A"}} {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		for _, doc := range docs {
+			in := navUpsertInput("t1", "kb1", doc, "shared summary "+doc)
+			in.Embedd = []float32{1, 1}
+			in.PreserveDocumentBoundary = true
+			if err := ns.UpsertDoc(t.Context(), in); err != nil {
+				t.Fatalf("UpsertDoc(%s): %v", doc, err)
+			}
+		}
+		clusters, total, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if total != int64(len(docs)) || len(clusters) != len(docs) {
+			t.Fatalf("order %v: got %d root branches, want %d", docs, total, len(docs))
+		}
+		for _, cluster := range clusters {
+			if cluster.DocCount != 1 {
+				t.Errorf("order %v: root %q contains %d documents, want 1", docs, cluster.Name, cluster.DocCount)
+			}
+		}
+	}
+}
+
 // TestNavService_NavDocDepth asserts a nav_doc merged under a root cluster
 // (depth 0) gets depth_int = parentDepth+1 = 1, not a hard-coded value.
 func TestNavService_NavDocDepth(t *testing.T) {

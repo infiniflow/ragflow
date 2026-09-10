@@ -50,11 +50,12 @@ type NavHit struct {
 
 // UpsertDocInput carries the per-document summary to place into the nav tree.
 type UpsertDocInput struct {
-	TenantID string
-	KbID     string
-	DocID    string
-	Summary  string    // document summary text (tree product or page_index summary)
-	Embedd   []float32 // optional precomputed embedding
+	TenantID                 string
+	KbID                     string
+	DocID                    string
+	Summary                  string    // document summary text (tree product or page_index summary)
+	Embedd                   []float32 // optional precomputed embedding
+	PreserveDocumentBoundary bool      // keep independent document trees as root branches
 }
 
 // NavMergeLLM summarizes or merges nav text via an LLM. It mirrors the Python

@@ -241,6 +241,13 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 	}
 	root = collapseUnary(root)
 	entities, relations := raptorTreeToGraph(root)
+	var rootVector []float32
+	for i := range products {
+		if kind, _ := products[i].Meta["kind"].(string); kind == "root" {
+			rootVector = products[i].Vector
+			break
+		}
+	}
 
 	var out []common.Product
 	var descs []string
@@ -303,21 +310,13 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 	// Compact graph blob discovery row (knowledge_graph_kwd="graph").
 	graph := map[string]any{"entities": entities, "relations": relations}
 	graphContent := payloadJSON(graph)
-	graphVecs, err := deps.Embed.Encode(ctx, []string{graphContent})
-	if err != nil {
-		return nil, err
-	}
-	var gv []float32
-	if len(graphVecs) > 0 {
-		gv = graphVecs[0]
-	}
 	out = append(out, common.Product{
 		ID:       common.StableRowID(docID, "tree", "structure_graph"),
 		DocID:    docID,
 		TenantID: deps.TenantID,
 		Variant:  common.VariantTree,
 		Content:  graphContent,
-		Vector:   gv,
+		Vector:   rootVector,
 		Meta: map[string]any{
 			"kind":        "graph",
 			"compile_kwd": "tree",

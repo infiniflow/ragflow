@@ -1,11 +1,29 @@
 package tree
 
 import (
+	"context"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
+
+type sizeLimitedEmbedder struct{}
+
+func (sizeLimitedEmbedder) Dimensions() int { return 2 }
+
+func (sizeLimitedEmbedder) Encode(_ context.Context, texts []string) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	for i, text := range texts {
+		if len(text) > 500 {
+			return nil, fmt.Errorf("input too large: %d", len(text))
+		}
+		out[i] = []float32{1, 0}
+	}
+	return out, nil
+}
 
 // TestRaptorTreeToGraph_CollapsesUnaryAndProjects verifies the tree→graph
 // projection matches Python raptor_tree_to_graph: unary chains are collapsed
@@ -103,5 +121,41 @@ func TestReconstructTree_FromFlatProducts(t *testing.T) {
 	}
 	if len(root.children[0].children) != 1 || root.children[0].children[0].title != "N2" {
 		t.Fatalf("N1 children = %+v, want [N2]", root.children[0].children)
+	}
+}
+
+func TestBuildTreeGraph_LongDocumentDoesNotEmbedGraphBlob(t *testing.T) {
+	products := []common.Product{{
+		ID: "root", DocID: "doc", TenantID: "tenant", Content: "collection summary",
+		Vector: []float32{0, 1}, Meta: map[string]any{"kind": "root", "title": "Document"},
+	}}
+	for i := range 40 {
+		products = append(products, common.Product{
+			ID:       fmt.Sprintf("node-%d", i),
+			DocID:    "doc",
+			TenantID: "tenant",
+			ParentID: "root",
+			Content:  fmt.Sprintf("section %d", i),
+			Meta: map[string]any{
+				"kind":             "summary",
+				"title":            fmt.Sprintf("Section %d", i),
+				"source_chunk_ids": []string{fmt.Sprintf("chunk-%d", i)},
+			},
+		})
+	}
+
+	got, err := buildTreeGraph(t.Context(), common.Deps{TenantID: "tenant", Embed: sizeLimitedEmbedder{}}, "doc", products)
+	if err != nil {
+		t.Fatalf("buildTreeGraph: %v", err)
+	}
+	if len(got) != 82 { // 41 entities + 40 relations + 1 compact graph row
+		t.Fatalf("got %d products, want 82", len(got))
+	}
+	graph := got[len(got)-1]
+	if graph.Meta["kind"] != "graph" || !strings.Contains(graph.Content, "chunk-39") {
+		t.Fatalf("compact graph lost late-document coverage: kind=%v content=%q", graph.Meta["kind"], graph.Content)
+	}
+	if !reflect.DeepEqual(graph.Vector, []float32{0, 1}) {
+		t.Fatalf("compact discovery row should reuse the root vector, got %v", graph.Vector)
 	}
 }
