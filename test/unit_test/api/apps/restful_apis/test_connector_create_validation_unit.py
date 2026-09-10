@@ -139,11 +139,12 @@ def test_missing_mandatory_fields_return_data_error_not_keyerror(monkeypatch):
 
 @pytest.mark.p2
 @pytest.mark.parametrize("field", ["refresh_freq", "prune_freq", "timeout_secs"])
-def test_non_integer_frequency_returns_data_error_not_500(monkeypatch, field):
+@pytest.mark.parametrize("value", ["abc", 1.5, True])
+def test_non_integer_frequency_returns_data_error_not_500(monkeypatch, field, value):
     module = _load_connector_api(monkeypatch)
     SAVED_CONNECTORS.clear()
     REQUEST_JSON.clear()
-    REQUEST_JSON.update({"name": "kb", "source": "local", "config": {}, field: "abc"})
+    REQUEST_JSON.update({"name": "kb", "source": "local", "config": {}, field: value})
     res = asyncio.run(module.create_connector())
     assert res["code"] == 102
     assert "must be integers" in res["message"]

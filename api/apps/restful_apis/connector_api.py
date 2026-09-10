@@ -93,10 +93,15 @@ async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
+        def _parse_frequency(value):
+            if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
+                raise ValueError(f"not an integer: {value!r}")
+            return int(value)
+
         try:
-            refresh_freq = int(req.get("refresh_freq", 5))
-            prune_freq = int(req.get("prune_freq", 5))
-            timeout_secs = int(req.get("timeout_secs", 60 * 29))
+            refresh_freq = _parse_frequency(req.get("refresh_freq", 5))
+            prune_freq = _parse_frequency(req.get("prune_freq", 5))
+            timeout_secs = _parse_frequency(req.get("timeout_secs", 60 * 29))
         except (TypeError, ValueError):
             return get_data_error_result(message="refresh_freq, prune_freq and timeout_secs must be integers")
         req["id"] = get_uuid()
