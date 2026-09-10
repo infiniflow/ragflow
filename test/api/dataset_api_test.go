@@ -19,12 +19,129 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"testing"
 )
 
-func TestCreateDataset(t *testing.T) {
-	//resp, err := http.Post(baseURL+"/users", "application/json", body)
-	//assert.NoError(t, err)
-	//assert.Equal(t, 201, resp.StatusCode)
-	t.Log("TestCreateDataset")
+func decodeResponseJSON(resp *http.Response) (map[string]interface{}, error) {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func requireStatusCode(t *testing.T, resp *http.Response, expected int) map[string]interface{} {
+	t.Helper()
+	if resp.StatusCode != expected {
+		t.Fatalf("expected status code %d, got %d", expected, resp.StatusCode)
+	}
+	payload, err := decodeResponseJSON(resp)
+	if err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	return payload
+}
+
+func requireCodeZero(t *testing.T, payload map[string]interface{}) {
+	t.Helper()
+	code, ok := payload["code"].(float64)
+	if !ok || int(code) != 0 {
+		t.Fatalf("expected code 0, got %v, payload: %v", payload["code"], payload)
+	}
+}
+
+func TestDatasetCRUDCycle(t *testing.T) {
+	// Create
+	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "restful_dataset_crud"}, nil)
+	if err != nil {
+		t.Fatalf("create dataset request failed: %v", err)
+	}
+	createPayload := requireStatusCode(t, createResp, http.StatusOK)
+	requireCodeZero(t, createPayload)
+	createData, ok := createPayload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("create response data is not an object: %v", createPayload)
+	}
+	datasetID, ok := createData["id"].(string)
+	if !ok || datasetID == "" {
+		t.Fatalf("create response data.id is not a valid string: %v", createData)
+	}
+
+	// Get by id
+	getResp, err := TestConfig.GetJSON(fmt.Sprintf("/datasets/%s", datasetID), nil, nil)
+	if err != nil {
+		t.Fatalf("get dataset request failed: %v", err)
+	}
+	getPayload := requireStatusCode(t, getResp, http.StatusOK)
+	requireCodeZero(t, getPayload)
+	getData, ok := getPayload["data"].(map[string]interface{})
+	if !ok || getData["id"] != datasetID {
+		t.Fatalf("get response data.id mismatch: %v", getPayload)
+	}
+
+	// Update
+	updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{"name": "restful_dataset_crud_updated"}, nil)
+	if err != nil {
+		t.Fatalf("update dataset request failed: %v", err)
+	}
+	updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
+	requireCodeZero(t, updatePayload)
+	updateData, ok := updatePayload["data"].(map[string]interface{})
+	if !ok || updateData["name"] != "restful_dataset_crud_updated" {
+		t.Fatalf("update response data.name mismatch: %v", updatePayload)
+	}
+
+	// List with id filter
+	listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": datasetID}, nil)
+	if err != nil {
+		t.Fatalf("list dataset request failed: %v", err)
+	}
+	listPayload := requireStatusCode(t, listResp, http.StatusOK)
+	requireCodeZero(t, listPayload)
+	listData, ok := listPayload["data"].([]interface{})
+	if !ok || len(listData) != 1 {
+		t.Fatalf("expected 1 dataset in list, got %v", listPayload)
+	}
+	firstItem, ok := listData[0].(map[string]interface{})
+	if !ok || firstItem["id"] != datasetID {
+		t.Fatalf("list response data[0].id mismatch: %v", listPayload)
+	}
+
+	// Delete
+	deleteResp, err := TestConfig.DeleteJSON("/datasets", map[string]interface{}{"ids": []interface{}{datasetID}}, nil)
+	if err != nil {
+		t.Fatalf("delete dataset request failed: %v", err)
+	}
+	deletePayload := requireStatusCode(t, deleteResp, http.StatusOK)
+	requireCodeZero(t, deletePayload)
+
+	// List after delete
+	listAfterResp, err := TestConfig.GetJSON("/datasets", nil, nil)
+	if err != nil {
+		t.Fatalf("list after delete request failed: %v", err)
+	}
+	listAfterPayload := requireStatusCode(t, listAfterResp, http.StatusOK)
+	requireCodeZero(t, listAfterPayload)
+	listAfterData, ok := listAfterPayload["data"].([]interface{})
+	if !ok {
+		t.Fatalf("list after delete data is not an array: %v", listAfterPayload)
+	}
+	for _, item := range listAfterData {
+		dataset, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if dataset["id"] == datasetID {
+			t.Fatalf("deleted dataset %s still present in list: %v", datasetID, listAfterPayload)
+		}
+	}
 }

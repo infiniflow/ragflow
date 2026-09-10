@@ -17,9 +17,12 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -143,9 +146,57 @@ func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
 	return h
 }
 
-func (c *ServerTestConfig) Request(method, path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-	normalizedPath := "/" + strings.TrimLeft(path, "/")
-	req, err := http.NewRequest(method, c.apiBase()+normalizedPath, body)
+//func (c *ServerTestConfig) Request(method, path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+//	normalizedPath := "/" + strings.TrimLeft(path, "/")
+//	req, err := http.NewRequest(method, c.apiBase()+normalizedPath, body)
+//	if err != nil {
+//		return nil, err
+//	}
+//	req.Header = c.buildHeaders(extraHeaders)
+//	return http.DefaultClient.Do(req)
+//}
+//
+//func (c *ServerTestConfig) Get(path string, extraHeaders map[string]string) (*http.Response, error) {
+//	return c.Request(http.MethodGet, path, nil, extraHeaders)
+//}
+//
+//func (c *ServerTestConfig) Post(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+//	return c.Request(http.MethodPost, path, body, extraHeaders)
+//}
+//
+//func (c *ServerTestConfig) Delete(path string, extraHeaders map[string]string) (*http.Response, error) {
+//	return c.Request(http.MethodDelete, path, nil, extraHeaders)
+//}
+//
+//func (c *ServerTestConfig) Put(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+//	return c.Request(http.MethodPut, path, body, extraHeaders)
+//}
+//
+//func (c *ServerTestConfig) Patch(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
+//	return c.Request(http.MethodPatch, path, body, extraHeaders)
+//}
+
+func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+
+	u, err := url.Parse(c.apiBase() + "/" + strings.TrimLeft(path, "/"))
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	for k, v := range params {
+		q.Set(k, fmt.Sprint(v))
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(method, u.String(), bodyReader)
 	if err != nil {
 		return nil, err
 	}
@@ -153,22 +204,22 @@ func (c *ServerTestConfig) Request(method, path string, body io.Reader, extraHea
 	return http.DefaultClient.Do(req)
 }
 
-func (c *ServerTestConfig) Get(path string, extraHeaders map[string]string) (*http.Response, error) {
-	return c.Request(http.MethodGet, path, nil, extraHeaders)
+func (c *ServerTestConfig) GetJSON(path string, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSON(http.MethodGet, path, nil, params, extraHeaders)
 }
 
-func (c *ServerTestConfig) Post(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-	return c.Request(http.MethodPost, path, body, extraHeaders)
+func (c *ServerTestConfig) PostJSON(path string, body map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSON(http.MethodPost, path, body, nil, extraHeaders)
 }
 
-func (c *ServerTestConfig) Delete(path string, extraHeaders map[string]string) (*http.Response, error) {
-	return c.Request(http.MethodDelete, path, nil, extraHeaders)
+func (c *ServerTestConfig) DeleteJSON(path string, body map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSON(http.MethodDelete, path, body, nil, extraHeaders)
 }
 
-func (c *ServerTestConfig) Put(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-	return c.Request(http.MethodPut, path, body, extraHeaders)
+func (c *ServerTestConfig) PutJSON(path string, body map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSON(http.MethodPut, path, body, nil, extraHeaders)
 }
 
-func (c *ServerTestConfig) Patch(path string, body io.Reader, extraHeaders map[string]string) (*http.Response, error) {
-	return c.Request(http.MethodPatch, path, body, extraHeaders)
+func (c *ServerTestConfig) PatchJSON(path string, body map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSON(http.MethodPatch, path, body, nil, extraHeaders)
 }
