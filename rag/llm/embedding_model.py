@@ -1393,19 +1393,20 @@ class RAGconEmbed(OpenAIEmbed):
     """
     RAGcon Embedding Provider - routes through LiteLLM proxy
 
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
 
     def __init__(self, key, model_name="text-embedding-3-small", base_url=None):
         if not base_url:
-            base_url = "https://connect.ragcon.ai/v1"
+            base_url = "https://connect.ragcon.com/v1"
 
         super().__init__(key, model_name, base_url)
 
     def _extra_body(self):
-        if (urlparse(self.base_url).hostname or "").lower() == "connect.ragcon.ai":
+        host = (urlparse(self.base_url).hostname or "").lower()
+        if host in {"connect.ragcon.com", "connect.ragcon.ai"} or host.endswith((".connect.ragcon.com", ".connect.ragcon.ai")):
             return {"drop_params": True}
         return None
 

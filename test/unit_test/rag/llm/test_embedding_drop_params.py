@@ -169,8 +169,18 @@ def test_openrouter_embed_call_appends_provider_when_provider_order_set():
     assert extra_body.get("provider") == {"order": ["Azure", "OpenAI"], "allow_fallbacks": False}
 
 
-def test_ragcon_embed_official_endpoint_sends_drop_params():
-    embed = _make_ragcon_embed()
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        None,
+        "https://connect.ragcon.com/v1",
+        "https://connect.ragcon.ai/v1",
+        "https://api.connect.ragcon.com/v1",
+        "https://api.connect.ragcon.ai/v1",
+    ],
+)
+def test_ragcon_embed_official_endpoint_sends_drop_params(endpoint):
+    embed = _make_ragcon_embed(endpoint)
     embed._call(["hello"])
 
     kwargs = embed.client.embeddings.create.call_args.kwargs
