@@ -353,7 +353,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 //	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
 //	file_type     string  — canonical parser-resolved file extension.
-//	output_format string  — wire format (unified to "json").
+//	output_format string  — active wire format (defaults to "json", or selected allowed format).
 //	lang          string  — language for tokenization.
 //	_ERROR        string  — populated when the component short-
 //	                        circuits with an error message
@@ -362,7 +362,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical parser-resolved file extension.",
-		"output_format": "string: the active output format (\"json\").",
+		"output_format": "string: the active output format (defaults to \"json\", or selected allowed format).",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
@@ -374,7 +374,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //
 //	{
 //	  "name":           string (from inputs["doc_id"]),
-//	  "output_format": "json",
+//	  "output_format": "json" (or configured allowed format),
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),

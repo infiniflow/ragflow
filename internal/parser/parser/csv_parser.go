@@ -129,10 +129,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		emptyHTML := "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>"
-		outFmt := p.OutputFormat
-		if outFmt == "" || strings.EqualFold(outFmt, "html") {
-			outFmt = "json"
-		}
+		outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
 		return ParseResult{
 			OutputFormat: outFmt,
 			File: map[string]any{
@@ -190,10 +187,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	htmlText := recordsToHTMLTableChunks(records, chunkRows, csvSheetName)
 
-	outFmt := p.OutputFormat
-	if outFmt == "" || strings.EqualFold(outFmt, "html") {
-		outFmt = "json"
-	}
+	outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
 
 	return ParseResult{
 		OutputFormat: outFmt,

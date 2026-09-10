@@ -58,7 +58,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	defer doc.Close()
 
-	text, err := extractDocText(doc)
+	text, mdText, err := extractDocText(doc)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
@@ -68,14 +68,19 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		outFmt = "json"
 	}
 
+	markdownPayload := text
+	if strings.TrimSpace(mdText) != "" {
+		markdownPayload = mdText
+	}
+
 	res := ParseResult{
 		OutputFormat: outFmt,
 		File:         map[string]any{"name": filename, "format": "doc"},
 		Text:         text,
+		Markdown:     markdownPayload,
 	}
 
 	if strings.EqualFold(outFmt, "markdown") {
-		res.Markdown = text
 		return res
 	}
 	if strings.EqualFold(outFmt, "text") {
@@ -117,7 +122,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 // is chosen so a sparser view never shadows a more complete one. A failure at
 // every stage degrades to the PlainText error, preserving the original "no
 // text at all" failure semantics.
-func extractDocText(doc *officeOxide.Document) (string, error) {
+func extractDocText(doc *officeOxide.Document) (string, string, error) {
 	var irJSON, irText, mdText, plainText string
 	if j, err := doc.ToIRJSON(); err == nil {
 		irJSON = j
@@ -131,9 +136,9 @@ func extractDocText(doc *officeOxide.Document) (string, error) {
 	} else if strings.TrimSpace(irText) == "" && strings.TrimSpace(mdText) == "" {
 		// Every view failed (or produced nothing): keep the original
 		// "no text at all" failure semantics.
-		return "", err
+		return "", "", err
 	}
-	return selectDocTextView(irJSON, irText, mdText, plainText), nil
+	return selectDocTextView(irJSON, irText, mdText, plainText), mdText, nil
 }
 
 // selectDocTextView chooses the best plain-text rendering from office_oxide's

@@ -100,10 +100,12 @@ func (ParserParam) Defaults() ParserParam {
 func (ParserParam) Validate() error { return nil }
 
 // ParserOutputs is the result of invoking the Parser component. The
-// primary wire format is unified to "json". Companion payloads
-// (markdown, text, html) are preserved when available for previews and fallbacks.
+// wire format defaults to "json", with structured JSON items as the primary
+// payload. Configured allowed formats (such as markdown) and companion payloads
+// (markdown, text, html) are preserved when available.
 type ParserOutputs struct {
-	// OutputFormat is the active output format for this run (unified to "json").
+	// OutputFormat is the active output format for this run (defaults to "json",
+	// or selected allowed format). Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// JSON holds the list of structured sections (primary payload).

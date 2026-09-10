@@ -109,10 +109,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" || strings.EqualFold(outFmt, "html") {
-		outFmt = "json"
-	}
+	outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
 
 	return ParseResult{
 		OutputFormat: outFmt,
