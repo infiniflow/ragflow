@@ -19,8 +19,14 @@
 package api
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -221,5 +227,81 @@ func TestDatasetUpdateNameAndCaseInsensitiveContract(t *testing.T) {
 	duplicateMessage, _ := duplicatePayload["message"].(string)
 	if !strings.Contains(duplicateMessage, "already exists") {
 		t.Fatalf("expected message to contain 'already exists', got %q, payload: %v", duplicateMessage, duplicatePayload)
+	}
+}
+
+func encodeAvatar() (string, error) {
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{B: 255, A: 255}}, image.Point{}, draw.Src)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return "", err
+	}
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
+}
+
+func TestDatasetUpdateLanguageConnectorsAvatarAndDescriptionContract(t *testing.T) {
+	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_lang_connectors"}, nil)
+	if err != nil {
+		t.Fatalf("create dataset request failed: %v", err)
+	}
+	createPayload := requireStatusCode(t, createResp, http.StatusOK)
+	requireCodeZero(t, createPayload)
+	createData, ok := createPayload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("create response data is not an object: %v", createPayload)
+	}
+	datasetID, ok := createData["id"].(string)
+	if !ok || datasetID == "" {
+		t.Fatalf("dataset id is invalid: %v", createData)
+	}
+
+	avatarValue, err := encodeAvatar()
+	if err != nil {
+		t.Fatalf("failed to encode avatar: %v", err)
+	}
+
+	updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{
+		"name":        "dataset_update_lang_connectors",
+		"description": "",
+		"parser_id":   "naive",
+		"parse_type":  1,
+		"language":    "English",
+		"connectors":  []interface{}{},
+		"avatar":      avatarValue,
+	}, nil)
+	if err != nil {
+		t.Fatalf("update dataset request failed: %v", err)
+	}
+	updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
+	requireCodeZero(t, updatePayload)
+	updateData, ok := updatePayload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("update response data is not an object: %v", updatePayload)
+	}
+	if updateData["language"] != "English" {
+		t.Fatalf("language mismatch: expected English, got %v", updatePayload)
+	}
+	connectors, ok := updateData["connectors"].([]interface{})
+	if !ok {
+		t.Fatalf("connectors is not an array: %v", updatePayload)
+	}
+	if len(connectors) != 0 {
+		t.Fatalf("connectors should be empty: %v", updatePayload)
+	}
+	if updateData["avatar"] != avatarValue {
+		t.Fatalf("avatar mismatch: %v", updatePayload)
+	}
+
+	descriptionResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{"description": "description"}, nil)
+	if err != nil {
+		t.Fatalf("update description request failed: %v", err)
+	}
+	descriptionPayload := requireStatusCode(t, descriptionResp, http.StatusOK)
+	requireCodeZero(t, descriptionPayload)
+	descriptionData, ok := descriptionPayload["data"].(map[string]interface{})
+	if !ok || descriptionData["description"] != "description" {
+		t.Fatalf("description mismatch: %v", descriptionPayload)
 	}
 }
