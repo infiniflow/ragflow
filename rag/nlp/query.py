@@ -53,6 +53,8 @@ class FulltextQueryer(QueryBase):
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
+        if not rag_tokenizer.tokenize(txt).strip():
+            return None, []
         otxt = txt
         txt = self.rmWWW(txt)
 

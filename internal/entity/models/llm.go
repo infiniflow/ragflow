@@ -46,9 +46,10 @@ import (
 // a new instance, never mutating in place — see eino's
 // components/model/interface.go:84-99 for the rationale).
 type EinoChatModel struct {
-	inner   *ChatModel
-	chatCfg *ChatConfig
-	tools   []*schema.ToolInfo
+	inner      *ChatModel
+	chatCfg    *ChatConfig
+	tools      []*schema.ToolInfo
+	toolChoice *string
 }
 
 // NewEinoChatModel wraps an existing RAGFlow *ChatModel so it can be passed
@@ -208,6 +209,11 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
+	if containsToolResult(internal) {
+		choice := "auto"
+		chatCfg.ToolChoice = &choice
+		chatCfg.ToolChoiceValue = nil
+	}
 	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
@@ -222,6 +228,15 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 		recordUsageFromResponse(ctx, m.inner)
 	}
 	return fromInternalResponse(resp), nil
+}
+
+func containsToolResult(messages []Message) bool {
+	for _, message := range messages {
+		if message.Role == "tool" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
@@ -239,7 +254,27 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 	}
 	cfg.Tools = tools
 	choice := "auto"
+	for _, tool := range m.tools {
+		if tool != nil && tool.Name == "execute_code" {
+			// MiniMax may answer with prose instead of emitting the callable
+			// CodeExec request. Require one tool dispatch for code-exec agents;
+			// the subsequent ReAct turn remains free to produce the final text.
+			choice = "required"
+			break
+		}
+		//if m.toolChoice != nil {
+		//	choice = *m.toolChoice
+	}
 	cfg.ToolChoice = &choice
+	for _, tool := range m.tools {
+		if tool != nil && tool.Name == "execute_code" {
+			cfg.ToolChoiceValue = map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "execute_code"},
+			}
+			break
+		}
+	}
 	return cfg, nil
 }
 
@@ -338,9 +373,31 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
 	internalMessage := toInternalMessages(msgs)
+	// Some OpenAI-compatible providers (including the configured MiniMax
+	// endpoint) stream tool intent as ordinary prose. Use the provider's
+	// non-streaming parser for tool-bound turns so structured tool_calls are
+	// preserved; ReAct still streams the final answer turn normally.
+	if len(m.tools) > 0 && !containsToolResult(internalMessage) {
+		msg, err := m.Generate(ctx, msgs, opts...)
+		if err != nil {
+			return nil, err
+		}
+		sr, sw := schema.Pipe[*schema.Message](1)
+		if !sw.Send(msg, nil) {
+			sw.Close()
+			return sr, nil
+		}
+		sw.Close()
+		return sr, nil
+	}
 	chatCfg, err := m.chatConfigForGenerate()
 	if err != nil {
 		return nil, err
+	}
+	if containsToolResult(internalMessage) {
+		choice := "auto"
+		chatCfg.ToolChoice = &choice
+		chatCfg.ToolChoiceValue = nil
 	}
 
 	sr, sw := schema.Pipe[*schema.Message](1)
@@ -403,6 +460,21 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 	cp := *m
 	cp.tools = append([]*schema.ToolInfo(nil), tools...)
 	return &cp, nil
+}
+
+// WithToolChoice returns a NEW EinoChatModel instance constrained to the given
+// tool_choice string ("auto", "none", "required", or a specific tool name).
+// Empty string leaves the default ("auto"). Mirrors eino's WithToolChoice but
+// operates on the RAGFlow wrapper so the choice reaches the driver's request
+// body via chatConfigForGenerate.
+func (m *EinoChatModel) WithToolChoice(choice string) *EinoChatModel {
+	cp := *m
+	if choice == "" {
+		cp.toolChoice = nil
+		return &cp
+	}
+	cp.toolChoice = &choice
+	return &cp
 }
 
 // Tools returns the tools currently bound to the wrapper (used by

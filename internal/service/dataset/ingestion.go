@@ -123,8 +123,15 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog) map[string]inter
 		"task_type":        log.TaskType,
 		"operation_status": log.OperationStatus,
 		"progress":         log.Progress,
+		"process_begin_at": log.ProcessBeginAt,
+		"process_duration": log.ProcessDuration,
+		"progress_msg":     log.ProgressMsg,
+		"dsl":              log.DSL,
+		"avatar":           log.Avatar,
 		"create_time":      log.CreateTime,
+		"create_date":      log.CreateDate,
 		"update_time":      log.UpdateTime,
+		"update_date":      log.UpdateDate,
 	}
 	if log.PipelineID != nil {
 		m["pipeline_id"] = *log.PipelineID

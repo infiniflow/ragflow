@@ -32,6 +32,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
@@ -62,8 +63,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
@@ -132,7 +133,11 @@ export const useUploadDocument = () => {
         const code = get(ret, 'code');
 
         if (code === 0 || code === 500) {
-          queryClient.invalidateQueries({
+          // Await the refetch so the fresh list (including the just-uploaded
+          // documents) reaches the cache before callers optimistically mark
+          // them RUNNING. Otherwise the late refetch lands after the
+          // optimistic update, overwrites it, and polling never starts.
+          await queryClient.invalidateQueries({
             queryKey: DocumentKeys.all(),
           });
         }
@@ -165,19 +170,20 @@ export const useFetchDocumentList = (loop = true) => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
-  const [docs, setDocs] = useState<IDocumentInfo[]>([]);
-
-  const isLoop = useMemo(() => {
-    return loop && docs.some((doc) => doc.run === RunningStatus.RUNNING);
-  }, [docs, loop]);
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
+    has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
-    initialData: { docs: [], total: 0 },
-    refetchInterval: isLoop ? 5000 : false,
+    initialData: { docs: [], total: 0, has_active_tasks: false },
+    refetchInterval: (query) =>
+      loop &&
+      (query.state.data?.has_active_tasks ||
+        !!query.state.data?.docs.some(isDocumentProcessing))
+        ? 5000
+        : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -197,7 +203,7 @@ export const useFetchDocumentList = (loop = true) => {
       const ret = await listDocument(
         {
           id: knowledgeId || id,
-          ext: { keywords: debouncedSearchString },
+          keywords: debouncedSearchString,
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -218,12 +224,10 @@ export const useFetchDocumentList = (loop = true) => {
       return {
         docs: [],
         total: 0,
+        has_active_tasks: false,
       };
     },
   });
-  useMemo(() => {
-    setDocs(data.docs);
-  }, [data.docs]);
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       setPagination({ page: 1 });
@@ -561,15 +565,14 @@ export const useSetDocumentParser = () => {
     }) => {
       // Build update payload
       const updateData: Record<string, unknown> = {};
-      if (parserId) {
-        updateData.chunk_method = parserId;
-      }
       if (pipelineId) {
         updateData.pipeline_id = pipelineId;
+      } else if (parserId) {
+        updateData.chunk_method = parserId;
       }
 
       if (parserConfig) {
-        updateData.parser_config = extractParserConfigExt(parserConfig);
+        updateData.parser_config = normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -634,7 +637,7 @@ export const useSetDocumentPipelineParser = () => {
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
-          : extractParserConfigExt(parserConfig);
+          : normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(

@@ -334,7 +334,18 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+		return err
+	}
+	// File replacement/deletion uses this path instead of deleteDocumentFull.
+	// Publish the same deletion event so the dataset-level Wiki consumer removes
+	// the deleted document's contribution in both paths.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
+	}
+	return nil
 }
 
 // InsertDocument creates a document row and increments the owning KB's doc_num

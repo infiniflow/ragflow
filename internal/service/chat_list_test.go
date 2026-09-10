@@ -20,7 +20,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.Chat{},
 		&entity.Tenant{},
 		&entity.User{},
@@ -34,7 +34,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { dao.DB = origDB })
 
 	status := string(entity.StatusValid)
-	if err := db.Create(&entity.Tenant{
+	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
 		LLMID:     "model-a",
 		EmbdID:    "embd-a",
@@ -44,7 +44,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
 
-	if err := db.Create(&entity.User{
+	if err = db.Create(&entity.User{
 		ID:       "user-1",
 		Nickname: "tester",
 		Status:   sptr("1"),

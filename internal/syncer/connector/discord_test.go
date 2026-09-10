@@ -275,6 +275,36 @@ func TestDiscordValidateNoNetwork(t *testing.T) {
 	}
 }
 
+func TestDiscordConnectorValidateConnectorSetting(t *testing.T) {
+	fixture := newDiscordFixture()
+	server := httptest.NewServer(fixture.handler())
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+	})
+	connector.baseURL = server.URL
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
+		t.Fatalf("ValidateConnectorSetting: %v", err)
+	}
+	if fixture.requests.Load() == 0 {
+		t.Fatalf("ValidateConnectorSetting made no network requests")
+	}
+
+	empty := newDiscordTestConnector(t, map[string]any{
+		"credentials": map[string]any{"discord_bot_token": "token"},
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"missing"},
+	})
+	empty.baseURL = server.URL
+	var valErr *ConnectorValidationError
+	if err := empty.ValidateConnectorSetting(t.Context(), nil); !errors.As(err, &valErr) {
+		t.Fatalf("ValidateConnectorSetting empty err = %v, want ConnectorValidationError", err)
+	}
+}
+
 func TestDiscordOpenSyncMergesBatches(t *testing.T) {
 	fixture := newDiscordFixture()
 	base := mustTime(t, "2026-08-14T10:00:00Z")
@@ -293,7 +323,7 @@ func TestDiscordOpenSyncMergesBatches(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -358,7 +388,7 @@ func TestDiscordOpenSyncWindowFilter(t *testing.T) {
 
 	start := base.Add(-2 * time.Minute)
 	end := base
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: false,
 		WindowStart:   &start,
 		WindowEnd:     end,
@@ -402,7 +432,7 @@ func TestDiscordOpenSyncChannelsAndThreads(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -449,10 +479,10 @@ func TestDiscordThreadListErrorsPropagate(t *testing.T) {
 			})
 			connector.baseURL = server.URL
 
-			if _, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true}); err == nil {
+			if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true}); err == nil {
 				t.Fatalf("OpenSync: want error, got nil")
 			}
-			if _, err := connector.OpenPrune(context.Background(), PruneRequest{}); err == nil {
+			if _, err := connector.OpenPrune(t.Context(), PruneRequest{}); err == nil {
 				t.Fatalf("OpenPrune: want error, got nil")
 			}
 		})
@@ -480,7 +510,7 @@ func TestDiscordResumeSameTarget(t *testing.T) {
 		return connector
 	}
 
-	session, err := newConnector().OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := newConnector().OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -500,7 +530,7 @@ func TestDiscordResumeSameTarget(t *testing.T) {
 		t.Fatalf("cursor = %+v, want target ch-1 message m2", cursor)
 	}
 
-	resumed, err := newConnector().OpenSync(context.Background(), SyncRequest{
+	resumed, err := newConnector().OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        batch.Checkpoint,
 	})
@@ -548,7 +578,7 @@ func TestDiscordResumeAcrossTargets(t *testing.T) {
 		return connector
 	}
 
-	session, err := newConnector().OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := newConnector().OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -561,7 +591,7 @@ func TestDiscordResumeAcrossTargets(t *testing.T) {
 		t.Fatalf("batch checkpoint is nil")
 	}
 
-	resumed, err := newConnector().OpenSync(context.Background(), SyncRequest{
+	resumed, err := newConnector().OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        batch.Checkpoint,
 	})
@@ -607,7 +637,7 @@ func TestDiscordResumeFingerprintMismatch(t *testing.T) {
 		"batch_size":  2,
 	})
 	firstConnector.baseURL = server.URL
-	session, err := firstConnector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := firstConnector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -617,7 +647,8 @@ func TestDiscordResumeFingerprintMismatch(t *testing.T) {
 	}
 	session.Close()
 
-	// Run 2 filters to one channel, changing the enumeration: resume is ignored.
+	// Run 2 filters to one channel, changing the enumeration: resume must be
+	// rejected so the runner can restart the same fixed window.
 	secondConnector := newDiscordTestConnector(t, map[string]any{
 		"server_ids":  []any{"1001"},
 		"channels":    []any{"general"},
@@ -625,21 +656,12 @@ func TestDiscordResumeFingerprintMismatch(t *testing.T) {
 		"batch_size":  2,
 	})
 	secondConnector.baseURL = server.URL
-	resumed, err := secondConnector.OpenSync(context.Background(), SyncRequest{
+	resumed, err := secondConnector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        batch.Checkpoint,
 	})
-	if err != nil {
-		t.Fatalf("resumed OpenSync: %v", err)
-	}
-	defer resumed.Close()
-
-	first, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resumed NextBatch: %v", err)
-	}
-	if first.Documents[0].SourceID != "DISCORD_m1" {
-		t.Fatalf("resumed doc = %q, want full re-scan from DISCORD_m1", first.Documents[0].SourceID)
+	if resumed != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resumed OpenSync = session %v, err %v, want ErrSyncResumeInvalid", resumed, err)
 	}
 }
 
@@ -656,21 +678,12 @@ func TestDiscordResumeInvalidCursor(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        &SyncCheckpoint{Cursor: "not-json"},
 	})
-	if err != nil {
-		t.Fatalf("OpenSync: %v", err)
-	}
-	defer session.Close()
-
-	batch, err := session.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("NextBatch: %v", err)
-	}
-	if batch.Documents[0].SourceID != "DISCORD_m1" {
-		t.Fatalf("doc = %q, want full re-scan from DISCORD_m1", batch.Documents[0].SourceID)
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 
@@ -696,7 +709,7 @@ func TestDiscordMessagePagination(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -734,7 +747,7 @@ func TestDiscord429Retry(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -768,7 +781,7 @@ func TestDiscordPruneSlimDocuments(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune: %v", err)
 	}
@@ -817,7 +830,7 @@ func TestDiscordPruneGroupBreaksOnTargetSwitch(t *testing.T) {
 	})
 	connector.baseURL = server.URL
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune: %v", err)
 	}

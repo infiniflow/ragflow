@@ -264,3 +264,80 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 		t.Fatalf("dataflow_canvas count = %d, want 1", catByID["dataflow_canvas"])
 	}
 }
+
+// TestUserCanvasDAOKeywordSearchIncludesTags verifies that the keyword
+// search matches agents by tag in addition to title (issue #14774:
+// "Tag metadata should be searchable across the Agent list").
+func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("failed to migrate user: %v", err)
+	}
+	pushDB(t, db)
+	ctx := t.Context()
+	d := NewUserCanvasDAO()
+
+	if err := db.Create(&entity.User{ID: "u1", Nickname: "Owner", Email: "o@example.com"}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	canvases := []entity.UserCanvas{
+		{ID: "c1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Budget Report"), Tags: "finance,budget"},
+		{ID: "c2", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Sales Bot"), Tags: "customer-support"},
+	}
+	for i := range canvases {
+		if err := db.Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("create canvas: %v", err)
+		}
+	}
+
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "finance", "", "", nil)
+	if err != nil {
+		t.Fatalf("ListByTenantIDs: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("keyword search 'finance' returned %d rows, want 1 (matched by tag not title)", len(results))
+	}
+	if results[0].ID != "c1" {
+		t.Errorf("matched canvas id = %s, want c1", results[0].ID)
+	}
+}
+
+// TestUserCanvasDAOOrderByTags verifies that agents can be sorted by
+// their tags column (issue #14774: "Agents can be sorted by tag").
+func TestUserCanvasDAOOrderByTags(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("failed to migrate user: %v", err)
+	}
+	pushDB(t, db)
+	ctx := t.Context()
+	d := NewUserCanvasDAO()
+
+	if err := db.Create(&entity.User{ID: "u1", Nickname: "Owner", Email: "o@example.com"}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	canvases := []entity.UserCanvas{
+		{ID: "c-z", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Zeta"), Tags: "zebra"},
+		{ID: "c-a", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Alpha"), Tags: "alpha"},
+		{ID: "c-m", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Mid"), Tags: "middle"},
+	}
+	for i := range canvases {
+		if err := db.Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("create canvas: %v", err)
+		}
+	}
+
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "tags", false, "", "", "", nil)
+	if err != nil {
+		t.Fatalf("ListByTenantIDs: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("returned %d rows, want 3", len(results))
+	}
+	want := []string{"c-a", "c-m", "c-z"}
+	for i, r := range results {
+		if r.ID != want[i] {
+			t.Errorf("row[%d] id = %s, want %s (ascending tag sort)", i, r.ID, want[i])
+		}
+	}
+}

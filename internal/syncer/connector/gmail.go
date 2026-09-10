@@ -90,6 +90,13 @@ func (c *GmailConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates Gmail settings from an unsaved config.
+func (c *GmailConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
+}
+
 // OpenSync opens one Gmail sync session.
 func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	users, err := c.getUserEmails(ctx)
@@ -106,7 +113,9 @@ func (c *GmailConnector) OpenSync(ctx context.Context, request SyncRequest) (Syn
 		batchSize: c.batchSize,
 		query:     query,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -304,7 +313,7 @@ type gmailSyncSession struct {
 	buffer          []gmailBufferedDocument
 	resumePageToken string
 	resumeOffset    int
-	resumeFilename  string
+	resumeSourceID  string
 }
 
 // NextBatch returns the next Gmail document batch.
@@ -381,11 +390,13 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBuffere
 				document:   doc,
 				checkpoint: gmailSyncCheckpoint(userEmail, requestPageToken, pageOffset, doc),
 				offset:     pageOffset,
-				filename:   syncSourceDocumentFilenameFromDocument(doc),
 			})
 		}
 	}
-	documents := s.filterResumedDocuments(requestPageToken, candidates)
+	documents, err := s.filterResumedDocuments(requestPageToken, candidates)
+	if err != nil {
+		return nil, err
+	}
 	if page.NextPageToken == "" {
 		s.advanceUser()
 	} else {
@@ -394,18 +405,25 @@ func (s *gmailSyncSession) nextDocumentPage(ctx context.Context) ([]gmailBuffere
 	return documents, nil
 }
 
-// applyResume apply resume if resume is available (adjust session's token and pageOffset)
-func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+// applyResume restores the Gmail source anchor when a checkpoint is available.
+func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("gmail sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 
 	var cursor gmailSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("gmail sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("gmail sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.UserEmail == "" {
-		return
+		return fmt.Errorf("gmail sync cursor has no user anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, userEmail := range s.users {
 		if userEmail != cursor.UserEmail {
@@ -414,48 +432,36 @@ func (s *gmailSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.userIndex = index
 		s.pageToken = cursor.PageToken
 		s.resumePageToken = cursor.PageToken
-		s.resumeFilename = cursor.Filename
+		s.resumeSourceID = sourceID
 		if cursor.Offset > 0 {
 			s.resumeOffset = cursor.Offset
 		}
-		return
+		return nil
 	}
+	return fmt.Errorf("gmail resume user %q was not found in the current listing: %w", cursor.UserEmail, ErrSyncResumeInvalid)
 }
 
-// filterResumedDocuments applies checkpoint offset using the filename at that offset.
-func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates []gmailBufferedDocument) []gmailBufferedDocument {
-	if s.resumeOffset <= 0 {
-		return candidates
+// filterResumedDocuments continues after the committed Gmail source anchor.
+func (s *gmailSyncSession) filterResumedDocuments(pageToken string, candidates []gmailBufferedDocument) ([]gmailBufferedDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
 	}
 	if pageToken != s.resumePageToken {
-		s.clearResumeOffset()
-		return candidates
+		return nil, fmt.Errorf("gmail resume page %q no longer matches checkpoint page %q: %w", pageToken, s.resumePageToken, ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset <= len(candidates) && candidates[s.resumeOffset-1].filename == s.resumeFilename {
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.offset > s.resumeOffset {
-				filtered = append(filtered, candidate)
-			}
-		}
-		s.clearResumeOffset()
-		return filtered
-	}
-
-	filtered := candidates[:0]
-	for _, candidate := range candidates {
-		if candidate.offset >= s.resumeOffset {
-			filtered = append(filtered, candidate)
+	for index, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			return candidates[index+1:], nil
 		}
 	}
-	s.clearResumeOffset()
-	return filtered
+	return nil, fmt.Errorf("gmail resume anchor %q was not found on page %q: %w", s.resumeSourceID, pageToken, ErrSyncResumeInvalid)
 }
 
 func (s *gmailSyncSession) clearResumeOffset() {
 	s.resumeOffset = 0
 	s.resumePageToken = ""
-	s.resumeFilename = ""
+	s.resumeSourceID = ""
 }
 
 // advanceUser moves a Gmail session to the next mailbox.
@@ -469,19 +475,17 @@ type gmailBufferedDocument struct {
 	document   SourceDocument
 	checkpoint *SyncCheckpoint
 	offset     int
-	filename   string
 }
 
 type gmailSyncCursor struct {
 	UserEmail string `json:"user_email"`
 	PageToken string `json:"page_token,omitempty"`
 	Offset    int    `json:"offset"`
-	Filename  string `json:"filename"`
+	SourceID  string `json:"source_id,omitempty"`
 }
 
 func gmailSyncCheckpoint(userEmail, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
-	filename := syncSourceDocumentFilenameFromDocument(doc)
-	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset, Filename: filename})
+	cursor, err := json.Marshal(gmailSyncCursor{UserEmail: userEmail, PageToken: pageToken, Offset: offset, SourceID: doc.SourceID})
 	if err != nil {
 		return nil
 	}

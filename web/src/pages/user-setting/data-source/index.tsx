@@ -153,8 +153,7 @@ const DataSource = () => {
           loading={addLoading}
           hideModal={hideAddingModal}
           onOk={(data) => {
-            console.log(data);
-            handleAddOk(data);
+            return handleAddOk(data);
           }}
           sourceData={addSource}
         />

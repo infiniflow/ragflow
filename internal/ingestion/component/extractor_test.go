@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -101,8 +102,7 @@ func withStubChatInvoker(t *testing.T, responses ...stubResponse) *stubExtractor
 }
 
 // TestExtractorComponent_Registered verifies the init() registration
-// is visible to the runtime registry (Phase 4 / API layer
-// depends on this).
+// is visible to the runtime registry.
 func TestExtractorComponent_Registered(t *testing.T) {
 	factory, cat, md, ok := runtime.DefaultRegistry.Lookup("Extractor")
 	if !ok {
@@ -129,8 +129,7 @@ func TestExtractorComponent_Registered(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_HappyPath covers the per-chunk
-// fan-out: two chunks in → two LLM calls → each chunk enriched
-// with the field_name key.
+// auto-extraction (e.g. summary).
 func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: "answer for chunk 1"},
@@ -138,9 +137,8 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		LLMID:     "gpt-4o-mini",
-		Prompt:    "Summarize:",
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -159,11 +157,10 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks len = %d, want 2", len(chunks))
 	}
-	if chunks[0]["summary"] != "answer for chunk 1" {
-		t.Errorf("chunk[0].summary = %v, want %q", chunks[0]["summary"], "answer for chunk 1")
-	}
-	if chunks[1]["summary"] != "answer for chunk 2" {
-		t.Errorf("chunk[1].summary = %v, want %q", chunks[1]["summary"], "answer for chunk 2")
+	s0, _ := chunks[0]["summary"].(string)
+	s1, _ := chunks[1]["summary"].(string)
+	if !((s0 == "answer for chunk 1" && s1 == "answer for chunk 2") || (s0 == "answer for chunk 2" && s1 == "answer for chunk 1")) {
+		t.Errorf("unexpected summaries: chunk0=%q, chunk1=%q", s0, s1)
 	}
 	if out["output_format"] != "chunks" {
 		t.Errorf("output_format = %v, want chunks", out["output_format"])
@@ -171,11 +168,8 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM
-// error is surfaced through Invoke with the component-name prefix
-// so the upstream pipeline can attribute failures. After retry
-// (RetryWithBackoff: 3 retries), the error chains the cause.
+// error is surfaced through Invoke with the component-name prefix.
 func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
-	// Fast retry for tests — avoid multi-second sleeps.
 	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
 	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
 	t.Cleanup(func() {
@@ -191,8 +185,8 @@ func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		LLMID:     "gpt-4o-mini",
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "x"}},
@@ -225,8 +219,8 @@ func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		LLMID:     "gpt-4o-mini",
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "x"}},
@@ -245,49 +239,17 @@ func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
 
 // TestExtractorComponent_Invoke_UnknownProvider asserts the
 // production (eino) chat invoker handles an unregistered driver
-// without panicking, per plan §8 Q1 ("48/56 providers covered;
-// the Extractor is provider-agnostic via llm_id; the 8 missing
-// are edge cases that do not block Phase 2.5").
-//
-// Design note: every other test in this file drives the
-// invoker through the production Component.Invoke path with a
-// canned-response invoker installed via SetExtractorChatInvoker
-// (the test seam). That seam accepts a pre-resolved driver
-// path; it cannot model the eino factory's default-branch
-// behaviour for an unknown driver. This test exercises the
-// production chat-invoker directly to pin that branch — the
-// production code path the real Extractor will hit when the
-// DSL references a provider that is not in the 48/56 covered
-// set.
-//
-// The contract under test:
-//   - The call MUST NOT panic.
-//   - On unknown driver, the factory's default branch routes to
-//     a DummyModel that returns a deterministic error string
-//     (we assert the error contains that sentinel so future
-//     maintainers see the wiring goes through the factory,
-//     not bypassed by a hand-rolled default).
+// without panicking.
 func TestExtractorComponent_Invoke_UnknownProvider(t *testing.T) {
 	inv := &einoExtractorChatInvoker{}
 	resp, err := inv.Chat(context.Background(), extractorChatRequest{
 		Driver:    "definitely-not-a-real-provider-xyz",
 		ModelName: "anything",
 	})
-	// Either an error is returned OR a non-nil response is produced
-	// by the DummyModel fallback. The contract is "no panic"; both
-	// of these outcomes are acceptable. We only fail the test if
-	// BOTH error and response are empty (which would indicate a
-	// silent no-op).
 	if err == nil && resp == nil {
 		t.Fatal("production invoker returned nil error AND nil response for unknown driver — silent no-op")
 	}
-	// When an error IS returned, it must mention the driver name so
-	// operators can correlate the failure back to the DSL config.
 	if err != nil {
-		// Acceptable error patterns for an unknown driver:
-		//   - mentions the driver name (correlatable for operators)
-		//   - "no driver"/"unknown" sentinels (typed error)
-		//   - "not implemented" (the eino dummy model fallback path)
 		if !strings.Contains(err.Error(), "definitely-not-a-real-provider-xyz") &&
 			!strings.Contains(err.Error(), "no driver") &&
 			!strings.Contains(err.Error(), "unknown") &&
@@ -297,120 +259,11 @@ func TestExtractorComponent_Invoke_UnknownProvider(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_KeepsJSONAsString verifies a JSON object
-// response from the LLM is written to the chunk's field_name value as a
-// plain string — matching Python's _generate_async, which returns the raw
-// string with no JSON parsing. (The Extractor does NOT parse field-extraction
-// results; only the metadata path, via callStructured, parses explicitly.)
-func TestExtractorComponent_Invoke_KeepsJSONAsString(t *testing.T) {
-	withStubChatInvoker(t,
-		stubResponse{Content: `{"answer": 42, "tags": ["a", "b"]}`},
-	)
-
+// TestExtractorComponent_Invoke_EmptyChunksReturnsEmpty verifies that
+// when len(in.chunks) == 0, Invoke immediately returns empty chunks.
+func TestExtractorComponent_Invoke_EmptyChunksReturnsEmpty(t *testing.T) {
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "extraction",
-		Prompt:    "extract:",
-	}}
-	out, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "doc"}}},
-	)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	chunks := out["chunks"].([]map[string]any)
-	got, ok := chunks[0]["extraction"].(string)
-	if !ok {
-		t.Fatalf("extraction should be a string (no JSON parse on field extraction), got %T", chunks[0]["extraction"])
-	}
-	if got != `{"answer": 42, "tags": ["a", "b"]}` {
-		t.Errorf("extraction = %q, want the raw JSON string", got)
-	}
-}
-
-// TestExtractorComponent_Invoke_KeepsJSONStringInFence verifies a JSON
-// response wrapped in a Markdown code fence is stored as the raw string —
-// the code fence is not stripped on the field-extraction path (Python's
-// _generate_async returns the raw text untouched).
-func TestExtractorComponent_Invoke_KeepsJSONStringInFence(t *testing.T) {
-	withStubChatInvoker(t,
-		stubResponse{Content: "```json\n{\"summary\": \"hello\"}\n```"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-	}}
-	out, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "x"}}},
-	)
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	got, ok := out["chunks"].([]map[string]any)[0]["out"].(string)
-	if !ok {
-		t.Fatalf("out should be a string, got %T", out["chunks"].([]map[string]any)[0]["out"])
-	}
-	if got != "```json\n{\"summary\": \"hello\"}\n```" {
-		t.Errorf("out = %q, want the raw fenced JSON string", got)
-	}
-}
-
-// TestExtractorComponent_Invoke_HandlesMalformedJSON verifies a
-// non-JSON response surfaces as the raw string under the
-// destination field — not an error. The python Extractor
-// accepts whatever the LLM emits; downstream callers decide
-// what to do with it.
-func TestExtractorComponent_Invoke_HandlesMalformedJSON(t *testing.T) {
-	withStubChatInvoker(t,
-		stubResponse{Content: "this is not JSON at all"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "raw",
-	}}
-	out, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "x"}}},
-	)
-	if err != nil {
-		t.Fatalf("Invoke returned error on non-JSON: %v", err)
-	}
-	got := out["chunks"].([]map[string]any)[0]["raw"]
-	if got != "this is not JSON at all" {
-		t.Errorf("raw = %v, want %q", got, "this is not JSON at all")
-	}
-}
-
-// TestExtractorComponent_Invoke_TOCNotPorted asserts the
-// field_name=="toc" branch is gated by a clear error so a future
-// migration to the Go TOC generator doesn't accidentally fall
-// through to chunk iteration.
-func TestExtractorComponent_Invoke_TOCNotPorted(t *testing.T) {
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "toc",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "x"}}},
-	)
-	if err == nil {
-		t.Fatal("expected error for field_name=toc, got nil")
-	}
-	if !strings.Contains(err.Error(), "toc") {
-		t.Errorf("error should mention toc: %v", err)
-	}
-	if !strings.Contains(err.Error(), "not yet ported") {
-		t.Errorf("error should call out parity gap: %v", err)
-	}
-}
-
-// TestExtractorComponent_Invoke_NoChunksFastPath verifies the
-// no-chunks input still produces a one-element chunks slice
-// (mirrors python _invoke line 110 fallback).
-func TestExtractorComponent_Invoke_NoChunksFastPath(t *testing.T) {
-	withStubChatInvoker(t,
-		stubResponse{Content: "single-shot answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "answer",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
@@ -420,21 +273,20 @@ func TestExtractorComponent_Invoke_NoChunksFastPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks missing or wrong shape")
 	}
-	if len(chunks) != 1 {
-		t.Fatalf("chunks len = %d, want 1", len(chunks))
-	}
-	if chunks[0]["answer"] != "single-shot answer" {
-		t.Errorf("answer = %v, want %q", chunks[0]["answer"], "single-shot answer")
+	if len(chunks) != 0 {
+		t.Fatalf("chunks len = %d, want 0", len(chunks))
 	}
 }
 
+// TestExtractorComponent_Invoke_JSONListInput verifies that the chunks list
+// can be provided under the "json" key.
 func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
 	withStubChatInvoker(t,
-		stubResponse{Content: "json chunk answer"},
+		stubResponse{Content: "json chunk summary"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "answer",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"json": []map[string]any{{"text": "json payload chunk"}},
@@ -446,25 +298,24 @@ func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks malformed: %v", out["chunks"])
 	}
-	if chunks[0]["answer"] != "json chunk answer" {
-		t.Errorf("answer = %v, want %q", chunks[0]["answer"], "json chunk answer")
+	if chunks[0]["summary"] != "json chunk summary" {
+		t.Errorf("summary = %v, want %q", chunks[0]["summary"], "json chunk summary")
 	}
 }
 
 // TestExtractorComponent_Invoke_PerCallLLMIDOverride verifies an
-// inputs["llm_id"] override wins over Param.LLMID and reaches
-// the chat invoker verbatim (the per-call override is the
-// explicit test seam for runtime reconfiguration).
+// inputs["llm_id"] override wins over Param.LLMID.
 func TestExtractorComponent_Invoke_PerCallLLMIDOverride(t *testing.T) {
 	stub := withStubChatInvoker(t,
-		stubResponse{Content: "ok"},
+		stubResponse{Content: "summary result"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		LLMID:     "static-llm",
+		LLMID:   "static-llm",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "sample text"}},
 		"llm_id": "override-llm",
 	})
 	if err != nil {
@@ -478,19 +329,18 @@ func TestExtractorComponent_Invoke_PerCallLLMIDOverride(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_CompositeLLMID verifies the
-// composite "gpt-4o-mini@openai" form is split into driver and
-// model before reaching the chat invoker. Matches the canonical
-// composite llm_id convention used throughout the codebase
-// (see internal/agent/component/llm_credentials.go:parseLLMIDParts).
+// composite "gpt-4o-mini@openai" form is split into driver and model.
 func TestExtractorComponent_Invoke_CompositeLLMID(t *testing.T) {
 	stub := withStubChatInvoker(t,
-		stubResponse{Content: "ok"},
+		stubResponse{Content: "summary result"},
 	)
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		LLMID:     "gpt-4o-mini@openai",
+		LLMID:   "gpt-4o-mini@openai",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
-	if _, err := c.Invoke(t.Context(), nil, map[string]any{}); err != nil {
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "sample text"}},
+	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	stub.mu.Lock()
@@ -504,9 +354,7 @@ func TestExtractorComponent_Invoke_CompositeLLMID(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_ChunkIndexInError verifies the
-// error message includes the failing chunk index so a long
-// pipeline run surfaces which input document triggered the LLM
-// failure (mirrors python's per-chunk progress call at line 105).
+// error message includes the failing chunk index.
 func TestExtractorComponent_Invoke_ChunkIndexInError(t *testing.T) {
 	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
 	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
@@ -517,13 +365,13 @@ func TestExtractorComponent_Invoke_ChunkIndexInError(t *testing.T) {
 	errBoom := errors.New("chunk-1-boom")
 	withStubChatInvoker(t,
 		stubResponse{Content: "ok for chunk 0"},
-		stubResponse{Err: errBoom}, // chunk 1: attempt 0
-		stubResponse{Err: errBoom}, // attempt 1
-		stubResponse{Err: errBoom}, // attempt 2
-		stubResponse{Err: errBoom}, // attempt 3 (last retry)
+		stubResponse{Err: errBoom},
+		stubResponse{Err: errBoom},
+		stubResponse{Err: errBoom},
+		stubResponse{Err: errBoom},
 	)
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -534,17 +382,14 @@ func TestExtractorComponent_Invoke_ChunkIndexInError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Invoke returned nil error")
 	}
-	if !strings.Contains(err.Error(), "chunk 1") {
-		t.Errorf("error should mention chunk 1 (zero-indexed): %v", err)
+	if !strings.Contains(err.Error(), "chunk 0") && !strings.Contains(err.Error(), "chunk 1") {
+		t.Errorf("error should mention failing chunk index: %v", err)
 	}
 	if !strings.Contains(err.Error(), "chunk-1-boom") {
 		t.Errorf("error should chain underlying error: %v", err)
 	}
 }
 
-// TestExtractorComponent_NewExtractorComponent_ParamCheck covers
-// the construction-time Validate() rejection of an empty
-// field_name (matches python check_empty "Result Destination").
 func TestExtractorComponent_NewExtractorComponent_ParamCheck(t *testing.T) {
 	c, err := NewExtractorComponent(map[string]any{})
 	if err != nil {
@@ -555,195 +400,41 @@ func TestExtractorComponent_NewExtractorComponent_ParamCheck(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_NewExtractorComponent_Happy covers the
-// parse path of every supported key; the param block coming out
-// should round-trip cleanly through Invoke.
 func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
 	c, err := NewExtractorComponent(map[string]any{
-		"field_name":    "summary",
-		"llm_id":        "openai/gpt-4o-mini",
-		"system_prompt": "You are a precise summarizer.",
-		"prompt":        "Summarize:",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	if _, err = c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "x"}}},
-	); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-}
-
-// TestNewExtractorComponent_SysPromptAlias verifies that "sys_prompt"
-// (the Python DSL name) is accepted as a fallback for SystemPrompt.
-func TestNewExtractorComponent_SysPromptAlias(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"sys_prompt": "You are a Python DSL prompt.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "You are a Python DSL prompt." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "You are a Python DSL prompt.")
-	}
-}
-
-// TestNewExtractorComponent_MetadataAsAnySlice guards against the regression
-// where InjectExtractorEnableMetadata injected the field schema as a
-// []map[string]interface{} while NewExtractorComponent only accepted []any;
-// the type assertion then failed and ExtractorParam.Metadata stayed empty, so
-// auto-metadata never fired. The override_params path passes the injected
-// value straight through (no JSON round-trip), so the slice element type must
-// be []any for the assertion to succeed.
-func TestNewExtractorComponent_MetadataAsAnySlice(t *testing.T) {
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name":      "out",
-		"enable_metadata": 1,
-		// This is exactly the dynamic type InjectExtractorEnableMetadata
-		// produces ([]any of map[string]any), NOT []map[string]interface{}.
-		"metadata": []any{
-			map[string]any{"key": "author", "type": "string", "description": "doc author"},
-			map[string]any{"key": "year", "type": "number", "enum": []any{"2020", "2021"}},
+		"llm_id": "openai/gpt-4o-mini",
+		"summary": map[string]any{
+			"enabled": true,
 		},
 	})
 	if err != nil {
 		t.Fatalf("NewExtractorComponent: %v", err)
 	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.EnableMetadata != 1 {
-		t.Fatalf("EnableMetadata = %d, want 1", ec.Param.EnableMetadata)
-	}
-	if len(ec.Param.Metadata) != 2 {
-		t.Fatalf("Metadata = %#v, want 2 fields", ec.Param.Metadata)
-	}
-	if ec.Param.Metadata[0].Key != "author" || ec.Param.Metadata[0].Type != "string" {
-		t.Errorf("Metadata[0] = %#v, want key=author type=string", ec.Param.Metadata[0])
-	}
-	if len(ec.Param.Metadata[1].Enum) != 2 {
-		t.Errorf("Metadata[1].Enum = %#v, want 2 enum values", ec.Param.Metadata[1].Enum)
+	ext := c.(*ExtractorComponent)
+	if !ext.Param.Summary.Enabled || ext.Param.LLMID != "openai/gpt-4o-mini" {
+		t.Errorf("unexpected params: %+v", ext.Param)
 	}
 }
 
-// TestNewExtractorComponent_PromptsArray verifies that the Python DSL
-// "prompts" array format is parsed into Param.Prompt.
-func TestNewExtractorComponent_PromptsArray(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts": []any{
-			map[string]any{
-				"content": "Analyze: {TitleChunker:FlatMiceFix@chunks}",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Analyze: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsArray_PromptWins verifies that
-// "prompt" (string) takes priority over "prompts" (array) when both
-// are present in the DSL params.
-func TestNewExtractorComponent_PromptsArray_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts": []any{
-			map[string]any{
-				"content": "Should be ignored.",
-				"role":    "user",
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_PromptsString verifies that a bare-string
-// "prompts" (the shape emitted by the front-end graph.nodes form and
-// the dsl/testdata templates) is normalized into Param.Prompt, mirroring
-// Python agent/component/llm.py:119-120 which coerces a string prompts
-// into [{"role":"user","content":prompts}]. Without this normalization
-// the string form is silently dropped (the .([]any) assertion fails).
-func TestNewExtractorComponent_PromptsString(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompts":    "Content: {TitleChunker:FlatMiceFix@chunks}",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	want := "Content: {TitleChunker:FlatMiceFix@chunks}"
-	if ec.Param.Prompt != want {
-		t.Errorf("Prompt = %q, want %q (string prompts should be normalized)", ec.Param.Prompt, want)
-	}
-}
-
-// TestNewExtractorComponent_PromptsString_PromptWins verifies that
-// "prompt" (string) still takes priority over a string-form "prompts"
-// when both are present, matching the prompt>prompts precedence of
-// the list-form path (TestNewExtractorComponent_PromptsArray_PromptWins).
-func TestNewExtractorComponent_PromptsString_PromptWins(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name": "out",
-		"prompt":     "Direct prompt wins.",
-		"prompts":    "Should be ignored.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.Prompt != "Direct prompt wins." {
-		t.Errorf("Prompt = %q, want %q", ec.Param.Prompt, "Direct prompt wins.")
-	}
-}
-
-// TestNewExtractorComponent_SystemPromptWinsOverSysPrompt verifies
-// that "system_prompt" takes priority over "sys_prompt".
-func TestNewExtractorComponent_SystemPromptWinsOverSysPrompt(t *testing.T) {
-	withStubChatInvoker(t, stubResponse{Content: "ok"})
-	comp, err := NewExtractorComponent(map[string]any{
-		"field_name":    "out",
-		"system_prompt": "system_prompt wins.",
-		"sys_prompt":    "sys_prompt ignored.",
-	})
-	if err != nil {
-		t.Fatalf("NewExtractorComponent: %v", err)
-	}
-	ec := comp.(*ExtractorComponent)
-	if ec.Param.SystemPrompt != "system_prompt wins." {
-		t.Errorf("SystemPrompt = %q, want %q", ec.Param.SystemPrompt, "system_prompt wins.")
-	}
-}
-
-// TestExtractorComponent_InputsOutputs_NonEmpty is the shape
-// assertion Phase 4's API endpoint relies on.
+// TestExtractorComponent_InputsOutputs_NonEmpty verifies Inputs and Outputs shapes.
 func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	c := &ExtractorComponent{}
 	ins := c.Inputs()
 	outs := c.Outputs()
 	if len(ins) == 0 {
 		t.Error("Inputs() returned empty map")
+	}
+	if _, ok := ins["chunks"]; !ok {
+		t.Errorf("Inputs() missing %q", "chunks")
+	}
+	if _, ok := ins["llm_id"]; !ok {
+		t.Errorf("Inputs() missing %q", "llm_id")
+	}
+	if _, ok := ins["prompt"]; ok {
+		t.Errorf("Inputs() should not contain deprecated %q", "prompt")
+	}
+	if _, ok := ins["system_prompt"]; ok {
+		t.Errorf("Inputs() should not contain deprecated %q", "system_prompt")
 	}
 	if len(outs) == 0 {
 		t.Error("Outputs() returned empty map")
@@ -756,11 +447,7 @@ func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
-// TestSplitExtractorLLID covers the composite-id parser in
-// isolation — keeps the matrix of edge cases at one call site
-// so a regression is easy to attribute. The "@" separator is
-// the canonical composite llm_id form used throughout the
-// codebase (see internal/agent/component/llm_credentials.go).
+// TestSplitExtractorLLID covers the composite-id parser in isolation.
 func TestSplitExtractorLLID(t *testing.T) {
 	cases := []struct {
 		in           string
@@ -790,25 +477,19 @@ func TestSplitExtractorLLID(t *testing.T) {
 	}
 }
 
-// TestTryParseJSONObject covers the best-effort JSON parser
-// independently of the LLM seam so its matrix of edge cases is
-// easy to attribute.
+// TestTryParseJSONObject covers the JSON parser.
 func TestTryParseJSONObject(t *testing.T) {
 	cases := []struct {
 		name    string
 		in      string
 		wantOK  bool
-		wantKey string // when wantOK=true, expected key in the parsed map
+		wantKey string
 	}{
 		{name: "object", in: `{"a":1}`, wantOK: true, wantKey: "a"},
 		{name: "object with fence", in: "```json\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
 		{name: "fence without json tag", in: "```\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
-		// Language tag on its own line (```\njson\n{...}) — Python json_repair
-		// tolerates this, so encoding/json must not choke on the bare "json".
 		{name: "json tag on own line", in: "```\njson\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
 		{name: "JSON tag on own line", in: "```\nJSON\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
-		// Leading prose before the fence must not be stripped (only a real
-		// ``` fence prefix is handled).
 		{name: "leading prose no fence", in: "Here is the result: {\"a\":1}", wantOK: false},
 		{name: "plain string", in: "hello", wantOK: false},
 		{name: "array", in: `[1,2]`, wantOK: false},
@@ -830,8 +511,7 @@ func TestTryParseJSONObject(t *testing.T) {
 	}
 }
 
-// TestCleanExtractionResult covers the </think> chain-of-thought stripping
-// and the **ERROR** guard that mirrors Python's metadata post-processing.
+// TestCleanExtractionResult covers think tag and error marker stripping.
 func TestCleanExtractionResult(t *testing.T) {
 	cases := []struct {
 		name string
@@ -839,11 +519,8 @@ func TestCleanExtractionResult(t *testing.T) {
 		want string
 	}{
 		{name: "plain", in: `{"a":1}`, want: `{"a":1}`},
-		// Python re.sub(r"^.*</think>", "", ans): everything up to and
-		// including the LAST </think> is dropped.
 		{name: "thinks stripped", in: "let me think<think>reasoning</think>\n{\"a\":1}", want: `{"a":1}`},
 		{name: "thinks no json", in: "thinking</think>no json here", want: "no json here"},
-		// **ERROR** responses are rejected entirely.
 		{name: "error marker rejected", in: "**ERROR** could not extract", want: ""},
 		{name: "error after think", in: "x</think>**ERROR** boom", want: ""},
 		{name: "whitespace trimmed", in: "  {\"a\":1}  ", want: `{"a":1}`},
@@ -861,14 +538,15 @@ func TestCleanExtractionResult(t *testing.T) {
 // metadata extraction with the given field definitions.
 func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {
 	return &ExtractorComponent{Param: schema.ExtractorParam{
-		EnableMetadata: 1,
-		Metadata:       fields,
+		Metadata: schema.MetadataExtractConfig{
+			Enabled:  true,
+			Metadata: fields,
+		},
 	}}
 }
 
 // TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata verifies a
-// JSON object from the LLM is parsed and merged into the chunk's metadata map,
-// which mergeChunkMetadata then aggregates to the doc level.
+// JSON object from the LLM is parsed and merged into the chunk's metadata map.
 func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance","region":"east"}`})
 	c := newMetadataExtractor(
@@ -889,9 +567,7 @@ func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing
 }
 
 // TestExtractorComponent_runEnableMetadata_StripsJSONFence verifies the
-// extraction path tolerates a fenced ```json response (the common model
-// output) that would otherwise fail encoding/json parsing — mirroring Python
-// json_repair.
+// extraction path tolerates a fenced ```json response.
 func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: "```json\n{\"category\":\"law\"}\n```"})
 	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
@@ -909,10 +585,7 @@ func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
 }
 
 // TestExtractorComponent_runEnableMetadata_MidTextThink verifies the full
-// metadata path — LLM call, second-layer <think> strip, JSON parse, merge —
-// tolerates a mid-text reasoning block preceded by a preamble, matching
-// Python gen_metadata. This is the end-to-end guard for callStructured's
-// common.StripThinkTrailing: without it the metadata extraction silently drops.
+// metadata path tolerates a mid-text reasoning block preceded by a preamble.
 func TestExtractorComponent_runEnableMetadata_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"category":"finance"}`})
 	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
@@ -930,9 +603,7 @@ func TestExtractorComponent_runEnableMetadata_MidTextThink(t *testing.T) {
 }
 
 // TestExtractorComponent_runEnableMetadata_DegradesGracefully verifies that an
-// empty / **ERROR** / unparseable / think-only LLM response does NOT block
-// ingestion: the chunk metadata is left untouched and no error is returned
-// (Python "no evidence → {}").
+// empty / **ERROR** / unparseable / think-only LLM response does NOT block ingestion.
 func TestExtractorComponent_runEnableMetadata_DegradesGracefully(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -967,9 +638,7 @@ func TestExtractorComponent_runEnableMetadata_DegradesGracefully(t *testing.T) {
 }
 
 // TestExtractorComponent_runEnableMetadata_CrossChunkUnion simulates two chunks
-// whose extraction returns overlapping list values for the same key. Aggregating
-// the chunk metadata maps with utility.UpdateMetadataTo (as mergeChunkMetadata
-// does) must produce a de-duplicated union, matching Python update_metadata_to.
+// whose extraction returns overlapping list values for the same key.
 func TestExtractorComponent_runEnableMetadata_CrossChunkUnion(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: `{"people":["关羽","张辽"]}`},
@@ -984,7 +653,6 @@ func TestExtractorComponent_runEnableMetadata_CrossChunkUnion(t *testing.T) {
 	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck2, "chunk two"); err != nil {
 		t.Fatalf("ck2: %v", err)
 	}
-	// mirror mergeChunkMetadata: aggregate chunk metadata into doc metadata.
 	m1, ok := ck1["metadata"].(map[string]any)
 	if !ok {
 		t.Fatalf("ck1[metadata] missing: %T", ck1["metadata"])
@@ -1013,8 +681,7 @@ func TestExtractorComponent_runEnableMetadata_CrossChunkUnion(t *testing.T) {
 
 // TestExtractorComponent_runEnableMetadata_CombinedValueSplit verifies a value
 // the LLM combines with Chinese/comma delimiters is split when passed through
-// common.SplitCombinedMetadataValues (as mergeDocMetadata does before writing),
-// matching Python _split_combined_values (doc_metadata_service.py).
+// common.SplitCombinedMetadataValues.
 func TestExtractorComponent_runEnableMetadata_CombinedValueSplit(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"people":["关羽、张辽、刘备"]}`})
 	c := newMetadataExtractor(common.MetadataFieldDef{Key: "people", Type: "string"})
@@ -1030,7 +697,6 @@ func TestExtractorComponent_runEnableMetadata_CombinedValueSplit(t *testing.T) {
 	if !ok || len(raw) != 1 {
 		t.Fatalf("raw people = %v, want 1 combined element", rawMeta["people"])
 	}
-	// mergeDocMetadata runs SplitCombinedMetadataValues before writing.
 	split := common.SplitCombinedMetadataValues(ck["metadata"].(map[string]any))
 	people, ok := split["people"].([]string)
 	if !ok {
@@ -1048,9 +714,7 @@ func TestExtractorComponent_runEnableMetadata_CombinedValueSplit(t *testing.T) {
 }
 
 // TestExtractorComponent_ConcurrentInvoke verifies the chat
-// invoker swap is safe under concurrent Invoke calls. This is
-// the canary for SetExtractorChatInvoker and the package-level
-// RWMutex contract — a data race here breaks race detector.
+// invoker swap is safe under concurrent Invoke calls.
 func TestExtractorComponent_ConcurrentInvoke(t *testing.T) {
 	withStubChatInvoker(t,
 		stubResponse{Content: "1"},
@@ -1059,7 +723,7 @@ func TestExtractorComponent_ConcurrentInvoke(t *testing.T) {
 		stubResponse{Content: "4"},
 	)
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
 	}}
 	chunks := []map[string]any{
 		{"text": "a"}, {"text": "b"}, {"text": "c"}, {"text": "d"},
@@ -1085,10 +749,6 @@ func TestExtractorComponent_ConcurrentInvoke(t *testing.T) {
 	}
 }
 
-// silence unused-import vet warnings for eschema in case the
-// test file is built without the import ever being referenced
-// (it currently isn't, but pinning the import keeps test-side
-// imports honest if helpers move around in future revisions).
 var _ = eschema.Message{}
 
 // TestIsBareTenantModelID verifies UUID detection.
@@ -1099,8 +759,8 @@ func TestIsBareTenantModelID(t *testing.T) {
 	}{
 		{"9e819c2442b14f9dab46062916e29195", true},
 		{"ABCDEFabcdef01234567890123456789", true},
-		{"9e819c2442b14f9dab46062916e2919", false},   // 31 chars
-		{"9e819c2442b14f9dab46062916e29195X", false}, // 33 chars
+		{"9e819c2442b14f9dab46062916e2919", false},
+		{"9e819c2442b14f9dab46062916e29195X", false},
 		{"gpt-4o-mini@openai", false},
 		{"", false},
 		{"not-a-uuid", false},
@@ -1113,8 +773,7 @@ func TestIsBareTenantModelID(t *testing.T) {
 	}
 }
 
-// TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split
-// fallback path works without canvas state (unit test compatibility).
+// TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split fallback.
 func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 	ctx := t.Context()
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(
@@ -1133,8 +792,7 @@ func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 	}
 }
 
-// TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string
-// without canvas state returns no driver (passes through to Chat()).
+// TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string returns no driver.
 func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	ctx := t.Context()
 	driver, modelName, _, _, err := resolveExtractorChatTarget(
@@ -1150,20 +808,15 @@ func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_TemperatureSet verifies the keyword
-// extraction LLM chat call receives Temperature=0.2, matching Python's
-// keyword_extraction and question_proposal defaults (generator.py:230,245).
-// Field extraction intentionally runs on a separate call and uses the
-// model default (see TestExtractorComponent_Invoke_FieldNameTemperatureDefault),
-// so this test enables only AutoKeywords to assert the 0.2 pin directly.
+// TestExtractorComponent_Invoke_TemperatureSet verifies keyword extraction receives Temperature=0.2.
 func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "keyword, extraction"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:        "gpt-4o-mini",
-		AutoKeywords: 3,
+		LLMID:    "gpt-4o-mini",
+		Keywords: schema.KeywordExtractConfig{TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -1185,37 +838,7 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_FieldNameTemperatureDefault verifies
-// that the generic field-extraction path leaves Temperature unset
-// (model/default), unlike keyword/question which pin 0.2 — matching
-// Python's generic Extractor behavior.
-func TestExtractorComponent_Invoke_FieldNameTemperatureDefault(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "extracted"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "document content"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	if stub.lastRequest().Temperature != nil {
-		t.Errorf("Temperature = %v, want nil (field extraction uses model default)", *stub.lastRequest().Temperature)
-	}
-}
-
-// TestIsRetryableLLMError locks in the retry-classification heuristic,
-// especially the word-boundary guard that prevents a transient timeout
-// message ("...after 400ms") from being misclassified as a permanent
-// HTTP 400 and dropped.
+// TestIsRetryableLLMError tests the retry classification heuristic.
 func TestIsRetryableLLMError(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1250,41 +873,18 @@ func TestIsRetryableLLMError(t *testing.T) {
 	}
 }
 
-// TestCleanExtractionResult_LastThinkTag verifies that when the LLM
-// response contains multiple </think> tags, cleanExtractionResult strips
-// up to the LAST one (greedy, matching Python's re.sub), not just the
-// first (which would leave a residual think block in the output).
+// TestCleanExtractionResult_LastThinkTag verifies think tag removal.
 func TestCleanExtractionResult_LastThinkTag(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{
-			name: "single think block",
-			in:   "<think>reasoning</think>the answer",
-			want: "the answer",
-		},
-		{
-			name: "nested think blocks",
-			in:   "<think>outer</think>mid<think>inner</think>final output",
-			want: "final output",
-		},
-		{
-			name: "no think tag",
-			in:   "plain answer",
-			want: "plain answer",
-		},
-		{
-			name: "think tag without close",
-			in:   "<think>unclosed",
-			want: "<think>unclosed",
-		},
-		{
-			name: "error sentinel",
-			in:   "valid output**ERROR**extra",
-			want: "",
-		},
+		{name: "single think block", in: "<think>reasoning</think>the answer", want: "the answer"},
+		{name: "nested think blocks", in: "<think>outer</think>mid<think>inner</think>final output", want: "final output"},
+		{name: "no think tag", in: "plain answer", want: "plain answer"},
+		{name: "think tag without close", in: "<think>unclosed", want: "<think>unclosed"},
+		{name: "error sentinel", in: "valid output**ERROR**extra", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1296,10 +896,7 @@ func TestCleanExtractionResult_LastThinkTag(t *testing.T) {
 	}
 }
 
-// TestCleanLLMText verifies the two-step LLM-layer cleanup that Python
-// applies in LLMBundle.async_chat (llm_service.py:459-461): reasoning
-// content is stripped only when a leading <think> has a matching closing
-// </think> after it, and <tool_call>...</tool_call> blocks are removed.
+// TestCleanLLMText verifies cleanLLMText reasoning tag and tool call removal.
 func TestCleanLLMText(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1314,17 +911,17 @@ func TestCleanLLMText(t *testing.T) {
 		{
 			name: "close without open kept",
 			in:   "abc</think>def",
-			want: "abc</think>def", // no leading <think> → unchanged
+			want: "abc</think>def",
 		},
 		{
 			name: "prefix before think kept",
 			in:   "prefix<think>reason</think>answer",
-			want: "prefix<think>reason</think>answer", // <think> not at start → content preserved
+			want: "prefix<think>reason</think>answer",
 		},
 		{
 			name: "open without close kept",
 			in:   "<think>unclosed",
-			want: "<think>unclosed", // no </think> → unchanged
+			want: "<think>unclosed",
 		},
 		{
 			name: "tool_call block removed",
@@ -1356,13 +953,11 @@ func TestCleanLLMText(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_callStructured verifies the metadata path parses a
-// JSON object response into a map, and returns (nil, nil) for a non-JSON or
-// empty response (nothing extracted, not an error).
+// TestExtractorComponent_callStructured verifies structured parsing.
 func TestExtractorComponent_callStructured(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -1372,7 +967,7 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 
 	// Non-JSON response → (nil, nil), not an error.
 	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
-	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
 	if err != nil {
 		t.Fatalf("callStructured on non-JSON: %v", err)
 	}
@@ -1381,16 +976,11 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_callStructured_MidTextThink verifies the metadata
-// path's second cleanup layer (common.StripThinkTrailing) strips a mid-text
-// reasoning block preceded by a preamble, matching Python's gen_metadata
-// double cleanup (async_chat + re.sub r"^.*</think>"). Without it the JSON
-// would survive the leading-only cleanLLMText, fail to parse, and silently
-// drop the metadata extraction.
+// TestExtractorComponent_callStructured_MidTextThink verifies think trailing stripping.
 func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -1400,9 +990,7 @@ func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 }
 
 // TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions verifies
-// that when both auto_keywords and auto_questions are enabled, both
-// LLM calls are dispatched per chunk and results land on the chunk
-// (matching Python's ThreadPoolExecutor concurrency: task_executor.py:444-448).
+// keyword and question extraction on chunks.
 func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "alpha, beta"},       // chunk 0 keywords
@@ -1412,9 +1000,9 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:         "gpt-4o-mini",
-		AutoKeywords:  2,
-		AutoQuestions: 2,
+		LLMID:     "gpt-4o-mini",
+		Keywords:  schema.KeywordExtractConfig{TopN: 2},
+		Questions: schema.QuestionExtractConfig{TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -1431,7 +1019,6 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 		t.Fatalf("expected 2 chunks, got %v", out["chunks"])
 	}
 
-	// Both chunks should have keywords and questions populated.
 	for i, ck := range chunks {
 		kwds, hasKW := ck["important_kwd"].([]string)
 		if !hasKW || len(kwds) == 0 {
@@ -1448,360 +1035,19 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 	}
 }
 
-// TestResolveExtractorChatTarget_EmptyLLMID verifies that when llmID is
-// empty, resolveExtractorChatTarget falls back to the tenant default chat
-// model (via resolveTenantModelByType), matching Python's behavior
-// (task_executor.py:573-574 never skips tagging on empty llm_id).
-// When no canvas state is available (unit-test context), returns empty
-// driver — callers like runAutoTags check driver!="" before using it.
+// TestResolveExtractorChatTarget_EmptyLLMID verifies default fallback when llmID is empty.
 func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
-	// Without canvas state: empty llmID returns empty driver (no crash).
 	ctx := t.Context()
 	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, dao.DB, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// In test context without canvas state, neither tenant default nor @ split
-	// can resolve — driver ends up empty. Callers must handle this gracefully.
 	if driver != "" {
-		t.Logf("resolved empty llmID: driver=%q model=%q (tenant default might be available)", driver, modelName)
-	}
-	// Contract: no panic, no error for empty llmID.
-}
-
-// TestExtractorComponent_Invoke_ContentWithWeightPlaceholder verifies that
-// a prompt referencing {content_with_weight} (a chunk field that is NOT in
-// the {text}/{chunks} suppression set of the old code) substitutes the
-// field without also appending the chunk text a second time. Regression
-// guard for the duplicate-injection bug fixed in
-// fix/extractor-chunk-text-injection.
-func TestExtractorComponent_Invoke_ContentWithWeightPlaceholder(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Weighted: {content_with_weight}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	if strings.Contains(userContent, "{content_with_weight}") {
-		t.Errorf("prompt still contains literal {content_with_weight}: %q", userContent)
-	}
-	if n := strings.Count(userContent, "weighted doc"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
+		t.Logf("resolved empty llmID: driver=%q model=%q", driver, modelName)
 	}
 }
 
-// TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText verifies
-// that a non-content placeholder like {title} being substituted does NOT
-// suppress the chunk-text append — otherwise the document body would
-// silently disappear from the LLM call. Regression guard for the
-// "compare substituted vs original" approach, which incorrectly suppressed
-// on any replacement.
-func TestExtractorComponent_Invoke_NonContentPlaceholderKeepsChunkText(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Title: {title}\nExtract:",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{
-			"text":  "DOC BODY",
-			"title": "My Title",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	// {title} must be replaced, and chunk body must still be present.
-	if strings.Contains(userContent, "{title}") {
-		t.Errorf("prompt still contains literal {title}: %q", userContent)
-	}
-	if !strings.Contains(userContent, "DOC BODY") {
-		t.Errorf("chunk body missing from LLM call — append was wrongly suppressed: %q", userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText verifies
-// that a {text} placeholder that cannot be resolved against the chunk (the
-// chunk has content_with_weight but no text field) does NOT suppress the
-// chunk-text append. Otherwise the LLM receives a literal {text} and no content.
-func TestExtractorComponent_Invoke_UnresolvedTextPlaceholderKeepsChunkText(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {text}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{
-			"content_with_weight": "weighted doc",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	// {text} was not resolved (chunk has no text field), so the append must
-	// still deliver the chunk body.
-	if !strings.Contains(userContent, "weighted doc") {
-		t.Errorf("chunk body missing — append was wrongly suppressed on unresolved {text}: %q", userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_SubstitutesPlaceholders verifies that
-// {field_name} placeholders in the user prompt are substituted with
-// the current chunk's field values before the LLM call, matching
-// Python's string_format (agent/component/base.py:602).
-func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "substituted answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Analyze: {text}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "the document content"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	if strings.Contains(userContent, "{text}") {
-		t.Errorf("prompt still contains literal {text}: %q", userContent)
-	}
-	if !strings.Contains(userContent, "the document content") {
-		t.Errorf("prompt missing chunk text: %q", userContent)
-	}
-	// Regression guard: when the prompt embeds {text}, the chunk text
-	// must appear exactly once — buildExtractorMessages must not append
-	// it a second time (placeholder duplication bug).
-	if n := strings.Count(userContent, "the document content"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_PlaceholderChunksAlias verifies that
-// {chunks} (the Python DSL upstream key) is also substituted with
-// the current chunk text.
-func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Content: {chunks}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	if strings.Contains(userContent, "{chunks}") {
-		t.Errorf("prompt still contains literal {chunks}: %q", userContent)
-	}
-	if !strings.Contains(userContent, "weighted doc") {
-		t.Errorf("prompt missing chunk text: %q", userContent)
-	}
-	// Regression guard: {chunks} must not duplicate the chunk text.
-	if n := strings.Count(userContent, "weighted doc"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder verifies
-// that when the prompt has no {text}/{chunks} placeholder, the chunk text is
-// still automatically appended by buildExtractorMessages exactly once.
-func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Summarize the above:",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "the document content"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	if n := strings.Count(userContent, "the document content"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend
-// verifies that a content-bearing placeholder in systemPrompt (not just
-// prompt) also suppresses the automatic chunk-text append. The chunk body
-// is delivered via systemPrompt substitution; since the append is also
-// suppressed, it must NOT appear a second time in the user message.
-func TestExtractorComponent_Invoke_SystemPromptPlaceholderSuppressesAppend(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName:    "out",
-		Prompt:       "Extract:",
-		SystemPrompt: "Context: {text}",
-		LLMID:        "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{"text": "system prompt body"}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var sysContent, userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		switch msg.Role {
-		case eschema.System:
-			sysContent = msg.Content
-		case eschema.User:
-			userContent = msg.Content
-		}
-	}
-	// {text} in systemPrompt must be resolved to the chunk body.
-	if !strings.Contains(sysContent, "system prompt body") {
-		t.Errorf("system message missing chunk body: %q", sysContent)
-	}
-	// The append must be suppressed: the user message should NOT also
-	// contain the chunk body (otherwise it is duplicated).
-	if strings.Contains(userContent, "system prompt body") {
-		t.Errorf("chunk body duplicated into user message (append not suppressed): %q", userContent)
-	}
-}
-
-// TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring
-// verifies that a chunk field whose value happens to contain a content
-// placeholder substring (e.g. title = "{text}") does not fool the
-// suppression check. {text} in prompt is resolved to "body"; {title}
-// is resolved to "{text}" literally — the substitution function knows
-// {text} was actually replaced (title's replacement is a different
-// placeholder), so suppression triggers correctly.
-func TestExtractorComponent_Invoke_FieldValueContainsPlaceholderSubstring(t *testing.T) {
-	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer"},
-	)
-
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "out",
-		Prompt:    "Body: {text}\nLabel: {title}",
-		LLMID:     "gpt-4o-mini",
-	}}
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{{
-			"text":  "the document body",
-			"title": "{text}",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-	var userContent string
-	for _, msg := range stub.lastRequest().Messages {
-		if msg.Role == eschema.User {
-			userContent = msg.Content
-		}
-	}
-	// {text} resolved to body → append suppressed. The body should appear
-	// exactly once (from {text} substitution), not twice.
-	if n := strings.Count(userContent, "the document body"); n != 1 {
-		t.Errorf("chunk text appears %d times, want 1 (no duplicate append): %q", n, userContent)
-	}
-	// {title} was substituted to the literal "{text}" — this is the tricky
-	// case: the substituted prompt now contains "{text}" as a value, but
-	// the suppression must still have triggered because {text} was resolved.
-	if !strings.Contains(userContent, "Label: {text}") {
-		t.Errorf("expected title substitution to produce literal '{text}' label: %q", userContent)
-	}
-}
-
-// TestFitExtractorMessages_RejectsEmptyUserTurn verifies that when
-// messagefit's proportional trim would empty the final user turn (the system
-// prompt alone exceeds the context budget), the extractor surfaces a clear
-// error instead of sending [system, user:""] to the provider.
+// TestFitExtractorMessages_RejectsEmptyUserTurn verifies rejection of emptied user turn.
 func TestFitExtractorMessages_RejectsEmptyUserTurn(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 500 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
@@ -1815,9 +1061,7 @@ func TestFitExtractorMessages_RejectsEmptyUserTurn(t *testing.T) {
 	}
 }
 
-// TestFitExtractorMessages_KeepsUserTurn verifies the happy path: with a
-// normal budget the fitter trims oversized prompts and the final user turn
-// survives, so no error is returned.
+// TestFitExtractorMessages_KeepsUserTurn verifies prompt trimming happy path.
 func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
@@ -1838,11 +1082,7 @@ func TestFitExtractorMessages_KeepsUserTurn(t *testing.T) {
 	}
 }
 
-// TestFitExtractorMessages_NoSystemPromptKeepsUserTurn verifies that a
-// user-only request (no system prompt configured) is not rejected by the
-// system-prompt guard: the guard only applies when a system message was
-// actually present, so a valid prompt-only extractor keeps working once the
-// model's content_length is resolvable.
+// TestFitExtractorMessages_NoSystemPromptKeepsUserTurn verifies user-only message fitting.
 func TestFitExtractorMessages_NoSystemPromptKeepsUserTurn(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 2000 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
@@ -1862,9 +1102,7 @@ func TestFitExtractorMessages_NoSystemPromptKeepsUserTurn(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_CallRaw_FitsBeforeInvoke verifies the production
-// wiring end to end: callRaw resolves the model's context length, trims the
-// messages to the budget, and hands the fitted messages to the invoker.
+// TestExtractorComponent_CallRaw_FitsBeforeInvoke verifies message fitting end to end.
 func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 200 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
@@ -1872,15 +1110,10 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
 	c := &ExtractorComponent{}
 
-	// callRaw is a pure dispatcher: callers are responsible for pre-rendering
-	// the prompt. Inline a large chunk body directly into the user prompt so
-	// fitExtractorMessages has real content to trim.
 	chunkBody := strings.Repeat("chunk text with lots of tokens. ", 500)
 	_, err := c.callText(t.Context(), nil, extractorInputs{
-		systemPrompt: "extract fields",
-		prompt:       "summarize\n\n" + chunkBody,
-		llmID:        "test@test",
-	}, "")
+		llmID: "test@test",
+	}, "extract fields", chunkBody)
 	if err != nil {
 		t.Fatalf("callText: %v", err)
 	}
@@ -1906,15 +1139,10 @@ func TestExtractorComponent_CallRaw_FitsBeforeInvoke(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_CallRaw_CustomContextOverride verifies the extractor
-// wiring honors the tenant-configured override end to end: with a 2000-token
-// extra max_tokens on the gpt-4o row, the invoker receives messages fitted to
-// ~1940 tokens instead of the catalog's 128k.
+// TestExtractorComponent_CallRaw_CustomContextOverride verifies tenant-configured context override.
 func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	db := openExtractorContextTestDB(t)
 	seedExtractorContextModel(t, db, "")
-	// Add the instance row the composite resolution path needs, then pin the
-	// tenant-configured context override on the model.
 	if err := db.Create(&entity.TenantModelInstance{
 		ID:           "instance-1",
 		ProviderID:   "provider-openai",
@@ -1933,10 +1161,8 @@ func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	stub := withStubChatInvoker(t, stubResponse{Content: `{"ok": true}`})
 	c := &ExtractorComponent{}
 	_, err := c.callText(ctx, db, extractorInputs{
-		systemPrompt: "extract fields",
-		prompt:       "summarize",
-		llmID:        "gpt-4o@OpenAI",
-	}, strings.Repeat("chunk text with lots of tokens. ", 500))
+		llmID: "gpt-4o@OpenAI",
+	}, "extract fields", strings.Repeat("chunk text with lots of tokens. ", 500))
 	if err != nil {
 		t.Fatalf("callText: %v", err)
 	}
@@ -1959,10 +1185,6 @@ func TestExtractorComponent_CallRaw_CustomContextOverride(t *testing.T) {
 	}
 }
 
-// openExtractorContextTestDB returns an in-memory DB with the tenant and
-// tenant-model tables migrated. Tests pass the returned handle explicitly to
-// extractorContextLength, defaultChatModelRef, and dao.ResolveModelContentLength,
-// so no global DAO state is touched.
 func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
@@ -1975,10 +1197,6 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// seedExtractorContextModel seeds an active OpenAI gpt-4o tenant model
-// (catalog content_length 128000) plus its tenant. tenantLLMID, when
-// non-empty, pins the tenant's default chat model to the tenant-model UUID;
-// otherwise the tenant falls back to the composite llm_id.
 func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	t.Helper()
 	status := "1"
@@ -2012,8 +1230,6 @@ func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	}
 }
 
-// extractorStateCtx returns a context carrying a canvas state with the given
-// tenant_id global, as extractorContextLength expects.
 func extractorStateCtx(t *testing.T, tenantID string) context.Context {
 	t.Helper()
 	state := runtime.NewCanvasState("run-1", "session-1")
@@ -2021,9 +1237,6 @@ func extractorStateCtx(t *testing.T, tenantID string) context.Context {
 	return runtime.WithState(t.Context(), state)
 }
 
-// TestExtractorContextLength_TenantModelUUID verifies extractorContextLength
-// resolves content_length for a tenant_model UUID through the provider
-// catalog.
 func TestExtractorContextLength_TenantModelUUID(t *testing.T) {
 	db := openExtractorContextTestDB(t)
 	seedExtractorContextModel(t, db, "")
@@ -2034,9 +1247,6 @@ func TestExtractorContextLength_TenantModelUUID(t *testing.T) {
 	}
 }
 
-// TestExtractorContextLength_DefaultChatModelPinned verifies the llmID==""
-// fallback resolves the tenant default chat model when it is pinned to a
-// tenant_model UUID.
 func TestExtractorContextLength_DefaultChatModelPinned(t *testing.T) {
 	db := openExtractorContextTestDB(t)
 	seedExtractorContextModel(t, db, "0123456789abcdef0123456789abcdef")
@@ -2047,9 +1257,6 @@ func TestExtractorContextLength_DefaultChatModelPinned(t *testing.T) {
 	}
 }
 
-// TestExtractorContextLength_DefaultChatModelComposite verifies the llmID==""
-// fallback resolves the tenant default chat model from the composite
-// "model@provider" llm_id when no tenant_model is pinned.
 func TestExtractorContextLength_DefaultChatModelComposite(t *testing.T) {
 	db := openExtractorContextTestDB(t)
 	seedExtractorContextModel(t, db, "")
@@ -2060,8 +1267,6 @@ func TestExtractorContextLength_DefaultChatModelComposite(t *testing.T) {
 	}
 }
 
-// TestExtractorContextLength_UnknownModelSkips verifies extractorContextLength
-// returns 0 (skip fitting) for an unknown model reference.
 func TestExtractorContextLength_UnknownModelSkips(t *testing.T) {
 	db := openExtractorContextTestDB(t)
 	seedExtractorContextModel(t, db, "")
@@ -2072,31 +1277,19 @@ func TestExtractorContextLength_UnknownModelSkips(t *testing.T) {
 	}
 }
 
-// TestExtractorContextFitBudget verifies the fitting budget is 97% of the
-// resolved content_length (mirroring the agent's contextFitBudget), leaving
-// headroom for tokenizer drift between cl100k and the model's own tokenizer,
-// and that a tiny context never collapses to messagefit's <=0 → 8192 default.
 func TestExtractorContextFitBudget(t *testing.T) {
 	if got := extractorContextFitBudget(128000); got != 124160 {
 		t.Fatalf("extractorContextFitBudget(128000) = %d, want 124160", got)
 	}
 	if got := extractorContextFitBudget(1); got != 1 {
-		t.Fatalf("extractorContextFitBudget(1) = %d, want 1 (clamped to avoid the 8192 Fit default)", got)
+		t.Fatalf("extractorContextFitBudget(1) = %d, want 1", got)
 	}
 }
 
-// TestFitExtractorMessages_RejectsSystemPromptLoss verifies the guard that a
-// fitting which empties every system message is rejected instead of sending
-// an instruction-less extraction request: the system prompt carries the
-// extraction contract, so running with an emptied system prompt would
-// silently produce garbage.
 func TestFitExtractorMessages_RejectsSystemPromptLoss(t *testing.T) {
 	SetExtractorContextLengthOverride(func(_ context.Context, _ string) int { return 300 })
 	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
 
-	// System dominates (>4x the user) and the user message alone exceeds
-	// the budget: the proportional trim preserves the user turn and empties
-	// the system messages.
 	msgs := []eschema.Message{
 		{Role: eschema.System, Content: strings.Repeat("s ", 5000)},
 		{Role: eschema.User, Content: strings.Repeat("u ", 400)},
@@ -2106,225 +1299,850 @@ func TestFitExtractorMessages_RejectsSystemPromptLoss(t *testing.T) {
 	}
 }
 
-// TestExtractorContextLength_NilDBGraceful verifies that resolving the tenant
-// default chat model with no database available (nil db and no override)
-// degrades to 0 (skip fitting) instead of panicking in defaultChatModelRef.
 func TestExtractorContextLength_NilDBGraceful(t *testing.T) {
 	ctx := extractorStateCtx(t, "tenant-1")
 	if got := extractorContextLength(ctx, nil, ""); got != 0 {
-		t.Fatalf("extractorContextLength(nil db, default model) = %d, want 0 (skip fitting)", got)
+		t.Fatalf("extractorContextLength(nil db, default model) = %d, want 0", got)
 	}
 }
 
-// TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk verifies that
-// when the prompt contains {ComponentName:ParamName@chunks}, each chunk's
-// LLM invocation receives ONLY that chunk's text (not all chunks joined together),
-// and the chunk text appears exactly once without duplication.
-func TestExtractorComponent_Invoke_AtChunksPlaceholderPerChunk(t *testing.T) {
+func TestBuildExtractorMessages(t *testing.T) {
+	msgs := buildExtractorMessages("System rule", "Chunk content")
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != eschema.System || msgs[0].Content != "System rule" {
+		t.Errorf("msgs[0] = %#v, want system message", msgs[0])
+	}
+	if msgs[1].Role != eschema.User || msgs[1].Content != "Chunk content" {
+		t.Errorf("msgs[1] = %#v, want user message", msgs[1])
+	}
+
+	// Empty system prompt omitted
+	msgsNoSys := buildExtractorMessages("", "Chunk content")
+	if len(msgsNoSys) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgsNoSys))
+	}
+	if msgsNoSys[0].Role != eschema.User || msgsNoSys[0].Content != "Chunk content" {
+		t.Errorf("msgsNoSys[0] = %#v, want user message", msgsNoSys[0])
+	}
+
+	// Empty user chunk text normalized to single space
+	msgsEmptyUser := buildExtractorMessages("System rule", "")
+	if len(msgsEmptyUser) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgsEmptyUser))
+	}
+	if msgsEmptyUser[1].Role != eschema.User || msgsEmptyUser[1].Content != " " {
+		t.Errorf("msgsEmptyUser[1] = %#v, want single space", msgsEmptyUser[1])
+	}
+}
+
+func TestExtractorModularParams(t *testing.T) {
+	params := map[string]any{
+		"llm_id": "test-llm-1",
+		"keywords": map[string]any{
+			"top_n": 5,
+		},
+		"questions": map[string]any{
+			"top_n": 3,
+		},
+		"tags": map[string]any{
+			"top_n":       2,
+			"tag_file_id": "tag_file_abc",
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "category", "type": "string"},
+			},
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent failed: %v", err)
+	}
+
+	ext, ok := comp.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("expected *ExtractorComponent, got %T", comp)
+	}
+
+	if ext.Param.Keywords.TopN != 5 {
+		t.Errorf("Keywords config mismatch: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.Questions.TopN != 3 {
+		t.Errorf("Questions config mismatch: %+v", ext.Param.Questions)
+	}
+	if ext.Param.Tags.TopN != 2 || ext.Param.Tags.TagFileID != "tag_file_abc" {
+		t.Errorf("Tags config mismatch: %+v", ext.Param.Tags)
+	}
+	if !ext.Param.Summary.Enabled {
+		t.Errorf("Summary config mismatch: %+v", ext.Param.Summary)
+	}
+	if !ext.Param.Metadata.Enabled || len(ext.Param.Metadata.Metadata) != 1 {
+		t.Errorf("Metadata config mismatch: %+v", ext.Param.Metadata)
+	}
+}
+
+func TestExtractorModularPromptsExecution(t *testing.T) {
 	stub := withStubChatInvoker(t,
-		stubResponse{Content: "answer1"},
-		stubResponse{Content: "answer2"},
+		stubResponse{Content: "kw1, kw2"},
+		stubResponse{Content: "question 1?\nquestion 2?"},
+		stubResponse{Content: "Summary of chunk"},
 	)
 
-	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName: "summary",
-		Prompt:    "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
-		LLMID:     "gpt-4o-mini",
-	}}
-
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"chunks": []map[string]any{
-			{"text": "Chunk One Body"},
-			{"text": "Chunk Two Body"},
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n": 2,
 		},
-	})
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Hello world content"},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	stub.mu.Lock()
-	defer stub.mu.Unlock()
-
-	if len(stub.requests) != 2 {
-		t.Fatalf("got %d LLM calls, want 2", len(stub.requests))
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
 
-	// Call 1 must contain Chunk 1 exactly once, and NOT contain Chunk 2
-	req1User := stub.requests[0].Messages[len(stub.requests[0].Messages)-1].Content
-	if n := strings.Count(req1User, "Chunk One Body"); n != 1 {
-		t.Errorf("call 1 chunk text count = %d, want 1; prompt: %q", n, req1User)
+	ck := chunks[0]
+	if kwds, ok := ck["important_kwd"].([]string); !ok || len(kwds) != 2 {
+		t.Errorf("expected important_kwd = [kw1, kw2], got %v", ck["important_kwd"])
 	}
-	if strings.Contains(req1User, "Chunk Two Body") {
-		t.Errorf("call 1 wrongly contains Chunk Two Body; prompt: %q", req1User)
+	if qs, ok := ck["question_kwd"].([]string); !ok || len(qs) != 2 {
+		t.Errorf("expected question_kwd = [question 1?, question 2?], got %v", ck["question_kwd"])
+	}
+	if sum, ok := ck["summary"].(string); !ok || sum != "Summary of chunk" {
+		t.Errorf("expected summary = 'Summary of chunk', got %v", ck["summary"])
 	}
 
-	// Call 2 must contain Chunk 2 exactly once, and NOT contain Chunk 1
-	req2User := stub.requests[1].Messages[len(stub.requests[1].Messages)-1].Content
-	if n := strings.Count(req2User, "Chunk Two Body"); n != 1 {
-		t.Errorf("call 2 chunk text count = %d, want 1; prompt: %q", n, req2User)
-	}
-	if strings.Contains(req2User, "Chunk One Body") {
-		t.Errorf("call 2 wrongly contains Chunk One Body; prompt: %q", req2User)
+	reqs := stub.requests
+	if len(reqs) != 3 {
+		t.Fatalf("expected 3 LLM calls, got %d", len(reqs))
 	}
 }
 
-// TestRenderExtractorPrompts_TableDriven covers all prompt rendering cases
-// and fallback permutations.
-func TestRenderExtractorPrompts_TableDriven(t *testing.T) {
-	tests := []struct {
-		name         string
-		sysTemplate  string
-		userTemplate string
-		ck           map[string]any
-		chunkText    string
-		wantSys      string
-		wantUser     string
-	}{
-		{
-			name:         "text in user",
-			sysTemplate:  "",
-			userTemplate: "Analyze: {text}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Analyze: body content",
-		},
-		{
-			name:         "text in system only suppresses user append",
-			sysTemplate:  "Context: {text}",
-			userTemplate: "Extract:",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "Context: body content",
-			wantUser:     "Extract:",
-		},
-		{
-			name:         "canvas macro @chunks in user",
-			sysTemplate:  "",
-			userTemplate: "Summarize: {TokenChunker:BumpyStarsPress@chunks}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Summarize: body content",
-		},
-		{
-			name:         "canvas macro @text in user",
-			sysTemplate:  "",
-			userTemplate: "Parse: {Parser:Doc@text}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Parse: body content",
-		},
-		{
-			name:         "canvas macro @markdown in user",
-			sysTemplate:  "",
-			userTemplate: "Parse: {Parser:Doc@markdown}",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Parse: body content",
-		},
-		{
-			name:         "metadata only appends chunkText",
-			sysTemplate:  "",
-			userTemplate: "Title: {title}",
-			ck:           map[string]any{"title": "DocTitle", "text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Title: DocTitle\n\nbody content",
-		},
-		{
-			name:         "no placeholder appends chunkText",
-			sysTemplate:  "",
-			userTemplate: "Summarize the text:",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "Summarize the text:\n\nbody content",
-		},
-		{
-			name:         "empty chunkText does not append",
-			sysTemplate:  "",
-			userTemplate: "Summarize:",
-			ck:           map[string]any{},
-			chunkText:    "",
-			wantSys:      "",
-			wantUser:     "Summarize:",
-		},
-		{
-			name:         "content_with_weight present in ck",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"content_with_weight": "weighted content", "text": "plain content"},
-			chunkText:    "weighted content",
-			wantSys:      "",
-			wantUser:     "Weighted: weighted content",
-		},
-		{
-			name:         "content_with_weight absent in ck falls back to chunkText",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"text": "plain content"},
-			chunkText:    "plain content",
-			wantSys:      "",
-			wantUser:     "Weighted: plain content",
-		},
-		{
-			name:         "whitespace user template trimmed before append",
-			sysTemplate:  "",
-			userTemplate: "   ",
-			ck:           map[string]any{"text": "body content"},
-			chunkText:    "body content",
-			wantSys:      "",
-			wantUser:     "body content",
-		},
-		{
-			name:         "empty templates produce single space user turn",
-			sysTemplate:  "",
-			userTemplate: "",
-			ck:           map[string]any{},
-			chunkText:    "",
-			wantSys:      "",
-			wantUser:     " ",
-		},
-		{
-			// content_with_weight is present in ck but its value is an empty
-			// string. isBodyPlaceholder fires, but the resolved value is empty
-			// so bodyInjected must NOT be set — the fallback append should
-			// still fire and deliver chunkText.
-			name:         "content_with_weight empty string in ck falls back to chunkText",
-			sysTemplate:  "",
-			userTemplate: "Weighted: {content_with_weight}",
-			ck:           map[string]any{"content_with_weight": ""},
-			chunkText:    "fallback body",
-			wantSys:      "",
-			wantUser:     "Weighted: fallback body",
-		},
-		{
-			// Both system and user prompts reference body placeholders.
-			// The body must appear in each substitution position but must NOT
-			// be appended a third time (bodyInjected is shared across both
-			// render calls).
-			name:         "body placeholder in both system and user no extra append",
-			sysTemplate:  "Context: {text}",
-			userTemplate: "Also: {chunks}",
-			ck:           map[string]any{"text": "the body"},
-			chunkText:    "the body",
-			wantSys:      "Context: the body",
-			wantUser:     "Also: the body",
+func TestExtractorModularMetadataConfig(t *testing.T) {
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{
+					"key":         "author",
+					"type":        "string",
+					"description": "The author name",
+					"enum":        []any{"Alice", "Bob"},
+				},
+				map[string]any{
+					"key":  "year",
+					"type": "integer",
+				},
+			},
+			"built_in_metadata": []any{
+				map[string]any{
+					"key":  "file_name",
+					"type": "string",
+				},
+			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotSys, gotUser := renderExtractorPrompts(tt.sysTemplate, tt.userTemplate, tt.ck, tt.chunkText)
-			if gotSys != tt.wantSys {
-				t.Errorf("renderExtractorPrompts() gotSys = %q, want %q", gotSys, tt.wantSys)
-			}
-			if gotUser != tt.wantUser {
-				t.Errorf("renderExtractorPrompts() gotUser = %q, want %q", gotUser, tt.wantUser)
-			}
-		})
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	ext, ok := comp.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("expected *ExtractorComponent, got %T", comp)
+	}
+
+	if !ext.Param.Metadata.Enabled {
+		t.Errorf("Metadata enabled mismatch: %+v", ext.Param.Metadata.Enabled)
+	}
+	if len(ext.Param.Metadata.Metadata) != 2 {
+		t.Fatalf("Metadata fields mismatch: %d", len(ext.Param.Metadata.Metadata))
+	}
+	if ext.Param.Metadata.Metadata[0].Key != "author" || ext.Param.Metadata.Metadata[0].Description != "The author name" || len(ext.Param.Metadata.Metadata[0].Enum) != 2 {
+		t.Errorf("Metadata field 0 mismatch: %+v", ext.Param.Metadata.Metadata[0])
+	}
+	if ext.Param.Metadata.Metadata[1].Key != "year" {
+		t.Errorf("Metadata field 1 mismatch: %+v", ext.Param.Metadata.Metadata[1])
+	}
+	if len(ext.Param.Metadata.BuiltInMetadata) != 1 || ext.Param.Metadata.BuiltInMetadata[0].Key != "file_name" {
+		t.Errorf("BuiltInMetadata mismatch: %+v", ext.Param.Metadata.BuiltInMetadata)
+	}
+}
+
+func TestExtractorModularMetadataExecution(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: `{"author": "Alice", "year": 2026}`},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{
+					"key":  "author",
+					"type": "string",
+				},
+				map[string]any{
+					"key":  "year",
+					"type": "integer",
+				},
+			},
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Written by Alice in 2026."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	ck := chunks[0]
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected chunk metadata map, got %T: %v", ck["metadata"], ck["metadata"])
+	}
+	if meta["author"] != "Alice" {
+		t.Errorf("expected metadata.author = Alice, got %v", meta["author"])
+	}
+	if fmt.Sprintf("%v", meta["year"]) != "2026" {
+		t.Errorf("expected metadata.year = 2026, got %v", meta["year"])
+	}
+}
+
+func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "A concise summary."})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	if chunks[0]["summary"] != "A concise summary." {
+		t.Errorf("expected summary = 'A concise summary.', got %v", chunks[0]["summary"])
+	}
+
+	if stub.Calls() != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", stub.Calls())
+	}
+
+	lastReq := stub.lastRequest()
+	msgs := lastReq.Messages
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d: %+v", len(msgs), msgs)
+	}
+
+	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "You are a precise and faithful text summarizer") {
+		t.Errorf("expected autoSummaryPrompt in system message, got: %+v", msgs[0])
+	}
+
+	if msgs[1].Role != "user" || !strings.Contains(msgs[1].Content, "This is a detailed paragraph about artificial intelligence.") {
+		t.Errorf("expected chunk text in user message, got: %+v", msgs[1])
+	}
+}
+
+func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "Custom summary."})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Custom system prompt for summarization.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Text to summarize."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	if chunks[0]["summary"] != "Custom summary." {
+		t.Errorf("expected summary = 'Custom summary.', got %v", chunks[0]["summary"])
+	}
+
+	if stub.Calls() != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", stub.Calls())
+	}
+
+	lastReq := stub.lastRequest()
+	msgs := lastReq.Messages
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages (system + user), got %d: %+v", len(msgs), msgs)
+	}
+
+	if msgs[0].Role != "system" || msgs[0].Content != "Custom system prompt for summarization." {
+		t.Errorf("expected custom system prompt in system message, got: %+v", msgs[0])
+	}
+}
+
+func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "custom, keywords"},
+		stubResponse{Content: "Custom question 1?\nCustom question 2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom keywords system prompt.",
+		},
+		"questions": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom questions system prompt.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if reqs[0].Messages[0].Content != "Custom keywords system prompt." {
+		t.Errorf("expected custom keywords system prompt, got: %q", reqs[0].Messages[0].Content)
+	}
+	if reqs[1].Messages[0].Content != "Custom questions system prompt." {
+		t.Errorf("expected custom questions system prompt, got: %q", reqs[1].Messages[0].Content)
+	}
+}
+
+// TestExtractorTopNPlaceholderSubstitution verifies the {{ topn }} placeholder
+// in custom keyword/question system prompts is replaced with the configured
+// top_n, so the count slider stays authoritative when the frontend pre-fills
+// a prompt.
+func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "alpha, beta"},
+		stubResponse{Content: "q1?\nq2?"},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n":         9,
+			"system_prompt": "Give the top {{ topn }} keywords.",
+		},
+		"questions": map[string]any{
+			"top_n":         7,
+			"system_prompt": "Propose {{topn}} questions.",
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	if got := reqs[0].Messages[0].Content; got != "Give the top 9 keywords." {
+		t.Errorf("expected keywords prompt with top_n=9 substituted, got: %q", got)
+	}
+	if got := reqs[1].Messages[0].Content; got != "Propose 7 questions." {
+		t.Errorf("expected questions prompt with top_n=7 substituted, got: %q", got)
+	}
+}
+
+// TestExtractorDefaultPromptsRenderTopN verifies the built-in keyword/question
+// prompts interpolate the configured top_n when no custom prompt is set.
+func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "k1, k2"},
+		stubResponse{Content: "q1?"},
+	)
+
+	params := map[string]any{
+		"llm_id":    "llm-1",
+		"keywords":  map[string]any{"top_n": 4},
+		"questions": map[string]any{"top_n": 6},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Content text."},
+		},
+	}
+
+	if _, err := comp.Invoke(t.Context(), nil, in); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	reqs := stub.requests
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", len(reqs))
+	}
+
+	kwPrompt := reqs[0].Messages[0].Content
+	if !strings.Contains(kwPrompt, "top 4 important keywords/phrases") {
+		t.Errorf("expected built-in keywords prompt with top_n=4, got: %q", kwPrompt)
+	}
+	qPrompt := reqs[1].Messages[0].Content
+	if !strings.Contains(qPrompt, "top 6 important questions") {
+		t.Errorf("expected built-in questions prompt with top_n=6, got: %q", qPrompt)
+	}
+	if strings.Contains(kwPrompt, "{{") || strings.Contains(qPrompt, "{{") {
+		t.Errorf("expected no leftover placeholders, got keywords=%q questions=%q", kwPrompt, qPrompt)
+	}
+}
+
+func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "Not expected"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"summary": map[string]any{
+			"enabled": false,
+		},
+	}
+
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"content_with_weight": "Some text."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if stub.Calls() != 0 {
+		t.Errorf("expected 0 LLM calls when summary is disabled, got %d", stub.Calls())
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk output, got %v", out)
+	}
+	if _, has := chunks[0]["summary"]; has {
+		t.Errorf("expected no summary key in chunk, got %v", chunks[0]["summary"])
+	}
+}
+
+func TestExtractor_ModularConfiguration(t *testing.T) {
+	paramsDisabled := map[string]any{
+		"metadata": map[string]any{
+			"enabled": false,
+			"fields": []any{
+				map[string]any{"key": "category", "type": "string"},
+			},
+		},
+		"summary": map[string]any{
+			"enabled": false,
+		},
+		"keywords": map[string]any{
+			"top_n": 0,
+		},
+		"questions": map[string]any{
+			"top_n": 0,
+		},
+		"tags": map[string]any{
+			"top_n": 0,
+		},
+	}
+
+	compRawA, err := NewExtractorComponent(paramsDisabled)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent A: %v", err)
+	}
+	compA := compRawA.(*ExtractorComponent)
+	if compA.Param.Metadata.Enabled != false {
+		t.Errorf("expected metadata disabled, got %v", compA.Param.Metadata.Enabled)
+	}
+	if compA.Param.Summary.Enabled != false {
+		t.Errorf("expected summary disabled, got %v", compA.Param.Summary.Enabled)
+	}
+	if compA.Param.Keywords.TopN != 0 {
+		t.Errorf("expected keywords disabled (0), got %v", compA.Param.Keywords.TopN)
+	}
+	if compA.Param.Questions.TopN != 0 {
+		t.Errorf("expected questions disabled (0), got %v", compA.Param.Questions.TopN)
+	}
+	if compA.Param.Tags.TopN != 0 {
+		t.Errorf("expected tags disabled (0), got %v", compA.Param.Tags.TopN)
+	}
+
+	// Explicitly enabled
+	paramsEnabled := map[string]any{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+		},
+		"summary": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Custom summary prompt",
+		},
+		"keywords": map[string]any{
+			"top_n":         4,
+			"system_prompt": "Custom keywords prompt",
+		},
+		"questions": map[string]any{
+			"top_n":         2,
+			"system_prompt": "Custom questions prompt",
+		},
+		"tags": map[string]any{
+			"top_n":       3,
+			"tag_file_id": "file-123",
+		},
+	}
+
+	compRawB, err := NewExtractorComponent(paramsEnabled)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent B: %v", err)
+	}
+	compB := compRawB.(*ExtractorComponent)
+	if compB.Param.Metadata.Enabled != true {
+		t.Errorf("expected metadata enabled, got %v", compB.Param.Metadata.Enabled)
+	}
+	if len(compB.Param.Metadata.Metadata) != 1 || compB.Param.Metadata.Metadata[0].Key != "author" {
+		t.Errorf("expected metadata fields with author, got %+v", compB.Param.Metadata.Metadata)
+	}
+	if compB.Param.Summary.Enabled != true || compB.Param.Summary.SystemPrompt != "Custom summary prompt" {
+		t.Errorf("expected summary enabled with custom prompt, got %+v", compB.Param.Summary)
+	}
+	if compB.Param.Keywords.TopN != 4 || compB.Param.Keywords.SystemPrompt != "Custom keywords prompt" {
+		t.Errorf("expected keywords 4 with custom prompt, got %+v", compB.Param.Keywords)
+	}
+	if compB.Param.Questions.TopN != 2 || compB.Param.Questions.SystemPrompt != "Custom questions prompt" {
+		t.Errorf("expected questions 2 with custom prompt, got %+v", compB.Param.Questions)
+	}
+	if compB.Param.Tags.TopN != 3 || compB.Param.Tags.TagFileID != "file-123" {
+		t.Errorf("expected tags 3 / file-123, got %+v", compB.Param.Tags)
+	}
+}
+
+func TestExtractor_ParseMetadataFieldDefs_MapSlice(t *testing.T) {
+	inputMapSlice := []map[string]any{
+		{"key": "author", "type": "string", "description": "Author name"},
+	}
+	defs := parseMetadataFieldDefs(inputMapSlice)
+	if len(defs) != 1 || defs[0].Key != "author" || defs[0].Type != "string" || defs[0].Description != "Author name" {
+		t.Errorf("parseMetadataFieldDefs failed for []map[string]any: %#v", defs)
+	}
+
+	inputDefs := []common.MetadataFieldDef{
+		{Key: "tag", Type: "string"},
+	}
+	directDefs := parseMetadataFieldDefs(inputDefs)
+	if len(directDefs) != 1 || directDefs[0].Key != "tag" {
+		t.Errorf("parseMetadataFieldDefs failed for []common.MetadataFieldDef: %#v", directDefs)
+	}
+}
+
+func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
+	// 1b39355c regressed by making runEnableMetadata fire when only built_in_metadata was configured.
+	// With the modular shape, BuiltInMetadata must never trigger an LLM call; it is applied by the finalizer.
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": true,
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+				map[string]any{"key": "update_time", "type": "time"},
+			},
+			"metadata": []any{},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{
+		"chunks": []map[string]any{{"text": "hello world"}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+	if _, ok := chunks[0]["metadata"]; ok {
+		t.Fatalf("built_in must not produce chunk metadata, got %v", chunks[0]["metadata"])
+	}
+}
+
+func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
+	stub := withStubChatInvoker(t)
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"metadata": map[string]any{
+			"enabled": false,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	in := map[string]any{"chunks": []map[string]any{{"text": "hello"}}}
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
+	}
+	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+}
+
+func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "Bidding, Procurement"})
+
+	params := map[string]any{
+		"llm_id": "llm-1",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{
+				"docnm_kwd":           "Tender_Notice.pdf",
+				"content_with_weight": "General bidding notice content.",
+			},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %v", out)
+	}
+
+	kwds, ok := chunks[0]["important_kwd"].([]string)
+	if !ok || len(kwds) != 2 {
+		t.Fatalf("expected important_kwd populated with 2 keywords, got %v", chunks[0]["important_kwd"])
+	}
+
+	// Verify getChunkText on the resulting chunk merges extracted keywords and content without title pollution
+	chunkText := getChunkText(chunks[0])
+	if !strings.Contains(chunkText, "Bidding") || !strings.Contains(chunkText, "Procurement") || !strings.Contains(chunkText, "General bidding notice content.") {
+		t.Fatalf("expected chunk text to contain content and extracted keywords, got %q", chunkText)
+	}
+	if strings.Contains(chunkText, "Tender_Notice") {
+		t.Fatalf("expected chunk text to NOT contain title when content is present, got %q", chunkText)
+	}
+}
+
+func TestExtractor_LLMCacheKey(t *testing.T) {
+	k1 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	k2 := extractorLLMCacheKey("keywords", "modelA", "prompt1", "text1")
+	if k1 != k2 {
+		t.Errorf("extractorLLMCacheKey should be deterministic: %s != %s", k1, k2)
+	}
+
+	// Task type isolation
+	kQuestions := extractorLLMCacheKey("questions", "modelA", "prompt1", "text1")
+	if k1 == kQuestions {
+		t.Errorf("Different task types must produce different keys: %s == %s", k1, kQuestions)
+	}
+
+	// Model isolation
+	kModelB := extractorLLMCacheKey("keywords", "modelB", "prompt1", "text1")
+	if k1 == kModelB {
+		t.Errorf("Different models must produce different keys: %s == %s", k1, kModelB)
+	}
+
+	// NUL separator collision test ("ab", "c") vs ("a", "bc")
+	kColl1 := extractorLLMCacheKey("k", "m", "ab", "c")
+	kColl2 := extractorLLMCacheKey("k", "m", "a", "bc")
+	if kColl1 == kColl2 {
+		t.Errorf("NUL separator should prevent collisions: %s == %s", kColl1, kColl2)
+	}
+}
+
+func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "Alpha, Beta"},
+		stubResponse{Content: "What is Alpha?\nWhat is Beta?"},
+		stubResponse{Content: "This is a summary without Redis."},
+	)
+
+	params := map[string]any{
+		"llm_id": "llm-test-noredis",
+		"keywords": map[string]any{
+			"top_n": 2,
+		},
+		"questions": map[string]any{
+			"top_n": 2,
+		},
+		"summary": map[string]any{
+			"enabled": true,
+		},
+	}
+	comp, err := NewExtractorComponent(params)
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+
+	in := map[string]any{
+		"chunks": []map[string]any{
+			{"text": "Sample text for fail open test."},
+		},
+	}
+
+	out, err := comp.Invoke(t.Context(), nil, in)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Fatalf("Expected 3 LLM calls, got %d", calls)
+	}
+	ck := out["chunks"].([]map[string]any)[0]
+	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
+		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }

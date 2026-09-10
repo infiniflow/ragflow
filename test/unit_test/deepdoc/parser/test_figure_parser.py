@@ -70,6 +70,7 @@ def _load_figure_parser(monkeypatch):
         monkeypatch,
         "api.db.services.llm_service",
         LLMBundle=Mock(),
+        resolve_llm_setting=Mock(return_value={}),
     )
     _module(
         monkeypatch,

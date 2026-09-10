@@ -38,15 +38,21 @@ export function RenameForm({
   initialName,
   hideModal,
   onOk,
-}: IModalProps<any> & { initialName?: string }) {
+  forbidSlash = false,
+}: IModalProps<any> & { initialName?: string; forbidSlash?: boolean }) {
   const { t } = useTranslation();
+  const baseNameSchema = z
+    .string()
+    .min(1, {
+      message: t('common.namePlaceholder'),
+    })
+    .trim();
   const FormSchema = z.object({
-    name: z
-      .string()
-      .min(1, {
-        message: t('common.namePlaceholder'),
-      })
-      .trim(),
+    name: forbidSlash
+      ? baseNameSchema.refine((value) => !value.includes('/'), {
+          message: t('common.nameSlashError'),
+        })
+      : baseNameSchema,
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({

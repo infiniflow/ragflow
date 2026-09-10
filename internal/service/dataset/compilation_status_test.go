@@ -16,7 +16,6 @@
 package dataset
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -129,6 +128,9 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 		InflightDocIDs:  `[{"doc_id":"d1","event_type":"completed","seq":1},{"doc_id":"d2","event_type":"completed","seq":2}]`,
 		State:           entity.DatasetStateRunning,
 		ErrorMsg:        "merge failed: boom",
+		Progress:        0.72,
+		CurrentPhase:    "routing_pages",
+		ProgressMsg:     "Routing 55 Wiki pages",
 		LastCompletedAt: &lastDone,
 	}
 	if err := db.Create(&row).Error; err != nil {
@@ -151,6 +153,9 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	}
 	if st.Error != "merge failed: boom" {
 		t.Fatalf("error=%q want %q", st.Error, "merge failed: boom")
+	}
+	if st.Progress != 0.72 || st.CurrentPhase != "routing_pages" || st.ProgressMsg != "Routing 55 Wiki pages" {
+		t.Fatalf("progress fields not mapped: progress=%v phase=%q msg=%q", st.Progress, st.CurrentPhase, st.ProgressMsg)
 	}
 	if st.LastCompletedAt == nil || !st.LastCompletedAt.Equal(lastDone) {
 		t.Fatalf("last_completed_at=%v want %v", st.LastCompletedAt, lastDone)
@@ -187,7 +192,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 func TestGetDatasetCompilationStatus_EmptyID(t *testing.T) {
 	setupCompilationStatusTestDB(t)
 	_, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		context.Background(), "user-1", "")
+		t.Context(), "user-1", "")
 	if err == nil {
 		t.Fatal("expected error for empty dataset_id")
 	}

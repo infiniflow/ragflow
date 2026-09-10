@@ -28,28 +28,33 @@ type mergeUnitsOracleRow struct {
 	tk   int
 }
 
-// pythonMergeUnitsOracle is the Go port of the UNIFIED merge contract shared by
-// the Go TokenChunker, Python naive_merge, and Python token_chunker's JSON
-// path. It is the oracle that mergeUnits (the single, unified merge core) must
-// match chunk-for-chunk (text AND count).
+// hardCapMergeUnitsOracle is the Go reference for the hard-cap merge contract
+// (方案 B) that mergeUnits (the single, unified merge core) must match
+// chunk-for-chunk (text AND count). It mirrors the same algorithm as the Go
+// TokenChunker, so the comparison pins the merge behavior, not Python's
+// OVER_CAP contract (which this code no longer follows).
 //
-// Contract mirrored here (the unified "hybrid" algorithm):
+// Contract mirrored here:
 //   - token counts are the RUNNING SUM of per-unit counts (never re-tokenizing
-//     the joined text);
+//     the joined text), but the merge ALSO re-checks the actual joined text
+//     against the target — joinSep (e.g. "\n" on the JSON path) can add tokens
+//     beyond the running sum, so a candidate whose joined text exceeds target
+//     starts a fresh chunk (hard-cap safety net, matching mergeUnits);
 //   - overlap>0 uses a SCALED threshold target*(100-overlap)/100 and prepends
-//     the previous chunk's tail UNCONDITIONALLY (no fit-check);
+//     the previous chunk's tail, trimmed to fit the target (computeOverlapPrefix
+//   - overlapFitPrefix, matching mergeUnits);
 //   - a non-text unit passes through and resets the merge run;
-//   - an over-budget unit (tk > target) STANDS ALONE — never merged into the
-//     previous chunk (retains the #17799 contract; diverges from Python JSON's
-//     native merge-into-prev on purpose, so the product-wide behaviour change
-//     is avoided);
-//   - MergeUnderCap additionally forbids a projected overflow.
+//   - the merge is UNDER_CAP: a projected join that would push the running sum
+//     over target starts a fresh chunk (never merge-then-close);
+//   - oversized units are expanded by mergeUnits BEFORE merging (sentence split
+//   - hard token-split fallback); this oracle takes pre-expanded units, so
+//     every tkNums it sees is already <= target.
 //
 // Token counts: the initial chunk and merged running sum use the EXPLICIT
 // tkNums (so merge decisions are deterministic and offline-independent), but
 // an overlap-prefixed chunk recomputes its count via tokenizeStr — exactly as
 // mergeUnits does — so the two stay in lock-step.
-func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target int, overlap float64, joinSep string, strat schema.MergeStrategy) []mergeUnitsOracleRow {
+func hardCapMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target int, overlap float64, joinSep string) []mergeUnitsOracleRow {
 	threshold := float64(target) * (100.0 - overlap) / 100.0
 	merged := []mergeUnitsOracleRow{}
 	prev := -1
@@ -65,44 +70,29 @@ func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target
 			prev = len(merged) - 1
 			continue
 		}
-		// #17799: an over-budget unit stands alone — never merged into prev.
-		if tk > target {
-			text := texts[i]
-			cpTk := tk
-			if overlap > 0 && merged[prev].text != "" {
-				vis := []rune(removeTag(merged[prev].text))
-				cut := int(float64(len(vis)) * (100.0 - overlap) / 100.0)
-				if cut < 0 {
-					cut = 0
-				}
-				if cut < len(vis) {
-					text = string(vis[cut:]) + texts[i]
-				}
-				cpTk = tokenizeStr(text)
+		// UNDER_CAP: a projected join that would exceed target starts a fresh
+		// chunk. The scaled threshold reserves room for the overlap prefix.
+		startNew := float64(merged[prev].tk) > threshold || merged[prev].tk+tk > target
+		if !startNew {
+			// Hard-cap safety net: re-check the actual joined text (joinSep can
+			// add tokens beyond the running sum), mirroring mergeUnits.
+			cand := merged[prev].text + texts[i]
+			if merged[prev].text != "" && texts[i] != "" {
+				cand = merged[prev].text + joinSep + texts[i]
 			}
-			merged = append(merged, mergeUnitsOracleRow{text, cpTk})
-			prev = len(merged) - 1
-			continue
-		}
-		startNew := float64(merged[prev].tk) > threshold
-		if !startNew && strat == schema.MergeUnderCap && merged[prev].tk+tk > target {
-			startNew = true
+			if tokenizeStr(cand) > target {
+				startNew = true
+			}
 		}
 		if startNew {
 			text := texts[i]
 			cpTk := tk
 			if overlap > 0 && merged[prev].text != "" {
-				vis := []rune(removeTag(merged[prev].text))
-				cut := int(float64(len(vis)) * (100.0 - overlap) / 100.0)
-				if cut < 0 {
-					cut = 0
-				}
-				if cut < len(vis) {
-					text = string(vis[cut:]) + texts[i]
-				}
-				// Mirror mergeUnits: recompute the overlap chunk's token
-				// count from its (prefix+cur) text. Only when a prefix was
-				// actually prepended; otherwise keep the explicit count.
+				// Mirror mergeUnits: carve the overlap prefix from the previous
+				// chunk's tag-free tail, then trim it to fit the target.
+				prefix, _ := computeOverlapPrefix(merged[prev].text, overlap)
+				prefix, _ = overlapFitPrefix(prefix, texts[i], target)
+				text = prefix + texts[i]
 				cpTk = tokenizeStr(text)
 			}
 			merged = append(merged, mergeUnitsOracleRow{text, cpTk})
@@ -119,7 +109,7 @@ func pythonMergeUnitsOracle(texts []string, tkNums []int, kinds []string, target
 	return merged
 }
 
-func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
+func TestMergeUnitsMatchesHardCapOracle(t *testing.T) {
 	cases := []struct {
 		name    string
 		texts   []string
@@ -128,63 +118,55 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 		target  int
 		overlap float64
 		joinSep string
-		strat   schema.MergeStrategy
 	}{
 		{
 			name:   "json overlap0",
 			texts:  []string{"a", "b", "c", "d"},
 			tkNums: []int{5, 5, 5, 5},
 			kinds:  []string{"text", "text", "text", "text"},
-			target: 8, overlap: 0, joinSep: "\n", strat: schema.MergeOverCap,
+			target: 8, overlap: 0, joinSep: "\n",
 		},
 		{
 			name:   "json overlap20 unconditional prefix",
 			texts:  []string{"a", "b", "c", "d"},
 			tkNums: []int{5, 5, 5, 5},
 			kinds:  []string{"text", "text", "text", "text"},
-			target: 8, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
+			target: 8, overlap: 20, joinSep: "\n",
 		},
 		{
 			name:   "text overlap0 joinsep empty",
 			texts:  []string{"a", "b", "c"},
 			tkNums: []int{5, 5, 5},
 			kinds:  []string{"text", "text", "text"},
-			target: 8, overlap: 0, joinSep: "", strat: schema.MergeOverCap,
+			target: 8, overlap: 0, joinSep: "",
 		},
 		{
 			name:   "text overlap20 unconditional prefix",
 			texts:  []string{"a", "b", "c"},
 			tkNums: []int{5, 5, 5},
 			kinds:  []string{"text", "text", "text"},
-			target: 8, overlap: 20, joinSep: "", strat: schema.MergeOverCap,
+			target: 8, overlap: 20, joinSep: "",
 		},
 		{
 			name:   "nontext breaks merge run",
 			texts:  []string{"a", "IMG", "b"},
 			tkNums: []int{5, 0, 5},
 			kinds:  []string{"text", "image", "text"},
-			target: 8, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
+			target: 8, overlap: 20, joinSep: "\n",
 		},
 		{
-			name:   "oversized stands alone (#17799, not merged into prev)",
-			texts:  []string{"small", "verylongunitthat exceedsbudgetbyalot", "tiny"},
-			tkNums: []int{3, 50, 3},
-			kinds:  []string{"text", "text", "text"},
-			target: 8, overlap: 0, joinSep: "\n", strat: schema.MergeOverCap,
-		},
-		{
-			name:   "under_cap no overflow",
+			name:   "three units under budget no overflow",
 			texts:  []string{"a", "b", "c"},
 			tkNums: []int{5, 5, 5},
 			kinds:  []string{"text", "text", "text"},
-			target: 8, overlap: 0, joinSep: "\n", strat: schema.MergeUnderCap,
+			target: 8, overlap: 0, joinSep: "\n",
 		},
 		{
-			name:   "under_cap overlap20 still no overflow but carries overlap",
+			name:   "overlap20 still no overflow but carries overlap",
 			texts:  []string{"a", "b", "c", "d"},
 			tkNums: []int{5, 5, 5, 5},
 			kinds:  []string{"text", "text", "text", "text"},
-			target: 8, overlap: 20, joinSep: "\n", strat: schema.MergeUnderCap,
+			target: 8, overlap: 20, joinSep: "\n",
 		},
 		{
 			// Tag-bearing overlap source: the previous chunk's text carries a
@@ -195,7 +177,7 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			texts:  []string{"aa@@1\t2\t3\t4##bb", "cc"},
 			tkNums: []int{5, 5},
 			kinds:  []string{"text", "text"},
-			target: 4, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
+			target: 6, overlap: 20, joinSep: "\n",
 		},
 		{
 			// Longer tag so the RAW-text cut would land INSIDE the tag. The
@@ -206,7 +188,28 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			texts:  []string{"abcd@@100\t200\t300\t400##", "wxyz"},
 			tkNums: []int{10, 4},
 			kinds:  []string{"text", "text"},
-			target: 5, overlap: 20, joinSep: "\n", strat: schema.MergeOverCap,
+			target: 12, overlap: 20, joinSep: "\n",
+		},
+		{
+			// Current unit near the cap: the overlap prefix carved from the
+			// previous chunk would push the fresh chunk over the target, so
+			// overlapFitPrefix trims it. The oracle must mirror the trim.
+			name:   "overlap prefix trimmed to fit hard cap",
+			texts:  []string{strings.Repeat("word ", 10), strings.Repeat("pad ", 10)},
+			tkNums: []int{tokenizeStr(strings.Repeat("word ", 10)), tokenizeStr(strings.Repeat("pad ", 10))},
+			kinds:  []string{"text", "text"},
+			target: 22, overlap: 20, joinSep: "\n",
+		},
+		{
+			// The re-tokenize guard (hard-cap safety net): the joined text
+			// (with joinSep "\n") exceeds target even though the running sum
+			// fits, so the merge must start a fresh chunk. Both mergeUnits and
+			// the oracle must fire the guard identically.
+			name:   "joinsep guard fires on actual joined text",
+			texts:  []string{"word", "pad"},
+			tkNums: []int{1, 1},
+			kinds:  []string{"text", "text"},
+			target: 2, overlap: 0, joinSep: "\n",
 		},
 	}
 	for _, c := range cases {
@@ -215,8 +218,8 @@ func TestMergeUnitsMatchesPythonOracle(t *testing.T) {
 			for i, tx := range c.texts {
 				units[i] = schema.ChunkDoc{Text: tx, TKNums: intPtr(c.tkNums[i]), CKType: c.kinds[i]}
 			}
-			want := pythonMergeUnitsOracle(c.texts, c.tkNums, c.kinds, c.target, c.overlap, c.joinSep, c.strat)
-			got := mergeUnits(units, c.target, c.overlap, c.strat, c.joinSep)
+			want := hardCapMergeUnitsOracle(c.texts, c.tkNums, c.kinds, c.target, c.overlap, c.joinSep)
+			got := mergeUnits(units, c.target, c.overlap, c.joinSep)
 			if len(got) != len(want) {
 				t.Fatalf("chunk count go=%d want=%d\n got=%v\nwant=%v", len(got), len(want), got, want)
 			}
@@ -245,9 +248,9 @@ func TestMergeUnitsOverlapPrefixIsTagFree(t *testing.T) {
 		target  int
 		overlap float64
 	}{
-		{"cut inside tag", "abcd@@100\t200\t300\t400##", "wxyz", 5, 20},
-		{"tag at end", "hello world@@1\t2\t3\t4##", "next", 5, 20},
-		{"tag at start", "@@1\t2\t3\t4##leading text", "next", 5, 20},
+		{"cut inside tag", "abcd@@100\t200\t300\t400##", "wxyz", 10, 20},
+		{"tag at end", "hello world@@1\t2\t3\t4##", "next", 10, 20},
+		{"tag at start", "@@1\t2\t3\t4##leading text", "next", 10, 20},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -255,7 +258,7 @@ func TestMergeUnitsOverlapPrefixIsTagFree(t *testing.T) {
 				{Text: c.prev, TKNums: intPtr(10), CKType: "text"},
 				{Text: c.cur, TKNums: intPtr(4), CKType: "text"},
 			}
-			got := mergeUnits(units, c.target, c.overlap, schema.MergeOverCap, "\n")
+			got := mergeUnits(units, c.target, c.overlap, "\n")
 			if len(got) < 2 {
 				t.Fatalf("expected >=2 chunks, got %d: %v", len(got), got)
 			}

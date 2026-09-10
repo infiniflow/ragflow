@@ -61,7 +61,7 @@ func wikiToolRun(t *testing.T, svc wikisearch.Service, tenant string, kb string,
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = tenant
 	state.Sys["dataset_id"] = kb
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	tool := newWikiQueryToolWithService(svc)
 	args, _ := json.Marshal(map[string]interface{}{"query": query})
 	raw, err := tool.InvokableRun(ctx, string(args))

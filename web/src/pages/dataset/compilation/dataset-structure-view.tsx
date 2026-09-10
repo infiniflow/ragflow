@@ -3,7 +3,10 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { getEntityDisplayName } from '@/components/structure-graph/adapters';
+import {
+  findEntityDisplayNameByKeyword,
+  getEntityDisplayName,
+} from '@/components/structure-graph/adapters';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,6 +17,7 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
+  ArtifactAlterationKeys,
   DatasetStructureKeys,
   useDeleteDatasetStructure,
   useFetchArtifactAlteration,
@@ -65,13 +69,18 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   const newlyUploaded = alteration?.newly_uploaded ?? 0;
   const removed = alteration?.removed ?? 0;
-  const hasChanges = newlyUploaded > 0 || removed > 0;
+  const retryPageCount = alteration?.retry_page_count ?? 0;
+  const hasChanges = newlyUploaded > 0 || removed > 0 || retryPageCount > 0;
 
   const handleRunEnd = useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
     });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+    });
   }, [queryClient, knowledgeBaseId, kind]);
+
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
@@ -106,10 +115,25 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     setSelectedNodeId(name);
   }, []);
 
-  const handleNoMatchEnter = useCallback((keywords: string) => {
-    setGraphKeywords(keywords);
-    setSelectedNodeId('');
-  }, []);
+  const handleNoMatchEnter = useCallback(
+    (keywords: string) => {
+      // Enter on a keyword that exactly names an entity must behave like
+      // picking it from the dropdown: highlight that node and its neighbors
+      // and dim the rest. Only unmatched text falls back to the server-side
+      // keyword subgraph, which renders fully bright.
+      const entityName = findEntityDisplayNameByKeyword(
+        template?.entities ?? [],
+        keywords,
+      );
+      if (entityName) {
+        handleSelectEntity(entityName);
+        return;
+      }
+      setGraphKeywords(keywords);
+      setSelectedNodeId('');
+    },
+    [template?.entities, handleSelectEntity],
+  );
 
   const handleDeleteStructure = useCallback(async () => {
     const code = await deleteDatasetStructure(kind);
@@ -163,6 +187,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             hasChanges={hasChanges}
             newlyUploaded={newlyUploaded}
             removed={removed}
+            retryPageCount={retryPageCount}
             loading={alterationLoading || runLoading}
             tooltip={t('knowledgeCompilation.updateStructureTooltip', {
               newlyUploaded,
@@ -188,6 +213,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}
+        totalEntities={data?.total_entities}
+        returnedEntities={data?.returned_entities}
       />
       <UpdateLogSheet
         open={updateSheetOpen}

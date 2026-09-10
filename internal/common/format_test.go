@@ -54,6 +54,28 @@ func TestChunkID_PreservesLeadingZero(t *testing.T) {
 	}
 }
 
+func TestFormatMinimumShouldMatchPercent(t *testing.T) {
+	tests := []struct {
+		name     string
+		fraction float64
+		want     string
+	}{
+		{"exact percent", 0.29, "29%"},
+		{"half rounds up", 0.125, "13%"},
+		{"just over half rounds up", 0.135, "14%"},
+		{"floating-point .5 rounds up", 0.285, "29%"},
+		{"zero", 0.0, "0%"},
+		{"one hundred", 1.0, "100%"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatMinimumShouldMatchPercent(tt.fraction); got != tt.want {
+				t.Fatalf("FormatMinimumShouldMatchPercent(%g) = %q, want %q", tt.fraction, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBaseModelName(t *testing.T) {
 	tests := []struct {
 		name  string

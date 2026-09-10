@@ -40,6 +40,11 @@ func main() {
 		return
 	}
 
+	if arguments.ShowVersion {
+		fmt.Println("RAGFlow CLI version 1.0.0") // Replace with actual version if needed
+		return
+	}
+
 	//arguments.Print()
 	logLevel := "warn" // Default to warn (quiet mode)
 	if arguments.Verbose {

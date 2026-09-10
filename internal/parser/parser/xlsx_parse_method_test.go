@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -39,8 +40,7 @@ func TestNormalizeXLSXParseMethod(t *testing.T) {
 }
 
 // TestXLSXParser_DeepDocParseMethod verifies that both the lowercase "deepdoc"
-// and the uppercase "DeepDOC" (as shipped by the ingestion pipeline DSL templates)
-// parse_method values produce the default HTML table output.
+// and the uppercase "DeepDOC" produce structured spreadsheet output.
 func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -74,14 +74,86 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
-			if got, want := res.OutputFormat, "html"; got != want {
+			if got, want := res.OutputFormat, "json"; got != want {
 				t.Fatalf("OutputFormat = %q, want %q", got, want)
 			}
-			if !strings.Contains(res.HTML, tc.cellValue) {
-				t.Fatalf("HTML = %q, want it to contain cell content %q", res.HTML, tc.cellValue)
+			if len(res.JSON) != 1 {
+				t.Fatalf("JSON item count = %d, want 1", len(res.JSON))
+			}
+			text, _ := res.JSON[0]["text"].(string)
+			if !strings.Contains(text, tc.cellValue) {
+				t.Fatalf("JSON = %#v, want it to contain cell content %q", res.JSON, tc.cellValue)
 			}
 		})
 	}
+}
+
+func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "table content")
+		if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "sheet image"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "with-image.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("JSON item count = %d, want table and image", len(res.JSON))
+	}
+	image := res.JSON[1]
+	if image["text"] != "sheet image" || image["doc_type_kwd"] != "image" {
+		t.Fatalf("unexpected image item: %#v", image)
+	}
+	if image["image"] != "data:image/png;base64,"+pngBase64 {
+		t.Fatalf("image data = %v, want data URL", image["image"])
+	}
+}
+
+func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	data := newTestXLSX(t, func(f *excelize.File) {
+		if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "without-alt.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "C3" {
+		t.Fatalf("image item = %#v, want anchor-cell text C3", res.JSON)
+	}
+}
+
+func mustDecodeBase64(t *testing.T, encoded string) []byte {
+	t.Helper()
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("DecodeString: %v", err)
+	}
+	return data
 }
 
 // TestCSVParser_DeepDocParseMethod asserts the CSV parser accepts the

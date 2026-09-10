@@ -181,8 +181,10 @@ services:
       - sandbox
     image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
     privileged: true
+    # Bind to loopback only: the /run endpoint executes arbitrary sandboxed
+    # code. RAGFlow reaches this service over the shared `ragflow` network.
     ports:
-      - ${SANDBOX_EXECUTOR_MANAGER_PORT-9385}:9385
+      - 127.0.0.1:${SANDBOX_EXECUTOR_MANAGER_PORT:-9385}:9385
     env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -197,6 +199,12 @@ services:
       - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
       - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
       - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
+      # Shared secret for the /run API. Set it in .env (same value is passed
+      # to the ragflow service); when empty the API stays open (backwards
+      # compatible) but a warning is logged.
+      - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
+      # Sandbox runner containers get no external network by default.
+      - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}
     healthcheck:
       test: ["CMD", "curl", "http://localhost:9385/healthz"]
       interval: 10s
@@ -205,6 +213,11 @@ services:
     restart: unless-stopped
 
   mysql:
+    profiles:
+      - mysql
+      - metadata-mysql
+      - metadata-MySQL
+      - metadata-MYSQL
     # mysql:5.7 linux/arm64 image is unavailable.
     image: mysql:8.0.40
     env_file: .env
@@ -291,7 +304,7 @@ services:
       - ragflow-go
     image: nats:2.14.2
     ports:
-      - ${NATS_PORT:-4222}:4222
+      - ${EXPOSE_NATS_PORT:-4222}:4222
       - "8222:8222"
     volumes:
       - nats_data:/data
@@ -371,7 +384,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${EXPOSE_CLICKHOUSE_TCP_PORT:-9900}:9000
       - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
     env_file: .env
     environment:

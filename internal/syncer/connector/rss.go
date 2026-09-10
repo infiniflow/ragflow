@@ -118,7 +118,9 @@ func (c *RSSConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncS
 		documents = append(documents, entry.toSourceDocument(c.feedURL))
 	}
 	session := &rssSyncSession{documents: documents, batchSize: c.batchSize}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -133,6 +135,13 @@ func (c *RSSConnector) OpenPrune(ctx context.Context, request PruneRequest) (Pru
 		documents = append(documents, SlimDocument{SourceID: entry.sourceID()})
 	}
 	return &rssPruneSession{documents: documents, batchSize: c.batchSize}, nil
+}
+
+// ValidateConnectorSetting validates RSS settings from an unsaved config.
+func (c *RSSConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
 }
 
 // loadEntries fetches and parses the configured feed.
@@ -206,25 +215,21 @@ func (s *rssSyncSession) Close() error {
 }
 
 // applyResume advances past the last committed RSS document when retrying a task.
-func (s *rssSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *rssSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
-	if sourceID != "" {
-		for index, doc := range s.documents {
-			if doc.SourceID == sourceID {
-				s.index = index + 1
-				return
-			}
+	if sourceID == "" {
+		return fmt.Errorf("rss sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	for index, doc := range s.documents {
+		if doc.SourceID == sourceID {
+			s.index = index + 1
+			return nil
 		}
 	}
-	if checkpoint.UpdatedAt == nil {
-		return
-	}
-	for s.index < len(s.documents) && s.documents[s.index].UpdatedAt.Before(*checkpoint.UpdatedAt) {
-		s.index++
-	}
+	return fmt.Errorf("rss resume anchor %q was not found in the current feed: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 // rssSyncCheckpoint returns a resume point after a committed RSS document.

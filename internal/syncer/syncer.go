@@ -19,7 +19,6 @@ package syncer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -57,7 +56,7 @@ func NewSyncer(taskWorkerCount int) *Syncer {
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
 
-	registerBuiltInConnectors(registry)
+	syncerconnector.RegisterBuiltIns(registry)
 
 	documentService := documentservice.NewDocumentService()
 	pruneService := service.NewSyncPruneService(documentService, nil)
@@ -83,14 +82,15 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		checkpoints = store
 	}
 
-	coordinator := NewTaskCoordinator(TaskCoordinatorConfig{
-		ItemRetryCount:     config.ItemRetryCount,
-		ItemRetryBaseDelay: config.ItemRetryBaseDelay,
-	}, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
+	coordinator := NewTaskCoordinator(SyncRunnerConfig{
+		ItemRetryCount:        config.ItemRetryCount,
+		ItemRetryBaseDelay:    config.ItemRetryBaseDelay,
+		MaxAnchorRestartCount: config.MaxAnchorRestartCount,
+	}, taskDAO, taskService, registry, sink, pruneService, idResolver, executor, checkpoints)
 
-	scheduler := NewScheduler(queue, taskService)
+	scheduler := NewScheduler(queue, taskDAO)
 	if broker, ok := messageQueue.(SyncTaskBroker); ok {
-		scheduler = NewNATSScheduler(queue, taskService, broker)
+		scheduler = NewNATSScheduler(queue, taskDAO, broker)
 	}
 
 	return &Syncer{
@@ -98,7 +98,7 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		config:     config,
 		queue:      queue,
 		scheduler:  scheduler,
-		worker:     NewTaskWorker(queue, taskService, coordinator, locker).WithScheduler(scheduler),
+		worker:     NewTaskWorker(queue, taskDAO, taskService, coordinator, locker).WithScheduler(scheduler),
 		executor:   executor,
 		ShutdownCh: make(chan struct{}),
 	}
@@ -153,9 +153,9 @@ func (s *Syncer) Stop() {
 	})
 }
 
-// logSyncTaskDuration test run time, delete it soon
-func logSyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Time) {
-	if taskContext.Task.TaskType != service.TaskTypeSync {
+// logSyncTaskDuration get job run time
+func logSyncTaskDuration(taskContext dao.SyncTaskContext, startedAt time.Time) {
+	if taskContext.Task.TaskType != dao.TaskTypeSync {
 		return
 	}
 	common.Info(
@@ -166,28 +166,4 @@ func logSyncTaskDuration(taskContext service.SyncTaskContext, startedAt time.Tim
 		zap.String("source", taskContext.Connector.Source),
 		zap.Duration("elapsed", time.Since(startedAt)),
 	)
-}
-
-// registerBuiltInConnectors registers datasource connectors available in the server binary.
-func registerBuiltInConnectors(registry *syncerconnector.Registry) {
-	registerDAOConnector(registry, "rss", syncerconnector.NewRSSConnector)
-	registerDAOConnector(registry, "github", syncerconnector.NewGitHubConnector)
-	registerDAOConnector(registry, "gmail", syncerconnector.NewGmailConnector)
-	registerDAOConnector(registry, "google-drive", syncerconnector.NewGoogleDriveConnector)
-	registerDAOConnector(registry, "google_drive", syncerconnector.NewGoogleDriveConnector)
-	registerDAOConnector(registry, "outlook", syncerconnector.NewOutlookConnector)
-	registerDAOConnector(registry, "rest_api", syncerconnector.NewRestAPIConnector)
-	registerDAOConnector(registry, "mysql", syncerconnector.NewMySQLConnector)
-	registerDAOConnector(registry, "postgresql", syncerconnector.NewPostgreSQLConnector)
-	registerDAOConnector(registry, "discord", syncerconnector.NewDiscordConnector)
-}
-
-func registerDAOConnector[T syncerconnector.Connector](registry *syncerconnector.Registry, source string, factory func(map[string]any) (T, error)) {
-	registry.Register(source, func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
-		row, ok := taskContext.(dao.SyncTaskContext)
-		if !ok {
-			return nil, fmt.Errorf("%s connector received an invalid task context", source)
-		}
-		return factory(map[string]any(row.Connector.Config))
-	})
 }

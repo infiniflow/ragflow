@@ -23,6 +23,7 @@ import struct
 import tempfile
 from abc import ABC
 from collections.abc import Mapping, Sequence
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import requests
@@ -30,6 +31,7 @@ from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
+from rag.llm.key_utils import _resolve_provider_credentials
 from rag.utils.url_utils import append_api_path, ensure_v1
 
 logger = logging.getLogger(__name__)
@@ -444,7 +446,10 @@ class TencentCloudSeq2txt(Base):
         from tencentcloud.asr.v20190614 import asr_client
         from tencentcloud.common import credential
 
-        key = json.loads(key)
+        # Route key parsing through the shared helper. Pre-fix, the bare
+        # ``key = json.loads(key)`` crashed with raw JSONDecodeError on a
+        # plain key and AttributeError on a JSON non-object. See #17687.
+        key = _resolve_provider_credentials(key)
         sid = key.get("tencent_cloud_sid", "")
         sk = key.get("tencent_cloud_sk", "")
         cred = credential.Credential(sid, sk)
@@ -511,20 +516,68 @@ class TencentCloudSeq2txt(Base):
 
 
 class GPUStackSeq2txt(Base):
+    """GPUStack speech-to-text adapter."""
+
     _FACTORY_NAME = "GPUStack"
+    _LANGUAGE_ALIASES: ClassVar[dict[str, str]] = {
+        "chinese": "zh",
+        "中文": "zh",
+        "zh_cn": "zh",
+        "zh-cn": "zh",
+        "english": "en",
+        "英语": "en",
+        "en-us": "en",
+        "en_us": "en",
+    }
 
     def __init__(self, key, model_name, base_url):
         if not base_url:
             raise ValueError("url cannot be None")
-        if base_url.split("/")[-1] != "v1":
-            base_url = os.path.join(base_url, "v1")
-        self.base_url = base_url
+        self.base_url = ensure_v1(base_url)
         self.model_name = model_name
         self.key = key
 
-    def check_available(self) -> tuple[bool, str]:
-        """GPUStack ASR transcription endpoint is not yet implemented."""
-        return False, "GPUStack ASR transcription is not yet implemented"
+    def transcription(self, audio, language="Chinese", prompt=None, response_format="json"):
+        """Transcribe audio through GPUStack without logging sensitive request data."""
+        if isinstance(audio, str):
+            with open(audio, "rb") as audio_file:
+                audio_data = audio_file.read()
+            audio_file_name = os.path.basename(audio)
+        else:
+            audio_data = audio
+            audio_file_name = "audio.wav"
+
+        normalized_language = self._LANGUAGE_ALIASES.get(language.strip().lower(), language) if language else None
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "response_format": response_format,
+        }
+        if normalized_language:
+            payload["language"] = normalized_language
+        files = {"file": (audio_file_name, audio_data, "audio/wav")}
+        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
+
+        try:
+            logger.info("GPUStack ASR request started for model %s", self.model_name)
+            response = requests.post(url=append_api_path(self.base_url, "audio/transcriptions"), files=files, data=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, Mapping):
+                raise ValueError("response root must be an object")
+            raw_text = result.get("text")
+            if isinstance(raw_text, str) and (text := raw_text.strip()):
+                logger.info("GPUStack ASR request completed for model %s with status %s and response text", self.model_name, response.status_code)
+                return text, num_tokens_from_string(text)
+            logger.info("GPUStack ASR request completed for model %s with status %s and empty response text", self.model_name, response.status_code)
+            return "**ERROR**: Failed to retrieve transcription.", 0
+        except requests.exceptions.RequestException as e:
+            response_status = getattr(getattr(e, "response", None), "status_code", "unknown")
+            logger.warning("GPUStack ASR request failed for model %s with status %s", self.model_name, response_status)
+            return f"**ERROR**: {e!s}", 0
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
+            logger.warning("GPUStack ASR response parsing failed for model %s", self.model_name)
+            return f"**ERROR**: Invalid transcription response: {e!s}", 0
 
 
 class GiteeSeq2txt(Base):
