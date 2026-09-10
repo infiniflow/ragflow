@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math"
 	"sort"
-	"sync"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
@@ -21,12 +20,6 @@ import (
 // Stateless after construction — safe to reuse across documents.
 type Parser struct {
 	Config pdf.ParserConfig
-	// deepInfOnce lazily initializes deepInf exactly once, so a Parser shared
-	// across goroutines does not race on the DeepDoc inference slot channel.
-	deepInfOnce sync.Once
-	// deepInf bounds concurrent DeepDoc (deepdoc) inference calls. Created
-	// on first use via limiters(); see parser_concurrency.go.
-	deepInf *deepInfLimiter
 }
 
 // pageResult holds per-page worker-local artifacts produced by

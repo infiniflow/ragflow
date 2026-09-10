@@ -17,11 +17,11 @@ package native
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 
 	ort "github.com/infiniflow/onnxruntime_go"
+
+	"ragflow/internal/deepdoc/runtimeconfig"
 )
 
 var (
@@ -67,16 +67,10 @@ func InitORT() error {
 func Initialized() bool { return ortReady }
 
 // defaultIntraOpThreads returns the thread count for ORT inference.
-// Defaults to 0 (all cores, matching Python onnxruntime) for bit-stable parity,
-// but can be overridden via the DEEPDOC_ORT_NUM_THREADS environment variable to
-// prevent CPU thread thrashing under concurrent workloads.
+// The default shares available CPUs across concurrent inference calls and can
+// be overridden via DEEPDOC_ORT_NUM_THREADS.
 func defaultIntraOpThreads() int {
-	if s := os.Getenv("DEEPDOC_ORT_NUM_THREADS"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
-			return v
-		}
-	}
-	return 0
+	return runtimeconfig.ORTThreads()
 }
 
 // session loads one ONNX model and runs single-input/single-output inference.

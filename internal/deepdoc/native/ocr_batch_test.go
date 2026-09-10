@@ -2,7 +2,10 @@
 
 package native
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestPlanOCRRecBatchesKeepsNormalBatchTogether(t *testing.T) {
 	imgs := make([]*Image, 16)
@@ -60,6 +63,14 @@ func TestDefaultIntraOpThreads(t *testing.T) {
 	t.Setenv("DEEPDOC_ORT_NUM_THREADS", "3")
 	if got := defaultIntraOpThreads(); got != 3 {
 		t.Fatalf("got %d threads, want 3", got)
+	}
+}
+
+func TestDefaultIntraOpThreadsDoesNotUseEveryCorePerInference(t *testing.T) {
+	t.Setenv("DEEPDOC_ORT_NUM_THREADS", "")
+	got := defaultIntraOpThreads()
+	if got < 1 || got > runtime.GOMAXPROCS(0) {
+		t.Fatalf("got %d threads for GOMAXPROCS=%d", got, runtime.GOMAXPROCS(0))
 	}
 }
 
