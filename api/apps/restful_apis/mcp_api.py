@@ -287,6 +287,9 @@ async def import_multiple() -> Response:
                 continue
             headers = dict(headers)
             if "authorization_token" in config:
+                if not isinstance(config["authorization_token"], str):
+                    results.append({"server": server_name, "success": False, "message": "authorization_token must be a string."})
+                    continue
                 headers.setdefault("authorization_token", config["authorization_token"])
             variables = {k: v for k, v in config.items() if k not in {"type", "url", "headers"}}
             variables.setdefault("authorization_token", "")

@@ -658,6 +658,23 @@ def test_import_invalid_headers_do_not_discover_or_insert(monkeypatch, headers):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize("token", [123, None, {}, []])
+def test_import_rejects_non_string_authorization_token_before_discovery(monkeypatch, token):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
+    _set_request_json(monkeypatch, module, {"mcpServers": {"bad": {"type": "streamable-http", "url": "https://example.com/mcp", "authorization_token": token}}})
+
+    async def forbidden_discovery(*_args):
+        pytest.fail("Invalid authorization token must not reach discovery")
+
+    monkeypatch.setattr(module, "thread_pool_exec", forbidden_discovery)
+    monkeypatch.setattr(module.MCPServerService, "insert", lambda **_data: pytest.fail("Invalid token must not be saved"))
+    result = _run(module.import_multiple.__wrapped__())
+    assert result["data"]["results"][0]["success"] is False
+    assert "authorization_token" in result["data"]["results"][0]["message"]
+
+
+@pytest.mark.p2
 def test_import_multiple_mixed_results(monkeypatch):
     module = _load_mcp_api(monkeypatch)
     _stub_url_safety(monkeypatch, module, {"http://unsafe"})
