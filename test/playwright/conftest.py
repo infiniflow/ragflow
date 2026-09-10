@@ -47,6 +47,9 @@ _RSA_CIPHER_CACHE = None
 _HANG_WATCHDOG_INSTALLED = False
 _PROVIDER_READY_CACHE: dict[str, dict] = {}
 _DATASET_READY_CACHE: dict[str, dict] = {}
+_NON_ACTIONABLE_PAGE_ERRORS = {
+    "ResizeObserver loop completed with undelivered notifications.",
+}
 
 
 class _RegisterDisabled(RuntimeError):
@@ -586,7 +589,9 @@ def pytest_runtest_makereport(item, call):
     if report.when == "call" and report.passed:
         for fixture_name in ("page", "flow_page"):
             browser_page = item.funcargs.get(fixture_name)
-            errors = getattr(browser_page, "_diag", {}).get("page_errors", [])
+            diagnostics = getattr(browser_page, "_diag", {})
+            allowed_patterns = diagnostics.get("allowed_page_error_patterns", [])
+            errors = [entry for entry in diagnostics.get("page_errors", []) if not _page_error_is_non_actionable(entry, allowed_patterns)]
             if errors:
                 report.outcome = "failed"
                 report.longrepr = f"{item.nodeid}: {len(errors)} unhandled browser exception(s); see browser failure artifacts"
@@ -730,6 +735,7 @@ def _configure_page(page_instance):
     page_instance._diag = {
         "console_errors": [],
         "page_errors": [],
+        "allowed_page_error_patterns": [],
         "request_failed": [],
     }
 
@@ -767,6 +773,11 @@ def _configure_page(page_instance):
     return page_instance
 
 
+def _page_error_is_non_actionable(entry: str, allowed_patterns: list[str]) -> bool:
+    message = entry.removeprefix("pageerror: ")
+    return message in _NON_ACTIONABLE_PAGE_ERRORS or any(re.fullmatch(pattern, message) for pattern in allowed_patterns)
+
+
 @pytest.fixture
 def page(context, request):
     page_instance = _configure_page(context.new_page())
@@ -776,6 +787,15 @@ def page(context, request):
     finally:
         _write_artifacts_if_failed(page_instance, context, request)
         page_instance.close()
+
+
+@pytest.fixture
+def allow_page_error(page):
+    def allow(pattern: str) -> None:
+        re.compile(pattern)
+        page._diag["allowed_page_error_patterns"].append(pattern)
+
+    return allow
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: e885ead1c0024dd379f9a1f91fb39df821bbc1e1
+head: db7d6cfc22b74853790b9f5fd21a55756cc56e86
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -221,6 +221,7 @@ changes:
   - test/unit_test/api/utils/test_admin_service_health.py
   - test/unit_test/api/db/services/test_audit_service.py
   - test/unit_test/tools/quality/test_admin_server_bootstrap.py
+  - web/src/utils/telemetry.test.ts
   validation: Paths and provenance verified in T0; behavior evidence and remaining
     limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -1592,7 +1593,7 @@ changes:
   - path: test/playwright/conftest.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/playwright/e2e/test_dataset_upload_parse.py
     committed: M
     staged: null

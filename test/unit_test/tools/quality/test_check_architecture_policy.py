@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -548,6 +549,22 @@ class ArchitecturePolicyTests(unittest.TestCase):
         self.assertEqual(checker._verified_content_source(b"candidate", b"candidate", b"base", "tool"), "candidate")
         with self.assertRaisesRegex(ValueError, "does not match"):
             checker._verified_content_source(b"forged", b"candidate", b"base", "tool")
+
+    def test_fixture_interpreter_path_preserves_virtualenv_symlink(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        interpreter = root / "managed-python"
+        interpreter.write_text("fixture", encoding="utf-8")
+        launcher = root / ".venv/bin/python"
+        launcher.parent.mkdir(parents=True)
+        try:
+            launcher.symlink_to(interpreter)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+
+        selected = checker._fixture_interpreter_path(root, Path(".venv/bin/python"))
+        self.assertEqual(selected, launcher)
+        self.assertTrue(selected.is_symlink())
+        self.assertEqual(selected.resolve(), interpreter)
 
     def test_protected_source_bundle_uses_base_and_blocks_changed_candidate(self):
         self.assertEqual(

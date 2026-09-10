@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "purpose": "mandatory-isolated-browser-regression",
-  "expected_count": 51,
+  "expected_count": 52,
   "nodeids": [
     "test/playwright/e2e/test_auth_boundaries_ui.py::test_auth_card_toggle_keeps_inactive_face_out_of_keyboard_and_pointer_input",
     "test/playwright/e2e/test_auth_boundaries_ui.py::test_expired_session_clears_credentials_and_redirects[envelope-401]",
@@ -16,12 +16,13 @@
     "test/playwright/e2e/test_business_documents_access_ui.py::test_document_role_matrix_controls_browser_actions[AUTHOR_EDITOR-False-False-False-False]",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_document_role_matrix_controls_browser_actions[EXTENDED_MODERATOR-True-True-True-True]",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_document_role_matrix_controls_browser_actions[MODERATOR_CREATOR-True-True-False-False]",
+    "test/playwright/e2e/test_business_documents_access_ui.py::test_eva_title_challenge_opens_the_selected_free_page_in_the_editor",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_extended_moderator_assigns_foreign_document_to_another_author",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_extended_moderator_deletes_foreign_document_after_confirmation",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_moderator_edits_foreign_document_but_cannot_delete_or_assign",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_owner_assignment_conflict_keeps_previous_owner_and_shows_error",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_read_only_author_cannot_issue_mutations_even_if_server_advertises_commands",
-    "test/playwright/e2e/test_business_documents_access_ui.py::test_revision_history_displays_named_and_legacy_change_authors",
+    "test/playwright/e2e/test_business_documents_access_ui.py::test_revision_history_displays_named_and_unavailable_change_authors",
     "test/playwright/e2e/test_business_documents_access_ui.py::test_unauthenticated_document_list_shows_api_denial_without_mutations",
     "test/playwright/e2e/test_managed_datasets_access_ui.py::test_regular_user_dataset_catalog_is_read_only_even_with_create_query",
     "test/playwright/e2e/test_managed_datasets_access_ui.py::test_regular_user_dataset_documents_are_visible_but_not_mutable",

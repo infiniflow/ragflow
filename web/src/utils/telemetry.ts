@@ -2,6 +2,9 @@ import { Authorization } from '@/constants/authorization';
 import { getAuthorization } from '@/utils/authorization-util';
 
 const SESSION_KEY = 'ragflow.telemetry.session';
+const NON_ACTIONABLE_ERROR_MESSAGES = new Set([
+  'ResizeObserver loop completed with undelivered notifications.',
+]);
 
 function newTelemetryId() {
   try {
@@ -50,6 +53,7 @@ async function reportClientError(error: {
   line?: number;
   column?: number;
 }) {
+  if (NON_ACTIONABLE_ERROR_MESSAGES.has(error.message)) return;
   const now = Date.now();
   const authorization = getAuthorization();
   if (reporting || !authorization || now - lastReportAt < 10_000) return;

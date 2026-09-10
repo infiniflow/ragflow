@@ -81,6 +81,10 @@ class BrowserWorkflowTests(unittest.TestCase):
         self.assertEqual(step("frontend", "Install frontend dependencies")["run"], "pnpm install --frozen-lockfile")
         self.assertEqual(step("frontend", "Frontend unit tests")["run"], "pnpm test --runInBand")
         self.assertNotIn("if", step("frontend", "Frontend unit tests"))
+        frontend_uv = next(item for item in jobs["frontend"]["steps"] if item.get("uses") == "astral-sh/setup-uv@v6")
+        browser_uv = next(item for item in jobs["browser"]["steps"] if item.get("uses") == "astral-sh/setup-uv@v6")
+        self.assertIs(frontend_uv["with"]["enable-cache"], False)
+        self.assertNotIn("enable-cache", browser_uv["with"])
         self.assertEqual(step("browser", "Run isolated browser journeys")["run"], ".venv/bin/python test/run_browser_regression.py --browser ${{ matrix.browser }}")
         self.assertEqual(step("browser", "Upload browser failure evidence")["if"], "failure()")
         self.assertEqual(step("frontend", "Upload frontend build")["with"]["if-no-files-found"], "error")
@@ -98,7 +102,7 @@ class BrowserWorkflowTests(unittest.TestCase):
         return ET.ElementTree(root)
 
     def test_expected_inventory_is_independent_and_covers_current_six_suites(self):
-        self.assertEqual(len(self.mandatory), 51)
+        self.assertEqual(len(self.mandatory), 52)
         parsed = ast.parse((ROOT / "test/run_browser_regression.py").read_text())
         suites = next(ast.literal_eval(node.value) for node in parsed.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "SUITES" for target in node.targets))
         self.assertEqual({node.split("::", 1)[0] for node in self.mandatory}, set(suites))
@@ -160,7 +164,16 @@ class BrowserWorkflowTests(unittest.TestCase):
     def test_wrong_browser_digest_or_result_fails(self):
         path = self.root / "browser-results/browser-result-webkit/webkit.json"
         original = json.loads(path.read_text())
-        for key, value in (("browser", "chromium"), ("manifest_sha256", "b" * 64), ("inventory_sha256", "b" * 64), ("result", "skipped"), ("tests", 0), ("tests", 1), ("tests", 50), ("tests", True)):
+        for key, value in (
+            ("browser", "chromium"),
+            ("manifest_sha256", "b" * 64),
+            ("inventory_sha256", "b" * 64),
+            ("result", "skipped"),
+            ("tests", 0),
+            ("tests", 1),
+            ("tests", len(self.mandatory) - 1),
+            ("tests", True),
+        ):
             with self.subTest(key=key):
                 path.write_text(json.dumps({**original, key: value}))
                 self.gate(False)
@@ -186,7 +199,7 @@ class BrowserWorkflowTests(unittest.TestCase):
                     tree = self.junit([sorted(self.mandatory)[0]])
                 elif change == "missing":
                     suite.remove(case)
-                    suite.set("tests", "50")
+                    suite.set("tests", str(len(self.mandatory) - 1))
                 elif change in {"extra", "duplicate"}:
                     clone = ET.fromstring(ET.tostring(case))
                     if change == "extra":
@@ -209,7 +222,7 @@ class BrowserWorkflowTests(unittest.TestCase):
     def test_actual_helper_accepts_all_cases_and_rejects_reduced_report(self):
         report = self.root / "report.xml"
         self.junit().write(report)
-        self.assertEqual(verify_junit(report), {"tests": 51, "inventory_sha256": self.inventory_digest})
+        self.assertEqual(verify_junit(report), {"tests": 52, "inventory_sha256": self.inventory_digest})
         self.junit([sorted(self.mandatory)[0]]).write(report)
         with self.assertRaisesRegex(ValueError, "inventory mismatch"):
             verify_junit(report)

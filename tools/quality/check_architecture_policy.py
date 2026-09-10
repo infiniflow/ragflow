@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 from capture_inventory import capture, git, paths, safe_path
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 TRUSTED_BASE_PROTOCOL = 1
 MODE = "report_only"
 POLICY_REPOSITORY_PATH = "tools/quality/architecture-policy.json"
@@ -36,6 +36,12 @@ def _canonical(value: object) -> bytes:
 
 def _resolve(root: Path, value: Path) -> Path:
     return value.resolve() if value.is_absolute() else safe_path(root, value.as_posix()).resolve()
+
+
+def _fixture_interpreter_path(root: Path, value: Path) -> Path:
+    """Return an absolute launcher path without dereferencing virtualenv symlinks."""
+    candidate = value if value.is_absolute() else root / value
+    return Path(os.path.abspath(candidate))
 
 
 def _repository_path(value: str, label: str) -> str:
@@ -1164,7 +1170,7 @@ def _fixtures_action(args: argparse.Namespace, root: Path, policy_path: Path, po
     plan_bytes = plan_path.read_bytes()
     plan = json.loads(plan_bytes)
     _validate_plan_context(root, policy_path, policy_repository_path, policy, plan)
-    python = args.python.resolve() if args.python.is_absolute() else (root / args.python).resolve()
+    python = _fixture_interpreter_path(root, args.python)
     result = run_policy_fixtures(root, policy_path, policy, python, junit_output, plan)
     if plan_path.read_bytes() != plan_bytes:
         raise ValueError("Architecture fixture plan changed during execution")

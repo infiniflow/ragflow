@@ -12,13 +12,31 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.parametrize(
-    "fixture_name,page_errors,console_errors,body,expected_exit,expected_text",
+    "fixture_name,page_errors,console_errors,allowed_patterns,body,expected_exit,expected_text",
     [
-        ("page", ["uncaught error"], [], "pass", 1, "unhandled browser exception"),
-        ("flow_page", ["uncaught error"], [], "pass", 1, "unhandled browser exception"),
-        ("page", [], ["HTTP 403 from negative case"], "pass", 0, "1 passed"),
-        ("page", [], [], "pass", 0, "1 passed"),
-        ("page", ["uncaught error"], [], "assert False, 'original failure'", 1, "original failure"),
+        ("page", ["uncaught error"], [], [], "pass", 1, "unhandled browser exception"),
+        ("flow_page", ["uncaught error"], [], [], "pass", 1, "unhandled browser exception"),
+        ("page", [], ["HTTP 403 from negative case"], [], "pass", 0, "1 passed"),
+        ("page", [], [], [], "pass", 0, "1 passed"),
+        (
+            "page",
+            ["pageerror: ResizeObserver loop completed with undelivered notifications."],
+            [],
+            [],
+            "pass",
+            0,
+            "1 passed",
+        ),
+        (
+            "page",
+            ["pageerror: /127.0.0.1:1234/api/v1/system/config due to access control checks."],
+            [],
+            [r"^/127\.0\.0\.1:\d+/api/v1/system/config due to access control checks\.$"],
+            "pass",
+            0,
+            "1 passed",
+        ),
+        ("page", ["uncaught error"], [], [], "assert False, 'original failure'", 1, "original failure"),
     ],
 )
 def test_page_error_gate(
@@ -26,6 +44,7 @@ def test_page_error_gate(
     fixture_name,
     page_errors,
     console_errors,
+    allowed_patterns,
     body,
     expected_exit,
     expected_text,
@@ -37,7 +56,8 @@ def test_page_error_gate(
         "@pytest.fixture\n"
         f"def {fixture_name}():\n"
         f"    return SimpleNamespace(_diag={{'page_errors': {page_errors!r}, "
-        f"'console_errors': {console_errors!r}}})\n"
+        f"'console_errors': {console_errors!r}, "
+        f"'allowed_page_error_patterns': {allowed_patterns!r}}})\n"
         # The real autouse artifact fixture expects a live flow context. The
         # subprocess only exercises report classification, not browser I/O.
         "@pytest.fixture(autouse=True)\n"

@@ -455,6 +455,7 @@ modules:
   - test/unit_test/api/utils/test_admin_service_health.py
   - test/unit_test/api/db/services/test_audit_service.py
   - test/unit_test/tools/quality/test_admin_server_bootstrap.py
+  - web/src/utils/telemetry.test.ts
   public_surfaces:
   - api/db/services/audit_service.py
   - admin/server/audit_feed.py
@@ -499,6 +500,7 @@ modules:
   - test/unit_test/common/test_observability.py
   - web/src/pages/admin/audit.tsx
   - web/src/pages/admin/service-status.tsx
+  - web/src/utils/telemetry.test.ts
   - web/src/utils/telemetry.ts
 - id: models-runtime
   title: Model reasoning and inference configuration

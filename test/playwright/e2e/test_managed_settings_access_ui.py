@@ -336,8 +336,9 @@ def test_superuser_keeps_all_settings_tabs(page, base_url):
 
 @pytest.mark.p1
 @pytest.mark.auth
-def test_unauthenticated_direct_settings_route_redirects_to_login(page, base_url):
+def test_unauthenticated_direct_settings_route_redirects_to_login(page, base_url, allow_page_error):
     stub = ManagedSettingsApiStub(authenticated=False)
+    allow_page_error(r"^(?:Fetch API cannot load http:)?//?127\.0\.0\.1:\d+/api/v1/system/config due to access control checks\.$")
     _open_settings(
         page,
         base_url,

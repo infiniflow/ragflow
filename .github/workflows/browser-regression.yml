@@ -33,6 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
+          enable-cache: false
       - name: Install frontend dependencies
         working-directory: web
         run: pnpm install --frozen-lockfile

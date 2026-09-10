@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-09-10T06:28:32.815157+00:00",
-  "head": "e885ead1c0024dd379f9a1f91fb39df821bbc1e1",
+  "verified_at": "2026-09-10T08:19:52.326602+00:00",
+  "head": "db7d6cfc22b74853790b9f5fd21a55756cc56e86",
   "official_commits": [
     {
       "sha": "cb93883f3f8c975eecb2fed81210effeb3bdb06f",
@@ -1693,13 +1693,14 @@
       }
     },
     {
-      "sha": "e885ead1c0024dd379f9a1f91fb39df821bbc1e1",
+      "sha": "db7d6cfc22b74853790b9f5fd21a55756cc56e86",
       "parents": [
-        "53704e9e0e2ddf3104f10fe53f33bd973078e93c"
+        "53704e9e0e2ddf3104f10fe53f33bd973078e93c",
+        "03c529786aae21db47855b8c1212ee1ace1e3ff1"
       ],
-      "tree": "0aa074c2133de5d210a4ab86834ade8e4d69a5d5",
-      "committed_at": "2026-09-09T22:37:25+03:00",
-      "subject": "chore(architecture): bootstrap trusted report-only policy",
+      "tree": "f2a238dc8dab92870eccfa36ed0ae7a033591581",
+      "committed_at": "2026-09-10T10:15:20+03:00",
+      "subject": "Merge pull request #1 from meownm/codex/t3-architecture-base-protocol",
       "changes_from_first_parent": {
         ".github/workflows/architecture.yml": "M",
         ".gitignore": "M",
@@ -1707,8 +1708,10 @@
         "docs/develop/architecture-checks-ru.md": "M",
         "docs/develop/architecture-transition-ru.md": "M",
         "docs/develop/t0-provenance-report-ru.md": "M",
+        "docs/develop/t2-go-build-profiles-ru.md": "M",
         "docs/develop/t2-python-analysis-ru.md": "M",
         "docs/develop/t2-runtime-graph-classification-ru.md": "M",
+        "docs/develop/t2-typescript-analysis-ru.md": "M",
         "docs/develop/t3-architecture-policy-ru.md": "M",
         "services/asr-online-service/architecture-contract-requirements.in": "A",
         "services/asr-online-service/architecture-contract-requirements.txt": "A",
@@ -1717,14 +1720,17 @@
         "test/unit_test/tools/quality/test_check_architecture.py": "M",
         "test/unit_test/tools/quality/test_check_architecture_policy.py": "M",
         "test/unit_test/tools/quality/test_check_runtime_graph_policy.py": "M",
+        "test/unit_test/tools/quality/test_inspect_typescript.py": "M",
         "tools/quality/architecture-policy.json": "M",
         "tools/quality/capture_inventory.py": "M",
         "tools/quality/check_architecture.py": "M",
         "tools/quality/check_architecture_policy.py": "M",
+        "tools/quality/check_go_build_profiles.py": "M",
         "tools/quality/check_runtime_graph_policy.py": "M",
         "tools/quality/core-changes.yaml": "M",
         "tools/quality/file-inventory.json": "M",
         "tools/quality/ignored-artifacts.json": "M",
+        "tools/quality/inspect_typescript.py": "M",
         "tools/quality/module-map.yaml": "M",
         "tools/quality/preserved-features.yaml": "M",
         "tools/quality/python-boundaries.yaml": "M",
@@ -1734,14 +1740,15 @@
     }
   ],
   "local_refs_only_no_fetch": [
-    "refs/remotes/origin/HEAD 53704e9e0e2ddf3104f10fe53f33bd973078e93c",
-    "refs/remotes/origin/main 53704e9e0e2ddf3104f10fe53f33bd973078e93c",
-    "refs/remotes/upstream/HEAD c178cdd5b91c1c0adc2ee7c5451841565da59790",
-    "refs/remotes/upstream/main c178cdd5b91c1c0adc2ee7c5451841565da59790",
+    "refs/remotes/origin/HEAD db7d6cfc22b74853790b9f5fd21a55756cc56e86",
+    "refs/remotes/origin/codex/t3-architecture-base-protocol 03c529786aae21db47855b8c1212ee1ace1e3ff1",
+    "refs/remotes/origin/main db7d6cfc22b74853790b9f5fd21a55756cc56e86",
+    "refs/remotes/upstream/HEAD 2b8861ceb8997be20da9cc55d379253c4f0ec519",
+    "refs/remotes/upstream/main 2b8861ceb8997be20da9cc55d379253c4f0ec519",
     "refs/remotes/upstream/main_backup 427e0540cab683a591a5f4a65a0b38bf9ee008b7"
   ],
   "graph_merge_base": "28ce77fe5f1e4301d3672221b509418d3c7acb77",
-  "baseline_diff_summary": "733 files changed, 152066 insertions(+), 2857 deletions(-)",
+  "baseline_diff_summary": "733 files changed, 152639 insertions(+), 2857 deletions(-)",
   "ancestry_only_merge": {
     "commit": "64f0bfdf0e724d006d61563a76964bf140bcfb4e",
     "first_parent": "268a5a9d60e19982ac329ec045d0ff9b0228b26b",
