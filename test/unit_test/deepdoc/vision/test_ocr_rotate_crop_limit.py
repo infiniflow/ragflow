@@ -7,11 +7,12 @@ chunking inside OCR.get_rotate_crop_image with:
   error: (-215:Assertion failed) dst.cols < SHRT_MAX && ... in function remap
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import cv2
 import numpy as np
 
-from deepdoc.vision.ocr import OCR, _OPENCV_REMAP_MAX_DIM
+from deepdoc.vision.ocr import _OPENCV_REMAP_MAX_DIM, OCR
 
 
 def _ocr_stub() -> OCR:
@@ -42,6 +43,23 @@ def test_get_rotate_crop_image_handles_oversized_source():
     assert cropped.shape[0] <= _OPENCV_REMAP_MAX_DIM
     assert cropped.shape[1] <= _OPENCV_REMAP_MAX_DIM
     assert cropped.shape[0] > 0 and cropped.shape[1] > 0
+
+
+def test_get_rotate_crop_images_resizes_oversized_source_once():
+    ocr = _ocr_stub()
+    width = _OPENCV_REMAP_MAX_DIM + 100
+    img = np.zeros((64, width, 3), dtype=np.uint8)
+    boxes = [
+        np.float32([[10, 10], [200, 10], [200, 40], [10, 40]]),
+        np.float32([[300, 10], [500, 10], [500, 40], [300, 40]]),
+        np.float32([[600, 10], [800, 10], [800, 40], [600, 40]]),
+    ]
+
+    with patch("deepdoc.vision.ocr.cv2.resize", wraps=cv2.resize) as resize:
+        crops = ocr.get_rotate_crop_images(img, boxes)
+
+    assert len(crops) == len(boxes)
+    resize.assert_called_once()
 
 
 def test_get_rotate_crop_image_normal_page_unchanged_size():

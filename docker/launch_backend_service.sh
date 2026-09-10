@@ -228,7 +228,7 @@ ensure_db_init() {
 
 run_mysql_migrations() {
     local db_type="${DB_TYPE:-mysql}"
-    db_type=$(printf '%s' "$db_type" | tr '[:upper:]' '[:lower:]')
+    db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
         # This migration script contains MySQL-only SQL and cannot run against
         # a GaussDB metadata database.
