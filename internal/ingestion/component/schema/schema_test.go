@@ -130,34 +130,6 @@ func TestParserFromUpstreamValidate(t *testing.T) {
 	}
 }
 
-func TestParserParamDefaults(t *testing.T) {
-	p := ParserParam{}.Defaults()
-	if err := p.Validate(); err != nil {
-		t.Fatalf("default ParserParam failed Validate: %v", err)
-	}
-	if got := p.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
-		t.Errorf("default pdf allowed_output_format = %v, want [json markdown]", got)
-	}
-}
-
-func TestParserParamJSONRoundTrip(t *testing.T) {
-	original := ParserParam{}.Defaults()
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(data), `"allowed_output_format"`) {
-		t.Errorf("expected allowed_output_format in JSON, got %s", data)
-	}
-	var decoded ParserParam
-	if err = json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got := decoded.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
-		t.Errorf("round-trip lost pdf allowed_output_format: got %v", got)
-	}
-}
-
 func TestParserFromUpstreamJSONRoundTrip(t *testing.T) {
 	original := ParserFromUpstream{
 		Name:     "input.pdf",

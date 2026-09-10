@@ -19,9 +19,9 @@
 // parsers surface enough data to reconstruct a Python-compatible
 // stage-boundary payload:
 //
-//	output_format ∈ {"json","markdown","text","html"}
-//	file         (enriched metadata)
-//	exactly one payload family populated (matching output_format)
+//	output_format
+//	file (enriched metadata)
+//	primary payload with optional rendered companion payloads
 //	err
 //
 // Go parser callers now consume only the structured ParseResult
@@ -33,18 +33,9 @@ package parser
 
 import "context"
 
-// ParseResult is the structured return value of a successful parse.
-// Exactly one of the payload fields (JSON / Markdown / Text / HTML)
-// is populated on success, matching the Python contract — see
-// port-rag-flow-pipeline-to-go.md §4.2:
-//
-//   - OutputFormat = "json"     → JSON populated
-//   - OutputFormat = "markdown" → Markdown populated
-//   - OutputFormat = "text"     → Text populated
-//   - OutputFormat = "html"     → HTML populated
-//
-// On failure (Err != nil), all payload fields are zero values and
-// OutputFormat is empty.
+// ParseResult is the structured return value of a parse operation. JSON is the
+// canonical pipeline payload; parsers may also retain rendered companion
+// payloads. On failure, Err is non-nil and OutputFormat is empty.
 type ParseResult struct {
 	// OutputFormat is the wire-compatible format the parser
 	// chose. Empty when Err is non-nil.
@@ -72,7 +63,7 @@ type ParseResult struct {
 	// optional `image` / `layout` / `positions` fields);
 	// Markdown / HTML / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits OCR/VLM result
-	// items. Exactly one payload family is populated on success.
+	// items.
 	JSON []map[string]any
 
 	// Markdown is the string payload when OutputFormat ==

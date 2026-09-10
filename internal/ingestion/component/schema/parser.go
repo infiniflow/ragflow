@@ -57,55 +57,16 @@ func (p *ParserFromUpstream) Validate() error {
 // documentation; downstream chunker code operates on the same dict shape.
 type Page map[string]any
 
-// ParserSetup is the per-filetype configuration block stored on
-// ParserParam.setups[fileType]. The keys are heterogeneous (e.g.,
+// ParserSetup is a per-filetype parser configuration block. The keys are heterogeneous (e.g.,
 // `parse_method`, `lang`, `output_format`, `suffix`, `fields`, `vlm`),
 // so a free-form map best mirrors the Python dict literal.
 type ParserSetup map[string]any
 
-// ParserParam is the static configuration for the Parser component.
-type ParserParam struct {
-	AllowedOutputFormat map[string][]string `json:"allowed_output_format"`
-}
-
-// Defaults returns a ParserParam populated with the Python defaults —
-// the full setups table copied verbatim from
-// rag/flow/parser/parser.py:ParserParam.__init__ and the corresponding
-// allowed_output_format map.
-func (ParserParam) Defaults() ParserParam {
-	return ParserParam{
-		AllowedOutputFormat: map[string][]string{
-			"pdf":         {"json", "markdown"},
-			"spreadsheet": {"json", "markdown", "html"},
-			"doc":         {"json", "markdown"},
-			"docx":        {"json", "markdown"},
-			"slides":      {"json"},
-			"image":       {"json"},
-			"email":       {"text", "json"},
-			"markdown":    {"text", "json"},
-			"text&code":   {"text", "json"},
-			"html":        {"text", "json"},
-			"audio":       {"text", "json"},
-			"video":       {"json", "text"},
-			"epub":        {"text", "json"},
-			"json":        {"json"},
-		},
-	}
-}
-
-// Validate returns nil. ParserParam's field set is fully defaulted by
-// Defaults(); the component's own `check()` method performs business
-// validation (e.g., "parse_method" must be one of the allowed set), and
-// that runs in the component implementation.
-func (ParserParam) Validate() error { return nil }
-
 // ParserOutputs is the result of invoking the Parser component. The
-// wire format defaults to "json", with structured JSON items as the primary
-// payload. Configured allowed formats (such as markdown) and companion payloads
-// (markdown, text, html) are preserved when available.
+// wire format is "json", with structured JSON items as the primary payload.
+// Companion payloads (markdown, text, html) are preserved when available.
 type ParserOutputs struct {
-	// OutputFormat is the active output format for this run (defaults to "json",
-	// or selected allowed format). Downstream components consume structured JSON items.
+	// OutputFormat is always "json". Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// JSON holds the list of structured sections (primary payload).

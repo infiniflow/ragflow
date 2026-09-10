@@ -112,34 +112,31 @@ const pageFormFeed = '\f'
 // read-only after construction.
 type ParserComponent struct {
 	Setups map[string]schema.ParserSetup
-	Param  schema.ParserParam
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
-// The map is decoded into schema.ParserParam.Defaults() and then
-// overlaid with the supplied values. This matches the Python
-// "default + override" pattern in parser.py:ParserParam.__init__.
+// The default setups are overlaid with the supplied values. Historical
+// output_format values are accepted but normalized to JSON so downstream
+// components consume one parser output protocol.
 //
-// Param map shape (all keys optional; missing keys fall back to
-// schema.ParserParam.Defaults() values):
+// Param map shape (all keys optional):
 //
 //	{
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
-//	  "allowed_output_format": map[string][]string,
 //	}
 //
 // Errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
 func NewParserComponent(params map[string]any) (runtime.Component, error) {
-	p := schema.ParserParam{}.Defaults()
 	s := defaultSetups()
 	if params == nil {
-		return &ParserComponent{Setups: s, Param: p}, nil
+		normalizeParserOutputFormats(s)
+		return &ParserComponent{Setups: s}, nil
 	}
 	for k, raw := range params {
-		if k == "outputs" {
+		if k == "outputs" || k == "allowed_output_format" {
 			continue
 		}
 		ftCfg, ok := raw.(map[string]any)
@@ -153,28 +150,31 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k][fk] = fv
 		}
 	}
-	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {
-		allowed := make(map[string][]string, len(rawAllowed))
-		for fileType, raw := range rawAllowed {
-			list, ok := raw.([]any)
-			if !ok {
-				continue
-			}
-			formats := make([]string, 0, len(list))
-			for _, item := range list {
-				if s, ok := item.(string); ok {
-					formats = append(formats, s)
-				}
-			}
-			allowed[fileType] = formats
-		}
-		p.AllowedOutputFormat = allowed
-	}
-	pc := &ParserComponent{Setups: s, Param: p}
+	normalizeParserOutputFormats(s)
+	pc := &ParserComponent{Setups: s}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
 	return pc, nil
+}
+
+func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
+	for _, setup := range setups {
+		setup["output_format"] = "json"
+	}
+}
+
+func cloneParserSetups(setups map[string]schema.ParserSetup) map[string]schema.ParserSetup {
+	cloned := make(map[string]schema.ParserSetup, len(setups))
+	for family, setup := range setups {
+		clonedSetup := make(schema.ParserSetup, len(setup)+1)
+		for key, value := range setup {
+			clonedSetup[key] = value
+		}
+		cloned[family] = clonedSetup
+	}
+	normalizeParserOutputFormats(cloned)
+	return cloned
 }
 
 // Check mirrors the applicable subset of Python ParserParam.check()
@@ -184,8 +184,6 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 // (Python raises ValueError on the first failure).
 //
 // NOT covered here (intentional):
-//   - output_format whitelist: already enforced at Invoke time by
-//     resolveOutputFormat (parser_dispatch.go:100-122).
 //   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
 //     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
 //     The Python flow check() for vlm.llm_id does not apply — Go
@@ -250,7 +248,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
-			"output_format":         "html",
+			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
@@ -312,7 +310,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -353,7 +351,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 //	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
 //	file_type     string  — canonical parser-resolved file extension.
-//	output_format string  — active wire format (defaults to "json", or selected allowed format).
+//	output_format string  — always "json".
 //	lang          string  — language for tokenization.
 //	_ERROR        string  — populated when the component short-
 //	                        circuits with an error message
@@ -362,7 +360,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical parser-resolved file extension.",
-		"output_format": "string: the active output format (defaults to \"json\", or selected allowed format).",
+		"output_format": "string: always \"json\".",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
@@ -374,7 +372,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //
 //	{
 //	  "name":           string (from inputs["doc_id"]),
-//	  "output_format": "json" (or configured allowed format),
+//	  "output_format": "json",
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -399,6 +397,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
+	setups := cloneParserSetups(c.Setups)
 
 	// Inject run-level metadata from Globals into inputs so media
 	// dispatch branches (audio/image/video) can resolve tenant_id.
@@ -419,29 +418,9 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     "docx", ...). Used by parser.GetParser, whose switch
 	//     arms are keyed off the utility constants.
 	//
-	//   - fileTypeFam  — the python-side family name ("markdown",
-	//     "docx", ...). Used by setups[fileType] and
-	//     allowed_output_format[fileType] lookups, which are keyed
-	//     off the python family identifiers in schema.ParserParam.
-	//
-	// For most families the two forms coincide; the divergence
-	// exists for Markdown ("md" vs "markdown") and slides
-	// ("ppt"/"pptx" vs "slides") and is intentional — the python
-	// ParserParam collapses the slide family into a single key.
 	fileTypeExt := fileTypeFromInputs(inputs)
-	fileTypeFam := pythonFamilyName(string(fileTypeExt))
 
-	// 2a. Validate the requested output_format against the
-	//     family-specific allowed_output_format whitelist. We do
-	//     this even when no setups entry exists so a misconfigured
-	//     DSL surfaces as _ERROR instead of a silent fallback.
-	if _, hasSetup := c.Setups[fileTypeFam]; hasSetup {
-		if _, verr := resolveOutputFormat(fileTypeFam, c.Setups, c.Param.AllowedOutputFormat); verr != nil {
-			return nil, verr
-		}
-	}
-
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -450,7 +429,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -459,7 +438,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -468,13 +447,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
 
 		// Vision figure enhancement: on the JSON output path,
 		// append vision-model descriptions to embedded image and
@@ -483,7 +462,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// Errors (including context cancellation) are intentionally
 		// discarded — enhancement is best-effort, matching Python's
 		// try/except pass pattern.
-		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.Setups)
+		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.

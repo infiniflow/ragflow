@@ -18,14 +18,12 @@ package component
 
 import (
 	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestReportParserWarningsAsProgressMessages(t *testing.T) {
@@ -89,6 +87,30 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
+func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
+	component, err := NewParserComponent(map[string]any{
+		"pdf":         map[string]any{"output_format": "markdown"},
+		"spreadsheet": map[string]any{"output_format": "html"},
+		"email":       map[string]any{"output_format": "text"},
+		"allowed_output_format": map[string]any{
+			"pdf": []any{"json", "markdown"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+
+	parserComponent := component.(*ParserComponent)
+	for _, family := range []string{"pdf", "spreadsheet", "email"} {
+		if got := parserComponent.Setups[family]["output_format"]; got != "json" {
+			t.Errorf("%s output_format = %v, want json", family, got)
+		}
+	}
+	if _, ok := parserComponent.Setups["allowed_output_format"]; ok {
+		t.Error("allowed_output_format must not be treated as a parser setup")
+	}
+}
+
 // TestParserComponent_Invoke_TextInput covers the happy path:
 // UTF-8 text input, no form-feeds, default page_size. The
 // component must emit exactly one page carrying the full text
@@ -96,7 +118,7 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 // owned by the canvas framework, not by this component, so they are
 // not asserted here.
 func TestParserComponent_Invoke_TextInput(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": "hello world",
 	})
@@ -128,7 +150,7 @@ func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults(), Setups: defaultSetups()}
+	c := &ParserComponent{Setups: defaultSetups()}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data.Bytes(),
 		"file_type": "xlsx",
@@ -150,7 +172,7 @@ func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
 // form-feed boundaries are honored: "A\fB\fC" yields three
 // items, in input order, with text intact.
 func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": "pageA\fpageB\fpageC",
 	})
@@ -185,7 +207,7 @@ func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 // stable across runs, which is the contract the downstream
 // chunker relies on for stable chunk IDs.
 func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	// 8 form-feed-separated pages.
 	input := "p1\fp2\fp3\fp4\fp5\fp6\fp7\fp8"
 
@@ -220,10 +242,8 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 	}
 }
 
-// TestParserComponent_New_Defaults constructs a Parser from a
-// nil param map and verifies the static Param is the
-// Defaults() value (i.e., NewParserComponent does not mutate
-// the schema default).
+// TestParserComponent_New_Defaults constructs a Parser from a nil param map
+// and verifies every parser family uses the canonical JSON output format.
 func TestParserComponent_New_Defaults(t *testing.T) {
 	c, err := NewParserComponent(nil)
 	if err != nil {
@@ -233,9 +253,10 @@ func TestParserComponent_New_Defaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
 	}
-	defaults := schema.ParserParam{}.Defaults()
-	if !reflect.DeepEqual(pc.Param, defaults) {
-		t.Errorf("Param differs from Defaults:\n got=%+v\nwant=%+v", pc.Param, defaults)
+	for family, setup := range pc.Setups {
+		if got := setup["output_format"]; got != "json" {
+			t.Errorf("%s output_format = %v, want json", family, got)
+		}
 	}
 }
 
@@ -271,7 +292,7 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 // TestParserComponent_Invoke_DocIDCarried asserts the optional
 // doc_id input flows through to the "name" output.
 func TestParserComponent_Invoke_DocIDCarried(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": "x",
 		"doc_id": "doc-123",
@@ -307,7 +328,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 		t.Fatalf("seed doc: %v", err)
 	}
 
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(ctx, db, map[string]any{"doc_id": "doc-parser"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -331,7 +352,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 		t.Fatalf("seed storage: %v", err)
 	}
 
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"bucket": "bucket-1",
 		"path":   "docs/explicit.txt",
@@ -354,7 +375,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 // look like this if a caller mistakenly handed a base64 string
 // without decoding it).
 func TestParserComponent_Invoke_RejectsInvalidUTF8(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		// 0xFF alone is not valid UTF-8 start byte.
 		"binary": string([]byte{0xFF, 0xFE, 0xFD}),
@@ -371,7 +392,7 @@ func TestParserComponent_Invoke_RejectsInvalidUTF8(t *testing.T) {
 // caller's normal form ([]byte) — the alternative to a UTF-8
 // string.
 func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
-	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
+	c := &ParserComponent{}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("alpha\fbeta"),
 	})

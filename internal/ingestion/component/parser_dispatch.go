@@ -36,15 +36,12 @@ import (
 // parserDispatchResult is the typed outcome of dispatchParse. The
 // component's Invoke translates it into the runtime output map.
 //
-// OutputFormat is the wire format the parser actually emitted. It
-// always matches setups[fileType].output_format on success; on a
-// format-mismatch failure (the whitelist rejects it) OutputFormat is
-// empty and Err is non-nil.
+// OutputFormat is the wire format the parser actually emitted. ParserComponent
+// normalizes setup values to JSON before dispatch.
 //
 // File is the per-parser file metadata and may be nil.
 //
-// Payload holds exactly one populated field per the ParseResult
-// contract (see internal/parser/parser/parse_result.go).
+// JSON is the primary payload. Rendered companion fields may also be populated.
 type parserDispatchResult struct {
 	OutputFormat string
 	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
@@ -79,87 +76,6 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 		return
 	}
 	cfg.ConfigureFromSetup(map[string]any(setup))
-}
-
-// resolveOutputFormat picks the wire format for this run. The
-// Python side asks the setup, then checks the value is in
-// allowed_output_format[fileType]. We mirror that exact sequence:
-//
-//  1. setups[fileType].output_format (or "" when absent),
-//  2. if absent and the family has an allowed_output_format entry,
-//     use the Python per-family default (mirrors ParserParam.__init__
-//     setups, e.g. "image" → "json", "pdf" → "json", "spreadsheet" →
-//     "html"), falling back to allowed[0] only when no explicit default
-//     is known,
-//  3. if absent and the family has no allowed_output_format entry,
-//     return "" (the component falls back to text-page mode
-//     without validating).
-//
-// The whitelist check returns "" + Err when the requested format is
-// not in the allowed set; this is the validation Python raises
-// via check_empty / check_valid_value, surfaced as an error so the
-// component short-circuits with _ERROR rather than emitting a
-// payload the downstream chunker cannot consume.
-//
-// Strict mode: explicit image:text is rejected by the whitelist.
-func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, allowed map[string][]string) (string, error) {
-	setup, ok := setups[family]
-	if !ok {
-		// Family not configured — text-page mode; no validation.
-		return "", nil
-	}
-	format, _ := setup["output_format"].(string)
-	allowedList, ok := allowed[family]
-	if !ok || len(allowedList) == 0 {
-		// No whitelist entry — accept what the setup asked for, or
-		// fall back to defaultOutputFormatForFamily or "json".
-		if format == "" {
-			if def, ok := defaultOutputFormatForFamily(family); ok {
-				return def, nil
-			}
-			format = "json"
-		}
-		return format, nil
-	}
-	if format == "" {
-		// No explicit format: use the Python per-family default declared
-		// in ParserParam.__init__ / defaultSetups(). This is not always
-		// allowed[0] (e.g. spreadsheet default is "html" but allowed[0]
-		// is "json"; markdown default is "json" but allowed[0] is "text").
-		if def, ok := defaultOutputFormatForFamily(family); ok {
-			return def, nil
-		}
-		return allowedList[0], nil
-	}
-	for _, candidate := range allowedList {
-		if strings.EqualFold(candidate, format) {
-			return format, nil
-		}
-	}
-	return "", fmt.Errorf(
-		"parser: output_format %q for %q is not in allowed_output_format %v",
-		format, family, allowedList,
-	)
-}
-
-// defaultOutputFormatForFamily returns the per-family default
-// output_format used when setups[family] exists but output_format is
-// empty. For most families it is the value in defaultSetups()
-// (which mirrors rag/flow/parser/parser.py ParserParam.setups).
-// Audio is overridden here:
-//   - audio: defaultSetups is "text" (Python), but dispatch defaults
-//     to "json" to match media_dispatch json fallback and Python
-//     whitelist [json] (audio:text would be rejected if validated).
-func defaultOutputFormatForFamily(family string) (string, bool) {
-	if family == "audio" {
-		return "json", true
-	}
-	if s, ok := defaultSetups()[family]; ok {
-		if v, ok := s["output_format"].(string); ok && v != "" {
-			return v, true
-		}
-	}
-	return "", false
 }
 
 // dispatchParse resolves the parser for the given fileType and invokes
@@ -317,7 +233,7 @@ func familyToExt(family string) utility.FileType {
 }
 
 // pythonFamilyName normalises a free-form file-type hint to the
-// python family identifier used by schema.ParserParam.Setups.
+// Python family identifier used by ParserComponent setups.
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
 	switch raw {
