@@ -131,11 +131,12 @@ export default {
       skills: 'Skills',
       flow: 'Agent',
       search: 'Search',
-      welcome: 'Welcome to',
+      brandShort: 'Cable industry search',
+      heroTitle: 'Cable industry intelligent search agent platform',
+      heroSubtitle:
+        'Industrial standards, BOM and QC compliance verification system',
       dataset: 'Dataset',
       memories: 'Memory',
-      discord: 'Discord',
-      github: 'GitHub',
       help: 'Help',
     },
     skills: {
