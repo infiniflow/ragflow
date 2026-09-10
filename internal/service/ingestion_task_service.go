@@ -249,7 +249,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		}); err != nil {
 			common.Warn(fmt.Sprintf("StartRunning: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
 		}
-		s.advanceEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusRunning), "Task is running...")
+		s.advanceEarlyLog(ctx, task.DocumentID, string(entity.TaskStatusRunning), "Task is running...", true)
 		return task, nil
 	case common.STOPPING:
 		task, err = s.transition(ctx, taskID, common.STOPPED)
@@ -283,7 +283,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// The stop finalizes without a worker (no RUNNING phase, so no
 		// terminal pipeline-log writer will run). Advance the early row to
 		// CANCEL here, otherwise the detail page keeps a queued entry.
-		s.advanceEarlyLogBestEffort(ctx, stopped.DocumentID, string(entity.TaskStatusCancel), "Task stopped by user.")
+		s.advanceEarlyLog(ctx, stopped.DocumentID, string(entity.TaskStatusCancel), "Task stopped by user.", false)
 		return stopped, nil
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
@@ -667,11 +667,9 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 	return err
 }
 
-// markScheduledAfterPublish records a successful NATS publish. A worker can
-// claim the CREATED task before this write and move it to RUNNING, which is
-// also a successful outcome. The early-log write below is idempotent in the
-// forward direction only: it advances 0->5 and never regresses a row that is
-// already RUNNING (a worker that won the publish race).
+// markScheduledAfterPublish records a successful NATS publish. A worker may
+// claim the task first and move it to RUNNING; the log write below only moves
+// forward (0->5) and never regresses it.
 func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
 	if err != nil {
@@ -682,9 +680,7 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		if err != nil {
 			return nil, err
 		}
-		if !s.advanceOrCreateEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusSchedule), "Task is queued...") {
-			s.reconcileScheduledEarlyLog(ctx, task)
-		}
+		s.advanceEarlyLog(ctx, task.DocumentID, string(entity.TaskStatusSchedule), "Task is queued...", true)
 		return task, nil
 	}
 
@@ -698,31 +694,6 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 	default:
 		return nil, s.newTaskStatusConflictError(ctx, taskID, common.CREATED, common.SCHEDULED)
 	}
-}
-
-// reconcileScheduledEarlyLog repairs the early-log row after a
-// CREATED->SCHEDULED transition whose advance/create write did not durably
-// record "5". Advance-returns-false happens in two cases: (a) a worker won
-// the publish race and the task is already RUNNING — in that case the row is
-// either already "1" (nothing to do) or the worker's terminal writer has not
-// run yet (its CAS will pick the row up); or (b) the row is genuinely missing
-// (a DB blip dropped both the CREATED create and the SCHEDULED advance).
-// Case (b) is repaired by re-opening the row at "5"; case (a) must never
-// regress a "1" row back to "5", so the repair only fires when no open row
-// exists at all.
-func (s *IngestionTaskService) reconcileScheduledEarlyLog(ctx context.Context, task *entity.IngestionTask) {
-	if task == nil || s.pipelineLogDAO == nil {
-		return
-	}
-	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("reconcile scheduled early log for document %s: %v", task.DocumentID, err))
-		return
-	}
-	if open != nil {
-		return
-	}
-	s.createEarlyLogBestEffort(ctx, task, string(entity.TaskStatusSchedule), "Task is queued...", nil)
 }
 
 // ScheduleCreatedTasks publishes the tasks that were persisted before a
@@ -768,14 +739,10 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
 }
 
-// createEarlyLogBestEffort opens the pre-terminal pipeline-operation-log row
-// the dataset detail page reads. All writes here are best-effort: a DB blip
-// must not fail task creation or enqueue and trigger a redelivery loop. When
-// an open row already exists (enqueue retry of an existing CREATED task), it
-// is left untouched so a run never owns two queued rows. The caller passes
-// the status/message the row should carry so a late-created row (e.g. the
-// SCHEDULED fallback, or a DB blip during the CREATED write) does not regress
-// to an older status.
+// createEarlyLogBestEffort opens the pre-terminal row the dataset detail
+// page reads. Best-effort: never fails task creation. Skips when an open row
+// already exists so a run never owns two queued rows. The caller passes the
+// status/message so a late-created row carries the current status.
 func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) {
 	if task == nil || s.pipelineLogDAO == nil {
 		return
@@ -798,50 +765,33 @@ func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, tas
 	}
 }
 
-// advanceEarlyLogBestEffort moves the open row to a later status. Best-effort:
-// a missing open row (legacy run that started before early rows existed) is
-// fine — the terminal writer falls back to Create.
-func (s *IngestionTaskService) advanceEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) {
+// advanceEarlyLog moves the open row forward, opening a fresh row when none
+// exists and reopen is true. Best-effort: never fails task transitions. The
+// single-statement CAS never regresses a row a concurrent writer moved first.
+func (s *IngestionTaskService) advanceEarlyLog(ctx context.Context, documentID, operationStatus, progressMsg string, reopen bool) {
 	if documentID == "" || s.pipelineLogDAO == nil {
 		return
-	}
-	if _, err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, documentID, operationStatus, progressMsg); err != nil {
-		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", documentID, operationStatus, err))
-	}
-}
-
-// advanceOrCreateEarlyLogBestEffort advances the open row when one exists and
-// opens a fresh row otherwise. Used by the SCHEDULED transition, which is the
-// funnel for recovered tasks whose queued row may predate the crash. The
-// returned bool reports whether the row was advanced in place (true) or a
-// fresh row had to be opened / nothing could be done (false); callers use it
-// to decide whether the status was durably recorded.
-func (s *IngestionTaskService) advanceOrCreateEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) bool {
-	if documentID == "" || s.pipelineLogDAO == nil {
-		return false
 	}
 	advanced, err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, documentID, operationStatus, progressMsg)
 	if err != nil {
 		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", documentID, operationStatus, err))
-		return false
+		return
 	}
-	if advanced {
-		return true
+	if advanced || !reopen {
+		return
 	}
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
 	if err != nil || task == nil {
 		if err != nil {
 			common.Warn(fmt.Sprintf("advance early pipeline log: load task for document %s: %v", documentID, err))
 		}
-		return false
+		return
 	}
 	s.createEarlyLogBestEffort(ctx, task, operationStatus, progressMsg, nil)
-	return false
 }
 
-// deleteEarlyLogBestEffort removes the open rows for a document. Used when
-// task creation rolls back after the early row was already written, so the
-// detail page is not left with a permanently queued entry.
+// deleteEarlyLogBestEffort drops open rows for a document so a rolled-back
+// or deleted run leaves no permanently queued entry on the detail page.
 func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, documentID string) {
 	if documentID == "" || s.pipelineLogDAO == nil {
 		return
@@ -851,12 +801,9 @@ func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, doc
 	}
 }
 
-// buildEarlyLogInput assembles the bookkeeping for the pre-terminal row from
-// the document and its knowledge base. It mirrors the identity resolution in
-// the terminal writer (parser_id fallback title, canvas title/avatar override,
-// source_from prefix) but leaves DSL and progress for the terminal write.
-// The caller supplies the status/message so a row created late (e.g. the
-// SCHEDULED fallback path) carries the current status, not UNSTART.
+// buildEarlyLogInput resolves the pre-terminal row from the document and its
+// knowledge base. Status/message come from the caller so a late-created row
+// carries the current status. DSL and progress stay empty for the terminal write.
 func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) (dao.EarlyLogInput, error) {
 	var input dao.EarlyLogInput
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, task.DocumentID)
