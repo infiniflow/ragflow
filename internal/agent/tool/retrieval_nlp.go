@@ -518,15 +518,16 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 		driver    modelModule.ModelDriver
 		modelName string
 		apiConfig *modelModule.APIConfig
+		maxTokens int
 		err       error
 	)
-	driver, modelName, apiConfig, _, err = a.modelResolver.ResolveModelConfig(
+	driver, modelName, apiConfig, maxTokens, err = a.modelResolver.ResolveModelConfig(
 		ctx, tenantID, entity.ModelTypeRerank, req.RerankID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve rerank model: %w", err)
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.

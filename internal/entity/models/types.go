@@ -3,8 +3,18 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
+
+const defaultMaxRerankTokens = 8196
+
+// ErrRerankTokenLimitPolicy identifies invalid token-limit configuration or oversized rerank input.
+var ErrRerankTokenLimitPolicy = errors.New("rerank token limit policy")
 
 // Message represents a chat message with role and content
 //
@@ -113,7 +123,7 @@ type OCRFileResponse struct {
 
 type ListModelResponse struct {
 	Name          string         `json:"name"`
-	ContentLength *int           `json:"content_length"`
+	ContextLength *int           `json:"context_length"`
 	MaxOutput     *int           `json:"max_output"`
 	ModelTypes    []string       `json:"model_types"`
 	Thinking      *ModelThinking `json:"thinking"`
@@ -141,9 +151,10 @@ type TaskResponse struct {
 }
 
 type ModelListItem struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
+	ID            string `json:"id"`
+	ContextLength *int   `json:"context_length"`
+	Object        string `json:"object"`
+	OwnedBy       string `json:"owned_by"`
 }
 
 type ModelList struct {
@@ -184,6 +195,7 @@ type ChatConfig struct {
 	Verbosity       *string
 	Tools           interface{}               `json:"tools,omitempty"`
 	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue any                       `json:"-"`
 	ToolCallsResult *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
@@ -281,19 +293,53 @@ type RerankModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	MaxTokens   int
 }
 
 // NewRerankModel creates a new RerankModel
-func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *RerankModel {
+func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int) *RerankModel {
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+		MaxTokens:   maxTokens,
 	}
 }
 
 // Rerank calculates similarity between query and texts
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	maxTokens := r.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
+	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
+	if mode == "" {
+		mode = "truncate"
+	}
+	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
+		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
+	}
+	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
+		queryTokens := tokenizer.NumTokensFromString(request.Query)
+		if mode == "truncate" {
+			documentTokens := max(maxTokens-queryTokens, 0)
+			documents := make([]string, len(request.Documents))
+			for i, document := range request.Documents {
+				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+			}
+			request.Documents = documents
+		} else {
+			for i, document := range request.Documents {
+				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
+				if inputTokens > maxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				}
+			}
+		}
+	}
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 

@@ -94,3 +94,9 @@ class TestGetFilters:
 
     def test_unknown_and_empty_are_skipped(self):
         assert self.filters({"not_a_column": "x", "doc_id": ""}) == []
+
+    def test_available_int_keeps_the_zero_predicate(self):
+        # 0 is the "disabled only" filter and is falsy, so the generic empty-value skip in
+        # _get_filters would drop the predicate and widen the result instead of narrowing it.
+        assert self.filters({"available_int": 0}) == ["COALESCE(available_int, 1) < 1"]
+        assert self.filters({"available_int": 1}) == ["COALESCE(available_int, 1) >= 1"]

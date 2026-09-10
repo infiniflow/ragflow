@@ -336,7 +336,7 @@ export default {
         'قم بإجراء اختبار استرجاع للتحقق مما إذا كان RAGFlow يمكنه استرداد المحتوى المقصود لـ LLM. إذا قمت بتعديل الإعدادات الافتراضية، مثل وزن تشابه الكلمة الرئيسية أو حد التشابه، لتحقيق النتائج المثلى، فاعلم أن هذه التغييرات لن يتم حفظها تلقائيًا. يجب عليك تطبيقها على إعدادات مساعد الدردشة أو إعدادات مكون وكيل الاسترداد.',
       similarityThreshold: 'عتبة التشابه',
       similarityThresholdTip:
-        'يستخدم RAGFlow إما مزيجًا من تشابه الكلمات الرئيسية المرجحة وتشابه جيب التمام المتجه المرجح، أو مزيجًا من تشابه الكلمات الرئيسية المرجحة ودرجة إعادة الترتيب المرجحة أثناء الاسترجاع. تحدد هذه المعلمة الحد الأدنى لأوجه التشابه بين استعلام المستخدم والقطع. سيتم استبعاد أي قطعة ذات درجة تشابه أقل من هذا الحد من النتائج. افتراضيًا، يتم تعيين العتبة على 0.2. وهذا يعني أنه سيتم استرداد الأجزاء ذات درجة التشابه الهجين 20 أو أعلى فقط.',
+        'يستخدم RAGFlow إما مزيجًا من تشابه الكلمات الرئيسية المرجحة وتشابه جيب التمام المتجه المرجح، أو مزيجًا من تشابه الكلمات الرئيسية المرجحة ودرجة إعادة الترتيب المرجحة أثناء الاسترجاع. تحدد هذه المعلمة الحد الأدنى لأوجه التشابه بين استعلام المستخدم والقطع. سيتم استبعاد أي قطعة ذات درجة تشابه أقل من هذا الحد من النتائج. افتراضيًا، يتم تعيين العتبة على 20. وهذا يعني أنه سيتم استرداد الأجزاء ذات درجة التشابه الهجين 20 أو أعلى فقط.',
       vectorSimilarityWeight: 'ناقل تشابه الوزن',
       vectorSimilarityWeightTip:
         'يؤدي هذا إلى تعيين وزن تشابه الكلمات الرئيسية في درجة التشابه المجمعة، إما المستخدمة مع تشابه جيب التمام المتجه أو مع درجة إعادة الترتيب. مجموع الوزنين يجب أن يساوي 1.0.',
@@ -359,6 +359,7 @@ export default {
       runningStatus2: 'تم الإلغاء',
       runningStatus3: 'نجاح',
       runningStatus4: 'يفشل',
+      runningStatusQueued: 'في الانتظار',
       pageRanges: 'نطاقات الصفحات',
       pageRangesTip:
         'نطاق الصفحات التي سيتم تحليلها؛ لن تتم معالجة الصفحات التي تقع خارج هذا النطاق.',
@@ -923,7 +924,10 @@ export default {
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
-      azure_devopsDescription: 'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
+      sitemapDescription:
+        'اربط ملف sitemap.xml عامًا لمزامنة صفحات الويب ومستندات PDF المدرجة فيه مع قاعدة المعرفة.',
+      azure_devopsDescription:
+        'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',

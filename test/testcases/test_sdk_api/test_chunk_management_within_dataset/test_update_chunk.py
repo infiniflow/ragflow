@@ -48,7 +48,7 @@ class TestUpdatedChunk:
         else:
             chunk.update(payload)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
