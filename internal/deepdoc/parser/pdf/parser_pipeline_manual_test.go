@@ -17,7 +17,7 @@ import (
 // Build tag: cgo && manual — skipped in regular integration runs due to
 // long runtime (27+ PDFs each requiring DeepDoc DLA+TSR+OCR).
 func TestIntegration_NoCrash(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	pdfDir := filepath.Join("testdata", "pdfs")
 	entries, err := os.ReadDir(pdfDir)

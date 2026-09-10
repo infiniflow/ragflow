@@ -49,7 +49,7 @@ func TestGoogleDriveConnectorOpenSyncUsesWindowFingerprintAndFetch(t *testing.T)
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-04T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestGoogleDriveConnectorOpenSyncUsesWindowFingerprintAndFetch(t *testing.T)
 	if !ok {
 		t.Fatalf("session does not implement Fetcher")
 	}
-	blob, err := fetcher.Fetch(context.Background(), *doc.FetchRef)
+	blob, err := fetcher.Fetch(t.Context(), *doc.FetchRef)
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		return googleDriveFilePage{Files: files}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestGoogleDriveConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want file-2", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector.listFiles = func(ctx context.Context, userEmail string, request googleDriveListRequest) (googleDriveFilePage, error) {
 		return googleDriveFilePage{Files: files}, nil
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestGoogleDriveConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 		}
 		return googleDriveFilePage{Files: files}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestGoogleDriveConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T
 		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
 	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
@@ -264,7 +264,7 @@ func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 		return nil, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestGoogleDriveRateLimitRetries(t *testing.T) {
 		}}}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}

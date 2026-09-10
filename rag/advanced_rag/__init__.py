@@ -14,16 +14,14 @@
 #  limitations under the License.
 #
 
-from .harness.config import THINKING_MODES, get_mode
-from .harness.types import RouteDecision, ExecutionStrategy, ClaimTarget, WorkflowPlan, SufficiencyVerdict
+# Mode configuration is the public entry point: every mode-dependent decision in
+# the harness reads from here.
+from .harness.config import NAIVE, THINKING_MODES, get_mode, resolve_mode
 
 
 __all__ = [
     "THINKING_MODES",
     "get_mode",
-    "RouteDecision",
-    "ExecutionStrategy",
-    "ClaimTarget",
-    "WorkflowPlan",
-    "SufficiencyVerdict",
+    "resolve_mode",
+    "NAIVE",
 ]
