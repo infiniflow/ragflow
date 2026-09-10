@@ -53,30 +53,31 @@ from rag.advanced_rag.knowlege_compile.structure import (
     rebuild_dataset_structure_graph_json,
     rebuild_structure_graph_json,
 )
+from rag.advanced_rag.knowlege_compile._common import env_float, env_int
 
 
 # ----- tunables ------------------------------------------------------
 # Bound how many source chunks are handed to a single
 # ``compile_structure_from_text`` invocation for regular templates.
-DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = env_int("DOC_STRUCTURE_COMPILE_BATCH_CHUNKS", 4, minimum=1)
 
 # Structure compilation packs chunks up to half of the model context.
 # ``compile_structure_from_text`` applies the exact prompt-aware packing again
 # before the LLM call.
-STRUCTURE_CONTEXT_FRACTION = 0.5
-STRUCTURE_DEFAULT_CONTEXT = 100_000
-KNOWLEDGE_GRAPH_CONTEXT_FRACTION = 0.1
-KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = 2048
-KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = 4096
+STRUCTURE_CONTEXT_FRACTION = env_float("STRUCTURE_CONTEXT_FRACTION", 0.5, minimum=0.01, maximum=1.0)
+STRUCTURE_DEFAULT_CONTEXT = env_int("STRUCTURE_DEFAULT_CONTEXT", 100_000, minimum=1)
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = env_float("KNOWLEDGE_GRAPH_CONTEXT_FRACTION", 0.1, minimum=0.01, maximum=1.0)
+KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS", 2048, minimum=1)
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS", 4096, minimum=KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS)
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
 # deterministic while the LLM calls run concurrently.
-DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT = 15
+DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT = env_int("DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT", 15, minimum=1)
 
 # Total task-scoped Chat LLM capacity shared by compile, chain validation and
 # merge decisions. A request waits in the priority queue when all slots are busy.
-DOC_STRUCTURE_LLM_POOL_SIZE = 20
+DOC_STRUCTURE_LLM_POOL_SIZE = env_int("DOC_STRUCTURE_LLM_POOL_SIZE", 20, minimum=1)
 
 # Bound how many compiled ES-ready docs may accumulate before we flush
 # them through ``merge_compiled_structures``. The merger does pairwise
@@ -85,7 +86,7 @@ DOC_STRUCTURE_LLM_POOL_SIZE = 20
 DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 
 # Hard wall on the chain-validator LLM correction step.
-STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
+STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = env_float("STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S", 120.0, minimum=0.1)
 
 
 # ----- template resolution -------------------------------------------

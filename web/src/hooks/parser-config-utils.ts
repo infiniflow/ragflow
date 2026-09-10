@@ -15,15 +15,9 @@
  */
 
 /**
- * Utility functions for extracting parser config extensions.
- * These functions extract known fields from parser config objects and merge
- * unknown fields into the `ext` field for flexible configuration.
- */
-
-/**
  * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
  * top-level key containing ":" marks the pipeline structure, which must be
- * sent as-is instead of being reshaped by extractParserConfigExt.
+ * sent as-is instead of being reshaped by normalizeParserConfig.
  */
 export const isPipelineParserConfig = (
   parserConfig: Record<string, any> | undefined,
@@ -35,11 +29,11 @@ export const isPipelineParserConfig = (
 };
 
 /**
- * Extracts Parser configuration with extra fields merged into ext.
+ * Normalizes parser configuration before it is sent to the API.
  * @param parserConfig - The parser configuration object
- * @returns Processed parser config with extra fields in ext
+ * @returns Processed parser config
  */
-export const extractParserConfigExt = (
+export const normalizeParserConfig = (
   parserConfig: Record<string, any> | undefined,
 ) => {
   if (!parserConfig) return parserConfig;
@@ -58,11 +52,10 @@ export const extractParserConfigExt = (
     children_delimiter,
     use_parent_child,
     enable_children,
-    ext,
-    ...parserExt
+    ...additionalParserConfig
   } = parserConfig;
-  delete parserExt.graphrag;
-  delete parserExt.raptor;
+  delete additionalParserConfig.graphrag;
+  delete additionalParserConfig.raptor;
   return {
     auto_keywords,
     auto_questions,
@@ -83,6 +76,6 @@ export const extractParserConfigExt = (
           use_parent_child: use_parent_child ?? enable_children,
         }
       : undefined,
-    ext: { ...ext, ...parserExt },
+    ...additionalParserConfig,
   };
 };

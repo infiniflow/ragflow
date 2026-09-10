@@ -40,6 +40,7 @@ type Heartbeat struct {
 	handle   common.TaskHandle
 	interval time.Duration
 	ctx      context.Context
+	onError  func(error)
 
 	mu      sync.Mutex
 	started bool
@@ -59,6 +60,14 @@ func NewHeartbeat(id string, handle common.TaskHandle, interval time.Duration) *
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 	}
+}
+
+// WithOnError sets an optional error callback invoked when handle.InProgress fails.
+func (h *Heartbeat) WithOnError(fn func(error)) *Heartbeat {
+	if h != nil {
+		h.onError = fn
+	}
+	return h
 }
 
 // WithContext binds an external cancellation signal (e.g. ingestor shutdown) so
@@ -119,6 +128,9 @@ func (h *Heartbeat) loop() {
 		case <-ticker.C:
 			if err := h.handle.InProgress(); err != nil {
 				common.Error(fmt.Sprintf("heartbeat task %s", h.id), err)
+				if h.onError != nil {
+					h.onError(err)
+				}
 			}
 		case <-h.stopCh:
 			return

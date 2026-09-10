@@ -169,7 +169,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	searchReq := &service.SearchDatasetsRequest{
 		DatasetIDs:   datasetIDs,
 		Question:     req.Question,
-		DocIDs:       req.DocumentIDs,
+		DocumentIDs:  req.DocumentIDs,
 		ForceRefresh: req.ForceRefresh,
 	}
 
@@ -179,7 +179,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 	if req.PageSize > 0 {
 		v := req.PageSize
-		searchReq.Size = &v
+		searchReq.PageSize = &v
 	}
 	if req.TopK > 0 {
 		v := req.TopK
