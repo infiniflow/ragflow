@@ -63,11 +63,6 @@ export default function DatasetSettings() {
         topn_tags: 3,
         image_table_context_window: 0,
         overlapped_percent: 0,
-        // MinerU-specific defaults
-        mineru_parse_method: 'auto',
-        mineru_formula_enable: true,
-        mineru_table_enable: true,
-        mineru_lang: 'English',
         metadata: {
           type: 'object',
           properties: {},

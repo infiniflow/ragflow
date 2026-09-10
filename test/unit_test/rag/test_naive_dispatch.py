@@ -42,6 +42,7 @@ import pytest
 from common.parser_config_utils import (
     MINERU_OPTION_KEYS,
     has_mineru_options,
+    is_tenant_model_id,
     normalize_layout_recognizer,
 )
 
@@ -204,7 +205,7 @@ def naive_module():
         _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
         _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
 
-        _stub("common.parser_config_utils", normalize_layout_recognizer=normalize_layout_recognizer, MINERU_OPTION_KEYS=MINERU_OPTION_KEYS, has_mineru_options=has_mineru_options)
+        _stub("common.parser_config_utils", normalize_layout_recognizer=normalize_layout_recognizer, MINERU_OPTION_KEYS=MINERU_OPTION_KEYS, has_mineru_options=has_mineru_options, is_tenant_model_id=is_tenant_model_id)
         _stub("common.float_utils", normalize_overlapped_percent=lambda x: x)
         _stub("common.text_utils", normalize_arabic_presentation_forms=lambda x: x)
         _stub("common.token_utils", num_tokens_from_string=lambda s: len((s or "").split()))
@@ -354,6 +355,25 @@ def test_dispatch_falls_back_to_mineru_only_for_unknown_layout_recognize(naive_m
     # The fallback branch reassigns parser=by_mineru directly (not via
     # PARSERS["mineru"]), so identify it by the function name.
     assert parser.__name__ == "by_mineru"
+
+
+def test_dispatch_does_not_fall_back_to_mineru_for_vision_composite_name(naive_module):
+    """A resolved vision LLM composite name with leftover mineru_* form
+    defaults must keep routing to by_plaintext (vision parser), not MinerU."""
+    vision_ref = "qwen3.6-plus@tongyi@Tongyi-Qianwen"
+    parser, name, lr, _op, _model = _dispatch(
+        naive_module,
+        vision_ref,
+        {
+            "mineru_parse_method": "auto",
+            "mineru_formula_enable": True,
+            "mineru_table_enable": True,
+            "mineru_lang": "English",
+        },
+    )
+    assert name == vision_ref.lower()
+    assert lr == vision_ref
+    assert parser is _ByPlaintext
 
 
 # CodeRabbit review #4: layout_recognize_override preserves parser_model_name.
