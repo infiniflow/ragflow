@@ -65,6 +65,21 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	}
 }
 
+func TestNavInputFromProducts_TreeSetsBoundaryAfterStructure(t *testing.T) {
+	products := []kccommon.Product{
+		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantStructure,
+			Content: `{"entities":[{"name":"Engine","description":"structure"}]}`,
+			Meta:    map[string]any{"kind": "graph"}},
+		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
+			Content: "tree summary", Vector: []float32{0.1, 0.2},
+			Meta: map[string]any{"kind": "root"}},
+	}
+	got := navInputFromProducts("kb1", products)
+	if len(got) != 1 || !got[0].PreserveDocumentBoundary {
+		t.Fatalf("tree product must preserve boundary regardless of product order: %+v", got)
+	}
+}
+
 // TestNavInputFromProducts_WikiExcluded covers the dispatch boundary: wiki
 // products never become nav inputs (they go to the page-specific wiki merge).
 func TestNavInputFromProducts_WikiExcluded(t *testing.T) {

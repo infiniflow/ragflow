@@ -124,6 +124,32 @@ func TestReconstructTree_FromFlatProducts(t *testing.T) {
 	}
 }
 
+func TestReconstructTree_LastRootWinsWithItsVector(t *testing.T) {
+	products := []common.Product{
+		{ID: "first", Vector: []float32{1, 0}, Meta: map[string]any{"kind": "root", "title": "first"}},
+		{ID: "last", Vector: []float32{0, 1}, Meta: map[string]any{"kind": "root", "title": "last"}},
+	}
+	root := reconstructTree(products)
+	if root == nil || root.title != "last" || !reflect.DeepEqual(root.vector, []float32{0, 1}) {
+		t.Fatalf("reconstructed root = %+v, want last root and its vector", root)
+	}
+}
+
+func TestBuildTreeGraph_EmbedsRootSummaryWhenVectorMissing(t *testing.T) {
+	products := []common.Product{{
+		ID: "root", DocID: "doc", TenantID: "tenant", Content: "document summary",
+		Meta: map[string]any{"kind": "root", "title": "Document"},
+	}}
+	got, err := buildTreeGraph(t.Context(), common.Deps{TenantID: "tenant", Embed: sizeLimitedEmbedder{}}, "doc", products)
+	if err != nil {
+		t.Fatalf("buildTreeGraph: %v", err)
+	}
+	graph := got[len(got)-1]
+	if !reflect.DeepEqual(graph.Vector, []float32{1, 0}) {
+		t.Fatalf("graph fallback vector = %v, want embedded root summary", graph.Vector)
+	}
+}
+
 func TestBuildTreeGraph_LongDocumentDoesNotEmbedGraphBlob(t *testing.T) {
 	products := []common.Product{{
 		ID: "root", DocID: "doc", TenantID: "tenant", Content: "collection summary",

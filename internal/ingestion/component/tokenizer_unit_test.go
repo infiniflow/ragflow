@@ -257,6 +257,7 @@ func TestTokenizerComponent_PreservesPrecomputedEmbedding(t *testing.T) {
 		"chunks": []map[string]any{{
 			"text":        strings.Repeat("large compiled graph ", 1000),
 			"compile_kwd": "tree",
+			"kc_kind":     "graph",
 			"q_4_vec":     []float64{1, 2, 3, 4},
 		}},
 	})
@@ -269,6 +270,35 @@ func TestTokenizerComponent_PreservesPrecomputedEmbedding(t *testing.T) {
 	chunks := out["chunks"].([]map[string]any)
 	if !reflect.DeepEqual(chunks[0]["q_4_vec"], []float64{1, 2, 3, 4}) {
 		t.Fatalf("precomputed vector changed: %v", chunks[0]["q_4_vec"])
+	}
+}
+
+func TestTokenizerComponent_ReembedsOtherCompiledProducts(t *testing.T) {
+	stub := newStubEmbedder(4)
+	component, err := NewTokenizerComponentWithResolver(map[string]any{
+		"search_method": []any{"embedding"},
+	}, func(context.Context, string, string) (Embedder, string, error) {
+		return stub, "embd-test", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := component.(*TokenizerComponent)
+	_, err = c.Invoke(t.Context(), nil, map[string]any{
+		"kb_id":         "kb-1",
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"text":        "compiled entity",
+			"compile_kwd": "knowledge_graph",
+			"kc_kind":     "entity",
+			"q_4_vec":     []float64{1, 2, 3, 4},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("embedder called %d times, want 1", got)
 	}
 }
 

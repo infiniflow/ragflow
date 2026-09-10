@@ -127,6 +127,7 @@ func payloadJSON(payload map[string]any) string {
 type graphNode struct {
 	title          string
 	description    string
+	vector         []float32
 	sourceChunkIDs []string
 	children       []*graphNode
 }
@@ -239,14 +240,19 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 		// No root summary survived; there is no tree to project.
 		return nil, nil
 	}
+	rootVector := root.vector
+	rootSummary := firstNonEmpty(root.description, root.title)
 	root = collapseUnary(root)
 	entities, relations := raptorTreeToGraph(root)
-	var rootVector []float32
-	for i := range products {
-		if kind, _ := products[i].Meta["kind"].(string); kind == "root" {
-			rootVector = products[i].Vector
-			break
+	if len(rootVector) == 0 {
+		vectors, err := deps.Embed.Encode(ctx, []string{rootSummary})
+		if err != nil {
+			return nil, fmt.Errorf("tree: embed graph discovery fallback: %w", err)
 		}
+		if len(vectors) == 0 || len(vectors[0]) == 0 {
+			return nil, fmt.Errorf("tree: embed graph discovery fallback returned no vector")
+		}
+		rootVector = vectors[0]
 	}
 
 	var out []common.Product
@@ -310,6 +316,8 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 	// Compact graph blob discovery row (knowledge_graph_kwd="graph").
 	graph := map[string]any{"entities": entities, "relations": relations}
 	graphContent := payloadJSON(graph)
+	// Reuse the selected root summary vector as a bounded semantic proxy: the
+	// full graph blob can exceed embedding-model input limits.
 	out = append(out, common.Product{
 		ID:       common.StableRowID(docID, "tree", "structure_graph"),
 		DocID:    docID,
@@ -336,6 +344,7 @@ func reconstructTree(products []common.Product) *graphNode {
 		byID[p.ID] = &graphNode{
 			title:          title,
 			description:    p.Content,
+			vector:         p.Vector,
 			sourceChunkIDs: stringMetaSlice(p.Meta["source_chunk_ids"]),
 		}
 	}

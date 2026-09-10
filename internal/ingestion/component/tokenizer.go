@@ -432,7 +432,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	truncs := make([]string, 0, len(chunks))
 	for i, ck := range chunks {
 		compileKWD, _ := ck.GetExtraString("compile_kwd")
-		if compileKWD != "" && hasEmbeddingVector(ck) {
+		kind, _ := ck.GetExtraString("kc_kind")
+		// The tree graph blob reuses its root-summary vector because embedding the
+		// complete graph may exceed the model limit. Other compiled rows are
+		// re-embedded normally so model changes cannot leave stale vectors.
+		if compileKWD == "tree" && kind == "graph" && hasEmbeddingVector(ck) {
 			continue
 		}
 		raw := concatFields(ck, c.param.Fields)

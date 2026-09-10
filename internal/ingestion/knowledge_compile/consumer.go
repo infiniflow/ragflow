@@ -1435,11 +1435,12 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 			}
 			a := byDoc[p.DocID]
 			if a == nil {
-				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID, PreserveDocumentBoundary: true}}
+				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
 				a = byDoc[p.DocID]
 			}
 			a.in.Summary = p.Content
 			a.in.Embedd = p.Vector
+			a.in.PreserveDocumentBoundary = true
 		case kccommon.VariantStructure:
 			if kind, _ := p.Meta["kind"].(string); kind != "graph" {
 				continue
