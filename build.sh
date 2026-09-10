@@ -403,7 +403,8 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
@@ -411,6 +412,7 @@ build_go() {
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
+    set +x
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
@@ -914,6 +916,11 @@ main() {
             if [ "${#pkgs[@]}" -eq 0 ]; then
                 pkgs=(./internal/deepdoc/parser/pdf/inference/native_analyzer/...)
             fi
+            # The in-process (Go) DeepDoc backend needs the .ort weights. Default
+            # MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so a
+            # local run needs no MODEL_DIR export after `download_go_deps.py`.
+            REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
             run_go_tests_tagged "cgo integration" "${pkgs[@]}"
             run_native_integration_tests
             ;;

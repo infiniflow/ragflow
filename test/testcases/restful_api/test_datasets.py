@@ -2422,7 +2422,7 @@ def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path
     assert nonexistent_payload["code"] == 102, nonexistent_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(

@@ -10,10 +10,13 @@
 # ]
 # ///
 
-# This script downloads every artifact that the `infiniflow/ragflow_deps`
-# Docker image bakes in. Run it from anywhere — the `__main__` block
-# chdir's into this file's own directory, so all outputs land under
-# `ragflow_deps/` regardless of the caller's CWD.
+# This script downloads every artifact the Go build needs: the native static
+# libraries (pdfium / pdf_oxide / office_oxide / onnxruntime) for `build.sh`,
+# and the Go DeepDoc `.ort` weights (det/layout/tsr/rec.ort + ocr.res) so a Go
+# dev can run the in-process backend locally without separately running
+# `download_deps.py`. Run it from anywhere — the `__main__` block chdir's into
+# this file's own directory, so all outputs land under `ragflow_deps/`
+# regardless of the caller's CWD.
 #
 # Build-context relationship: `ragflow_deps/Dockerfile` is built with
 # `ragflow_deps/` as its build context, so the files written here MUST
@@ -30,6 +33,16 @@
 # The main `Dockerfile` (built from the project root) pulls this image
 # via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
 # is unaffected by where these files live locally.
+#
+# Go DeepDoc weights: in addition to the native libs, this script downloads the
+# five Go model files (internal/common.DeepDocModelFiles) from InfiniFlow/deepdoc
+# straight into the repo's canonical model directory `rag/res/deepdoc/` (one level
+# up from this script). The Go server auto-discovers that directory via
+# resolveDeepDocModelDir(), and build.sh --test-native / internal/deepdoc/native/run.sh
+# default MODEL_DIR there too — so after running this script NO MODEL_DIR env needs
+# to be set:
+#
+#   bash build.sh --test-native          # or: cd internal/deepdoc/native && bash run.sh
 
 import argparse
 import os
@@ -47,6 +60,13 @@ import requests
 # (pyproject.toml) and the onnxruntime_go binding minor (go.mod) must stay on
 # the same minor line.
 ORT_VERSION = "1.23.2"
+
+# Mirrors internal/common.DeepDocModelFiles (Go in-process DeepDoc backend).
+# These are the ONLY weights the Go backend loads; the full InfiniFlow/deepdoc
+# repo also ships .onnx (Python-only), which this Go-only script deliberately
+# skips to keep the download lean.
+DEEPDOC_REPO = "InfiniFlow/deepdoc"
+DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
 
 
 def prune_stale_onnxruntime(static_lib_dir, version):
@@ -177,6 +197,68 @@ def download_with_progress(url, filename):
     print()
 
 
+def download_go_models(use_china_mirrors=False):
+    """Download the Go DeepDoc `.ort` weights so a Go dev can run the in-process
+    backend with no further setup.
+
+    The files are written into the repo's canonical model directory
+    `rag/res/deepdoc/` (relative to the repo root, one level up from this
+    script). The Go server auto-discovers that directory via
+    resolveDeepDocModelDir(), and build.sh --test-native / run.sh default
+    MODEL_DIR there too — so after this script runs, no MODEL_DIR env needs to
+    be set.
+
+    Uses hf_hub_download per-file (not snapshot_download) to fetch only the
+    five Go model files; the `.onnx` siblings are Python-only and skipped.
+    On China mirrors, route through hf-mirror.com via HF_ENDPOINT.
+    """
+    if use_china_mirrors:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    # Imported lazily so the module stays importable (and its unit tests stay
+    # huggingface-free) without the huggingface_hub dependency installed.
+    from huggingface_hub import hf_hub_download
+
+    # Canonical local-dev model dir the Go backend auto-discovers.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target_dir = os.path.join(repo_root, "rag", "res", "deepdoc")
+    os.makedirs(target_dir, exist_ok=True)
+
+    missing = []
+    for fname in DEEPDOC_MODEL_FILES:
+        dest = os.path.join(target_dir, fname)
+        if os.path.isfile(dest):
+            print(f"  ✓ {fname} already present")
+            continue
+        print(f"Downloading deepdoc model {fname}...")
+        try:
+            hf_hub_download(repo_id=DEEPDOC_REPO, filename=fname, local_dir=target_dir)
+        except Exception as e:  # noqa: BLE001 - collected and surfaced below
+            missing.append((fname, e))
+
+    if missing:
+        for fname, e in missing:
+            print(f"  ERROR: failed to download {fname}: {e}", file=sys.stderr)
+        print(
+            "\n"
+            "The Go in-process DeepDoc backend loads ONLY the .ort weights listed in\n"
+            "internal/common.DeepDocModelFiles. They are fetched from "
+            f"{DEEPDOC_REPO} into:\n"
+            f"  {target_dir}\n"
+            "Without them the backend cannot serve — the server exits with a fatal\n"
+            '"no in-process DeepDoc backend serving". To recover:\n'
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or run `uv run python3 ragflow_deps/download_deps.py`, which snapshots\n"
+            f"    all of {DEEPDOC_REPO} (it also provides the Python-side .onnx);\n"
+            "  - or copy the missing files into that directory by hand.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"  ✓ Go DeepDoc models ready under {target_dir}")
+    print("    No MODEL_DIR env needed: the Go backend auto-discovers this directory.")
+
+
 if __name__ == "__main__":
     # Anchor CWD to this file's directory so all relative outputs
     # (huggingface.co/, nltk_data/, *.deb, *.jar, *.tar.gz, etc.) land
@@ -257,3 +339,7 @@ if __name__ == "__main__":
     else:
         print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
         sys.exit(1)
+
+    # Download the Go DeepDoc `.ort` weights so this script is a one-stop for Go
+    # dev: native libs (above) + model files (below) from a single invocation.
+    download_go_models(args.china_mirrors)

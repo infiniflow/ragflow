@@ -1217,6 +1217,17 @@ def build_agentic_graph(
     def _route_sca(state: AgenticState) -> str:
         if state.get("no_progress"):
             return "formalize_answer"
+        # Evidence pool saturated at the SCA view cap: any further chunk lands
+        # beyond what the SCA can read, so another search round cannot flip the
+        # sufficiency verdict. Short-circuit straight to finalize.
+        _pool = tools.kbinfos.get("chunks", [])
+        if len(_pool) >= _SCA_VIEW_CAP:
+            _LOG.info(
+                "[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.",
+                len(_pool),
+                _SCA_VIEW_CAP,
+            )
+            return "formalize_answer"
         if not enable_sca:
             # medium: single research pass — the SCA verdict is informational only.
             return "formalize_answer"
