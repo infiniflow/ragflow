@@ -822,7 +822,7 @@ DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, in
 
 *Asynchronously* parses documents in the current dataset.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully.
+This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
 
 #### Parameters
 
