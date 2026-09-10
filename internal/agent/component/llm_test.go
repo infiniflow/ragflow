@@ -16,9 +16,17 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
+	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
+
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 )
 
 // stubInvoker is a programmable ChatInvoker used by these tests.
@@ -29,7 +37,7 @@ type stubInvoker struct {
 	calls    int
 }
 
-func (s *stubInvoker) Invoke(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (s *stubInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	s.calls++
 	cp := req
 	s.captured = &cp
@@ -52,7 +60,7 @@ func TestLLM_Invoke_HappyPath(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo-model"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -83,7 +91,7 @@ func TestLLM_Invoke_JSONOutput(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "give me json",
 		"json_output": true,
 	})
@@ -107,7 +115,7 @@ func TestLLM_Invoke_SystemAndUser(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"system_prompt": "you are helpful",
 		"user_prompt":   "say hi",
 	})
@@ -130,7 +138,7 @@ func TestLLM_Stream(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "go"})
+	ch, err := c.Stream(t.Context(), nil, map[string]any{"user_prompt": "go"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -154,7 +162,7 @@ func TestLLM_Stream(t *testing.T) {
 func TestLLM_Invoke_MissingModelID(t *testing.T) {
 	withStubInvoker(t, &stubInvoker{resp: &ChatInvokeResponse{Content: "should not be called"}})
 	c := NewLLMComponent(LLMParam{}) // no model_id
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected ParamError for missing model_id")
 	}
@@ -168,7 +176,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 	stub := &stubInvoker{err: errors.New("upstream blew up")}
 	withStubInvoker(t, stub)
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error to propagate")
 	}
@@ -254,5 +262,437 @@ func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
 	})
 	if arbitrary.Thinking != "auto" {
 		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
+	}
+}
+
+// TestLLM_Invoke_CompositeModel_CustomContextOverride verifies the composite
+// reference path of the tenant-configured override: a 2000-token extra
+// max_tokens on the tenant's gpt-4o row drives trimming even though the
+// catalog reports 128k.
+func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-comp-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-comp-1",
+		ProviderID:   "provider-comp-1",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-comp-1",
+		InstanceID: "instance-comp-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 2000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@OpenAI"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got > 2000 || got < 1000 {
+		t.Fatalf("user message = %d tokens; want trimmed to the custom 2000-token context window (~1940)", got)
+	}
+}
+
+// TestLLM_Invoke_UUIDModel_CustomContextOverride verifies end to end that a
+// tenant-configured "max_tokens" override in tenant_model.extra wins over the
+// provider catalog's content_length: with an override of 2000 and a 40k-token
+// prompt, the user message must be trimmed to roughly the override budget, not
+// preserved under gpt-4o's 128k catalog window.
+func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-uuid-2",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-uuid-2",
+		ProviderID:   "provider-uuid-2",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-uuid-2",
+		InstanceID: "instance-uuid-2",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 2000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "0123456789abcdef0123456789abcdef"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	// 97% of the 2000-token override budget; the catalog's 128k must not apply.
+	if got := tokenizer.NumTokensFromString(userContent); got > 2000 || got < 1000 {
+		t.Fatalf("user message = %d tokens; want trimmed to the custom 2000-token context window (~1940)", got)
+	}
+}
+
+// TestLLM_Invoke_UUIDModel_ResolvesContentLength verifies the tenant-model
+// UUID path of content_length resolution end to end: with a real in-memory
+// DB row for gpt-4o@OpenAI, the fitting budget comes from the catalog's
+// content_length (128000) rather than the 8192 fallback, so a 40k-token
+// prompt survives.
+func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-uuid-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-uuid-1",
+		ProviderID:   "provider-uuid-1",
+		InstanceName: "default",
+		APIKey:       "test-key",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-uuid-1",
+		InstanceID: "instance-uuid-1",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "0123456789abcdef0123456789abcdef"})
+	if _, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; UUID content_length resolution failed (want preserved under gpt-4o 128k)", got)
+	}
+}
+
+// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
+// in the agent canvas are resolved to their real provider/model name, driver,
+// and credentials before the LLM call is dispatched.
+func TestLLM_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "DeepSeek",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "prod-east",
+		APIKey:       "instance-key",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "3d2d824e7e5d11f1a845455b140cef90",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "deepseek-chat",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewLLMComponent(LLMParam{ModelID: "3d2d824e7e5d11f1a845455b140cef90"})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": "hi"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if got, want := stub.captured.Driver, "DeepSeek"; got != want {
+		t.Errorf("Driver=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.ModelName, "deepseek-chat"; got != want {
+		t.Errorf("ModelName=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.APIKey, "instance-key"; got != want {
+		t.Errorf("APIKey=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.BaseURL, "https://instance.example"; got != want {
+		t.Errorf("BaseURL=%q, want %q", got, want)
+	}
+}
+
+// TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget pins the core semantics
+// of the content_length change: the canvas max_tokens must still reach the
+// invoker as the generation cap, but must NOT be the message-fitting budget.
+// A small max_tokens with a 40k-token prompt would be trimmed to ~500 tokens
+// under the old behavior; the prompt must survive under the content_length
+// budget.
+func TestLLM_Invoke_MaxTokensStillOutputCapAndNotBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	maxOut := 512
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai", MaxTokens: &maxOut})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	// Generation cap still flows to the invoker.
+	if stub.captured.MaxTokens == nil || *stub.captured.MaxTokens != maxOut {
+		t.Fatalf("MaxTokens = %v, want %d (generation cap must still be forwarded)", stub.captured.MaxTokens, maxOut)
+	}
+	// ...but is not the fitting budget: the 40k prompt must survive.
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; max_tokens must not be the fitting budget", got)
+	}
+}
+
+// TestLLM_Invoke_UnresolvableModelFallsBackTo8192 verifies the fallback: when
+// content_length cannot be resolved, fitting falls back to the 8192 budget
+// (matching Python's chat_mdl.max_length default) instead of panicking or
+// passing the oversized prompt through.
+func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	bigPrompt := strings.Repeat("x ", 20000) // ~40k tokens
+	c := NewLLMComponent(LLMParam{ModelID: "no-such-model@no-such-provider"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatal("no user message captured")
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got >= 8000 {
+		t.Fatalf("user message not trimmed under the 8192 fallback budget: %d tokens", got)
+	}
+}
+
+// TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
+// fitting budget in Invoke is the chat model's context window
+// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// canvas max_tokens / the 8192 fallback. A user prompt far larger than the
+// 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
+// through to the invoker untrimmed.
+//
+// NOTE: this test couples to the provider catalog ("gpt-4o" must carry a
+// content_length well above 8000). The >=8000 threshold is robust to catalog
+// bumps; if gpt-4o's content_length were ever lowered below ~8k, the test
+// failing is the correct signal.
+func TestLLM_Invoke_UsesModelContentLengthBudget(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo", Stopped: true}}
+	withStubInvoker(t, stub)
+
+	// ~40k tokens: > 8192 (the fallback default) but << 128000 (gpt-4o).
+	bigPrompt := strings.Repeat("x ", 20000)
+
+	c := NewLLMComponent(LLMParam{ModelID: "gpt-4o@openai"})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": bigPrompt}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker was not called")
+	}
+
+	var userContent string
+	for _, m := range stub.captured.Messages {
+		if m.Role == schema.User {
+			userContent = m.Content
+		}
+	}
+	if userContent == "" {
+		t.Fatalf("no user message captured: %+v", stub.captured.Messages)
+	}
+	if got := tokenizer.NumTokensFromString(userContent); got < 8000 {
+		t.Fatalf("user message trimmed to %d tokens; want it preserved under the gpt-4o content_length budget, got head: %.80q", got, userContent)
+	}
+	if !strings.Contains(userContent, bigPrompt) {
+		t.Fatal("user prompt was modified by fitting despite fitting the content_length budget")
+	}
+}
+
+// TestCleanFormattedAnswer pins cleanFormattedAnswer's pipeline: think-block
+// strip (common.StripThinkTrailing) first, then JSON-fence prefix/suffix.
+func TestCleanFormattedAnswer(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain", in: "plain answer", want: "plain answer"},
+		{name: "think prefix", in: "<think>reasoning</think>{\"a\":1}", want: "{\"a\":1}"},
+		{name: "mid-text think", in: "note<think>reasoning</think>{\"a\":1}", want: "{\"a\":1}"},
+		{name: "json fence", in: "```json\n{\"a\":1}\n```", want: "\n{\"a\":1}\n"},
+		{name: "think then fence", in: "<think>reasoning</think>```json\n{\"a\":1}\n```", want: "\n{\"a\":1}\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanFormattedAnswer(tt.in); got != tt.want {
+				t.Errorf("cleanFormattedAnswer(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// streamingStubDriver is a ModelDriver whose only real behaviour is the stream
+// the resolved invoker must forward. Everything else is inherited from
+// models.DummyModel ("not implemented"), which the test never calls.
+type streamingStubDriver struct {
+	models.DummyModel
+}
+
+func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	think, answer := "thinking…", "the answer"
+	if err := sender(nil, &think); err != nil {
+		return err
+	}
+	return sender(&answer, nil)
+}
+
+// TestResolvedModelInvokerStreams pins the seam the harness asserts:
+// harness.InvokerSessionModel.StreamComplete type-asserts chat.StreamingInvoker
+// (harness/action_session.go:1504), so a resolved invoker without Stream
+// silently downgraded every agentic answer to the one-shot call — the log line
+// "chat invoker *component.resolvedModelInvoker does not support streaming" —
+// and the client received the whole answer in one piece.
+func TestResolvedModelInvokerStreams(t *testing.T) {
+	invoker := NewResolvedInvoker(&streamingStubDriver{}, "stub-model", &models.APIConfig{})
+	streamer, ok := invoker.(chat.StreamingInvoker)
+	if !ok {
+		t.Fatalf("resolved invoker %T must implement chat.StreamingInvoker", invoker)
+	}
+
+	var answer, think strings.Builder
+	resp, err := streamer.Stream(t.Context(), nil, chat.Request{
+		Messages: []schema.Message{{Role: schema.User, Content: "q"}},
+	}, func(delta string, isThink bool) error {
+		if isThink {
+			think.WriteString(delta)
+			return nil
+		}
+		answer.WriteString(delta)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	// Reasoning rides the think channel, content the answer channel — the caller
+	// frames each separately, so a mixed-up flag would put reasoning in the answer.
+	if think.String() != "thinking…" {
+		t.Errorf("think deltas = %q, want the reasoning piece", think.String())
+	}
+	if answer.String() != "the answer" {
+		t.Errorf("answer deltas = %q, want the content piece", answer.String())
+	}
+	// The assembled reply matches what Invoke would have returned.
+	if resp.Content != "the answer" || resp.Thinking != "thinking…" {
+		t.Errorf("assembled reply = (%q, %q), want (the answer, thinking…)", resp.Content, resp.Thinking)
 	}
 }

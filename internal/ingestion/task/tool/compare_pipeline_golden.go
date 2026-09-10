@@ -17,7 +17,6 @@ import (
 func main() {
 	caseDir := flag.String("case-dir", "", "case directory under internal/ingestion/task/testdata/<case_id>")
 	docID := flag.String("doc-id", "doc-1", "document id")
-	kbID := flag.String("kb-id", "kb-1", "knowledge base id")
 	docName := flag.String("doc-name", "sample.md", "document name")
 	flag.Parse()
 
@@ -35,7 +34,7 @@ func main() {
 	expectedMetadata := mustReadJSONMap(filepath.Join(outputDir, "merged_metadata.json"))
 	expectedProcessError, hasExpectedProcessError := readOptionalJSONMap(filepath.Join(outputDir, "process_error.json"))
 
-	actual, actualErr := runActual(input, *docID, *kbID, *docName)
+	actual, actualErr := runActual(input, *docID, *docName)
 	if hasExpectedProcessError || actualErr != nil {
 		reportProcessErrorOutcome(expectedProcessError, hasExpectedProcessError, actualErr)
 		return
@@ -58,13 +57,13 @@ func main() {
 	os.Exit(1)
 }
 
-func runActual(input map[string]any, docID string, kbID string, docName string) (result task.GoldenCompareResult, err error) {
+func runActual(input map[string]any, docID string, docName string) (result task.GoldenCompareResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic: %v", r)
 		}
 	}()
-	return task.ProcessPipelineOutputForGolden(input, docID, kbID, docName)
+	return task.ProcessPipelineOutputForGolden(input, docID, docName)
 }
 
 func reportProcessErrorOutcome(expected map[string]any, hasExpected bool, actualErr error) {
@@ -102,7 +101,10 @@ func sanitizeProcessed(chunks []map[string]any) []map[string]any {
 		delete(cp, "create_time")
 		delete(cp, "create_timestamp_flt")
 		for k := range cp {
-			if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+			// Use the production stripping rule so the golden compare never
+			// disagrees with the debug payload: fixed legacy keys
+			// (vector/embedding/feature/q_vec) AND q_<dim>_vec are all dropped.
+			if task.IsVectorKey(k) {
 				delete(cp, k)
 			}
 		}

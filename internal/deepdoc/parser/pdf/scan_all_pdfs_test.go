@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 //
 //	CGO_ENABLED=1 CGO_LDFLAGS="..." go test -tags=manual -run TestScanAllPDFs -v -count=1
 func TestScanAllPDFs(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	pdfDir := filepath.Join("testdata", "pdfs")
 	entries, err := os.ReadDir(pdfDir)
@@ -44,7 +43,7 @@ func TestScanAllPDFs(t *testing.T) {
 		eng := mustOpenEngine(t, name)
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.ParseRaw(context.Background(), eng, client)
+		result, err := p.ParseRaw(t.Context(), eng, client)
 		eng.Close()
 		if err != nil {
 			fmt.Printf("  ❌ ERROR: %v\n", err)

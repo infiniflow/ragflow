@@ -57,8 +57,8 @@ function SkillDeleteAction({
 
   return (
     <ConfirmDeleteDialog
-      title={t('datasetSkill.deleteSkillTitle')}
-      content={{ title: t('datasetSkill.deleteSkillDescription') }}
+      title={t('knowledgeCompilation.skillDeleteTitle')}
+      content={{ title: t('knowledgeCompilation.skillDeleteDescription') }}
       onOk={handleConfirmDelete}
     >
       <Button
@@ -151,11 +151,11 @@ export function SkillsLeftPanel({
     <aside className="size-full flex flex-col">
       <section className="flex items-center justify-between px-3 pt-3">
         <span className="text-sm font-medium text-text-primary">
-          {t('datasetSkill.folders')} ({totalCount})
+          {t('knowledgeCompilation.skillFolders')} ({totalCount})
         </span>
         <ConfirmDeleteDialog
-          title={t('datasetSkill.deleteAllTitle')}
-          content={{ title: t('datasetSkill.deleteAllDescription') }}
+          title={t('knowledgeCompilation.skillDeleteAllTitle')}
+          content={{ title: t('knowledgeCompilation.skillDeleteAllDescription') }}
           onOk={handleDeleteAll}
         >
           <Button
@@ -186,7 +186,7 @@ export function SkillsLeftPanel({
           <div className="py-8 text-center text-sm text-text-secondary">
             {debouncedSearchString
               ? t('common.noData')
-              : t('datasetSkill.empty')}
+              : t('knowledgeCompilation.skillEmpty')}
           </div>
         ) : (
           <TreeView

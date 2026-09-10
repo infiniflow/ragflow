@@ -11,6 +11,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +85,7 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 }
 
 func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

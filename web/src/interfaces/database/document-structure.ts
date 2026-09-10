@@ -29,4 +29,6 @@ export interface IStructureGraphTemplate {
 
 export interface IStructureGraphResponse {
   templates: IStructureGraphTemplate[];
+  total_entities?: number;
+  returned_entities?: number;
 }

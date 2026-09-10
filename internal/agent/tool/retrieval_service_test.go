@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 // TestRetrievalService_DefaultStub: with no SetRetrievalService
@@ -29,7 +31,9 @@ func TestRetrievalService_DefaultStub(t *testing.T) {
 	if svc == nil {
 		t.Fatal("GetRetrievalService returned nil")
 	}
-	_, err := svc.Search(context.Background(), RetrievalRequest{Query: "hi"})
+
+	ctx := t.Context()
+	_, err := svc.Search(ctx, nil, RetrievalRequest{Query: "hi"})
 	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("err=%v, want ErrRetrievalServiceMissing", err)
 	}
@@ -41,9 +45,10 @@ func TestRetrievalService_RegisterAndRestore(t *testing.T) {
 	prev := GetRetrievalService()
 	t.Cleanup(func() { SetRetrievalService(prev) })
 
+	ctx := t.Context()
 	// Install a fake.
 	SetRetrievalService(fakeRetrievalService{chunks: []RetrievalChunk{{ID: "1", Content: "fake"}}})
-	got, err := GetRetrievalService().Search(context.Background(), RetrievalRequest{Query: "x"})
+	got, err := GetRetrievalService().Search(ctx, nil, RetrievalRequest{Query: "x"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -53,7 +58,7 @@ func TestRetrievalService_RegisterAndRestore(t *testing.T) {
 
 	// Restore via nil.
 	SetRetrievalService(nil)
-	if _, err := GetRetrievalService().Search(context.Background(), RetrievalRequest{}); !errors.Is(err, ErrRetrievalServiceMissing) {
+	if _, err := GetRetrievalService().Search(ctx, nil, RetrievalRequest{}); !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("after nil-reset: err=%v, want ErrRetrievalServiceMissing", err)
 	}
 }
@@ -64,7 +69,7 @@ type fakeRetrievalService struct {
 	err    error
 }
 
-func (f fakeRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (f fakeRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return f.chunks, f.err
 }
 

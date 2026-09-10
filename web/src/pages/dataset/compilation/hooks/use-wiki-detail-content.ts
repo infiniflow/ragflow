@@ -14,7 +14,7 @@ import { useWikiEditor } from './use-wiki-editor';
 import { useWikiLinkNavigation } from './use-wiki-link-navigation';
 
 type UseWikiDetailContentOptions = {
-  selectedArtifact: IArtifact | null;
+  selectedArtifact: IArtifact;
   selectedVersion: IWikiCommit | null;
   onSelectVersion: (version: IWikiCommit | null) => void;
   onSelectArtifact: (artifact: IArtifact) => void;
@@ -50,7 +50,7 @@ export function useWikiDetailContent({
     if (!currentEntry || !pageData) return;
     if (currentEntry.slug !== pageData.slug) return;
     updateCurrentTitle(pageData.title);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [currentEntry?.slug, pageData?.slug, pageData?.title, updateCurrentTitle]);
 
   // When selectedArtifact changes from the left panel (not from our own
@@ -58,7 +58,7 @@ export function useWikiDetailContent({
   // before onSelectArtifact(), so currentEntry.slug already matches by the
   // time this effect runs and we bail out.
   useEffect(() => {
-    if (isVersionView || !selectedArtifact) return;
+    if (isVersionView) return;
     if (currentEntry?.slug === selectedArtifact.slug) return;
 
     reset({
@@ -66,12 +66,12 @@ export function useWikiDetailContent({
       title: selectedArtifact.title,
       pageType: selectedArtifact.page_type ?? '',
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [
     isVersionView,
-    selectedArtifact?.slug,
-    selectedArtifact?.title,
-    selectedArtifact?.page_type,
+    selectedArtifact.slug,
+    selectedArtifact.title,
+    selectedArtifact.page_type,
     currentEntry?.slug,
     reset,
   ]);
@@ -83,23 +83,26 @@ export function useWikiDetailContent({
   const title =
     currentEntry?.title ||
     pageData?.title ||
-    selectedArtifact?.title ||
+    selectedArtifact.title ||
     currentEntry?.slug ||
     '';
 
   const displayedArtifact = currentEntry
-    ? { slug: currentEntry.slug, title: currentEntry.title, page_type: currentEntry.pageType }
+    ? {
+        slug: currentEntry.slug,
+        title: currentEntry.title,
+        page_type: currentEntry.pageType,
+      }
     : selectedArtifact;
 
   const previousEntryTitle = previousEntry?.title || previousEntry?.slug;
 
   const editorKey = isVersionView
-    ? `${selectedArtifact?.slug}@${selectedVersion?.id}`
-    : (selectedArtifact?.slug ?? '');
+    ? `${selectedArtifact.slug}@${selectedVersion?.id}`
+    : selectedArtifact.slug;
 
   const handleMarkdownLinkClick = useCallback(
     (pageType: WikiPageType, slug: string) => {
-      if (isVersionView) return;
       if (currentEntry?.slug === slug && currentEntry?.pageType === pageType)
         return;
 
@@ -118,14 +121,7 @@ export function useWikiDetailContent({
       push({ slug, title: '', pageType });
       onSelectArtifact({ slug, page_type: pageType, title: '' });
     },
-    [
-      push,
-      onSelectArtifact,
-      isVersionView,
-      currentEntry,
-      pageData,
-      updateCurrentTitle,
-    ],
+    [push, onSelectArtifact, currentEntry, pageData, updateCurrentTitle],
   );
 
   const handleBack = useCallback(() => {
@@ -156,17 +152,15 @@ export function useWikiDetailContent({
     }
   }, [handleMarkAsSaved, isVersionView, onSelectVersion]);
 
-  const { isOpen, open, close, form, handleConfirm, isUpdating } =
+  const { isOpen, open, setIsOpen, form, handleConfirm, isUpdating } =
     useCommitArtifact({
       editedContent,
-      pageType: currentEntry?.pageType ?? selectedArtifact?.page_type ?? '',
-      slug: currentEntry?.slug ?? selectedArtifact?.slug ?? '',
+      pageType: currentEntry?.pageType ?? selectedArtifact.page_type ?? '',
+      slug: currentEntry?.slug ?? selectedArtifact.slug,
       onSuccess: handleCommitSuccess,
     });
 
-  const { documents } = useFetchDocumentsByIds(
-    pageData?.source_doc_ids ?? [],
-  );
+  const { documents } = useFetchDocumentsByIds(pageData?.source_doc_ids ?? []);
 
   const referenceDocuments = useMemo<Docagg[]>(() => {
     return documents.map(
@@ -205,7 +199,7 @@ export function useWikiDetailContent({
     referenceDocuments,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,

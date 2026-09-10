@@ -36,7 +36,7 @@ func NewPerplexityModel(baseURL map[string]string, urlSuffix URLSuffix) *Perplex
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -49,41 +49,10 @@ func (p *PerplexityModel) Name() string {
 	return "perplexity"
 }
 
-func (p *PerplexityModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
+func applyPerplexityReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
+	if chatModelConfig != nil && chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "reasoning") {
+		reqBody["reasoning_effort"] = *chatModelConfig.Effort
 	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		// Perplexity sonar-reasoning* models accept reasoning_effort.
-		if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "reasoning") {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
-		}
-	}
-
-	return reqBody
 }
 
 func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
@@ -94,24 +63,6 @@ func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Chat), nil
-}
-
-type perplexityChatMessage struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-	Reasoning        string `json:"reasoning"`
-}
-
-type perplexityChatChoice struct {
-	Message      perplexityChatMessage `json:"message"`
-	Delta        perplexityChatMessage `json:"delta"`
-	FinishReason string                `json:"finish_reason"`
-}
-
-type perplexityChatResponse struct {
-	Choices      []perplexityChatChoice `json:"choices"`
-	Error        interface{}            `json:"error"`
-	FinishReason string                 `json:"finish_reason"`
 }
 
 func (p *PerplexityModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -130,55 +81,15 @@ func (p *PerplexityModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(p.chatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyPerplexityReasoningRequestParams(reqBody, modelName, chatModelConfig)
+
+	body, err := p.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := p.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result perplexityChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("perplexity: upstream error: %v", result.Error)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	content := result.Choices[0].Message.Content
-	reasonContent := result.Choices[0].Message.ReasoningContent
-	if reasonContent == "" {
-		reasonContent = result.Choices[0].Message.Reasoning
-	}
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (p *PerplexityModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -204,76 +115,13 @@ func (p *PerplexityModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return err
 	}
 
-	jsonData, err := json.Marshal(p.chatPayload(modelName, messages, true, chatModelConfig))
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyPerplexityReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	// ResponseHeaderTimeout caps the initial header wait. This context
-	// also caps the body-read phase so a stalled SSE stream cannot hold
-	// the caller's goroutine and connection indefinitely.
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := p.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	done, err := ParseSSEStream[perplexityChatResponse](resp.Body, func(event perplexityChatResponse) error {
-		if event.Error != nil {
-			return fmt.Errorf("perplexity: upstream stream error: %v", event.Error)
-		}
-		if len(event.Choices) == 0 {
-			return nil
-		}
-
-		choice := event.Choices[0]
-		if choice.Delta.ReasoningContent != "" {
-			if err := sender(nil, &choice.Delta.ReasoningContent); err != nil {
-				return err
-			}
-		}
-		if choice.Delta.Reasoning != "" {
-			if err := sender(nil, &choice.Delta.Reasoning); err != nil {
-				return err
-			}
-		}
-		if choice.Delta.Content != "" {
-			if err := sender(&choice.Delta.Content, nil); err != nil {
-				return err
-			}
-		}
-		if choice.FinishReason != "" || event.FinishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return p.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("perplexity: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
 type perplexityModelInfo struct {
@@ -350,12 +198,12 @@ type perplexityEmbeddingResponse struct {
 	Error interface{}                   `json:"error"`
 }
 
-func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
@@ -371,7 +219,7 @@ func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, texts []
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -424,7 +272,7 @@ func (p *PerplexityModel) Embed(ctx context.Context, modelName *string, texts []
 	return embeddings, nil
 }
 
-func (p *PerplexityModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (p *PerplexityModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 

@@ -17,6 +17,7 @@ import os
 import json
 import secrets
 import logging
+import re
 from datetime import date
 
 from common.constants import RAG_FLOW_SERVICE_NAME
@@ -30,6 +31,7 @@ import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.ob_conn
 import rag.utils.opensearch_conn
+import rag.utils.gaussdb_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
 from rag.utils.gcs_conn import RAGFlowGCS
@@ -44,6 +46,7 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+import memory.utils.gaussdb_conn as memory_gaussdb_conn
 
 TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
@@ -70,8 +73,89 @@ SECRET_KEY = None
 FACTORY_LLM_INFOS = None
 ALLOWED_LLM_FACTORIES = None
 
-DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
-DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+# The metadata database and DocEngine/Memory Store may all use GaussDB while
+# targeting different databases, schemas, compatibility modes, or credentials.
+# The metadata database therefore reads only GAUSSDB_METADATA_*. The gaussdb
+# section in service_conf.yaml remains exclusive to DOC_ENGINE=gaussdb.
+GAUSSDB_ENV_DEFAULTS = {
+    "name": "rag_flow",
+    "user": "rag_flow",
+    "password": "infini_rag_flow",
+    "host": "gaussdb",
+    "port": 8000,
+    "schema": "public",
+    "max_connections": 100,
+    "stale_timeout": 30,
+    "options": "-c client_encoding=UTF8 -c default_transaction_read_only=off",
+}
+_GAUSSDB_SCHEMA_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def normalize_database_type(database_type: str | None = None) -> str:
+    # Only normalize the new GaussDB values. Existing database names retain
+    # their upstream spelling and lookup behavior.
+    raw_value = database_type or "mysql"
+    normalized = raw_value.strip().lower()
+    if normalized in {"gaussdb", "gauss"}:
+        return "gaussdb"
+    return raw_value
+
+
+def _get_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_gaussdb_metadata_schema(value: str | None = None) -> str:
+    # The schema is interpolated into search_path in the libpq options. Restrict
+    # it to a plain SQL identifier so quotes, semicolons, or extra options cannot
+    # be injected. The metadata database currently accepts one schema only.
+    schema = (value or GAUSSDB_ENV_DEFAULTS["schema"]).strip() or GAUSSDB_ENV_DEFAULTS["schema"]
+    if not _GAUSSDB_SCHEMA_PATTERN.match(schema):
+        raise ValueError(f"invalid GAUSSDB_METADATA_SCHEMA: {schema}")
+    return schema
+
+
+def _gaussdb_metadata_options(schema: str) -> str:
+    explicit_options = os.environ.get("GAUSSDB_METADATA_OPTIONS")
+    if explicit_options is not None:
+        # An explicit value replaces the complete options string. Advanced
+        # deployments can control search_path, encoding, read-only behavior,
+        # and other libpq options, but must also include any required defaults.
+        return explicit_options
+    return f"-c search_path={schema} {GAUSSDB_ENV_DEFAULTS['options']}"
+
+
+def _gaussdb_env_config() -> dict:
+    # Read only GAUSSDB_METADATA_* so the metadata database does not share
+    # connection parameters with DOC_ENGINE=gaussdb.
+    schema = _normalize_gaussdb_metadata_schema(os.environ.get("GAUSSDB_METADATA_SCHEMA"))
+    return {
+        "name": os.environ.get("GAUSSDB_METADATA_DBNAME", GAUSSDB_ENV_DEFAULTS["name"]),
+        "user": os.environ.get("GAUSSDB_METADATA_USER", GAUSSDB_ENV_DEFAULTS["user"]),
+        "password": os.environ.get("GAUSSDB_METADATA_PASSWORD", GAUSSDB_ENV_DEFAULTS["password"]),
+        "host": os.environ.get("GAUSSDB_METADATA_HOST", GAUSSDB_ENV_DEFAULTS["host"]),
+        "port": _get_int_env("GAUSSDB_METADATA_PORT", GAUSSDB_ENV_DEFAULTS["port"]),
+        "max_connections": _get_int_env("GAUSSDB_METADATA_MAX_CONNECTIONS", GAUSSDB_ENV_DEFAULTS["max_connections"]),
+        "stale_timeout": _get_int_env("GAUSSDB_METADATA_STALE_TIMEOUT", GAUSSDB_ENV_DEFAULTS["stale_timeout"]),
+        "options": _gaussdb_metadata_options(schema),
+    }
+
+
+def load_database_config(database_type: str) -> dict:
+    database_type = normalize_database_type(database_type)
+    if database_type == "gaussdb":
+        # Always build DB_TYPE=gaussdb from GAUSSDB_METADATA_* so the metadata
+        # connection remains isolated from the gaussdb section used by
+        # DOC_ENGINE=gaussdb.
+        return decrypt_database_config(database=_gaussdb_env_config())
+    return decrypt_database_config(name=database_type)
+
+
+DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
+DATABASE = load_database_config(DATABASE_TYPE)
 
 # authentication
 AUTHENTICATION_CONF = None
@@ -85,6 +169,8 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch")
 DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
 DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
+DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
 
 
 docStoreConn = None
@@ -123,9 +209,11 @@ OB = {}
 OSS = {}
 OS = {}
 GCS = {}
+GAUSSDB = {}
+SERENEDB = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
-DOC_BULK_SIZE: int = 4
+DOC_BULK_SIZE: int = 32
 EMBEDDING_BATCH_SIZE: int = 16
 
 PARALLEL_DEVICES: int = 0
@@ -175,7 +263,8 @@ def init_secret_key():
 def get_secret_key():
     global SECRET_KEY
     if SECRET_KEY is None:
-        return _get_or_create_secret_key()
+        # Why need cache it, if REDIS evict keys due to lack of memory, new secret key will be generated, cause all requests 401
+        SECRET_KEY = _get_or_create_secret_key()
     return SECRET_KEY
 
 
@@ -217,8 +306,8 @@ class StorageFactory:
 
 def init_settings():
     global DATABASE_TYPE, DATABASE
-    DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
-    DATABASE = decrypt_database_config(name=DATABASE_TYPE)
+    DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
+    DATABASE = load_database_config(DATABASE_TYPE)
 
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}
@@ -300,10 +389,12 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+    DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
+    DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -320,6 +411,15 @@ def init_settings():
     elif lower_case_doc_engine == "seekdb":
         OB = get_base_config("seekdb", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "gaussdb":
+        GAUSSDB = get_base_config("gaussdb", {})
+        docStoreConn = rag.utils.gaussdb_conn.GaussDBConnection()
+    elif lower_case_doc_engine == "serenedb":
+        SERENEDB = get_base_config("serenedb", {})
+        # Imported lazily so psycopg2/SereneDB is only touched when selected.
+        from rag.utils import serenedb_conn
+
+        docStoreConn = serenedb_conn.SereneDBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
@@ -333,6 +433,11 @@ def init_settings():
         msgStoreConn = memory_infinity_conn.InfinityConnection()
     elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
         msgStoreConn = memory_ob_conn.OBConnection()
+    elif lower_case_doc_engine == "gaussdb":
+        # Memory Store uses a dedicated adapter for message tables. It reads the
+        # same GaussDB configuration and shares the lazy connection pool with
+        # docStoreConn, but keeps its own table layout and query semantics.
+        msgStoreConn = memory_gaussdb_conn.GaussDBMemoryConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ["AZURE_SPN", "AZURE_SAS"]:
@@ -394,7 +499,7 @@ def init_settings():
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
-    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
+    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 32))
     EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
 
     os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"

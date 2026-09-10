@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import type { Meta, StoryObj } from '@storybook/react-webpack5';
@@ -29,12 +45,12 @@ import { useState } from 'react';
 
 function MyComponent() {
   const [open, setOpen] = useState(false);
-  
+
   return (
     <>
       <button onClick={() => setOpen(true)}>Open Modal</button>
-      <Modal 
-        open={open} 
+      <Modal
+        open={open}
         onOpenChange={setOpen}
         title="Modal Title"
       >
@@ -169,7 +185,7 @@ export const Default: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -193,8 +209,8 @@ Shows the basic modal with default size and standard header/footer.
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Default Modal</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Default Modal"
 >
@@ -228,7 +244,7 @@ export const Small: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -257,8 +273,8 @@ Shows a small-sized modal, ideal for confirmations or brief messages.
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Small Modal</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Small Modal"
   size="small"
@@ -297,7 +313,7 @@ export const Large: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -326,8 +342,8 @@ Shows a large-sized modal, suitable for complex content like forms or data table
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Large Modal</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Large Modal"
   size="large"
@@ -364,7 +380,7 @@ export const WithCustomFooter: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -405,8 +421,8 @@ Shows a modal with a custom footer. You can provide your own footer content inst
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Modal with Custom Footer</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Custom Footer"
   footer={
@@ -448,7 +464,7 @@ export const WithoutFooter: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -477,8 +493,8 @@ Shows a modal without a footer. Useful when you want to include action buttons w
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Modal without Footer</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="No Footer"
   showfooter={false}
@@ -515,7 +531,7 @@ export const FullScreen: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -544,8 +560,8 @@ Shows a full screen modal that takes up the entire viewport. Useful for complex 
 const [open, setOpen] = useState(false);
 
 <Button onClick={() => setOpen(true)}>Open Full Screen Modal</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Full Screen Modal"
   full={true}
@@ -581,9 +597,9 @@ export const LoadingState: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [loading, setLoading] = useState(false);
 
     const handleOk = () => {
@@ -630,8 +646,8 @@ const handleOk = () => {
 };
 
 <Button onClick={() => setOpen(true)}>Open Loading State Modal</Button>
-<Modal 
-  open={open} 
+<Modal
+  open={open}
   onOpenChange={setOpen}
   title="Loading State"
   confirmLoading={loading}
@@ -668,7 +684,7 @@ export const Interactive: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -705,12 +721,12 @@ import { Modal } from '@/components/ui/modal/modal';
 
 function InteractiveModal() {
   const [open, setOpen] = useState(false);
-  
+
   return (
     <div>
       <Button onClick={() => setOpen(true)}>Open Interactive Modal</Button>
-      <Modal 
-        open={open} 
+      <Modal
+        open={open}
         onOpenChange={setOpen}
         title="Interactive Modal"
         onOk={() => {

@@ -5,7 +5,7 @@ import {
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
-import { isGoBackend } from '@/utils/backend-runtime';
+import { pickByBackend } from '@/utils/backend-variant';
 import { useCallback, useState } from 'react';
 
 export const useChangeDocumentParser = () => {
@@ -25,16 +25,21 @@ export const useChangeDocumentParser = () => {
       if (record?.id && record?.dataset_id) {
         // The Go document endpoint takes `parser_id` and a pipeline-shaped
         // parser_config; the Python one keeps the legacy payload shape.
-        const setParser = isGoBackend()
-          ? setDocumentPipelineParser
-          : setDocumentParser;
-        const ret = await setParser({
+        const common = {
           parserId: parserConfigInfo.parser_id,
           pipelineId: parserConfigInfo.pipeline_id || '',
           documentId: record?.id,
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
-        });
+        };
+        const ret = await pickByBackend({
+          go: () =>
+            setDocumentPipelineParser({
+              ...common,
+              parseType: parserConfigInfo.parseType,
+            }),
+          python: () => setDocumentParser(common),
+        })();
         if (ret === 0) {
           hideChangeParserModal();
         }

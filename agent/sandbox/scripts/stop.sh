@@ -24,17 +24,28 @@ echo "🛑 Stopping all services..."
 docker compose down
 
 echo "🧹 Deleting sandbox containers..."
-if [ -f .env ]; then
-  source .env
-  for i in $(seq 0 $((SANDBOX_EXECUTOR_MANAGER_POOL_SIZE - 1))); do
-    echo "🧹 Deleting sandbox_python_$i..."
-    docker rm -f "sandbox_python_$i" >/dev/null 2>&1 || true
-
-    echo "🧹 Deleting sandbox_nodejs_$i..."
-    docker rm -f "sandbox_nodejs_$i" >/dev/null 2>&1 || true
-  done
+# Remove the sandbox containers that actually exist instead of walking a range derived from
+# SANDBOX_EXECUTOR_MANAGER_POOL_SIZE. A pool created at one size and torn down after .env changed
+# left every container above the new size running; a missing .env skipped cleanup altogether; and a
+# container that never joined the executor-manager queue was never in the range to begin with.
+# The pattern is anchored to the generated pool names, so an unrelated container that merely
+# contains "sandbox_python_" in its name is not touched.
+# `docker ps` failing and finding nothing look identical once both become an empty string, and
+# the difference matters: the first leaves every sandbox container running while reporting
+# success. Only grep's no-match exit is tolerated here.
+if ! all_containers="$(docker ps -a --format '{{.Names}}')"; then
+  echo "❌ Could not list Docker containers; sandbox containers were NOT removed" >&2
+  exit 1
+fi
+sandbox_containers="$(printf '%s\n' "$all_containers" |
+  grep -E '^sandbox_(python|nodejs)_[0-9]+$' || true)"
+if [ -n "$sandbox_containers" ]; then
+  while IFS= read -r container; do
+    echo "🧹 Deleting $container..."
+    docker rm -f "$container" >/dev/null 2>&1 || true
+  done <<<"$sandbox_containers"
 else
-  echo "⚠️ .env not found, skipping container cleanup"
+  echo "✅ No sandbox containers found"
 fi
 
 echo "✅ Stopping and cleanup complete"

@@ -1,7 +1,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 )
 
@@ -75,7 +74,7 @@ func TestBuildParallelExpansion_PrefersGroupedMembersOverDescendants(t *testing.
 		},
 	}
 
-	exp, err := buildParallelExpansion(context.Background(), c, "Parallel:IterateList")
+	exp, err := buildParallelExpansion(t.Context(), c, "Parallel:IterateList")
 	if err != nil {
 		t.Fatalf("buildParallelExpansion: %v", err)
 	}

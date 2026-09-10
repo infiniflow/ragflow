@@ -16,7 +16,7 @@ import (
 // If Go produces the same HTML as Python, the pipeline is correct
 // and differences are from the engine layer (pdf_oxide vs pdfplumber).
 func TestTableParityWithPythonBoxes(t *testing.T) {
-	boxesDir := filepath.Join("testdata", "output", "py", "noocr", "table_boxes")
+	boxesDir := filepath.Join("testdata", "output", "py", "ocr", "table_boxes")
 	entries, err := os.ReadDir(boxesDir)
 	if err != nil {
 		t.Skipf("Python table_boxes not found — run dump_py_results.py first: %v", err)

@@ -24,7 +24,7 @@
                         "field_name": "metadata",
                         "frequencyPenaltyEnabled": true,
                         "frequency_penalty": 0.7,
-                        "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_tokens": 256,
                         "outputs": {
@@ -63,7 +63,7 @@
                         "field_name": "summary",
                         "frequencyPenaltyEnabled": true,
                         "frequency_penalty": 0.7,
-                        "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_tokens": 256,
                         "outputs": {
@@ -102,7 +102,7 @@
                         "field_name": "keywords",
                         "frequencyPenaltyEnabled": true,
                         "frequency_penalty": 0.7,
-                        "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_tokens": 256,
                         "outputs": {
@@ -141,7 +141,7 @@
                         "field_name": "questions",
                         "frequencyPenaltyEnabled": true,
                         "frequency_penalty": 0.7,
-                        "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_tokens": 256,
                         "outputs": {
@@ -248,7 +248,7 @@
                             ]
                         },
                         "image": {
-                            "output_format": "text",
+                            "output_format": "json",
                             "parse_method": "ocr",
                             "preprocess": "main_content",
                             "suffix": [
@@ -336,7 +336,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [],
                         "image_context_size": 0,
                         "outputs": {
@@ -498,7 +498,7 @@
                                 },
                                 {
                                     "fileFormat": "image",
-                                    "output_format": "text",
+                                    "output_format": "json",
                                     "parse_method": "ocr",
                                     "preprocess": "main_content",
                                     "system_prompt": ""
@@ -576,7 +576,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"
@@ -614,7 +614,7 @@
                             "field_name": "summary",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -656,7 +656,7 @@
                             "field_name": "keywords",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -699,7 +699,7 @@
                             "field_name": "questions",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -742,7 +742,7 @@
                             "field_name": "metadata",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {

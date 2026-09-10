@@ -6,6 +6,8 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import { ListDeletionKey } from '@/constants/list-deletion';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useFetchChatList } from '@/hooks/use-chat-request';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
@@ -24,7 +26,9 @@ export default function ChatList() {
     pagination,
     handleInputChange,
     searchString,
+    setSearchString,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
     loading,
   } = useFetchChatList();
@@ -53,6 +57,13 @@ export default function ChatList() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(data?.chats?.length, loading, {
+    deletionKey: ListDeletionKey.ChatList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const handleShowCreateModal = useCallback(() => {
     showCreateChatModal();

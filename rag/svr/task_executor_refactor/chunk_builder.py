@@ -72,6 +72,7 @@ async def run_chunking(
     chunker,
     binary: bytes,
     ctx: TaskContext,
+    on_chunking_start=None,
 ) -> List[Dict]:
     """Run document chunking via parser.
 
@@ -88,7 +89,10 @@ async def run_chunking(
         # Merge table parser config
         parser_config = merge_table_parser_config_from_kb(ctx.raw_task)
 
+        chunking_wait_started_at = timer()
         async with ctx.chunk_limiter:
+            if on_chunking_start:
+                on_chunking_start(timer() - chunking_wait_started_at)
             cks = await thread_pool_exec(
                 chunker.chunk,
                 ctx.name,
