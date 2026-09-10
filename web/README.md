@@ -36,8 +36,4 @@ _Replace `[YOUR_MACHINE_IP]` with your actual machine IP address (e.g., `http://
 
 ## Shutdown front-end
 
-Ctrl + C or
-
-```bash
-kill -f "umi dev"
-```
+Press Ctrl + C in the terminal that runs `npm run dev`.

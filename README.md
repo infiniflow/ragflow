@@ -7,15 +7,6 @@
 <p align="center">
   <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DBEDFA"></a>
   <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DFE0E5"></a>
-  <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DFE0E5"></a>
-  <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
-  <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
-  <a href="./README_fr.md"><img alt="README en Français" src="https://img.shields.io/badge/Français-DFE0E5"></a>
-  <a href="./README_id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-DFE0E5"></a>
-  <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
-  <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
-  <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
-  <a href="./README_ru.md"><img alt="Русская версия README" src="https://img.shields.io/badge/Русский-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -319,80 +310,86 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Launch Service from Source for Development
 
+This repository is developed and run on Windows with PowerShell. Use the flow below as the standard
+local startup procedure, and keep the Docker dependencies running in the background.
+
 > [!IMPORTANT]
 > After cloning the repository for the first time, run `git config --local --unset core.hooksPath`, `uv tool install lefthook` and `lefthook install` once from the repo root to enable local Git hooks.
 
+### First-time setup
+
 1. Install `uv`, or skip this step if it is already installed:
 
-   ```bash
+   ```powershell
    pipx install uv
    ```
-2. Clone the source code and install Python dependencies:
 
-   ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+2. Install the Python dependencies and download the native libraries:
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   uv sync --python 3.13
+   uv run python ragflow_deps/download_deps.py
    ```
-3. Launch the dependent services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
-   ```bash
+3. Install the frontend dependencies:
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow\web
+   npm install
+   ```
+
+### Start the services
+
+1. Make sure the Docker dependencies are running: `docker ps` should list `docker-mysql-1`,
+   `docker-es01-1`, `docker-redis-1` and `docker-minio-1`. If they are not running, start them
+   now and skip this step next time:
+
+   ```powershell
    docker compose -f docker/docker-compose-base.yml up -d
    ```
 
-   Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/.env** to `127.0.0.1`:
+2. Terminal 1 — task executor, the background worker that parses and indexes documents:
 
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   $env:PYTHONPATH="."
+   $env:HF_ENDPOINT="https://hf-mirror.com"
+   $env:PYTHONUTF8="1"
+   uv run python rag/svr/task_executor.py
    ```
-4. If you cannot access HuggingFace, set the `HF_ENDPOINT` environment variable to use a mirror site:
 
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+3. Terminal 2 — Web API service, listening on port 9380:
+
+   ```powershell
+   cd C:\Projects\RAG\ragflow
+   $env:PYTHONPATH="."
+   $env:HF_ENDPOINT="https://hf-mirror.com"
+   $env:PYTHONUTF8="1"
+   uv run python api/ragflow_server.py
    ```
-5. If your operating system does not have jemalloc, please install it as follows:
 
-   ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
-   ```
-6. Launch backend service:
+4. Terminal 3 — frontend UI, listening on port 9222 and proxying `/api` and `/v1` to port 9380:
 
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. Install frontend dependencies:
-
-   ```bash
-   cd web
-   npm install
-   ```
-8. Launch frontend service:
-
-   ```bash
+   ```powershell
+   cd C:\Projects\RAG\ragflow\web
    npm run dev
    ```
 
-   _The following output confirms a successful launch of the system:_
+5. Open <http://localhost:9222> to use RAGFlow:
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Stop RAGFlow front-end and back-end service after development is complete:
 
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+   `$env:PYTHONUTF8="1"` keeps Chinese log output from breaking the console code page, and
+   `$env:HF_ENDPOINT="https://hf-mirror.com"` points model downloads at the HuggingFace mirror.
+
+### Stop the services
+
+Press `Ctrl+C` in each terminal. The Docker dependencies keep running until you run
+`docker compose -f docker/docker-compose-base.yml down`.
+
+On Linux or macOS, replace the `$env:X="..."` lines with `export X=...`; there
+`bash docker/launch_backend_service.sh` starts both backend processes in a single terminal.
 
 ## 📚 Documentation
 
