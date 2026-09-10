@@ -362,11 +362,14 @@ async def retrieval_test_embedded(tenant_id=None):
     if not kb_ids:
         return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.0))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    try:
+        similarity_threshold = float(req.get("similarity_threshold", 0.0))
+        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+        top = int(req.get("top_k", 1024))
+        rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
+    except (TypeError, ValueError):
+        return get_error_data_result("`top_k` and `rerank_candidates_count` must be integers and `similarity_threshold` and `vector_similarity_weight` must be numbers")
     use_kg = req.get("use_kg", False)
-    top = int(req.get("top_k", 1024))
-    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
