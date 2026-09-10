@@ -22,7 +22,7 @@ from .dataset import (
     wait_for_parse_done,
 )
 from .http_client import HttpClient
-from .metrics import ChatSample, RetrievalSample, summarize
+from .metrics import ChatSample, RetrievalSample, request_rates, summarize
 from .report import chat_report, retrieval_report
 from .retrieval import RetrievalError, build_payload, run_retrieval as run_retrieval_request
 from .utils import eprint, load_json_arg, split_csv
@@ -457,7 +457,7 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
             "errors": [e for e in errors if e],
             "created": created,
             "total_duration_s": total_duration,
-            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
+            **request_rates(success, failure, total_duration),
         }
         if args.print_response:
             payload["responses"] = responses
@@ -557,7 +557,7 @@ def run_retrieval(client: HttpClient, args: argparse.Namespace) -> int:
             "errors": [e for e in errors if e],
             "created": created,
             "total_duration_s": total_duration,
-            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
+            **request_rates(success, failure, total_duration),
         }
         if args.print_response:
             payload["responses"] = responses
