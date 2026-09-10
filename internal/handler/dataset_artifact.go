@@ -282,8 +282,10 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	common.SuccessWithData(c, graph, "success")
 }
 
-// ListStructures handles GET /artifacts/structure?kind=<kind> — the dataset-scope
-// structure graph for a resolved kind (mirrors Python get_dataset_structure).
+// ListStructures handles GET /artifacts/structure?kind=<kind>&keywords=<query> —
+// the dataset-scope structure graph for a resolved kind (mirrors Python
+// get_dataset_structure). A non-empty keywords value returns the matching
+// entity subgraph.
 // kind is REQUIRED: missing or invalid → 400 ARGUMENT_ERROR.
 func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
@@ -296,7 +298,12 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
 		return
 	}
-	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind}
+	in := service.DatasetStructureGraphInput{
+		TenantID:  tenantID,
+		DatasetID: datasetID,
+		Kind:      kind,
+		Keywords:  strings.TrimSpace(c.Query("keywords")),
+	}
 	resp, err := h.svc.GetDatasetStructure(c.Request.Context(), in)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidStructureKind) {
