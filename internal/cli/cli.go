@@ -983,18 +983,17 @@ Datasets syntax (full filter set):
     keyword                 true|false  Enable keyword extraction via LLM
     use_kg                  true|false  Enable knowledge-graph augmentation
     rerank_id               'id'      Rerank model to apply
-    tenant_rerank_id        'id'      Tenant-scoped rerank model
-    search_id               'id'      Idempotency / search-session id
-    meta_data_filter        '<json>'  Metadata filter (must be valid JSON)
+    search_id               'id'      Apply a saved search configuration
+    metadata_condition      '<json>'  Metadata filter (must be valid JSON)
     cross_languages         ['a','b'] Source languages to translate from
-    doc_ids                 ['d1',...] Restrict to specific document ids
+    document_ids            ['d1',...] Restrict to specific document ids
 
   Examples:
     search 'AI' on datasets 'kb_chinese' with top_k 10;
     search 'AI' on datasets 'kb1' 'kb2' with top_k 20 similarity_threshold 0.3 cross_languages ['Chinese']
-        doc_ids ['d1', 'd2'];
+        document_ids ['d1', 'd2'];
     search 'manual' on datasets 'kb1' with
-        meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+        metadata_condition '{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]}';
 `
 	fmt.Println(help)
 }

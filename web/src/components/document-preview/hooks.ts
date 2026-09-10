@@ -187,6 +187,34 @@ async function normalizeXlsxForExcelJS(
   }
 }
 
+/**
+ * x-spreadsheet (used internally by @js-preview/excel) throws
+ * "Worksheet name ... cannot include any of the following characters:
+ * * ? : \ / [ ]" when a sheet name contains any of those characters. Files
+ * generated programmatically (not through Excel/WPS UI) can carry such names
+ * (e.g. "Visible:Data"), crashing the whole preview. Replace the illegal
+ * characters with underscores in xl/workbook.xml so the previewer renders.
+ */
+async function sanitizeSheetNames(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(data);
+  const workbookFile = zip.file('xl/workbook.xml');
+  if (!workbookFile) return data;
+
+  const xml = await workbookFile.async('string');
+  const cleaned = xml.replace(
+    /(<sheet\b[^>]*\bname=")([^"]*)(")/g,
+    (_match, prefix: string, name: string, suffix: string) =>
+      prefix + name.replace(/[:\\/?*[\]]/g, '_') + suffix,
+  );
+  if (cleaned === xml) return data;
+
+  zip.file('xl/workbook.xml', cleaned);
+  return zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+  });
+}
+
 type ExcelLocatePos = number[];
 
 /** x-spreadsheet Data instance used by @js-preview/excel (not a plain object). */
@@ -395,6 +423,7 @@ export const useFetchExcel = (filePath: string, positions?: number[][]) => {
           let data = jsonFile.data;
           data = await normalizeXlsxForExcelJS(data);
           data = await stripWpsDispImg(data);
+          data = await sanitizeSheetNames(data);
           dataRef.current = data;
         } catch {
           // Not a valid ZIP or preprocessing failed — use original data
