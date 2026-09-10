@@ -32,16 +32,16 @@ type TaskKind int
 const (
 	// TaskKindIngestion is an ingestion document task (IngestionTask set).
 	TaskKindIngestion TaskKind = iota
-	// TaskKindMemory is an async memory-extraction task (MemoryPayload set,
-	// IngestionTask nil). It shares the worker pool with ingestion tasks but
+	// TaskKindMemory is an async memory-extraction task (IngestionTask nil). It
+	// shares the worker pool with ingestion tasks but
 	// runs through executeMemoryTask instead of the ingestion state machine.
 	TaskKindMemory
 )
 
 // TaskContext holds the execution inputs for an ingestion document task or a
 // memory-extraction task. Ingestion tasks populate IngestionTask and the
-// document/KB/tenant chain; memory tasks populate MemoryPayload and leave
-// IngestionTask nil.
+// document/KB/tenant chain; memory tasks carry only the durable task id and
+// leave IngestionTask nil.
 type TaskContext struct {
 	Ctx context.Context
 
@@ -57,18 +57,10 @@ type TaskContext struct {
 	PipelineID string
 	File       any
 
-	// MemoryPayload carries the raw task_type="memory" message body for
-	// memory tasks (memory_id/source_id/message_dict). Only set for
-	// TaskKindMemory.
-	MemoryPayload map[string]any
-
-	// taskID is the envelope task identifier (TaskMessage.TaskID) that the
-	// scheduler claims and later releases. It is the authoritative identity
-	// for claim, release, and logging across both task kinds. Unexported so
-	// the claim key cannot be mutated between admission (claim) and
-	// settlement (release), which would leak the claim and permanently block
-	// redelivery. There is deliberately no fallback chain in ID(): identity
-	// lives only here, never re-derived from IngestionTask or MemoryPayload.
+	// taskID is the authoritative TaskMessage identity used for admission,
+	// execution, settlement, and logging. It is unexported so it cannot change
+	// while a worker owns the delivery. There is deliberately no fallback chain
+	// in ID(): identity lives only here, never in task-specific data.
 	taskID string
 
 	// Handle is the message-queue ack handle for the task message that scheduled
@@ -77,26 +69,21 @@ type TaskContext struct {
 	//   - TaskKindIngestion: ack on a durably-persisted terminal status and
 	//     nack otherwise (e.g. shutdown mid-task) so the message is redelivered
 	//     and resumed after restart.
-	//   - TaskKindMemory: ack on success and on terminal failure (task absent,
-	//     already-failed, or progress=-1 persisted by HandleSaveToMemoryTask);
-	//     nack on transient failure (task-load DB error before any marker, or
-	//     LLM/network error that did not reach progress=-1) so the message is
-	//     redelivered. See executeMemoryTask.
+	//   - TaskKindMemory: ack when the durable task runner permits it; otherwise
+	//     leave the delivery unsettled for broker or reconciler recovery.
 	Handle common.TaskHandle
 }
 
 // NewMemoryTaskContextForScheduling creates a lightweight TaskContext for a
 // memory-extraction task. taskID is the envelope TaskMessage.TaskID that the
-// scheduler claims and will release; it is the authoritative identity for the
-// whole memory task lifecycle. Only the scheduling-related fields are set, not
-// the full ingestion business data.
-func NewMemoryTaskContextForScheduling(ctx context.Context, taskID string, payload map[string]any, handle common.TaskHandle) *TaskContext {
+// scheduler receives; it is the authoritative identity for the whole memory
+// task lifecycle. Only scheduling fields are set, not full business data.
+func NewMemoryTaskContextForScheduling(ctx context.Context, taskID string, handle common.TaskHandle) *TaskContext {
 	return &TaskContext{
-		Ctx:           ctx,
-		Kind:          TaskKindMemory,
-		taskID:        taskID,
-		MemoryPayload: payload,
-		Handle:        handle,
+		Ctx:    ctx,
+		Kind:   TaskKindMemory,
+		taskID: taskID,
+		Handle: handle,
 	}
 }
 
@@ -113,7 +100,7 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 
 // ID returns the task identifier for claim/release and logging. It is the
 // envelope TaskMessage.TaskID captured at construction — there is deliberately
-// no fallback to IngestionTask or MemoryPayload, so identity is never
+// no fallback to IngestionTask or broker payload, so identity is never
 // re-derived from a source that could disagree with the claim key.
 func (c *TaskContext) ID() string {
 	if c == nil {

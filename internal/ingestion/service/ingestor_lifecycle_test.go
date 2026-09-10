@@ -244,16 +244,15 @@ func TestStopDeadlineLeavesStuckMemoryHandleUnsettled(t *testing.T) {
 
 	release := make(chan struct{})
 	started := make(chan struct{})
-	ingestor.runMemoryTask = func(context.Context, string, map[string]any) error {
+	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		close(started)
 		<-release
-		return nil
+		return servicepkg.MemoryTaskAcknowledge, nil
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "memory-stop-timeout",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{}`),
 	}}
 	w := <-ingestor.workerQueue
 	w.inbox <- handle
