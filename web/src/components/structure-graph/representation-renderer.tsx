@@ -43,6 +43,8 @@ export interface ClickableNode {
   source_chunk_ids?: string[];
   /** Tree leaves only: whether this node has child clusters. */
   hasChildren?: boolean;
+  /** Leaf claim count (tree badge). 0/undefined ⇒ nothing for the claims panel. */
+  badge?: number;
   /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
   description?: string;
   evidence?: IClaimEvidence[];
@@ -88,6 +90,7 @@ export function RepresentationRenderer({
           // Tree leaves are where the claims UI attaches; branches are pure
           // structure and clicking them keeps the old behaviour.
           hasChildren: !!item.children?.length,
+          badge: item.badge,
           description: item.description,
           evidence: item.evidence,
         });

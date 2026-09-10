@@ -8,21 +8,39 @@ import {
   useFetchDocumentClaims,
 } from '@/hooks/use-document-request';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   type ClickableNode,
   RepresentationRenderer,
 } from '@/components/structure-graph/representation-renderer';
-import { ClaimsPanel, NodeDetailPanel } from './components/claim-list';
+import type {
+  ClaimsPanelState,
+  EvidencePanelState,
+} from './components/claim-list';
 import { RepresentationSelect } from './components/representation-select';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
 
+export type {
+  ClaimsPanelState,
+  EvidencePanelState,
+} from './components/claim-list';
+
 interface RepresentationProps {
   onNodeClick?: (node: ClickableNode) => void;
+  // The claims / evidence panels belong to the artifact page's middle column,
+  // not inside this tree view. The selection still lives here (it is driven by
+  // node clicks), but the resolved content is published upward and the page
+  // decides where to render it.
+  onClaimsPanelChange?: (panel: ClaimsPanelState | null) => void;
+  onEvidencePanelChange?: (panel: EvidencePanelState | null) => void;
 }
 
-function Representation({ onNodeClick }: RepresentationProps) {
+function Representation({
+  onNodeClick,
+  onClaimsPanelChange,
+  onEvidencePanelChange,
+}: RepresentationProps) {
   const { t } = useTranslation();
   const { deleteDocumentStructureGraph, loading: deleting } =
     useDeleteDocumentStructureGraph();
@@ -50,21 +68,73 @@ function Representation({ onNodeClick }: RepresentationProps) {
     handleNodeClick,
   } = useGraphEntitySearch(onNodeClick);
 
-  // Tree leaves carry a claim-count badge: clicking one opens its claims here
-  // in addition to the usual chunk navigation. Branch clicks close the panel —
-  // they are pure structure and their descendants own the claims.
+  // Tree leaves carry a claim-count badge: clicking one opens its claims in the
+  // artifact page's middle column, in addition to the usual chunk navigation.
+  // Branch clicks close the panel — they are pure structure and their
+  // descendants own the claims. The panels themselves are rendered by the page
+  // (as a resizable column), so only the resolved content is published upward.
   const { data: claimsData, loading: claimsLoading } = useFetchDocumentClaims(
     claimsLeaf?.source_chunk_ids,
     selectedTemplateId,
   );
 
+  const handleCloseClaims = useCallback(() => setClaimsLeaf(null), []);
+  const handleCloseEvidence = useCallback(() => setEvidenceDetail(null), []);
+
+  useEffect(() => {
+    onClaimsPanelChange?.(
+      claimsLeaf
+        ? {
+            clusterName: claimsLeaf.name,
+            claims: claimsData?.claims ?? [],
+            total: claimsData?.total ?? 0,
+            loading: claimsLoading,
+            onClose: handleCloseClaims,
+          }
+        : null,
+    );
+    // Clear on unmount too: switching the left view back to the document
+    // preview unmounts the tree, and the page must drop the column with it.
+    return () => onClaimsPanelChange?.(null);
+  }, [
+    claimsLeaf,
+    claimsData,
+    claimsLoading,
+    handleCloseClaims,
+    onClaimsPanelChange,
+  ]);
+
+  useEffect(() => {
+    onEvidencePanelChange?.(
+      evidenceDetail
+        ? {
+            nodeName: evidenceDetail.name,
+            description: evidenceDetail.description,
+            evidence: evidenceDetail.evidence ?? [],
+            onClose: handleCloseEvidence,
+          }
+        : null,
+    );
+    return () => onEvidencePanelChange?.(null);
+  }, [evidenceDetail, handleCloseEvidence, onEvidencePanelChange]);
+
   const handleNodeClickWithClaims = useCallback(
     (node: ClickableNode) => {
-      // Tree leaf cluster → its claims panel; a node carrying verified
-      // evidence (page_index fact/conclusion) → its detail panel. Both also
-      // forward to the usual chunk navigation.
-      setClaimsLeaf(node.hasChildren === false ? node : null);
-      setEvidenceDetail(node.evidence?.length ? node : null);
+      // Two leaf kinds share the middle column, so exactly one panel opens:
+      // a leaf cluster with a claim count → its claims; any other node that
+      // has something to say (description and/or verified evidence) → its
+      // detail panel. Gating the detail panel on evidence alone left most
+      // page_index nodes empty: the evidence gate verifies quotes verbatim
+      // against the source chunk and drops the ones it cannot locate, so the
+      // majority carry a description but no evidence. Both also forward to
+      // the usual chunk navigation.
+      const showClaims = node.hasChildren === false && (node.badge ?? 0) > 0;
+      setClaimsLeaf(showClaims ? node : null);
+      setEvidenceDetail(
+        !showClaims && (node.evidence?.length || node.description)
+          ? node
+          : null,
+      );
       handleNodeClick(node);
     },
     [handleNodeClick],
@@ -124,32 +194,13 @@ function Representation({ onNodeClick }: RepresentationProps) {
         </div>
       )}
       {!(loading && !data) && templates.length > 0 && (
-        <>
-          <RepresentationRenderer
-            template={selectedTemplate}
-            onNodeClick={handleNodeClickWithClaims}
-            highlightNodeId={highlightNodeId}
-            totalEntities={data?.total_entities}
-            returnedEntities={data?.returned_entities}
-          />
-          {claimsLeaf && (
-            <ClaimsPanel
-              clusterName={claimsLeaf.name}
-              claims={claimsData?.claims ?? []}
-              total={claimsData?.total ?? 0}
-              loading={claimsLoading}
-              onClose={() => setClaimsLeaf(null)}
-            />
-          )}
-          {evidenceDetail && (
-            <NodeDetailPanel
-              nodeName={evidenceDetail.name}
-              description={evidenceDetail.description}
-              evidence={evidenceDetail.evidence ?? []}
-              onClose={() => setEvidenceDetail(null)}
-            />
-          )}
-        </>
+        <RepresentationRenderer
+          template={selectedTemplate}
+          onNodeClick={handleNodeClickWithClaims}
+          highlightNodeId={highlightNodeId}
+          totalEntities={data?.total_entities}
+          returnedEntities={data?.returned_entities}
+        />
       )}
     </section>
   );

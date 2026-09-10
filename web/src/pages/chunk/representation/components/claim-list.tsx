@@ -133,6 +133,25 @@ export function ClaimList({
   );
 }
 
+// The artifact page renders these panels as a resizable middle column, so the
+// tree view only owns the selection and hands the resolved content upward. The
+// payload carries its own close handler: clearing the selection lives here,
+// next to the click handler that set it.
+export interface ClaimsPanelState {
+  clusterName?: string;
+  claims: IClaimItem[];
+  total: number;
+  loading: boolean;
+  onClose: () => void;
+}
+
+export interface EvidencePanelState {
+  nodeName?: string;
+  description?: string;
+  evidence: IClaimEvidence[];
+  onClose: () => void;
+}
+
 interface ClaimsPanelProps {
   clusterName?: string;
   claims: IClaimItem[];
@@ -141,7 +160,10 @@ interface ClaimsPanelProps {
   onClose: () => void;
 }
 
-// One leaf cluster's claims, opened from the tree's count badge.
+// One leaf cluster's claims, opened from the tree's count badge. Rendered as a
+// full-height column between the artifact tree and the chunk list, so it shares
+// the frame language of those panels: a bordered header on top, a scrollable
+// body filling the rest, and a close affordance on the right.
 export function ClaimsPanel({
   clusterName,
   claims,
@@ -152,34 +174,36 @@ export function ClaimsPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="mt-4 rounded-xl border border-border-button bg-bg-card">
-      <div className="flex items-center justify-between border-b border-border-button px-4 py-2.5">
-        <div className="text-sm font-medium text-text-primary">
+    <article className="h-full flex flex-col">
+      <header className="flex items-center justify-between gap-2 flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
+        <h2 className="truncate text-[18px] text-text-primary">
           {t('knowledgeCompilation.claimsPanelTitle', {
             name: clusterName ?? '',
             defaultValue: `Claims · ${clusterName ?? ''}`,
           })}
+        </h2>
+        <div className="flex items-center gap-2 shrink-0">
           {!loading && (
-            <span className="ml-2 text-xs text-text-secondary">
+            <span className="text-[14px] text-text-secondary">
               {t('knowledgeCompilation.claimsTotal', {
                 count: total,
                 defaultValue: `${total} total`,
               })}
             </span>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            type="button"
+            className="h-6 w-6"
+            onClick={onClose}
+            aria-label={t('common.close', 'Close')}
+          >
+            <X size={14} />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          type="button"
-          className="h-6 w-6"
-          onClick={onClose}
-          aria-label={t('common.close', 'Close')}
-        >
-          <X size={14} />
-        </Button>
-      </div>
-      <div className="max-h-96 overflow-auto scrollbar-auto p-3">
+      </header>
+      <div className="flex-1 h-0 overflow-auto scrollbar-auto px-5 pb-5 pt-2.5">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-sm text-text-secondary">
             <Loader2 className="animate-spin" size={16} />
@@ -191,7 +215,7 @@ export function ClaimsPanel({
           <ClaimList claims={claims} total={total} loading={loading} />
         )}
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -214,31 +238,31 @@ export function NodeDetailPanel({
   const { t } = useTranslation();
 
   return (
-    <div className="mt-4 rounded-xl border border-border-button bg-bg-card">
-      <div className="flex items-center justify-between border-b border-border-button px-4 py-2.5">
-        <div className="truncate text-sm font-medium text-text-primary">
+    <article className="h-full flex flex-col">
+      <header className="flex items-center justify-between gap-2 flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
+        <h2 className="truncate text-[18px] text-text-primary">
           {nodeName ||
             t('knowledgeCompilation.claimsNodeDetail', {
               defaultValue: 'Details',
             })}
-        </div>
+        </h2>
         <Button
           variant="ghost"
           size="icon"
           type="button"
-          className="h-6 w-6"
+          className="h-6 w-6 shrink-0"
           onClick={onClose}
           aria-label={t('common.close', 'Close')}
         >
           <X size={14} />
         </Button>
-      </div>
-      <div className="max-h-96 overflow-auto scrollbar-auto p-3">
+      </header>
+      <div className="flex-1 h-0 overflow-auto scrollbar-auto px-5 pb-5 pt-2.5">
         {description && (
           <p className="text-sm leading-6 text-text-secondary">{description}</p>
         )}
         <EvidenceBlock items={evidence} expandable />
       </div>
-    </div>
+    </article>
   );
 }

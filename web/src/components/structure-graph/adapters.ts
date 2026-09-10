@@ -87,6 +87,15 @@ function buildTreeDataItems(
         name: entity.name,
         entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
+        // Leaf clusters only: the tree shows this as a count badge and the
+        // claims themselves are fetched on click.
+        badge: entity.claim_count,
+        // page_index fact/conclusion: gate-verified quotes rendered in the
+        // node's detail panel. Without badge/evidence/description the tree and
+        // page_index nodes reached the click handler empty, so the detail panel
+        // could never open for them.
+        evidence: entity.evidence,
+        description: getEntityDescription(entity),
       },
     ]),
   );

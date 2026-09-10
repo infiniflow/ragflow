@@ -3626,6 +3626,14 @@ export default {
       skillEmpty: '利用可能なスキルがありません',
       representationEmpty: '利用可能な表現テンプレートがありません。',
       representationUnsupported: 'この表現形式にはまだ対応していません。',
+      claimsPanelTitle: 'アサーション · {{name}}',
+      claimsTotal: '全 {{count}} 件',
+      claimsLoading: 'アサーションを読み込み中…',
+      claimsEmpty: 'このクラスターからアサーションは抽出されませんでした。',
+      claimsLoadMore: 'さらに読み込む（残り {{remaining}} 件）',
+      claimsMoreEvidence: '他に {{count}} 件の証拠',
+      claimsCollapseEvidence: '折りたたむ',
+      claimsNodeDetail: '詳細',
     },
 
     llmTools: {
