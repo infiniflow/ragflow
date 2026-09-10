@@ -231,11 +231,7 @@ class Dealer:
             total = self.dataStore.get_total(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"]
-            if not highlight:
-                highlightFields = []
-            elif isinstance(highlight, list):
-                highlightFields = highlight
+            highlightFields = []
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
                 matchExprs = [matchText] if matchText else []
@@ -309,9 +305,19 @@ class Dealer:
         logging.debug(f"TOTAL: {total}")
         ids = self.dataStore.get_doc_ids(res)
         keywords = list(kwds)
-        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
+        highlightDic = self.get_highlight(res, keywords, "content_with_weight") if highlight else {}
         aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
-        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlight, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlightDic, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+
+    @staticmethod
+    def get_highlight(res, keywords: list[str], field_name: str):
+        ans = {}
+        pattern = re.compile("|".join(re.escape(w) for w in sorted(filter(None, keywords), key=len, reverse=True)), re.IGNORECASE) if any(keywords) else None
+        for d in res["hits"]["hits"]:
+            txt = d["_source"][field_name]
+            ans[d["_id"]] = pattern.sub(lambda match: f"<em>{match.group(0)}</em>", txt) if pattern else txt
+
+        return ans
 
     @staticmethod
     def trans2floats(txt):
@@ -784,11 +790,8 @@ class Dealer:
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
             }
-            if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
+            if id in sres.highlight:
+                d["highlight"] = sres.highlight[id]
             ranks["chunks"].append(d)
 
         if aggs:
