@@ -1,7 +1,6 @@
 import { cloneDeep } from 'lodash';
-import { Operator } from '@/constants/agent';
 import { DSL } from '@/interfaces/database/agent';
-import { RetrievalFrom } from '@/pages/agent/constant';
+import { Operator, RetrievalFrom } from '@/pages/agent/constant';
 
 /**
  * Retrieval params live in two views of a DSL: the canvas graph

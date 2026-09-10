@@ -47,7 +47,7 @@ class TestChunksRetrieval:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_page_size, expected_message",
         [
