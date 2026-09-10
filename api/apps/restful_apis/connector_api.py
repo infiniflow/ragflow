@@ -88,10 +88,17 @@ async def update_connector(connector_id):
 
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("name", "source", "config")
 async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
+        try:
+            refresh_freq = int(req.get("refresh_freq", 5))
+            prune_freq = int(req.get("prune_freq", 5))
+            timeout_secs = int(req.get("timeout_secs", 60 * 29))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="refresh_freq, prune_freq and timeout_secs must be integers")
         req["id"] = get_uuid()
         conn = {
             "id": req["id"],
@@ -100,9 +107,9 @@ async def create_connector():
             "source": req["source"],
             "input_type": InputType.POLL,
             "config": req["config"],
-            "refresh_freq": int(req.get("refresh_freq", 5)),
-            "prune_freq": int(req.get("prune_freq", 5)),
-            "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
+            "refresh_freq": refresh_freq,
+            "prune_freq": prune_freq,
+            "timeout_secs": timeout_secs,
             "status": TaskStatus.UNSTART,
         }
         ConnectorService.save(**conn)
