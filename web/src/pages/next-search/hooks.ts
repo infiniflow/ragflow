@@ -263,7 +263,7 @@ export const useTestRetrieval = (
 
     testChunk({
       kb_id: kbIds,
-      highlight: true,
+      highlight: false,
       question: q,
       document_ids: Array.isArray(selectedDocumentIds)
         ? selectedDocumentIds
@@ -367,7 +367,7 @@ export const useSendQuestion = (
       }
       testChunk({
         kb_id: kbIds,
-        highlight: true,
+        highlight: false,
         question: q,
         page: 1,
         page_size: pageSize,
@@ -415,7 +415,7 @@ export const useSendQuestion = (
 
       testChunk({
         kb_id: kbIds,
-        highlight: true,
+        highlight: false,
         question: q,
         document_ids: documentIds ?? selectedDocumentIds,
         page,
@@ -425,7 +425,7 @@ export const useSendQuestion = (
 
       testChunkAll({
         kb_id: kbIds,
-        highlight: true,
+        highlight: false,
         question: q,
         document_ids: [],
         page,
