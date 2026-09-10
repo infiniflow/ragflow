@@ -1270,7 +1270,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
-        d["available_int"] = int(req["available"])
+        try:
+            d["available_int"] = int(req["available"])
+        except (TypeError, ValueError):
+            return get_error_data_result("`available` should be an integer")
     if "positions" in req:
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
@@ -1336,7 +1339,13 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message="`chunk_ids` is required.")
     if "available_int" not in req and "available" not in req:
         return get_error_data_result(message="`available_int` or `available` is required.")
-    available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
+    if "available_int" in req:
+        try:
+            available_int = int(req["available_int"])
+        except (TypeError, ValueError):
+            return get_error_data_result("`available_int` should be an integer")
+    else:
+        available_int = 1 if req.get("available") else 0
 
     try:
 
