@@ -241,8 +241,8 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 	if c == nil {
 		return fmt.Errorf("azure devops connector is nil")
 	}
-	if c.organization == "" && c.baseURL == "" {
-		return fmt.Errorf("Invalid connector settings: 'organization' or 'base_url' must be provided")
+	if c.organization == "" {
+		return fmt.Errorf("Invalid connector settings: Azure DevOps organization or collection must be provided")
 	}
 	if c.pat == "" {
 		return fmt.Errorf("Missing azure_devops_pat in credentials")
@@ -251,10 +251,16 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 		if !strings.HasPrefix(c.customBaseURL, "http://") && !strings.HasPrefix(c.customBaseURL, "https://") {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must use HTTP or HTTPS")
 		}
+		if u, err := url.Parse(c.customBaseURL); err == nil && u.User != nil {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must not contain credentials")
+		}
 	}
 	if c.organization != "" && strings.Contains(c.organization, "://") {
 		if !strings.HasPrefix(c.organization, "http://") && !strings.HasPrefix(c.organization, "https://") {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTP or HTTPS")
+		}
+		if u, err := url.Parse(c.organization); err == nil && u.User != nil {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must not contain credentials")
 		}
 	}
 	switch c.indexMode {

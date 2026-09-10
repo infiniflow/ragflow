@@ -32,6 +32,24 @@ export const azureDevOpsConstant = (t: TFunction) => [
     required: false,
     placeholder: 'https://dev.azure.com',
     tooltip: t('setting.azureDevOpsBaseUrlTip'),
+    customValidate: (val: string) => {
+      const trimmed = val?.trim();
+      if (!trimmed) {
+        return true;
+      }
+      if (!/^https?:\/\//i.test(trimmed)) {
+        return t('setting.azureDevOpsBaseUrlTip');
+      }
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.username || parsed.password) {
+          return t('setting.azureDevOpsPatTip');
+        }
+      } catch {
+        return t('setting.azureDevOpsBaseUrlTip');
+      }
+      return true;
+    },
   },
   {
     label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
@@ -39,11 +57,32 @@ export const azureDevOpsConstant = (t: TFunction) => [
     type: FormFieldType.Text,
     required: false,
     customValidate: (val: string, formValues: any) => {
-      const baseUrl = formValues?.config?.base_url;
-      if (!val?.trim() && !baseUrl?.trim()) {
+      const org = val?.trim();
+      if (org) {
+        return true;
+      }
+      const baseUrl = formValues?.config?.base_url?.trim();
+      if (!baseUrl) {
         return t('setting.dataSourceValidationFieldRequired', {
           label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
         });
+      }
+      try {
+        const parsed = new URL(baseUrl);
+        const pathSegments = parsed.pathname.split('/').filter(Boolean);
+        if (pathSegments.length === 0) {
+          return t('setting.dataSourceValidationFieldRequired', {
+            label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
+          });
+        }
+      } catch {
+        const withoutScheme = baseUrl.replace(/^[a-zA-Z]+:\/\//, '');
+        const segments = withoutScheme.split('/').slice(1).filter(Boolean);
+        if (segments.length === 0) {
+          return t('setting.dataSourceValidationFieldRequired', {
+            label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
+          });
+        }
       }
       return true;
     },

@@ -5,7 +5,7 @@ import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -117,9 +117,18 @@ def organization_url(organization: str | None = None, base_url: str | None = Non
     if clean_base:
         if not clean_base.startswith(("http://", "https://")):
             raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
+        parsed_base = urlparse(clean_base)
+        if parsed_base.username or parsed_base.password:
+            raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
         if not clean_org:
+            path_segments = [seg for seg in parsed_base.path.strip("/").split("/") if seg]
+            if not path_segments:
+                raise UnexpectedValidationError("Azure DevOps organization or collection must be provided.")
             return clean_base
         if clean_org.startswith(("http://", "https://")):
+            parsed_org = urlparse(clean_org)
+            if parsed_org.username or parsed_org.password:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
             return clean_org
         if clean_base.endswith((f"/{clean_org}", f"/{quote(clean_org, safe='')}")):
             return clean_base
@@ -129,6 +138,9 @@ def organization_url(organization: str | None = None, base_url: str | None = Non
         raise UnexpectedValidationError("Azure DevOps organization or base URL must be provided.")
 
     if clean_org.startswith(("http://", "https://")):
+        parsed_org = urlparse(clean_org)
+        if parsed_org.username or parsed_org.password:
+            raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
         return clean_org
     if "://" in clean_org:
         raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTP or HTTPS.")

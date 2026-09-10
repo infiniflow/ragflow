@@ -681,6 +681,54 @@ func TestAzureDevOpsRejectsInvalidScheme(t *testing.T) {
 	}
 }
 
+func TestAzureDevOpsRejectsRootBaseURLWithoutOrganization(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "https://dev.azure.com",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "organization or collection") {
+		t.Fatalf("root base URL without organization must be rejected, got %v", err)
+	}
+
+	connectorHTTP, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "http://tfs.corp.local:8080",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorHTTP.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "organization or collection") {
+		t.Fatalf("root base URL without organization must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsURLWithCredentials(t *testing.T) {
+	connectorBase, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorBase.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("base URL with credentials must be rejected, got %v", err)
+	}
+
+	connectorOrg, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorOrg.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("organization URL with credentials must be rejected, got %v", err)
+	}
+}
+
 func TestAzureDevOpsRejectsUnknownSelectorValues(t *testing.T) {
 	for field, value := range map[string]string{"index_mode": "everything", "content_types": "everything"} {
 		connector, _ := NewAzureDevOpsConnector(map[string]any{

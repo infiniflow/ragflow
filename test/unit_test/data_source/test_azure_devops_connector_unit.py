@@ -273,32 +273,20 @@ def test_organization_url_accepts_http_in_closed_network():
 @pytest.mark.p2
 def test_organization_url_supports_custom_base_url():
     """Custom base URL combined with organization name."""
-    assert (
-        azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs")
-        == "http://tfs.corp.local:8080/tfs/DefaultCollection"
-    )
-    assert (
-        azure_utils.organization_url(organization="DefaultCollection", base_url="https://tfs.contoso.com/tfs")
-        == "https://tfs.contoso.com/tfs/DefaultCollection"
-    )
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="https://tfs.contoso.com/tfs") == "https://tfs.contoso.com/tfs/DefaultCollection"
 
 
 @pytest.mark.p2
 def test_organization_url_custom_base_url_already_includes_organization():
     """When base_url already contains the collection, it must not be appended twice."""
-    assert (
-        azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs/DefaultCollection")
-        == "http://tfs.corp.local:8080/tfs/DefaultCollection"
-    )
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs/DefaultCollection") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
 
 
 @pytest.mark.p2
 def test_organization_url_custom_base_url_empty_organization():
     """Custom base URL without organization returns the base URL."""
-    assert (
-        azure_utils.organization_url(base_url="http://tfs.corp.local:8080/tfs/DefaultCollection")
-        == "http://tfs.corp.local:8080/tfs/DefaultCollection"
-    )
+    assert azure_utils.organization_url(base_url="http://tfs.corp.local:8080/tfs/DefaultCollection") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
 
 
 @pytest.mark.p2
@@ -466,6 +454,28 @@ def test_connector_custom_base_url_extracts_organization():
 
 
 @pytest.mark.p2
+def test_organization_url_rejects_root_only_base_url_without_organization():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(base_url="https://dev.azure.com")
+    assert "organization or collection" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("", base_url="http://tfs.corp.local:8080")
+    assert "organization or collection" in str(excinfo.value)
+
+
+@pytest.mark.p2
+def test_organization_url_rejects_credentials_in_urls():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(organization="DefaultCollection", base_url="http://user:pass@tfs.corp.local:8080/tfs")
+    assert "credentials" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection")
+    assert "credentials" in str(excinfo.value)
+
+
+@pytest.mark.p2
 def test_html_body_is_not_an_auth_failure_for_raw_content():
     """A repository may legitimately contain .html files."""
     response = _FakeResponse(status_code=200, content_type="text/html", text="<html>page</html>")
@@ -482,6 +492,10 @@ def test_html_body_is_not_an_auth_failure_for_raw_content():
         {"organization": "", "base_url": ""},
         {"organization": "", "base_url": "ftp://invalid"},
         {"organization": "ftp://invalid", "base_url": ""},
+        {"organization": "", "base_url": "https://dev.azure.com"},
+        {"organization": "", "base_url": "http://tfs.corp.local:8080"},
+        {"organization": "DefaultCollection", "base_url": "http://user:pass@tfs.corp.local:8080/tfs"},
+        {"organization": "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection", "base_url": ""},
     ],
 )
 def test_unusable_settings_are_rejected_before_any_request(overrides):

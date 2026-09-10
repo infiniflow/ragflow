@@ -4,7 +4,8 @@ import copy
 import logging
 from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from typing_extensions import override
 
@@ -582,12 +583,20 @@ class AzureDevOpsConnector(
         An unknown selector would otherwise pass silently and the sync would
         complete without producing a single document.
         """
-        if not self.organization and not self.base_url:
-            raise UnexpectedValidationError("Azure DevOps organization or base URL must be provided.")
-        if self.base_url and not self.base_url.startswith(("http://", "https://")):
-            raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
-        if self.organization and "://" in self.organization and not self.organization.startswith(("http://", "https://")):
-            raise UnexpectedValidationError("Azure DevOps organization URL must use HTTP or HTTPS.")
+        if not self.organization:
+            raise UnexpectedValidationError("Azure DevOps organization or collection must be provided.")
+        if self.base_url:
+            if not self.base_url.startswith(("http://", "https://")):
+                raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
+            parsed_base = urlparse(self.base_url)
+            if parsed_base.username or parsed_base.password:
+                raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
+        if self.organization and "://" in self.organization:
+            if not self.organization.startswith(("http://", "https://")):
+                raise UnexpectedValidationError("Azure DevOps organization URL must use HTTP or HTTPS.")
+            parsed_org = urlparse(self.organization)
+            if parsed_org.username or parsed_org.password:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
         if self.index_mode not in (INDEX_MODE_ORGANIZATION, INDEX_MODE_PROJECTS, INDEX_MODE_REPOSITORIES):
             raise UnexpectedValidationError(f"Unsupported index mode: {self.index_mode}")
         if self.content_types not in (CONTENT_CODE, CONTENT_PULL_REQUESTS, CONTENT_BOTH):
