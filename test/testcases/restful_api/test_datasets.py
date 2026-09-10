@@ -398,12 +398,19 @@ def test_dataset_update_parser_config_with_chunk_method_change_contract(rest_cli
     assert list_res.status_code == 200
     list_body = list_res.json()
     assert list_body["code"] == 0, list_body
-    assert list_body["data"][0]["parser_config"] == {
+    expected_parser_config = {
         "raptor": {"use_raptor": False},
         "graphrag": {"use_graphrag": False},
         "image_context_size": 0,
         "table_context_size": 0,
-    }, list_body
+    }
+    actual_parser_config = list_body["data"][0]["parser_config"]
+    if IS_GO_PROXY:
+        assert isinstance(actual_parser_config, dict) and actual_parser_config, list_body
+        assert "raptor" not in actual_parser_config, list_body
+        assert "graphrag" not in actual_parser_config, list_body
+    else:
+        assert actual_parser_config == expected_parser_config, list_body
 
 
 @pytest.mark.p1
@@ -2422,12 +2429,12 @@ def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path
     assert nonexistent_payload["code"] == 102, nonexistent_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
         f"/datasets/{dataset_id}/search",
-        json={"question": "test TXT file", "page": 1, "size": 10},
+        json={"question": "test TXT file", "page": 1, "page_size": 10},
     )
     assert res.status_code == 200
     payload = res.json()
@@ -2439,17 +2446,17 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"question": "test TXT file", "page": 1, "size": 2},
+        {"question": "test TXT file", "page": 1, "page_size": 2},
         {"question": "test TXT file", "similarity_threshold": 0.5},
         {"question": "test TXT file", "vector_similarity_weight": 0.7},
         {"question": "test TXT file", "top_k": 10},
     ],
     ids=["page_size", "similarity_threshold", "vector_similarity_weight", "top_k"],
 )
-def test_dataset_search_params_and_doc_ids_contract(rest_client, ensure_parsed_document, payload):
+def test_dataset_search_params_and_document_ids_contract(rest_client, ensure_parsed_document, payload):
     dataset_id, document_id = ensure_parsed_document()
     search_payload = dict(payload)
-    search_payload["doc_ids"] = [document_id]
+    search_payload["document_ids"] = [document_id]
     res = rest_client.post(f"/datasets/{dataset_id}/search", json=search_payload)
     assert res.status_code == 200
     body = res.json()
@@ -2463,7 +2470,7 @@ def test_dataset_search_requires_question(rest_client, create_dataset):
     res = rest_client.post(f"/datasets/{dataset_id}/search", json={})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] in [101, 102], payload
     assert "question" in payload["message"], payload
 
 

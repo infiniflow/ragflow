@@ -40,7 +40,7 @@ from common.misc_utils import thread_pool_exec
 from common.float_utils import normalize_overlapped_percent
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import TaskService
-from rag.nlp import search
+from rag.nlp import search, DEFAULT_DELIMITER
 from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
 from rag.svr.task_executor_refactor.task_context import TaskContext
 from rag.utils.base64_image import image2id
@@ -171,7 +171,7 @@ class ChunkService:
             "parser_id": ctx.parser_id,
             "chunk_token_num": ctx.parser_config.get("chunk_token_num", 128),
             "overlapped_percent": normalize_overlapped_percent(ctx.parser_config.get("overlapped_percent", 0)),
-            "delimiter": ctx.parser_config.get("delimiter", "\n!?。；！？"),
+            "delimiter": ctx.parser_config.get("delimiter", DEFAULT_DELIMITER),
             "from_page": ctx.from_page,
             "to_page": ctx.to_page,
             "language": ctx.language,

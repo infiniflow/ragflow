@@ -50,6 +50,7 @@ export function WikiLeftPanel({
     newlyUploaded,
     removed,
     changed,
+    retryPageCount,
     handleUpdate,
     loading: updateLoading,
   } = useWikiUpdate();
@@ -74,6 +75,7 @@ export function WikiLeftPanel({
           newlyUploaded={newlyUploaded}
           removed={removed}
           changed={changed}
+          retryPageCount={retryPageCount}
           loading={updateLoading}
           tooltip={t('knowledgeCompilation.updateTooltip', {
             newlyUploaded,
