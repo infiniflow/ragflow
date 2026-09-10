@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -143,5 +144,82 @@ func TestDatasetCRUDCycle(t *testing.T) {
 		if dataset["id"] == datasetID {
 			t.Fatalf("deleted dataset %s still present in list: %v", datasetID, listAfterPayload)
 		}
+	}
+}
+
+func TestDatasetUpdateNameAndCaseInsensitiveContract(t *testing.T) {
+	// Create first dataset
+	firstResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_name_source"}, nil)
+	if err != nil {
+		t.Fatalf("create first dataset request failed: %v", err)
+	}
+	firstPayload := requireStatusCode(t, firstResp, http.StatusOK)
+	requireCodeZero(t, firstPayload)
+	firstData, ok := firstPayload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first response data is not an object: %v", firstPayload)
+	}
+	firstDatasetID, ok := firstData["id"].(string)
+	if !ok || firstDatasetID == "" {
+		t.Fatalf("first dataset id is invalid: %v", firstData)
+	}
+
+	// Create second dataset
+	secondResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_name_target"}, nil)
+	if err != nil {
+		t.Fatalf("create second dataset request failed: %v", err)
+	}
+	secondPayload := requireStatusCode(t, secondResp, http.StatusOK)
+	requireCodeZero(t, secondPayload)
+	secondData, ok := secondPayload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("second response data is not an object: %v", secondPayload)
+	}
+	secondDatasetName, ok := secondData["name"].(string)
+	if !ok || secondDatasetName == "" {
+		t.Fatalf("second dataset name is invalid: %v", secondData)
+	}
+
+	// Rename first dataset
+	renameResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", firstDatasetID), map[string]interface{}{"name": "dataset_update_name_renamed"}, nil)
+	if err != nil {
+		t.Fatalf("rename dataset request failed: %v", err)
+	}
+	renamePayload := requireStatusCode(t, renameResp, http.StatusOK)
+	requireCodeZero(t, renamePayload)
+	renameData, ok := renamePayload["data"].(map[string]interface{})
+	if !ok || renameData["name"] != "dataset_update_name_renamed" {
+		t.Fatalf("rename response data.name mismatch: %v", renamePayload)
+	}
+
+	// List with id filter
+	listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": firstDatasetID}, nil)
+	if err != nil {
+		t.Fatalf("list dataset request failed: %v", err)
+	}
+	listPayload := requireStatusCode(t, listResp, http.StatusOK)
+	requireCodeZero(t, listPayload)
+	listData, ok := listPayload["data"].([]interface{})
+	if !ok || len(listData) != 1 {
+		t.Fatalf("expected 1 dataset in list, got %v", listPayload)
+	}
+	firstItem, ok := listData[0].(map[string]interface{})
+	if !ok || firstItem["name"] != "dataset_update_name_renamed" {
+		t.Fatalf("list response data[0].name mismatch: %v", listPayload)
+	}
+
+	// Try duplicate name (case-insensitive)
+	duplicateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", firstDatasetID), map[string]interface{}{"name": strings.ToUpper(secondDatasetName)}, nil)
+	if err != nil {
+		t.Fatalf("duplicate case rename request failed: %v", err)
+	}
+	duplicatePayload := requireStatusCode(t, duplicateResp, http.StatusOK)
+	duplicateCode, ok := duplicatePayload["code"].(float64)
+	if !ok || int(duplicateCode) != 102 {
+		t.Fatalf("expected code 102 for duplicate case rename, got %v, payload: %v", duplicatePayload["code"], duplicatePayload)
+	}
+	duplicateMessage, _ := duplicatePayload["message"].(string)
+	if !strings.Contains(duplicateMessage, "already exists") {
+		t.Fatalf("expected message to contain 'already exists', got %q, payload: %v", duplicateMessage, duplicatePayload)
 	}
 }
