@@ -1339,6 +1339,7 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
         )
         if claim_hits:
             stats["claim_hits"] = len(claim_hits)
+            _publish_claim_hits(tools_slot, claim_hits, doc_id)
         out.append(
             {
                 "doc_id": doc_id,
@@ -1555,6 +1556,71 @@ def _rrf_fuse(*legs: list[dict], k: int = 60) -> list[dict]:
     return fused
 
 
+# Memo for _recall_claim_hits, keyed by (doc_id, query). The drill calls it once
+# per routed doc and the model re-issues navigate_structure, so the same
+# (doc, query) pair recurs within a session; each miss costs two store
+# round-trips (BM25 + KNN). Same TTL/cap policy as _CLAIM_PREFETCH_CACHE.
+_STRUCT_CLAIM_HITS_CACHE: dict = {}
+
+
+def _publish_claim_hits(tools_slot, claim_hits: list, doc_id: str) -> int:
+    """Mirror navigate_structure's claim hits into the shared evidence pool.
+
+    navigate_structure renders its claims into the outline, so the model sees
+    them - but the SCA, the slot prefill and the final compose all read ONLY the
+    pool, so a claim that already states the fact was invisible to every
+    downstream consumer and the answer stage went back to raw chunks. Publishing
+    the same pseudo-chunk the session prefetch writes (identical id scheme, so a
+    claim found by either path is one entry) fixes that, and lets the
+    claim-vs-chunk dedup in _admit_evidence retire passages a claim already
+    quotes verbatim. Pure addition: no retrieval is suppressed.
+    """
+    import hashlib
+
+    pool = getattr(tools_slot, "kbinfos", None)
+    if not isinstance(pool, dict) or not claim_hits:
+        return 0
+    try:
+        chunks = pool.setdefault("chunks", [])
+        known = {str(c.get("chunk_id") or "") for c in chunks}
+        added = 0
+        for h in claim_hits or []:
+            name = str(h.get("name") or "").strip()
+            if not name:
+                continue
+            cid = "claim_" + hashlib.md5(f"{doc_id}:{name}".encode("utf-8", "ignore")).hexdigest()[:12]
+            if cid in known:
+                continue
+            content = f"[claim #{h.get('rank') or '?'}] {name}"
+            desc = str(h.get("description") or "").strip()
+            if desc and desc != name:
+                content += f" \u2014 {desc}"
+            quote = ""
+            for ev in h.get("evidence") or []:
+                if isinstance(ev, dict) and str(ev.get("quote") or "").strip():
+                    quote = str(ev["quote"]).strip()
+                    break
+            if quote:
+                content += f'\nEvidence (verbatim): "{quote[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+            src = str(h.get("chunk_id") or "").strip()
+            chunks.append(
+                {
+                    "chunk_id": cid,
+                    "content_with_weight": content[:1200],
+                    "doc_id": doc_id,
+                    "source_chunk_ids": [src] if src else [],
+                }
+            )
+            known.add(cid)
+            added += 1
+        if added:
+            _LOG.info("[navigate_structure] published %d claim(s) to the evidence pool (doc=%s)", added, doc_id)
+        return added
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[navigate_structure] claim publish failed (doc=%s)", doc_id, exc_info=True)
+        return 0
+
+
 async def _recall_claim_hits(
     tools_slot,
     query: str,
@@ -1585,6 +1651,15 @@ async def _recall_claim_hits(
     """
     if not doc_id or top_n <= 0:
         return []
+    import time
+
+    _ckey = (doc_id, str(query or "").strip().lower())
+    _now = time.time()
+    _hit = _STRUCT_CLAIM_HITS_CACHE.get(_ckey)
+    if _hit and _now - _hit[0] < _CLAIM_PREFETCH_CACHE_TTL:
+        return _hit[1]
+    if len(_STRUCT_CLAIM_HITS_CACHE) >= _CLAIM_PREFETCH_CACHE_CAP:
+        _STRUCT_CLAIM_HITS_CACHE.clear()
     from common import settings
     from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr, OrderByExpr
     from common.misc_utils import thread_pool_exec
@@ -1643,7 +1718,7 @@ async def _recall_claim_hits(
     if not dense_leg and not text_leg:
         return []
     fused = _rrf_fuse(dense_leg, text_leg)
-    return [
+    out = [
         {
             "chunk_id": h["chunk_ids"][0],
             "score": h["score"],
@@ -1654,6 +1729,8 @@ async def _recall_claim_hits(
         }
         for h in fused[:top_n]
     ]
+    _STRUCT_CLAIM_HITS_CACHE[_ckey] = (time.time(), out)
+    return out
 
 
 # --- dataset-level claim prefetch (search-time, framework-automatic) ---------

@@ -54,11 +54,12 @@ _EMPTY_STRIKES = 2
 _NEAR_DUP_JACCARD = 0.8
 _RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
 
-# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Mirrors
-# _MAX_SNIPPET_POOL / _SCA_VIEW_CAP (=60) in agentic_rag_graph.py: once the pool
-# is saturated, further admits cannot reach the SCA view or improve the answer,
-# so the action session stops admitting (observed pools otherwise grew to ~106).
-_EVIDENCE_POOL_CAP = 60
+# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Deliberately
+# LARGER than _SCA_VIEW_CAP (=60) in agentic_rag_graph.py so storage and review stay
+# DECOUPLED: the pool accumulates while the SCA reads a ranked top-60 view. Coupling them
+# at 60 starved the raw-evidence channel in 42% of rounds (every admit rejected -> status
+# REDUNDANT -> playbook told the model to vary the query -> it re-searched for nothing).
+_EVIDENCE_POOL_CAP = 120
 # Per-process flag so the "pool FULL" log line is emitted once per fill, not once
 # per rejected chunk. The pool never shrinks mid-session, so no reset is needed.
 _EVIDENCE_POOL_STATE = {"full_logged": False}
@@ -615,6 +616,21 @@ def _seed_evidence(tools):
     return kbinfos
 
 
+def _claim_covered_ids(kbinfos) -> set:
+    """Chunk ids already represented verbatim by a claim pseudo-chunk in the pool.
+
+    A claim carries its own verbatim quote plus the ids of the chunks it was
+    distilled from, so admitting those passages again is duplicate payload: the
+    answer material is already in the pool at a fraction of the size.
+    """
+    covered: set = set()
+    for c in kbinfos.get("chunks") or []:
+        if str(c.get("chunk_id") or "").startswith("claim_"):
+            for cid in c.get("source_chunk_ids") or []:
+                covered.add(str(cid))
+    return covered
+
+
 def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) -> bool:
     """Register one chunk into the session output AND the shared evidence pool.
 
@@ -633,10 +649,10 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     deepdoc dependency chain) out of module-import time.
     """
     # Early-stop: the shared evidence pool is hard-capped. Once it reaches the
-    # cap, admit no further chunk — the SCA view and compose can only consume the
-    # first 60 anyway (see _MAX_SNIPPET_POOL / _SCA_VIEW_CAP in agentic_rag_graph),
-    # so extra admits only bloat the pool (observed growth up to ~106) without
-    # improving the answer.
+    # cap, admit no further chunk. The cap is deliberately ABOVE _SCA_VIEW_CAP
+    # (60): the SCA reads a ranked view while the pool accumulates, so extra
+    # admits still reach the view via ranking. Coupling them at 60 starved the
+    # raw channel in 42% of rounds (admits rejected -> REDUNDANT -> re-search).
     _pool = kbinfos.get("chunks", []) if isinstance(kbinfos, dict) else (getattr(kbinfos, "chunks", []) or [])
     if len(_pool) >= _EVIDENCE_POOL_CAP:
         if not _EVIDENCE_POOL_STATE["full_logged"]:
@@ -652,6 +668,11 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
 
     cid = _chunk_id(c)
     if cid in seen:
+        return False
+    # Already in the pool as a claim's verbatim quote -> skip the full passage.
+    # Table chunks are exempt: their answer rows survive only in full text.
+    if not _is_table_chunk(c) and cid in _claim_covered_ids(kbinfos):
+        _LOG.debug("[Action Session] skip chunk %s: already covered by a claim", cid)
         return False
     seen.add(cid)
     ids.append(cid)
@@ -732,6 +753,13 @@ async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tup
         # chunk can retire this pseudo-chunk (its quote would then duplicate
         # the full text already in the pool).
         kbinfos["chunks"].append({"chunk_id": cid, "content_with_weight": content, "doc_id": doc_id, "source_chunk_ids": c["chunk_ids"]})
+    _LOG.info(
+        "[Claim] prefetch q=%r -> recalled=%d new=%d (exclusive=%s)",
+        str(query)[:60],
+        len(claims or []),
+        len(new_ids),
+        _CLAIM_PREFETCH_EXCLUSIVE,
+    )
     return entries, new_ids
 
 

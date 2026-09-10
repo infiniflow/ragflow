@@ -533,13 +533,20 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
 # 30-chunk ceiling starved every enrichment channel dead (observed: Drill
 # admitted 0 for entire runs because prefetch filled the pool first).
 _MAX_SNIPPET_POOL = 60
-# Ceiling for evidence rows (claim / fact-conclusion) inside the snippet pool.
-# They are admitted FIRST because they are answer material, but they must not
-# crowd out raw chunks: nothing has judged sufficiency at prefetch time yet, so
-# the pool still needs chunk coverage for the SCA to review.
 # id prefix of the pool entries synthesized from compiled evidence rows.
 _EVIDENCE_CHUNK_PREFIX = "claim_"
-_EVIDENCE_POOL_QUOTA = 12
+# Ceiling for evidence rows (claim / fact-conclusion) inside the snippet pool.
+# Raised 12 -> 24: a claim is an atomic proposition with a verbatim quote
+# (~1.2k chars, ~300 tokens) while a raw chunk is far larger, so at equal pool
+# capacity evidence rows carry several times the answer material per token.
+# They are admitted FIRST because they are answer material; the raw channels now
+# get their own budget below so they cannot push them out.
+_EVIDENCE_POOL_QUOTA = 24
+# Separate ceiling for RAW passages. Storage and REVIEW are decoupled (the SCA
+# reads a ranked _SCA_VIEW_CAP view), but the pool's own composition decides how
+# much raw text every later prompt carries, so raw gets a tighter bound than the
+# pool as a whole. Room left above it is reserved for evidence rows.
+_RAW_SNIPPET_QUOTA = 30
 # How many of the chunks cited by admitted evidence rows to pull in verbatim.
 # This is a directed fetch (by id), not another recall.
 _EVIDENCE_TOP_UP = 8
@@ -739,8 +746,10 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
     room = max(0, max_total - len(seen))
     added = 0
 
+    raw_added = 0
+
     def _admit(batch) -> bool:
-        nonlocal added
+        nonlocal added, raw_added
         if isinstance(batch, Exception) or not batch:
             return False
         stop = False
@@ -751,10 +760,17 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
             k = _chunk_id(c)
             if k and k in seen:
                 continue
+            is_evidence = bool(k) and str(k).startswith(_EVIDENCE_CHUNK_PREFIX)
+            # Raw passages get their own budget; anything left above it stays
+            # free for evidence rows, which are far denser answer material.
+            if not is_evidence and raw_added >= _RAW_SNIPPET_QUOTA:
+                continue
             if k:
                 seen.add(k)
             kbinfos.setdefault("chunks", []).append(c)
             added += 1
+            if not is_evidence:
+                raw_added += 1
         return stop
 
     # Evidence rows first: they are answer material, so they must not be
@@ -1390,9 +1406,9 @@ def build_agentic_graph(
             return "formalize_answer"
         # Evidence pool saturated at the SCA view cap: any further chunk lands
         # beyond what the SCA can read, so another search round cannot flip the
-        # sufficiency verdict. Short-circuit straight to finalize.
+        # sufficiency verdict. Gated to SECOND-or-later reviews on THIS branch: claim pseudo-chunks bypass the pool cap (direct append in _claim_prefetch), so a rewrite round can still add evidence — the FIRST SCA review must always get its rewrite round when insufficient, or hard multi-hop questions lose their only refinement pass and the retry moves to the outer agent as a whole new graph run (observed: research 30→43, wall +47%, R2 9→1).
         _pool = tools.kbinfos.get("chunks", [])
-        if len(_pool) >= _SCA_VIEW_CAP:
+        if len(_pool) >= _SCA_VIEW_CAP and int(state.get("search_rounds", 0)) >= 1:
             _LOG.info(
                 "[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.",
                 len(_pool),
