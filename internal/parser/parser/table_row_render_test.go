@@ -64,7 +64,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		{"", "", "", ""}, // empty row, should be skipped
 	}
 
-	t.Run("auto mode indexes without creating metadata", func(t *testing.T) {
+	t.Run("auto mode defaults every column to both, matching Python", func(t *testing.T) {
 		items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil)
 		if len(headers) != 4 {
 			t.Fatalf("expected 4 headers, got %d", len(headers))
@@ -78,11 +78,52 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		if item0["text"] != expectedText {
 			t.Errorf("item0 text = %q, want %q", item0["text"], expectedText)
 		}
-		if got, exists := item0["chunk_data"]; exists {
-			t.Fatalf("auto mode must not implicitly create metadata, got %#v", got)
+		cd, ok := item0["chunk_data"].(map[string]any)
+		if !ok {
+			t.Fatalf("auto mode must default columns to both, chunk_data missing: %v", item0["chunk_data"])
+		}
+		if cd["Title"] != "Doc A" || cd["Content"] != "First document text" || cd["Category"] != "Tech" || cd["Year"] != "2024" {
+			t.Errorf("auto mode chunk_data = %v, want all four columns", cd)
 		}
 		if item0["sheet"] != "Sheet1" {
 			t.Errorf("item0 sheet = %v, want Sheet1", item0["sheet"])
+		}
+	})
+
+	t.Run("empty header falls back to Column_N, matching Python", func(t *testing.T) {
+		items, headers := RenderRowsToJSONChunks([][]string{
+			{"Name", "", "Age"},
+			{"Alice", "x", "30"},
+		}, "", "auto", nil)
+		if len(headers) != 3 || headers[1] != "Column_2" {
+			t.Fatalf("headers = %v, want [Name Column_2 Age]", headers)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		cd, ok := items[0]["chunk_data"].(map[string]any)
+		if !ok || cd["Column_2"] != "x" {
+			t.Errorf("chunk_data = %v, want Column_2=x", items[0]["chunk_data"])
+		}
+	})
+
+	t.Run("manual mode maps legacy vectorize to indexing", func(t *testing.T) {
+		items, _ := RenderRowsToJSONChunks([][]string{
+			{"A", "B"},
+			{"1", "2"},
+		}, "", "manual", map[string]string{"A": "vectorize"})
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		if items[0]["text"] != "- A: 1\n- B: 2" {
+			t.Errorf("text = %q, want both columns indexed", items[0]["text"])
+		}
+		cd, ok := items[0]["chunk_data"].(map[string]any)
+		if !ok || cd["B"] != "2" {
+			t.Errorf("chunk_data = %v, want B=2", items[0]["chunk_data"])
+		}
+		if _, hasA := cd["A"]; hasA {
+			t.Errorf("vectorize column A must not land in chunk_data: %v", cd)
 		}
 	})
 

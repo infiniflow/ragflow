@@ -128,7 +128,10 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		chunkRows = defaultTableChunkRows
 	}
 
-	if p.ColumnMode != "" {
+	// Structured JSON row rendering applies only to the JSON output format.
+	// An html/markdown canvas setup must keep its legacy rendering even when
+	// a stale column_mode lingers, matching the CSV parser's gate.
+	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
 		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
 		if err == nil {
 			return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
@@ -205,11 +208,15 @@ func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]st
 }
 
 func xlsxRowParseResult(filename string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
+	return spreadsheetRowParseResult(filename, "xlsx", items, columns, warnings, sheets)
+}
+
+func spreadsheetRowParseResult(filename, format string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
 			"name":               filename,
-			"format":             "xlsx",
+			"format":             format,
 			"sheets":             sheets,
 			"table_column_names": columns,
 		},

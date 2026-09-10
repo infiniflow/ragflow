@@ -484,6 +484,42 @@ func TestResolveTableColumnConfig_Flat(t *testing.T) {
 	}
 }
 
+func TestResolveTableColumnConfig_WriterShapes(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_mode":  "auto",
+		"table_column_roles": map[string]string{"col1": "Both"},
+		"table_column_names": []string{"col1", "col2"},
+	}
+	_, roles, names := ResolveTableColumnConfig(cfg)
+	if len(roles) != 1 || roles["col1"] != "Both" {
+		t.Errorf("roles = %v, want col1 preserved", roles)
+	}
+	if len(names) != 2 || names[0] != "col1" || names[1] != "col2" {
+		t.Errorf("names = %v, want [col1 col2]", names)
+	}
+	nested := map[string]interface{}{
+		"Parser:B": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]string{"age": "Metadata"},
+				"column_names": []string{"name", "age"},
+			},
+		},
+		"Parser:A": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode": "auto",
+			},
+		},
+	}
+	mode, roles, names := ResolveTableColumnConfig(nested)
+	if mode != "auto" {
+		t.Errorf("mode = %q, want deterministic lowest Parser id (auto)", mode)
+	}
+	if len(roles) != 0 || len(names) != 0 {
+		t.Errorf("roles/names = %v/%v, want empty from lowest id", roles, names)
+	}
+}
+
 func TestResolveTableColumnConfig_NestedComponent(t *testing.T) {
 	cfg := map[string]interface{}{
 		"Parser:HipSignsRhyme": map[string]interface{}{
@@ -591,5 +627,32 @@ func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
 	ages, ok := meta["Age"].([]string)
 	if !ok || len(ages) != 2 {
 		t.Errorf("Age = %v, want 2 entries", meta["Age"])
+	}
+}
+
+func TestAggregateTableDocMetadata_RoleCaseInsensitive(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text":       "- A: 1",
+			"chunk_data": map[string]interface{}{"A": "1", "B": "2"},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "manual",
+		"table_column_roles": map[string]interface{}{
+			"A": "Metadata",
+			"B": "VECTORIZE",
+		},
+		"table_column_names": []interface{}{"A", "B"},
+	}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	if _, ok := meta["A"]; !ok {
+		t.Errorf("A with role Metadata must aggregate, got %v", meta)
+	}
+	if _, hasB := meta["B"]; hasB {
+		t.Errorf("B with legacy role VECTORIZE must not aggregate, got %v", meta)
 	}
 }

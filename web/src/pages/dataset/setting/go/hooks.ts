@@ -147,10 +147,11 @@ export const useSaveDatasetSetting = () => {
           if (spreadsheetConfig.column_mode) {
             transformedConfig.table_column_mode = spreadsheetConfig.column_mode;
           }
-          if (spreadsheetConfig.column_roles) {
-            transformedConfig.table_column_roles =
-              spreadsheetConfig.column_roles;
-          }
+          // Column roles default to "both" per column (Python table chunker
+          // convention). Send an explicit map — never undefined — so the
+          // backend cannot mistake "absent" for "indexing-only".
+          transformedConfig.table_column_roles =
+            spreadsheetConfig.column_roles ?? {};
           if (spreadsheetConfig.column_names) {
             transformedConfig.table_column_names =
               spreadsheetConfig.column_names;

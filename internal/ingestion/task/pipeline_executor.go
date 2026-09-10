@@ -38,6 +38,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -247,12 +248,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	parserConfigForStrip := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+	for _, stripKey := range indexdoc.TableParserStripDocMetadataKeys(parserConfigForStrip) {
+		delete(metadata, stripKey)
+	}
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)
-		}
-		for _, stripKey := range indexdoc.TableParserStripDocMetadataKeys(map[string]interface{}(s.taskCtx.Doc.ParserConfig)) {
-			delete(metadata, stripKey)
 		}
 		for k, v := range tableMeta {
 			if _, exists := metadata[k]; !exists {
@@ -261,13 +263,15 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
-	if fileVal, ok := globals.GetGlobal(ctx, "file"); ok {
-		if fileMap, ok := fileVal.(map[string]any); ok {
-			if names, ok := fileMap["table_column_names"].([]string); ok && len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
-				if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
-					common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
-				}
-			}
+	// Persist the parser-discovered column names on the document so the
+	// role selector can offer them without re-reading the file. The parser
+	// publishes them on its file metadata (file.table_column_names); the
+	// terminal payload carries that map through untouched (see
+	// buildParserOutputs), so read it from the run result — CanvasState
+	// globals are scoped to the pipeline run and are not visible here.
+	if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
+		if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
+			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
 		}
 	}
 
@@ -951,6 +955,41 @@ func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map
 	if len(names) > 0 {
 		ssEntry["column_names"] = names
 	}
+	common.Debug("inject table column override",
+		zap.String("parser", parserCpnID),
+		zap.String("column_mode", mode),
+		zap.Int("column_roles", len(roles)),
+		zap.Int("column_names", len(names)),
+	)
+	return docConfig
+}
+
+// mergeKBTableColumnFallback fills the table column keys a document does not
+// already define from the knowledgebase config, so an older document (uploaded
+// before column mode existed) still picks up dataset-level settings at task
+// time. Column discovery stays per-document: any document-level key wins outright,
+// only wholly-absent keys fall back — mirroring Python's
+// merge_table_parser_config_from_kb (rag/utils/table_es_metadata.py).
+func mergeKBTableColumnFallback(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
+	if kbConfig == nil {
+		return docConfig
+	}
+	mode, roles, names := indexdoc.ResolveTableColumnConfig(kbConfig)
+	if mode == "" && len(roles) == 0 && len(names) == 0 {
+		return docConfig
+	}
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+	if _, ok := docConfig["table_column_mode"]; !ok && mode != "" {
+		docConfig["table_column_mode"] = mode
+	}
+	if _, ok := docConfig["table_column_roles"]; !ok && len(roles) > 0 {
+		docConfig["table_column_roles"] = roles
+	}
+	if _, ok := docConfig["table_column_names"]; !ok && len(names) > 0 {
+		docConfig["table_column_names"] = names
+	}
 	return docConfig
 }
 
@@ -968,6 +1007,10 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 
 	parserConfig = injectTableColumnOverride(parserConfig, []byte(dsl))
+	if s.taskCtx.KB.ParserConfig != nil {
+		parserConfig = mergeKBTableColumnFallback(parserConfig, map[string]interface{}(s.taskCtx.KB.ParserConfig))
+		parserConfig = injectTableColumnOverride(parserConfig, []byte(dsl))
+	}
 	s.taskCtx.Doc.ParserConfig = parserConfig
 
 	// Surface component params whose cpnID is absent from the DSL. The
@@ -1190,4 +1233,32 @@ func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]int
 		}
 	}
 	return filtered
+}
+
+// tableColumnNamesFromPayload extracts the parser-discovered column names from
+// the terminal pipeline payload. The parser publishes them on its file
+// metadata (file.table_column_names); the chunker and tokenizer forward the
+// file map untouched, so the terminal output still carries it.
+func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
+	if pipelineOutput == nil {
+		return nil
+	}
+	fileMap, ok := pipelineOutput["file"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch names := fileMap["table_column_names"].(type) {
+	case []string:
+		return names
+	case []interface{}:
+		out := make([]string, 0, len(names))
+		for _, n := range names {
+			if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

@@ -970,7 +970,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if cfg["existing"] != "value" || cfg["table_column_mode"] != "manual" {
 		t.Fatalf("parser_config=%v", cfg)
 	}
-	if !reflect.DeepEqual(cfg["table_column_names"], []string{"Title", "Owner"}) {
+	if !reflect.DeepEqual(cfg["table_column_names"], []interface{}{"Title", "Owner"}) {
 		t.Fatalf("table_column_names=%#v, want file-specific columns", cfg["table_column_names"])
 	}
 	if !reflect.DeepEqual(cfg["table_column_roles"], map[string]interface{}{"Title": "indexing", "Owner": "metadata"}) {

@@ -26,14 +26,37 @@ export const useHandleUploadDocument = () => {
       tableColumnRoles,
     }: UploadFormSchemaType) => {
       if (fileList.length > 0) {
-        // Build parser_config if column roles are configured
+        // Only table files carry column settings, and only those files get a
+        // per-file entry — never emit names/roles for mixed non-table uploads.
+        const tableIndexes = (fileList as any[])
+          .map((f: any, i: number) => {
+            const file = f instanceof File ? f : f?.file;
+            const name =
+              file instanceof File
+                ? file.name
+                : typeof f?.name === 'string'
+                  ? f.name
+                  : '';
+            return /\.(csv|xlsx?|txt)$/i.test(name) ? i : -1;
+          })
+          .filter((i: number) => i >= 0);
+        // Build parser_config if column settings are configured
         let parserConfig: Record<string, any> | undefined;
-        if (tableColumnMode && tableColumnNames?.length) {
+        if (tableIndexes.length > 0 && tableColumnMode) {
           parserConfig = {
             table_column_mode: tableColumnMode,
-            table_column_names: tableColumnNames,
-            table_column_names_by_file: tableColumnNamesByFile,
           };
+          if (tableColumnNames?.length) {
+            parserConfig.table_column_names = tableColumnNames;
+          }
+          if (Array.isArray(tableColumnNamesByFile)) {
+            const byFile = tableIndexes.map(
+              (i: number) => tableColumnNamesByFile[i] ?? [],
+            );
+            if (byFile.some((cols: string[]) => cols.length > 0)) {
+              parserConfig.table_column_names_by_file = byFile;
+            }
+          }
           if (tableColumnMode === 'manual' && tableColumnRoles) {
             parserConfig.table_column_roles = tableColumnRoles;
           }

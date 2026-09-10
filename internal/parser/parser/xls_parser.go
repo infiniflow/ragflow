@@ -105,12 +105,23 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	if p.ColumnMode != "" {
+	// Structured JSON row rendering applies only to the JSON output format,
+	// matching the CSV/XLSX gate. Legacy .xls (OLE/BIFF) bytes cannot be
+	// opened by excelize, so normalize first the same way the XLSX parser
+	// does; an un-normalizable legacy payload falls through to the legacy
+	// HTML path and fails there with the pre-existing (non-column) error.
+	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
 		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
-		if err != nil {
-			return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+		if err == nil {
+			return spreadsheetRowParseResult(filename, "xls", items, allColumns, warnings, sheets)
 		}
-		return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
+		if normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data); normalizeErr == nil && changed {
+			if items, allColumns, retryWarnings, sheets, retryErr := parseXLSXRowsJSON(normalized, p.ColumnMode, p.ColumnRoles); retryErr == nil {
+				warnings = append(normalizeWarnings, warnings...)
+				warnings = append(warnings, retryWarnings...)
+				return spreadsheetRowParseResult(filename, "xls", items, allColumns, warnings, sheets)
+			}
+		}
 	}
 
 	f, err := excelize.OpenReader(bytes.NewReader(data))

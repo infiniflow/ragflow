@@ -796,6 +796,134 @@ func TestSyncTableColumnNames_PersistsOnlyOnDocument(t *testing.T) {
 	}
 }
 
+func TestProcessOutput_PersistsDiscoveredColumnsFromPayload(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate knowledgebase: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "kb-1"}).Error; err != nil {
+		t.Fatalf("seed knowledgebase: %v", err)
+	}
+	name := "table.csv"
+	doc := &entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "table",
+		ParserConfig: entity.JSONMap{"table_column_mode": "auto"},
+		CreatedBy:    "tenant-1",
+		Type:         "csv",
+		Suffix:       "csv",
+		Name:         &name,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc = *doc
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+	output := map[string]any{
+		"chunks": []map[string]any{{"text": "- Name: Alice"}},
+		"file":   map[string]any{"name": "table.csv", "table_column_names": []string{"Name", "City"}},
+	}
+	if _, err := svc.processOutput(t.Context(), output, time.Now()); err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	persisted, err := dao.NewDocumentDAO().GetByID(t.Context(), dao.DB, doc.ID)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	gotNames, _ := persisted.ParserConfig["table_column_names"].([]interface{})
+	if len(gotNames) != 2 {
+		t.Fatalf("document column names = %#v, want [Name City]", persisted.ParserConfig["table_column_names"])
+	}
+}
+
+func TestProcessOutput_StripsStaleTableMetadataOnReparse(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	name := "table.csv"
+	doc := &entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "table",
+		ParserConfig: entity.JSONMap{"table_column_mode": "manual", "table_column_names": []interface{}{"Name", "Age"}},
+		CreatedBy:    "tenant-1",
+		Type:         "csv",
+		Suffix:       "csv",
+		Name:         &name,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc = *doc
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+	// Seed pre-existing metadata carrying a stale table column ("Age") that
+	// the fresh chunks no longer emit. The strip pass must remove it even
+	// though AggregateTableDocMetadata returns non-nil here (Name aggregates).
+	output := map[string]any{
+		"chunks": []map[string]any{{
+			"text":       "- Name: Alice",
+			"metadata":   map[string]any{"Age": []string{"30"}, "keep": "yes"},
+			"chunk_data": map[string]interface{}{"Name": "Alice"},
+		}},
+	}
+	res, err := svc.processOutput(t.Context(), output, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if res == nil || res.Metadata == nil {
+		t.Fatalf("expected metadata, got %+v", res)
+	}
+	if _, hasAge := res.Metadata["Age"]; hasAge {
+		t.Errorf("stale Age key must be stripped when chunks no longer emit it: %v", res.Metadata)
+	}
+	if res.Metadata["keep"] != "yes" {
+		t.Errorf("non-table metadata must survive the strip pass: %v", res.Metadata)
+	}
+}
+
+func TestMergeKBTableColumnFallback(t *testing.T) {
+	doc := map[string]interface{}{"table_column_mode": "manual"}
+	kb := map[string]interface{}{
+		"table_column_mode":  "auto",
+		"table_column_roles": map[string]interface{}{"Age": "metadata"},
+		"table_column_names": []interface{}{"Name", "Age"},
+	}
+	got := mergeKBTableColumnFallback(doc, kb)
+	if got["table_column_mode"] != "manual" {
+		t.Errorf("doc mode must win, got %v", got["table_column_mode"])
+	}
+	if _, ok := got["table_column_roles"]; !ok {
+		t.Errorf("absent roles must fall back to KB, got %v", got)
+	}
+	if _, ok := got["table_column_names"]; !ok {
+		t.Errorf("absent names must fall back to KB, got %v", got)
+	}
+	if out := mergeKBTableColumnFallback(nil, nil); out != nil {
+		t.Errorf("nil KB must return doc unchanged, got %v", out)
+	}
+}
+
+func TestTableColumnNamesFromPayload(t *testing.T) {
+	out := map[string]any{"file": map[string]any{"table_column_names": []interface{}{"A", " B ", 1}}}
+	if got := tableColumnNamesFromPayload(out); len(got) != 2 || got[0] != "A" || got[1] != " B " {
+		t.Errorf("got %q, want [A \" B \"]", got)
+	}
+	if got := tableColumnNamesFromPayload(map[string]any{}); len(got) != 0 {
+		t.Errorf("missing file must yield nil, got %v", got)
+	}
+}
+
 func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	logged := false
 	inserted := false
