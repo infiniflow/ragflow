@@ -204,6 +204,34 @@ func TestDatasetNavigation_DocScopeFiltersClusterFallback(t *testing.T) {
 	}
 }
 
+// TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults pins that a blank
+// request value cannot DISABLE the configured default scope: [" "] has a
+// non-zero length, so it suppressed the default and then compacted to an empty
+// scope, which inScope()/ns.Search read as "unscoped" — the tool returned
+// documents the default scope excludes.
+func TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults(t *testing.T) {
+	fake := &navRoutingFake{hits: []nav.NavHit{
+		{Type: nav.TypeNavDoc, DocID: "d1", Name: "in scope"},
+		{Type: nav.TypeNavDoc, DocID: "out", Name: "out of scope"},
+	}}
+	prev := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prev) }()
+
+	tool := NewDatasetNavigationByTreeWithDefaults(datasetNavigationArgs{DocScope: []string{"d1"}})
+	out, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"],"doc_scope":[" "]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	scopes := fake.searchedScopes()
+	if len(scopes) != 1 || len(scopes[0]) != 1 || scopes[0][0] != "d1" {
+		t.Fatalf("doc scope forwarded to Search = %v, want the configured default [d1]", scopes)
+	}
+	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
+		t.Errorf("docs = %v, want only the in-scope d1 (a blank request value must not disable the default scope)", docs)
+	}
+}
+
 func containsStr(s, sub string) bool {
 	return len(s) > 0 && len(sub) > 0 && (s == sub || containsSub(s, sub))
 }

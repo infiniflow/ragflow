@@ -150,6 +150,24 @@ func SplitKeywords(keywords string) []string {
 
 var wordRe = regexp.MustCompile("[a-z0-9]+")
 
+// wordLetterRe is the scan Python's _highlight_keywords uses to find the words
+// to stem-match: `re.findall(r"[A-Za-z]+", text)` (text_processing.py:403). It is
+// deliberately NOT the shared lowercase wordRe, which on capitalized text matches
+// only fragments ("New" -> "ew", "Nominated" -> "ominated") and therefore never
+// yields the stem term Python adds for those words.
+var wordLetterRe = regexp.MustCompile("[A-Za-z]+")
+
+// containedInPhrase reports whether low occurs inside any keyword phrase,
+// mirroring Python's `any(low in p for p in phrases)` (text_processing.py:405).
+func containedInPhrase(low string, phrases map[string]struct{}) bool {
+	for p := range phrases {
+		if strings.Contains(p, low) {
+			return true
+		}
+	}
+	return false
+}
+
 // stemSuffixes mirrors Python _STEM_SUFFIXES (longest-first; first match wins).
 var stemSuffixes = [][2]string{
 	{"ations", ""}, {"ation", ""}, {"ated", ""}, {"ates", ""}, {"ate", ""},
@@ -344,6 +362,14 @@ func HighlightKeywords(text string, kwds []string) string {
 		return text
 	}
 	terms := append([]string(nil), kwds...)
+	// Python's phrase set (text_processing.py:396): keywords trimmed, lowercased
+	// and deduplicated. It guards the stem terms added just below.
+	phrases := make(map[string]struct{}, len(kwds))
+	for _, kw := range kwds {
+		if p := strings.ToLower(strings.TrimSpace(kw)); p != "" {
+			phrases[p] = struct{}{}
+		}
+	}
 	// Stem-based highlight terms: a stemmed form that matches in the text is
 	// wrapped too, mirroring Python _highlight_keywords (which adds stemmed-word
 	// occurrences so e.g. "nominated" is highlighted for keyword "nominations").
@@ -355,9 +381,13 @@ func HighlightKeywords(text string, kwds []string) string {
 				stemSet[s] = true
 			}
 		}
-		for _, word := range wordRe.FindAllString(text, -1) {
+		for _, word := range wordLetterRe.FindAllString(text, -1) {
 			low := strings.ToLower(word)
-			if stemmable(low) && stemSet[stem(low)] {
+			// Python adds a stem-matched word only when it is NOT already inside a
+			// keyword phrase (text_processing.py:405): "nominated" is starred for
+			// "nominations", while the "Braves" of "Atlanta Braves" is left to the
+			// phrase's own span instead of being starred on its own elsewhere.
+			if stemmable(low) && stemSet[stem(low)] && !containedInPhrase(low, phrases) {
 				terms = append(terms, low)
 			}
 		}
@@ -382,7 +412,14 @@ func HighlightKeywords(text string, kwds []string) string {
 	// i.e. code points (text_processing.py:396/411).
 	termRunes := make([][]rune, 0, len(terms))
 	for _, t := range terms {
-		if t != "" {
+		// Fold the TERM the same way the haystack was folded: the match below
+		// compares against `lows`, and only the stem-derived terms appended above
+		// were already lowercase — a caller-supplied "Rocket" or "New York" kept
+		// its casing and therefore never matched, silently dropping the highlight.
+		// Python builds its phrase list with `(kw or "").strip().lower()`
+		// (text_processing.py:396) and additionally compiles with re.IGNORECASE
+		// (:411), so the trim and the case fold both belong here.
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
 			termRunes = append(termRunes, []rune(t))
 		}
 	}

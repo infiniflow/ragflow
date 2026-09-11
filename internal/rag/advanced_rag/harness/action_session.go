@@ -1641,8 +1641,10 @@ type SessionState struct {
 	// ToolChars is the running total of tool-payload chars emitted so far
 	// (O(1) accounting; Python tracks the same counter as _tool_chars).
 	ToolChars int
-	// ToolCache avoids re-executing an identical (name, args) call.
-	ToolCache map[string]ToolOutcome
+	// ToolCache avoids re-executing an identical (name, args) call. It is the
+	// per-round cache shared with the round's other sessions, so it is a guarded
+	// *ToolCache rather than a bare map.
+	ToolCache *ToolCache
 	// SearchQueries accumulates retrieval queries for near-dup detection.
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
@@ -1797,7 +1799,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	}
 	used := s.ToolChars
 	if s.ToolCache == nil {
-		s.ToolCache = map[string]ToolOutcome{}
+		s.ToolCache = NewToolCache()
 	}
 	seenQueries := append([]string(nil), s.SearchQueries...)
 	skipped := 0
@@ -1843,14 +1845,16 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			continue
 		}
 
-		// Same-session cache: avoid re-running an identical (name, args) call.
+		// Same-round cache: avoid re-running an identical (name, args) call.
 		// The cache only avoids RE-EXECUTING; a response is still returned for
 		// every declared call, because the assistant message declared it.
+		// The cache is shared by a round's concurrent sessions, hence the guarded
+		// Get/Put.
 		cacheKey := callCacheKey(c)
-		oc, cached := s.ToolCache[cacheKey]
+		oc, cached := s.ToolCache.Get(cacheKey)
 		if !cached {
 			oc = ExecuteTool(ctx, s.Tools, c.Name, c.Args)
-			s.ToolCache[cacheKey] = oc
+			s.ToolCache.Put(cacheKey, oc)
 		}
 		if q != "" {
 			seenQueries = append(seenQueries, q)
@@ -2361,6 +2365,46 @@ func callCacheKey(c ToolCall) string {
 		raw = []byte("{}")
 	}
 	return c.Name + "|" + string(raw)
+}
+
+// ToolCache is the per-round tool-outcome cache. One instance is shared by a
+// round's CONCURRENT sessions: Python builds a single dict per round
+// (agentic_rag_graph.py:1407) and hands it to every session (:2030), and only
+// asyncio's cooperative scheduling keeps that safe. Go's sessions are goroutines
+// and concurrent map access is a FATAL error there, so the map is guarded.
+type ToolCache struct {
+	mu sync.Mutex
+	m  map[string]ToolOutcome
+}
+
+// NewToolCache returns an empty, concurrency-safe tool cache.
+func NewToolCache() *ToolCache { return &ToolCache{m: map[string]ToolOutcome{}} }
+
+// Get returns the cached outcome for key. A nil cache never holds anything, so a
+// session constructed without one simply re-executes (the pre-existing behavior).
+func (c *ToolCache) Get(key string) (ToolOutcome, bool) {
+	if c == nil {
+		return ToolOutcome{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	oc, ok := c.m[key]
+	return oc, ok
+}
+
+// Put stores the outcome for key. Two identical calls that lose the race both
+// compute and both store — Python's dict behaves the same way under asyncio (the
+// cache avoids re-executing DELIBERATE repeats, not simultaneous ones).
+func (c *ToolCache) Put(key string, oc ToolOutcome) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]ToolOutcome{}
+	}
+	c.m[key] = oc
 }
 
 // stripUnpairedToolCalls removes assistant tool_calls that never received a
@@ -3016,7 +3060,7 @@ type SessionDeps struct {
 // Returns an empty Result (no states) when no model is configured or the
 // session fails — mirroring Python, which logs and returns
 // Result(messages=[], new_states=[]) rather than propagating.
-func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache map[string]ToolOutcome, sharedSearchQueries []string) Result {
+func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache *ToolCache, sharedSearchQueries []string) Result {
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
@@ -3067,7 +3111,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		Direction:            direction,
 	}
 	if st.ToolCache == nil {
-		st.ToolCache = map[string]ToolOutcome{}
+		st.ToolCache = NewToolCache()
 	}
 
 	// The graph loop is bounded by the turn budget and the deadline; the context

@@ -96,7 +96,7 @@ func TestToolNodeContinuesLadderInCode(t *testing.T) {
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
 		NavRuleID:    llmRung,
-		ToolCache:    map[string]ToolOutcome{},
+		ToolCache:    NewToolCache(),
 		PendingCalls: []ToolCall{
 			{ID: "call-1", Name: "navigate_structure"},
 		},
@@ -153,7 +153,7 @@ func TestToolNodeLeavesLadderAloneWithNoPendingRule(t *testing.T) {
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
 		NavRuleID:    "", // ladder finished
-		ToolCache:    map[string]ToolOutcome{},
+		ToolCache:    NewToolCache(),
 		PendingCalls: []ToolCall{
 			{ID: "call-1", Name: "retrieve"},
 		},

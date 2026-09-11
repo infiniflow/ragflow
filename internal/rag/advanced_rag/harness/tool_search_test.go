@@ -349,6 +349,54 @@ func TestHighlightKeywordsFoldsWithoutByteOffsets(t *testing.T) {
 	}
 }
 
+// TestHighlightKeywordsFoldsUppercaseKeywords pins that a keyword's OWN casing is
+// folded the way the haystack is: terms are matched against the lowercased text
+// (`lows`), and Python builds its phrase list with `(kw or "").strip().lower()`
+// (text_processing.py:396) plus re.IGNORECASE (:411). A caller-supplied "Rocket"
+// used to be compared verbatim, so a capitalised keyword never matched and the
+// span was silently left unstarred.
+func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		kwds []string
+		want string
+	}{
+		{"single word", "the Rocket launched", []string{"Rocket"}, "the *Rocket* launched"},
+		{"multi-word phrase stays one span", "welcome to New York city", []string{"New York"}, "welcome to *New York* city"},
+		{"source casing is preserved", "ROCKET is loud", []string{"Rocket"}, "*ROCKET* is loud"},
+		{"surrounding spaces are trimmed", "the Rocket launched", []string{"  Rocket  "}, "the *Rocket* launched"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HighlightKeywords(tc.text, tc.kwds); got != tc.want {
+				t.Errorf("HighlightKeywords(%q, %v) = %q, want %q", tc.text, tc.kwds, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHighlightKeywordsKeepsPhrasePartsWhole pins Python's phrase guard
+// (text_processing.py:405): a stem-matched word that already occurs inside a
+// keyword phrase is NOT added as a term of its own, so a standalone "Braves" is
+// left alone and only the "Atlanta Braves" span is starred.
+func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
+	got := HighlightKeywords("Braves lost. Atlanta Braves won.", []string{"Atlanta Braves"})
+	if want := "Braves lost. *Atlanta Braves* won."; got != want {
+		t.Errorf("highlight = %q, want %q", got, want)
+	}
+}
+
+// TestHighlightKeywordsStemMatchesCapitalisedWords pins the word scan: Python
+// stems every `[A-Za-z]+` word (:403), so a capitalised inflected word still
+// contributes its stem term. The shared lowercase pattern matched only the
+// fragment after the capital ("Nominated" -> "ominated"), so nothing was starred.
+func TestHighlightKeywordsStemMatchesCapitalisedWords(t *testing.T) {
+	got := HighlightKeywords("Nominated twice.", []string{"nominations"})
+	if want := "*Nominated* twice."; got != want {
+		t.Errorf("highlight = %q, want %q", got, want)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Doc aggregations
 // ---------------------------------------------------------------------------

@@ -36,7 +36,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/service/nav"
@@ -513,27 +512,9 @@ func argString(args map[string]any, key string) string {
 // stops admitting chunks (observed pools otherwise grew to ~106).
 const evidencePoolCap = 60
 
-// evidencePoolFullLogged mirrors Python _EVIDENCE_POOL_STATE["full_logged"], which
-// Python documents as a PER-PROCESS flag (action_session.py:62-64: "Per-process
-// flag so the 'pool FULL' log line is emitted once per fill, not once per
-// rejected chunk"). So the line is emitted once per PROCESS — not once per
-// rejected chunk, and NOT once per session: a second session in the same process
-// stays silent, exactly as in Python. sync.Once because concurrent tool calls
-// run the check. The pool never shrinks mid-session, so no reset is needed.
-var evidencePoolFullLogged sync.Once
-
-// evidencePoolFull mirrors the early-stop at the top of Python _admit_evidence:
-// once the shared pool reaches evidencePoolCap, admit no further chunk and
-// return true so the caller skips it.
-func evidencePoolFull(pool *Kbinfos) bool {
-	if pool == nil || len(pool.Chunks) < evidencePoolCap {
-		return false
-	}
-	evidencePoolFullLogged.Do(func() {
-		_LOG.Printf("[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.", len(pool.Chunks), evidencePoolCap)
-	})
-	return true
-}
+// The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
+// the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
+// while another session appends.
 
 // search runs one retrieval call for a tool invocation.
 //
@@ -582,13 +563,10 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	newChunks := 0
 	// Per-call admittance state, mirroring Python _run_search/_admit_evidence
 	// (action_session.py:_run_search): `seen` dedups chunks ACROSS the queries of
-	// this one call; kbSeen holds the shared pool's existing identities
-	// (Python `kb_seen`).
+	// this one call. The pool-side dedup is Kbinfos.Admit's job, against the LIVE
+	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
+	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
-	kbSeen := make(map[string]bool, len(e.deps.KB.Chunks))
-	for _, c := range e.deps.KB.Chunks {
-		kbSeen[chunkKey(c)] = true
-	}
 	for _, q := range queries {
 		// Per-tool top_n (mirrors Python action_session: retrieve=10,
 		// search_chunks=20). They were previously collapsed onto e.req.TopN,
@@ -661,29 +639,33 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// id, the chunk ID as the evidence reference (Python's `ids` holds ids,
 		// not pool positions), and only chunks NEW to the shared pool appended
 		// to it — so REDUNDANT means "nothing new", not "nothing returned".
-		for _, c := range chunks {
-			// Python _admit_evidence early-stops at the top once the shared pool
-			// reaches the cap, BEFORE the per-call dedup.
-			if evidencePoolFull(e.deps.KB) {
-				continue
+		//
+		// ONE query's batch is one critical section: Python's per-query loop has
+		// no await (the awaits sit in the outer query loop, :691-700), so asyncio
+		// cannot interleave two sessions' batches. Locking per chunk would let
+		// them interleave into pool orders Python can never produce.
+		e.deps.KB.Admit(func(p *PoolAdmitter) {
+			for _, c := range chunks {
+				// Python _admit_evidence early-stops at the top once the shared pool
+				// reaches the cap, BEFORE the per-call dedup.
+				if p.Full() {
+					continue
+				}
+				cid := ChunkIDOf(c)
+				if seen[cid] {
+					continue
+				}
+				seen[cid] = true
+				evidenceIDs = append(evidenceIDs, cid)
+				payload = append(payload, passageFromChunk(c))
+				// Pool identity uses chunkKey (Go's stable key): Python's _chunk_key
+				// falls back to id(ck) — the dict's address — so an equivalent
+				// re-retrieved chunk never matches and is appended again.
+				if p.Add(c) {
+					newChunks++
+				}
 			}
-			cid := ChunkIDOf(c)
-			if seen[cid] {
-				continue
-			}
-			seen[cid] = true
-			evidenceIDs = append(evidenceIDs, cid)
-			payload = append(payload, passageFromChunk(c))
-			// Pool identity uses chunkKey (Go's stable key): Python's _chunk_key
-			// falls back to id(ck) — the dict's address — so an equivalent
-			// re-retrieved chunk never matches and is appended again.
-			key := chunkKey(c)
-			if !kbSeen[key] {
-				kbSeen[key] = true
-				e.deps.KB.Chunks = append(e.deps.KB.Chunks, c)
-				newChunks++
-			}
-		}
+		})
 		// Pool this search's doc_aggs (skipped when it returned no chunks, like
 		// _merge_kbinfos).
 		e.deps.KB.MergeDocAggs(aggs)

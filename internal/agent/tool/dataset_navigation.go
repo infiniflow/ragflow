@@ -232,11 +232,21 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 }
 
 func (d *DatasetNavigationByTree) mergeDefaults(args datasetNavigationArgs) datasetNavigationArgs {
+	// Blank request values count as NOT SUPPLIED, and they must be compacted
+	// before the default is considered: a request like {"doc_scope":[" "]} has a
+	// non-zero length, so it used to suppress d.defaults.DocScope and then
+	// compact away at the use site — leaving an empty scope, which inScope() and
+	// ns.Search read as "unscoped". The configured restriction was therefore
+	// silently disabled by a value that carries no document id, letting the tool
+	// return documents the default scope excludes. Python's
+	// RAGTools.scoped_doc_ids treats a falsy request scope the same way this now
+	// does: fall back to the configured scope (agentic_rag.py:352-358).
+	args.DocScope = compactStrings(args.DocScope)
 	if len(args.DatasetIDs) == 0 && len(d.defaults.DatasetIDs) != 0 {
 		args.DatasetIDs = append([]string(nil), d.defaults.DatasetIDs...)
 	}
 	if len(args.DocScope) == 0 && len(d.defaults.DocScope) != 0 {
-		args.DocScope = append([]string(nil), d.defaults.DocScope...)
+		args.DocScope = compactStrings(d.defaults.DocScope)
 	}
 	if args.MaxDocs <= 0 {
 		args.MaxDocs = d.defaults.MaxDocs

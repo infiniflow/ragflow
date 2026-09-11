@@ -102,3 +102,26 @@ func TestSummarizeDocumentReturnsNothingWhenNoChunkRenders(t *testing.T) {
 		t.Fatalf("blocks = %v, want nothing for a document with no renderable chunk", got)
 	}
 }
+
+// TestSummarizeDocumentDeduplicatesRepeatedSourcePositions covers the paging
+// hazard: offset paging over an unstable order can serve the same chunk on two
+// pages, and Merge reports a position per OCCURRENCE, not per distinct chunk. The
+// block of that one pooled chunk was therefore appended twice — paying its tokens
+// into the prompt twice, on top of a budget that was already spent.
+func TestSummarizeDocumentDeduplicatesRepeatedSourcePositions(t *testing.T) {
+	pool := []map[string]any{{"chunk_id": "p0", "content": "Pooled evidence."}}
+	docChunks := []map[string]any{
+		{"chunk_id": "c1", "content": "Document body."},
+		{"chunk_id": "c1", "content": "Document body."}, // same chunk served twice
+		{"chunk_id": "c2", "content": "Second body."},
+	}
+
+	got := summarizeDocument(context.Background(), docFetchDeps(pool, docChunks), "doc-1", 100000)
+
+	if len(got) != 2 {
+		t.Fatalf("blocks = %d (%v), want one block per distinct fetched chunk", len(got), got)
+	}
+	if !strings.Contains(got[0], "Document body.") || !strings.Contains(got[1], "Second body.") {
+		t.Errorf("blocks = %v, want the document's chunks in reading order, each once", got)
+	}
+}

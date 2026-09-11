@@ -1,6 +1,10 @@
 package harness
 
-import "testing"
+import (
+	"fmt"
+	"sync"
+	"testing"
+)
 
 // TestMergeSkipsAllWhenNoChunks mirrors Python _merge_kbinfos's early return:
 // `if not result or not result.get("chunks"): return`. When the incoming chunk
@@ -105,5 +109,95 @@ func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
 	MemoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
 	if len(kb.Memory) != 2 {
 		t.Fatalf("identical text must still dedup, memory = %d", len(kb.Memory))
+	}
+}
+
+// TestKbinfosAdmitIsAtomic pins the pool's invariants under the concurrency the
+// pool actually sees: one round's sessions run at the same time and share ONE
+// Kbinfos (SessionDeps.KB; RunSlotResearchPass starts them as goroutines).
+//
+// Python gets both invariants for free — asyncio never preempts the await-free
+// admit stretch (_admit_evidence is a plain def, action_session.py:615, and the
+// per-query loop has no await, :691-700) — so Go has to lock the same stretch.
+//
+// The pool starts one chunk short of the cap, and both sessions offer the SAME
+// first chunk. Whichever batch wins the lock pools it — once — and the cap then
+// stops every further chunk, so the assertions hold whatever the schedule does:
+// they fail only when the batches interleave (which is what an unlocked
+// check-then-append does: both sessions read 59 and both append).
+func TestKbinfosAdmitIsAtomic(t *testing.T) {
+	pool := &Kbinfos{}
+	for i := 0; i < evidencePoolCap-1; i++ {
+		pool.Admit(func(p *PoolAdmitter) {
+			p.Add(map[string]any{"chunk_id": fmt.Sprintf("p%d", i)})
+		})
+	}
+	if len(pool.Chunks) != evidencePoolCap-1 {
+		t.Fatalf("fixture pool = %d chunks, want %d", len(pool.Chunks), evidencePoolCap-1)
+	}
+
+	var wg sync.WaitGroup
+	for _, tag := range []string{"a", "b"} {
+		wg.Add(1)
+		go func(tag string) {
+			defer wg.Done()
+			pool.Admit(func(p *PoolAdmitter) {
+				for _, c := range []map[string]any{
+					{"chunk_id": "shared"},
+					{"chunk_id": tag},
+				} {
+					if p.Full() {
+						continue
+					}
+					p.Add(c)
+				}
+			})
+		}(tag)
+	}
+	wg.Wait()
+
+	if len(pool.Chunks) != evidencePoolCap {
+		t.Errorf("pool = %d chunks, want exactly the cap %d: a serialized batch stops at the cap, an interleaved one overshoots",
+			len(pool.Chunks), evidencePoolCap)
+	}
+	counts := map[string]int{}
+	for _, c := range pool.Chunks {
+		id, _ := c["chunk_id"].(string)
+		counts[id]++
+	}
+	if counts["shared"] != 1 {
+		t.Errorf("chunk %q pooled %d time(s), want exactly 1: the pool must be deduped against its LIVE contents", "shared", counts["shared"])
+	}
+	if counts["a"]+counts["b"] != 0 {
+		t.Errorf("session-private chunks were pooled (%d a, %d b) although only one slot was free", counts["a"], counts["b"])
+	}
+}
+
+// TestToolCacheIsConcurrencySafe exercises the cache the way a round does: the
+// SAME instance handed to concurrent sessions (Python builds one dict per round,
+// agentic_rag_graph.py:1407, and passes it to every session, action_session.py:2030).
+// Run under -race this is what a bare map cannot survive — concurrent map writes
+// are a fatal error in Go, not merely a race report.
+func TestToolCacheIsConcurrencySafe(t *testing.T) {
+	cache := NewToolCache()
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("tool-%d", i%4) // deliberate key collisions
+			if _, ok := cache.Get(key); !ok {
+				cache.Put(key, ToolOutcome{Reason: key})
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < 4; i++ {
+		key := fmt.Sprintf("tool-%d", i)
+		oc, ok := cache.Get(key)
+		if !ok || oc.Reason != key {
+			t.Errorf("cache[%q] = (%+v, %v), want the stored outcome", key, oc, ok)
+		}
 	}
 }

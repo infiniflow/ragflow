@@ -164,7 +164,10 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 	if e == nil || e.store == nil || kb == nil {
 		return nil
 	}
-	before := len(kb.Chunks)
+	// Counted from what was actually pooled, not from a len(before)/len(after)
+	// delta: another session's appends land in the same pool and would be
+	// counted here as this expansion's contribution.
+	expanded := 0
 	seen := make(map[string]bool, len(kb.Chunks))
 	for _, c := range kb.Chunks {
 		if id := ChunkIDOf(c); id != "" {
@@ -176,6 +179,24 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		match = strings.TrimSpace(keywords)
 	}
 
+	// Admit one expansion batch. UNCAPPED, like Python's expansion (it appends
+	// straight to kbinfos, which is what pushes the pool past _EVIDENCE_POOL_CAP),
+	// but under the pool lock and deduped against the LIVE pool — the per-call
+	// `seen` snapshot it is also gated on cannot see a concurrent session's
+	// appends. Returns how many chunks were actually new.
+	admitExpansion := func(chunks []map[string]any) int {
+		added := 0
+		kb.Admit(func(p *PoolAdmitter) {
+			for _, c := range chunks {
+				if p.Add(c) {
+					added++
+				}
+			}
+		})
+		expanded += added
+		return added
+	}
+
 	scopes := e.kgScopes(docScope)
 	for _, sc := range scopes {
 		// 1-hop entity-graph expansion, per template kind (Python L71-89):
@@ -185,9 +206,8 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 			if err != nil {
 				return err
 			}
-			if len(chunks) > 0 {
-				kb.Chunks = append(kb.Chunks, chunks...)
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", tk.label, len(chunks))
+			if n := admitExpansion(chunks); n > 0 {
+				_LOG.Printf("[Compiled expand] %s: +%d chunks", tk.label, n)
 			}
 		}
 		// Tree structure graph, selected by compile_kwd (Python L91-104):
@@ -196,9 +216,8 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		if err != nil {
 			return err
 		}
-		if len(chunks) > 0 {
-			kb.Chunks = append(kb.Chunks, chunks...)
-			_LOG.Printf("[Compiled expand] tree: +%d chunks", len(chunks))
+		if n := admitExpansion(chunks); n > 0 {
+			_LOG.Printf("[Compiled expand] tree: +%d chunks", n)
 		}
 		// Synthesis pages — standalone rendered articles, searched directly
 		// (Python L106-125).
@@ -207,22 +226,24 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 			if err != nil {
 				return err
 			}
-			if len(chunks) > 0 {
-				kb.Chunks = append(kb.Chunks, chunks...)
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, len(chunks))
+			if n := admitExpansion(chunks); n > 0 {
+				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, n)
 			}
 		}
 	}
 
 	// Re-sort so compiled-expansion chunks blend by similarity with regular ones
-	// (Python L127-130).
-	if len(kb.Chunks) > 0 {
-		sort.SliceStable(kb.Chunks, func(i, j int) bool {
-			return similarityOf(kb.Chunks[i]) > similarityOf(kb.Chunks[j])
-		})
-	}
+	// (Python L127-130). Under the pool lock: this PERMUTES the shared slice, so
+	// it must not run while another session reads or appends it.
+	kb.Admit(func(*PoolAdmitter) {
+		if len(kb.Chunks) > 0 {
+			sort.SliceStable(kb.Chunks, func(i, j int) bool {
+				return similarityOf(kb.Chunks[i]) > similarityOf(kb.Chunks[j])
+			})
+		}
+	})
 
-	_LOG.Printf("[Hybrid search] Compiled expansion added %d chunks.", len(kb.Chunks)-before)
+	_LOG.Printf("[Hybrid search] Compiled expansion added %d chunks.", expanded)
 	return nil
 }
 

@@ -93,6 +93,11 @@ func MemoryAdd(kb *Kbinfos, chunks []map[string]any) {
 	if kb == nil || len(chunks) == 0 {
 		return
 	}
+	// One critical section: memory.add is an await-free stretch in Python, so
+	// asyncio can never interleave two sessions' adds into it (the pool is shared
+	// across a round's concurrent sessions — see Kbinfos.Admit).
+	kb.mu.Lock()
+	defer kb.mu.Unlock()
 	seen := make(map[string]struct{}, len(kb.Memory))
 	for _, c := range kb.Memory {
 		seen[chunkKey(c)] = struct{}{}
@@ -126,6 +131,8 @@ func MemorySize(kb *Kbinfos) int {
 // MemoryClear mirrors Python memory.clear.
 func MemoryClear(kb *Kbinfos) {
 	if kb != nil {
+		kb.mu.Lock()
+		defer kb.mu.Unlock()
 		kb.Memory = nil
 	}
 }

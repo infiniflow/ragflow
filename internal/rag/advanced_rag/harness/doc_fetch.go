@@ -153,8 +153,17 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 			blockAt[src] = blocks[i]
 		}
 	}
+	// One block per POOL POSITION. `added` is positional per OCCURRENCE: a chunk
+	// the reader served twice (offset paging over an unstable order) or a chunk
+	// already pooled is reported at the same position again, so appending per
+	// occurrence would hand the model the same block — and its tokens — twice.
 	fresh := make([]string, 0, len(added))
+	seenPositions := make(map[int]struct{}, len(added))
 	for _, pos := range added {
+		if _, seen := seenPositions[pos]; seen {
+			continue
+		}
+		seenPositions[pos] = struct{}{}
 		if block, ok := blockAt[pos]; ok {
 			fresh = append(fresh, block)
 		}

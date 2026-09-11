@@ -2247,7 +2247,7 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 	}
 
 	// Shared across sessions so duplicate retrievals are served from cache.
-	sharedToolCache := map[string]harness.ToolOutcome{}
+	sharedToolCache := harness.NewToolCache()
 	var sharedSearchQueries []string
 
 	sem := make(chan struct{}, slotSessionConcurrency)

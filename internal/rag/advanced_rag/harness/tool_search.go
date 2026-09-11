@@ -1011,38 +1011,45 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 	var evidenceIDs []string
 	newChunks := 0
 	seen := make(map[string]bool, len(results))
-	for i, r := range results {
-		if r == "" || seen[r] {
-			continue
+	// The whole batch is ONE critical section (Kbinfos.Admit): Python's admit loop
+	// has no await (the retrieval itself is awaited above it), so two sessions can
+	// never interleave here.
+	deps.KB.Admit(func(p *PoolAdmitter) {
+		for i, r := range results {
+			if r == "" || seen[r] {
+				continue
+			}
+			// Python _admit_evidence early-stops at the pool cap, BEFORE it records
+			// the chunk as seen, so a rejected passage is retried once room frees.
+			if p.Full() {
+				continue
+			}
+			seen[r] = true
+			chunkID := fmt.Sprintf("web_%d", i)
+			c := map[string]any{
+				"chunk_id": chunkID,
+				"content":  r,
+				"doc_id":   "web",
+			}
+			// p.Add, not Merge: Merge takes this same pool lock and would deadlock
+			// inside the critical section. It also answers "new to the pool" per
+			// chunk, so the count no longer has to be inferred from a length delta
+			// that other sessions' appends inflate.
+			if p.Add(c) {
+				newChunks++
+			}
+			// Evidence references the chunk id (Python ids.append(cid)), not a pool
+			// position.
+			evidenceIDs = append(evidenceIDs, chunkID)
+			// Passage shape from _admit_evidence(include_doc_id=False): {"id","content"},
+			// non-table text cut to 1200 code points (plain slice, no ellipsis).
+			content := r
+			if !IsTableChunk(c) {
+				content = truncateRunes(content, 1200)
+			}
+			payload = append(payload, map[string]any{"id": chunkID, "content": content})
 		}
-		// Python _admit_evidence early-stops at the pool cap, BEFORE it records
-		// the chunk as seen, so a rejected passage is retried once room frees.
-		if evidencePoolFull(deps.KB) {
-			continue
-		}
-		seen[r] = true
-		chunkID := fmt.Sprintf("web_%d", i)
-		c := map[string]any{
-			"chunk_id": chunkID,
-			"content":  r,
-			"doc_id":   "web",
-		}
-		if deps.KB != nil {
-			before := len(deps.KB.Chunks)
-			deps.KB.Merge([]map[string]any{c}, nil)
-			newChunks += len(deps.KB.Chunks) - before
-		}
-		// Evidence references the chunk id (Python ids.append(cid)), not a pool
-		// position.
-		evidenceIDs = append(evidenceIDs, chunkID)
-		// Passage shape from _admit_evidence(include_doc_id=False): {"id","content"},
-		// non-table text cut to 1200 code points (plain slice, no ellipsis).
-		content := r
-		if !IsTableChunk(c) {
-			content = truncateRunes(content, 1200)
-		}
-		payload = append(payload, map[string]any{"id": chunkID, "content": content})
-	}
+	})
 
 	if len(payload) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
@@ -1128,45 +1135,43 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	if len(admit) > listChunksMaxOut {
 		admit = admit[:listChunksMaxOut]
 	}
-	kbSeen := make(map[string]bool, len(e.deps.KB.Chunks))
-	for _, c := range e.deps.KB.Chunks {
-		kbSeen[chunkKey(c)] = true
-	}
 	seen := map[string]bool{}
 	var payload []any
 	var evidenceIDs []string
 	newChunks := 0
-	for _, c := range admit {
-		cid := ChunkIDOf(c)
-		if cid == "" {
-			// Python _exec_list_chunks skips a blank cid in the caller, BEFORE
-			// _admit_evidence.
-			continue
+	// The batch is ONE critical section (Kbinfos.Admit): Python's admit stretch
+	// has no await, so two sessions can never interleave here, and the pool-side
+	// dedup must see the LIVE pool rather than a snapshot taken upfront.
+	e.deps.KB.Admit(func(p *PoolAdmitter) {
+		for _, c := range admit {
+			cid := ChunkIDOf(c)
+			if cid == "" {
+				// Python _exec_list_chunks skips a blank cid in the caller, BEFORE
+				// _admit_evidence.
+				continue
+			}
+			// Python _admit_evidence early-stops at the pool cap, BEFORE the
+			// per-call dedup.
+			if p.Full() {
+				continue
+			}
+			if seen[cid] {
+				continue
+			}
+			seen[cid] = true
+			evidenceIDs = append(evidenceIDs, cid)
+			// Shape like _admit_evidence(include_doc_id=False): {"id","content"} with
+			// non-table text cut to 1200 code points (a plain slice, no ellipsis).
+			content := ChunkTextOf(c)
+			if !IsTableChunk(c) {
+				content = truncateRunes(content, 1200)
+			}
+			payload = append(payload, map[string]any{"id": cid, "content": content})
+			if p.Add(c) {
+				newChunks++
+			}
 		}
-		// Python _admit_evidence early-stops at the pool cap, BEFORE the
-		// per-call dedup.
-		if evidencePoolFull(e.deps.KB) {
-			continue
-		}
-		if seen[cid] {
-			continue
-		}
-		seen[cid] = true
-		evidenceIDs = append(evidenceIDs, cid)
-		// Shape like _admit_evidence(include_doc_id=False): {"id","content"} with
-		// non-table text cut to 1200 code points (a plain slice, no ellipsis).
-		content := ChunkTextOf(c)
-		if !IsTableChunk(c) {
-			content = truncateRunes(content, 1200)
-		}
-		payload = append(payload, map[string]any{"id": cid, "content": content})
-		key := chunkKey(c)
-		if !kbSeen[key] {
-			kbSeen[key] = true
-			e.deps.KB.Chunks = append(e.deps.KB.Chunks, c)
-			newChunks++
-		}
-	}
+	})
 
 	if len(payload) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
