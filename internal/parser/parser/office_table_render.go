@@ -161,25 +161,7 @@ type htmlTableChunk struct {
 	ColEnd   int
 }
 
-// recordsToHTMLTableChunks renders records as one or more self-contained HTML
-// <table> chunks. The first row is always the header (<th>). Data rows are
-// split into chunks of chunkRows, each chunk being a complete <table> with
-// <caption> and a repeated header row. Chunks are joined with newlines.
-//
-// The tag schema is <table><caption>{caption}</caption><tr><th>…</th></tr>
-// <tr><td>…</td></tr>…</table>. Rows are intentionally NOT wrapped in
-// <thead>/<tbody>, so every <table> is one atomic chunk that downstream
-// chunkers can consume independently.
-func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
-	chunks := recordsToHTMLTableChunkList(records, chunkRows, caption, 1)
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, "")
-}
-
-// recordsToHTMLTableChunkList is the structured form of recordsToHTMLTableChunks.
+// recordsToHTMLTableChunkList renders records as structured htmlTableChunk items.
 // headerRowAbs is the 1-based workbook row number of records[0] (normally 1).
 func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption string, headerRowAbs int) []htmlTableChunk {
 	if headerRowAbs <= 0 {
@@ -400,7 +382,7 @@ func mergeExtentCol(ranges []mergeRange) int {
 }
 
 // padRowToWidth grows a single row to at least maxCol, padding with empty
-// strings. Only the header row is padded (see renderSheetTables): merged-master
+// strings. Only the header row is padded: merged-master
 // text is inherited into the header alone, so data rows must not be widened —
 // widening them would emit a sea of empty <td> cells for every far merge in the
 // sheet and is the memory blow-up flagged in review.
@@ -632,22 +614,6 @@ func decodeChunkRows(setup map[string]any) int {
 		return rows
 	}
 	return defaultTableChunkRows
-}
-
-// renderSheetTables renders a single workbook sheet into one or more
-// self-contained <table> chunks using the shared spreadsheet-HTML contract:
-// detect the header row, inherit merged-master text into the header, and split
-// data into chunkRows-sized atomic tables each repeating the header.
-func renderSheetTables(f *excelize.File, sheet string, chunkRows int) (string, []string, error) {
-	chunks, warnings, err := renderSheetTableChunks(f, sheet, chunkRows)
-	if err != nil {
-		return "", warnings, err
-	}
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, ""), warnings, nil
 }
 
 func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) ([]htmlTableChunk, []string, error) {

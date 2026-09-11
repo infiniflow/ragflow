@@ -87,10 +87,9 @@ func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) 
 		}, nil
 	}
 
-	// The presentation template only configures pdf and slides
-	// parser setups, matching Python's restriction to .pptx/.ppt/.pdf.
-	// The upstream parser therefore always emits per-slide JSON, never
-	// flat text/markdown/html, so every payload keeps one-chunk-per-slide.
+	// The Page chunker preserves one incoming JSON item per output chunk.
+	// It has no file-family restriction: item granularity is determined by
+	// the upstream parser backend.
 	items := slideItems(upstream.JSONResult, upstream.Chunks)
 	if len(items) == 0 {
 		return emptyOutputs(), nil
