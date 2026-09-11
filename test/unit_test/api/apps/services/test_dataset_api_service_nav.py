@@ -272,9 +272,9 @@ def test_nav_bucket_compiled_rows_bins_claims_per_document(monkeypatch):
             "r1": _claim_row("doc-a", 0.9),
             "r2": _claim_row("doc-a", 0.5),
             "r3": _claim_row("doc-b", 0.7),
-            # A title row is never an evidence row, so it drops.  (fact /
-            # conclusion DO count as evidence rows on page_index, so they cannot
-            # be used here to exercise the drop path.)
+            # A title row is never an evidence row, so it drops.  (Only
+            # "claim" rows count as evidence rows now, so a stale fact row
+            # would exercise this same drop path.)
             "r4": {"doc_id": "doc-c", "similarity": 0.6, "content_with_weight": json.dumps({"type": "title"})},
         }
     )

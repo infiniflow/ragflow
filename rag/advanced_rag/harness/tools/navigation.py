@@ -1680,8 +1680,8 @@ async def _recall_claim_hits(
         "entity_type_kwd",
         "compile_kwd",
     ]
-    # page_index carries its evidence rows as fact/conclusion, not claim.
-    row_types = _evidence_row_types(kinds) if kinds else ("claim", "fact", "conclusion")
+    # Both compilers spell their evidence rows ``claim`` now.
+    row_types = _evidence_row_types(kinds) if kinds else ("claim",)
     condition: dict = {
         "doc_id": [doc_id],
         "entity_type_kwd": list(row_types),
@@ -1768,20 +1768,17 @@ _COMPILATION_PROBE_TTL = 300.0
 
 
 # "Evidence rows" — atomic propositions carrying verbatim evidence.  Every
-# compiler now writes them as ``claim``: tree via raptor claim extraction,
-# page_index via its own atomic claim type with gate-verified verbatim
-# evidence.  page_index used to spell that type ``fact`` / ``conclusion``;
-# both spellings stay listed so rows compiled before the rename keep answering
-# queries until the dataset is recompiled.
+# compiler writes them as ``entity_type_kwd="claim"``: tree via raptor claim
+# extraction, page_index via its own atomic claim type with gate-verified
+# verbatim evidence.  page_index's pre-rename ``fact``/``conclusion`` spellings
+# are deliberately NOT searched — a recompile retypes those rows.
+# ``raptor_graph`` (legacy parser-config RAPTOR graph projection) is absent on
+# purpose: those rows carry no ``entity_type_kwd`` and the legacy path writes no
+# claims, so it can never be an evidence-row kind.
 _EVIDENCE_ROW_TYPES_BY_COMPILE = {
     "tree": ("claim",),
     "raptor": ("claim",),
-    "raptor_graph": ("claim",),
-    # page_index writes ``claim`` too, now that its fact/conclusion types were
-    # folded into the one claim type. "fact"/"conclusion" stay listed as the
-    # pre-rename spelling so rows compiled before the rename keep answering
-    # queries until the dataset is recompiled.
-    "page_index": ("claim", "fact", "conclusion"),
+    "page_index": ("claim",),
 }
 
 

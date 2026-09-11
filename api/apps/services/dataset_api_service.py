@@ -3895,7 +3895,7 @@ _NAV_DOC_FOCUS_LIMIT = 3
 
 _NAV_CLAIM_POOL = 256
 
-_NAV_EVIDENCE_ROW_TYPES = ("claim", "fact", "conclusion")
+_NAV_EVIDENCE_ROW_TYPES = ("claim",)
 
 
 # Router behind the "navigation_tree" mode. Two callers share the entry point:
@@ -4216,15 +4216,19 @@ async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl
         return fm
 
     try:
-        # Which row type carries evidence depends on the compiler: tree writes
-        # ``claim``, page_index folds the same role into ``fact``/``conclusion``.
-        # The two are queried SEPARATELY, never as one mixed condition — a tree
-        # ``fact`` row carries no verbatim evidence, so lumping them together
-        # would admit evidence-less rows.  Tree first: it is the compiled
-        # benchmark path, so the common case still costs a single pass.
-        field_map = await _recall(("tree", "raptor_graph"), ("claim",))
+        # Both compilers write their evidence rows as ``entity_type_kwd="claim"``
+        # (page_index's pre-rename ``fact``/``conclusion`` spellings are no longer
+        # searched — a recompile retypes them).  The two are still queried
+        # SEPARATELY, never as one mixed condition: a tree claim row carries no
+        # ``knowledge_graph_kwd`` while a page_index claim is a graph entity.
+        # Tree first: it is the compiled benchmark path, so the common case
+        # still costs a single pass.  ``compile_kwd="raptor_graph"`` (the legacy
+        # parser-config RAPTOR graph projection) is NOT queried here: those rows
+        # carry no ``entity_type_kwd`` and the legacy path writes no claims, so
+        # the filter could never match.
+        field_map = await _recall(("tree",), ("claim",))
         if not field_map:
-            field_map = await _recall(("page_index", "pageindex"), ("claim", "fact", "conclusion"))
+            field_map = await _recall(("page_index", "pageindex"), ("claim",))
     except Exception:
         logging.exception("dataset_nav: claim-agg retrieval failed for kb=%s", kb.id)
         return False, {"error": "claim retrieval failed", "code": RetCode.SERVER_ERROR}
