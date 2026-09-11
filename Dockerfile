@@ -6,7 +6,7 @@ SHELL ["/bin/bash", "-c"]
 ARG NEED_MIRROR=0
 
 #Optional parameter
-#If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
+# If set NEED_MIRROR=1 and GITEE_TOKEN="xxxxx", download the source from Gitee.
 #If don't set GITEE_TOKEN , download from github
 ARG GITEE_TOKEN=""
 
