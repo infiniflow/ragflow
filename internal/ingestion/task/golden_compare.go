@@ -18,6 +18,8 @@ package task
 
 import (
 	"time"
+
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 // GoldenCompareResult is the structured output used by the local golden tools.
@@ -32,16 +34,15 @@ type GoldenCompareResult struct {
 func ProcessPipelineOutputForGolden(
 	pipelineOutput map[string]any,
 	docID string,
-	kbID string,
 	docName string,
 ) (GoldenCompareResult, error) {
-	normalized := NormalizeChunks(pipelineOutput)
+	normalized := indexdoc.NormalizeChunks(pipelineOutput)
 	if normalized == nil {
 		normalized = []map[string]any{}
 	}
 
-	processed := deepCopyChunks(normalized)
-	metadata, err := ProcessChunksForPipeline(processed, docID, kbID, docName, time.Now())
+	processed := indexdoc.DeepCopyChunks(normalized)
+	metadata, err := indexdoc.ProcessChunksForPipeline(processed, docID, docName, time.Now())
 	if err != nil {
 		return GoldenCompareResult{}, err
 	}

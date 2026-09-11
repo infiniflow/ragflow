@@ -63,7 +63,7 @@ func allowAnyHost() bool {
 // prevent rebinding between validation and the actual TCP connection.
 //
 // Mirrors common/ssrf_guard.py:assert_url_is_safe.
-func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
+var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -84,7 +84,7 @@ func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 	allowAny := allowAnyHost()
 	addresses, err := LookupHost(hostname)
 	if err != nil {
-		return "", "", fmt.Errorf("could not resolve hostname '%s': %v", hostname, err)
+		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
 	}
 	if len(addresses) == 0 {
 		return "", "", fmt.Errorf("hostname '%s' resolved to no addresses", hostname)
@@ -124,6 +124,10 @@ func isGlobalIP(ip net.IP) bool {
 		return false
 	}
 	if v4 := ip.To4(); v4 != nil {
+		// 0.0.0.0/8 — "this network"; 0.x.y.z routes to localhost on Linux.
+		if v4[0] == 0 {
+			return false
+		}
 		// CGNAT 100.64.0.0/10 — not flagged by IsPrivate in older Go versions.
 		if v4[0] == 100 && v4[1]&0xC0 == 64 {
 			return false
@@ -159,8 +163,49 @@ func isGlobalIP(ip net.IP) bool {
 		if v6[0] == 0x01 && v6[1] == 0x00 && allZero(v6[2:8]) {
 			return false
 		}
+		// IPv6 transition addresses (6to4, NAT64, Teredo, IPv4-compatible) embed
+		// an arbitrary IPv4 address that none of the checks above look at. Unwrap
+		// and re-check it so 2002:7f00:1::1 is treated as 127.0.0.1.
+		for _, inner := range embeddedIPv4(v6) {
+			if !isGlobalIP(inner) {
+				return false
+			}
+		}
 	}
 	return true
+}
+
+// embeddedIPv4 returns the IPv4 addresses carried inside an IPv6 transition
+// address, or nil when it carries none. Teredo yields two: the relay server and
+// the (obfuscated) client.
+func embeddedIPv4(v6 net.IP) []net.IP {
+	switch {
+	// 6to4 — RFC 3056, 2002::/16, IPv4 in bytes 2-6.
+	case v6[0] == 0x20 && v6[1] == 0x02:
+		return []net.IP{net.IPv4(v6[2], v6[3], v6[4], v6[5])}
+
+	// NAT64 well-known prefix — RFC 6052, 64:ff9b::/96, IPv4 in the low 32 bits.
+	case v6[0] == 0x00 && v6[1] == 0x64 && v6[2] == 0xff && v6[3] == 0x9b && allZero(v6[4:12]):
+		return []net.IP{net.IPv4(v6[12], v6[13], v6[14], v6[15])}
+
+	// NAT64 local-use prefix — RFC 8215, 64:ff9b:1::/48. The embedded IPv4
+	// position depends on the operator's prefix length, so block the range.
+	case v6[0] == 0x00 && v6[1] == 0x64 && v6[2] == 0xff && v6[3] == 0x9b && v6[4] == 0x00 && v6[5] == 0x01:
+		return []net.IP{net.IPv4zero}
+
+	// Teredo — RFC 4380, 2001::/32. Server IPv4 in bytes 4-8, client IPv4 in
+	// bytes 12-16 obfuscated by XOR with 0xff.
+	case v6[0] == 0x20 && v6[1] == 0x01 && v6[2] == 0x00 && v6[3] == 0x00:
+		return []net.IP{
+			net.IPv4(v6[4], v6[5], v6[6], v6[7]),
+			net.IPv4(v6[12]^0xff, v6[13]^0xff, v6[14]^0xff, v6[15]^0xff),
+		}
+
+	// IPv4-compatible — deprecated ::a.b.c.d, not unwrapped by net.IP.To4.
+	case allZero(v6[0:12]):
+		return []net.IP{net.IPv4(v6[12], v6[13], v6[14], v6[15])}
+	}
+	return nil
 }
 
 func allZero(b []byte) bool {
@@ -172,11 +217,36 @@ func allZero(b []byte) bool {
 	return true
 }
 
+// AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
+// target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
+// Xinference). It only rejects dangerous schemes and empty hosts; it does not
+// resolve DNS and does not require public routability. Use this ONLY for
+// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
+var AssertURLSchemeSafe = func(rawURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return fmt.Errorf("invalid url")
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if !slices.Contains(AllowedURLSchemes, scheme) {
+		sorted := append([]string(nil), AllowedURLSchemes...)
+		sort.Strings(sorted)
+		return fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
+	}
+
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("URL is missing a host")
+	}
+
+	return nil
+}
+
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
 // scoped to this client only.
-func PinnedHTTPClient(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,

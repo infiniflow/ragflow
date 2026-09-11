@@ -92,16 +92,21 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
+        delimiter = "\t" if any("\t" in line for line in lines) else ","
 
         fails = []
         content = ""
         res = []
-        reader = csv.reader(lines)
+        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
+        prev_line_num = 0
 
+        # line_num tracks the physical span when quoted fields cross lines.
         for i, row in enumerate(reader):
+            raw = "\n".join(lines[prev_line_num : reader.line_num])
+            prev_line_num = reader.line_num
             row = [r.strip() for r in row if r.strip()]
             if len(row) != 2:
-                content += "\n" + lines[i]
+                content += "\n" + raw
             elif len(row) == 2:
                 content += "\n" + row[0]
                 res.append(beAdoc(deepcopy(doc), content, row[1], eng, i))

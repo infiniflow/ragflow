@@ -23,7 +23,7 @@ from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import apply_meta_data_filter
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
@@ -32,6 +32,21 @@ from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
+
+
+def _shared_embedding_id(records, mismatch_message: str):
+    """Return a stored embedding id when records share one resolved model.
+
+    Comparison uses ``validate_dataset_embedding_models`` so a tenant_model
+    UUID and a legacy ``model@instance@provider`` composite are compatible
+    when they refer to the same model. Empty or unresolved names stay
+    isolated. The returned value is an original stored ``embd_id`` (UUID or
+    composite) for ``resolve_model_config``, not a normalized base name.
+    """
+    err = validate_dataset_embedding_models(records)
+    if err:
+        raise Exception(mismatch_message)
+    return next((rec.embd_id for rec in records if rec.embd_id), None)
 
 
 class RetrievalParam(ToolParamBase):
@@ -58,6 +73,7 @@ class RetrievalParam(ToolParamBase):
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
+        self.rerank_candidates_count = 64
         self.top_k = 1024
         self.dataset_ids = []
         self.kb_ids = []  # Deprecated: keep for backward compatibility
@@ -87,6 +103,27 @@ class Retrieval(ToolBase, ABC):
         """Get dataset IDs with backward compatibility for kb_ids."""
         return self._param.dataset_ids or getattr(self._param, "kb_ids", None) or []
 
+    def _resolve_manual_filter(self, flt: dict) -> dict:
+        # Return a new dict instead of mutating `flt` in place. The caller
+        # passes filters straight out of self._param.meta_data_filter, so
+        # mutating them would make later invocations reuse a stale value.
+        pat = re.compile(self.variable_ref_patt)
+        content = flt.get("value", "")
+
+        def replace(match):
+            value = self._canvas.get_variable_value(match.group(1))
+            if value is None:
+                return ""
+            elif isinstance(value, partial):
+                return "".join(value())
+            elif isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False)
+
+        resolved = dict(flt)
+        resolved["value"] = self._replace_template_matches(pat, content, replace)
+        return resolved
+
     async def _retrieve_kb(self, query_text: str):
         kb_ids: list[str] = []
         for id in self._dataset_ids:
@@ -110,13 +147,12 @@ class Retrieval(ToolBase, ABC):
         if not kbs:
             raise Exception("No dataset is selected.")
 
-        embd_nms = list(set([kb.embd_id for kb in kbs]))
-        assert len(embd_nms) == 1, "Knowledge bases use different embedding models."
+        embd_id = _shared_embedding_id(kbs, "Knowledge bases use different embedding models.")
 
         embd_mdl = None
-        if embd_nms:
+        if embd_id:
             tenant_id = self._canvas.get_tenant_id()
-            embd_model_config = resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_model_config = resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_id)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
@@ -136,41 +172,6 @@ class Retrieval(ToolBase, ABC):
             def _load_metas() -> dict:
                 return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
 
-            def _resolve_manual_filter(flt: dict) -> dict:
-                # Return a new dict instead of mutating `flt` in place. The
-                # caller passes filters straight out of self._param.meta_data_filter,
-                # so mutating them would replace the variable reference with its
-                # resolved value and every subsequent invocation (e.g. inside an
-                # Iteration component) would reuse that stale value.
-                pat = re.compile(self.variable_ref_patt)
-                s = flt.get("value", "")
-                out_parts = []
-                last = 0
-
-                for m in pat.finditer(s):
-                    out_parts.append(s[last : m.start()])
-                    key = m.group(1)
-                    v = self._canvas.get_variable_value(key)
-                    if v is None:
-                        rep = ""
-                    elif isinstance(v, partial):
-                        buf = []
-                        for chunk in v():
-                            buf.append(chunk)
-                        rep = "".join(buf)
-                    elif isinstance(v, str):
-                        rep = v
-                    else:
-                        rep = json.dumps(v, ensure_ascii=False)
-
-                    out_parts.append(rep)
-                    last = m.end()
-
-                out_parts.append(s[last:])
-                resolved = dict(flt)
-                resolved["value"] = "".join(out_parts)
-                return resolved
-
             chat_mdl = None
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 tenant_id = self._canvas.get_tenant_id()
@@ -183,7 +184,7 @@ class Retrieval(ToolBase, ABC):
                 query,
                 chat_mdl,
                 doc_ids,
-                _resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
+                self._resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
                 kb_ids=kb_ids,
                 metas_loader=_load_metas,
             )
@@ -202,11 +203,12 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
-                top=self._param.top_k,
+                knn_top_k=self._param.top_k,
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
+                rerank_candidates_count=self._param.rerank_candidates_count,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return
@@ -271,8 +273,7 @@ class Retrieval(ToolBase, ABC):
         if not memory_list:
             raise Exception("No memory is selected.")
 
-        embd_names = list({memory.embd_id for memory in memory_list})
-        assert len(embd_names) == 1, "Memory use different embedding models."
+        _shared_embedding_id(memory_list, "Memory use different embedding models.")
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}

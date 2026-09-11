@@ -27,10 +27,8 @@ var (
 	ErrComponentNotFound = errors.New("dsl: component not found")
 
 	// ErrMissingInputForm is returned when the component exists
-	// but has no `obj.input_form` dict. The python Canvas returns
-	// None in this case; we surface 102 "component has no
-	// input_form" instead.
-	ErrMissingInputForm = errors.New("dsl: component has no input_form")
+	// but has no `obj.params.inputs` dict.
+	ErrMissingInputForm = errors.New("dsl: component has no params.inputs")
 
 	// ErrMalformedDSL is returned for structural problems — nil
 	// dsl, missing components map, wrong types. Distinct from

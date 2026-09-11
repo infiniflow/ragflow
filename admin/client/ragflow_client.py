@@ -13,20 +13,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import json
-import time
-from typing import Any, List, Optional
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import time
 import urllib.parse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
+
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
 from http_client import HttpClient
 from lark import Tree
 from user import encrypt_password, login_user
-
-import base64
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from Cryptodome.PublicKey import RSA
 
 try:
     from requests_toolbelt import MultipartEncoder
@@ -107,26 +107,28 @@ class RAGFlowClient:
         print(f"Register user: {nickname}, email: {username}, password: ******")
         payload = {"email": username, "nickname": nickname, "password": enc_password}
         response = self.http_client.request(method="POST", path="/users", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json["code"] == 0:
                 self._print_table_simple(res_json["data"])
             else:
                 print(f"Fail to register user {username}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to register user {username}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to register user {username}, code: {response.status_code}, body: {response.text}")
 
     def list_services(self):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/services", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
-        pass
+            print(f"Fail to get all services, code: {response.status_code}, body: {response.text}")
 
     def show_service(self, command):
         if self.server_type != "admin":
@@ -135,23 +137,26 @@ class RAGFlowClient:
         service_id: int = command["number"]
 
         response = self.http_client.request("GET", f"/admin/services/{service_id}", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            res_data = res_json["data"]
-            if "status" in res_data and res_data["status"] == "alive":
-                print(f"Service {res_data['service_name']} is alive, ")
-                res_message = res_data["message"]
-                if res_message is None:
-                    return
-                elif isinstance(res_message, str):
-                    print(res_message)
+            res_json = response.json()
+            if res_json["code"] == 0:
+                res_data = res_json["data"]
+                if "status" in res_data and res_data["status"] == "alive":
+                    print(f"Service {res_data['service_name']} is alive, ")
+                    res_message = res_data["message"]
+                    if res_message is None:
+                        return
+                    elif isinstance(res_message, str):
+                        print(res_message)
+                    else:
+                        data = self._format_service_detail_table(res_message)
+                        self._print_table_simple(data)
                 else:
-                    data = self._format_service_detail_table(res_message)
-                    self._print_table_simple(data)
+                    print(f"Service {res_data['service_name']} is down, {res_data['message']}")
             else:
-                print(f"Service {res_data['service_name']} is down, {res_data['message']}")
+                print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show service, code: {response.status_code}, body: {response.text}")
 
     def restart_service(self, command):
         if self.server_type != "admin":
@@ -179,11 +184,14 @@ class RAGFlowClient:
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/users", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get all users, code: {response.status_code}, body: {response.text}")
 
     def show_user(self, command):
         if self.server_type != "admin":
@@ -193,13 +201,16 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Showing user: {user_name}")
         response = self.http_client.request("GET", f"/admin/users/{user_name}", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json["data"][0]
-            table_data.pop("avatar")
-            self._print_table_simple(table_data)
+            res_json = response.json()
+            if res_json["code"] == 0:
+                table_data = res_json["data"][0]
+                table_data.pop("avatar")
+                self._print_table_simple(table_data)
+            else:
+                print(f"Fail to get user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get user {user_name}, code: {response.status_code}, body: {response.text}")
 
     def drop_user(self, command):
         if self.server_type != "admin":
@@ -209,11 +220,14 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Drop user: {user_name}")
         response = self.http_client.request("DELETE", f"/admin/users/{user_name}", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Fail to drop user, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to drop user, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop user, code: {response.status_code}, body: {response.text}")
 
     def alter_user(self, command):
         if self.server_type != "admin":
@@ -225,11 +239,14 @@ class RAGFlowClient:
         password: str = password_tree.children[0].strip("'\"")
         print(f"Alter user: {user_name}, password: ******")
         response = self.http_client.request("PUT", f"/admin/users/{user_name}/password", json_body={"new_password": encrypt_password(password)}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to alter password, code: {response.status_code}, body: {response.text}")
 
     def create_user(self, command):
         if self.server_type != "admin":
@@ -244,11 +261,14 @@ class RAGFlowClient:
         # enpass1 = encrypt(password)
         enc_password = encrypt_password(password)
         response = self.http_client.request(method="POST", path="/admin/users", json_body={"username": user_name, "password": enc_password, "role": role}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to create user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to create user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create user {user_name}, code: {response.status_code}, body: {response.text}")
 
     def activate_user(self, command):
         if self.server_type != "admin":
@@ -261,11 +281,14 @@ class RAGFlowClient:
         if activate_status.lower() in ["on", "off"]:
             print(f"Alter user {user_name} activate status, turn {activate_status.lower()}.")
             response = self.http_client.request("PUT", f"/admin/users/{user_name}/activate", json_body={"activate_status": activate_status}, use_api_base=True, auth_kind="admin")
-            res_json = response.json()
             if response.status_code == 200:
-                print(res_json["message"])
+                res_json = response.json()
+                if res_json["code"] == 0:
+                    print(res_json["message"])
+                else:
+                    print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
             else:
-                print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
+                print(f"Fail to alter activate status, code: {response.status_code}, body: {response.text}")
         else:
             print(f"Unknown activate status: {activate_status}.")
 
@@ -276,11 +299,14 @@ class RAGFlowClient:
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         response = self.http_client.request("PUT", f"/admin/users/{user_name}/admin", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to grant {user_name} admin authorization, code: {response.status_code}, body: {response.text}")
 
     def revoke_admin(self, command):
         if self.server_type != "admin":
@@ -289,11 +315,14 @@ class RAGFlowClient:
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
         response = self.http_client.request("DELETE", f"/admin/users/{user_name}/admin", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to revoke {user_name} admin authorization, code: {response.status_code}, body: {response.text}")
 
     def create_role(self, command):
         if self.server_type != "admin":
@@ -308,11 +337,14 @@ class RAGFlowClient:
 
         print(f"create role name: {role_name}, description: {desc_str}")
         response = self.http_client.request("POST", "/admin/roles", json_body={"role_name": role_name, "description": desc_str}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create role {role_name}, code: {response.status_code}, body: {response.text}")
 
     def drop_role(self, command):
         if self.server_type != "admin":
@@ -322,11 +354,14 @@ class RAGFlowClient:
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
         response = self.http_client.request("DELETE", f"/admin/roles/{role_name}", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop role {role_name}, code: {response.status_code}, body: {response.text}")
 
     def alter_role(self, command):
         if self.server_type != "admin":
@@ -339,22 +374,28 @@ class RAGFlowClient:
 
         print(f"alter role name: {role_name}, description: {desc_str}")
         response = self.http_client.request("PUT", f"/admin/roles/{role_name}", json_body={"description": desc_str}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to update role {role_name} with description: {desc_str}, code: {response.status_code}, body: {response.text}")
 
     def list_roles(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/roles", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list roles, code: {response.status_code}, body: {response.text}")
 
     def show_role(self, command):
         if self.server_type != "admin":
@@ -364,11 +405,14 @@ class RAGFlowClient:
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
         response = self.http_client.request("GET", f"/admin/roles/{role_name}/permission", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list roles, code: {response.status_code}, body: {response.text}")
 
     def grant_permission(self, command):
         if self.server_type != "admin":
@@ -385,11 +429,14 @@ class RAGFlowClient:
             actions.append(action_str)
         print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
         response = self.http_client.request("POST", f"/admin/roles/{role_name_str}/permission", json_body={"actions": actions, "resource": resource_str}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {response.status_code}, body: {response.text}")
 
     def revoke_permission(self, command):
         if self.server_type != "admin":
@@ -406,11 +453,14 @@ class RAGFlowClient:
             actions.append(action_str)
         print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
         response = self.http_client.request("DELETE", f"/admin/roles/{role_name_str}/permission", json_body={"actions": actions, "resource": resource_str}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {response.status_code}, body: {response.text}")
 
     def alter_user_role(self, command):
         if self.server_type != "admin":
@@ -422,11 +472,14 @@ class RAGFlowClient:
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
         response = self.http_client.request("PUT", f"/admin/users/{user_name_str}/role", json_body={"role_name": role_name_str}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {response.status_code}, body: {response.text}")
 
     def show_user_permission(self, command):
         if self.server_type != "admin":
@@ -436,11 +489,14 @@ class RAGFlowClient:
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
         response = self.http_client.request("GET", f"/admin/users/{user_name_str}/permission", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show user: {user_name_str} permission, code: {response.status_code}, body: {response.text}")
 
     def generate_key(self, command: dict[str, Any]) -> None:
         if self.server_type != "admin":
@@ -450,11 +506,14 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Generating API key for user: {user_name}")
         response = self.http_client.request("POST", f"/admin/users/{user_name}/keys", use_api_base=True, auth_kind="admin")
-        res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json: dict[str, Any] = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to generate key for user {user_name}, code: {response.status_code}, body: {response.text}")
 
     def list_keys(self, command: dict[str, Any]) -> None:
         if self.server_type != "admin":
@@ -464,11 +523,14 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing API keys for user: {user_name}")
         response = self.http_client.request("GET", f"/admin/users/{user_name}/keys", use_api_base=True, auth_kind="admin")
-        res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json: dict[str, Any] = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to list keys for user {user_name}, code: {response.status_code}, body: {response.text}")
 
     def drop_key(self, command: dict[str, Any]) -> None:
         if self.server_type != "admin":
@@ -482,11 +544,14 @@ class RAGFlowClient:
         # URL encode the key to handle special characters
         encoded_key: str = urllib.parse.quote(key, safe="")
         response = self.http_client.request("DELETE", f"/admin/users/{user_name}/keys/{encoded_key}", use_api_base=True, auth_kind="admin")
-        res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json: dict[str, Any] = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to drop key for user {user_name}, code: {response.status_code}, body: {response.text}")
 
     def set_variable(self, command):
         if self.server_type != "admin":
@@ -495,11 +560,14 @@ class RAGFlowClient:
         var_name = _strip_tree_value(command["var_name"])
         var_value = _strip_tree_value(command["var_value"])
         response = self.http_client.request("PUT", "/admin/variables", json_body={"var_name": var_name, "var_value": var_value}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["message"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(res_json["message"])
+            else:
+                print(f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to set variable {var_name} to {var_value}, code: {response.status_code}, body: {response.text}")
 
     def show_variable(self, command):
         if self.server_type != "admin":
@@ -507,65 +575,83 @@ class RAGFlowClient:
 
         var_name = _strip_tree_value(command["var_name"])
         response = self.http_client.request(method="GET", path="/admin/variables", json_body={"var_name": var_name}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to get variable {var_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get variable {var_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get variable {var_name}, code: {response.status_code}, body: {response.text}")
 
     def list_variables(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/variables", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list variables, code: {response.status_code}, body: {response.text}")
 
     def list_configs(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/configs", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list variables, code: {response.status_code}, body: {response.text}")
 
     def list_environments(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
         response = self.http_client.request("GET", "/admin/environments", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list variables, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list variables, code: {response.status_code}, body: {response.text}")
 
     def show_fingerprint(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
         response = self.http_client.request("GET", "/admin/fingerprint", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to show fingerprint, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to show fingerprint, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show fingerprint, code: {response.status_code}, body: {response.text}")
 
     def set_license(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
         license = command["license"]
         response = self.http_client.request("POST", "/admin/license", json_body={"license": license}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print("Set license successfully")
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print("Set license successfully")
+            else:
+                print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to set license, code: {response.status_code}, body: {response.text}")
 
     def set_license_config(self, command):
         if self.server_type != "admin":
@@ -573,35 +659,47 @@ class RAGFlowClient:
         value1 = command["value1"]
         value2 = command["value2"]
         response = self.http_client.request("POST", "/admin/license/config", json_body={"value1": value1, "value2": value2}, use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print("Set license successfully")
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print("Set license successfully")
+            else:
+                print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to set license, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to set license, code: {response.status_code}, body: {response.text}")
 
     def show_license(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
         response = self.http_client.request("GET", "/admin/license", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show license, code: {response.status_code}, body: {response.text}")
 
     def check_license(self, command):
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
         response = self.http_client.request("GET", "/admin/license?check=true", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            print(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 320:
+                print(res_json["data"])
+            else:
+                print(f"Invalid, code: {res_json['code']}, message: {res_json['data']}")
         else:
-            print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to check license, code: {response.status_code}, body: {response.text}")
 
     def list_server_configs(self, command):
         """List server configs by calling /system/configs API and flattening the JSON response."""
         response = self.http_client.request("GET", "/system/configs", use_api_base=False, auth_kind="web")
+        if response.status_code != 200:
+            print(f"Fail to list server configs, code: {response.status_code}, body: {response.text}")
+            return
         res_json = response.json()
         if res_json.get("code") != 0:
             print(f"Fail to list server configs, code: {res_json.get('code')}, message: {res_json.get('message')}")
@@ -644,14 +742,17 @@ class RAGFlowClient:
         print(f"Listing all datasets of user: {user_name}")
 
         response = self.http_client.request("GET", f"/admin/users/{user_name}/datasets", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json["data"]
-            for t in table_data:
-                t.pop("avatar")
-            self._print_table_simple(table_data)
+            res_json = response.json()
+            if res_json["code"] == 0:
+                table_data = res_json["data"]
+                for t in table_data:
+                    t.pop("avatar")
+                self._print_table_simple(table_data)
+            else:
+                print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get all datasets of {user_name}, code: {response.status_code}, body: {response.text}")
 
     def handle_list_agents(self, command):
         if self.server_type != "admin":
@@ -661,14 +762,17 @@ class RAGFlowClient:
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all agents of user: {user_name}")
         response = self.http_client.request("GET", f"/admin/users/{user_name}/agents", use_api_base=True, auth_kind="admin")
-        res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json["data"]
-            for t in table_data:
-                t.pop("avatar")
-            self._print_table_simple(table_data)
+            res_json = response.json()
+            if res_json["code"] == 0:
+                table_data = res_json["data"]
+                for t in table_data:
+                    t.pop("avatar")
+                self._print_table_simple(table_data)
+            else:
+                print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get all agents of {user_name}, code: {response.status_code}, body: {response.text}")
 
     def show_current_user(self, command):
         if self.server_type != "user":
@@ -685,29 +789,37 @@ class RAGFlowClient:
         # Step 1: Add provider
         provider_payload = {"provider_name": provider_name}
         provider_response = self.http_client.request("PUT", "/providers", json_body=provider_payload, use_api_base=True, auth_kind="web")
-        provider_res = provider_response.json()
-        if provider_response.status_code == 200 and provider_res.get("code") == 0:
-            print(f"Success to add provider {provider_name}")
-        else:
-            msg = provider_res.get("message", "")
-            if "duplicated" in msg.lower() or "already exist" in msg.lower():
-                print(f"Note: provider {provider_name} already exists, continuing to add instance")
+        if provider_response.status_code == 200:
+            provider_res = provider_response.json()
+            if provider_res.get("code") == 0:
+                print(f"Success to add provider {provider_name}")
             else:
-                print(f"Fail to add provider {provider_name}, code: {provider_res.get('code')}, message: {msg}")
-                return
+                msg = provider_res.get("message", "")
+                if "duplicated" in msg.lower() or "already exist" in msg.lower():
+                    print(f"Note: provider {provider_name} already exists, continuing to add instance")
+                else:
+                    print(f"Fail to add provider {provider_name}, code: {provider_res.get('code')}, message: {msg}")
+                    return
 
+        else:
+            print(f"Fail to add provider {provider_name}, code: {provider_response.status_code}, body: {provider_response.text}")
+            return
         # Step 2: Add instance
         instance_payload = {"instance_name": "default", "api_key": api_key, "region": "default", "base_url": ""}
         instance_response = self.http_client.request("POST", f"/providers/{provider_name}/instances", json_body=instance_payload, use_api_base=True, auth_kind="web")
-        instance_res = instance_response.json()
-        if instance_response.status_code == 200 and instance_res.get("code") == 0:
-            print(f"Success to add instance for provider {provider_name}")
-        else:
-            msg = instance_res.get("message", "")
-            if "already exist" in msg.lower():
-                print(f"Note: instance for provider {provider_name} already exists, skipping")
+        if instance_response.status_code == 200:
+            instance_res = instance_response.json()
+            if instance_res.get("code") == 0:
+                print(f"Success to add instance for provider {provider_name}")
             else:
-                print(f"Fail to add instance for provider {provider_name}, code: {instance_res.get('code')}, message: {msg}")
+                msg = instance_res.get("message", "")
+                if "already exist" in msg.lower():
+                    print(f"Note: instance for provider {provider_name} already exists, skipping")
+                else:
+                    print(f"Fail to add instance for provider {provider_name}, code: {instance_res.get('code')}, message: {msg}")
+
+        else:
+            print(f"Fail to add instance for provider {provider_name}, code: {instance_response.status_code}, body: {instance_response.text}")
 
     def drop_model_provider(self, command):
         if self.server_type != "user":
@@ -715,11 +827,15 @@ class RAGFlowClient:
             return
         provider_name: str = command["provider_name"]
         response = self.http_client.request("DELETE", f"/providers/{provider_name}", use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to drop model provider {provider_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print(f"Success to drop model provider {provider_name}")
+            else:
+                print(f"Fail to drop model provider {provider_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to drop model provider {provider_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to drop model provider {provider_name}, code: {response.status_code}, body: {response.text}")
 
     # Mapping from legacy model_type keys to API model_type values
     _MODEL_TYPE_MAP = {
@@ -753,11 +869,15 @@ class RAGFlowClient:
             "model_name": model_name,
         }
         response = self.http_client.request("PATCH", "/models/default", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to set default {model_type} to {model_id}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print(f"Success to set default {model_type} to {model_id}")
+            else:
+                print(f"Fail to set default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to set default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to set default {model_type}, code: {response.status_code}, body: {response.text}")
 
     def reset_default_model(self, command):
         if self.server_type != "user":
@@ -772,11 +892,15 @@ class RAGFlowClient:
 
         payload = {"model_type": model_type}
         response = self.http_client.request("PATCH", "/models/default", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to reset default {model_type}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print(f"Success to reset default {model_type}")
+            else:
+                print(f"Fail to reset default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to reset default {model_type}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to reset default {model_type}, code: {response.status_code}, body: {response.text}")
 
     @staticmethod
     def _parse_model_id(model_id: str):
@@ -805,11 +929,14 @@ class RAGFlowClient:
             return response
         else:
             response = self.http_client.request("GET", "/datasets", use_api_base=True, auth_kind="web")
-            res_json = response.json()
             if response.status_code == 200:
-                self._print_table_simple(res_json["data"])
+                res_json = response.json()
+                if res_json["code"] == 0:
+                    self._print_table_simple(res_json["data"])
+                else:
+                    print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
             else:
-                print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+                print(f"Fail to list datasets, code: {response.status_code}, body: {response.text}")
             return None
 
     def create_user_dataset(self, command):
@@ -821,11 +948,14 @@ class RAGFlowClient:
         if "pipeline" in command:
             payload["pipeline_id"] = command["pipeline"]
         response = self.http_client.request("POST", "/datasets", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to create datasets, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to create datasets, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create datasets, code: {response.status_code}, body: {response.text}")
 
     def drop_user_dataset(self, command):
         if self.server_type != "user":
@@ -837,11 +967,14 @@ class RAGFlowClient:
             return
         payload = {"ids": [dataset_id]}
         response = self.http_client.request("DELETE", "/datasets", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
-            print(f"Drop dataset {dataset_name} successfully")
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Drop dataset {dataset_name} successfully")
+            else:
+                print(f"Fail to drop datasets, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to drop datasets, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop datasets, code: {response.status_code}, body: {response.text}")
 
     def list_user_dataset_files(self, command_dict):
         if self.server_type != "user":
@@ -917,11 +1050,14 @@ class RAGFlowClient:
         dataset_ids = [dataset_id for _, dataset_id in valid_datasets]
         kb_ids_param = ",".join(dataset_ids)
         response = self.http_client.request("GET", f"/kb/get_meta?kb_ids={kb_ids_param}", use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code != 200:
-            print(f"Fail to get metadata, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to get metadata, code: {response.status_code}, body: {response.text}")
             return
 
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            print(f"Fail to get metadata, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            return
         meta = res_json.get("data", {})
         if not meta:
             print("No metadata found")
@@ -949,42 +1085,48 @@ class RAGFlowClient:
         if doc_ids:
             payload["doc_ids"] = doc_ids
         response = self.http_client.request("POST", "/document/metadata/summary", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
-            summary = res_json.get("data", {}).get("summary", {})
-            if not summary:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                summary = res_json.get("data", {}).get("summary", {})
+                if not summary:
+                    if doc_ids:
+                        print(f"No metadata summary found for documents: {', '.join(doc_ids)}")
+                    else:
+                        print(f"No metadata summary found in dataset {dataset_name}")
+                    return
                 if doc_ids:
-                    print(f"No metadata summary found for documents: {', '.join(doc_ids)}")
+                    print(f"Metadata summary for document(s): {', '.join(doc_ids)}")
                 else:
-                    print(f"No metadata summary found in dataset {dataset_name}")
-                return
-            if doc_ids:
-                print(f"Metadata summary for document(s): {', '.join(doc_ids)}")
+                    print(f"Metadata summary for all documents in dataset: {dataset_name}")
+                print("-" * 60)
+                for field_name, field_info in summary.items():
+                    field_type = field_info.get("type", "unknown")
+                    values = field_info.get("values", [])
+                    print(f"\nField: {field_name} (type: {field_type})")
+                    print(f"  Total unique values: {len(values)}")
+                    if values:
+                        print("  Values:")
+                        for value, count in values:
+                            print(f"    {value}: {count}")
             else:
-                print(f"Metadata summary for all documents in dataset: {dataset_name}")
-            print("-" * 60)
-            for field_name, field_info in summary.items():
-                field_type = field_info.get("type", "unknown")
-                values = field_info.get("values", [])
-                print(f"\nField: {field_name} (type: {field_type})")
-                print(f"  Total unique values: {len(values)}")
-                if values:
-                    print("  Values:")
-                    for value, count in values:
-                        print(f"    {value}: {count}")
+                print(f"Fail to get metadata summary, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to get metadata summary, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to get metadata summary, code: {response.status_code}, body: {response.text}")
 
     def list_user_agents(self, command):
         if self.server_type != "user":
             print("This command is only allowed in USER mode")
 
         response = self.http_client.request("GET", "/canvas/list", use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                self._print_table_simple(res_json["data"])
+            else:
+                print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list datasets, code: {response.status_code}, body: {response.text}")
 
     def list_user_chats(self, command):
         if self.server_type != "user":
@@ -1038,11 +1180,15 @@ class RAGFlowClient:
             use_api_base=True,
             auth_kind="web",
         )
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to create chat: {chat_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Success to create chat: {chat_name}")
+            else:
+                print(f"Fail to create chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
         else:
-            print(f"Fail to create chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create chat {chat_name}, code: {response.status_code}, body: {response.text}")
 
     def create_dataset_table(self, command):
         if self.server_type != "user":
@@ -1061,11 +1207,15 @@ class RAGFlowClient:
         payload = {"kb_id": dataset_id, "vector_size": vector_size}
         # Call API
         response = self.http_client.request("POST", "/kb/doc_engine_table", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to create table for dataset: {dataset_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print(f"Success to create table for dataset: {dataset_name}")
+            else:
+                print(f"Fail to create table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to create table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to create table for dataset {dataset_name}, code: {response.status_code}, body: {response.text}")
 
     def drop_dataset_table(self, command):
         if self.server_type != "user":
@@ -1079,11 +1229,15 @@ class RAGFlowClient:
         # Call API to delete table
         payload = {"kb_id": dataset_id}
         response = self.http_client.request("DELETE", "/kb/doc_engine_table", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print(f"Success to drop table for dataset: {dataset_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print(f"Success to drop table for dataset: {dataset_name}")
+            else:
+                print(f"Fail to drop table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to drop table for dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to drop table for dataset {dataset_name}, code: {response.status_code}, body: {response.text}")
 
     def create_metadata_table(self, command):
         if self.server_type != "user":
@@ -1091,11 +1245,15 @@ class RAGFlowClient:
             return
         # Call API to create metadata table
         response = self.http_client.request("POST", "/tenant/doc_engine_metadata_table", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print("Success to create metadata table")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print("Success to create metadata table")
+            else:
+                print(f"Fail to create metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to create metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to create metadata table, code: {response.status_code}, body: {response.text}")
 
     def drop_metadata_table(self, command):
         if self.server_type != "user":
@@ -1103,11 +1261,15 @@ class RAGFlowClient:
             return
         # Call API to delete metadata table
         response = self.http_client.request("DELETE", "/tenant/doc_engine_metadata_table", use_api_base=False, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json.get("code") == 0:
-            print("Success to drop metadata table")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                print("Success to drop metadata table")
+            else:
+                print(f"Fail to drop metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
+
         else:
-            print(f"Fail to drop metadata table, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to drop metadata table, code: {response.status_code}, body: {response.text}")
 
     def drop_user_chat(self, command):
         if self.server_type != "user":
@@ -1126,11 +1288,15 @@ class RAGFlowClient:
             use_api_base=True,
             auth_kind="web",
         )
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to drop chat: {chat_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Success to drop chat: {chat_name}")
+            else:
+                print(f"Fail to drop chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
         else:
-            print(f"Fail to drop chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop chat {chat_name}, code: {response.status_code}, body: {response.text}")
 
     def _get_chat_id_by_name(self, chat_name):
         """Get chat (dialog) ID by name."""
@@ -1146,12 +1312,16 @@ class RAGFlowClient:
     def _list_chat_sessions(self, dialog_id):
         """List all sessions (conversations) for a given dialog."""
         response = self.http_client.request("GET", f"/chats/{dialog_id}/conversations", use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            return res_json["data"]
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                return res_json["data"]
+            else:
+                print(f"Fail to list chat sessions, code: {res_json['code']}, message: {res_json['message']}")
+                return None
+
         else:
-            print(f"Fail to list chat sessions, code: {res_json['code']}, message: {res_json['message']}")
-            return None
+            print(f"Fail to list chat sessions, code: {response.status_code}, body: {response.text}")
 
     def create_chat_session(self, command):
         if self.server_type != "user":
@@ -1162,11 +1332,15 @@ class RAGFlowClient:
             return
         payload = {"name": "New conversation"}
         response = self.http_client.request("POST", f"/chats/{dialog_id}/conversations", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to create chat session for chat: {chat_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Success to create chat session for chat: {chat_name}")
+            else:
+                print(f"Fail to create chat session for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
         else:
-            print(f"Fail to create chat session for chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to create chat session for chat {chat_name}, code: {response.status_code}, body: {response.text}")
 
     def drop_chat_session(self, command):
         if self.server_type != "user":
@@ -1188,11 +1362,15 @@ class RAGFlowClient:
             return
         payload = {"ids": to_drop_session_ids}
         response = self.http_client.request("DELETE", f"/chats/{dialog_id}/conversations", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Success to drop chat session '{session_id}' from chat: {chat_name}")
+            else:
+                print(f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+
         else:
-            print(f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to drop chat session '{session_id}' from chat {chat_name}, code: {response.status_code}, body: {response.text}")
 
     def list_chat_sessions(self, command):
         if self.server_type != "user":
@@ -1260,14 +1438,17 @@ class RAGFlowClient:
             print("This command is only allowed in USER mode")
 
         response = self.http_client.request("GET", "/llm/my_llms", use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
-            new_input = []
-            for key, value in res_json["data"].items():
-                new_input.append({"model provider": key, "models": value})
-            self._print_table_simple(new_input)
+            res_json = response.json()
+            if res_json["code"] == 0:
+                new_input = []
+                for key, value in res_json["data"].items():
+                    new_input.append({"model provider": key, "models": value})
+                self._print_table_simple(new_input)
+            else:
+                print(f"Fail to list model provider, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list model provider, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list model provider, code: {response.status_code}, body: {response.text}")
 
     def list_user_default_models(self, command):
         if self.server_type != "user":
@@ -1327,11 +1508,15 @@ class RAGFlowClient:
 
         payload = {"doc_ids": document_ids, "run": 1}
         response = self.http_client.request("POST", "/documents/ingest", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            print(f"Success to parse {to_parse_doc_names} of {dataset_name}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                print(f"Success to parse {to_parse_doc_names} of {dataset_name}")
+            else:
+                print(f"Fail to parse documents {res_json.get('data', {}).get('docs')}, code: {res_json['code']}, message: {res_json['message']}")
+
         else:
-            print(f"Fail to parse documents {res_json['data']['docs']}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to parse documents, code: {response.status_code}, body: {response.text}")
 
     def parse_dataset(self, command_dict):
         if self.server_type != "user":
@@ -1351,12 +1536,15 @@ class RAGFlowClient:
 
         payload = {"doc_ids": document_ids, "run": 1}
         response = self.http_client.request("POST", "/documents/ingest", json_body=payload, use_api_base=True, auth_kind="web")
-        res_json = response.json()
-        if response.status_code == 200 and res_json["code"] == 0:
-            pass
-        else:
-            print(f"Fail to parse dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json["code"] == 0:
+                pass
+            else:
+                print(f"Fail to parse dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
 
+        else:
+            print(f"Fail to parse dataset {dataset_name}, code: {response.status_code}, body: {response.text}")
         if command_dict["method"] == "async":
             print(f"Success to start parse dataset {dataset_name}")
             return
@@ -1392,11 +1580,14 @@ class RAGFlowClient:
             response = self.http_client.request(
                 "POST", f"/datasets/{dataset_id}/documents?return_raw_files=true", headers=headers, data=encoder, json_body=None, params=None, stream=False, auth_kind="web", use_api_base=True
             )
-            res = response.json()
-            if res.get("code") == 0:
-                print(f"Success to import documents into dataset {dataset_name}")
+            if response.status_code == 200:
+                res = response.json()
+                if res["code"] == 0:
+                    print(f"Success to import documents into dataset {dataset_name}")
+                else:
+                    print(f"Fail to import documents: code: {res['code']}, message: {res['message']}")
             else:
-                print(f"Fail to import documents: code: {res['code']}, message: {res['message']}")
+                print(f"Fail to import documents: code: {response.status_code}, body: {response.text}")
         except Exception as exc:
             print(f"Fail to import document into dataset: {dataset_name}, error: {exc}")
         finally:
@@ -1429,14 +1620,14 @@ class RAGFlowClient:
             return response
         else:
             response = self.http_client.request("POST", "/retrieval", json_body=payload, use_api_base=True, auth_kind="web")
-            res_json = response.json()
             if response.status_code == 200:
+                res_json = response.json()
                 if res_json["code"] == 0:
                     self._print_table_simple(res_json["data"]["chunks"])
                 else:
                     print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
             else:
-                print(f"Fail to search datasets: {dataset_names}, code: {res_json['code']}, message: {res_json['message']}")
+                print(f"Fail to search datasets: {dataset_names}, code: {response.status_code}, body: {response.text}")
 
     def get_chunk(self, command_dict):
         if self.server_type != "user":
@@ -1445,14 +1636,14 @@ class RAGFlowClient:
 
         chunk_id = command_dict["chunk_id"]
         response = self.http_client.request("GET", f"/chunk/get?chunk_id={chunk_id}", use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json["code"] == 0:
                 self._print_key_value(res_json["data"])
             else:
                 print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to get chunk, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to get chunk, code: {response.status_code}, body: {response.text}")
 
     # Internal
     def insert_dataset_from_file(self, command_dict):
@@ -1463,8 +1654,8 @@ class RAGFlowClient:
         file_path = command_dict["file_path"]
         payload = {"file_path": file_path}
         response = self.http_client.request("POST", "/kb/insert_from_file", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json["code"] == 0:
                 print(f"Success to insert dataset from file: {file_path}")
                 if res_json.get("data"):
@@ -1472,7 +1663,7 @@ class RAGFlowClient:
             else:
                 print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to insert dataset from file, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to insert dataset from file, code: {response.status_code}, body: {response.text}")
 
     # Internal
     def insert_metadata_from_file(self, command_dict):
@@ -1483,8 +1674,8 @@ class RAGFlowClient:
         file_path = command_dict["file_path"]
         payload = {"file_path": file_path}
         response = self.http_client.request("POST", "/tenant/insert_metadata_from_file", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json["code"] == 0:
                 print(f"Success to insert metadata from file: {file_path}")
                 if res_json.get("data"):
@@ -1492,7 +1683,7 @@ class RAGFlowClient:
             else:
                 print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to insert metadata from file, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to insert metadata from file, code: {response.status_code}, body: {response.text}")
 
     def update_chunk(self, command_dict):
         if self.server_type != "user":
@@ -1510,11 +1701,11 @@ class RAGFlowClient:
 
         # Get doc_id from chunk_id via GET /chunk/get
         response = self.http_client.request("GET", f"/chunk/get?chunk_id={chunk_id}", use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code != 200:
-            print(f"Fail to get chunk info, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            print(f"Fail to get chunk info, code: {response.status_code}, body: {response.text}")
             return
 
+        res_json = response.json()
         doc_id = None
         if res_json.get("code") == 0 and res_json.get("data"):
             doc_id = res_json["data"].get("doc_id")
@@ -1537,14 +1728,14 @@ class RAGFlowClient:
 
         # Call POST /v1/chunk/update
         response = self.http_client.request("POST", "/chunk/update", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json.get("code") == 0:
                 print(f"Success to update chunk: {chunk_id}")
             else:
                 print(f"Fail to update chunk, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to update chunk, HTTP {response.status_code}")
+            print(f"Fail to update chunk, code: {response.status_code}, body: {response.text}")
 
     def _get_documents_by_ids(self, ids: list[str]):
         response = self.http_client.request("POST", "/document/infos", json_body={"doc_ids": ids}, use_api_base=False, auth_kind="web")
@@ -1589,7 +1780,7 @@ class RAGFlowClient:
             print(f"no document found for {doc_id}")
             return
 
-        dataset_id = docs[0].get("dataset_id")
+        dataset_id = docs[0].get("dataset_id") or docs[0].get("kb_id")
         if not dataset_id:
             print(f"Dataset ID not found for document: {doc_id}")
             return
@@ -1601,14 +1792,84 @@ class RAGFlowClient:
 
         response = self.http_client.request("PATCH", f"/datasets/{dataset_id}/documents/{doc_id}", json_body=payload, use_api_base=True, auth_kind="web")
 
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json.get("code") == 0:
                 print(f"Success to set metadata for document: {doc_id}")
             else:
                 print(f"Fail to set metadata, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to set metadata, HTTP {response.status_code}: {res_json.get('message', 'no message')}")
+            print(f"Fail to set metadata, code: {response.status_code}, body: {response.text}")
+
+    def generate_nav_for_dataset(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        dataset_name = command_dict["dataset_id"]
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            print(f"Dataset not found: {dataset_name}")
+            return
+
+        response = self.http_client.request(
+            "POST",
+            f"/datasets/{dataset_id}/navigation",
+            json_body={},
+            use_api_base=True,
+            auth_kind="web",
+        )
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                data = res_json.get("data", {})
+                print(f"Navigation tree created: deleted={data.get('deleted', 0)}, upserted={data.get('upserted', 0)}")
+            else:
+                print(f"Fail to generate navigation, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Fail to generate navigation, code: {response.status_code}, body: {response.text}")
+
+    def navigation_search(self, command_dict):
+        if self.server_type != "user":
+            print("This command is only allowed in USER mode")
+            return
+
+        query = command_dict["query"]
+        dataset_name = command_dict["dataset_id"]
+        mode = command_dict["mode"]
+        topk = command_dict.get("topk", None)
+
+        # Try name lookup; fall back to using the value directly as an ID.
+        dataset_id = self._get_dataset_id(dataset_name)
+        if dataset_id is None:
+            dataset_id = dataset_name
+
+        valid_modes = {"nav_doc", "nav_cluster", "navigation_tree", "chunk", "all"}
+        if mode not in valid_modes:
+            print(f"Invalid mode: {mode}, expected one of {valid_modes}")
+            return
+
+        url = f"/datasets/{dataset_id}/navigation/search?q={query}&mode={mode}"
+        if topk is not None:
+            url += f"&top_k={topk}"
+        response = self.http_client.request(
+            "GET",
+            url,
+            use_api_base=True,
+            auth_kind="web",
+        )
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("code") == 0:
+                data = res_json.get("data", {})
+                items = data.get("items", [])
+                print(f"Found {len(items)} result(s) for mode '{data.get('mode', mode)}':")
+                for i, item in enumerate(items, 1):
+                    print(f"  [{i}] doc_id: {item.get('doc_id', '')}  score: {item.get('score', 0):.4f}")
+            else:
+                print(f"Search failed, code: {res_json.get('code')}, message: {res_json.get('message')}")
+        else:
+            print(f"Search failed, code: {response.status_code}, body: {response.text}")
 
     def remove_tags(self, command_dict):
         if self.server_type != "user":
@@ -1628,14 +1889,14 @@ class RAGFlowClient:
         }
 
         response = self.http_client.request("POST", f"/kb/{dataset_id}/rm_tags", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json.get("code") == 0:
                 print(f"Success to remove tags from dataset: {dataset_name}")
             else:
                 print(f"Fail to remove tags, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to remove tags, HTTP {response.status_code}")
+            print(f"Fail to remove tags, code: {response.status_code}, body: {response.text}")
 
     def remove_chunks(self, command_dict):
         if self.server_type != "user":
@@ -1651,15 +1912,15 @@ class RAGFlowClient:
             payload["chunk_ids"] = command_dict["chunk_ids"]
 
         response = self.http_client.request("POST", "/chunk/rm", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json.get("code") == 0:
                 deleted_count = res_json.get("data", 0)
                 print(f"Success to remove chunks from document {doc_id}: {deleted_count} chunks deleted")
             else:
                 print(f"Fail to remove chunks, code: {res_json.get('code')}, message: {res_json.get('message')}")
         else:
-            print(f"Fail to remove chunks, HTTP {response.status_code}")
+            print(f"Fail to remove chunks, code: {response.status_code}, body: {response.text}")
 
     def list_chunks(self, command_dict):
         if self.server_type != "user":
@@ -1676,14 +1937,14 @@ class RAGFlowClient:
             payload["page"] = command_dict["page"]
         if "size" in command_dict:
             payload["size"] = command_dict["size"]
-        if "keywords" in command_dict and command_dict["keywords"]:
+        if command_dict.get("keywords"):
             payload["keywords"] = command_dict["keywords"]
         if "available_int" in command_dict:
             payload["available_int"] = command_dict["available_int"]
 
         response = self.http_client.request("POST", "/chunk/list", json_body=payload, use_api_base=False, auth_kind="web")
-        res_json = response.json()
         if response.status_code == 200:
+            res_json = response.json()
             if res_json["code"] == 0:
                 chunks = res_json["data"]["chunks"]
                 if chunks:
@@ -1696,7 +1957,7 @@ class RAGFlowClient:
             else:
                 print(f"Fail to list chunks, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to list chunks, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list chunks, code: {response.status_code}, body: {response.text}")
 
     def show_version(self, command):
         if self.server_type == "admin":
@@ -1704,14 +1965,17 @@ class RAGFlowClient:
         else:
             response = self.http_client.request("GET", "/system/version", use_api_base=True, auth_kind="admin")
 
-        res_json = response.json()
         if response.status_code == 200:
-            if self.server_type == "admin":
-                self._print_table_simple(res_json["data"])
+            res_json = response.json()
+            if res_json["code"] == 0:
+                if self.server_type == "admin":
+                    self._print_table_simple(res_json["data"])
+                else:
+                    self._print_table_simple({"version": res_json["data"]})
             else:
-                self._print_table_simple({"version": res_json["data"]})
+                print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
         else:
-            print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show version, code: {response.status_code}, body: {response.text}")
 
     def _wait_parse_done(self, dataset_name: str, dataset_id: str):
         start = time.monotonic()
@@ -1734,19 +1998,25 @@ class RAGFlowClient:
     def _list_documents(self, dataset_name: str, dataset_id: str):
         # Use the new RESTful API: GET /api/v1/datasets/<dataset_id>/documents
         response = self.http_client.request("GET", f"/datasets/{dataset_id}/documents", use_api_base=True, auth_kind="web")
-        res_json = response.json()
         if response.status_code != 200:
-            print(f"Fail to list files from dataset {dataset_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list files from dataset {dataset_name}, code: {response.status_code}, body: {response.text}")
+            return None
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            print(f"Fail to list files from dataset {dataset_name}, code: {res_json.get('code')}, message: {res_json.get('message')}")
             return None
         return res_json["data"]["docs"]
 
     def _get_dataset_id(self, dataset_name: str):
         response = self.http_client.request("GET", "/datasets", use_api_base=True, auth_kind="web")
-        res_json = response.json()
         if response.status_code != 200:
-            print(f"Fail to list datasets, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to list datasets, code: {response.status_code}, body: {response.text}")
             return None
 
+        res_json = response.json()
+        if res_json.get("code") != 0:
+            print(f"Fail to list datasets, code: {res_json.get('code')}, message: {res_json.get('message')}")
+            return None
         dataset_list = res_json["data"]
         dataset_id: str = ""
         for dataset in dataset_list:
@@ -1777,12 +2047,16 @@ class RAGFlowClient:
                 auth_kind="web",
                 iterations=iterations,
             )
-            res_json = response.json()
-            if response.status_code == 200 and res_json["code"] == 0:
-                return res_json["data"]["chats"]
+            if response.status_code == 200:
+                res_json = response.json()
+                if res_json["code"] == 0:
+                    return res_json["data"]["chats"]
+                else:
+                    print(f"Fail to list chats, code: {res_json['code']}, message: {res_json['message']}")
+                    return None
+
             else:
-                print(f"Fail to list chats, code: {res_json['code']}, message: {res_json['message']}")
-                return None
+                print(f"Fail to list chats, code: {response.status_code}, body: {response.text}")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
@@ -1831,8 +2105,7 @@ class RAGFlowClient:
             max_width = get_string_width(str(col))
             for item in data:
                 value_len = get_string_width(str(item.get(col, "")))
-                if value_len > max_width:
-                    max_width = value_len
+                max_width = max(max_width, value_len)
             col_widths[col] = max(2, max_width)
 
         # Generate delimiter
@@ -2025,6 +2298,10 @@ def run_command(client: RAGFlowClient, command_dict: dict):
             return client.update_chunk(command_dict)
         case "set_metadata":
             return client.set_metadata(command_dict)
+        case "generate_nav_for_dataset":
+            return client.generate_nav_for_dataset(command_dict)
+        case "navigation_search":
+            return client.navigation_search(command_dict)
         case "remove_tags":
             return client.remove_tags(command_dict)
         case "remove_chunks":
@@ -2086,6 +2363,8 @@ User Commands (use -t user):
 LIST DATASETS
 LIST DOCUMENTS OF DATASET <dataset>
 SEARCH <query> ON DATASETS <dataset>
+GENERATE NAVIGATION OF DATASET '<id>'
+NAVIGATION SEARCH '<query>' IN DATASET '<name or id>' MODE '<mode>' [TOP_K <n>]
 LIST METADATA OF DATASETS <dataset>[, <dataset>]*
 LIST METADATA SUMMARY OF DATASET <dataset> DOCUMENTS <doc_id>[, <doc_id>]*
 GET CHUNK <chunk_id>
@@ -2118,17 +2397,17 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
                     if response.status_code == 200:
                         success_count += 1
                 case _:
-                    res_json = response.json()
-                    if response.status_code == 200 and res_json["code"] == 0:
-                        success_count += 1
+                    if response.status_code == 200:
+                        res_json = response.json()
+                        if res_json["code"] == 0:
+                            success_count += 1
 
         total_duration = result["duration"]
         qps = iterations / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency}, iterations: {iterations}")
         print(f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {iterations}, SUCCESS: {success_count}, FAILURE: {iterations - success_count}")
-        pass
     else:
-        results: List[Optional[dict]] = [None] * concurrency
+        results: list[dict | None] = [None] * concurrency
         mp_context = mp.get_context("spawn")
         start_time = time.perf_counter()
         with ProcessPoolExecutor(max_workers=concurrency, mp_context=mp_context) as executor:
@@ -2146,14 +2425,13 @@ def run_benchmark(client: RAGFlowClient, command_dict: dict):
                         if response.status_code == 200:
                             success_count += 1
                     case _:
-                        res_json = response.json()
-                        if response.status_code == 200 and res_json["code"] == 0:
-                            success_count += 1
+                        if response.status_code == 200:
+                            res_json = response.json()
+                            if res_json["code"] == 0:
+                                success_count += 1
 
         total_duration = end_time - start_time
         total_command_count = iterations * concurrency
         qps = total_command_count / total_duration if total_duration > 0 else None
         print(f"command: {command}, Concurrency: {concurrency} , iterations: {iterations}")
         print(f"total duration: {total_duration:.4f}s, QPS: {qps}, COMMAND_COUNT: {total_command_count}, SUCCESS: {success_count}, FAILURE: {total_command_count - success_count}")
-
-    pass

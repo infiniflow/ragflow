@@ -17,16 +17,25 @@
 from copy import deepcopy
 
 GENERATION_CONFIG_KEYS = ("temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens")
+GENERATION_CONFIG_ENABLED_KEYS = {
+    "temperature": ("temperatureEnabled", "temperature_enabled"),
+    "top_p": ("topPEnabled", "top_p_enabled"),
+    "frequency_penalty": ("frequencyPenaltyEnabled", "frequency_penalty_enabled"),
+    "presence_penalty": ("presencePenaltyEnabled", "presence_penalty_enabled"),
+    "max_tokens": ("maxTokensEnabled", "max_tokens_enabled"),
+}
 
 
 def extract_generation_config(req):
-    return {key: req[key] for key in GENERATION_CONFIG_KEYS if key in req and req[key] is not None}
+    return {key: req[key] for key in GENERATION_CONFIG_KEYS if key in req and req[key] is not None and not any(req.get(enabled_key) is False for enabled_key in GENERATION_CONFIG_ENABLED_KEYS[key])}
 
 
 def pop_generation_config(req):
     generation_config = extract_generation_config(req)
     for key in GENERATION_CONFIG_KEYS:
         req.pop(key, None)
+        for enabled_key in GENERATION_CONFIG_ENABLED_KEYS[key]:
+            req.pop(enabled_key, None)
     return generation_config
 
 

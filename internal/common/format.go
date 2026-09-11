@@ -19,11 +19,14 @@ package common
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // PtrString formats a pointer value as a string for debug/log output.
@@ -35,7 +38,7 @@ func PtrString[T any](p *T) string {
 	return fmt.Sprintf("%v", *p)
 }
 
-// composite model name format: model_name@instance_name@provider_name
+// IsCompositeModelName checks if a model name is a valid composite model name format model_name@instance_name@provider_name.
 func IsCompositeModelName(modelName string) bool {
 	parts := strings.Split(modelName, "@")
 	if len(parts) != 3 {
@@ -54,6 +57,22 @@ func IsUUID(uuid string) bool {
 		return true
 	}
 	return false
+}
+
+// BaseModelName returns the bare model name of a (possibly composite) model
+// reference by stripping the trailing "@instance@provider" (or "@provider")
+// segments. The split is right-anchored so model names that legitimately
+// contain '@' (e.g. LM Studio quant suffixes) are preserved. Mirrors Python's
+// api/db/services/knowledgebase_service.py _base_model_name (rsplit("@", 2)[0]).
+func BaseModelName(modelName string) string {
+	if idx := strings.LastIndex(modelName, "@"); idx > 0 {
+		base := modelName[:idx]
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
+	}
+	return modelName
 }
 
 // ExtractCompositeName splits a composite model name into three parts.
@@ -103,14 +122,21 @@ func FormatBytes(bytes int64) string {
 	}
 }
 
+// FormatMinimumShouldMatchPercent converts a fractional minimum_should_match
+// value to a percentage string using half-up rounding, mirroring Python's
+// common.float_utils.format_minimum_should_match_percent.
+func FormatMinimumShouldMatchPercent(fraction float64) string {
+	// Add a tiny epsilon so values whose true product ends in .5 but are
+	// represented slightly below it (e.g. 0.285*100 == 28.499...) still
+	// round half-up instead of being truncated.
+	return fmt.Sprintf("%d%%", int(math.Floor(fraction*100+0.5+1e-9)))
+}
+
 func FormatNumber(n int64) string {
 	s := fmt.Sprintf("%d", n)
 	parts := []string{}
 	for i := len(s); i > 0; i -= 3 {
-		start := i - 3
-		if start < 0 {
-			start = 0
-		}
+		start := max(i-3, 0)
 		parts = append([]string{s[start:i]}, parts...)
 	}
 	return strings.Join(parts, ",")
@@ -158,4 +184,18 @@ func FormatTime(t *int64) string {
 func IsValidString(v interface{}) bool {
 	str, ok := v.(string)
 	return ok && str != ""
+}
+
+// ChunkID generates a deterministic chunk identifier matching Python's:
+//
+//	xxhash.xxh64((content_with_weight + str(doc_id)).encode("utf-8", "surrogatepass")).hexdigest()
+//
+// The concatenation inside the hash is text+docID (matching Python); the
+// parameter order is (docID, text) so the scope/identity argument comes first.
+// This is the single shared implementation used by the ingestion pipeline (for
+// image object keys and index document ids) and by the API (for directly
+// created chunks), so the two paths always produce the same id from the same
+// (docID, text) pair.
+func ChunkID(docID, text string) string {
+	return fmt.Sprintf("%016x", xxhash.Sum64String(text+docID))
 }

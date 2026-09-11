@@ -99,7 +99,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 	// without usage doesn't leak the prior call's data.
 	cm.LastUsage = nil
 	var totalTokens int
-	aggUsage := &ChatUsage{}
+	aggUsage := &TokenUsage{}
 
 	addRoundUsage := func(resp *ChatResponse) {
 		u := resp.Usage
@@ -112,7 +112,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens = aggUsage.TotalTokens
 		// Store per-round delta (not cumulative) so RecordRunTokenUsage
 		// records each round's contribution exactly once.
-		cm.LastUsage = &ChatUsage{
+		cm.LastUsage = &TokenUsage{
 			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
 		}
 		recordUsageFromResponse(ctx, cm)
@@ -129,7 +129,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		tcChoice := "auto"
 		cfg.ToolChoice = &tcChoice
 
-		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+		resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
 		if err != nil {
 			return "", totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -154,7 +154,18 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 			return answer, totalTokens, nil
 		}
 
-		history = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession)
+		// Execute the round's tool calls and fold their results into history.
+		// If one of them is a terminal tool and succeeded, its result is already
+		// the final answer — return it directly instead of re-invoking the model
+		// (Python chat_model.py:619-627).
+		var hit bool
+		var toolAnswer string
+		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		if hit {
+			addRoundUsage(resp)
+			return toolAnswer, totalTokens, nil
+		}
+		// history now carries this round's tool results; continue to the next round.
 	}
 
 	// Exceeded max rounds
@@ -163,7 +174,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
 	})
 	cfg := *chatCfg
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg)
+	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
 	}
@@ -176,6 +187,14 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens += tokenizer.NumTokensFromString(*resp.Answer)
 	}
 	return *resp.Answer, totalTokens, nil
+}
+
+// terminalSet returns the configured terminal-tool name set, or nil when none.
+func terminalSet(cm *ChatModel) map[string]struct{} {
+	if cm.ToolConfig == nil {
+		return nil
+	}
+	return cm.ToolConfig.TerminalTools
 }
 
 // ChatStreamlyWithTools runs the streaming tool-calling loop.
@@ -231,7 +250,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	// Reset stale per-call usage from a previous call.
 	cm.LastUsage = nil
 	var totalTokens int
-	aggUsage := &ChatUsage{}
+	aggUsage := &TokenUsage{}
 
 	commitRound := func(cfg *ChatConfig, roundTokens int) {
 		// Prefer the authoritative usage from the API (extracted via
@@ -251,7 +270,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			aggUsage.TotalTokens += deltaTotal
 		}
 		totalTokens = aggUsage.TotalTokens
-		cm.LastUsage = &ChatUsage{
+		cm.LastUsage = &TokenUsage{
 			PromptTokens: deltaPrompt, CompletionTokens: deltaCompletion, TotalTokens: deltaTotal,
 		}
 		recordUsageFromResponse(ctx, cm)
@@ -270,7 +289,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		cfg.Stream = boolPtr(true)
 		var tcs []map[string]interface{}
 		cfg.ToolCallsResult = &tcs
-		var roundUsage ChatUsage
+		var roundUsage TokenUsage
 		cfg.UsageResult = &roundUsage
 
 		reasoningStarted := false
@@ -278,7 +297,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		var pendingThinkClose bool
 		var roundTokens int
 
-		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+		err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				if !reasoningStarted {
 					reasoningStarted = true
@@ -338,7 +357,19 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			return totalTokens, fmt.Errorf("round %d: no content and no tool_calls", round)
 		}
 
-		history = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession)
+		// A terminal tool's successful result is already the final answer:
+		// stream it to the caller and stop instead of asking the model again
+		// (Python chat_model.py:2574-2582). sendTerminal streams the result.
+		var termAnswer string
+		var termHit bool
+		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		if termHit {
+			if err := sendTerminal(sender, &termAnswer); err != nil {
+				return totalTokens, err
+			}
+			return totalTokens, nil
+		}
+		// history now carries this round's tool results; continue to the next round.
 	}
 
 	// Exceeded max rounds
@@ -348,10 +379,10 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	})
 	cfg := *chatCfg
 	cfg.Stream = boolPtr(true)
-	var exceedUsage ChatUsage
+	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
-	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, func(delta *string, reason *string) error {
+	err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 		if delta != nil && *delta != "" && *delta != "[DONE]" {
 			exceedTokens += tokenizer.NumTokensFromString(*delta)
 		}
@@ -363,7 +394,13 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 
 // appendToolResults executes tool calls concurrently, appends the assistant
 // message with tool_calls and individual tool result messages to history.
-func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession) []Message {
+//
+// When terminal is non-empty, a successful call to one of those tools
+// short-circuits: the loop returns (history, that result, true) so the caller
+// treats it as the final answer instead of re-invoking the model (mirrors
+// Python chat_model.py:619-627 / :2574-2582). When terminal is empty or no
+// terminal tool fired, it returns (history, "", false).
+func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}) ([]Message, string, bool) {
 	if session == nil {
 		history = append(history, Message{
 			Role:      "assistant",
@@ -378,13 +415,15 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 				ToolCallID: tcID,
 			})
 		}
-		return history
+		return history, "", false
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	type toolResult struct {
 		index   int
 		tcID    string
+		name    string
+		err     error
 		content string
 	}
 	results := make([]toolResult, len(toolCalls))
@@ -405,6 +444,7 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 			name, _ := fn["name"].(string)
 			argsStr, _ := fn["arguments"].(string)
 			result.tcID, _ = tcMap["id"].(string)
+			result.name = name
 
 			var args map[string]interface{}
 			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
@@ -413,6 +453,7 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 
 			res, err := session.ToolCall(name, args)
 			if err != nil {
+				result.err = err
 				result.content = fmt.Sprintf("Error: %s", err.Error())
 			} else {
 				result.content = res
@@ -430,17 +471,46 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 		ToolCalls: toolCalls,
 	})
 
+	// A successful terminal tool is the final answer; remember its result but
+	// still append every tool message so history stays well-formed if the
+	// caller ignores the short-circuit (defensive).
+	var terminalAnswer string
+	var terminalHit bool
 	for _, r := range results {
 		history = append(history, Message{
 			Role:       "tool",
 			Content:    r.content,
 			ToolCallID: r.tcID,
 		})
+		if !terminalHit && r.err == nil && r.name != "" {
+			if _, ok := terminal[r.name]; ok {
+				terminalAnswer = r.content
+				terminalHit = true
+			}
+		}
 	}
 
-	return history
+	// A terminal tool short-circuits on success regardless of what it returned.
+	// Tools that stream their own answer through the caller's sender return an
+	// empty string to say "nothing more to emit", and sendTerminal's empty guard
+	// then keeps the loop from re-streaming it (mirrors Python, where the
+	// terminal result is ignored once the inner answer_sink has streamed).
+	if terminalHit {
+		return history, terminalAnswer, true
+	}
+	return history, "", false
 }
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// sendTerminal streams a terminal tool's already-final answer to the sender as
+// plain text deltas (no reasoning), mirroring how Python yields the terminal
+// result and stops.
+func sendTerminal(sender func(*string, *string) error, answer *string) error {
+	if answer == nil || *answer == "" {
+		return nil
+	}
+	return sender(answer, nil)
 }

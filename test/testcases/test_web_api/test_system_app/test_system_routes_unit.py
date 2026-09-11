@@ -148,6 +148,7 @@ def _load_system_module(monkeypatch):
     health_utils_mod = ModuleType("api.utils.health_utils")
     health_utils_mod.run_health_checks = lambda: ({"status": "ok"}, True)
     health_utils_mod.get_oceanbase_status = lambda: {"status": "alive"}
+    health_utils_mod.get_gaussdb_status = lambda: {"status": "alive"}
     monkeypatch.setitem(sys.modules, "api.utils.health_utils", health_utils_mod)
 
     quart_mod = ModuleType("quart")
@@ -220,3 +221,14 @@ def test_get_config_returns_register_enabled_unit(monkeypatch):
     res = module.get_config()
     assert res["code"] == 0
     assert res["data"]["registerEnabled"] is False
+
+
+@pytest.mark.p2
+def test_gaussdb_status_route_unit(monkeypatch):
+    module = _load_system_module(monkeypatch)
+    monkeypatch.setattr(module, "get_gaussdb_status", lambda: {"status": "alive"})
+
+    res = module.gaussdb_status()
+
+    assert res["code"] == 0
+    assert res["data"]["status"] == "alive"

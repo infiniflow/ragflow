@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.2"
+OFFICE_OXIDE_VERSION="0.1.9"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -35,7 +35,16 @@ PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.67"
+PDF_OXIDE_VERSION="0.3.73"
+
+# onnxruntime native library settings — static linking for the in-process
+# (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
+# (--undefined=OrtGetApiBase + --dynamic-list, no --whole-archive); OrtGetApiBase
+# is then resolved via dlopen(NULL) (the process-global symbol table, not the
+# executable's own path), so no libonnxruntime.so is needed at runtime.
+# Downloaded by ragflow_deps/download_go_deps.py (and
+# ragflow_deps/download_deps.py) into onnxruntime/static_lib.
+ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
 # Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
@@ -141,6 +150,38 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+    check_ort_version_consistency
+}
+
+# Fail fast when the ONNX Runtime native version is declared inconsistently.
+# The in-process (Go) DeepDoc backend statically links libonnxruntime.a built
+# from ONE exact ORT release; a mismatch links a wrong/missing .a and only fails
+# at runtime (dlopen(NULL) can't find OrtGetApiBase). The version is pinned in
+# four Go-side locations that must all agree.
+check_ort_version_consistency() {
+    print_section "Checking ONNX Runtime version consistency"
+
+    local env_go d1 d2 dockerfile
+    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+
+    if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
+        echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
+        exit 1
+    fi
+
+    if [ "$env_go" != "$d1" ] || [ "$env_go" != "$d2" ] || [ "$env_go" != "$dockerfile" ]; then
+        echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
+        printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
+        printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ ONNX Runtime native version consistent: ${env_go}${NC}"
 }
 
 # Check office_oxide native library
@@ -152,16 +193,31 @@ check_office_oxide_deps() {
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
-    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
-        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
-        return 0
+    if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
+        echo -e "${RED}Error: office_oxide native library not found${NC}"
+        echo "  Expected: ${lib_path}"
+        echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+        exit 1
     fi
 
-    echo -e "${RED}Error: office_oxide native library not found${NC}"
-    echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
-    echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
-    exit 1
+    # Verify the on-disk lib matches the pinned version. A stale older lib
+    # (e.g. v0.1.7) silently reintroduces the PPT97 content-loss bug
+    # (github.com/yfedoseev/office_oxide#85, fixed in v0.1.8): PlainText()
+    # on a legacy .ppt returns stale metadata instead of slide text.
+    if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    uv run python3 ragflow_deps/download_go_deps.py"
+        exit 1
+    fi
+
+    echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
+    return 0
 }
 
 # Check pdfium static library.
@@ -176,7 +232,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -207,13 +263,35 @@ check_pdf_oxide_deps() {
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
     if [ -f "$lib_path" ]; then
+        # Verify the on-disk lib matches the pinned version. _seed_from_system
+        # accepts an existing user-cache directory without inspecting it, so a
+        # lib left over from an earlier pin is reused silently and the upgrade
+        # becomes a no-op.
+        #
+        # The marker here differs from office_oxide: instead of a standalone
+        # "0.1.9" line it is "pdf_oxide <version>" merged into Rust's string
+        # constant pool, so a whole-line match cannot be used. Extract the
+        # version and compare it exactly — a substring match would let a pin of
+        # "0.3.7" accept a 0.3.73 lib. The "pdf_oxide " prefix keeps bare
+        # version numbers of vendored dependencies out of the match.
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null \
+            | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
+        if [ "$found_version" != "$PDF_OXIDE_VERSION" ]; then
+            echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
+            echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
+            echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
+            echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+            echo "    uv run python3 ragflow_deps/download_go_deps.py"
+            return 1
+        fi
         echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
         return 0
     fi
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -236,6 +314,34 @@ build_cpp() {
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
+    fi
+
+    # Rename the tokenizer's bundled re2 symbols into a private namespace so they
+    # never collide with onnxruntime's copy of re2 at final link time.
+    #
+    # Why this is needed: onnxruntime.a and librag_tokenizer_c_api.a both embed a
+    # copy of re2, but they are built against different toolchains/libstdc++ and
+    # are ABI-incompatible. Symbol-localization approaches (--exclude-libs, linker
+    # version scripts) cannot fix it: both re2 copies must live in the same global
+    # symbol table, and the linker resolves the tokenizer's re2 references to
+    # whichever copy was archived first (here, onnxruntime's), regardless of which
+    # copy is localized. SIGSEGV in re2::DFA::InlinedSearchLoop is the symptom.
+    #
+    # Renaming the tokenizer's re2 symbols into a private prefix gives each copy
+    # its own namespace, so the tokenizer calls its own ABI-compatible re2 and
+    # onnxruntime keeps calling its own. Verified to eliminate the crash.
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    local rename_map="$BUILD_DIR/re2_rename.map"
+    if command -v objcopy >/dev/null 2>&1; then
+        nm "$tok_a" \
+            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
+            | sort -u > "$rename_map"
+        if [ -s "$rename_map" ]; then
+            objcopy --redefine-syms="$rename_map" "$tok_a"
+            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Warning: objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
     fi
 
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
@@ -298,16 +404,47 @@ build_go() {
 
     setup_cgo_env
 
+    # The in-process (Go) DeepDoc backend is statically linked against ONNX
+    # Runtime (--undefined=OrtGetApiBase + -Wl,--dynamic-list, see
+    # setup_cgo_env). The forked onnxruntime_go binding resolves OrtGetApiBase
+    # only at RUNTIME via dlopen(NULL), so a missing ORT archive still lets
+    # `go build` SUCCEED and yields a server binary that FAILS AT STARTUP with a
+    # fatal "no in-process DeepDoc backend serving". That is exactly the
+    # breakage colleagues hit when ORT was not present at build time and
+    # setup_cgo_env silently skipped it. Fail the build HERE instead of
+    # deferring the breakage to runtime: a server binary without ORT is unusable,
+    # not a degraded one.
+    if ! printf '%s' "$CGO_LDFLAGS" | grep -q 'libonnxruntime'; then
+        echo -e "${RED}Error: ONNX Runtime static libraries are not linked.${NC}" >&2
+        echo "  The in-process DeepDoc backend requires libonnxruntime.a to be" >&2
+        echo "  statically linked into ragflow_server (--undefined=OrtGetApiBase +" >&2
+        echo "  -Wl,--dynamic-list). Without it the binary compiles but dies" >&2
+        echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
+        echo "  Fetch the static libs with:" >&2
+        echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
+        echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  This production binary must statically include ORT — there is no" >&2
+        echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
+        echo "    - the ORT static_lib dir was never seeded: run" >&2
+        echo "      'uv run python3 ragflow_deps/download_go_deps.py', or pre-seed" >&2
+        echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
+        echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
+        return 1
+    fi
+
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}
-        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    set -x
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go
+        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        cmd/ragflow_server.go
+    set +x
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
@@ -324,8 +461,23 @@ build_go() {
 setup_cgo_env() {
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
+
+    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
+    # file content of referenced .a archives. So swapping the .a in-place
+    # (same path) does NOT invalidate the cache, and `go build` silently
+    # reuses a stale binary linked against the old .a.
+    #
+    # Create a version-stamped symlink directory so the flag string
+    # includes the actual linked version. When the .a is upgraded, the
+    # path changes → Go cache key changes → automatic relink.
+    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
+    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
+    mkdir -p "$versioned_lib_dir"
+    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
+        "${versioned_lib_dir}/liboffice_oxide.a"
+
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
@@ -334,7 +486,8 @@ setup_cgo_env() {
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
     # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
     # staticlibs that embed the Rust runtime; linking them together produces
-    # duplicate rust_eh_personality symbols.
+    # duplicate rust_eh_personality / compiler-rt builtins. Those duplicates are
+    # ABI-IDENTICAL, so merging them is benign.
     if [ "$(uname -s)" = "Linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
             echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
@@ -345,6 +498,11 @@ setup_cgo_env() {
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
             -fuse-ld=lld -Wl,--allow-multiple-definition"
+        # The re2 regex-library collision between onnxruntime.a and
+        # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
+        # the tokenizer's bundled re2 symbols are renamed into a private
+        # namespace (ragtokre2_) so the two re2 copies never share a symbol.
+        # See build_cpp() for details.
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
@@ -367,7 +525,130 @@ setup_cgo_env() {
             esac
             ;;
     esac
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
+    # Version-stamp the archive path so an in-place .a upgrade invalidates
+    # Go's build cache. See the office_oxide block above for why the raw path
+    # is not enough: the cache key hashes CGO_LDFLAGS as a string, not the
+    # contents of the archives it names.
+    local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
+    local pdf_oxide_versioned_dir="${pdf_oxide_lib_dir}/v${PDF_OXIDE_VERSION}"
+    mkdir -p "$pdf_oxide_versioned_dir"
+    ln -sf "${pdf_oxide_lib_dir}/libpdf_oxide.a" \
+        "${pdf_oxide_versioned_dir}/libpdf_oxide.a"
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_versioned_dir}/libpdf_oxide.a"
+
+    # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
+    # macOS native builds of the in-process DeepDoc backend are not supported:
+    # ONNX Runtime is statically linked with GNU ld flags
+    # (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list) and resolved at
+    # runtime via dlopen(NULL); Apple's ld64 does not understand these flags.
+    # Build on Linux or cross-compile there.
+    case "$(uname -s)" in
+        Darwin)
+            echo "Error: macOS native build of the in-process DeepDoc backend is not supported." >&2
+            echo "  ONNX Runtime is linked with GNU ld flags (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list)" >&2
+            echo "  and resolved via dlopen(NULL); Apple's ld64 does not support them. Build on Linux." >&2
+            return 1
+            ;;
+    esac
+    # Statically link libonnxruntime*.a into the binary. The org Go binding
+    # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves OrtGetApiBase
+    # with dlopen(NULL) + dlsym(handle, "OrtGetApiBase"), so the ONLY symbol that
+    # must be visible in the process-global table is OrtGetApiBase.
+    #
+    # We therefore do NOT use --whole-archive: that flag force-pulls every .o in
+    # the archive (including unregistered "dead" kernels we never call), which
+    # is why every ORT size-trimming build flag had near-zero effect before.
+    # Instead we link the archives normally and let GNU ld's archive-level GC
+    # drop any kernel/EP object that nothing references. The onnxruntime_go
+    # binding reaches ORT purely through the OrtApi function-pointer table
+    # returned by OrtGetApiBase, and a minimal/reduced-ops build registers only
+    # the operators the deepdoc models actually use, so the reachable closure is
+    # small. --dynamic-list exports just OrtGetApiBase (the only symbol dlopen
+    # needs) and leaves Go's runtime symbols untouched, unlike a "local: *"
+    # version script which breaks PIE absolute relocations. No libonnxruntime.so
+    # is required or supported at runtime; there is no dynamic .so fallback.
+    #
+    # Seed the static ORT archives from the system pre-bake (/opt, laid down
+    # by the CI runner image) into the user cache before the link check
+    # below. Mirrors the existing _seed_from_system calls for the other
+    # native libs so CI never downloads ORT at build/test time.
+    _seed_from_system "onnxruntime" || true
+    if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
+        # Collect every .a, but skip GPU-only providers we never build
+        # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
+        #
+        # Select the ORT static lib that matches the Go deepdoc backend's
+        # required version (DeepDocORTVersion in internal/common/environments.go).
+        # Go and Python build/link against independent ORT versions, so the
+        # static_lib prefix legitimately holds more than one
+        # onnxruntime-linux-x64-static_lib-* dir at once (e.g. the Python-side
+        # 1.23.x next to the Go-side 1.29.0). We pick the dir that matches
+        # DeepDocORTVersion rather than failing when a second version dir is
+        # present. This avoids silently linking the wrong version while still
+        # keeping the bake self-documenting.
+        local ort_version
+        ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+            "${PROJECT_ROOT}/internal/common/environments.go" \
+            | sed -E 's/.*"([^"]+)".*/\1/')"
+        if [ -z "$ort_version" ]; then
+            echo "  Error: cannot parse DeepDocORTVersion from internal/common/environments.go" >&2
+            return 1
+        fi
+        local ort_a=""
+        while IFS= read -r f; do
+            case "$(basename "$f")" in
+                *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
+            esac
+            case "$f" in
+                # Only collect .a from the dir matching the required version.
+                */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+                    ort_a="$ort_a $f" ;;
+            esac
+        done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
+
+        if [ -n "$ort_a" ]; then
+            # Export exactly one symbol (OrtGetApiBase) for the binding's
+            # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
+            # with "local: *", which hides Go's runtime type symbols and breaks
+            # the PIE absolute relocations). No --whole-archive, so GNU ld's
+            # archive-level GC drops any ORT kernel/EP object nothing references.
+            #
+            # The dynamic list is written to a STABLE, project-scoped path (not
+            # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
+            # across invocations; its content never changes, so overwriting is
+            # safe and nothing leaks in /tmp. .cache/ is gitignored.
+            local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
+            mkdir -p "$(dirname "$ort_dynamic_list")"
+            printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
+            # --undefined=OrtGetApiBase force-pulls the archive member that
+            # defines OrtGetApiBase (the Go binding reaches ORT only via
+            # dlsym("OrtGetApiBase"), so nothing references it at link time and
+            # it would otherwise be GC'd). From there the minimal build's CPU-EP
+            # registration call chain pulls in the operators the models use.
+            # The explicit space between $ort_dynamic_list and $ort_a keeps the
+            # two as separate linker arguments regardless of $ort_a's leading
+            # space.
+            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a -lstdc++"
+            echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
+            # The re2 regex-library collision between onnxruntime.a and
+            # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
+            # the tokenizer's bundled re2 symbols are renamed into a private
+            # namespace (ragtokre2_) so the two re2 copies never share a symbol
+            # name. --dynamic-list (above) exports OrtGetApiBase into the process
+            # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
+            # lookup needs at runtime (no --export-dynamic required).
+        else
+            local avail
+            avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
+                -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            echo "  Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX" >&2
+            echo "    available: ${avail:-<none>}" >&2
+            echo "    DeepDocORTVersion=${ort_version}; bake/download the matching ORT (or update DeepDocORTVersion)." >&2
+            return 1
+        fi
+    else
+        echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
+    fi
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
@@ -376,8 +657,9 @@ setup_cgo_env() {
             ;;
         Darwin)
             export CGO_LDFLAGS="$CGO_LDFLAGS \
-                -framework CoreFoundation -framework Security \
-                -framework SystemConfiguration -liconv -lresolv"
+                -framework CoreGraphics -framework CoreFoundation \
+                -framework Security -framework SystemConfiguration \
+                -liconv -lresolv -lc++"
             ;;
     esac
 
@@ -398,7 +680,96 @@ run_go_tests() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -count=1 "$@"
+        go test -tags cgo,static -count=1 "$@"
+
+    run_native_tests
+}
+
+# Run the unit tests of the native package (DeepDoc det/DLA/TSR/OCR-rec Go
+# ports), now a regular package under the MAIN module gated by the `cgo` build
+# tag (same isolation as office_oxide/pdfium). It used to be a nested Go module
+# (own go.mod) that the root `./...` never descended into; after the merge it is
+# covered by the normal module tests. The build is pure-Go geometry plus the
+# cgo onnxruntime binding, so it runs whenever CGO_ENABLED=1 (the same gate the
+# rest of the native C libs use). Model-backed integration tests are handled by
+# run_native_integration_tests.
+run_native_tests() {
+    print_section "Running native unit tests"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags cgo,static -count=1 ./internal/deepdoc/native/... )
+}
+
+# Run the model-backed integration tests of the native package and the
+# native_analyzer package (the DocAnalyzer the PDF parser consumes). These
+# require MODEL_DIR at runtime; ONNX Runtime is statically linked and resolved
+# via dlopen(NULL), so no ORT_LIB is needed. The tests self-skip when MODEL_DIR
+# is unset or the binary lacks static ORT (see native_integration_test.go
+# skipIfNoModels / native_analyzer_test.go analyzerWithModels). Run under the
+# `cgo integration` tier.
+#
+# Why -race is split instead of applied to the whole suite:
+# - The DLA/TSR/OCR-rec/Det golden-comparison tests are single-threaded and
+#   deterministic. -race multiplies their (model-heavy) heap ~10x for ZERO
+#   race-detection value, and that is what used to OOM-kill the runner
+#   (SIGTERM) under `cgo integration`. So they run WITHOUT -race.
+# - Only the concurrency-correctness tests (TestInferenceConcurrency* in the
+#   native package, and native_analyzer's TestAnalyzerConcurrentBatchAndSingle)
+#   actually benefit from -race: they hammer the shared session pools from many
+#   goroutines, and the detector catches data races on the pools / per-session
+#   in-out tensors / cross-call batch state. Those run WITH -race.
+# ORT's C internals are not instrumented, but all our shared mutable state lives
+# in Go, which the detector covers. CGO_ENABLED=1 is required for both the build
+# and the race runtime.
+run_native_integration_tests() {
+    # Optional isolation: NATIVE_TEST_RUN forwards a -run filter and
+    # NATIVE_TEST_V adds -v so a single native test can be exercised in
+    # isolation (e.g. `NATIVE_TEST_RUN='TestNativeLoadsOrtModels$' NATIVE_TEST_V=1`).
+    local native_run_filter=()
+    if [ -n "${NATIVE_TEST_RUN:-}" ]; then
+        native_run_filter+=(-run "${NATIVE_TEST_RUN}")
+    fi
+    if [ -n "${NATIVE_TEST_V:-}" ]; then
+        native_run_filter+=(-v)
+    fi
+    print_section "Running native integration tests (golden/comparison, no race)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo static integration fetch_testdata" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
+
+    print_section "Running native integration concurrency tests (race detector on)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
+
+    print_section "Running native_analyzer race tests (race detector on)"
+    ( cd "$PROJECT_ROOT" && \
+      GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+      CGO_ENABLED=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
+}
+
+# Run Go tests gated behind a build tag (or space-separated tag list), e.g.
+# `./build.sh --test-integration -run TestFoo ./internal/engine/...`.
+# See "Go Test Tiers" in AGENTS.md for the tier definitions.
+run_go_tests_tagged() {
+    local tags="$1"; shift
+    print_section "Running Go tests (tags: ${tags})"
+
+    cd "$PROJECT_ROOT"
+    setup_cgo_env
+
+    if [ "$#" -eq 0 ]; then
+        set -- ./...
+    fi
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go test -tags "${tags} static" -count=1 "$@"
 }
 
 # Clean build artifacts
@@ -426,7 +797,13 @@ run() {
     print_section "Starting admin server (background)"
     "$RAGFLOW_SERVER_BINARY" --admin &
     ADMIN_PID=$!
-    trap 'kill "$ADMIN_PID" 2>/dev/null || true' EXIT INT TERM
+    # One trap for both background services: a second `trap ... EXIT INT TERM`
+    # would replace this one rather than add to it, leaving admin_server holding
+    # port 9383 after the foreground server exits. INGESTOR_PID is cleared first
+    # so a value inherited from the environment cannot be signalled during the
+    # window before the ingestor starts.
+    INGESTOR_PID=""
+    trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
 
     # Give admin_server a moment to bind its listening port (9383) before
     # ragflow_server starts sending heartbeats to it.
@@ -435,7 +812,6 @@ run() {
     print_section "Starting ingestor (background)"
     "$RAGFLOW_SERVER_BINARY" --ingestor &
     INGESTOR_PID=$!
-    trap 'kill "$INGESTOR_PID" 2>/dev/null || true' EXIT INT TERM
     sleep 1
 
     print_section "Starting RAGFlow server (foreground)"
@@ -454,12 +830,27 @@ Build script for RAGFlow Go server with C++ bindings.
 OPTIONS:
     --all, -a       Build everything (C++ library + Go server) [default]
     --cpp, -c       Build only C++ static library
-    --cpp-test      Build C++ test executable (requires --cpp first)
+    --cpp-test      Build C++ test executable (builds the C++ library if needed)
     --go, -g        Build only Go server (requires C++ library to be built)
-    --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Any extra args are forwarded to `go test`, e.g.
+    --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
+                    native static libs (office_oxide/pdfium/pdf_oxide) needed to
+                    build (same contract as the Go tier table in AGENTS.md).
+                    Extra args are forwarded to `go test`, e.g.
                     `$0 --test -run TestFoo ./internal/admin/...`
+    --test-integration   Run Go tests tagged 'integration' (need real services,
+                    e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
+                    `$0 --test-integration ./internal/engine/...`
+    --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
+    --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
+                    ONLY, never run in CI).
+    --test-all           Run 'integration' + 'e2e' tests (excludes 'manual').
+    --test-native        Run the in-process (Go) DeepDoc backend tests tagged
+                    'cgo integration' (needs libonnxruntime + the
+                    InfiniFlow/deepdoc model snapshot; self-skip otherwise).
+                    e.g. `$0 --test-native`
     --clean, -C     Clean all build artifacts
+    --check-ort-version  Verify the ONNX Runtime native version is declared
+                    consistently across all sources (exit 1 on mismatch).
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
                     (disabled by default, useful for smaller production binaries)
@@ -470,16 +861,20 @@ EXAMPLES:
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
-    $0 --test       # Run all Go tests
+    $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
+    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-e2e                                 # e2e tier
+    $0 --test-manual                             # manual tier (very slow)
+    $0 --test-all                                # integration + e2e (no manual)
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
 DEPENDENCIES:
     - cmake >= 4.0
-    - go >= 1.24
-    - g++ with C++17/23 support
-    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
+    - go >= 1.26.4
+    - clang++ with C++20 support
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
@@ -520,8 +915,62 @@ main() {
                 run_go_tests "${args[@]:1}"
             fi
             ;;
+        --test-integration)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
+            run_native_integration_tests
+            ;;
+        --test-e2e)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged e2e "${args[@]:2}"
+            else
+                run_go_tests_tagged e2e "${args[@]:1}"
+            fi
+            ;;
+        --test-manual)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged manual "${args[@]:2}"
+            else
+                run_go_tests_tagged manual "${args[@]:1}"
+            fi
+            ;;
+        --test-all)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged "integration e2e" "${args[@]:2}"
+            else
+                run_go_tests_tagged "integration e2e" "${args[@]:1}"
+            fi
+            ;;
+        --test-native)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                pkgs=("${args[@]:2}")
+            else
+                pkgs=("${args[@]:1}")
+            fi
+            if [ "${#pkgs[@]}" -eq 0 ]; then
+                pkgs=(./internal/deepdoc/parser/pdf/inference/native_analyzer/...)
+            fi
+            # The in-process (Go) DeepDoc backend needs the .ort weights. Default
+            # MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so a
+            # local run needs no MODEL_DIR export after `download_go_deps.py`.
+            REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
+            run_go_tests_tagged "cgo integration" "${pkgs[@]}"
+            run_native_integration_tests
+            ;;
         --clean|-C)
             clean
+            ;;
+        --check-ort-version)
+            check_ort_version_consistency
             ;;
         --run|-r)
             check_cpp_deps
@@ -542,7 +991,7 @@ main() {
             echo "Binary: $RAGFLOW_SERVER_BINARY, $RAGFLOW_CLI_BINARY"
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
+            echo -e "${RED}Unknown option: ${args[0]}${NC}"
             show_help
             exit 1
             ;;

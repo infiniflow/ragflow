@@ -17,6 +17,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,15 +29,15 @@ import (
 type Connector interface {
 	// ListDatasets returns newline-delimited JSON lines, each containing
 	// at minimum {"id": "...", "description": "..."}.
-	ListDatasets(page, pageSize int, orderby string, desc bool) (string, error)
+	ListDatasets(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error)
 
 	// ListChats returns newline-delimited JSON lines, each containing
 	// at minimum {"id": "...", "name": "...", "description": "..."}.
-	ListChats(page, pageSize int, orderby string, desc bool) (string, error)
+	ListChats(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error)
 
 	// Retrieval executes a retrieval request and returns the result as
 	// a JSON string.
-	Retrieval(req RetrievalRequest) (string, error)
+	Retrieval(ctx context.Context, req RetrievalRequest) (string, error)
 }
 
 // RetrievalRequest carries all parameters for a retrieval query.
@@ -71,7 +72,7 @@ func NewServer(connector Connector) *Server {
 // HandleRequest dispatches a raw JSON-RPC request body and returns the
 // serialized JSON-RPC response. Returns nil if the request is a
 // notification (no id) and requires no response.
-func (s *Server) HandleRequest(body []byte) ([]byte, bool, error) {
+func (s *Server) HandleRequest(ctx context.Context, body []byte) ([]byte, bool, error) {
 	// Try to decode as a request (with an id) first.
 	var req JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -98,9 +99,9 @@ func (s *Server) HandleRequest(body []byte) ([]byte, bool, error) {
 	case "initialize":
 		resp = s.handleInitialize(req.ID)
 	case "tools/list":
-		resp = s.handleListTools(req.ID)
+		resp = s.handleListTools(ctx, req.ID)
 	case "tools/call":
-		resp = s.handleCallTool(req.ID, req.Params)
+		resp = s.handleCallTool(ctx, req.ID, req.Params)
 	case "ping":
 		resp = s.handlePing(req.ID)
 	default:
@@ -133,14 +134,14 @@ func (s *Server) handlePing(id json.RawMessage) JSONRPCResponse {
 	return NewSuccessResponse(id, struct{}{})
 }
 
-func (s *Server) handleListTools(id json.RawMessage) JSONRPCResponse {
+func (s *Server) handleListTools(ctx context.Context, id json.RawMessage) JSONRPCResponse {
 	// Fetch dataset and chat descriptions for embedding into tool descriptions,
 	// matching the Python MCP server behavior.
-	datasetDescription, err := s.connector.ListDatasets(1, 100, "create_time", true)
+	datasetDescription, err := s.connector.ListDatasets(ctx, 1, 100, "create_time", true)
 	if err != nil {
 		datasetDescription = ""
 	}
-	chatDescription, err := s.connector.ListChats(1, 30, "create_time", true)
+	chatDescription, err := s.connector.ListChats(ctx, 1, 30, "create_time", true)
 	if err != nil {
 		chatDescription = ""
 	}
@@ -267,7 +268,7 @@ func (s *Server) handleListTools(id json.RawMessage) JSONRPCResponse {
 	return NewSuccessResponse(id, ListToolsResult{Tools: tools})
 }
 
-func (s *Server) handleCallTool(id json.RawMessage, rawParams json.RawMessage) JSONRPCResponse {
+func (s *Server) handleCallTool(ctx context.Context, id json.RawMessage, rawParams json.RawMessage) JSONRPCResponse {
 	var params CallToolParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		return NewErrorResponse(id, ErrCodeInvalidParams,
@@ -280,18 +281,18 @@ func (s *Server) handleCallTool(id json.RawMessage, rawParams json.RawMessage) J
 
 	switch params.Name {
 	case "ragflow_retrieval":
-		return s.callRagflowRetrieval(id, params.Arguments)
+		return s.callRagflowRetrieval(ctx, id, params.Arguments)
 	case "ragflow_list_datasets":
-		return s.callListDatasets(id, params.Arguments)
+		return s.callListDatasets(ctx, id, params.Arguments)
 	case "ragflow_list_chats":
-		return s.callListChats(id, params.Arguments)
+		return s.callListChats(ctx, id, params.Arguments)
 	default:
 		return NewErrorResponse(id, ErrCodeMethodNotFound,
 			fmt.Sprintf("Tool not found: %s", params.Name))
 	}
 }
 
-func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
+func (s *Server) callRagflowRetrieval(ctx context.Context, id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
 	req := RetrievalRequest{
 		Page:                   getBoundedIntArg(args, "page", 1, 1, 1_000_000),
 		PageSize:               getBoundedIntArg(args, "page_size", 10, 1, 100),
@@ -315,29 +316,29 @@ func (s *Server) callRagflowRetrieval(id json.RawMessage, args map[string]interf
 		return NewSuccessResponse(id, NewErrorResult("question is required"))
 	}
 
-	result, err := s.connector.Retrieval(req)
+	result, err := s.connector.Retrieval(ctx, req)
 	if err != nil {
 		return NewSuccessResponse(id, NewErrorResult(err.Error()))
 	}
 	return NewSuccessResponse(id, NewTextResult(result))
 }
 
-func (s *Server) callListDatasets(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
+func (s *Server) callListDatasets(ctx context.Context, id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
 	page := getBoundedIntArg(args, "page", 1, 1, 1_000_000)
 	pageSize := getBoundedIntArg(args, "page_size", 100, 1, 1000)
 
-	result, err := s.connector.ListDatasets(page, pageSize, "create_time", true)
+	result, err := s.connector.ListDatasets(ctx, page, pageSize, "create_time", true)
 	if err != nil {
 		return NewSuccessResponse(id, NewErrorResult(err.Error()))
 	}
 	return NewSuccessResponse(id, NewTextResult(result))
 }
 
-func (s *Server) callListChats(id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
+func (s *Server) callListChats(ctx context.Context, id json.RawMessage, args map[string]interface{}) JSONRPCResponse {
 	page := getBoundedIntArg(args, "page", 1, 1, 1_000_000)
 	pageSize := getBoundedIntArg(args, "page_size", 30, 1, 100)
 
-	result, err := s.connector.ListChats(page, pageSize, "create_time", true)
+	result, err := s.connector.ListChats(ctx, page, pageSize, "create_time", true)
 	if err != nil {
 		return NewSuccessResponse(id, NewErrorResult(err.Error()))
 	}

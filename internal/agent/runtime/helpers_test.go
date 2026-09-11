@@ -133,7 +133,7 @@ func TestTrackProgress_PassesThroughReturnValue(t *testing.T) {
 	// err path — exact identity preserved
 	want := errors.New("exact")
 	got := TrackProgress("Foo", rec.callback, func() error { return want })
-	if got != want {
+	if !errors.Is(got, want) {
 		t.Fatalf("err not propagated by identity: got %v (%T), want %v (%T)", got, got, want, want)
 	}
 
@@ -148,7 +148,7 @@ func TestTrackProgress_PassesThroughReturnValue(t *testing.T) {
 // --- WithTimeout ---
 
 func TestWithTimeout_Success(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	err := WithTimeout(ctx, 50*time.Millisecond, func(ctx context.Context) error {
 		// simulate fast work
 		time.Sleep(5 * time.Millisecond)
@@ -160,7 +160,7 @@ func TestWithTimeout_Success(t *testing.T) {
 }
 
 func TestWithTimeout_Timeout(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	start := time.Now()
 	err := WithTimeout(ctx, 20*time.Millisecond, func(ctx context.Context) error {
 		// sleep long enough to outlast the timeout; honor ctx so the
@@ -228,7 +228,7 @@ func TestWithTimeout_ParentCancellation(t *testing.T) {
 // helper bug.
 func TestWithTimeout_PassesContextToFn(t *testing.T) {
 	type ctxKey struct{}
-	parent := context.WithValue(context.Background(), ctxKey{}, "v")
+	parent := context.WithValue(t.Context(), ctxKey{}, "v")
 	type captured struct {
 		ctx         context.Context
 		errInFlight error

@@ -122,7 +122,7 @@ class Invoke(ComponentBase, ABC):
             self.set_input_value(variable_name, value)
         return "" if value is None else value
 
-    def _render_template(self, content: str, pattern: str, kwargs: dict | None = None, *, flags: int = 0) -> str:
+    def _render_template(self, content: str, pattern: str, kwargs: dict | None = None, *, flags: int = 0, complete_matches: bool = False) -> str:
         content = content or ""
         if not content:
             return content
@@ -130,10 +130,13 @@ class Invoke(ComponentBase, ABC):
         def replace_variable(match_obj):
             return str(self._resolve_variable_value(match_obj.group(1), kwargs))
 
-        return re.sub(pattern, replace_variable, content, flags=flags)
+        compiled_pattern = re.compile(pattern, flags=flags)
+        if complete_matches:
+            return self._replace_template_matches(compiled_pattern, content, replace_variable)
+        return compiled_pattern.sub(replace_variable, content)
 
     def _resolve_template_text(self, content: str, kwargs: dict | None = None) -> str:
-        return self._render_template(content, self.variable_ref_patt, kwargs, flags=re.DOTALL)
+        return self._render_template(content, self.variable_ref_patt, kwargs, flags=re.DOTALL, complete_matches=True)
 
     def _resolve_header_text(self, content: str, kwargs: dict | None = None) -> str:
         # Headers support plain {token} placeholders, so they cannot reuse the canvas variable regex.
@@ -182,12 +185,29 @@ class Invoke(ComponentBase, ABC):
         return url
 
     def _build_headers(self, kwargs: dict) -> dict:
-        if not self._param.headers:
+        raw_headers = self._param.headers
+        if raw_headers is None or (isinstance(raw_headers, str) and not raw_headers.strip()):
             return {}
 
-        headers = json.loads(self._param.headers)
+        if isinstance(raw_headers, dict):
+            headers = raw_headers
+        elif isinstance(raw_headers, str):
+            try:
+                headers = json.loads(raw_headers)
+            except json.JSONDecodeError as exc:
+                logging.warning(
+                    "Invoke headers ignored: invalid JSON (line=%s column=%s)",
+                    exc.lineno,
+                    exc.colno,
+                )
+                return {}
+        else:
+            logging.warning("Invoke headers ignored: unsupported type=%s", type(raw_headers).__name__)
+            return {}
+
         if not isinstance(headers, dict):
-            raise ValueError("Invoke headers must be a JSON object.")
+            logging.warning("Invoke headers ignored: decoded type=%s", type(headers).__name__)
+            return {}
 
         return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 
@@ -210,7 +230,7 @@ class Invoke(ComponentBase, ABC):
         proxy_url = self._normalize_proxy_url()
         if not proxy_url:
             return None
-        return {"http": self._param.proxy, "https": self._param.proxy}
+        return {"http": proxy_url, "https": proxy_url}
 
     def _send_request(self, url: str, args: dict, headers: dict, proxies: dict | None):
         method = self._param.method.lower()
@@ -254,6 +274,7 @@ class Invoke(ComponentBase, ABC):
             proxy_url = self._normalize_proxy_url()
             try:
                 proxy_hostname, proxy_ip = assert_url_is_safe(proxy_url)
+                logging.debug("Invoke proxy in use: %s", self._ssrf_log_target(proxy_url))
             except ValueError as exc:
                 logging.warning(
                     "Invoke SSRF guard blocked proxy=%s: %s",
