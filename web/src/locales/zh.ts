@@ -355,6 +355,20 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      continueUpload: '继续上传',
+      goToConfiguration: '前往配置',
+      uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
+      fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
+      missingModelAsr: '音频（ASR）',
+      missingModelVision: '视觉',
+      configureInDatasetSettingHint:
+        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      parseBlockedTitle: '无法解析',
+      parseBlockedPartialTitle: '部分文件无法解析',
+      parseBlockedHint:
+        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
+      parseValidFiles: '解析有效文件',
+      parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
@@ -3008,6 +3022,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         audio: '音频',
         video: '视频',
       },
+      addFileType: '添加文件类型',
+      atLeastOneFileType: '至少保留一个文件类型',
       fields: '字段',
       rule: '规则',
       addRule: '增加规则',

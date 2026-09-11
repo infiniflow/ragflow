@@ -874,34 +874,44 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_result(data=_response([bucket]))
 
     # ── normal mode: per-template subgraph sampling from the raw rows ──
-    # Metadata-only scan of the per-doc entity rows purely to discover buckets
-    # and resolve their display name/kind — WITHOUT loading the (potentially
-    # huge) content_with_weight. Each bucket's entities/relations are then
-    # fetched from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
-    # (The compact graph blob is gone from the storage model: tree compilation
-    # now writes the same per-row shape as page_index, so buckets are
-    # discovered from the entity rows themselves. The scan limit is raised
-    # accordingly -- a doc carries one row per entity, not one per template.)
-    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            meta_fields,
-            [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
-            [],
-            OrderByExpr(),
-            0,
-            10000,
-            index_name,
-            [dataset_id],
-        )
-        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
-    except Exception as e:
-        return server_error_response(e)
+    # Discover buckets from the authoritative per-doc entity/relation rows,
+    # WITHOUT loading the (potentially huge) content_with_weight. The compact
+    # graph blob is gone from the storage model: tree compilation now writes
+    # the same per-row shape as page_index, so buckets are discovered from the
+    # rows themselves. The scan is paged (metadata-only) to avoid truncating
+    # large docs — a doc carries one row per entity/relation, not one per
+    # template. Each bucket's entities/relations are then fetched with
+    # subgraph sampling.
+    meta_fields = ["id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    meta_rows: dict = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                meta_fields,
+                [],
+                {"doc_id": [document_id], "knowledge_graph_kwd": ["entity", "relation"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_name,
+                [dataset_id],
+            )
+            page_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+        except Exception as e:
+            return server_error_response(e)
+        if not page_rows:
+            break
+        meta_rows.update(page_rows)
+        if len(page_rows) < page_size:
+            break
+        offset += page_size
 
-    # Discover unique buckets. A template can own multiple compile_kwd blob
-    # rows; scoping by template_id folds them together, matching prior behavior.
+    # Discover unique buckets. A template can own multiple raw entity/relation
+    # rows; scoping by template_id folds them together.
     bucket_metas: dict[str, dict] = {}
     bucket_scopes: dict[str, dict] = {}
     for row in meta_rows.values():
@@ -922,7 +932,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         grouped[bid] = {**meta, "entities": entities, "relations": relations}
 
     # Order: configured templates first (in the user's chosen order),
-    # then any discovered / legacy / raptor buckets after.
+    # then any discovered / legacy buckets after.
     ordered_ids: list[str] = []
     for tid in configured_ids:
         if tid in grouped and tid not in ordered_ids:
@@ -1100,11 +1110,10 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
 
     Request body::
 
-        {"template_id": "<template id> | legacy:<compile_kwd> | raptor"}
+        {"template_id": "<template id> | legacy:<compile_kwd>"}
 
     Template-backed structure tabs remove both the compact graph row and
-    the underlying entity/relation rows. RAPTOR only removes the graph
-    projection row so summary chunks remain available for retrieval.
+    the underlying entity/relation rows.
     """
     from rag.nlp import search
 

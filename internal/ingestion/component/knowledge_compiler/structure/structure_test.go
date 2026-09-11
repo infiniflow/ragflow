@@ -446,7 +446,7 @@ func TestStructureRunGraphKind(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	var entities, relations, graphs int
+	var entities, relations int
 	var betaProduct *common.Product
 	for i, p := range out.Products {
 		switch p.Meta["kind"] {
@@ -464,11 +464,11 @@ func TestStructureRunGraphKind(t *testing.T) {
 		case "relation":
 			relations++
 		case "graph":
-			graphs++
+			t.Errorf("unexpected graph blob product: no compact graph row is written anymore")
 		}
 	}
-	if entities != 3 || relations != 2 || graphs != 1 {
-		t.Fatalf("products = %d entities + %d relations + %d graph, want 3+2+1", entities, relations, graphs)
+	if entities != 3 || relations != 2 {
+		t.Fatalf("products = %d entities + %d relations, want 3+2 (no graph blob)", entities, relations)
 	}
 	if out.DuplicatesDropped != 1 {
 		t.Fatalf("DuplicatesDropped = %d, want 1 (the cross-chunk Beta)", out.DuplicatesDropped)

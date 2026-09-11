@@ -8,7 +8,6 @@ package structure
 
 import (
 	"context"
-	"fmt"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -221,57 +220,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		prods[i].Meta["compile_kwd"] = string(compileType)
 	}
 
-	// ---- GRAPH ----
-	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods, string(compileType))
-	if err != nil {
-		return common.Outputs{}, err
-	}
-
-	// Buffer every product (plus the graph) in one slice; the component merges
-	// them into the upstream chunk stream (matching Python, which appends
-	// compiled units onto the chunk list).
+	// Buffer the deduplicated row products in one slice; the component merges
+	// them into the upstream chunk stream. (No compact graph blob: the
+	// knowledge_graph_kwd="graph" row is gone from the storage model -- the
+	// per-row entity/relation products above are the whole output, which also
+	// saves one embedding call per compile.)
 	products := append([]common.Product{}, prods...)
-	products = append(products, graphProduct)
 
 	out := common.Outputs{
 		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
 	}
 	return out, nil
-}
-
-// buildGraphProduct rebuilds the compact graph JSON from the surviving
-// entity/relation rows and wraps it as a single "graph" product so the
-// downstream writer has a ready structure to persist. The row id mirrors
-// Python's _struct_graph_row_id (doc : structure_graph : compile : template).
-func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product, compileType string) (common.Product, error) {
-	if deps.Embed == nil {
-		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding model is required to build the graph product")
-	}
-	graph := RebuildStructureGraph(prods, compileType)
-	graphContent := payloadJSON(graph)
-	vecs, err := deps.Embed.Encode(ctx, []string{graphContent})
-	if err != nil {
-		return common.Product{}, err
-	}
-	if len(vecs) == 0 {
-		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding the graph summary returned no vector")
-	}
-	idParts := []string{cfg.DocID, "structure_graph", string(cfg.Type)}
-	if cfg.TemplateID != "" {
-		idParts = append(idParts, cfg.TemplateID)
-	}
-	return common.Product{
-		ID:       common.StableRowID(idParts...),
-		DocID:    cfg.DocID,
-		TenantID: cfg.TenantID,
-		Variant:  cfg.Variant,
-		Content:  graphContent,
-		Vector:   vecs[0],
-		Meta: map[string]any{
-			"kind":           "graph",
-			"compile_kwd":    string(cfg.Type),
-			"source_doc_ids": []string{cfg.DocID},
-		},
-	}, nil
 }
