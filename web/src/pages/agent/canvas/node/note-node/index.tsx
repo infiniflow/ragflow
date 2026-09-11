@@ -102,10 +102,11 @@ function NoteNode({
               control={form.control}
               name="text"
               render={({ field }) => (
-                <FormItem className="h-full">
+                <FormItem className="h-full pb-2">
                   <FormControl>
                     <Textarea
                       placeholder={t('flow.notePlaceholder')}
+                      resize="none"
                       className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs h-full"
                       {...field}
                     />

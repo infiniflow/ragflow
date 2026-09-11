@@ -16,27 +16,60 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { memo, useCallback } from 'react';
+import { normalizeOperatorForm } from '@/utils/pipeline-operator';
+import { memo, useCallback, useMemo } from 'react';
+import { FieldErrors } from 'react-hook-form';
 import PipelineOperatorForm from './pipeline-operator-form';
 
 type PipelineOperatorTabsProps = {
   nodes: RAGFlowNodeType[];
-  value: string;
-  onValueChange: (value: string) => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
   onOperatorValuesChange: (operatorId: string, values: any) => void;
+  // Current values of the outer form's parser_config, keyed by operatorId.
+  // The outer form is the single source of truth: Radix unmounts inactive
+  // tabs, so a remounted operator form must initialize from these values —
+  // not from the static node form built off the pipeline DSL — otherwise
+  // unsaved edits are lost on tab switches.
+  operatorValues?: Record<string, any>;
+  // Validation errors from the outer form's parser_config, keyed by
+  // operatorId; each entry is mirrored onto the operator form's fields.
+  operatorFormErrors?: Record<string, FieldErrors | undefined>;
 };
 
 const PipelineOperatorTabs = ({
   nodes,
-  value,
-  onValueChange,
+  activeTab,
+  onTabChange,
   onOperatorValuesChange,
+  operatorValues,
+  operatorFormErrors,
 }: PipelineOperatorTabsProps) => {
   const getOperatorId = useCallback((node: RAGFlowNodeType) => {
     return (
       (node.data as Record<string, any>)?.operatorId || node.data?.label || ''
     );
   }, []);
+
+  const mergedNodes = useMemo(() => {
+    if (!operatorValues) {
+      return nodes;
+    }
+    return nodes.map((node) => {
+      const operatorId = getOperatorId(node);
+      const values = operatorValues[operatorId];
+      if (!values || typeof values !== 'object') {
+        return node;
+      }
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          form: normalizeOperatorForm(operatorId, values),
+        },
+      };
+    });
+  }, [nodes, operatorValues, getOperatorId]);
 
   const getTabValue = useCallback(
     (node: RAGFlowNodeType, index: number) => {
@@ -53,9 +86,9 @@ const PipelineOperatorTabs = ({
   );
 
   return (
-    <Tabs value={value} onValueChange={onValueChange} className="w-full">
+    <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
       <TabsList className="w-full justify-start">
-        {nodes.map((node, index) => {
+        {mergedNodes.map((node, index) => {
           const tabValue = getTabValue(node, index);
           return (
             <TabsTrigger key={tabValue} value={tabValue}>
@@ -64,13 +97,14 @@ const PipelineOperatorTabs = ({
           );
         })}
       </TabsList>
-      {nodes.map((node, index) => {
+      {mergedNodes.map((node, index) => {
         const tabValue = getTabValue(node, index);
         return (
           <TabsContent key={tabValue} value={tabValue}>
             <PipelineOperatorForm
               node={node}
               onValuesChange={handleValuesChange(node)}
+              externalErrors={operatorFormErrors?.[getOperatorId(node)]}
             />
           </TabsContent>
         );

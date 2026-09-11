@@ -24,27 +24,38 @@ from test.testcases.utils import wait_for
 @pytest.mark.p3
 def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
+    request_body = {"question": "test TXT file", "top_k": 5}
     res = rest_client.post(
         f"/datasets/{dataset_id}/search",
-        json={"question": "test TXT file", "top_k": 5},
+        json=request_body,
     )
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
     assert "chunks" in payload["data"], payload
+    retrieval_payload = rest_client.post("/retrieval", json={"dataset_ids": [dataset_id], **request_body}).json()
+    assert payload == retrieval_payload
 
 
 @pytest.mark.p3
 def test_multi_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
+    request_body = {"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5}
     res = rest_client.post(
         "/datasets/search",
-        json={"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5},
+        json=request_body,
     )
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
     assert "chunks" in payload["data"], payload
+    for chunk in payload["data"]["chunks"]:
+        assert "id" in chunk, payload
+        assert "content" in chunk, payload
+        assert "document_id" in chunk, payload
+        assert "dataset_id" in chunk, payload
+    retrieval_payload = rest_client.post("/retrieval", json=request_body).json()
+    assert payload == retrieval_payload
 
 
 @pytest.mark.p3
@@ -67,10 +78,9 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
         json={
             "dataset_ids": [dataset_id],
             "question": "test TXT file",
-            "meta_data_filter": {
-                "method": "manual",
+            "metadata_condition": {
                 "logic": "and",
-                "manual": [{"key": "author", "op": "=", "value": "qa_batch2"}],
+                "conditions": [{"name": "author", "comparison_operator": "=", "value": "qa_batch2"}],
             },
         },
     )
@@ -81,9 +91,8 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 
 
 @pytest.mark.p3
-def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
+def test_retrieval_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
-    # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
     res = rest_client.post(
         "/retrieval",
         json={"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5},
@@ -255,7 +264,7 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
         ("vector 0", {"vector_similarity_weight": 0}, 0, ""),
         ("vector 0.5", {"vector_similarity_weight": 0.5}, 0, ""),
         ("vector 10", {"vector_similarity_weight": 10}, 0, ""),
-        ("vector alpha", {"vector_similarity_weight": "a"}, 100, "could not convert string to float"),
+        ("vector alpha", {"vector_similarity_weight": "a"}, 102, "`vector_similarity_weight` should be a number"),
         ("top_k 10", {"top_k": 10}, 0, ""),
         ("top_k 1", {"top_k": 1}, 0, ""),
         ("top_k -1", {"top_k": -1}, 102, "`top_k` must be greater than 0"),
@@ -354,7 +363,7 @@ def test_deleted_chunk_not_in_retrieval_contract(rest_client, create_document):
     _retrieval_lacks_chunks(rest_client, dataset_id, content, [chunk_id])
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_document):
     dataset_id, document_id = create_document("retrieval_deleted_chunks_batch.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
