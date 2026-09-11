@@ -109,10 +109,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
-
 	return ParseResult{
-		OutputFormat: outFmt,
+		OutputFormat: spreadsheetOutputFormat,
 		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
 		JSON:         items,
 		HTML:         html.String(),

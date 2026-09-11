@@ -21,7 +21,7 @@
 //
 // These follow the maybeDispatchPDFVision pattern: they bypass
 // dispatchParse and call the model directly from the component
-// layer, returning a parserDispatchResult.
+// layer, returning a parser.ParseResult.
 
 package component
 
@@ -65,12 +65,12 @@ func maybeDispatchVideo(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVIDEO {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	if _, ok := setups["video"]; !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 
 	// Video parsing is intentionally not implemented yet: the underlying
@@ -84,7 +84,7 @@ func maybeDispatchVideo(
 	// Gemini: raw-bytes inline_data; Qwen: file://).
 	// When video analysis is implemented, it emits standard Text JSON items:
 	// [{"text": transcript, "doc_type_kwd": "text"}] with output_format "json".
-	return parserDispatchResult{}, true,
+	return parser.ParseResult{}, true,
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
@@ -104,17 +104,17 @@ func maybeDispatchImage(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	setup, ok := setups["image"]
 	if !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: image requires tenant_id")
 	}
 
@@ -183,7 +183,7 @@ func maybeDispatchImage(
 		if ocrText != "" {
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
@@ -207,7 +207,7 @@ func maybeDispatchImage(
 		if ocrText != "" {
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: picture describe: %w", err)
 	}
 	vlmText := ""
@@ -232,8 +232,8 @@ func maybeDispatchImage(
 // family: a single item carrying the combined text, the image attachment
 // (data URI), and doc_type_kwd "image". Mirrors Python
 // rag/app/picture.py:71-72.
-func imageDispatchResult(text, dataURI string) parserDispatchResult {
-	return parserDispatchResult{
+func imageDispatchResult(text, dataURI string) parser.ParseResult {
+	return parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{{
 			"text":         text,
@@ -257,17 +257,17 @@ func maybeDispatchAudio(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeAURAL {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	setup, ok := setups["audio"]
 	if !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
@@ -287,20 +287,20 @@ func maybeDispatchAudio(
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 	}
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio speech2text model: %w", err)
 	}
 
 	tmpFile, err := writeTempAudioFile(filename, binary)
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio temp file: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
 	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)
 	}
 
@@ -309,27 +309,12 @@ func maybeDispatchAudio(
 		transcription = resp.Text
 	}
 
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "json"
-	}
-	// Diff 2.11: when output_format is "json" the transcription must be
-	// carried as a JSON item. Returning it only in Text made the Invoke
-	// switch silently drop it (the switch has no "json" branch and the
-	// JSON slice was empty). Mirror the JSON-item shape used by the
-	// other parser branches.
-	if outputFormat == "json" {
-		return parserDispatchResult{
-			OutputFormat: "json",
-			JSON: []map[string]any{{
-				"text":         transcription,
-				"doc_type_kwd": "text",
-			}},
-		}, true, nil
-	}
-	return parserDispatchResult{
-		OutputFormat: outputFormat,
-		Text:         transcription,
+	return parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         transcription,
+			"doc_type_kwd": "text",
+		}},
 	}, true, nil
 }
 

@@ -123,7 +123,6 @@ func TestFileOutputsJSONRoundTrip(t *testing.T) {
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
 		Name:         "input.pdf",
-		FileType:     "pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
 		Lang:         "English",
@@ -149,8 +148,8 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
 	}
-	if decoded.Name != original.Name || decoded.FileType != original.FileType || decoded.Lang != original.Lang {
-		t.Errorf("parser identity round-trip mismatch: got name=%q file_type=%q lang=%q", decoded.Name, decoded.FileType, decoded.Lang)
+	if decoded.Name != original.Name || decoded.Lang != original.Lang {
+		t.Errorf("parser identity round-trip mismatch: got name=%q lang=%q", decoded.Name, decoded.Lang)
 	}
 	if decoded.DocID != original.DocID || decoded.Bucket != original.Bucket || decoded.Path != original.Path {
 		t.Errorf("parser storage round-trip mismatch: got doc_id=%q bucket=%q path=%q", decoded.DocID, decoded.Bucket, decoded.Path)

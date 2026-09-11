@@ -87,23 +87,8 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return res
 	}
 
-	// Default: "json" payload with canonical text items
-	lines := strings.Split(text, "\n")
-	var items []map[string]any
-	for _, line := range lines {
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
-			items = append(items, NewTextJSONItem(trimmed))
-		}
-	}
-	if len(items) == 0 && strings.TrimSpace(text) != "" {
-		items = append(items, NewTextJSONItem(strings.TrimSpace(text)))
-	}
-	if len(items) == 0 {
-		items = []map[string]any{NewTextJSONItem("")}
-	}
-
 	res.OutputFormat = "json"
-	res.JSON = items
+	res.JSON = []map[string]any{NewTextJSONItem(text)}
 	return res
 }
 

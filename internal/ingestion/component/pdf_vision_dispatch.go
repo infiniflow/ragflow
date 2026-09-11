@@ -69,13 +69,13 @@ func maybeDispatchPDFVision(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypePDF {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	setup, ok := setups["pdf"]
 	if !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 
 	method := getStringOr(setup, "parse_method", "")
@@ -114,12 +114,12 @@ func maybeDispatchPDFVision(
 			zap.String("layout_recognizer", layout),
 			zap.String("tenant_id", tenantID))
 		if tenantID == "" {
-			return parserDispatchResult{}, true,
+			return parser.ParseResult{}, true,
 				fmt.Errorf("parser: MinerU requires tenant_id")
 		}
 		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup)
 		if err != nil {
-			return parserDispatchResult{}, true, err
+			return parser.ParseResult{}, true, err
 		}
 		return res, true, nil
 	}
@@ -151,7 +151,7 @@ func maybeDispatchPDFVision(
 	}
 	if isPaddleOCRMatch || isPaddleOCRByUUID {
 		if tenantID == "" {
-			return parserDispatchResult{}, true,
+			return parser.ParseResult{}, true,
 				fmt.Errorf("parser: PaddleOCR requires tenant_id")
 		}
 		// Only a resolved UUID may be passed to the model resolver; a string
@@ -163,27 +163,27 @@ func maybeDispatchPDFVision(
 		}
 		res, err := dispatchPaddleOCRPdf(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
 		if err != nil {
-			return parserDispatchResult{}, true, err
+			return parser.ParseResult{}, true, err
 		}
 		return res, true, nil
 	}
 
 	modelID, useVision := resolvePDFVisionModelID(setup)
 	if !useVision {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	if tenantID == "" {
-		return parserDispatchResult{}, true, fmt.Errorf(
+		return parser.ParseResult{}, true, fmt.Errorf(
 			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
 	}
 	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID)
 	if err != nil {
-		return parserDispatchResult{}, true, err
+		return parser.ParseResult{}, true, err
 	}
 	return res, true, nil
 }
 
-func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup, modelRef string) (parserDispatchResult, error) {
+func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup, modelRef string) (parser.ParseResult, error) {
 	baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
 	timeout := monkeyOCRv2RequestTimeout(setup, nil)
 	if tenantID != "" {
@@ -197,7 +197,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		}
 		if err == nil {
 			if !strings.EqualFold(driver.Name(), "monkeyocrv2") {
-				return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
+				return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
 			}
 			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
 				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
@@ -206,19 +206,19 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			}
 			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
 		} else if baseURL == "" {
-			return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
+			return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
 		}
 	}
 	if baseURL == "" {
-		return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
+		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
 	}
 	zipBytes, err := monkeyOCRv2ParseRequest(ctx, baseURL+"/parse", filename, binary, timeout)
 	if err != nil {
-		return parserDispatchResult{}, err
+		return parser.ParseResult{}, err
 	}
 	sections, err := monkeyOCRv2ExtractSections(zipBytes)
 	if err != nil {
-		return parserDispatchResult{}, err
+		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
 	return buildMarkdownOCRDispatchResult(md), nil
@@ -246,10 +246,10 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 	return res.JSON
 }
 
-func buildMarkdownOCRDispatchResult(md string) parserDispatchResult {
+func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
 	// Keep the backend's Markdown intact here. buildParserOutputs is the
 	// single normalization boundary for all non-JSON parser responses.
-	return parserDispatchResult{
+	return parser.ParseResult{
 		OutputFormat: "markdown",
 		Markdown:     md,
 	}
@@ -484,13 +484,13 @@ func dispatchMinerUPDF(
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
-) (parserDispatchResult, error) {
+) (parser.ParseResult, error) {
 	driver, _, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeOCR)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: MinerU model: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU model: %w", err)
 	}
 	if !isMinerUDriver(driver) {
-		return parserDispatchResult{}, fmt.Errorf(
+		return parser.ParseResult{}, fmt.Errorf(
 			"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
 	}
 
@@ -511,12 +511,12 @@ func dispatchMinerUPDF(
 
 	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
 	sections, err := mineruExtractSections(zipBytes)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
 	var parts []string
@@ -569,13 +569,13 @@ func dispatchPaddleOCRPdf(
 	tenantID string,
 	setup schema.ParserSetup,
 	modelID string,
-) (parserDispatchResult, error) {
+) (parser.ParseResult, error) {
 	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR model: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR model: %w", err)
 	}
 	if !isPaddleOCRDriver(driver) {
-		return parserDispatchResult{}, fmt.Errorf(
+		return parser.ParseResult{}, fmt.Errorf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
@@ -604,7 +604,7 @@ func dispatchPaddleOCRPdf(
 		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
 	}
 	if baseURL == "" {
-		return parserDispatchResult{}, fmt.Errorf(
+		return parser.ParseResult{}, fmt.Errorf(
 			"parser: PaddleOCR requires a base url from the tenant PaddleOCR OCR model or PADDLEOCR_BASE_URL")
 	}
 
@@ -634,13 +634,13 @@ func dispatchPaddleOCRPdf(
 		Algorithm: algorithm,
 	}, nil)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
 	if resp == nil || resp.Text == nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
+		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
 	if strings.TrimSpace(*resp.Text) == "" {
-		return parserDispatchResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
+		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
 
 	return buildMarkdownOCRDispatchResult(*resp.Text), nil
@@ -884,18 +884,18 @@ func dispatchPDFVision(
 	binary []byte,
 	tenantID string,
 	modelID string,
-) (parserDispatchResult, error) {
+) (parser.ParseResult, error) {
 	renderedPages, err := pdfVisionPageRenderer(binary)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: pdf vision render: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: pdf vision render: %w", err)
 	}
 	driver, resolvedModelName, apiConfig, err := pdfVisionModelResolver(ctx, db, tenantID, modelID)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: pdf vision model %q: %w", modelID, err)
+		return parser.ParseResult{}, fmt.Errorf("parser: pdf vision model %q: %w", modelID, err)
 	}
 	promptTemplate, err := pdfVisionPromptLoader("vision_llm_describe_prompt")
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("parser: load vision prompt: %w", err)
+		return parser.ParseResult{}, fmt.Errorf("parser: load vision prompt: %w", err)
 	}
 
 	items := make([]map[string]any, 0, len(renderedPages))
@@ -903,7 +903,7 @@ func dispatchPDFVision(
 		prompt := renderPDFVisionPrompt(promptTemplate, page.PageNumber)
 		resp, err := pdfVisionChatInvoker(ctx, driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
 		if err != nil {
-			return parserDispatchResult{}, fmt.Errorf("parser: pdf vision page %d: %w", page.PageNumber, err)
+			return parser.ParseResult{}, fmt.Errorf("parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
 		text := extractVisionAnswer(resp)
 		positions := [][]any{{page.PageNumber, 0.0, page.WidthPts, 0.0, page.HeightPts}}
@@ -922,7 +922,7 @@ func dispatchPDFVision(
 		"outline":      []map[string]any{},
 		"parse_method": modelID,
 	}
-	return parserDispatchResult{
+	return parser.ParseResult{
 		OutputFormat: "json",
 		File:         fileMeta,
 		JSON:         items,

@@ -36,27 +36,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// parserDispatchResult is the typed outcome of dispatchParse. The
-// component's Invoke translates it into the runtime output map.
-//
-// OutputFormat is the wire format the parser actually emitted. ParserComponent
-// normalizes setup values to JSON before dispatch.
-//
-// File is the per-parser file metadata and may be nil.
-//
-// JSON is the canonical payload. Markdown, Text, and HTML capture non-JSON
-// backend responses until buildParserOutputs normalizes them.
-type parserDispatchResult struct {
-	OutputFormat string
-	File         map[string]any
-	JSON         []map[string]any
-	Markdown     string
-	Text         string
-	HTML         string
-	Warnings     []string
-	Err          error
-}
-
 type parserSetupConfigurer interface {
 	ConfigureFromSetup(setup map[string]any)
 }
@@ -97,12 +76,12 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
 		// result here so the caller routes to that path.
-		return parserDispatchResult{}
+		return parser.ParseResult{}
 	}
 
 	var parseMethod string
@@ -114,13 +93,13 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 
 	p, err := parser.GetParser(fileType)
 	if err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
+		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
+		return parser.ParseResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.
@@ -130,15 +109,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		}
 		res.File["parse_method"] = parseMethod
 	}
-	return parserDispatchResult{
-		OutputFormat: res.OutputFormat,
-		File:         res.File,
-		JSON:         res.JSON,
-		Markdown:     res.Markdown,
-		Text:         res.Text,
-		HTML:         res.HTML,
-		Warnings:     res.Warnings,
-	}
+	return res
 }
 
 // fileTypeFromInputs derives the parser-library extension form
@@ -295,17 +266,13 @@ func ParserFileFamily(ext string) string {
 //
 //   - name           string        — from the upstream file/document name
 //     (or doc_id when no filename is available)
-//   - file_type      string        — normalized parser routing type
 //   - output_format  string        — always "json"
 //   - json           []map[string]any — normalized parser items
 //   - file           map[string]any — the parser-enriched file
 //     metadata, when present
-func buildParserOutputs(ctx context.Context, dispatched parserDispatchResult, name string, fileType utility.FileType, rawBinary []byte, lang string) map[string]any {
+func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name string, rawBinary []byte, lang string) map[string]any {
 	out := map[string]any{
 		"name": name,
-	}
-	if fileType != "" && fileType != utility.FileTypeOTHER {
-		out["file_type"] = string(fileType)
 	}
 	if lang != "" {
 		out["lang"] = lang
@@ -333,7 +300,7 @@ func buildParserOutputs(ctx context.Context, dispatched parserDispatchResult, na
 	return out
 }
 
-func normalizeParserJSON(ctx context.Context, filename string, dispatched parserDispatchResult) []map[string]any {
+func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []map[string]any {
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}

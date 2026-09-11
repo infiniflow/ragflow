@@ -107,6 +107,16 @@ func TestParseResultText_EmptyJSONUsesRenderedFallback(t *testing.T) {
 	}
 }
 
+func TestParseResultText_EmptyJSONWithoutFallbackReturnsEmpty(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{OutputFormat: "json"})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if result != "" {
+		t.Fatalf("parseResultText = %q, want empty text", result)
+	}
+}
+
 func TestParseAgentUploadContent_JSONUsesParsedItemText(t *testing.T) {
 	content, err := parseAgentUploadContent(t.Context(), "data.csv", []byte("a,b\n1,2\n"), "")
 	if err != nil {

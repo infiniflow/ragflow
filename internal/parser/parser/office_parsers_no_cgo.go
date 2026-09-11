@@ -46,38 +46,20 @@ func (p *PPTXParser) ParseWithResult(_ context.Context, filename string, _ []byt
 	}
 }
 
-type DOCParser struct {
-	OutputFormat string
-}
+type DOCParser struct{}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{
-		OutputFormat: "json",
-	}
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser(no-cgo)"
 }
 
-func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-}
-
 type DOCXParser struct{}
 
 func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
-}
-
-func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
-	// No-op in the no-CGO stub: the real implementation in
-	// docx_parser.go reads output_format from setup.
 }
 
 func (p *DOCXParser) String() string {

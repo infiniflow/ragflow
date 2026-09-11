@@ -16,14 +16,6 @@
 
 package schema
 
-// Page is one parsed document section. The Parser component does not emit
-// a typed page model — Python code passes around `dict` literals with
-// shape `{text, layout_type, doc_type_kwd, positions?, image?, ...}`. To
-// keep the wire schema typed without overcommitting to a parser-specific
-// shape, Page is left as a generic map and provided for forward
-// documentation; downstream chunker code operates on the same dict shape.
-type Page map[string]any
-
 // ParserSetup is a per-filetype parser configuration block. The keys are heterogeneous (e.g.,
 // `parse_method`, `lang`, `output_format`, `suffix`, `fields`, `vlm`),
 // so a free-form map best mirrors the Python dict literal.
@@ -34,10 +26,6 @@ type ParserSetup map[string]any
 type ParserOutputs struct {
 	// Name is the resolved source filename.
 	Name string `json:"name"`
-
-	// FileType is the normalized parser routing type. It can be a concrete
-	// extension (for example "pdf") or a family (for example "visual").
-	FileType string `json:"file_type,omitempty"`
 
 	// OutputFormat is always "json". Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`

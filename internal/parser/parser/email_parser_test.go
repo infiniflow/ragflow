@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"io"
 	"mime/multipart"
 	"net/textproto"
 	"os"
@@ -27,6 +28,15 @@ import (
 	"testing"
 	"time"
 )
+
+func mustParseEML(t *testing.T, reader io.Reader, fields []string) map[string]any {
+	t.Helper()
+	content, err := parseEMLWithError(reader, fields)
+	if err != nil {
+		t.Fatalf("parseEMLWithError: %v", err)
+	}
+	return content
+}
 
 func TestEmailParser_EmlJSON(t *testing.T) {
 	ctx := t.Context()
@@ -449,7 +459,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 		t.Error("attachments must be dropped from the final ParseResult")
 	}
 	// ...and verify the .eml branch still decodes the base64 attachment.
-	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
+	eml := mustParseEML(t, bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
 	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok {
 		t.Fatalf("attachments missing or wrong type: %T", eml["attachments"])
@@ -535,7 +545,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 		t.Error("attachments must be dropped from the final ParseResult")
 	}
 	// ...and verify the .eml branch still decodes the base64 attachment.
-	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
+	eml := mustParseEML(t, bytes.NewReader([]byte(raw)), []string{"from", "body", "attachments"})
 	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok || len(atts) != 1 {
 		t.Fatalf("expected 1 attachment, got %d", len(atts))
@@ -961,7 +971,7 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 		t.Error("attachments must be dropped from the final ParseResult")
 	}
 	// ...and verify the .eml branch still extracts them even without body.
-	eml := parseEML(bytes.NewReader([]byte(raw)), []string{"from", "attachments"})
+	eml := mustParseEML(t, bytes.NewReader([]byte(raw)), []string{"from", "attachments"})
 	atts, ok := eml["attachments"].([]map[string]any)
 	if !ok {
 		t.Fatalf("attachments missing or wrong type: %T", eml["attachments"])
@@ -1282,7 +1292,7 @@ func TestParseEML_GB2312EncodedSubject(t *testing.T) {
 		"body",
 	}, "\r\n")
 
-	content := parseEML(strings.NewReader(raw), []string{"subject"})
+	content := mustParseEML(t, strings.NewReader(raw), []string{"subject"})
 	if content["subject"] != "中文" {
 		t.Errorf("subject = %q, want 中文", content["subject"])
 	}

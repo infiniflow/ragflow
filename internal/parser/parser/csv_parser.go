@@ -39,7 +39,7 @@ import (
 const csvDefaultChunkRows = defaultTableChunkRows
 const csvSheetName = "Data"
 
-// CSVParser reads RFC-4180 CSV data and emits HTML <table> payloads.
+// CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
 	OutputFormat                   string
@@ -128,9 +128,8 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		emptyHTML := "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>"
-		outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
 		return ParseResult{
-			OutputFormat: outFmt,
+			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
@@ -174,10 +173,8 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	htmlText := recordsToHTMLTableChunks(records, chunkRows, csvSheetName)
 
-	outFmt := NormalizeSpreadsheetOutputFormat(p.OutputFormat)
-
 	return ParseResult{
-		OutputFormat: outFmt,
+		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

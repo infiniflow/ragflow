@@ -90,7 +90,7 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if _, ok := out["json"]; !ok {
 		t.Errorf("Outputs() missing key %q", "json")
 	}
-	for _, key := range []string{"name", "file_type", "lang", "file", "doc_id", "bucket", "path"} {
+	for _, key := range []string{"name", "lang", "file", "doc_id", "bucket", "path"} {
 		if _, ok := out[key]; !ok {
 			t.Errorf("Outputs() missing runtime output key %q", key)
 		}
@@ -115,11 +115,11 @@ func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 
 	parserComponent := component.(*ParserComponent)
 	for _, family := range []string{"pdf", "spreadsheet", "email"} {
-		if got := parserComponent.Setups[family]["output_format"]; got != "json" {
+		if got := parserComponent.setups[family]["output_format"]; got != "json" {
 			t.Errorf("%s output_format = %v, want json", family, got)
 		}
 	}
-	if _, ok := parserComponent.Setups["allowed_output_format"]; ok {
+	if _, ok := parserComponent.setups["allowed_output_format"]; ok {
 		t.Error("allowed_output_format must not be treated as a parser setup")
 	}
 }
@@ -163,7 +163,7 @@ func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	c := &ParserComponent{Setups: defaultSetups()}
+	c := &ParserComponent{setups: defaultSetups()}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data.Bytes(),
 		"file_type": "xlsx",
@@ -263,7 +263,7 @@ func TestParserComponent_New_Defaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
 	}
-	for family, setup := range pc.Setups {
+	for family, setup := range pc.setups {
 		if got := setup["output_format"]; got != "json" {
 			t.Errorf("%s output_format = %v, want json", family, got)
 		}
@@ -286,7 +286,7 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewParserComponent returned %T", c)
 	}
-	setup, ok := pc.Setups["text&code"]
+	setup, ok := pc.setups["text&code"]
 	if !ok {
 		t.Fatalf("Setups[text&code] missing after override")
 	}
@@ -294,8 +294,31 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 		t.Errorf("Setups[text&code][chunk_token_size] = %v, want 256", setup["chunk_token_size"])
 	}
 	// Defaults must still be present for other file types.
-	if _, ok := pc.Setups["pdf"]; !ok {
+	if _, ok := pc.setups["pdf"]; !ok {
 		t.Errorf("Setups[pdf] missing; override should not erase defaults")
+	}
+}
+
+func TestParserComponent_NewOwnsNestedSetup(t *testing.T) {
+	vlm := map[string]any{"llm_id": "original"}
+	c, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"vlm": vlm},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	pc, ok := c.(*ParserComponent)
+	if !ok {
+		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
+	}
+
+	vlm["llm_id"] = "mutated"
+	gotVLM, ok := pc.setups["pdf"]["vlm"].(map[string]any)
+	if !ok {
+		t.Fatalf("pdf.vlm = %T, want map[string]any", pc.setups["pdf"]["vlm"])
+	}
+	if got := gotVLM["llm_id"]; got != "original" {
+		t.Errorf("pdf.vlm.llm_id = %v after caller mutation, want original", got)
 	}
 }
 

@@ -90,6 +90,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
@@ -109,7 +110,7 @@ const pageFormFeed = '\f'
 // the goroutine that returned from Invoke. The static Param is
 // read-only after construction.
 type ParserComponent struct {
-	Setups map[string]schema.ParserSetup
+	setups map[string]schema.ParserSetup
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -133,7 +134,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	s := defaultSetups()
 	if params == nil {
 		normalizeParserOutputFormats(s)
-		return &ParserComponent{Setups: s}, nil
+		return &ParserComponent{setups: s}, nil
 	}
 	for k, raw := range params {
 		if k == "outputs" || k == "allowed_output_format" {
@@ -147,11 +148,11 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k] = schema.ParserSetup{}
 		}
 		for fk, fv := range ftCfg {
-			s[k][fk] = fv
+			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
 	normalizeParserOutputFormats(s)
-	pc := &ParserComponent{Setups: s}
+	pc := &ParserComponent{setups: s}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
@@ -167,17 +168,39 @@ func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
 	}
 }
 
-func cloneParserSetups(setups map[string]schema.ParserSetup) map[string]schema.ParserSetup {
-	cloned := make(map[string]schema.ParserSetup, len(setups))
-	for family, setup := range setups {
-		clonedSetup := make(schema.ParserSetup, len(setup)+1)
-		for key, value := range setup {
-			clonedSetup[key] = value
+func cloneParserSetupValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		cloned := make(map[string]any, len(v))
+		for key, nested := range v {
+			cloned[key] = cloneParserSetupValue(nested)
 		}
-		cloned[family] = clonedSetup
+		return cloned
+	case schema.ParserSetup:
+		cloned := make(schema.ParserSetup, len(v))
+		for key, nested := range v {
+			cloned[key] = cloneParserSetupValue(nested)
+		}
+		return cloned
+	case []any:
+		cloned := make([]any, len(v))
+		for i, nested := range v {
+			cloned[i] = cloneParserSetupValue(nested)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), v...)
+	case []int:
+		return append([]int(nil), v...)
+	case [][]int:
+		cloned := make([][]int, len(v))
+		for i, nested := range v {
+			cloned[i] = append([]int(nil), nested...)
+		}
+		return cloned
+	default:
+		return value
 	}
-	normalizeParserOutputFormats(cloned)
-	return cloned
 }
 
 // Check mirrors the applicable subset of Python ParserParam.check()
@@ -194,7 +217,7 @@ func cloneParserSetups(setups map[string]schema.ParserSetup) map[string]schema.P
 //     valid audio/video pipeline (see ingestion_pipeline_audio.json).
 func (c *ParserComponent) Check() error {
 	// PDF family (parser.py:252-261).
-	if pdf, ok := c.Setups["pdf"]; ok {
+	if pdf, ok := c.setups["pdf"]; ok {
 		pm, _ := pdf["parse_method"].(string)
 		if pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
@@ -213,7 +236,7 @@ func (c *ParserComponent) Check() error {
 		}
 	}
 	// image family (parser.py:283-287).
-	if img, ok := c.Setups["image"]; ok {
+	if img, ok := c.setups["image"]; ok {
 		pm, _ := img["parse_method"].(string)
 		// OCR mode does not need a VLM language; any other value does.
 		if pm != "ocr" {
@@ -362,8 +385,6 @@ func (c *ParserComponent) Inputs() map[string]string {
 //
 //	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
-//	file_type     string  — normalized parser routing type; may be an
-//	                        extension or a family such as "visual".
 //	output_format string  — always "json".
 //	json          []map[string]any — canonical structured parser items.
 //	lang          string  — language for tokenization.
@@ -378,7 +399,6 @@ func (c *ParserComponent) Inputs() map[string]string {
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
-		"file_type":     "string: normalized parser routing type; may be an extension or a family such as \"visual\".",
 		"output_format": "string: always \"json\".",
 		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
@@ -414,7 +434,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
-	setups := cloneParserSetups(c.Setups)
+	setups := c.setups
 
 	// Inject run-level metadata from Globals into inputs so media
 	// dispatch branches (audio/image/video) can resolve tenant_id.
@@ -492,7 +512,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		return nil, fmt.Errorf("parser: %w", err)
 	}
 	lang, _ := getString(inputs, "lang")
-	out := buildParserOutputs(ctx, dispatched, filename, fileTypeExt, binary, lang)
+	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
@@ -519,7 +539,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parserDispatchResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
@@ -527,7 +547,7 @@ func logParserOutput(dispatched parserDispatchResult, items []map[string]any) {
 	)
 }
 
-func resolveParserNormalizationSource(dispatched parserDispatchResult) string {
+func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	if len(dispatched.JSON) > 0 {
 		return "json"
 	}

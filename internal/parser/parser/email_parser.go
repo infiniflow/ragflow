@@ -263,14 +263,6 @@ func decodeHeaderWord(val string) string {
 
 // -- .eml parsing (RFC 5322 with multipart support) --
 
-func parseEML(r io.Reader, fields []string) map[string]any {
-	content, err := parseEMLWithError(r, fields)
-	if err == nil {
-		return content
-	}
-	return map[string]any{"error": fmt.Sprintf("email: parse error: %v", err)}
-}
-
 func parseEMLWithError(r io.Reader, fields []string) (map[string]any, error) {
 	target := targetFieldsSet(fields)
 	content := map[string]any{}

@@ -400,7 +400,7 @@ func mergeExtentCol(ranges []mergeRange) int {
 }
 
 // padRowToWidth grows a single row to at least maxCol, padding with empty
-// strings. Only the header row is padded (see renderSheetTables): merged-master
+// strings. Only the header row is padded: merged-master
 // text is inherited into the header alone, so data rows must not be widened —
 // widening them would emit a sea of empty <td> cells for every far merge in the
 // sheet and is the memory blow-up flagged in review.
@@ -632,22 +632,6 @@ func decodeChunkRows(setup map[string]any) int {
 		return rows
 	}
 	return defaultTableChunkRows
-}
-
-// renderSheetTables renders a single workbook sheet into one or more
-// self-contained <table> chunks using the shared spreadsheet-HTML contract:
-// detect the header row, inherit merged-master text into the header, and split
-// data into chunkRows-sized atomic tables each repeating the header.
-func renderSheetTables(f *excelize.File, sheet string, chunkRows int) (string, []string, error) {
-	chunks, warnings, err := renderSheetTableChunks(f, sheet, chunkRows)
-	if err != nil {
-		return "", warnings, err
-	}
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, ""), warnings, nil
 }
 
 func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) ([]htmlTableChunk, []string, error) {

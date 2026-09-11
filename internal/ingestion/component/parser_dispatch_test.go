@@ -47,6 +47,7 @@ import (
 	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -96,12 +97,12 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 	tests := []struct {
 		name       string
-		dispatched parserDispatchResult
+		dispatched parser.ParseResult
 		wantText   string
 	}{
 		{
 			name: "markdown",
-			dispatched: parserDispatchResult{
+			dispatched: parser.ParseResult{
 				OutputFormat: "markdown",
 				Markdown:     "# Title\n\nBody",
 			},
@@ -109,7 +110,7 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 		},
 		{
 			name: "html",
-			dispatched: parserDispatchResult{
+			dispatched: parser.ParseResult{
 				OutputFormat: "html",
 				HTML:         "<h1>Title</h1><p>Body</p>",
 			},
@@ -117,7 +118,7 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 		},
 		{
 			name: "text",
-			dispatched: parserDispatchResult{
+			dispatched: parser.ParseResult{
 				OutputFormat: "text",
 				Text:         "plain body",
 			},
@@ -127,7 +128,7 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, utility.FileTypeOTHER, nil, "")
+			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, nil, "")
 
 			requireJSONText(t, out, tt.wantText)
 			if tt.name == "markdown" {
@@ -158,11 +159,11 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 }
 
 func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
-	out := buildParserOutputs(t.Context(), parserDispatchResult{
+	out := buildParserOutputs(t.Context(), parser.ParseResult{
 		OutputFormat: "json",
 		JSON:         []map[string]any{},
 		Markdown:     "# Recovered title",
-	}, "sample.md", utility.FileTypeMarkdown, nil, "")
+	}, "sample.md", nil, "")
 
 	requireJSONText(t, out, "Recovered title")
 }
@@ -200,7 +201,7 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	common.Logger = zap.New(core)
 	t.Cleanup(func() { common.Logger = originalLogger })
 
-	logParserOutput(parserDispatchResult{
+	logParserOutput(parser.ParseResult{
 		OutputFormat: "markdown",
 		Markdown:     "# Title\n\nBody",
 	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
@@ -247,7 +248,7 @@ func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
 
 func TestDispatch_JSONOutput(t *testing.T) {
 	setups := defaultSetups()
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n\nbody\n"),
@@ -259,9 +260,6 @@ func TestDispatch_JSONOutput(t *testing.T) {
 	}
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
-	}
-	if got, want := out["file_type"], "md"; got != want {
-		t.Errorf("file_type = %v, want %v", got, want)
 	}
 	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok {
@@ -279,7 +277,7 @@ func TestDispatch_JSONOutput(t *testing.T) {
 func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	setups := defaultSetups()
 	setups["email"]["output_format"] = "text"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("From: sender@example.com\r\nTo: receiver@example.com\r\nSubject: Hello\r\n\r\nBody\r\n"),
@@ -305,7 +303,7 @@ func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 // a family hint.
 func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	setups := defaultSetups()
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("plain content\n"),
@@ -332,7 +330,7 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 // silently degrading to text-page mode.
 func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 	setups := defaultSetups()
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
@@ -436,7 +434,7 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
@@ -464,7 +462,7 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "plain_text"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
@@ -486,7 +484,7 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 func TestDispatch_PDFUnsupportedParseMethod_HardErrors(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -556,7 +554,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -621,7 +619,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -670,7 +668,7 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -715,7 +713,7 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -874,7 +872,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -938,7 +936,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -963,7 +961,7 @@ func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "paddleocr"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1026,7 +1024,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["layout_recognizer"] = modelID
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1090,7 +1088,7 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1264,7 +1262,7 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["docling_server_url"] = server.URL
 	setups["pdf"]["docling_api_key"] = "doc-secret"
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1299,7 +1297,7 @@ func TestDispatch_PDFOpenDataLoaderLegacyMarkdownEmitsJSON(t *testing.T) {
 	setups["pdf"]["parse_method"] = "OpenDataLoader"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["opendataloader_apiserver"] = server.URL
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1330,7 +1328,7 @@ func TestDispatch_PDFSoMarkLegacyMarkdownEmitsJSON(t *testing.T) {
 	setups["pdf"]["parse_method"] = "SoMark"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["somark_base_url"] = server.URL
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1363,7 +1361,7 @@ func TestDispatch_PDFTCADPLegacyMarkdownEmitsJSON(t *testing.T) {
 	setups["pdf"]["parse_method"] = "TCADP parser"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["tcadp_apiserver"] = server.URL
-	c := &ParserComponent{Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),

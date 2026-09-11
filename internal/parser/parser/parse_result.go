@@ -96,6 +96,8 @@ const (
 	DocTypeText  = "text"
 	DocTypeTable = "table"
 	DocTypeImage = "image"
+
+	spreadsheetOutputFormat = "json"
 )
 
 // NewTextJSONItem constructs a canonical text JSON item for parser output.
@@ -120,13 +122,4 @@ func NewTableJSONItem(html string, sheet string, positions [][]float64) map[stri
 		item["positions"] = positions
 	}
 	return item
-}
-
-// NormalizeSpreadsheetOutputFormat returns the canonical output format for spreadsheet
-// parsers (CSV, XLS, XLSX). Because spreadsheet parsers always populate structured
-// table JSON items as their primary output (with companion HTML), the active format
-// is unified to "json", avoiding mismatched formats (e.g. "markdown" or "text") where
-// payloads would be empty.
-func NormalizeSpreadsheetOutputFormat(_ string) string {
-	return "json"
 }

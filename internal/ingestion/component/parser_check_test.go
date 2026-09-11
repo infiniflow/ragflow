@@ -130,7 +130,7 @@ func TestParserComponent_Check(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ParserComponent{Setups: tc.setups}
+			c := &ParserComponent{setups: tc.setups}
 			err := c.Check()
 			if tc.wantErr != "" {
 				if err == nil {
