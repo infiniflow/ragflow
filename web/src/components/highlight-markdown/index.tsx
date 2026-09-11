@@ -37,6 +37,7 @@ import { SafeImg } from '@/components/safe-img';
 import styles from './index.module.less';
 
 const HighLightMarkdown = ({
+  className,
   children,
 }: {
   className?: string;
@@ -53,7 +54,7 @@ const HighLightMarkdown = ({
     : undefined;
 
   return (
-    <div dir={dir} className={classNames(styles.text)}>
+    <div dir={dir} className={classNames(styles.text, className)}>
       <Markdown
         remarkPlugins={MarkdownRemarkPlugins}
         rehypePlugins={[

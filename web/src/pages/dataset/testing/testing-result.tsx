@@ -1,5 +1,6 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
@@ -7,7 +8,6 @@ import { Card } from '@/components/ui/card';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/dataset';
-import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
@@ -85,14 +85,11 @@ export function TestingResult({
                 <article key={x.id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
-                    <div
-                      className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
-                      dangerouslySetInnerHTML={{
-                        __html: sanitizeHtmlWithImagesAsText(
-                          x.highlight || x.content,
-                        ),
-                      }}
-                    />
+                    <div className="!mt-2.5 whitespace-pre-wrap">
+                      <HighLightMarkdown>
+                        {x.highlight || x.content_with_weight}
+                      </HighLightMarkdown>
+                    </div>
                     <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
                       {x.document_keyword}
                     </div>
