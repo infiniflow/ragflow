@@ -105,6 +105,37 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 }
 
+func TestIngestionTaskServiceCreateForDocumentsQueuesWithoutKnowledgebase(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestDoc(t, "doc-1", "missing-kb", 0, 0)
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "missing-kb", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments should keep early-log lookup best-effort: %v", err)
+	}
+	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id:") {
+		t.Fatalf("unexpected responses: %+v", responses)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("published messages = %d, want 1", len(publisher.messages))
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load queued task: %v", err)
+	}
+	if task == nil || task.Status != common.SCHEDULED {
+		t.Fatalf("queued task = %+v, want SCHEDULED", task)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+		t.Fatalf("pipeline log rows = %d, want 0 when metadata lookup fails", got)
+	}
+}
+
 func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1619,6 +1650,92 @@ func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
 	}
 	if bound.OperationStatus != string(entity.TaskStatusSchedule) {
 		t.Fatalf("bound row status = %q, want %q", bound.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+}
+
+func TestIngestionTaskServiceStaleSnapshotKeepsEstablishedOpenLogBinding(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	taskDAO := dao.NewIngestionTaskDAO()
+	firstSnapshot, err := taskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("load first task snapshot: %v", err)
+	}
+	staleSnapshot, err := taskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("load stale task snapshot: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.createOpenLogBestEffort(t.Context(), firstSnapshot, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+	firstLogID := loadTaskPipelineLogID(t, t.Context(), db, "task-1")
+	svc.createOpenLogBestEffort(t.Context(), staleSnapshot, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+
+	if got := loadTaskPipelineLogID(t, t.Context(), db, "task-1"); got != firstLogID {
+		t.Fatalf("stale snapshot replaced binding %q with %q", firstLogID, got)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 1 {
+		t.Fatalf("pipeline log rows = %d, want the original single row", got)
+	}
+	var firstLog entity.PipelineOperationLog
+	if err := db.First(&firstLog, "id = ?", firstLogID).Error; err != nil {
+		t.Fatalf("established open log was removed: %v", err)
+	}
+}
+
+func TestIngestionTaskServiceDoesNotDeleteOpenLogOwnedByActiveTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := db.Migrator().DropIndex(&entity.IngestionTask{}, "idx_ingestion_task_document_id"); err != nil {
+		t.Fatalf("drop document uniqueness to model an existing database: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "owner-task", "user-1", "doc-1", "kb-1", common.RUNNING)
+	insertTestIngestionTaskWithStatus(t, "new-task", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	queuedMsg := logMsgRunning
+	ownedLog := &entity.PipelineOperationLog{
+		ID:              "owned-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := db.Create(ownedLog).Error; err != nil {
+		t.Fatalf("seed owned open log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "owner-task").Update("pipeline_log_id", ownedLog.ID).Error; err != nil {
+		t.Fatalf("bind owner task: %v", err)
+	}
+
+	newTask, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "new-task")
+	if err != nil {
+		t.Fatalf("load new task: %v", err)
+	}
+	svc := NewIngestionTaskService()
+	svc.createOpenLogBestEffort(t.Context(), newTask, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+
+	var reloaded entity.PipelineOperationLog
+	if err := db.First(&reloaded, "id = ?", ownedLog.ID).Error; err != nil {
+		t.Fatalf("active task's open log was deleted: %v", err)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 1 {
+		t.Fatalf("pipeline log rows = %d, want only the active task's row", got)
+	}
+	reloadedTask, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "new-task")
+	if err != nil {
+		t.Fatalf("reload new task: %v", err)
+	}
+	if reloadedTask.PipelineLogID != nil {
+		t.Fatalf("new task bound to %q while another active task owns the open row", *reloadedTask.PipelineLogID)
 	}
 }
 

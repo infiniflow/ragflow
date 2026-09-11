@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type IngestionTaskDAO struct{}
@@ -202,6 +203,18 @@ func (dao *IngestionTaskDAO) ListByStatus(ctx context.Context, db *gorm.DB, stat
 func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
 	var task *entity.IngestionTask
 	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	return task, err
+}
+
+// GetByIDForUpdate fetches and locks a task for a short ownership-establishment
+// transaction. Callers must pass a transaction and keep metadata lookups and
+// message publishing outside the lock.
+func (dao *IngestionTaskDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
+	var task *entity.IngestionTask
+	err := db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).
+		First(&task).Error
 	return task, err
 }
 

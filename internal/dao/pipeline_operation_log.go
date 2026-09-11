@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 
@@ -315,6 +316,24 @@ func (dao *PipelineOperationLogDAO) DeleteOpenLogByID(ctx context.Context, db *g
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
 		Delete(&entity.PipelineOperationLog{}).Error
+}
+
+// DeleteUnownedOpenLogByID removes an open row only when no live ingestion
+// task owns it. Existing databases may contain more than one task per document,
+// so document identity alone is not sufficient proof that a row is leftover.
+func (dao *PipelineOperationLogDAO) DeleteUnownedOpenLogByID(ctx context.Context, db *gorm.DB, logID string) (bool, error) {
+	if logID == "" {
+		return false, nil
+	}
+	liveStatuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
+		Where("NOT EXISTS (SELECT 1 FROM ingestion_task WHERE pipeline_log_id = ? AND status IN ?)", logID, liveStatuses).
+		Delete(&entity.PipelineOperationLog{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.

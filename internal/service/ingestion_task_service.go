@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -86,17 +85,9 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 		return nil, fmt.Errorf("no documents to parse")
 	}
 
-	// The knowledge base row is identical for every document in the batch;
-	// resolve it once so the open-log bookkeeping below does not re-read it
-	// per document.
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil {
-		return nil, fmt.Errorf("get knowledgebase %s: %w", datasetID, err)
-	}
-	if kb == nil {
-		return nil, fmt.Errorf("knowledgebase %s not found", datasetID)
-	}
-	kbCache := map[string]*entity.Knowledgebase{datasetID: kb}
+	// Open-log metadata is best-effort. Populate this cache lazily so a missing
+	// or temporarily unavailable knowledge base cannot block task creation.
+	kbCache := make(map[string]*entity.Knowledgebase)
 
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
@@ -616,87 +607,81 @@ var (
 // caller passes the status/message so a late-created row carries the current
 // status.
 //
-// A run that already owns a row keeps it: a still-open row is reused, and a row
-// left over from a previous run (terminal, so no longer open) is replaced.
-//
-// A run with no bound row must open its own. It must not adopt the document's
-// open row: ingestion_task.document_id is unique, so this task is the
-// document's only task and any open row for the document therefore belongs to a
-// run that no longer exists. Adopting it would inherit stale status, content
-// and identity, and a stale RUNNING row could never be advanced again because
-// the monotonic from-state guards reject it. Drop the leftover instead, so it
-// neither gets reused nor lingers as a permanently queued entry.
+// Ownership establishment is serialized on the task row. A stale in-memory
+// task snapshot therefore cannot replace a binding another caller just wrote.
+// An unbound run never adopts a document-level row; it removes that row only
+// when no live task owns it, then creates and binds its own row atomically.
 func (s *IngestionTaskService) createOpenLogBestEffort(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) {
 	if task == nil || s.pipelineLogDAO == nil {
 		return
 	}
-	if bound := task.PipelineLogID; bound != nil && *bound != "" {
-		if s.isBoundLogOpen(ctx, *bound) {
-			return
-		}
-	} else if !s.deleteLeftoverOpenLog(ctx, task.DocumentID) {
-		return
-	}
 	input, err := s.buildOpenLogInput(ctx, task, operationStatus, progressMsg, kbCache)
 	if err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: build open pipeline log for document %s: %v", task.DocumentID, err))
+		common.Warn(fmt.Sprintf("open pipeline log: build input for task %s document %s: %v", task.ID, task.DocumentID, err))
 		return
 	}
-	log, err := s.pipelineLogDAO.CreateOpenLog(ctx, dao.DB, input)
-	if err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: create open pipeline log for document %s: %v", task.DocumentID, err))
-		return
-	}
-	s.bindOpenLog(ctx, task, log.ID)
-}
-
-// deleteLeftoverOpenLog removes the open row a document may still carry for a
-// run that no longer exists, so an unbound run starts from a clean slate. It
-// reports whether the caller may proceed to create its own row: false only when
-// the leftover could not be cleared, in which case creating another row would
-// leave two open entries for the document.
-func (s *IngestionTaskService) deleteLeftoverOpenLog(ctx context.Context, documentID string) bool {
-	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, documentID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", documentID, err))
-		return false
-	}
-	if open == nil {
-		return true
-	}
-	if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, open.ID); err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: drop leftover pipeline log %s for document %s: %v", open.ID, documentID, err))
-		return false
-	}
-	common.Warn(fmt.Sprintf("dropped leftover pipeline log %s for document %s (status %s) before opening a fresh row", open.ID, documentID, open.OperationStatus))
-	return true
-}
-
-// isBoundLogOpen reports whether the row a task is bound to still exists in
-// a pre-terminal state. A missing or already-final row means the run needs a
-// fresh one.
-func (s *IngestionTaskService) isBoundLogOpen(ctx context.Context, logID string) bool {
-	log, err := s.pipelineLogDAO.GetByID(ctx, dao.DB, logID)
-	if err != nil {
-		if !dao.IsNotFoundErr(err) {
-			common.Warn(fmt.Sprintf("CreateAndEnqueue: load pipeline log %s: %v", logID, err))
+	var boundLogID string
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		lockedTask, err := s.ingestionTaskDAO.GetByIDForUpdate(ctx, tx, task.ID)
+		if err != nil {
+			return err
 		}
-		return false
-	}
-	return slices.Contains(dao.OpenPipelineOperationStatuses(), log.OperationStatus)
-}
+		if isTerminalIngestionTask(lockedTask.Status) {
+			return nil
+		}
+		if lockedTask.PipelineLogID != nil && *lockedTask.PipelineLogID != "" {
+			bound, err := s.pipelineLogDAO.GetByID(ctx, tx, *lockedTask.PipelineLogID)
+			if err == nil && isOpenPipelineLog(bound.OperationStatus) {
+				boundLogID = bound.ID
+				return nil
+			}
+			if err != nil && !dao.IsNotFoundErr(err) {
+				return err
+			}
+		}
 
-// bindOpenLog records the run's log row on the task so the running advance and
-// the terminal write target exactly this row instead of whichever row happens
-// to be open for the document. Best-effort.
-func (s *IngestionTaskService) bindOpenLog(ctx context.Context, task *entity.IngestionTask, logID string) {
-	if task == nil || logID == "" {
+		open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, tx, lockedTask.DocumentID)
+		if err != nil {
+			return err
+		}
+		if open != nil {
+			deleted, err := s.pipelineLogDAO.DeleteUnownedOpenLogByID(ctx, tx, open.ID)
+			if err != nil {
+				return err
+			}
+			if !deleted {
+				return fmt.Errorf("open pipeline log %s is owned by another live task", open.ID)
+			}
+			common.Warn(fmt.Sprintf("dropped unowned open pipeline log %s for document %s (status %s)", open.ID, lockedTask.DocumentID, open.OperationStatus))
+		}
+
+		log, err := s.pipelineLogDAO.CreateOpenLog(ctx, tx, input)
+		if err != nil {
+			return err
+		}
+		if err := s.ingestionTaskDAO.UpdatePipelineLogID(ctx, tx, lockedTask.ID, log.ID); err != nil {
+			return err
+		}
+		boundLogID = log.ID
+		return nil
+	})
+	if err != nil {
+		common.Warn(fmt.Sprintf("open pipeline log: establish ownership for task %s document %s: %v", task.ID, task.DocumentID, err))
 		return
 	}
-	task.PipelineLogID = &logID
-	if err := s.ingestionTaskDAO.UpdatePipelineLogID(ctx, dao.DB, task.ID, logID); err != nil {
-		common.Warn(fmt.Sprintf("bind open pipeline log %s to task %s: %v", logID, task.ID, err))
+	if boundLogID != "" {
+		task.PipelineLogID = &boundLogID
 	}
+}
+
+func isTerminalIngestionTask(status string) bool {
+	return status == common.COMPLETED || status == common.STOPPED || status == common.FAILED
+}
+
+func isOpenPipelineLog(status string) bool {
+	return status == string(entity.TaskStatusUnstart) ||
+		status == string(entity.TaskStatusSchedule) ||
+		status == string(entity.TaskStatusRunning)
 }
 
 // advanceOpenLog moves the task's own bound row to operationStatus from one of
