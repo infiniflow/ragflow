@@ -43,7 +43,6 @@ from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
-from common.token_utils import num_tokens_from_string
 from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
@@ -69,66 +68,13 @@ from rag.flow.parser.utils import (
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
-# Rows per self-contained spreadsheet <table> chunk in the DeepDOC path.
-# Matches Go's defaultTableChunkRows so both backends emit the same chunk
-# boundaries for narrow tables. The TCADP path applies neither ceiling and
-# emits one item per returned table.
-TABLE_CHUNK_ROWS = 256
-
-# Token ceiling for one spreadsheet <table> chunk in the DeepDOC path. A row
-# ceiling alone is not enough: a wide table reaches tens of thousands of tokens
-# well before 256 rows, and the tokenizer truncates at ``max_length - 10``,
-# which silently hides the tail of the chunk from vector retrieval.
-# ``max_length`` defaults to 8192 (``tenant_llm_service.py``) and LLMBundle
-# further truncates at 95% of it (~7782), so 4096 keeps roughly 2x headroom.
-TABLE_CHUNK_TOKENS = 4096
-
-_ROW_RE = re.compile(r"<tr>.*?</tr>", flags=re.DOTALL)
-
-
-def split_oversized_table(html: str, budget: int = TABLE_CHUNK_TOKENS) -> list[str]:
-    """Split one self-contained ``<table>`` on row boundaries to fit ``budget``.
-
-    ``ExcelParser.html`` caps a chunk at ``TABLE_CHUNK_ROWS`` rows, but a wide
-    table reaches tens of thousands of tokens well before that, and the
-    tokenizer truncates at ``max_length - 10`` — which silently hides the tail
-    of the chunk from vector retrieval.
-
-    Split on row boundaries and repeat the caption and the header row so every
-    piece stays self-contained: a chunk is retrieved on its own and is
-    unreadable without the column labels. A single row larger than the budget
-    stays whole; cutting inside a row would break the structure this keeps.
-    """
-    if num_tokens_from_string(html) <= budget:
-        return [html]
-
-    first = _ROW_RE.search(html)
-    if not first:
-        return [html]
-    # Everything before the header row holds <table> and the caption.
-    prefix, header = html[: first.start()], first.group(0)
-    table_end = html.rfind("</table>")
-    body = html[first.end() : table_end] if table_end > 0 else html[first.end() :]
-    suffix = html[table_end:] if table_end > 0 else ""
-
-    data_rows = _ROW_RE.findall(body)
-    if not data_rows:
-        return [html]
-
-    frame_tokens = num_tokens_from_string(prefix + header + suffix)
-    chunks: list[str] = []
-    current: list[str] = []
-    current_tokens = frame_tokens
-    for row in data_rows:
-        row_tokens = num_tokens_from_string(row)
-        if current and current_tokens + row_tokens > budget:
-            chunks.append(prefix + header + "".join(current) + suffix)
-            current, current_tokens = [], frame_tokens
-        current.append(row)
-        current_tokens += row_tokens
-    if current:
-        chunks.append(prefix + header + "".join(current) + suffix)
-    return chunks
+# Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
+# deliberately far beyond any real sheet: a sheet is emitted as ONE
+# self-contained <table> and is never split by row count or token budget.
+# Any split would cut inside ``<td>`` content or, worse, drop the delimiter
+# characters it cut on — the bug this typed parser output exists to prevent.
+# The TCADP path applies the same rule and emits one item per returned table.
+TABLE_NO_SPLIT_ROWS = 1 << 30
 
 
 class ParserParam(ProcessParamBase):
@@ -936,32 +882,23 @@ class Parser(ProcessBase):
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
-                # One self-contained <table> item per sheet chunk, each carrying
-                # its own caption and header row, so the downstream TokenChunker
-                # keeps every table whole instead of cutting it on a delimiter.
-                # Mirrors the Go xlsx path (defaultTableChunkRows = 256) and adds
-                # a token ceiling for wide tables.
-                items = []
-                for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_CHUNK_ROWS):
-                    if not tb:
-                        continue
-                    pieces = split_oversized_table(tb)
-                    start = r1
-                    for piece in pieces:
-                        # Re-map the row range so a citation still points at the
-                        # rows this piece actually holds.
-                        end = r2 if len(pieces) == 1 else start + max(piece.count("<tr>") - 1, 1) - 1
-                        items.append(
-                            {
-                                "text": piece,
-                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
-                                # 0-based sheet. TaskExecutor and dataflow_service
-                                # call add_positions, which stores pn+1 (1-based).
-                                "positions": [[sheet, start, end, c1, c2]],
-                            }
-                        )
-                        start = end + 1
-                self.set_output("json", items)
+                # One self-contained <table> item per sheet, never split, so the
+                # downstream TokenChunker keeps every table whole instead of
+                # cutting it on a delimiter.
+                self.set_output(
+                    "json",
+                    [
+                        {
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
+                            # 0-based sheet. TaskExecutor and dataflow_service
+                            # call add_positions, which stores pn+1 (1-based).
+                            "positions": [[sheet, r1, r2, c1, c2]],
+                        }
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_NO_SPLIT_ROWS)
+                        if tb
+                    ],
+                )
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
