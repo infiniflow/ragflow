@@ -779,14 +779,27 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		return resp, nil
 	}
 
-	// normal mode: discover buckets from per-doc graph blob rows. "id" is
-	// required for the same reason as dataset discovery (Infinity only projects
-	// listed fields; graphRowSearch keys by id).
+	// normal mode: discover buckets from the authoritative entity/relation
+	// rows. The structure compiler no longer emits a synthetic graph row;
+	// page metadata only so large documents cannot hide later buckets.
 	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
-	metaRows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
-		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 0, 1000, nil)
-	if err != nil {
-		return nil, err
+	metaRows := map[string]map[string]interface{}{}
+	const pageSize = 1000
+	for offset := 0; ; offset += pageSize {
+		page, _, searchErr := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
+			map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}}, nil, offset, pageSize, nil)
+		if searchErr != nil {
+			return nil, searchErr
+		}
+		if len(page) == 0 {
+			break
+		}
+		for id, row := range page {
+			metaRows[id] = row
+		}
+		if len(page) < pageSize {
+			break
+		}
 	}
 
 	bucketMetas := map[string]map[string]interface{}{}
