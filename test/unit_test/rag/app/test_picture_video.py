@@ -222,3 +222,27 @@ def test_ocr_only_fallback_is_reported_as_degraded():
 
     progressed = [args[0] for args, _kwargs in callback_calls if args]
     assert 0.8 not in progressed, "the fallback still reports a clean 0.8 success"
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_vision_markdown_preserves_code_fences(wrapped):
+    """Keep a model's code example intact when cleaning image-derived text."""
+    from common.string_utils import clean_markdown_block
+
+    picture = _load_picture_module([])
+    picture.clean_markdown_block = clean_markdown_block
+    content = "Example:\n```python\nprint('hello')\n```"
+    model_text = f"```markdown\n{content}\n```" if wrapped else content
+    calls = []
+
+    def describe(binary, prompt):
+        """Check that the real image encoding path reached the model boundary."""
+        with Image.open(io.BytesIO(binary)) as decoded:
+            assert decoded.size == (64, 64)
+        calls.append(prompt)
+        return model_text
+
+    with Image.new("RGB", (64, 64), "white") as image:
+        text = picture.vision_llm_chunk(image, SimpleNamespace(describe_with_prompt=describe), prompt="Read this image")
+    assert text == "\n" + content
+    assert calls == ["Read this image"]

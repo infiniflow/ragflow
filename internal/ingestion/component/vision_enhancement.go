@@ -91,9 +91,7 @@ func (s *promptDirState) resolve(requestedRoot string) (string, error) {
 }
 
 // cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
-//
-//	re.sub(r"^\s*```markdown\s*\n?", "", text)
-//	re.sub(r"\n?\s*```\s*$", "", text)
+// and removes a closing fence only after recognizing an opening markdown wrapper.
 //
 // Matches Python without re.MULTILINE so ^/$ anchor only the whole text.
 var (
@@ -102,8 +100,10 @@ var (
 )
 
 func cleanMarkdownBlock(s string) string {
-	s = reMarkdownOpen.ReplaceAllString(s, "")
-	s = reMarkdownClose.ReplaceAllString(s, "")
+	if reMarkdownOpen.MatchString(s) {
+		s = reMarkdownOpen.ReplaceAllString(s, "")
+		s = reMarkdownClose.ReplaceAllString(s, "")
+	}
 	return strings.TrimSpace(s)
 }
 
