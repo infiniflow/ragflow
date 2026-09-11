@@ -1,0 +1,564 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+// QAChunker extracts question-answer pairs from parsed content.
+//
+// Input formats and extraction strategies:
+//   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
+//   - Markdown (md)    → heading-based Q&A
+//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
+//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
+//
+// Every Q&A pair becomes a single chunk whose text is
+// "Question: {q}\tAnswer: {a}" (ingestion renames text to
+// content_with_weight at the index boundary).
+package chunker
+
+import (
+	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/parser"
+	"golang.org/x/net/html"
+	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
+)
+
+const ComponentNameQAChunker = "QAChunker"
+
+type qaChunkerParam struct {
+	Lang string `json:"lang,omitempty"`
+}
+
+func (p *qaChunkerParam) Update(conf map[string]any) {
+	if v, ok := conf["lang"]; ok {
+		if s, ok := v.(string); ok {
+			p.Lang = s
+		}
+	}
+}
+
+func (qaChunkerParam) Defaults() qaChunkerParam { return qaChunkerParam{} }
+
+func (qaChunkerParam) Validate() error { return nil }
+
+type QAChunkerComponent struct {
+	name  string
+	param qaChunkerParam
+}
+
+func NewQAChunker(params map[string]any) (runtime.Component, error) {
+	p := qaChunkerParam{}.Defaults()
+	(&p).Update(params)
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+	return &QAChunkerComponent{
+		name:  ComponentNameQAChunker,
+		param: p,
+	}, nil
+}
+func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
+
+func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
+
+func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	return c.invoke(ctx, inputs)
+}
+
+func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+	if inputs == nil {
+		return emptyOutputs(), nil
+	}
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return map[string]any{
+			"output_format": "chunks",
+			"chunks":        []map[string]any{},
+			"_ERROR":        fmt.Sprintf("Input error: %v", err),
+		}, nil
+	}
+
+	qPrefix, aPrefix := "问题：", "回答："
+	// Python qa.py defaults to Chinese when no language is supplied; only
+	// an explicit "english" switches to English prefixes
+	eng := strings.EqualFold(c.param.Lang, "english")
+	if eng {
+		qPrefix, aPrefix = "Question: ", "Answer: "
+	}
+
+	var qaPairs []qaPair
+	var isMarkdown bool
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatHTML:
+		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult), isCSV(upstream.Name))
+	case schema.PayloadFormatMarkdown:
+		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
+		isMarkdown = true
+	case schema.PayloadFormatText:
+		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
+	default:
+		qaPairs = extractQAJSON(upstream.JSONResult)
+	}
+
+	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
+	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
+	for _, pair := range qaPairs {
+		contentLTKS, _ := tok.Tokenize(pair.Question)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
+		answer := rmQAPrefix(pair.Answer)
+		if isMarkdown {
+			answer = renderMarkdown(answer)
+		}
+		// Text is the pipeline's canonical chunk carrier: ingestion hashes
+		// it into the chunk id and renames it to content_with_weight. A
+		// content_with_weight-only chunk would share one empty-text id with
+		// every sibling and the index write would collapse all Q&A pairs
+		// into a single chunk.
+		chunk := schema.ChunkDoc{
+			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:       "text",
+			ContentLtks:   contentLTKS,
+			ContentSmLtks: contentSMLTKS,
+		}
+		//
+		// index), image id + coordinates carried from the source item.
+		if pair.RowNum >= 0 {
+			chunk.TopInt = []int{pair.RowNum}
+		}
+		if pair.Image != "" {
+			chunk.Image = pair.Image
+			chunk.DocType = "image"
+		}
+		if len(pair.PDFPositions) > 0 {
+			chunk.PDFPositions = pair.PDFPositions
+		}
+		if len(pair.Positions) > 0 {
+			chunk.Positions = pair.Positions
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunkOutputs(chunks), nil
+}
+
+func renderMarkdown(s string) string {
+	mdParser := parser.NewWithExtensions(parser.CommonExtensions | parser.Tables)
+	output := markdown.ToHTML([]byte(s), mdParser, nil)
+	return string(output)
+}
+
+type qaPair struct {
+	Question string
+	Answer   string
+	// RowNum is the 0-based source line/record index, mapped to Python's
+	// top_int (qa.py beAdoc(..., row_num=i)). -1 means unset.
+	RowNum int
+	// Image and positions are carried from the upstream item so the QA
+	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
+	//
+	Image        string
+	PDFPositions json.RawMessage
+	Positions    json.RawMessage
+}
+
+// rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
+// chars, so "Q:: answer" is fully stripped
+var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
+
+func rmQAPrefix(txt string) string {
+	return strings.TrimSpace(rmQAPrefixRe.ReplaceAllString(txt, ""))
+}
+
+func stringPtrVal(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func isCSV(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".csv")
+}
+
+// ---------------------------------------------------------------------------
+// HTML / spreadsheet QA extraction
+// ---------------------------------------------------------------------------
+
+// tableRows walks the parsed HTML and returns the <td>/<th> text of every
+// <tr>, in document order.
+//
+// The markup is parsed into a tree rather than matched with a regex because
+// this input is not guaranteed to be well formed: seven parsers render table
+// items (xlsx, csv, docx, html, pdf, …) and some of that markup originates
+// from user-supplied documents. A tree also settles the cases a tag-level
+// scan gets wrong: a nested <table> no longer terminates its enclosing row
+// early — that row keeps its own cells, with the nested table's text folded
+// into the cell holding it — and a row or cell missing its closing tag is
+// recovered rather than dropped.
+func tableRows(htmlStr string) [][]string {
+	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
+	// mode, so a bare row fragment would yield nothing. Give the parser the
+	// table context it needs instead of dropping the rows silently.
+	lower := strings.ToLower(htmlStr)
+	if strings.Contains(lower, "<tr") && !strings.Contains(lower, "<table") {
+		htmlStr = "<table>" + htmlStr + "</table>"
+	}
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		return nil
+	}
+	var rows [][]string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		// An inert subtree is parsed but never rendered. <template> puts its
+		// content straight into the ordinary child list (the parser has no
+		// separate template-contents field), so without this its rows would
+		// be read as rows of the enclosing table.
+		if n.Type == html.ElementNode && isInertElement(n.Data) {
+			return
+		}
+		if isHTMLElement(n, "tr") {
+			var cells []string
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
+					cells = append(cells, cellText(c))
+				}
+			}
+			// Return without descending: the cells above already collected
+			// the nested table's text, so its rows must not be reported a
+			// second time as rows of the enclosing table.
+			rows = append(rows, cells)
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return rows
+}
+
+// cellText returns the visible text of a table cell. The parser hands text
+// nodes over already unescaped, nested markup contributes its text without
+// its tags (a nested table's cells are concatenated, not separated), and a
+// <br> becomes a newline instead of silently gluing the two halves of the
+// cell together.
+func cellText(cell *html.Node) string {
+	var sb strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		switch {
+		case n.Type == html.TextNode:
+			sb.WriteString(n.Data)
+		case isHTMLElement(n, "br"):
+			sb.WriteByte('\n')
+		case n.Type == html.ElementNode && isInertElement(n.Data):
+			// Stop here rather than descending: the content is parsed but
+			// never rendered, so it is not text a reader of the cell sees.
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(cell)
+	return strings.TrimSpace(sb.String())
+}
+
+// isHTMLElement reports whether n is an element with the given tag name in
+// the HTML namespace. Foreign content reuses HTML tag names for unrelated
+// elements — an <svg><tr> is not a table row — so matching on the tag name
+// alone would read markup that carries no table semantics.
+func isHTMLElement(n *html.Node, tag string) bool {
+	return n.Type == html.ElementNode && n.Namespace == "" && n.Data == tag
+}
+
+// isInertElement reports whether an element's content is inert — parsed, but
+// never rendered as visible text. An inline <script> or <style> inside a
+// table cell of a user-supplied document would otherwise be embedded into the
+// Q&A pair as if it were part of the sentence, and a <template>'s placeholder
+// rows would be read as real ones.
+func isInertElement(tag string) bool {
+	switch tag {
+	case "script", "style", "noscript", "template":
+		return true
+	}
+	return false
+}
+
+// extractQATable turns table markup into Q&A pairs: the first two non-empty
+// cells of a row become the question and the answer. strictPairs is the CSV
+// contract (Python qa.py:365) and requires a row to have exactly two cells
+// instead of taking the first two.
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
+	if htmlStr == "" {
+		return nil
+	}
+	rows := tableRows(htmlStr)
+	pairs := make([]qaPair, 0, len(rows))
+	for _, cells := range rows {
+		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		if strictPairs && len(cells) != 2 {
+			continue
+		}
+		var texts []string
+		for _, cell := range cells {
+			if cell != "" {
+				texts = append(texts, cell)
+			}
+		}
+		if len(texts) >= 2 {
+			// RowNum mirrors Python qa.py's enumerate over the extracted
+			// pairs (beAdoc(..., row_num=ii)) → top_int.
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)})
+		}
+	}
+	return pairs
+}
+
+// ---------------------------------------------------------------------------
+// Markdown QA extraction
+// ---------------------------------------------------------------------------
+
+var mdHeading = regexp.MustCompile(`^(#*)`)
+
+func extractQAMarkdown(md string) []qaPair {
+	if md == "" {
+		return nil
+	}
+	lines := strings.Split(md, "\n")
+	var pairs []qaPair
+	var questionStack []string
+	var levelStack []int
+	var answer []string
+	curRow := -1
+	codeBlock := false
+
+	flushAnswer := func() {
+		joined := strings.TrimSpace(strings.Join(answer, "\n"))
+		if joined != "" && len(questionStack) > 0 {
+			sumQ := strings.Join(questionStack, "\n")
+			pairs = append(pairs, qaPair{Question: sumQ, Answer: joined, RowNum: curRow})
+		}
+		answer = nil
+	}
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			codeBlock = !codeBlock
+		}
+		if codeBlock {
+			answer = append(answer, line)
+			continue
+		}
+
+		m := mdHeading.FindStringSubmatch(line)
+		level := len(m[1])
+		if level == 0 || level > 6 {
+			answer = append(answer, line)
+			continue
+		}
+
+		flushAnswer()
+		question := strings.TrimSpace(line[level:])
+		curRow = i
+
+		for len(levelStack) > 0 && level <= levelStack[len(levelStack)-1] {
+			questionStack = questionStack[:len(questionStack)-1]
+			levelStack = levelStack[:len(levelStack)-1]
+		}
+		questionStack = append(questionStack, question)
+		levelStack = append(levelStack, level)
+	}
+	flushAnswer()
+	return pairs
+}
+
+// ---------------------------------------------------------------------------
+// Text / delimiter-based QA extraction (txt, csv)
+// ---------------------------------------------------------------------------
+
+func extractQAText(text string) []qaPair {
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	delimiter := detectDelimiter(lines)
+
+	if delimiter == "\t" {
+		return extractQATextTab(lines)
+	}
+	return extractQATextCSV(text, lines)
+}
+
+// extractQATextTab handles tab-delimited Q&A where no CSV quoting
+// rules apply and physical lines always map 1:1 to records.
+func extractQATextTab(lines []string) []qaPair {
+	var pairs []qaPair
+	var question, answer string
+	var row int
+
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) != 2 {
+			if question != "" {
+				answer += "\n" + line
+			}
+			continue
+		}
+		if question != "" && answer != "" {
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+		}
+		question = parts[0]
+		answer = parts[1]
+		row = i
+	}
+	if question != "" {
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+	}
+	return pairs
+}
+
+// extractQATextCSV uses a full-text csv.Reader so that quoted fields
+// that span multiple physical lines are parsed correctly (mirrors the
+// Python fix in infiniflow/ragflow#16881).
+//
+// Because csv.Reader can merge several physical lines into one record,
+// we track the byte offset via InputOffset() and map it back to the
+// original lines slice so that malformed rows append the correct raw
+// continuation text.
+func extractQATextCSV(text string, lines []string) []qaPair {
+	// Pre‑compute the byte offset where each physical line starts.
+	lineStarts := make([]int, len(lines)+1)
+	off := 0
+	for i, l := range lines {
+		lineStarts[i] = off
+		off += len(l) + 1 // +1 for '\n'
+	}
+	lineStarts[len(lines)] = off // sentinel
+
+	r := csv.NewReader(strings.NewReader(text))
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	var pairs []qaPair
+	var question, answer string
+	var row int
+	prevLine := 0
+	recIdx := -1
+
+	for {
+		record, err := r.Read()
+		if err != nil {
+			break
+		}
+		recIdx++
+
+		// Map InputOffset back to the physical lines consumed.
+		endOff := int(r.InputOffset())
+		curLine := prevLine
+		for curLine < len(lineStarts) && lineStarts[curLine] < endOff {
+			curLine++
+		}
+
+		raw := strings.Join(lines[prevLine:curLine], "\n")
+		prevLine = curLine
+
+		if len(record) != 2 {
+			if question != "" {
+				answer += "\n" + raw
+			}
+			continue
+		}
+		if question != "" && answer != "" {
+			pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+		}
+		question = record[0]
+		answer = record[1]
+		row = recIdx
+	}
+	if question != "" {
+		pairs = append(pairs, qaPair{Question: strings.TrimSpace(question), Answer: strings.TrimSpace(answer), RowNum: row})
+	}
+	return pairs
+}
+
+func detectDelimiter(lines []string) string {
+	comma, tab := 0, 0
+	for _, line := range lines {
+		if len(strings.Split(line, ",")) == 2 {
+			comma++
+		}
+		if len(strings.Split(line, "\t")) == 2 {
+			tab++
+		}
+	}
+	if tab >= comma {
+		return "\t"
+	}
+	return ","
+}
+
+// ---------------------------------------------------------------------------
+// JSON / structured QA extraction
+// ---------------------------------------------------------------------------
+
+func extractQAJSON(items []schema.ChunkDoc) []qaPair {
+	var pairs []qaPair
+	for _, item := range items {
+		txt, _ := itemText(item)
+		if txt == "" {
+			continue
+		}
+		// XLSX (#18800) emits OutputFormat json with HTML tables in item
+		// text and doc_type_kwd=table. Route those through extractQATable
+		// so spreadsheet QA keeps working; plain text items stay on the
+		// delimiter path used by pdf/docx.
+		var tmp []qaPair
+		if itemDocType(item) == "table" {
+			tmp = extractQATable(txt, false)
+		} else {
+			tmp = extractQAText(txt)
+		}
+		// Preserve the source item's image id and coordinates on each
+		// extracted pair
+		for _, p := range tmp {
+			p.Image = item.Image
+			p.PDFPositions = item.PDFPositions
+			p.Positions = item.Positions
+			pairs = append(pairs, p)
+		}
+	}
+	return pairs
+}
+
+func init() {
+	MustRegisterChunker(ComponentNameQAChunker)
+}

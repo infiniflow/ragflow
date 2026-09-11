@@ -1,0 +1,10 @@
+{
+  "default_leaf_clusters_min": 4,
+  "default_leaf_clusters_max": 4,
+  "fine_leaf_clusters_min": 6,
+  "fine_leaf_clusters_max": 6,
+  "coarse_leaf_clusters_min": 2,
+  "coarse_leaf_clusters_max": 2,
+  "leaf_coverage_min": 1.0,
+  "max_depth_max": 5
+}

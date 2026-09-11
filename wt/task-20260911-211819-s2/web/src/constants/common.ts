@@ -1,0 +1,200 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+// TODO: Use standard BCP 47 language tag and display names
+export const LanguageList = [
+  'English',
+  'Chinese',
+  'Traditional Chinese',
+  'Russian',
+  'Indonesian',
+  'Spanish',
+  'Vietnamese',
+  'Japanese',
+  'Portuguese BR',
+  'German',
+  'French',
+  'Italian',
+  'Bulgarian',
+  'Arabic',
+  'Turkish',
+  'Dutch',
+];
+export const LanguageMap = {
+  English: 'English',
+  Chinese: '简体中文',
+  'Traditional Chinese': '繁體中文',
+  Russian: 'Русский',
+  Indonesian: 'Bahasa Indonesia',
+  Indonesia: 'Indonesia',
+  Spanish: 'Español',
+  Vietnamese: 'Tiếng việt',
+  Japanese: '日本語',
+  'Portuguese BR': 'Português BR',
+  German: 'Deutsch',
+  French: 'Français',
+  Italian: 'Italiano',
+  Bulgarian: 'Български',
+  Arabic: 'العربية',
+  Turkish: 'Türkçe',
+  Dutch: 'Nederlands',
+};
+
+export enum LanguageAbbreviation {
+  En = 'en',
+  Zh = 'zh-Hans',
+  ZhTraditional = 'zh-Hant',
+  Ru = 'ru',
+  Id = 'id',
+  Ja = 'ja',
+  Es = 'es',
+  Vi = 'vi',
+  PtBr = 'pt-BR',
+  De = 'de',
+  Fr = 'fr',
+  It = 'it',
+  Bg = 'bg',
+  Ar = 'ar',
+  Tr = 'tr',
+  Ko = 'ko',
+  Nl = 'nl',
+}
+
+export const LanguageAbbreviationMap = {
+  [LanguageAbbreviation.En]: 'English',
+  [LanguageAbbreviation.Zh]: '简体中文',
+  [LanguageAbbreviation.ZhTraditional]: '繁體中文',
+  [LanguageAbbreviation.Ru]: 'Русский',
+  [LanguageAbbreviation.Id]: 'Bahasa Indonesia',
+  [LanguageAbbreviation.Es]: 'Español',
+  [LanguageAbbreviation.Vi]: 'Tiếng việt',
+  [LanguageAbbreviation.Ja]: '日本語',
+  [LanguageAbbreviation.PtBr]: 'Português BR',
+  [LanguageAbbreviation.De]: 'Deutsch',
+  [LanguageAbbreviation.Fr]: 'Français',
+  [LanguageAbbreviation.It]: 'Italiano',
+  [LanguageAbbreviation.Bg]: 'Български',
+  [LanguageAbbreviation.Ar]: 'العربية',
+  [LanguageAbbreviation.Tr]: 'Türkçe',
+  [LanguageAbbreviation.Ko]: '한국어',
+  [LanguageAbbreviation.Nl]: 'Nederlands',
+};
+
+export const LanguageTranslationMap = {
+  English: 'en',
+  Chinese: 'zh-Hans',
+  'Traditional Chinese': 'zh-Hant',
+  Russian: 'ru',
+  Indonesian: 'id',
+  Indonesia: 'id',
+  Spanish: 'es',
+  Vietnamese: 'vi',
+  Japanese: 'ja',
+  Korean: 'ko',
+  'Portuguese BR': 'pt-BR',
+  'pt-br': 'pt-BR',
+  'pt-BR': 'pt-BR',
+  German: 'de',
+  French: 'fr',
+  Italian: 'it',
+  Tamil: 'ta',
+  Telugu: 'te',
+  Kannada: 'ka',
+  Thai: 'th',
+  Greek: 'el',
+  Hindi: 'hi',
+  Ukrainian: 'uk',
+  Bulgarian: 'bg',
+  Arabic: 'ar',
+  Turkish: 'tr',
+  Dutch: 'nl',
+};
+
+export enum FileMimeType {
+  Bmp = 'image/bmp',
+  Csv = 'text/csv',
+  Odt = 'application/vnd.oasis.opendocument.text',
+  Doc = 'application/msword',
+  Docx = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  Gif = 'image/gif',
+  Htm = 'text/htm',
+  Html = 'text/html',
+  Jpg = 'image/jpg',
+  Jpeg = 'image/jpeg',
+  Pdf = 'application/pdf',
+  Png = 'image/png',
+  Ppt = 'application/vnd.ms-powerpoint',
+  Pptx = 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  Tiff = 'image/tiff',
+  Txt = 'text/plain',
+  Xls = 'application/vnd.ms-excel',
+  Xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  Mp4 = 'video/mp4',
+  Json = 'application/json',
+  Md = 'text/markdown',
+  Mdx = 'text/mdx',
+}
+
+export const Domain = 'cloud.ragflow.io';
+
+//#region file preview
+export const Images = [
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'bmp',
+  'tif',
+  'tiff',
+  'webp',
+  // 'svg',
+  'ico',
+];
+
+// Without FileViewer
+export const ExceptiveType = [
+  'xlsx',
+  'xls',
+  'pdf',
+  'docx',
+  'md',
+  'mdx',
+  'txt',
+  'csv',
+  'pptx',
+  'html',
+  'htm',
+  'epub',
+  ...Images,
+];
+
+export const SupportedPreviewDocumentTypes = [...ExceptiveType];
+//#endregion
+
+export enum Platform {
+  RAGFlow = 'RAGFlow',
+  Dify = 'Dify',
+  FastGPT = 'FastGPT',
+  Coze = 'Coze',
+}
+
+export enum ThemeEnum {
+  Dark = 'dark',
+  Light = 'light',
+  System = 'system',
+}
+
+export const DESCRIPTION_MAX_LENGTH = 512;
