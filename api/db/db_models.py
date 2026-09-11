@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import hashlib
+import heapq
 import inspect
 import logging
 import operator
@@ -343,7 +344,77 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
-class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
+class PooledConnectionRetryMixin:
+    """Recover pooled connections without replaying work in a dead transaction."""
+
+    def _raise_if_connection_poisoned(self):
+        error = getattr(self._state, "connection_loss", None)
+        if error is not None:
+            raise error
+
+    def _evict_dead_connection(self):
+        conn = self._state.conn
+        if conn is None:
+            return
+        key = self.conn_key(conn)
+        with self._pool_lock:
+            self._in_use.pop(key, None)
+            self._connections = [entry for entry in self._connections if entry[2] is not conn]
+            heapq.heapify(self._connections)
+        try:
+            conn.close()
+        except Exception:
+            logging.debug("Failed to close dead database connection", exc_info=True)
+
+    def _abort_transaction_after_connection_loss(self, error):
+        self._evict_dead_connection()
+        # Keep transactions until Peewee's context manager pops them. The
+        # poison flag makes all SQL and final commit/rollback deterministic.
+        self._state.connection_loss = error
+        self._state.closed = True
+        self._state.conn = None
+
+    def pop_transaction(self):
+        transaction = super().pop_transaction()
+        if not self._state.transactions and getattr(self._state, "connection_loss", None) is not None:
+            self._state.reset()
+            self._state.connection_loss = None
+        return transaction
+
+    def commit(self):
+        if getattr(self._state, "connection_loss", None) is not None:
+            logging.debug("Suppressing commit after database connection loss")
+            return
+        return super().commit()
+
+    def rollback(self):
+        if getattr(self._state, "connection_loss", None) is not None:
+            logging.debug("Suppressing rollback after database connection loss")
+            return
+        return super().rollback()
+
+    def _handle_connection_loss(self):
+        self._evict_dead_connection()
+        self._state.reset()
+        self._state.connection_loss = None
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error("Failed to reconnect to %s: %s", getattr(self, "database_display_name", self.__class__.__name__), e)
+            raise
+
+
+def _is_mysql_connection_error(error):
+    args = getattr(error, "args", ())
+    if args and isinstance(args[0], int) and args[0] in {2006, 2013}:
+        return True
+    if error.__class__.__name__ == "InterfaceError":
+        return True
+    message = str(error).lower()
+    return any(text in message for text in ("lost connection", "gone away", "connection reset", "connection closed"))
+
+
+class RetryingPooledMySQLDatabase(PooledConnectionRetryMixin, PooledMySQLDatabase):
     def __init__(self, *args, **kwargs):
         self.max_retries = kwargs.pop("max_retries", 5)
         self.retry_delay = kwargs.pop("retry_delay", 1)
@@ -352,11 +423,14 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
     def execute_sql(self, sql, params=None, commit=True):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
-                error_codes = [2013, 2006]
-                error_messages = ["", "Lost connection"]
-                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
+                should_retry = _is_mysql_connection_error(e)
+
+                if should_retry and self.in_transaction():
+                    self._abort_transaction_after_connection_loss(e)
+                    raise
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"Database connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
@@ -367,33 +441,13 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                     raise
         return None
 
-    def _handle_connection_loss(self):
-        # self.close_all()
-        # self.connect()
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect: {e}")
-            time.sleep(0.1)
-            try:
-                self.connect()
-            except Exception as e2:
-                logging.error(f"Failed to reconnect on second attempt: {e2}")
-                raise
-
     def begin(self):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_codes = [2013, 2006]
-                error_messages = ["", "Lost connection"]
-
-                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
+                should_retry = _is_mysql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
@@ -404,7 +458,7 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         return None
 
 
-class GaussDBPsycopgRetryMixin:
+class GaussDBPsycopgRetryMixin(PooledConnectionRetryMixin):
     """Connection retry behavior used only by the GaussDB adapter."""
 
     database_display_name = "GaussDB"
@@ -420,13 +474,15 @@ class GaussDBPsycopgRetryMixin:
     def execute_sql(self, sql, params=None, commit=True):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 prepared_sql = self._prepare_sql_for_execution(sql)
                 return super().execute_sql(prepared_sql, params, commit)
             except (OperationalError, InterfaceError) as e:
                 # A reconnect cannot restore an active transaction. Let the
                 # atomic block fail as a unit instead of retrying one statement
                 # on a different connection.
-                if self.in_transaction():
+                if self.in_transaction() and is_psycopg_connection_error(e):
+                    self._abort_transaction_after_connection_loss(e)
                     logging.error(f"{self.database_display_name} execution failure: {e}")
                     raise
 
@@ -445,24 +501,12 @@ class GaussDBPsycopgRetryMixin:
         return None
 
     def _handle_connection_loss(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect to {self.database_display_name}: {e}")
-            time.sleep(0.1)
-            try:
-                self.connect()
-            except Exception as e2:
-                logging.error(f"Failed to reconnect to {self.database_display_name} on second attempt: {e2}")
-                raise
+        return super()._handle_connection_loss()
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 # Apply the same connection-error classification during
@@ -478,7 +522,7 @@ class GaussDBPsycopgRetryMixin:
         return None
 
 
-class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
+class RetryingPooledPostgresqlDatabase(PooledConnectionRetryMixin, PooledPostgresqlDatabase):
     def __init__(self, *args, **kwargs):
         self.max_retries = kwargs.pop("max_retries", 5)
         self.retry_delay = kwargs.pop("retry_delay", 1)
@@ -487,18 +531,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
     def execute_sql(self, sql, params=None, commit=True):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
-                # PostgreSQL specific error codes
-                # 57P01: admin_shutdown
-                # 57P02: crash_shutdown
-                # 57P03: cannot_connect_now
-                # 08006: connection_failure
-                # 08003: connection_does_not_exist
-                # 08000: connection_exception
-                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
+                should_retry = is_psycopg_connection_error(e)
 
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
+                if should_retry and self.in_transaction():
+                    self._abort_transaction_after_connection_loss(e)
+                    raise
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
@@ -510,29 +550,15 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         return None
 
     def _handle_connection_loss(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect to PostgreSQL: {e}")
-            time.sleep(0.1)
-            try:
-                self.connect()
-            except Exception as e2:
-                logging.error(f"Failed to reconnect to PostgreSQL on second attempt: {e2}")
-                raise
+        return super()._handle_connection_loss()
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
-
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
+                should_retry = is_psycopg_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})")
@@ -721,7 +747,7 @@ class RetryingPooledGaussDBDatabase(GaussDBPsycopgRetryMixin, PooledPostgresqlDa
         return [table for (table,) in cursor.fetchall()]
 
 
-class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
+class RetryingPooledOceanBaseDatabase(PooledConnectionRetryMixin, PooledMySQLDatabase):
     """Pooled OceanBase database with retry mechanism.
 
     OceanBase is compatible with MySQL protocol, so we inherit from PooledMySQLDatabase.
@@ -736,19 +762,14 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
     def execute_sql(self, sql, params=None, commit=True):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
-                # OceanBase/MySQL specific error codes
-                # 2013: Lost connection to MySQL server during query
-                # 2006: MySQL server has gone away
-                error_codes = [2013, 2006]
-                error_messages = ["", "Lost connection", "gone away"]
+                should_retry = _is_mysql_connection_error(e)
 
-                should_retry = (
-                    (hasattr(e, "args") and e.args and e.args[0] in error_codes)
-                    or any(msg in str(e).lower() for msg in error_messages)
-                    or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
-                )
+                if should_retry and self.in_transaction():
+                    self._abort_transaction_after_connection_loss(e)
+                    raise
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"OceanBase connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
@@ -760,30 +781,15 @@ class RetryingPooledOceanBaseDatabase(PooledMySQLDatabase):
         return None
 
     def _handle_connection_loss(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect to OceanBase: {e}")
-            time.sleep(0.1)
-            try:
-                self.connect()
-            except Exception as e2:
-                logging.error(f"Failed to reconnect to OceanBase on second attempt: {e2}")
-                raise
+        return super()._handle_connection_loss()
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
             try:
+                self._raise_if_connection_poisoned()
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_codes = [2013, 2006]
-                error_messages = ["", "Lost connection"]
-
-                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
+                should_retry = _is_mysql_connection_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
