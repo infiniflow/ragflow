@@ -233,10 +233,17 @@ func tableRows(htmlStr string) [][]string {
 	var rows [][]string
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "tr" {
+		// An inert subtree is parsed but never rendered. <template> puts its
+		// content straight into the ordinary child list (the parser has no
+		// separate template-contents field), so without this its rows would
+		// be read as rows of the enclosing table.
+		if n.Type == html.ElementNode && isInertElement(n.Data) {
+			return
+		}
+		if isHTMLElement(n, "tr") {
 			var cells []string
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
+				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
 					cells = append(cells, cellText(c))
 				}
 			}
@@ -266,7 +273,7 @@ func cellText(cell *html.Node) string {
 		switch {
 		case n.Type == html.TextNode:
 			sb.WriteString(n.Data)
-		case n.Type == html.ElementNode && n.Data == "br":
+		case isHTMLElement(n, "br"):
 			sb.WriteByte('\n')
 		case n.Type == html.ElementNode && isInertElement(n.Data):
 			// Stop here rather than descending: the content is parsed but
@@ -281,10 +288,19 @@ func cellText(cell *html.Node) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// isHTMLElement reports whether n is an element with the given tag name in
+// the HTML namespace. Foreign content reuses HTML tag names for unrelated
+// elements — an <svg><tr> is not a table row — so matching on the tag name
+// alone would read markup that carries no table semantics.
+func isHTMLElement(n *html.Node, tag string) bool {
+	return n.Type == html.ElementNode && n.Namespace == "" && n.Data == tag
+}
+
 // isInertElement reports whether an element's content is inert — parsed, but
 // never rendered as visible text. An inline <script> or <style> inside a
 // table cell of a user-supplied document would otherwise be embedded into the
-// Q&A pair as if it were part of the sentence.
+// Q&A pair as if it were part of the sentence, and a <template>'s placeholder
+// rows would be read as real ones.
 func isInertElement(tag string) bool {
 	switch tag {
 	case "script", "style", "noscript", "template":
