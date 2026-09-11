@@ -203,6 +203,7 @@ class TestApplyMetaDataFilterBaseScope:
         import asyncio
         import sys
         import types
+        from unittest.mock import patch
 
         stub = types.ModuleType("rag.prompts.generator")
 
@@ -210,11 +211,11 @@ class TestApplyMetaDataFilterBaseScope:
             raise RuntimeError("unexpected LLM call in manual mode")
 
         stub.gen_meta_filter = gen_meta_filter
-        sys.modules.setdefault("rag.prompts.generator", stub)
 
         from common.metadata_utils import apply_meta_data_filter
 
-        return asyncio.run(apply_meta_data_filter(filter_def, metas, base_doc_ids=base, kb_ids=None))
+        with patch.dict(sys.modules, {"rag.prompts.generator": stub}):
+            return asyncio.run(apply_meta_data_filter(filter_def, metas, base_doc_ids=base, kb_ids=None))
 
     def test_filter_excludes_base_doc_that_does_not_match(self):
         flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
