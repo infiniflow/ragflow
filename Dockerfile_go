@@ -176,8 +176,17 @@ COPY Dockerfile_go ./
 # ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
 ARG ORT_VERSION=1.29.0
 RUN set -eux; \
-    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
-    cp -rn "/opt/ragflow-native-libs/onnxruntime/onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc2_28" "${HOME}/ragflow-native-libs/onnxruntime/"; \
+    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime/static_lib"; \
+    _src="/opt/ragflow-native-libs/onnxruntime/static_lib"; \
+    _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-"${ORT_VERSION}"-* 2>/dev/null | head -1)"; \
+    if [ -z "${_v}" ]; then \
+      _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-* 2>/dev/null | head -1)"; \
+    fi; \
+    if [ -n "${_v}" ]; then \
+      cp -r "${_v}" "${HOME}/ragflow-native-libs/onnxruntime/static_lib/"; \
+    else \
+      echo "Warning: no pre-baked onnxruntime static_lib in runner image; build.sh will attempt download" >&2; \
+    fi; \
     find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
 
 RUN git config --global safe.directory "*" && \
