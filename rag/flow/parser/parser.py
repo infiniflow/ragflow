@@ -55,6 +55,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     reorder_multi_column_bboxes,
 )
 from rag.flow.parser.schema import ParserFromUpstream
+from rag.flow.parser.spreadsheet_positions import tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
@@ -838,23 +839,7 @@ class Parser(ProcessBase):
                 self.set_output("html", html_content)
 
             elif output_format == "json":
-                # For JSON output, create a list of text items
-                result = []
-                # Add sections as text
-                for section, position_tag in sections:
-                    if section:
-                        result.append({"text": section, "doc_type_kwd": "text"})
-                # Add tables as text
-                for table in tables:
-                    if table:
-                        result.append(
-                            {
-                                "text": table,
-                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
-                            }
-                        )
-
-                self.set_output("json", result)
+                self.set_output("json", tcadp_spreadsheet_json_items(sections, tables, flatten_media_to_text))
 
             elif output_format == "markdown":
                 # For markdown output, combine into markdown
