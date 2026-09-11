@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -136,6 +137,66 @@ func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 	}
 	if got := res.JSON[0]["text"]; got == nil {
 		t.Fatal("JSON[0].text missing")
+	}
+}
+
+func TestPDFParser_ParseWithResult_MinerUSendsServerURL(t *testing.T) {
+	withSSRFBypass(t)
+	var gotServerURL string
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			reader, err := r.MultipartReader()
+			if err != nil {
+				t.Errorf("MultipartReader: %v", err)
+				return
+			}
+			for {
+				part, err := reader.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Errorf("NextPart: %v", err)
+					return
+				}
+				if part.FormName() == "server_url" {
+					body, _ := io.ReadAll(part)
+					mu.Lock()
+					gotServerURL = string(body)
+					mu.Unlock()
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"task_id":"task-url"}}`))
+		} else if r.Method == http.MethodGet && r.URL.Path == "/tasks/task-url/result" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Title\n\nBody paragraph.\n"}}}`))
+		} else {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":      "MinerU",
+		"output_format":     "markdown",
+		"mineru_apiserver":  server.URL,
+		"mineru_backend":    "vlm-http-client",
+		"mineru_server_url": "http://mineru-downstream:8080",
+	})
+
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	mu.Lock()
+	got := gotServerURL
+	mu.Unlock()
+	if want := "http://mineru-downstream:8080"; got != want {
+		t.Fatalf("server_url = %q, want %q", got, want)
 	}
 }
 
