@@ -268,6 +268,10 @@ func cellText(cell *html.Node) string {
 			sb.WriteString(n.Data)
 		case n.Type == html.ElementNode && n.Data == "br":
 			sb.WriteByte('\n')
+		case n.Type == html.ElementNode && isInertElement(n.Data):
+			// Stop here rather than descending: the content is parsed but
+			// never rendered, so it is not text a reader of the cell sees.
+			return
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
@@ -275,6 +279,18 @@ func cellText(cell *html.Node) string {
 	}
 	walk(cell)
 	return strings.TrimSpace(sb.String())
+}
+
+// isInertElement reports whether an element's content is inert — parsed, but
+// never rendered as visible text. An inline <script> or <style> inside a
+// table cell of a user-supplied document would otherwise be embedded into the
+// Q&A pair as if it were part of the sentence.
+func isInertElement(tag string) bool {
+	switch tag {
+	case "script", "style", "noscript", "template":
+		return true
+	}
+	return false
 }
 
 // extractQATable turns table markup into Q&A pairs: the first two non-empty

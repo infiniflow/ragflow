@@ -148,6 +148,48 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 			want: [][2]string{{"q\nL2", "a"}},
 		},
 		{
+			// Content that is parsed but never rendered must not join the
+			// sentence: an inline <script>/<style> is not text a reader sees.
+			name: "inert elements contribute no text",
+			html: "<table><tr><td>q<script>var x=1;</script></td>" +
+				"<td>a<style>.c{color:red}</style></td></tr></table>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			name: "noscript and template contribute no text",
+			html: "<table><tr><td>q<noscript>enable js</noscript></td>" +
+				"<td>a<template>tpl</template></td></tr></table>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			// The counterpart of the two cases above: elements whose content
+			// *is* rendered keep their text, so the skip list stays narrow.
+			name: "rendered descendants keep their text",
+			html: "<table><tr><td>q<textarea>notes</textarea></td>" +
+				"<td>a<span>bold</span></td></tr></table>",
+			want: [][2]string{{"qnotes", "abold"}},
+		},
+		{
+			// A template's rows are markup, not rows: the script's content is
+			// raw text to the parser, so only the real row becomes a pair.
+			// Found on a real page, where the unrendered template would
+			// otherwise contribute placeholder pairs.
+			name: "markup inside a script is not a row",
+			html: "<table><script type=\"text/tpl\"><tr><td>tpl</td><td>tpl2</td></tr></script>" +
+				"<tr><td>q</td><td>a</td></tr></table>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			name: "commented-out markup is not a pair",
+			html: "<table><!-- <tr><td>old</td><td>value</td></tr> --><tr><td>q</td><td>a</td></tr></table>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			name: "commented-out cell is not a cell",
+			html: "<table><tr><!-- <td>dead</td> --><td>q</td><td>a</td></tr></table>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
 			// The nested table's text is folded into the cell holding it, and
 			// its own rows are not reported as rows of the enclosing table.
 			name: "nested table",
