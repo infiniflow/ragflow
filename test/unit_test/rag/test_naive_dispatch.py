@@ -36,6 +36,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -420,3 +421,37 @@ def test_merge_excel_items_passthrough_when_budget_disabled(naive_module):
     items = [("a", (0, 2, 2, 1, 1)), ("b", (0, 3, 3, 1, 1))]
     assert naive_module._merge_excel_items(items, chunk_token_num=0) == items
     assert naive_module._merge_excel_items([], chunk_token_num=128) == []
+
+
+def test_by_paddleocr_rethrows_parse_failure_and_notifies_callback(naive_module, monkeypatch):
+    callback = Mock()
+    parse_error = RuntimeError("paddle boom")
+    fake_parser = Mock()
+    fake_parser.parse_pdf.side_effect = parse_error
+    fake_bundle = Mock(mdl=fake_parser)
+
+    monkeypatch.setattr(naive_module, "resolve_model_config", Mock(return_value={"id": "cfg"}))
+    monkeypatch.setattr(naive_module, "LLMBundle", Mock(return_value=fake_bundle))
+
+    with pytest.raises(RuntimeError, match="paddle boom"):
+        naive_module.by_paddleocr(
+            "doc.pdf",
+            tenant_id="t1",
+            paddleocr_llm_name="paddle@provider",
+            callback=callback,
+        )
+
+    callback.assert_called_once()
+    prog, msg = callback.call_args.args
+    assert prog == -1
+    assert "Failed to parse pdf via PaddleOCR" in msg
+    assert "paddle boom" in msg
+
+
+def test_by_paddleocr_not_found_path_unchanged(naive_module):
+    callback = Mock()
+
+    sections, tables, parser = naive_module.by_paddleocr("doc.pdf", callback=callback)
+
+    assert (sections, tables, parser) == (None, None, None)
+    callback.assert_called_once_with(-1, "PaddleOCR not found.")

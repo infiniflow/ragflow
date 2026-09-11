@@ -577,15 +577,16 @@ def test_transfer_to_sections_routes_app_media_separately(monkeypatch, parse_met
 class _FakeZipResponse:
     """Stand-in for the streaming response returned by requests.post.
 
-    Provides the minimum surface that _run_mineru_api touches: status code,
-    headers (Content-Type), and a `.raw` stream that copyfileobj can drain.
+    Provides the minimum surface that _run_mineru_api touches: status_code,
+    ok, text, headers (Content-Type), and a `.raw` stream that copyfileobj
+    can drain.
     """
 
-    def __init__(self, body: bytes = b"zip-bytes", *, status_code: int = 200):
+    def __init__(self, body: bytes = b"zip-bytes", *, status_code: int = 200, text: str = ""):
         self._body = body
         self.status_code = status_code
         self.ok = 200 <= status_code < 400
-        self.text = ""
+        self.text = text
         self.headers = {"Content-Type": "application/zip"}
         self.raw = BytesIO(body)
 
@@ -606,7 +607,15 @@ class _FakePostContext:
         return False
 
 
-def _capture_run_mineru_api(monkeypatch, module, *, pdf_path: Path, extracted_dir: Path):
+def _capture_run_mineru_api(
+    monkeypatch,
+    module,
+    *,
+    pdf_path: Path,
+    extracted_dir: Path,
+    status_code: int = 200,
+    text: str = "",
+):
     """Stub everything around requests.post so _run_mineru_api runs end-to-end
     against an in-memory response. Returns the captured kwargs dict.
     """
@@ -616,7 +625,7 @@ def _capture_run_mineru_api(monkeypatch, module, *, pdf_path: Path, extracted_di
         captured["url"] = url
         captured["data"] = data
         captured["files"] = files
-        return _FakePostContext(_FakeZipResponse(), captured)
+        return _FakePostContext(_FakeZipResponse(status_code=status_code, text=text), captured)
 
     monkeypatch.setattr(module.requests, "post", fake_post)
     monkeypatch.setattr(module.os.path, "exists", lambda _p: True)
@@ -722,6 +731,63 @@ def test_end_page_minus_one_normalizes_for_mineru_api(monkeypatch, tmp_path):
     )
 
     assert captured["data"]["end_page_id"] == 12
+
+
+def test_run_mineru_api_raises_with_status_and_body_on_non_ok(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    parser.mineru_server_url = ""
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    _capture_run_mineru_api(
+        monkeypatch,
+        module,
+        pdf_path=pdf_path,
+        extracted_dir=extracted_dir,
+        status_code=502,
+        text='{"error":"upstream timeout"}',
+    )
+    options = module.MinerUParseOptions()
+
+    with pytest.raises(RuntimeError, match=r"status=502.*upstream timeout") as exc_info:
+        parser._run_mineru_api(pdf_path, extracted_dir, options, callback=None)
+
+    assert "body=" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("options_server_url", "parser_server_url", "expected"),
+    [
+        (None, "", None),
+        ("http://options.server", "", "http://options.server"),
+        (None, "http://parser.server", "http://parser.server"),
+        ("http://options.server", "http://parser.server", "http://options.server"),
+    ],
+)
+def test_run_mineru_api_server_url_only_when_set(
+    monkeypatch, tmp_path, options_server_url, parser_server_url, expected
+):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local", mineru_server_url=parser_server_url)
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    extracted_dir = tmp_path / "out"
+    extracted_dir.mkdir()
+
+    captured = _capture_run_mineru_api(monkeypatch, module, pdf_path=pdf_path, extracted_dir=extracted_dir)
+    options = module.MinerUParseOptions(server_url=options_server_url)
+
+    parser._run_mineru_api(pdf_path, extracted_dir, options, callback=None)
+
+    if expected is None:
+        assert "server_url" not in captured["data"]
+    else:
+        assert captured["data"]["server_url"] == expected
 
 
 class _FakePageImage:
