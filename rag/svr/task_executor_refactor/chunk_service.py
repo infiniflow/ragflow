@@ -60,6 +60,11 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
 )
 
 
+def make_mother_chunk_id(content: str, doc_id: Any) -> str:
+    """Build a deterministic parent-chunk ID scoped to its source document."""
+    return xxhash.xxh64((content + str(doc_id or "")).encode("utf-8", "surrogatepass")).hexdigest()
+
+
 def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
     """Stamp ordinary source chunks available_int=0 when document status is disabled.
 
@@ -351,7 +356,7 @@ class ChunkService:
             if not mom:
                 continue
 
-            mom_id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+            mom_id = make_mother_chunk_id(mom, ck.get("doc_id"))
             ck["mom_id"] = mom_id
 
             if mom_id in mother_ids:
