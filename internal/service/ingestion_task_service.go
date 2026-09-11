@@ -618,10 +618,16 @@ var (
 // caller passes the status/message so a late-created row carries the current
 // status.
 //
-// A run that already owns a row keeps it: a still-open row is reused, and a
-// row left over from a previous run (terminal, so no longer open) is replaced.
-// Only an unbound task falls back to the document's open row — that is the
-// legacy/adopt path, and it is the one place a document-wide lookup is safe.
+// A run that already owns a row keeps it: a still-open row is reused, and a row
+// left over from a previous run (terminal, so no longer open) is replaced.
+//
+// A run with no bound row must open its own. It must not adopt the document's
+// open row: ingestion_task.document_id is unique, so this task is the
+// document's only task and any open row for the document therefore belongs to a
+// run that no longer exists. Adopting it would inherit stale status, content
+// and identity, and a stale RUNNING row could never be advanced again because
+// the monotonic from-state guards reject it. Drop the leftover instead, so it
+// neither gets reused nor lingers as a permanently queued entry.
 func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) {
 	if task == nil || s.pipelineLogDAO == nil {
 		return
@@ -630,16 +636,8 @@ func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, tas
 		if s.earlyLogRowIsOpen(ctx, *bound) {
 			return
 		}
-	} else {
-		open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
-		if err != nil {
-			common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", task.DocumentID, err))
-			return
-		}
-		if open != nil {
-			s.bindEarlyLog(ctx, task, open.ID)
-			return
-		}
+	} else if !s.dropLeftoverEarlyLog(ctx, task.DocumentID) {
+		return
 	}
 	input, err := s.buildEarlyLogInput(ctx, task, operationStatus, progressMsg, kbCache)
 	if err != nil {
@@ -652,6 +650,28 @@ func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, tas
 		return
 	}
 	s.bindEarlyLog(ctx, task, log.ID)
+}
+
+// dropLeftoverEarlyLog removes the open row a document may still carry for a
+// run that no longer exists, so an unbound run starts from a clean slate. It
+// reports whether the caller may proceed to create its own row: false only when
+// the leftover could not be cleared, in which case creating another row would
+// leave two open entries for the document.
+func (s *IngestionTaskService) dropLeftoverEarlyLog(ctx context.Context, documentID string) bool {
+	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, documentID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", documentID, err))
+		return false
+	}
+	if open == nil {
+		return true
+	}
+	if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, open.ID); err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: drop leftover pipeline log %s for document %s: %v", open.ID, documentID, err))
+		return false
+	}
+	common.Warn(fmt.Sprintf("dropped leftover pipeline log %s for document %s (status %s) before opening a fresh row", open.ID, documentID, open.OperationStatus))
+	return true
 }
 
 // earlyLogRowIsOpen reports whether the row a task is bound to still exists in

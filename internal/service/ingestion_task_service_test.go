@@ -1622,6 +1622,70 @@ func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
 	}
 }
 
+// TestIngestionTaskServiceNewRunReplacesStaleOpenRow locks the pre-binding
+// window: a brand-new task arrives with no bound row, and an open row left over
+// for the document (a run whose cleanup failed) must not be adopted. Since
+// ingestion_task.document_id is unique, this task is the document's only task,
+// so such a row cannot belong to a live run — the new run must open its own row
+// and the stale one must not linger as a permanently queued entry.
+func TestIngestionTaskServiceNewRunReplacesStaleOpenRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	// An orphaned row in a pre-terminal state, from a run that no longer owns a
+	// task, with stale content the new run must not inherit.
+	staleMsg := "Task is running..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "stale-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &staleMsg,
+		PipelineTitle:   strPtr("stale-pipeline"),
+	}).Error; err != nil {
+		t.Fatalf("seed stale log: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	ctx := t.Context()
+	if _, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}); err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatal("task has no bound early log row")
+	}
+	if *task.PipelineLogID == "stale-log" {
+		t.Fatalf("task adopted the stale row %q; want a fresh row", *task.PipelineLogID)
+	}
+	if err := db.First(&entity.PipelineOperationLog{}, "id = ?", "stale-log").Error; !dao.IsNotFoundErr(err) {
+		t.Fatalf("stale open row survived; want it dropped, got err=%v", err)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (stale dropped, fresh queued)", got)
+	}
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.ID != *task.PipelineLogID {
+		t.Fatalf("open row %q is not the bound row %q", open.ID, *task.PipelineLogID)
+	}
+	if open.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("OperationStatus = %q, want %q (fresh row, not stale RUNNING)", open.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+	if open.PipelineTitle != nil && *open.PipelineTitle == "stale-pipeline" {
+		t.Fatalf("new run inherited the stale row's content: %+v", open)
+	}
+}
+
 // TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic locks the monotonic
 // transition contract: a late queued write must not regress a row a concurrent
 // worker already moved to running.
