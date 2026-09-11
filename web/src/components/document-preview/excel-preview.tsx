@@ -14,21 +14,22 @@
  *  limitations under the License.
  */
 
-// import { useFetchExcel } from '@/pages/document-viewer/hooks';
 import classNames from 'classnames';
 import { useFetchExcel } from './hooks';
 
 interface ExcelCsvPreviewerProps {
   className?: string;
   url: string;
+  /** [sheetIndex(1-based), rowStart, rowEnd, colStart, colEnd] */
+  positions?: number[][];
 }
 
 export const ExcelCsvPreviewer: React.FC<ExcelCsvPreviewerProps> = ({
   className,
   url,
+  positions,
 }) => {
-  // const url = useGetDocumentUrl();
-  const { containerRef } = useFetchExcel(url);
+  const { containerRef } = useFetchExcel(url, positions);
 
   return (
     <div

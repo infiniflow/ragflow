@@ -99,18 +99,33 @@ def _allow_any_host() -> bool:
     return os.environ.get(_ALLOW_ANY_HOST_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+_NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
 def _effective_ip(
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
-    """Return the IPv4 equivalent for IPv4-mapped IPv6 addresses, unchanged otherwise.
+    """Return the routable IPv4 address carried by an IPv6 address, unchanged otherwise.
 
-    Without this normalization ``::ffff:127.0.0.1`` would pass ``is_global``
-    as an IPv6Address in some Python versions, bypassing the loopback check.
+    Some IPv6 forms embed an arbitrary IPv4 address that ``is_global`` does not
+    look at, so a private/link-local IPv4 target could be reached by wrapping it:
+
+    - IPv4-mapped ``::ffff:127.0.0.1``
+    - NAT64 well-known prefix ``64:ff9b::7f00:1`` (RFC 6052)
+    - deprecated IPv4-compatible ``::127.0.0.1`` (RFC 4291)
+
+    6to4 (``2002::/16``) and Teredo (``2001::/32``) are already handled by
+    ``ipaddress.is_global``.
     """
-    if isinstance(ip, ipaddress.IPv6Address):
-        mapped = ip.ipv4_mapped
-        if mapped is not None:
-            return mapped
+    if not isinstance(ip, ipaddress.IPv6Address):
+        return ip
+    mapped = ip.ipv4_mapped
+    if mapped is not None:
+        return mapped
+    if ip in _NAT64_WELL_KNOWN_PREFIX:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if ip.packed[:12] == b"\x00" * 12:
+        return ipaddress.IPv4Address(ip.packed[12:])
     return ip
 
 

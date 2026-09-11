@@ -33,9 +33,29 @@ from ._common import (
 )
 
 
-# ----- REFINE concurrency control -----
+# ----- REFINE progress -----
 
-WIKI_REFINE_MAX_CONCURRENT = 20  # shared LLM pool size used by the Wiki runner
+WIKI_REFINE_PROGRESS_UPDATES = 20
+
+
+async def _wiki_run_refine_tasks(tasks: list, progress: Callable[[str], None]) -> None:
+    """Run REFINE page tasks and emit at most roughly 20 progress updates."""
+    total = len(tasks)
+    if not total:
+        return
+    report_every = max(1, (total + WIKI_REFINE_PROGRESS_UPDATES - 1) // WIKI_REFINE_PROGRESS_UPDATES)
+    scheduled = [asyncio.create_task(task) for task in tasks]
+    try:
+        for done, task in enumerate(asyncio.as_completed(scheduled), start=1):
+            await task
+            if done % report_every == 0 or done == total:
+                progress(f"{done}/{total} pages completed.")
+    except BaseException:
+        for task in scheduled:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*scheduled, return_exceptions=True)
+        raise
 
 
 # ----- constants ----
@@ -45,6 +65,7 @@ WIKI_PAGE_COMPILE_KWD = "wiki_page"
 WIKI_PLAN_GROUP_COMPILE_KWD = "wiki_plan_group"
 WIKI_DOC_PAGE_SOURCE_COMPILE_KWD = "wiki_doc_page_source"
 WIKI_CANONICAL_ENTITY_COMPILE_KWD = "wiki_canonical_entity"
+WIKI_REFINE_FAILURE_COMPILE_KWD = "wiki_refine_failure"
 
 # Entity matching thresholds (not exposed in YAML)
 ENTITY_MERGE_THRESHOLD = 0.90  # auto-merge
@@ -303,6 +324,103 @@ async def _wiki_has_any_pages(tenant_id: str, kb_id: str) -> bool:
         return False
 
 
+async def _wiki_load_refine_failures(tenant_id: str, kb_id: str) -> dict[str, dict]:
+    """Load persisted REFINE failures keyed by page id."""
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return {}
+    fields = ["slug_kwd", "content_with_weight"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index,
+            [kb_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields) or {}
+    except Exception:
+        logging.exception("wiki: failed to load REFINE failures for kb=%s", kb_id)
+        return {}
+
+    failures: dict[str, dict] = {}
+    for row in rows.values():
+        page_id = row.get("slug_kwd")
+        payload = row.get("content_with_weight")
+        if isinstance(page_id, list):
+            page_id = page_id[0] if page_id else ""
+        if not isinstance(page_id, str) or not page_id.strip():
+            continue
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload) if payload else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+        failures[page_id.strip()] = payload if isinstance(payload, dict) else {}
+    return failures
+
+
+async def _wiki_record_refine_failure(
+    tenant_id: str,
+    kb_id: str,
+    page_id: str,
+    entity_names: list[str] | None = None,
+    error: str = "",
+) -> None:
+    """Persist one failed page so a later Update can retry it."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    index = search.index_name(tenant_id)
+    payload = json.dumps(
+        {
+            "page_id": page_id,
+            "entity_names": [str(name).strip() for name in entity_names or [] if str(name).strip()],
+            "error": str(error or "")[:1000],
+        },
+        ensure_ascii=False,
+    )
+    row = {
+        "id": _stable_row_id(WIKI_REFINE_FAILURE_COMPILE_KWD, kb_id, page_id),
+        "doc_id": str(kb_id),
+        "compile_kwd": WIKI_REFINE_FAILURE_COMPILE_KWD,
+        "slug_kwd": page_id,
+        "content_with_weight": payload,
+        "available_int": 0,
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            index,
+            kb_id,
+        )
+        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+    except Exception:
+        logging.exception("wiki: failed to persist REFINE failure page=%s", page_id)
+
+
+async def _wiki_clear_refine_failure(tenant_id: str, kb_id: str, page_id: str) -> None:
+    """Remove the retry marker after a page succeeds or is deleted."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to clear REFINE failure page=%s", page_id)
+
+
 async def _load_canonical_entities(
     tenant_id: str,
     kb_id: str,
@@ -401,56 +519,6 @@ def _build_canonical_entity_doc(
         vec_col = f"q_{dim}_vec"
         doc[vec_col] = embedding
     return doc
-
-
-async def _save_canonical_entity(
-    tenant_id: str,
-    kb_id: str,
-    entity_name: str,
-    entity_type: str,
-    aliases: list[str],
-    source_doc_ids: list[str],
-    claim_count: int,
-    embedding: list[float] | None = None,
-    source_chunk_ids: list[str] | None = None,
-) -> None:
-    """Insert or update a canonical entity row."""
-    index = search.index_name(tenant_id)
-    doc = _build_canonical_entity_doc(
-        tenant_id,
-        kb_id,
-        entity_name,
-        entity_type,
-        aliases,
-        source_doc_ids,
-        claim_count,
-        embedding,
-        source_chunk_ids,
-    )
-
-    condition = {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": [entity_name]}
-    existing = await thread_pool_exec(
-        settings.docStoreConn.search,
-        ["entity_kwd"],
-        [],
-        condition,
-        [],
-        OrderByExpr(),
-        0,
-        1,
-        index,
-        [kb_id],
-    )
-    if settings.docStoreConn.get_fields(existing, ["entity_kwd"]):
-        await thread_pool_exec(
-            settings.docStoreConn.update,
-            {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": entity_name},
-            doc,
-            index,
-            kb_id,
-        )
-    else:
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
 
 
 async def _update_canonical_entity(
@@ -1191,16 +1259,26 @@ def _wiki_extract_outlinks_from_content(content: str, kb_id: str = "") -> list[s
     return outlinks
 
 
-def _inside_wikilink(content: str, pos: int) -> bool:
-    """Return True iff position ``pos`` falls inside an existing [[...]] span."""
-    open_pos = content.rfind("[[", 0, pos)
-    if open_pos < 0:
-        return False
-    # Find the FIRST "]]" that closes the "[[...]]" starting at open_pos
-    close_pos = content.find("]]", open_pos + 2)
-    if close_pos < 0:
-        close_pos = len(content)
-    return open_pos + 2 <= pos < close_pos
+_WIKI_PROTECTED_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\n]+\)")
+
+
+def _wiki_find_unlinked_mention(content: str, name: str) -> int:
+    """Find the first occurrence of ``name`` outside existing link markup."""
+    if not content or not name:
+        return -1
+    protected_spans = [(match.start(), match.end()) for match in _WIKI_PROTECTED_LINK_RE.finditer(content)]
+    raw_open = content.rfind("[[")
+    if raw_open >= 0 and content.find("]]", raw_open + 2) < 0:
+        protected_spans.append((raw_open, len(content)))
+    start = 0
+    while True:
+        idx = content.find(name, start)
+        if idx < 0:
+            return -1
+        end = idx + len(name)
+        if not any(idx < protected_end and end > protected_start for protected_start, protected_end in protected_spans):
+            return idx
+        start = idx + 1
 
 
 _WIKI_PIPE_LINK_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
@@ -1805,24 +1883,6 @@ async def _wiki_load_doc_page_source(
             "map_checksum": row.get("map_checksum", ""),
         }
     return None
-
-
-async def _wiki_delete_doc_page_source(
-    tenant_id: str,
-    kb_id: str,
-    doc_id: str,
-) -> None:
-    """Delete doc_page_source record when a document is removed."""
-    index = search.index_name(tenant_id)
-    await thread_pool_exec(
-        settings.docStoreConn.delete,
-        {
-            "compile_kwd": [WIKI_DOC_PAGE_SOURCE_COMPILE_KWD],
-            "doc_id": [doc_id],
-        },
-        index,
-        kb_id,
-    )
 
 
 # ----- Mode A: no-plan REFINE -----------------------------------------------
@@ -3225,11 +3285,8 @@ async def _wiki_finalize(
                 continue
             if target in existing_links:
                 continue
-            idx = content.find(name)
+            idx = _wiki_find_unlinked_mention(content, name)
             if idx < 0:
-                continue
-            # Skip if the occurrence is already inside a [[...]] link span
-            if _inside_wikilink(content, idx):
                 continue
             # Preserve the matched prose as the link label.  This matters when
             # several entities share one page: e.g. the page slug may be
@@ -3703,6 +3760,15 @@ async def wiki_compile_incremental(
             if page_id in existing_pages and names:
                 existing_pages[page_id]["entity_names_kwd"] = names
 
+    # A failed REFINE page must be reconsidered together with the current
+    # document delta.  The current REDUCE snapshot remains authoritative, so
+    # deleted entities can still produce a deletion rather than being blindly
+    # retried from stale failure metadata.
+    refine_failures = await _wiki_load_refine_failures(tenant_id, kb_id)
+    retry_names = {str(name).strip() for failure in refine_failures.values() for name in failure.get("entity_names", []) if str(name).strip()}
+    if incremental:
+        affected_names.update(retry_names)
+
     # Build canonical claims ON-DEMAND only for affected names, then release
     # the full claim_index.  claim_index is keyed by RAW entity name (from MAP),
     # so claims must be aggregated through name_resolution onto the canonical
@@ -3973,6 +4039,7 @@ async def _wiki_mode_a_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     summary["pages_deleted"] += 1
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                     return
 
                 next_version = _as_int(existing.get("page_version_int")) + 1 if existing else 1
@@ -4008,6 +4075,9 @@ async def _wiki_mode_a_run(
                     topic_pool=topic_pool,
                     topic_pool_lock=topic_pool_lock,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {pid}")
+                await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
                 else:
@@ -4017,14 +4087,21 @@ async def _wiki_mode_a_run(
                     for did in entry["source_doc_ids"]:
                         doc_updates.setdefault(did, []).append(pid)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki A: REFINE failed for %s", pid)
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    pid,
+                    entry.get("existing_page", {}).get("entity_names_kwd") or [entry.get("page_title", pid)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{pid}")
 
     tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
     if tasks:
-        _progress(f"REFINE A: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="A", **topic_selection_stats)
 
     for did, pids in doc_updates.items():
@@ -4300,6 +4377,7 @@ async def _wiki_mode_b_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     if deleted_page is None:
+                        await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                         await _wiki_delete_plan_group(tenant_id, kb_id, page_key)
                         for did in _as_str_list(existing.get("source_doc_ids")) if existing else []:
                             doc_removals.setdefault(did, []).append(page_key)
@@ -4341,7 +4419,10 @@ async def _wiki_mode_b_run(
                     topic_pool_lock=topic_pool_lock,
                     member_evidence=member_evidence,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {page_key}")
                 if result:
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                     if is_new:
                         summary["pages_created"] += 1
                     else:
@@ -4367,14 +4448,22 @@ async def _wiki_mode_b_run(
                     for did in old_doc_ids - new_doc_ids:
                         doc_removals.setdefault(did, []).append(page_key)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki B: REFINE failed for %s", page_id)
+                failed_page_id = page_id[5:] if page_id.startswith("_new_") else page_id
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    failed_page_id,
+                    [ent.get("entity_name", "") for ent in entities if isinstance(ent, dict)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{page_id}")
 
     tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]
     if tasks:
-        _progress(f"REFINE B: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="B", **topic_selection_stats)
 
     # Apply doc_page_source updates serially (no race), preserving metadata
@@ -4648,191 +4737,12 @@ async def _wiki_load_plan_group_members(tenant_id: str, kb_id: str) -> dict[str,
     return result
 
 
-async def wiki_handle_document_deleted(
-    tenant_id: str,
-    kb_id: str,
-    doc_id: str,
-    chat_mdl,
-    embd_mdl,
-    mode: str,
-) -> dict:
-    """Clean up wiki pages + canonical entities when a document is deleted.
-
-    Args:
-        mode: ``topic`` updates plan groups; ``entity`` does not.
-
-    Returns: {pages_modified, pages_deleted, errors}
-    """
-    summary = {"pages_modified": 0, "pages_deleted": 0, "errors": []}
-
-    # Step 1: Update canonical entity index (decrement claim_count)
-    dps = await _wiki_load_doc_page_source(tenant_id, kb_id, doc_id)
-    if not dps:
-        return summary
-
-    entity_names = dps.get("entity_names", [])
-    if entity_names:
-        canonical_index = await _load_canonical_entities(tenant_id, kb_id)
-        for ename in entity_names:
-            centry = canonical_index.get(ename)
-            if centry:
-                src_ids = centry.get("source_doc_ids", [])
-                if isinstance(src_ids, str):
-                    try:
-                        src_ids = json.loads(src_ids) if src_ids else []
-                    except (json.JSONDecodeError, TypeError):
-                        src_ids = []
-                if doc_id in src_ids:
-                    src_ids.remove(doc_id)
-
-                if not src_ids:
-                    await _delete_canonical_entity(tenant_id, kb_id, ename)
-                else:
-                    # Keep existing mention_count_int; the next REFINE phase
-                    # will recalculate claims precisely from wiki pages.
-                    # Removing the doc_id from source_doc_ids prevents future
-                    # incremental runs from re-tracking this deletion.
-                    await _save_canonical_entity(
-                        tenant_id,
-                        kb_id,
-                        ename,
-                        centry.get("entity_type_kwd", "entity"),
-                        centry.get("aliases", []),
-                        src_ids,
-                        centry.get("mention_count_int", len(src_ids)),
-                        source_chunk_ids=centry.get("source_chunk_ids", []),
-                    )
-
-    affected_page_ids = dps.get("page_ids", [])
-    if not affected_page_ids:
-        return summary
-
-    # Step 2: Update wiki pages
-    all_existing_pages = await _search_existing_pages(
-        tenant_id,
-        kb_id,
-        ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "entity_names_kwd", "page_type_kwd", "topic_kwd"],
-    )
-
-    for page_id in affected_page_ids:
-        try:
-            existing = all_existing_pages.get(page_id)
-            if not existing:
-                continue
-
-            source_doc_ids = existing.get("source_doc_ids", [])
-            if isinstance(source_doc_ids, str):
-                source_doc_ids = json.loads(source_doc_ids) if source_doc_ids else []
-
-            if doc_id in source_doc_ids:
-                source_doc_ids.remove(doc_id)
-
-            page_type = existing.get("page_type_kwd", "concept" if mode == "entity" else "entity")
-
-            if not source_doc_ids:
-                await _wiki_refine_page(
-                    mode="delete",
-                    page_id=page_id,
-                    page_title=existing.get("title_kwd", page_id),
-                    existing_page=existing,
-                    page_type_kwd=page_type,
-                    additions=None,
-                    retractions=None,
-                    source_chunks=[],
-                    claims=[],
-                    available_pages=[],
-                    contextual_hints="",
-                    chat_mdl=chat_mdl,
-                    embd_mdl=embd_mdl,
-                    tenant_id=tenant_id,
-                    kb_id=kb_id,
-                    page_version=existing.get("page_version_int", 0),
-                    source_doc_ids=source_doc_ids,
-                )
-                summary["pages_deleted"] += 1
-            else:
-                existing_claims = existing.get("claims", [])
-                if isinstance(existing_claims, str):
-                    existing_claims = json.loads(existing_claims) if existing_claims else []
-
-                retractions = [c for c in existing_claims if c.get("source_doc_id") == doc_id]
-                retained = [c for c in existing_claims if c.get("source_doc_id") != doc_id]
-
-                await _wiki_refine_page(
-                    mode="modify",
-                    page_id=page_id,
-                    page_title=existing.get("title_kwd", page_id),
-                    existing_page=existing,
-                    page_type_kwd=page_type,
-                    additions=[],
-                    retractions=retractions,
-                    source_chunks=[],
-                    claims=retained,
-                    available_pages=list(all_existing_pages.keys()),
-                    contextual_hints=_wiki_build_contextual_hints(page_id, existing, {}),
-                    chat_mdl=chat_mdl,
-                    embd_mdl=embd_mdl,
-                    tenant_id=tenant_id,
-                    kb_id=kb_id,
-                    page_version=existing.get("page_version_int", 0),
-                )
-                summary["pages_modified"] += 1
-
-            if mode == "topic":
-                plan_condition = {
-                    "compile_kwd": [WIKI_PLAN_GROUP_COMPILE_KWD],
-                    "page_id": [page_id],
-                }
-                index = search.index_name(tenant_id)
-                res_pg = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    ["entity_names", "source_doc_ids"],
-                    [],
-                    plan_condition,
-                    [],
-                    OrderByExpr(),
-                    0,
-                    1,
-                    index,
-                    [kb_id],
-                )
-                pg_map = settings.docStoreConn.get_fields(res_pg, ["entity_names", "source_doc_ids"])
-                for pg_row in pg_map.values():
-                    pg_src_ids = pg_row.get("source_doc_ids", [])
-                    if isinstance(pg_src_ids, str):
-                        pg_src_ids = json.loads(pg_src_ids)
-                    if doc_id in pg_src_ids:
-                        pg_src_ids.remove(doc_id)
-                    await _wiki_update_plan_group(
-                        tenant_id,
-                        kb_id,
-                        page_id,
-                        entity_names=json.loads(pg_row.get("entity_names", "[]")) if isinstance(pg_row.get("entity_names"), str) else pg_row.get("entity_names", []),
-                        page_version=existing.get("page_version_int", 0),
-                    )
-                    break
-
-        except Exception:
-            logging.exception("wiki: document deletion cleanup failed for page=%s doc=%s", page_id, doc_id)
-            summary["errors"].append(f"CLEANUP_FAILED:{page_id}")
-
-    await _wiki_delete_doc_page_source(tenant_id, kb_id, doc_id)
-
-    try:
-        await _wiki_finalize(tenant_id, kb_id, embd_mdl)
-    except Exception:
-        logging.exception("wiki: FINALIZE after deletion failed")
-
-    return summary
-
-
 __all__ = [
     "WIKI_PAGE_COMPILE_KWD",
     "WIKI_PLAN_GROUP_COMPILE_KWD",
     "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
     "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
     "wiki_compile_incremental",
-    "wiki_handle_document_deleted",
     "_wiki_reduce_entity",
     "_wiki_reduce_batch",
     "_wiki_match_entities",
@@ -4841,7 +4751,6 @@ __all__ = [
     "_wiki_refine_page",
     "_wiki_update_doc_page_source",
     "_load_canonical_entities",
-    "_save_canonical_entity",
     "_delete_canonical_entity",
     "_extract_raw_entities",
 ]

@@ -13,9 +13,18 @@ async def direct_search(state: dict, tools) -> dict:
     """Single hybrid search → merge into kbinfos."""
     question = state.get("question", "")
     keywords = state.get("keywords", "")
+    # Entity/qualifier-weighted retrieval query: a problem-level search over the
+    # bare question is exactly where the entity must dominate the ranking, so the
+    # weighted query (entity x3, qualifier x3) is always attached.
+    retrieval_query = ""
+    try:
+        if hasattr(tools, "_extract_keywords_weighted"):
+            retrieval_query, _ = await tools._extract_keywords_weighted(question)
+    except Exception:
+        _LOG.exception("[Direct] entity-weighted keyword extraction failed")
     _LOG.info('[Direct search] Looking up the knowledge base for: "%s" (keywords: %s)', question, keywords)
 
-    result = await hybrid_search(tools, query=question, keywords=keywords, use_compiled=True)
+    result = await hybrid_search(tools, query=question, keywords=keywords, retrieval_query=retrieval_query, use_compiled=True)
     _merge_kbinfos(tools, result)
 
     if not _has_chunks(tools):

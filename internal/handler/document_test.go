@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -47,6 +48,8 @@ type fakeDocumentService struct {
 	docErr                 error
 	updateCalled           bool
 	updatedID              string
+	updateCode             common.ErrorCode
+	updateErr              error
 	deleteCalled           bool
 	deletedID              string
 	stopResult             map[string]interface{}
@@ -80,7 +83,11 @@ type fakeDocumentService struct {
 	filterResult           map[string]interface{}
 	filterTotal            int64
 	listIDs                []string
+	documentList           []*entity.DocumentListItem
+	documentListTotal      int64
 	metadataByKBs          map[string]interface{}
+	hasActiveTasks         bool
+	hasActiveTasksErr      error
 }
 
 func (f *fakeDocumentService) Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
@@ -115,9 +122,15 @@ func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename,
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
-		return nil, fmt.Errorf("not found")
+		return nil, document.ErrPreviewDocumentNotFound
+	}
+	if docID == "empty-file" {
+		return nil, document.ErrPreviewFileEmpty
+	}
+	if docID == "storage-error" {
+		return nil, fmt.Errorf("read document object b/k: connection refused")
 	}
 	return &document.DocumentPreview{
 		Data:        []byte("preview content"),
@@ -144,10 +157,10 @@ func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*
 	}
 	return nil, fmt.Errorf("document not found")
 }
-func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error {
+func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error) {
 	f.updateCalled = true
 	f.updatedID = id
-	return nil
+	return f.updateCode, f.updateErr
 }
 func (f *fakeDocumentService) DeleteDocument(ctx context.Context, id string) error {
 	f.deleteCalled = true
@@ -171,7 +184,7 @@ func (f *fakeDocumentService) ListDocumentsByDatasetID(ctx context.Context, kbID
 }
 func (f *fakeDocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	f.listOpts = opts
-	return nil, 0, nil
+	return f.documentList, f.documentListTotal, nil
 }
 func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error) {
 	f.listOpts = opts
@@ -209,6 +222,10 @@ func (f *fakeDocumentService) GetMetadataSummary(ctx context.Context, kbID strin
 	f.metadataDocIDs = docIDs
 	return f.metadataSummary, f.metadataErr
 }
+func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error) {
+	return f.hasActiveTasks, f.hasActiveTasksErr
+}
+
 func (f *fakeDocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
 	f.setMetaCalled = true
 	f.setMetaDocID = docID
@@ -501,6 +518,70 @@ func TestUpdateDocumentHandler_Accessible(t *testing.T) {
 	}
 	if resp["message"] != "updated successfully" {
 		t.Fatalf("unexpected response: %v", resp)
+	}
+}
+
+func TestUpdateDocumentHandler_ValidationError(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		doc:        &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		updateCode: common.CodeDataError,
+		updateErr:  errors.New("can't change `progress`"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"progress":0.5}`)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.UpdateDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected data error, got %v", resp)
+	}
+	if resp["message"] != "can't change `progress`" {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
+func TestUpdateDocumentHandler_ServerError(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		doc:        &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		updateCode: common.CodeServerError,
+		updateErr:  errors.New("database unavailable"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"new.pdf"}`)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.UpdateDocument(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected server error, got %v", resp)
+	}
+	if resp["message"] != "database unavailable" {
+		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
 
@@ -1108,6 +1189,243 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	}
 }
 
+func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:              "doc-scheduled",
+			KbID:            "ds-1",
+			ParserID:        "naive",
+			ParserConfig:    "{}",
+			SourceType:      "local",
+			Type:            "document",
+			CreatedBy:       "user-1",
+			Name:            sptr("scheduled.pdf"),
+			Suffix:          "pdf",
+			IngestionStatus: sptr(common.SCHEDULED),
+		}},
+		documentListTotal: 1,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs []map[string]interface{} `json:"docs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(response.Data.Docs) != 1 {
+		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
+	}
+	if got := response.Data.Docs[0]["ingestion_status"]; got != common.SCHEDULED {
+		t.Fatalf("ingestion_status = %v, want %q", got, common.SCHEDULED)
+	}
+}
+
+func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:           "doc-without-task",
+			KbID:         "ds-1",
+			ParserID:     "naive",
+			ParserConfig: "{}",
+			SourceType:   "local",
+			Type:         "document",
+			CreatedBy:    "user-1",
+			Name:         sptr("without-task.pdf"),
+			Suffix:       "pdf",
+		}},
+		documentListTotal: 1,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs []map[string]interface{} `json:"docs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(response.Data.Docs) != 1 {
+		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
+	}
+	if _, exists := response.Data.Docs[0]["ingestion_status"]; exists {
+		t.Fatalf("ingestion_status should be omitted when no ingestion task exists")
+	}
+}
+
+func TestListDocumentsHandlerReturnsHasActiveTasks(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:           "doc-1",
+			KbID:         "ds-1",
+			ParserID:     "naive",
+			ParserConfig: "{}",
+			SourceType:   "local",
+			Type:         "document",
+			CreatedBy:    "user-1",
+			Name:         sptr("doc.pdf"),
+			Suffix:       "pdf",
+		}},
+		documentListTotal: 1,
+		hasActiveTasks:    true,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs           []map[string]interface{} `json:"docs"`
+			HasActiveTasks bool                     `json:"has_active_tasks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !response.Data.HasActiveTasks {
+		t.Fatalf("has_active_tasks = false, want true")
+	}
+}
+
+func TestListDocumentsHandlerReturnsHasActiveTasksFalse(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:           "doc-1",
+			KbID:         "ds-1",
+			ParserID:     "naive",
+			ParserConfig: "{}",
+			SourceType:   "local",
+			Type:         "document",
+			CreatedBy:    "user-1",
+			Name:         sptr("doc.pdf"),
+			Suffix:       "pdf",
+		}},
+		documentListTotal: 1,
+		hasActiveTasks:    false,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs           []map[string]interface{} `json:"docs"`
+			HasActiveTasks bool                     `json:"has_active_tasks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if response.Data.HasActiveTasks {
+		t.Fatalf("has_active_tasks = true, want false")
+	}
+}
+
+func TestListDocumentsHandlerKeepsPollingWhenActiveTaskCheckFails(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:           "doc-1",
+			KbID:         "ds-1",
+			ParserID:     "naive",
+			ParserConfig: "{}",
+			SourceType:   "local",
+			Type:         "document",
+			CreatedBy:    "user-1",
+			Name:         sptr("doc.pdf"),
+			Suffix:       "pdf",
+		}},
+		documentListTotal: 1,
+		hasActiveTasksErr: errors.New("temporary task lookup failure"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			HasActiveTasks bool `json:"has_active_tasks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !response.Data.HasActiveTasks {
+		t.Fatal("has_active_tasks = false, want true when active task lookup fails")
+	}
+}
+
 func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB
@@ -1511,6 +1829,61 @@ func TestGetDocumentPreview_NotFound(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	if resp["message"] != "document not found" {
+		t.Fatalf("expected message %q, got %v", "document not found", resp["message"])
+	}
+}
+
+func TestGetDocumentPreview_EmptyFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/empty-file/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "empty-file"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	if resp["message"] != "This file is empty." {
+		t.Fatalf("expected message %q, got %v", "This file is empty.", resp["message"])
+	}
+}
+
+func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/storage-error/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "storage-error"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	msg, _ := resp["message"].(string)
+	if msg != "Failed to load document preview" {
+		t.Fatalf("expected generic message, got %v", resp["message"])
+	}
+	// The storage detail (bucket/key, transport error) must stay in the
+	// server log, not in the client-visible message.
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
+		t.Fatalf("storage detail leaked to client: %v", resp["message"])
 	}
 }
 
