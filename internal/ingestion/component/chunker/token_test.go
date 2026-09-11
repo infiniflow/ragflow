@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -227,6 +228,41 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// Email's structured body item can have no text for a header-only
+	// message. Parser emits the second text item specifically so headers are
+	// still indexed through the JSON path.
+	items := []map[string]any{
+		{"from": "sender@example.com", "subject": "Status", "doc_type_kwd": "text"},
+		{"text": "from:sender@example.com\nsubject:Status\n", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "message.eml",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("chunks missing: %#v", out["chunks"])
+	}
+	for _, chunk := range chunks {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "subject:Status") {
+			return
+		}
+	}
+	t.Fatalf("header item was not indexed: %#v", chunks)
+}
+
 // TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
 // regression lock for #17889: when merging adjacent segments, only
 // "text" segments may be merged; "table"/"image" (any non-text type)
@@ -279,6 +315,10 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 		got, _ := ch["doc_type_kwd"].(string)
 		if got != wantTypes[i] {
 			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
+		}
+		ckType, _ := ch["ck_type"].(string)
+		if ckType != wantTypes[i] {
+			t.Errorf("chunk %d: ck_type = %q, want %q (derived from doc_type_kwd)", i, ckType, wantTypes[i])
 		}
 	}
 	// The two text segments on either side of the table/image must remain
@@ -353,6 +393,41 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 	if len(meta.Outputs) == 0 {
 		t.Error("outputs metadata is empty")
+	}
+}
+
+// TestTokenChunker_SpreadsheetTablePreservesSelectionRange guards the Parser
+// JSON path: spreadsheet positions describe a sheet selection, not a PDF
+// bounding box, and a table item must pass through without proportional text
+// splitting or coordinate rewriting.
+func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"delimiter": "\n"})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	wantPositions := [][]float64{{1, 2, 10, 1, 5}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "book.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"text":         "<table><tr><td>A</td></tr>\n<tr><td>B</td></tr></table>",
+			"doc_type_kwd": "table",
+			"positions":    wantPositions,
+			"sheet":        "Sheet1",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
+	}
+	if got := chunks[0]["ck_type"]; got != "table" {
+		t.Errorf("ck_type = %v, want table", got)
+	}
+	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
 	}
 }
 
@@ -725,5 +800,101 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	}
 	if got := joined.String(); strings.Contains(got, "\n\n") {
 		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
+	}
+}
+
+// TestApplyChildrenDelimText_DefaultsMomToCurrentChunk verifies that when an
+// incoming chunk has no Mom, the children fall back to the current chunk's
+// text (the historical behaviour preserved by the fix for #17876).
+func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q", i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_OverwritesIncomingMom documents the
+// CURRENT behaviour: when a chunk flowing into applyChildrenDelimText
+// already has a non-empty Mom, the function OVERWRITES it with
+// TrimPrefix(d.Text, "\n") of the current chunk's text. This is
+// the divergence that #17876 item 2 (multi-chunk text-path Mom
+// granularity) is tracking. Once the merge-granularity fix lands,
+// this test should be updated (or the PreservesIncomingMom version
+// added back).
+func TestApplyChildrenDelimText_OverwritesIncomingMom(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma", Mom: "incoming-mom-from-upstream"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Children must NOT carry the incoming Mom; the function
+		// overwrites it with TrimPrefix(d.Text, "\n") of the current
+		// chunk's text. This pins the current behavior; a future
+		// merge-granularity fix should update this test (or the test
+		// itself flips to assert the new preserved Mom behavior).
+		if c.Mom == "incoming-mom-from-upstream" {
+			t.Errorf("child %d: Mom=%q, expected overwrite to %q (not preserved)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (TrimPrefix(d.Text, \"\\n\"))",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
+// callers that pass a nil pattern don't accidentally clear Mom.
+func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta", Mom: "kept"},
+	}
+	out := applyChildrenDelimText(docs, nil)
+	if len(out) != 1 {
+		t.Fatalf("want 1 chunk unchanged, got %d", len(out))
+	}
+	if out[0].Mom != "kept" || out[0].Text != "alpha. beta" {
+		t.Errorf("input mutated under nil pattern: %+v", out[0])
+	}
+}
+
+// TestApplyChildrenDelimText_FallbackStripsLeadingNewline verifies that
+// when no incoming Mom is set, the fallback Mom uses
+// strings.TrimPrefix(t, "\n") — i.e. it strips a single leading newline
+// from the current chunk's text. The historical default this PR
+// preserves; if a child path forgets to strip, JSON-keyed SQL
+// downstream could see an extra leading "\n" in the Mom value.
+func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "\nalpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Each child Mom must be the text-path parent segment with
+		// the leading "\n" stripped, NOT the raw text-with-newline.
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (leading newline must be stripped)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
 	}
 }

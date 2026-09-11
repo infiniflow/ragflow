@@ -261,6 +261,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   documentStructureGraph: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
+  documentStructureClaims: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document

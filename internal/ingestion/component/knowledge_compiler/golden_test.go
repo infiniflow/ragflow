@@ -162,7 +162,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 		}
 	}
 
-	// Exactly one graph product summarizing {nodes, edges}.
+	// Entity and relation products are emitted without a graph summary (the
+	// compact graph blob was removed by #19474).
 	graphCount, nodeCount, edgeCount := 0, 0, 0
 	for _, p := range prods {
 		kind, _ := p.GetExtraString("kc_kind")
@@ -175,8 +176,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 			edgeCount++
 		}
 	}
-	if graphCount != 1 {
-		t.Fatalf("structure: graphCount = %d, want 1", graphCount)
+	if graphCount != 0 {
+		t.Fatalf("structure: graphCount = %d, want 0 (graph blob removed by #19474)", graphCount)
 	}
 	if nodeCount == 0 || edgeCount == 0 {
 		t.Fatalf("structure: expected entities+relations, got nodes=%d edges=%d", nodeCount, edgeCount)

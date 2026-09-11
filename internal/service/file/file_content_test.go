@@ -1,6 +1,9 @@
 package file
 
 import (
+	"strings"
+
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 	"testing"
 )
@@ -38,16 +41,92 @@ func TestLooksLikeHTML(t *testing.T) {
 	}
 }
 
-func TestParseFileContent_HTMLOutputFormat(t *testing.T) {
+func TestParseFileContent_JSONItems(t *testing.T) {
 	ctx := t.Context()
-	// CSV parser produces OutputFormat "html".
+	// CSV parser now produces JSON table items. sys.files still needs the
+	// readable item text, not the original CSV bytes.
 	result := parseFileContent(ctx, "data.csv", []byte("a,b,c\n1,2,3\n"))
-	if result == "" || result == string([]byte("a,b,c\n1,2,3\n")) {
-		t.Skip("CSV parser not available or returned raw text; integration-only test")
+	if result == "" {
+		t.Fatal("CSV parser returned empty content")
 	}
-	// CSV parser emits an HTML table; must not contain raw CSV comma-separated rows.
-	if result == "a,b,c\n1,2,3\n" {
-		t.Errorf("CSV should produce HTML output, got raw CSV: %q", result)
+	if strings.Contains(result, "a,b,c\n1,2,3\n") {
+		t.Errorf("CSV content used original bytes instead of parsed item text: %q", result)
+	}
+	if !strings.Contains(result, "<table") || !strings.Contains(result, "1") {
+		t.Errorf("CSV content lost readable table text: %q", result)
+	}
+}
+
+func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "first"},
+			{"text": "second"},
+			{"value": 3},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	want := "first\nsecond\n{\"value\":3}"
+	if result != want {
+		t.Fatalf("parseResultText = %q, want %q", result, want)
+	}
+}
+
+func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
+	raw := []byte("From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Parser contract\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nEmail body")
+	p := parser.NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "json", "fields": []string{"from", "to", "subject", "body"}})
+	parsed := p.ParseWithResult(t.Context(), "message.eml", raw)
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	content, err := parseResultText(parsed)
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	for _, want := range []string{"from:sender@example.com", "to:recipient@example.com", "subject:Parser contract", "Email body"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("sys.files text missing %q: %q", want, content)
+		}
+	}
+}
+
+func TestParseResultText_EmptyJSONUsesRenderedFallback(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		Markdown:     "legacy markdown",
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if result != "legacy markdown" {
+		t.Fatalf("parseResultText = %q, want rendered fallback", result)
+	}
+}
+
+func TestParseResultText_EmptyJSONWithoutFallbackReturnsEmpty(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{OutputFormat: "json"})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if result != "" {
+		t.Fatalf("parseResultText = %q, want empty text", result)
+	}
+}
+
+func TestParseAgentUploadContent_JSONUsesParsedItemText(t *testing.T) {
+	content, err := parseAgentUploadContent(t.Context(), "data.csv", []byte("a,b\n1,2\n"), "")
+	if err != nil {
+		t.Fatalf("parseAgentUploadContent: %v", err)
+	}
+	if strings.Contains(content, "a,b\n1,2\n") {
+		t.Fatalf("upload content used original bytes instead of parsed item text: %q", content)
+	}
+	if !strings.Contains(content, "<table") || !strings.Contains(content, "1") {
+		t.Fatalf("upload content lost readable table text: %q", content)
 	}
 }
 

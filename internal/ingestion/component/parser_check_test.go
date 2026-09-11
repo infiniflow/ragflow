@@ -24,8 +24,7 @@ import (
 )
 
 // TestParserComponent_Check covers the construction-time business
-// validation that mirrors the applicable subset of Python
-// ParserParam.check() (rag/flow/parser/parser.py:251-321).
+// validation for parser methods that require language configuration.
 //
 // Go does NOT validate audio/video vlm.llm_id because media_dispatch
 // resolves tenant default models via resolveTenantModelByType, not
@@ -71,6 +70,10 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:   "pdf: paddleocr (whitelist) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "paddleocr"}},
+		},
+		{
+			name:   "pdf: monkeyocrv2 (whitelist) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "monkeyocrv2"}},
 		},
 
 		// --- image family (parser.py:283-287) ---
@@ -127,7 +130,7 @@ func TestParserComponent_Check(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ParserComponent{Setups: tc.setups, Param: schema.ParserParam{}.Defaults()}
+			c := &ParserComponent{setups: tc.setups}
 			err := c.Check()
 			if tc.wantErr != "" {
 				if err == nil {

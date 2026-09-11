@@ -396,6 +396,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
+      continueUpload: 'Continue upload',
+      goToConfiguration: 'Go to configuration',
+      uploadMissingModelsTitle: 'Some files lack a required model',
+      fileModelMissing:
+        '{{name}} ({{fileType}}) requires a configured {{model}} model',
+      missingModelAsr: 'audio (ASR)',
+      missingModelVision: 'vision',
+      configureInDatasetSettingHint:
+        'You can configure it in the dataset Configuration page (Parser operator), or continue anyway.',
+      parseBlockedTitle: 'Cannot parse',
+      parseBlockedPartialTitle: 'Some files cannot be parsed',
+      parseBlockedHint:
+        'Configure the model in the dataset Configuration page (Parser operator), then try again.',
+      parseValidFiles: 'Parse valid files',
+      parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {
         fields: 'fields',
         selectFiles: 'Selected {{count}} files',
@@ -537,7 +552,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -560,6 +575,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus2: 'Cancelled',
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
+      runningStatusQueued: 'Queued',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -567,6 +583,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fromMessage: 'Missing start page number',
       toPlaceholder: 'to',
       toMessage: 'Missing end page number (excluded)',
+      pageRangeFromInvalid: 'Start page must be an integer greater than 0',
+      pageRangeToInvalid:
+        'End page must be an integer no less than the start page',
       layoutRecognize: 'PDF parser',
       layoutRecognizeTip:
         'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
@@ -604,11 +623,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
+      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set metadata',
@@ -644,7 +663,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       datasetDescription: 'Describe your dataset',
       overlappedPercentTip: 'The overlapped percent between two nearby chunks',
       globalIndexModelTip:
-        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+        'Used to generate auto-metadata, auto-keywords, and auto-questions. Model performance affects generation quality.',
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
@@ -784,6 +803,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the dataset categories',
+      imageLoadFailed: 'Failed to load image',
       audio: `<p>Supported file formats are <b>WAV, MP3, AAC, FLAC, OGG</b> and other common audio formats.</p>
 <p>This method transcribes audio files into text using a speech-to-text model.</p>`,
       email: `<p>Supported file formats are <b>EML</b> and <b>MSG</b>.</p>
@@ -865,11 +885,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     </p><p>
     Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
     </p>`,
-      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-
-<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
-<p>Ensure that you set the <b>Entity types</b>.</p>`,
       tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
 <p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this dataset is an independent description-tag pair.</p>
@@ -881,7 +896,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -918,15 +933,16 @@ Paragraphs:
       scopeFile: 'File',
       vietnamese: 'Vietnamese',
       pageRank: 'Page rank',
-      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dev/set_page_rank for details.`,
+      pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
+      tagMessage: 'Please select a tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
       tagTable: 'Table',
       tagSet: 'Tag sets',
       tagSetTip: `
-     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dev/use_tag_sets for details.</p>
+     <p> Select one or multiple tag datasets to auto-tag chunks in your dataset. See https://ragflow.io/docs/dataset_configuration#basic-information for details.</p>
 <p>The user query will also be auto-tagged.</p>
 This auto-tagging feature enhances retrieval by adding another layer of domain-specific knowledge to the existing dataset.
 <p>Difference between auto-tag and auto-keyword:</p>
@@ -941,7 +957,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
@@ -1076,7 +1092,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       rerankCandidatesCountValidation:
         'Rerank candidates must be greater than or equal to Top N.',
       variable: 'Variable',
-      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
+      variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/chat_configuration#system-prompt for details.`,
       add: 'Add',
       key: 'Key',
       variableKeyMessage: 'Please input the variable key',
@@ -1306,6 +1322,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldContainerName: 'Container Name',
       dataSourceFieldPrefixOptional: 'Prefix (optional)',
       dataSourceFieldFeedUrl: 'Feed URL',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL filter (regex)',
+      dataSourceFieldFollowPdfLinks: 'Follow PDF links',
+      dataSourceFieldRestrictPdfToDomain: 'Restrict PDFs to sitemap domain',
+      dataSourceFieldUserAgent: 'User-Agent',
       dataSourceFieldGcsAccessKeyId: 'GCS Access Key ID',
       dataSourceFieldGcsSecretAccessKey: 'GCS Secret Access Key',
       dataSourceFieldBucketName: 'Bucket Name',
@@ -1564,6 +1585,8 @@ Example: Virtual Hosted Style`,
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
+      webdavCaCertPathTip:
+        'Optional: Path to a CA certificate bundle mounted inside the RAGFlow container.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -1605,6 +1628,20 @@ Example: Virtual Hosted Style`,
         'Every repository visible to the token in this organization will be indexed.',
       azureDevOpsContentTypesTip:
         'Choose what to index: source files, pull requests, or both.',
+      sitemapDescription:
+        'Connect a public sitemap.xml to sync the listed web pages and PDF documents into your knowledge base.',
+      sitemapUrlTip:
+        'URL of the sitemap.xml or sitemap index to crawl, e.g. https://example.com/sitemap.xml. Sitemap indexes are followed recursively (up to 5 levels).',
+      sitemapUrlFilterTip:
+        'Optional regular expression. Only URLs matching it are indexed, e.g. ^https://example\\.com/docs/ to restrict the sync to a section of the site.',
+      sitemapFollowPdfLinksTip:
+        'Also index the PDF files linked from the crawled HTML pages.',
+      sitemapRestrictPdfToDomainTip:
+        'Only follow PDF links hosted on the same domain as the sitemap.',
+      sitemapUserAgentTip:
+        'User-Agent header sent with every request. Leave empty to use RAGFlow-SitemapConnector/1.0.',
+      sitemapBatchSizeTip:
+        'Number of pages fetched and sent to RAGFlow per batch.',
       azure_devopsDescription:
         'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
@@ -1882,12 +1919,14 @@ Example: Virtual Hosted Style`,
       deleteChannelModalTitle: 'Delete chat channel',
       deleteChannelModalContent:
         'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
-      connectDialog: 'Connect assistant',
-      connectDialogTitle: 'Connect {{name}} to an assistant',
-      selectDialog: 'Select an assistant',
+      connectDialog: 'Connect assistant or Agent',
+      connectDialogTitle: 'Connect {{name}} to an assistant or Agent',
+      selectDialog: 'Select an assistant or Agent',
       connectDialogTip:
-        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
-      notConnected: 'No assistant connected',
+        'Messages received by this channel will be answered by the connected assistant or Agent. Clear the selection to disconnect.',
+      notConnected: 'No assistant or Agent connected',
+      chatChannelAssistant: 'Chat assistant',
+      chatChannelAgent: 'Agent',
       chatChannelDesc: {
         clickclack: 'Connect a ClickClack bot',
         discord: 'Connect a Discord bot',
@@ -2210,7 +2249,7 @@ Example: Virtual Hosted Style`,
         modelNameRequired: 'Model name is required',
         apiServerRequired: 'MinerU API Server Configuration is required',
         serverUrlBackendLimit:
-          'MinerU Server URL Address is only available for the HTTP client backend',
+          'MinerU server URL is only available for vlm-http-client and hybrid-http-client backends',
         apiserver: 'MinerU API Server Configuration',
         outputDir: 'MinerU Output Directory Path',
         backend: 'MinerU Processing Backend Type',
@@ -2338,6 +2377,9 @@ Example: Virtual Hosted Style`,
         'Entity mode: one Wiki page per entity or concept. Topic mode: let the LLM group related entities or concepts into the same Wiki page by topic.',
       raptorTreeSettings: 'RAPTOR tree settings',
       summarizationPrompt: 'Summarization prompt',
+      claimExtractionPrompt: 'Claim extraction prompt',
+      claimExtractionPromptTip:
+        'System prompt for harvesting atomic claims with verbatim evidence from the leaf chunks before clustering. Leave empty to use the built-in contract.',
       maxToken: 'Max token',
       maxTokenRequired: 'Please input max token',
       clusteringThreshold: 'Clustering threshold',
@@ -2361,19 +2403,19 @@ Example: Virtual Hosted Style`,
       compilationTitleSuffix: "' dataset",
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'Tree/Page index',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
-      noWikiPages: 'No wiki pages yet',
+      noWikiPages: 'No wiki yet',
       noSkills: 'No skills yet',
       noStructureGraph: 'No graph yet',
       noStructureMindmap: 'No mind map yet',
       noStructureTimeline: 'No timeline yet',
       contents: 'Navigation',
       topics: 'Topics',
-      selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
+      graphEntityCount: '{{returned}} / {{total}} entities',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:
@@ -2431,6 +2473,14 @@ Example: Virtual Hosted Style`,
       representationEmpty: 'No artifact templates available.',
       representationUnsupported:
         'This representation type is not supported yet.',
+      claimsPanelTitle: 'Claims · {{name}}',
+      claimsTotal: '{{count}} total',
+      claimsLoading: 'Loading claims…',
+      claimsEmpty: 'No claims were extracted for this cluster.',
+      claimsLoadMore: 'Load more ({{remaining}} remaining)',
+      claimsMoreEvidence: '+{{count}} more evidence',
+      claimsCollapseEvidence: 'Show less',
+      claimsNodeDetail: 'Details',
     },
     message: {
       registered: 'Registered!',
@@ -2625,6 +2675,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       script: 'Script',
       iterationItemDescription:
         'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      maxConcurrency: 'Max concurrency',
+      maxConcurrencyTip:
+        '0 or 1 runs items one by one. Values greater than 1 run that many items at once.',
       guidingQuestion: 'Guidance question',
       onFailure: 'On failure',
       userPromptDefaultValue:
@@ -2774,6 +2827,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
+      sofyaSearchDepth: 'Search depth',
+      sofyaSearchDepthTip:
+        'Basic returns the content of each result page. Snippets returns the search snippets only, which is faster and costs less.',
+      sofyaSearchDepthBasic: 'Page content',
+      sofyaSearchDepthSnippets: 'Snippets only',
+      sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -3128,6 +3190,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      debugRunLimits:
+        'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
       templateDescription:
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
@@ -3159,6 +3223,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
       delimiterTip: `
@@ -3261,6 +3326,9 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
+      documentIds: 'Document IDs',
+      documentIdsTip:
+        'Optional list of document IDs to restrict retrieval scope. Supports upstream variable references.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',
@@ -3360,6 +3428,20 @@ This process aggregates variables from multiple branches into a single variable 
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
+      nodeFormInvalid:
+        'Cannot save: "{{name}}" has invalid settings. Please fix them first',
+      agentModelMissing:
+        'Cannot save: "{{name}}" has no model selected. Please choose one first',
+      retrievalDatasetMissing:
+        'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalMemoryMissing:
+        'Cannot save: "{{name}}" has no memories selected. Please choose them first',
+      retrievalTemplateDatasetHint:
+        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+      retrievalTemplateMemoryHint:
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+      retrievalDatasetRequired: 'Please select a knowledge base first',
+      retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
@@ -3375,7 +3457,6 @@ This process aggregates variables from multiple branches into a single variable 
       compilerDescription:
         'Compiles document chunks using knowledge compilation templates into structured artifacts.',
       outputFormat: 'Output format',
-      fileFormats: 'File type',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: 'Spreadsheet',
@@ -3390,8 +3471,9 @@ This process aggregates variables from multiple branches into a single variable 
         audio: 'Audio',
         video: 'Video',
       },
+      addFileType: 'Add file type',
+      atLeastOneFileType: 'At least one file type is required',
       fields: 'Field',
-      addParser: 'Add Parser',
       rule: 'Rule',
       addRule: 'Add rule',
       group: 'Group',

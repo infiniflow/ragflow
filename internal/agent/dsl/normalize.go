@@ -442,7 +442,7 @@ func toStringSlice(v any) []string {
 // Without the deep copy, a caller that reuses the original
 // decoded DSL map (e.g. for re-validation or diffing) would
 // observe side effects that contradict the documented
-// "never mutates its input" contract.
+// "never mutates its input"
 //
 // Primitives and non-mutable values (string, number, bool) are
 // shared by reference; only the maps and slices that the
