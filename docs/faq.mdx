@@ -59,11 +59,11 @@ Where:
 
 ---
 
-### Why not use other open-source vector databases as the document engine?
+### Why does RAGFlow use Elasticsearch or Infinity as its default document engine?
 
-Currently, only Elasticsearch and [Infinity](https://github.com/infiniflow/infinity) meet the hybrid search requirements of RAGFlow. Most open-source vector databases have limited support for full-text search, and sparse embedding is not an alternative to full-text search. Additionally, these vector databases lack critical features essential to RAGFlow, such as phrase search and advanced ranking capabilities.
-
-These limitations led us to develop [Infinity](https://github.com/infiniflow/infinity), the AI-native database, from the ground up.
+Elasticsearch and [Infinity](https://github.com/infiniflow/infinity) meet RAGFlow's core hybrid search requirements, including full-text search, vector search, phrase search, and advanced ranking capabilities.
+RAGFlow also supports other document engines, including OpenSearch, OceanBase, SeekDB, and GaussDB. Support levels and available features may vary between document engines.
+[Infinity](https://github.com/infiniflow/infinity) is an AI-native database developed by InfiniFlow and optimized for RAG workloads.
 
 ---
 
@@ -75,9 +75,11 @@ You can deploy an open-source RAGFlow service and call it from a Python client o
 
 ---
 
-### Why does RAGFlow require more resources than other projects?
+### Why does RAGFlow require substantial system resources?
 
-RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
+RAGFlow runs multiple components for document parsing, embedding, full-text and vector indexing, retrieval, task processing, metadata storage, caching, and object storage. Some document parsers also load or download machine-learning models and may require significant memory or GPU resources.
+
+Actual resource usage depends on the selected document engine, parser, model provider, document volume, and workload. See the deployment prerequisites and configuration documentation for the current minimum requirements.
 
 ---
 
@@ -141,6 +143,8 @@ See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 Some RAGFlow document parsers download required model files from [Hugging Face](https://huggingface.co). If the RAGFlow container cannot access Hugging Face and the files are not already cached, model initialization or document parsing may fail.
 
+For example:
+
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
 ```
@@ -170,7 +174,11 @@ To fix this issue, use https://hf-mirror.com instead:
 
 ### `Fail to access model(Ollama/xxxxx)`
 
-Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
+This error means that RAGFlow cannot access the configured Ollama model. Check that Ollama is running, the model has been downloaded, the model name is correct, and the Ollama Base URL is reachable from the RAGFlow container.
+
+If the request times out while loading the model, check the Ollama logs and available memory. Try a smaller model or allocate more memory if necessary.
+
+See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more information.
 
 ---
 
@@ -219,8 +227,8 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
  * Running on http://x.x.x.x:9380
- INFO:werkzeug:Press CTRL+C to quit
 ```
+Then use the [system health API](./references/http_api_reference.md#check-system-health) to check the database, Redis, document engine, and object storage.
 
 ---
 
@@ -234,7 +242,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ### `xxx tasks are ahead in the queue`
 
-### For RAGFlow versions earlier than v0.26.0
+#### For RAGFlow versions earlier than v0.26.0
 
 1. Clear the Redis task queue:
 
@@ -266,7 +274,7 @@ docker stop $(docker ps -aq)
 docker rm $(docker ps -aq)
 ```
 
-### For RAGFlow v0.26.0 and later
+#### For RAGFlow v0.26.0 and later
 
 1. Clear the Redis task queue:
 
@@ -341,7 +349,9 @@ docker compose up -d
 
 ### `Index failure`
 
-An index failure usually indicates an unavailable Elasticsearch service.
+An index failure means that RAGFlow could not write the processed document chunks to the configured document engine.
+
+Check the task logs, embedding model, document engine connection, and system health. If you use Elasticsearch, OpenSearch, Infinity, or another supported document engine, verify that the corresponding service is running and accessible.
 
 ---
 
@@ -355,26 +365,20 @@ tail -f ragflow/docker/ragflow-logs/*.log
 
 ### How to check the status of each component in RAGFlow?
 
-1. Check the status of the Elasticsearch Docker container:
+1. Check the status of the RAGFlow Docker container:
 
    ```bash
-   $ docker ps
+   $ docker compose ps
    ```
-
-   *The following is an example result:*
-
+   Review the service logs:
    ```bash
-   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
-   91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
-   d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
-   cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
+   docker compose logs -f ragflow
+
    ```
 
-2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
+2. Use the [system health API](./references/http_api_reference.md#check-system-health) to check the database, Redis, document engine, and object storage.
 
-:::danger IMPORTANT
-The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
-:::
+A running container does not necessarily mean that the service inside it is healthy. Check the health API and logs for connection, port, DNS, and configuration errors.
 
 ---
 
@@ -472,30 +476,21 @@ See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more informat
 
 ### Do you offer examples of using DeepDoc to parse PDF or other files?
 
-Yes, we do. See the Python files under the **rag/app** folder.
+Yes. See the parser entry points and examples in the [`rag/app`](https://github.com/infiniflow/ragflow/tree/main/rag/app) directory.
+
+For example, `rag/app/naive.py` shows how RAGFlow selects and invokes document parsers for different file types.
 
 ---
 
 ### `FileNotFoundError: [Errno 2] No such file or directory`
 
-1. Check the status of the MinIO Docker container:
+This error means that RAGFlow cannot find a required file. Check the complete error message and stack trace to identify the missing path.
 
-   ```bash
-   $ docker ps
-   ```
+- If a model file is missing, check whether the required model was downloaded successfully.
+- If an uploaded document is missing, check the configured object storage service.
+- If a temporary or local file is missing, check the container volume mappings and file permissions.
 
-   *The status of a healthy Elasticsearch component should look as follows:*
-
-   ```bash
-   cd29bcb254bc   pgsty/silo:RELEASE.2026-08-06T00-00-00Z                "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
-   ```
-
-2. Follow [the system health API](./references/http_api_reference.md#check-system-health) to check the health status of the Elasticsearch service.
-
-:::danger IMPORTANT
-The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
-:::
-
+Use the [system health API](./references/http_api_reference.md#check-system-health) to verify the configured object storage and other dependencies.
 ---
 
 ## Usage
@@ -538,19 +533,6 @@ It is not recommended to manually change the 32-file batch upload limit. However
 
 ---
 
-### `Error: Range of input length should be [1, 30000]`
-
-This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
-
-1. Click **Chat** in the middle top of the page.
-2. Right-click the desired conversation > **Edit** > **Prompt engine**
-3. Reduce the **TopN** and/or raise **Similarity threshold**.
-4. Click **OK** to confirm your changes.
-
-![topn](https://github.com/infiniflow/ragflow/assets/93570324/7ec72ab3-0dd2-4cff-af44-e2663b67b2fc)
-
----
-
 ### How to get an API key for integration with third-party applications?
 
 See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
@@ -567,7 +549,11 @@ See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. Stop all running containers:
+:::danger WARNING
+Switching the document engine requires rebuilding the document indexes. The following command deletes Docker volumes and existing data. Back up any data you need before continuing.
+:::
+
+1. Stop all running containers and remove the existing volumes:
 
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
@@ -576,18 +562,25 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
    `-v` will delete all Docker container volumes, and the existing data will be cleared.
    :::
 
-2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
+2. Set the following value in **docker/.env** :
+
+```env
+   DOC_ENGINE=infinity
+```
+
 3. Restart your Docker image:
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   $ docker compose -f docker/docker-compose.yml up -d
    ```
 
 ---
 
-### Where are my uploaded files stored in RAGFlow's image?
+### Where are uploaded files stored in RAGFlow?
 
-All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
+Uploaded files are stored in the configured object storage backend. MinIO is used by default, while other supported options include Amazon S3, Azure Blob Storage, Alibaba Cloud OSS, Google Cloud Storage, and OpenDAL-compatible storage.
+
+The internal bucket and object path depend on how and where the file was uploaded. Manage uploaded files through RAGFlow instead of relying on a fixed storage path.
 
 ---
 
@@ -644,11 +637,9 @@ If retrieval needs improvement, adjust settings such as the similarity threshold
 
 ### What needs to be reprocessed after changing the embedding model, reranker, or LLM?
 
-These models affect different stages of the RAG pipeline:
-
-- Changing the **embedding model** generally requires rebuilding the vector index.
-- Changing the **reranker** affects how retrieved results are reordered and does not change the original documents.
-- Changing the **LLM** mainly affects query understanding and answer generation and generally does not require reparsing the dataset.
+- Changing the **embedding model** requires rebuilding the document indexes. RAGFlow does not normally allow you to change the embedding model after documents in the dataset have been parsed. Create a new dataset or remove the existing parsed data before using another embedding model.
+- Changing the **reranker** affects only the ranking of retrieved results and does not require reparsing the documents.
+- Changing the **LLM** affects query understanding and answer generation and does not normally require reparsing the dataset.
 
 ---
 
@@ -669,8 +660,6 @@ To reduce response latency, consider the following:
 - Disable optional features that require additional model calls when they are not needed.
 - Use a reranker only when it provides a meaningful improvement in retrieval quality.
 - Make sure the deployed model service has sufficient computing resources and low network latency.
-
-See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
 
 ---
 
