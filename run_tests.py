@@ -56,19 +56,35 @@ def _is_color_supported() -> bool:
         try:
             # Get Windows version number
             win_version = platform.version()
-            major, _, build = map(int, win_version.split("."))
+            ver_parts = win_version.split(".")
+            if len(ver_parts) < 3:
+                return False
+            major, _, build = map(int, ver_parts[:3])
             if not (major >= 10 and build >= 10586):
                 return False
-            from ctypes import windll
+            from ctypes import windll, wintypes, POINTER, byref
 
             # Actively enable ANSI support for Windows terminal
-            INVALID_HANDLE_VALUE = -1
+            INVALID_HANDLE_VALUE = wintypes.HANDLE(-1)
+            STD_OUTPUT_HANDLE = wintypes.DWORD(-11)
             kernel32 = windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+
+            # Declare Win32 API signatures. Prevent 64‑bit handle truncation and silent API failure
+            kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+            kernel32.GetStdHandle.restype = wintypes.HANDLE
+            # Signatures for console mode read and write APIs
+            kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, POINTER(wintypes.DWORD)]
+            kernel32.GetConsoleMode.restype = wintypes.BOOL
+
+            handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
             if handle == INVALID_HANDLE_VALUE:
                 return False
-            success = kernel32.SetConsoleMode(handle, 7)
-            return bool(success)
+            mode = wintypes.DWORD()
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
+            if kernel32.GetConsoleMode(handle, byref(mode)):
+                vt_enabled = bool(mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+                return vt_enabled
+            return False
         except BaseException as e:
             if isinstance(e, (SystemExit, KeyboardInterrupt)):
                 raise e
@@ -106,8 +122,12 @@ def set_color(s: str, color: str) -> str:
     """
 
     if COLOR_SUPPORT:
-        return f"{getattr(Colors, color.strip().upper()).value}{s}{Colors.NC.value}"
-    return f"{s}"  # pragma: no cover
+        try:
+            c_enum = getattr(Colors, color.strip().upper())
+            return f"{c_enum.value}{s}{Colors.NC.value}"
+        except AttributeError:
+            return s
+    return s  # pragma: no cover
 
 
 class TestRunner:
