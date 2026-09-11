@@ -586,6 +586,14 @@ class OBConnectionBase(DocStoreConnection):
             if not v:
                 continue
             if k == "exists":
+                column_name = v
+            elif k == "must_not" and isinstance(v, dict) and "exists" in v:
+                column_name = v.get("exists")
+            else:
+                column_name = k
+            if not isinstance(column_name, str) or not column_name.isidentifier():
+                raise ValueError(f"Invalid column name in filter condition: {column_name!r}")
+            if k == "exists":
                 filters.append(f"{v} IS NOT NULL")
             elif k == "must_not" and isinstance(v, dict) and "exists" in v:
                 filters.append(f"{v.get('exists')} IS NULL")
