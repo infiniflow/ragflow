@@ -783,7 +783,12 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}}, embModel.APIConfig, embeddingConfig, nil)
+	// Query: true mirrors Python Dealer.get_vector (rag/nlp/search.py:75-82),
+	// which embeds the search text with emb_mdl.encode_queries — the asymmetric
+	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
+	// / NVIDIA query). Embedding it as a document would put the query vector in
+	// the wrong space for those providers.
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}
