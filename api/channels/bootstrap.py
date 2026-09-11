@@ -51,6 +51,47 @@ _BUNDLED_CHANNELS = (
 _RECONCILE_INTERVAL_SECS = 10
 
 
+def _remove_reasoning_content(txt: str) -> str:
+    """Strip ``<think>...</think>`` reasoning blocks from a reply.
+
+    Mirrors ``LLMBundle._remove_reasoning_content`` (and the shared Go
+    ``StripThinkTrailing`` helper): everything through the last ``</think>``
+    marker is reasoning, and only what follows is shown to the end user.
+    """
+    if not txt:
+        return txt
+    first_think_start = txt.find("<think>")
+    if first_think_start == -1:
+        return txt
+    last_think_end = txt.rfind("</think>")
+    if last_think_end == -1 or last_think_end < first_think_start:
+        return txt
+    return txt[last_think_end + len("</think>") :]
+
+
+async def _send_thinking_message(ch, msg) -> None:
+    """Send a lightweight "thinking" placeholder before the real reply (WeCom only)."""
+    if ch.channel_id != "wecom":
+        return
+    from api.channels.core.base import OutgoingMessage
+
+    try:
+        await ch.send(
+            OutgoingMessage(
+                chat_id=msg.chat_id,
+                text="🤔 开始思考...",
+                reply_to_message_id=msg.message_id or None,
+            )
+        )
+    except Exception:
+        LOGGER.warning(
+            "[%s:%s] failed to send thinking placeholder",
+            ch.channel_id,
+            ch.account_id,
+            exc_info=True,
+        )
+
+
 def _canvas_state(dsl) -> dict:
     """Normalize a persisted canvas DSL into a dictionary."""
     value = dsl
@@ -139,7 +180,7 @@ def _make_chat_handler(ch):
     bot, a RAG completion is run against that dialog, and the answer is sent
     back. The connected dialog is resolved per message, so connection changes
     take effect immediately without restarting the channel. Channels with no
-    connected dialog ignore inbound messages.
+    connected target ignore inbound messages.
     """
     from api.channels.core.base import IncomingMessage, OutgoingMessage
     from api.db.services.api_service import API4ConversationService
@@ -176,6 +217,7 @@ def _make_chat_handler(ch):
             user_id = _channel_agent_user_id(ch.account_id, msg.chat_id, msg.sender_id)
             session = API4ConversationService.get_latest_agent_channel_session(cc.agent_id, user_id)
             query, inputs = _prepare_agent_turn(msg.text, session.dsl if session else None)
+            await _send_thinking_message(ch, msg)
             answer_text = ""
             try:
                 async for raw in agent_completion(
@@ -196,7 +238,12 @@ def _make_chat_handler(ch):
                             continue
                         event = json.loads(payload)
                         if event.get("event") == "message":
-                            answer_text += event.get("data", {}).get("content", "") or ""
+                            data = event.get("data") or {}
+                            answer_text += data.get("content", "") or ""
+                            if data.get("start_to_think", False):
+                                answer_text += "<think>"
+                            elif data.get("end_to_think", False):
+                                answer_text += "</think>"
             except Exception:
                 LOGGER.exception("[%s:%s] Agent completion failed", ch.channel_id, ch.account_id)
                 answer_text = "抱歉，当前无法处理这条消息，请稍后重试。"
@@ -205,7 +252,7 @@ def _make_chat_handler(ch):
                 await ch.send(
                     OutgoingMessage(
                         chat_id=msg.chat_id,
-                        text=answer_text,
+                        text=_remove_reasoning_content(answer_text),
                         reply_to_message_id=msg.message_id or None,
                     )
                 )
@@ -238,6 +285,8 @@ def _make_chat_handler(ch):
                 continue
             history.append(m)
 
+        await _send_thinking_message(ch, msg)
+
         answer_text = ""
         try:
             chat_kwargs = {"quote": False}
@@ -256,7 +305,7 @@ def _make_chat_handler(ch):
             await ch.send(
                 OutgoingMessage(
                     chat_id=msg.chat_id,
-                    text=answer_text,
+                    text=_remove_reasoning_content(answer_text),
                     reply_to_message_id=msg.message_id or None,
                 )
             )

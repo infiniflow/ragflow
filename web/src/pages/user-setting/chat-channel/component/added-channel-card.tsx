@@ -156,7 +156,7 @@ export const AddedChannelCard = (props: IAddedChannelCardProps) => {
               >
                 <Settings size={14} />
               </Button>
-              {channel.channel === ChatChannelKey.WHATSAPP && (
+              {channel.id === ChatChannelKey.WHATSAPP && (
                 <Button
                   variant={'ghost'}
                   className="rounded-lg px-2 py-1 bg-transparent hover:bg-bg-card"

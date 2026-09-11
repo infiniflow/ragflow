@@ -74,8 +74,10 @@ const ConnectDialogModal = ({
     if (!channel) {
       return;
     }
-    await connect({ channelId: channel.id, targetValue });
-    hideModal();
+    const result = await connect({ channelId: channel.id, targetValue });
+    if (result.code === 0) {
+      hideModal();
+    }
   };
 
   return (

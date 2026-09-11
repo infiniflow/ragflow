@@ -244,23 +244,36 @@ export const useFetchAgentListByPage = () => {
   };
 };
 
+export const fetchAllAgents = async (): Promise<AgentListItem[]> => {
+  const all: AgentListItem[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (all.length < total) {
+    const { data } = await agentService.listAgents(
+      {
+        params: buildAgentListParams({
+          page,
+          pageSize: 100,
+          canvasCategoryIds: [AgentCategory.AgentCanvas],
+        }),
+      },
+      true,
+    );
+    const canvas: AgentListItem[] = data?.data?.canvas ?? [];
+    all.push(...canvas);
+    total = data?.data?.total ?? all.length;
+    if (canvas.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+  return all;
+};
+
 export function useFetchAllAgentList() {
   const { data, isFetching: loading } = useQuery<AgentListItem[]>({
     queryKey: AgentKeys.all(),
-    queryFn: async () => {
-      const { data } = await agentService.listAgents(
-        {
-          params: buildAgentListParams({
-            page: 1,
-            pageSize: 100000,
-            canvasCategoryIds: [AgentCategory.AgentCanvas],
-          }),
-        },
-        true,
-      );
-
-      return data?.data?.canvas;
-    },
+    queryFn: fetchAllAgents,
   });
 
   return { data, loading };
