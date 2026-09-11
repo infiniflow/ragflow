@@ -35,7 +35,7 @@ from common.float_utils import get_float
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
-        if not binary:
+        if binary is None:
             wb = load_workbook(fnm)
         else:
             wb = load_workbook(BytesIO(binary))
@@ -75,7 +75,7 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
         start = timer()
@@ -178,7 +178,7 @@ class Docx(DocxParser):
         pass
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -384,7 +384,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        qai_list, tbls = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

@@ -103,12 +103,16 @@ func mustAddTable(t *testing.T, f *excelize.File, sheet string, table *excelize.
 	}
 }
 
-// TestRecordsToHTMLTableChunks_Alignment asserts the chunked output uses the
+// TestRecordsToHTMLTableChunkList_Alignment asserts the chunked output uses the
 // shared schema: <caption>, first row as <th>, data as <td>, repeated header
 // per 256-row chunk, and NO <thead>/<tbody> wrapper.
-func TestRecordsToHTMLTableChunks_Alignment(t *testing.T) {
+func TestRecordsToHTMLTableChunkList_Alignment(t *testing.T) {
 	records := [][]string{{"Name", "Age"}, {"Alice", "30"}, {"Bob", "25"}}
-	out := recordsToHTMLTableChunks(records, 256, "Sheet1")
+	chunks := recordsToHTMLTableChunkList(records, 256, "Sheet1", 1)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	out := chunks[0].HTML
 
 	if !strings.Contains(out, `<caption>Sheet1</caption>`) {
 		t.Fatalf("want <caption>Sheet1</caption>, got:\n%s", out)
@@ -122,28 +126,58 @@ func TestRecordsToHTMLTableChunks_Alignment(t *testing.T) {
 	if strings.Contains(out, "<thead>") || strings.Contains(out, "<tbody>") {
 		t.Fatalf("must not emit <thead>/<tbody> to stay byte-compatible with Python/CSV, got:\n%s", out)
 	}
-	// Exactly one <table> for <=256 data rows.
-	if n := strings.Count(out, "<table>"); n != 1 {
-		t.Fatalf("want 1 <table>, got %d:\n%s", n, out)
-	}
 }
 
-// TestRecordsToHTMLTableChunks_Chunking asserts 256-row chunking with a repeated
+// TestRecordsToHTMLTableChunkList_Chunking asserts 256-row chunking with a repeated
 // header (ceil(n_data / chunk_rows) chunks).
-func TestRecordsToHTMLTableChunks_Chunking(t *testing.T) {
+func TestRecordsToHTMLTableChunkList_Chunking(t *testing.T) {
 	const dataRows = 300
 	records := make([][]string, 0, dataRows+1)
 	records = append(records, []string{"C1", "C2"})
 	for i := 0; i < dataRows; i++ {
 		records = append(records, []string{"x", "y"})
 	}
-	out := recordsToHTMLTableChunks(records, 256, "S")
+	chunks := recordsToHTMLTableChunkList(records, 256, "S", 1)
 	// 300 data rows → ceil(300/256) = 2 chunks, each repeating the header.
-	if n := strings.Count(out, "<table>"); n != 2 {
-		t.Fatalf("want 2 <table> chunks, got %d", n)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
 	}
-	if n := strings.Count(out, "<tr><th>C1</th><th>C2</th></tr>"); n != 2 {
-		t.Fatalf("want header repeated in both chunks, got %d", n)
+	for i, ch := range chunks {
+		if !strings.Contains(ch.HTML, "<tr><th>C1</th><th>C2</th></tr>") {
+			t.Fatalf("want header repeated in chunk %d, got %s", i, ch.HTML)
+		}
+	}
+}
+
+func TestRecordsToHTMLTableChunkList_RowRange(t *testing.T) {
+	records := make([][]string, 0, 25)
+	records = append(records, []string{"H"})
+	for i := 0; i < 24; i++ {
+		records = append(records, []string{"x"})
+	}
+	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	if chunks[0].RowStart != 2 || chunks[0].RowEnd != 13 {
+		t.Fatalf("chunk0 rows = %d-%d, want 2-13", chunks[0].RowStart, chunks[0].RowEnd)
+	}
+	if chunks[1].RowStart != 14 || chunks[1].RowEnd != 25 {
+		t.Fatalf("chunk1 rows = %d-%d, want 14-25", chunks[1].RowStart, chunks[1].RowEnd)
+	}
+}
+
+func TestRecordsToHTMLTableChunkList_ColEndUsesWidestRow(t *testing.T) {
+	records := [][]string{
+		{"H"},
+		{"a", "b", "c"},
+	}
+	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].ColEnd != 3 {
+		t.Fatalf("ColEnd = %d, want 3", chunks[0].ColEnd)
 	}
 }
 

@@ -16,6 +16,8 @@
 import json
 import logging
 import re
+import threading
+import time
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
@@ -46,9 +48,18 @@ def index_name(uid):
 
 
 class Dealer:
+    # Short-lived cache of "doc_id exists in MySQL" used by _prune_deleted_chunks.
+    # Every retrieval would otherwise hit MySQL per query (fan-out searches and the
+    # ReAct native loop hammer the same doc_ids repeatedly), which exhausts the
+    # connection pool under concurrency. Doc existence is stable within seconds, so
+    # a short TTL lets us skip the DB round-trip for repeats.
+    _DOC_EXISTS_TTL = 120.0
+
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
+        self._doc_exists_cache: OrderedDict = OrderedDict()
+        self._doc_exists_lock = threading.Lock()
 
     @dataclass
     class SearchResult:
@@ -75,13 +86,37 @@ class Dealer:
             return set()
 
         unique_doc_ids = list(dict.fromkeys(doc_ids))
+        now = time.time()
 
-        def _load():
-            from api.db.services.document_service import DocumentService
+        # Fast path: serve every doc_id from the short-lived cache if it is fresh.
+        with self._doc_exists_lock:
+            cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
+            hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
+            miss = [d for d in unique_doc_ids if d not in cached]
 
-            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+        if not miss:
+            return hit
 
-        return await thread_pool_exec(_load)
+        # Run the existence check on the MAIN thread against the shared peewee pool.
+        # Doing it through ``thread_pool_exec`` spins up a fresh thread per call; the
+        # pooled MySQL connection gets bound to that (short-lived) thread's local pool
+        # and, once the thread is torn down, stays locked in the dead thread — a leak
+        # that exhausts the connection pool under fan-out / ReAct concurrency (hundreds
+        # of MaxConnectionsExceeded). Reusing the main thread's pool keeps connections
+        # returning properly; the query itself is small and the cache makes this rare.
+        from api.db.services.document_service import DocumentService
+
+        found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+
+        # Merge results; a missing doc is recorded as False so repeat queries skip it too.
+        with self._doc_exists_lock:
+            for d in miss:
+                self._doc_exists_cache[d] = (now, d in found)
+            # Bound the cache so it cannot grow unbounded across many documents.
+            while len(self._doc_exists_cache) > 4096:
+                self._doc_exists_cache.popitem(last=False)
+
+        return hit.union(found)
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:
@@ -196,11 +231,7 @@ class Dealer:
             total = self.dataStore.get_total(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"]
-            if not highlight:
-                highlightFields = []
-            elif isinstance(highlight, list):
-                highlightFields = highlight
+            highlightFields = []
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
                 matchExprs = [matchText] if matchText else []
@@ -274,9 +305,9 @@ class Dealer:
         logging.debug(f"TOTAL: {total}")
         ids = self.dataStore.get_doc_ids(res)
         keywords = list(kwds)
-        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
+        highlightDic = self.dataStore.get_highlight(res, keywords, "content_with_weight") if highlight else {}
         aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
-        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlight, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlightDic, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
 
     @staticmethod
     def trans2floats(txt):
@@ -478,7 +509,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -510,7 +541,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -531,21 +562,35 @@ class Dealer:
             if isinstance(sres.field[i].get("important_kwd", []), str):
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
+        rerank_docs = []
         for i in sres.ids:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = sres.field[i].get(cfield, "").split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks + important_kwd
+            # Unlike rerank()/rerank_with_knn(), the fields are not repeated here:
+            # these tokens are joined back into `docs` for a cross-encoder, where
+            # duplicating a field would distort the model's own scoring.
+            tks = content_ltks + title_tks + important_kwd + question_tks
             ins_tw.append(tks)
-
-        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+            # Feed the reranker the natural chunk text (markup preserved), not the
+            # tokenized content_ltks. Neural rerankers score stemmed / accent-split
+            # tokens far lower, which collapses relevance scores and forces an
+            # artificially low similarity_threshold. The natural text is passed
+            # as-is: remove_redundant_spaces() is ASCII-oriented and mangles
+            # multilingual text ("sécurité des données" -> "sécuritédes données"),
+            # so it is only applied to the tokenized fallback used when
+            # content_with_weight is absent. Per-provider truncation to the model
+            # window stays the reranker connector's responsibility.
+            natural = str(sres.field[i].get("content_with_weight") or "")
+            rerank_docs.append(natural or remove_redundant_spaces(" ".join(tks)))
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
         # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
         # provider (see RerankModel.Base.similarity), so the blend below stays
         # on a single scale regardless of the configured reranker.
-        vtsim, _ = rerank_mdl.similarity(query, docs)
+        vtsim, _ = rerank_mdl.similarity(query, rerank_docs)
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
@@ -727,7 +772,7 @@ class Dealer:
             # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
+                "content_ltks": chunk.get("content_ltks", ""),
                 "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
@@ -744,11 +789,8 @@ class Dealer:
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
             }
-            if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
+            if id in sres.highlight:
+                d["highlight"] = sres.highlight[id]
             ranks["chunks"].append(d)
 
         if aggs:

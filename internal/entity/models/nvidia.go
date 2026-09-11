@@ -179,10 +179,16 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, err
 	}
 
+	// Python NvidiaEmbed.encode sends input_type="passage" for documents and
+	// encode_queries sends "query"; the NIM API embeds each side differently.
+	inputType := "passage"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
 		"input":           request.Texts,
-		"input_type":      "query",
+		"input_type":      inputType,
 		"encoding_format": "float",
 		"truncate":        "END",
 	}
@@ -239,13 +245,11 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 
 // nvidiaRerankRequest mirrors the NIM /ranking request shape:
 // query is an object with a "text" field, passages is an array of
-// objects each with a "text" field. truncate=END matches the Python
-// NvidiaRerank reference at rag/llm/rerank_model.py.
+// objects each with a "text" field.
 type nvidiaRerankRequest struct {
 	Model    string             `json:"model"`
 	Query    nvidiaRerankText   `json:"query"`
 	Passages []nvidiaRerankText `json:"passages"`
-	Truncate string             `json:"truncate,omitempty"`
 	TopN     int                `json:"top_n"`
 }
 
@@ -304,7 +308,6 @@ func (n *NvidiaModel) Rerank(ctx context.Context, modelName *string, request Rer
 		Model:    *modelName,
 		Query:    nvidiaRerankText{Text: query},
 		Passages: passages,
-		Truncate: "END",
 		TopN:     topN,
 	}
 

@@ -75,7 +75,7 @@ function NoteNode({
         <section className="px-2 py-1 flex gap-2 items-center note-drag-handle rounded-t border-t-2 border-state-warning">
           <NotebookPen className="size-4" />
           <Form {...nameForm}>
-            <form className="flex-1">
+            <form onSubmit={nameForm.handleSubmit(() => {})} className="flex-1">
               <FormField
                 control={nameForm.control}
                 name="name"
@@ -102,10 +102,11 @@ function NoteNode({
               control={form.control}
               name="text"
               render={({ field }) => (
-                <FormItem className="h-full">
+                <FormItem className="h-full pb-2">
                   <FormControl>
                     <Textarea
                       placeholder={t('flow.notePlaceholder')}
+                      resize="none"
                       className="resize-none rounded-none p-1 py-0 overflow-auto bg-transparent focus-visible:ring-0 border-none text-text-secondary focus-visible:ring-offset-0 !text-xs h-full"
                       {...field}
                     />

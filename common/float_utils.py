@@ -56,3 +56,28 @@ def normalize_overlapped_percent(overlapped_percent):
         value *= 100
     value = int(value)
     return max(0, min(value, 90))
+
+
+def format_minimum_should_match_percent(fraction: float) -> str:
+    """Convert a fraction to a percentage string for full-text search.
+
+    Floating-point fractions such as 0.29 are not exactly representable in
+    IEEE-754, so `int(fraction * 100)` truncates toward zero and can produce a
+    string one percentage point stricter than requested. This helper rounds
+    half-up to the nearest whole percent instead.
+
+    Args:
+        fraction: A fraction in the range [0, 1].
+
+    Returns:
+        A percentage string like "29%".
+
+    Examples:
+        >>> format_minimum_should_match_percent(0.29)
+        '29%'
+        >>> format_minimum_should_match_percent(0.57)
+        '57%'
+        >>> format_minimum_should_match_percent(0.125)
+        '13%'
+    """
+    return str(int(fraction * 100 + 0.5)) + "%"

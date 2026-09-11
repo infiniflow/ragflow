@@ -644,8 +644,15 @@ export const useUpdateProviderInstance = () => {
 export const useFetchDefaultModels = () => {
   const { data, isFetching: loading } = useQuery<IDefaultModel[]>({
     queryKey: LlmKeys.defaultModels(),
+    // Tenant default models change rarely, and every mutation that can change
+    // them invalidates this key explicitly, so hold the result for a while
+    // instead of refetching per observer — there is one per dataset row.
+    staleTime: 5 * 60 * 1000,
     initialData: [],
-    gcTime: 0,
+    // `initialData` alone would be timestamped as of now and so counted fresh
+    // for the whole stale window, meaning the seeded empty list would never be
+    // replaced by a real fetch. Backdate it so the first mount still fetches.
+    initialDataUpdatedAt: 0,
     queryFn: async () => {
       const { data } = await llmService.listDefaultModels({}, true);
       return data?.data?.models ?? [];
