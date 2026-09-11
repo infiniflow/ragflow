@@ -81,17 +81,38 @@ function Representation({
   const handleCloseClaims = useCallback(() => setClaimsLeaf(null), []);
   const handleCloseEvidence = useCallback(() => setEvidenceDetail(null), []);
 
-  // Wait for the fetch to settle before committing to either panel. Publishing
-  // during the load made the heading flicker: it opened as "Claims · X" and
-  // then, the moment an empty result landed, switched to the node-detail panel
-  // titled just "X". The page stacks both panels in one slot, so the choice is
-  // exclusive — and it can only be made once the claim count is known.
+  // Wait for the fetch to settle before committing to either panel. While it
+  // is in flight, publish the claims panel in its loading state so the middle
+  // column is stable and honest — publishing the node-detail panel during the
+  // load made it flash first and then be overwritten by the claims panel (or,
+  // for a node without claims, it just stayed there looking unexplained). The
+  // page stacks both panels in one slot, so the choice is exclusive — and it
+  // can only be made once the claim count is known.
   const claimsSettled = Boolean(claimsLeaf) && !claimsLoading;
   const hasClaims = claimsSettled && (claimsData?.claims?.length ?? 0) > 0;
 
   useEffect(() => {
+    if (claimsLeaf && !claimsSettled) {
+      onClaimsPanelChange?.({
+        clusterName: claimsLeaf.name,
+        claims: [],
+        total: 0,
+        loading: true,
+        onClose: handleCloseClaims,
+      });
+      return () => onClaimsPanelChange?.(null);
+    }
+    // No claims and no node detail: keep the claims panel open with its empty
+    // state when the click actually addressed chunks (a real leaf), so the
+    // column answers "why nothing" instead of silently closing. Branch nodes
+    // without source_chunk_ids close it -- they are pure structure.
+    const showEmptyClaims =
+      claimsSettled &&
+      !hasClaims &&
+      !evidenceDetail &&
+      Boolean(claimsLeaf?.source_chunk_ids?.length);
     onClaimsPanelChange?.(
-      hasClaims && claimsLeaf
+      claimsLeaf && (hasClaims || showEmptyClaims)
         ? {
             clusterName: claimsLeaf.name,
             claims: claimsData?.claims ?? [],
@@ -109,6 +130,7 @@ function Representation({
     claimsData,
     claimsLoading,
     claimsSettled,
+    evidenceDetail,
     hasClaims,
     handleCloseClaims,
     onClaimsPanelChange,
@@ -116,7 +138,7 @@ function Representation({
 
   useEffect(() => {
     onEvidencePanelChange?.(
-      !hasClaims && evidenceDetail
+      claimsSettled && !hasClaims && evidenceDetail
         ? {
             nodeName: evidenceDetail.name,
             description: evidenceDetail.description,
@@ -126,7 +148,13 @@ function Representation({
         : null,
     );
     return () => onEvidencePanelChange?.(null);
-  }, [evidenceDetail, handleCloseEvidence, hasClaims, onEvidencePanelChange]);
+  }, [
+    claimsSettled,
+    evidenceDetail,
+    handleCloseEvidence,
+    hasClaims,
+    onEvidencePanelChange,
+  ]);
 
   const handleNodeClickWithClaims = useCallback(
     (node: ClickableNode) => {
@@ -137,9 +165,11 @@ function Representation({
       // every node. Whether the panel actually opens is decided by the fetch
       // below, once we know the node has claims.
       setClaimsLeaf(node);
-      setEvidenceDetail(
-        node.evidence?.length || node.description ? node : null,
-      );
+      // The node-detail panel is ONLY for nodes carrying gate-verified quotes
+      // (page_index fact/conclusion rows). A description alone would make
+      // every tree node fall back to it when no claims exist -- an
+      // unexplained block of compiled summary text in the claims slot.
+      setEvidenceDetail(node.evidence?.length ? node : null);
       handleNodeClick(node);
     },
     [handleNodeClick],
