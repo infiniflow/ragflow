@@ -33,7 +33,7 @@ from common.constants import (
     SOMARK_DEFAULT_CONFIG,
     SOMARK_ENV_KEYS,
 )
-from api.db.services.tenant_llm_service import TenantService
+from api.db.services.user_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService

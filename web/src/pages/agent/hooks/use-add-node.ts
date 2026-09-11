@@ -32,6 +32,7 @@ import {
   initialIterationStartValues,
   initialIterationValues,
   initialKeenableValues,
+  initialSofyaValues,
   initialYouComValues,
   initialListOperationsValues,
   initialLoopValues,
@@ -60,6 +61,7 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from '../constant';
+import { withDefaultParserModels } from '../form/parser-form/utils';
 import useGraphStore from '../store';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -175,12 +177,16 @@ export const useInitializeOperatorParams = () => {
       [Operator.QueritSearch]: initialQueritValues,
       [Operator.KeenableSearch]: initialKeenableValues,
       [Operator.YouComSearch]: initialYouComValues,
+      [Operator.SofyaSearch]: initialSofyaValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
       [Operator.Placeholder]: {},
       [Operator.File]: {},
-      [Operator.Parser]: initialParserValues,
+      [Operator.Parser]: withDefaultParserModels(
+        initialParserValues,
+        defaultModelDictionary,
+      ),
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.TokenChunker]: initialTokenChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
@@ -210,7 +216,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
     };
-  }, [llmId]);
+  }, [defaultModelDictionary, llmId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
