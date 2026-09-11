@@ -235,7 +235,6 @@ func maybeDispatchImage(
 func imageDispatchResult(text, dataURI string) parserDispatchResult {
 	return parserDispatchResult{
 		OutputFormat: "json",
-		DocType:      "image",
 		JSON: []map[string]any{{
 			"text":         text,
 			"image":        dataURI,
@@ -322,7 +321,6 @@ func maybeDispatchAudio(
 	if outputFormat == "json" {
 		return parserDispatchResult{
 			OutputFormat: "json",
-			DocType:      "text",
 			JSON: []map[string]any{{
 				"text":         transcription,
 				"doc_type_kwd": "text",
@@ -331,7 +329,6 @@ func maybeDispatchAudio(
 	}
 	return parserDispatchResult{
 		OutputFormat: outputFormat,
-		DocType:      "audio",
 		Text:         transcription,
 	}, true, nil
 }

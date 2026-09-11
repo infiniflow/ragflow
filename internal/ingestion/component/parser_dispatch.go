@@ -14,8 +14,8 @@
 //  limitations under the License.
 //
 
-// Parser dispatch validates the requested output format, resolves the
-// parser backend, and returns the structured ParseWithResult payload.
+// Parser dispatch resolves the parser backend and returns the structured
+// ParseWithResult payload for component-boundary normalization.
 //
 // `parse_method` is carried through file metadata for downstream
 // consumers, while the actual backend work stays in
@@ -48,7 +48,6 @@ import (
 // backend responses until buildParserOutputs normalizes them.
 type parserDispatchResult struct {
 	OutputFormat string
-	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
 	File         map[string]any
 	JSON         []map[string]any
 	Markdown     string
@@ -154,9 +153,9 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 //     or the python family name ("markdown"); both are normalized
 //     to the extension form via the pythonFamilyName / familyToExt
 //     lookup tables below.
-//  2. inputs["file"].name — fall back to the filename so a caller
-//     that only supplies the path is still routed correctly.
-//  3. inputs["name"] — last-resort filename.
+//  2. inputs["name"] — the resolved source filename.
+//  3. inputs["file"].name — fallback for callers that only supply a
+//     file descriptor.
 //  4. utility.FileTypeOTHER — text-page mode.
 //
 // The function never errors; unknown / absent filenames degrade to
@@ -186,13 +185,13 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 			return ft
 		}
 	}
+	if name, ok := inputs["name"].(string); ok && name != "" {
+		return utility.GetFileType(name)
+	}
 	if m, ok := inputs["file"].(map[string]any); ok {
 		if name, ok := m["name"].(string); ok && name != "" {
 			return utility.GetFileType(name)
 		}
-	}
-	if name, ok := inputs["name"].(string); ok && name != "" {
-		return utility.GetFileType(name)
 	}
 	return utility.FileTypeOTHER
 }
@@ -296,7 +295,7 @@ func ParserFileFamily(ext string) string {
 //
 //   - name           string        — from the upstream file/document name
 //     (or doc_id when no filename is available)
-//   - file_type      string        — canonical parser-resolved file extension
+//   - file_type      string        — normalized parser routing type
 //   - output_format  string        — always "json"
 //   - json           []map[string]any — normalized parser items
 //   - file           map[string]any — the parser-enriched file

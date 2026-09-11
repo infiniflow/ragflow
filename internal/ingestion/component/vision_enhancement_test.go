@@ -126,7 +126,6 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 
 			dispatched := parserDispatchResult{
 				OutputFormat: "json",
-				DocType:      string(tc.fileType),
 				JSON: []map[string]any{
 					{"text": "Intro paragraph", "image": nil, "doc_type_kwd": "text"},
 					{"text": "", "image": "aGVsbG8taW1hZ2U=", "doc_type_kwd": "image"},
@@ -188,7 +187,6 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 
 	dispatched := parserDispatchResult{
 		OutputFormat: "markdown",
-		DocType:      "docx",
 		Markdown:     "![Image](data:image/png;base64,abc)",
 		File:         map[string]any{"figures": []map[string]any{{"image": "abc", "marker": "x"}}},
 	}
@@ -216,7 +214,6 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 	dispatched := parserDispatchResult{
 		OutputFormat: "json",
-		DocType:      "other",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},
@@ -242,7 +239,6 @@ func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
 	dispatched := parserDispatchResult{
 		OutputFormat: "json",
-		DocType:      "docx",
 		JSON: []map[string]any{
 			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},

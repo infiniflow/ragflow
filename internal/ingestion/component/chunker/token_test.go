@@ -228,6 +228,41 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// Email's structured body item can have no text for a header-only
+	// message. Parser emits the second text item specifically so headers are
+	// still indexed through the JSON path.
+	items := []map[string]any{
+		{"from": "sender@example.com", "subject": "Status", "doc_type_kwd": "text"},
+		{"text": "from:sender@example.com\nsubject:Status\n", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "message.eml",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("chunks missing: %#v", out["chunks"])
+	}
+	for _, chunk := range chunks {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "subject:Status") {
+			return
+		}
+	}
+	t.Fatalf("header item was not indexed: %#v", chunks)
+}
+
 // TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
 // regression lock for #17889: when merging adjacent segments, only
 // "text" segments may be merged; "table"/"image" (any non-text type)

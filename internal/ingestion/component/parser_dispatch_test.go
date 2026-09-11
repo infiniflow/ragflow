@@ -210,8 +210,8 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 		t.Fatalf("parser output log count = %d, want 1", len(entries))
 	}
 	fields := entries[0].ContextMap()
-	if got := fields["output_format"]; got != "json" {
-		t.Errorf("output_format = %v, want json", got)
+	if _, ok := fields["output_format"]; ok {
+		t.Errorf("output_format must be omitted because it is always json: %v", fields)
 	}
 	if got := fields["normalized_from"]; got != "markdown" {
 		t.Errorf("normalized_from = %v, want markdown", got)
@@ -350,8 +350,8 @@ func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 // rules documented on parser_dispatch.go:fileTypeFromInputs:
 //
 //  1. inputs["file_type"]  (explicit family hint)
-//  2. inputs["file"].name  (filename in the file descriptor)
-//  3. inputs["name"]       (last-resort filename)
+//  2. inputs["name"]       (the resolved source filename)
+//  3. inputs["file"].name  (filename in the file descriptor)
 //  4. FileTypeOTHER        (text-page mode)
 func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	cases := []struct {
@@ -367,6 +367,7 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 		{"explicit slides (family name)", map[string]any{"file_type": "slides"}, "pptx"},
 		{"explicit spreadsheet (family name)", map[string]any{"file_type": "spreadsheet"}, "xlsx"},
 		{"explicit markdown (family form)", map[string]any{"file_type": "markdown"}, "md"},
+		{"name wins over conflicting file.name", map[string]any{"name": "report.txt", "file": map[string]any{"name": "report.pdf"}}, "txt"},
 		{"file.name docx", map[string]any{"file": map[string]any{"name": "report.docx"}}, "docx"},
 		{"name fallback md", map[string]any{"name": "notes.md"}, "md"},
 		{"unrelated inputs", map[string]any{"binary": []byte("x"), "doc_id": "abc"}, "other"},

@@ -75,6 +75,25 @@ func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T)
 	}
 }
 
+func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
+	raw := []byte("From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Parser contract\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nEmail body")
+	p := parser.NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "json", "fields": []string{"from", "to", "subject", "body"}})
+	parsed := p.ParseWithResult(t.Context(), "message.eml", raw)
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	content, err := parseResultText(parsed)
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	for _, want := range []string{"from:sender@example.com", "to:recipient@example.com", "subject:Parser contract", "Email body"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("sys.files text missing %q: %q", want, content)
+		}
+	}
+}
+
 func TestParseResultText_EmptyJSONUsesRenderedFallback(t *testing.T) {
 	result, err := parseResultText(parser.ParseResult{
 		OutputFormat: "json",

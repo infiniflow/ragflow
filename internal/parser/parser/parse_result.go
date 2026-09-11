@@ -33,20 +33,19 @@ package parser
 
 import "context"
 
-// ParseResult is the structured return value of a parse operation. JSON is the
-// canonical payload. The rendered fields carry non-JSON backend responses to
-// the Parser component's normalization boundary. On failure, Err is non-nil
-// and OutputFormat is empty.
+// ParseResult is the structured return value of a parse operation. JSON holds
+// structured backend output when available; the rendered fields carry
+// non-JSON backend responses to the Parser component's normalization boundary.
+// On failure, Err is non-nil and OutputFormat is empty.
 type ParseResult struct {
 	// OutputFormat identifies the backend payload representation. The Parser
 	// component normalizes successful results to JSON. Empty when Err is non-nil.
 	OutputFormat string
 
-	// File is the enriched file metadata the parser emits. In
-	// Python this is the dict form of the original `file`
-	// descriptor, augmented with format-specific keys (e.g.
-	// `outline` on the PDF path, `page_count` for paginated
-	// formats). Nil when the parser did not enrich.
+	// File is metadata produced by the parser backend (for example
+	// `outline` on the PDF path or `page_count` for paginated formats).
+	// Nil when the backend does not produce metadata. It is not an augmented
+	// copy of the upstream file descriptor.
 	//
 	// For the office family (docx/doc, pptx/ppt), File["format"]
 	// reflects the real container format detected via magic-byte
@@ -93,12 +92,10 @@ type ParseResultProducer interface {
 // Canonical document type identifiers used in structured JSON items.
 // These align directly with Python's doc_type_kwd contract.
 const (
-	DocTypeKey     = "doc_type_kwd"
-	DocTypeText    = "text"
-	DocTypeTable   = "table"
-	DocTypeImage   = "image"
-	DocTypeAudio   = "audio"
-	DocTypeHeading = "heading"
+	DocTypeKey   = "doc_type_kwd"
+	DocTypeText  = "text"
+	DocTypeTable = "table"
+	DocTypeImage = "image"
 )
 
 // NewTextJSONItem constructs a canonical text JSON item for parser output.

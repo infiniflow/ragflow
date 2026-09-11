@@ -55,8 +55,8 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	if result.OutputFormat != "json" {
 		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
 	}
-	if len(result.JSON) != 1 {
-		t.Fatalf("expected 1 JSON item, got %d", len(result.JSON))
+	if len(result.JSON) != 2 {
+		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
 	}
 	item := result.JSON[0]
 
@@ -81,6 +81,31 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 	if v, ok := item["doc_type_kwd"].(string); !ok || v != "text" {
 		t.Errorf("doc_type_kwd: got %q", v)
+	}
+
+	header := result.JSON[1]
+	headerText, ok := header["text"].(string)
+	if !ok {
+		t.Fatalf("header item text missing: %#v", header)
+	}
+	for _, want := range []string{"from:sender@example.com", "to:recipient@example.com", "subject:Test Email"} {
+		if !strings.Contains(headerText, want) {
+			t.Errorf("header item missing %q: %q", want, headerText)
+		}
+	}
+	if strings.Contains(headerText, "This is the body of the test email.") {
+		t.Errorf("header item must not duplicate body text: %q", headerText)
+	}
+	if v, ok := header["doc_type_kwd"].(string); !ok || v != "text" {
+		t.Errorf("header doc_type_kwd: got %q", v)
+	}
+}
+
+func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
+	p := NewEmailParser()
+	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
+	if result.Err == nil {
+		t.Fatalf("expected malformed EML error, got result %#v", result)
 	}
 }
 
@@ -233,8 +258,8 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if len(result.JSON) != 1 {
-		t.Fatalf("expected 1 JSON item, got %d", len(result.JSON))
+	if len(result.JSON) != 2 {
+		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
 	}
 	item := result.JSON[0]
 

@@ -77,9 +77,12 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if len(out) == 0 {
 		t.Errorf("Outputs() returned empty map")
 	}
-	// The component catalog must expose its canonical input and payload.
-	if _, ok := in["binary"]; !ok {
-		t.Errorf("Inputs() missing key %q", "binary")
+	// The component catalog must expose every caller-provided input that
+	// Invoke reads before dispatching.
+	for _, key := range []string{"binary", "name", "file", "file_type", "lang", "doc_id", "bucket", "path"} {
+		if _, ok := in[key]; !ok {
+			t.Errorf("Inputs() missing runtime input key %q", key)
+		}
 	}
 	if _, ok := out["output_format"]; !ok {
 		t.Errorf("Outputs() missing key %q", "output_format")

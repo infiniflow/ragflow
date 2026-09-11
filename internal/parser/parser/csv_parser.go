@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 
-// CSVParser renders CSV data as HTML tables, matching the spreadsheet
-// family output_format == "html" convention from ParserParam.Defaults().
+// CSVParser renders CSV data as HTML table text in structured JSON table items.
 //
 // Mirrors Python's deepdoc/parser/excel_parser.py:RAGFlowExcelParser.html():
 //   - CSV data is rendered as an HTML <table> with <caption> "Data".

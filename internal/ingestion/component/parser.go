@@ -335,16 +335,25 @@ func defaultSetups() map[string]schema.ParserSetup {
 // reads the following from the inputs map at Invoke time:
 //
 //	binary    ([]byte, optional) — file bytes from upstream File.
-//	                                When absent, Parser resolves
-//	                                them from bucket/path or doc_id.
+//	                                When absent, Parser resolves them from
+//	                                bucket/path or doc_id.
+//	name      (string, optional) — resolved source filename.
+//	file      (map[string]any, optional) — source descriptor; its name is
+//	                                used when name is absent.
+//	file_type (string, optional) — explicit parser routing hint.
+//	lang      (string, optional) — language forwarded to downstream stages.
 //	doc_id    (string, optional) — document ID used for naming and,
 //	                                when binary is absent, storage lookup.
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"binary": "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
-		"doc_id": "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
-		"bucket": "Optional storage bucket override. Used when binary is absent.",
-		"path":   "Optional storage object key override. Used when binary is absent.",
+		"binary":    "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
+		"name":      "Optional resolved source filename. Takes precedence over file.name.",
+		"file":      "Optional source file descriptor (map[string]any). file.name is used when name is absent.",
+		"file_type": "Optional explicit parser routing hint (string).",
+		"lang":      "Optional language for downstream tokenization (string).",
+		"doc_id":    "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
+		"bucket":    "Optional storage bucket override. Used when binary is absent.",
+		"path":      "Optional storage object key override. Used when binary is absent.",
 	}
 }
 
@@ -353,7 +362,8 @@ func (c *ParserComponent) Inputs() map[string]string {
 //
 //	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
-//	file_type     string  — canonical parser-resolved file extension.
+//	file_type     string  — normalized parser routing type; may be an
+//	                        extension or a family such as "visual".
 //	output_format string  — always "json".
 //	json          []map[string]any — canonical structured parser items.
 //	lang          string  — language for tokenization.
@@ -368,7 +378,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
-		"file_type":     "string: canonical parser-resolved file extension.",
+		"file_type":     "string: normalized parser routing type; may be an extension or a family such as \"visual\".",
 		"output_format": "string: always \"json\".",
 		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
@@ -384,7 +394,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 // Returns:
 //
 //	{
-//	  "name":           string (from inputs["doc_id"]),
+//	  "name":           string (from inputs["name"], file.name, or doc_id),
 //	  "output_format": "json",
 //	  "json":           []map[string]any,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
@@ -512,7 +522,6 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 func logParserOutput(dispatched parserDispatchResult, items []map[string]any) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
-		zap.String("output_format", "json"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
 		zap.Int("json_items", len(items)),
 	)
