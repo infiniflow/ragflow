@@ -1177,22 +1177,22 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[
 			bucketKind = kindVal
 		}
 		return map[string]interface{}{
-				"template_id":   tid,
-				"template_name": bucketName,
-				"kind":          bucketKind,
-			}, graphBucketScope(documentID, map[string]interface{}{
-				"compilation_template_ids": []string{tid},
-			})
+			"template_id":   tid,
+			"template_name": bucketName,
+			"kind":          bucketKind,
+		}, graphBucketScope(documentID, map[string]interface{}{
+			"compilation_template_ids": []string{tid},
+		})
 	}
 	bucketID := "legacy:" + compileKwd
 	return map[string]interface{}{
-			"template_id":   bucketID,
-			"template_name": "Legacy (" + compileKwd + ")",
-			"kind":          kindVal,
-		}, graphBucketScope(documentID, map[string]interface{}{
-			"compile_kwd": []string{compileKwd},
-			"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
-		})
+		"template_id":   bucketID,
+		"template_name": "Legacy (" + compileKwd + ")",
+		"kind":          kindVal,
+	}, graphBucketScope(documentID, map[string]interface{}{
+		"compile_kwd": []string{compileKwd},
+		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
+	})
 }
 
 func graphBucketScope(documentID string, scope map[string]interface{}) map[string]interface{} {
