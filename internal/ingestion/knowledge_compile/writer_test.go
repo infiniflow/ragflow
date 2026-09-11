@@ -164,6 +164,32 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
+	oldID := "dataset_structure_old"
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            oldID,
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "component",
+			"content_with_weight":           `{"name":"Engine","type":"component","description":"existing"}`,
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Engine", Type: "component", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eng.lastDeleteCond != nil {
+		t.Fatalf("invalid bucket must not delete the existing row: %v", eng.lastDeleteCond)
+	}
+}
+
 // TestDeleteMergedScopesToMergedWikiRows locks the W1 contract: DeleteMerged
 // must only target dataset-level (available_int=1) wiki merged rows. The
 // structural filter (kb_id + available_int + wiki page/section compile_kwd) is

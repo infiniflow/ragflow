@@ -296,13 +296,10 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	}
 	rows := make([]map[string]interface{}, 0, len(buckets))
 	for _, b := range buckets {
+		if !structureBucketWritable(b) {
+			continue
+		}
 		desc := strings.TrimSpace(b.Description)
-		if desc == "" {
-			continue
-		}
-		if b.Name == "" {
-			continue
-		}
 		template := structureTemplateIdentity(b.TemplateID, b.TemplateKind)
 		bid := datasetLevelStructureID(tenant, kb, template, b.Name, b.Type, b.CompileKwd, b.RelationType)
 		ckwd := b.CompileKwd
@@ -489,6 +486,9 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				continue
 			}
 			bucket := &buckets[idx]
+			if !structureBucketWritable(*bucket) {
+				continue
+			}
 			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
 			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
 			payload := structureRowPayload(row)
@@ -524,11 +524,23 @@ func structureCompileKind(compileKwd string) string {
 	return compileKwdStructure
 }
 
+func structureRelationType(value string) string {
+	value = strings.ToLower(strings.Join(strings.Fields(value), " "))
+	if value == "" {
+		return "related"
+	}
+	return value
+}
+
+func structureBucketWritable(bucket StructureBucket) bool {
+	return strings.TrimSpace(bucket.Name) != "" && strings.TrimSpace(bucket.Description) != ""
+}
+
 func structureBucketIdentity(bucket StructureBucket) string {
 	template := structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind)
 	compileKwd := structureCompileKind(bucket.CompileKwd)
 	if bucket.FromEntity != "" || bucket.ToEntity != "" {
-		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + strings.ToLower(strings.TrimSpace(bucket.RelationType)) + "\x00" + normalizedStructureEntityName(bucket.ToEntity)
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + structureRelationType(bucket.RelationType) + "\x00" + normalizedStructureEntityName(bucket.ToEntity)
 	}
 	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.Name)
 }
@@ -550,7 +562,7 @@ func structureRowIdentity(row map[string]interface{}) string {
 		if to == "" {
 			to = structureString(payload["to"])
 		}
-		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(from) + "\x00" + strings.ToLower(strings.TrimSpace(structureString(payload["type"]))) + "\x00" + normalizedStructureEntityName(to)
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(from) + "\x00" + structureRelationType(structureString(payload["type"])) + "\x00" + normalizedStructureEntityName(to)
 	}
 	name := structureString(row["name_kwd"])
 	if name == "" {
@@ -723,7 +735,7 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 func datasetLevelStructureID(tenant, kb, template, name, typ, compileKwd, relationType string) string {
 	identity := template + "\x00" + normalizedStructureEntityName(name) + "\x00" + structureCompileKind(compileKwd)
 	if relationType != "" {
-		identity += "\x00" + typ + "\x00" + strings.ToLower(relationType)
+		identity += "\x00" + typ + "\x00" + structureRelationType(relationType)
 	}
 	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+identity)
 }

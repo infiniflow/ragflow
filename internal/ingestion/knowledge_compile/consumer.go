@@ -1552,7 +1552,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if relType == "" {
 				relType = "related"
 			}
-			k := rkey{template: template, from: strings.ToLower(from), typ: strings.ToLower(relType), to: strings.ToLower(to), ckwd: ckwd}
+			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
 				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}

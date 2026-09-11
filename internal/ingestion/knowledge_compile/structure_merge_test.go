@@ -134,6 +134,26 @@ func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 	}
 }
 
+func TestMergeStructureDataset_NormalizesRelationIdentity(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "first",
+			Meta: map[string]any{"kind": "relation", "from": " A  ", "to": " B ", "relation_type": " Related  ", "source_chunk_ids": []string{"c1"}}},
+		{Variant: kccommon.VariantStructure, DocID: "d2", Content: "second",
+			Meta: map[string]any{"kind": "relation", "from": "a", "to": "b", "relation_type": "related", "source_chunk_ids": []string{"c2"}}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 1 {
+		t.Fatalf("normalized relation identity should produce one bucket, got %d: %+v", len(buckets), buckets)
+	}
+	if got := len(buckets[0].SourceDocIDs); got != 2 {
+		t.Fatalf("relation source docs = %v, want two docs", buckets[0].SourceDocIDs)
+	}
+}
+
 // TestMergeStructureDataset_DescriptionIsPlainText covers the description bug:
 // the product Content is the doc row's content_with_weight JSON, so the dataset
 // row's folded description must be the plain-text "description" field, NOT the raw
