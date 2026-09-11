@@ -869,6 +869,10 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	// Seed the document and KB so buildEarlyLogInput succeeds: without them no
+	// early row is created and the rollback cleanup below is never exercised.
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.FAILED).Error; err != nil {
 		t.Fatalf("set failed status: %v", err)
@@ -894,6 +898,11 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	}
 	if reloaded.Status != common.FAILED {
 		t.Fatalf("status = %q, want %q", reloaded.Status, common.FAILED)
+	}
+	// The retry opened an early row before publishing; the failed publish must
+	// take it back with the rolled-back task.
+	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+		t.Fatalf("pipeline log rows = %d, want 0 after the retry rollback", got)
 	}
 }
 
