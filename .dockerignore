@@ -34,11 +34,16 @@ target/
 
 # ── ragflow_deps build context (built as a separate image, mounted ──
 # ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
-# Excluding the entire directory keeps the main build context small
+# Excluding the directory contents keeps the main build context small
 # regardless of which deps files download_deps.py currently fetches.
 # The deps image is built from this directory with:
 #   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
-ragflow_deps/
+# The two ORT version-pin files are re-included: build.sh's
+# check_ort_version_consistency (run by Dockerfile_go's `--go` build) greps
+# them. Re-including requires NOT excluding the directory itself.
+ragflow_deps/*
+!ragflow_deps/download_go_deps.py
+!ragflow_deps/download_deps.py
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/
