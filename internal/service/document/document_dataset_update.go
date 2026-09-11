@@ -235,7 +235,11 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		metaFields, _ = s.GetDocumentMetadataByID(ctx, updatedDoc.ID)
 	}
 
-	return s.toUpdateDatasetDocumentResponse(ctx, updatedDoc, metaFields), common.CodeSuccess, nil
+	resp, err := s.toUpdateDatasetDocumentResponse(ctx, updatedDoc, metaFields)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return resp, common.CodeSuccess, nil
 }
 
 // validateDocumentModifiable rejects configuration edits while the document is
@@ -466,13 +470,17 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	})
 }
 
-func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) *UpdateDatasetDocumentResponse {
+func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
 	if metaFields == nil {
 		metaFields = map[string]interface{}{}
 	}
 	ingestionStatus := "UNSTART"
 	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
-		if task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && task != nil && task.Status != "" {
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+		}
+		if task != nil && task.Status != "" {
 			ingestionStatus = task.Status
 		}
 	}
@@ -504,7 +512,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		CreateDate:      doc.CreateDate,
 		UpdateTime:      doc.UpdateTime,
 		UpdateDate:      doc.UpdateDate,
-	}
+	}, nil
 }
 
 // validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.

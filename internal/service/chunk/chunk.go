@@ -983,7 +983,11 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	if taskDAO == nil {
 		taskDAO = dao.NewIngestionTaskDAO()
 	}
-	if task, err := taskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && task != nil && task.Status != "" {
+	task, err := taskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+	}
+	if task != nil && task.Status != "" {
 		ingestionStatus = task.Status
 	}
 

@@ -31,7 +31,11 @@ func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int)
 
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(ctx, doc)
+		resp, err := s.toResponse(ctx, doc)
+		if err != nil {
+			return nil, 0, err
+		}
+		responses[i] = resp
 	}
 
 	return responses, total, nil
@@ -179,14 +183,18 @@ func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, 
 
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(ctx, doc)
+		resp, err := s.toResponse(ctx, doc)
+		if err != nil {
+			return nil, 0, err
+		}
+		responses[i] = resp
 	}
 
 	return responses, total, nil
 }
 
 // toResponse convert model.Document to DocumentResponse
-func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) *DocumentResponse {
+func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) (*DocumentResponse, error) {
 	createdAt := ""
 	if doc.CreateTime != nil {
 		// Check if timestamp is in milliseconds (13 digits) or seconds (10 digits)
@@ -210,7 +218,11 @@ func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) 
 	}
 	ingestionStatus := "UNSTART"
 	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
-		if task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && task != nil && task.Status != "" {
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
+		}
+		if task != nil && task.Status != "" {
 			ingestionStatus = task.Status
 		}
 	}
@@ -236,5 +248,5 @@ func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) 
 		Status:          doc.Status,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
-	}
+	}, nil
 }

@@ -111,7 +111,7 @@ func (s *DocumentService) GetDocumentByID(ctx context.Context, id string) (*Docu
 		return nil, err
 	}
 
-	return s.toResponse(ctx, document), nil
+	return s.toResponse(ctx, document)
 }
 
 // UpdateDocument update document
