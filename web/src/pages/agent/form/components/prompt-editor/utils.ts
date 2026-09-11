@@ -18,6 +18,13 @@ type PromptVariableLeadingPathMatch = {
   remainingText: string;
 };
 
+export function shouldSyncPromptEditorValue(
+  value: string | undefined,
+  previousValue: string | undefined,
+): value is string {
+  return value !== undefined && value !== previousValue;
+}
+
 const PromptVariableLeadingPathRegex =
   /^(?<pathSuffix>(?:\.(?:\d+|[A-Za-z_][A-Za-z0-9_]*))+)/;
 

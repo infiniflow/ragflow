@@ -36,7 +36,10 @@ import React, {
 } from 'react';
 import * as ReactDOM from 'react-dom';
 
-import { resolvePromptVariableOption } from './utils';
+import {
+  resolvePromptVariableOption,
+  shouldSyncPromptEditorValue,
+} from './utils';
 import { $createVariableNode } from './variable-node';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -649,7 +652,7 @@ export default function VariablePickerMenuPlugin({
   );
 
   useEffect(() => {
-    if (editor && value && value !== previousValue.current) {
+    if (editor && shouldSyncPromptEditorValue(value, previousValue.current)) {
       previousValue.current = value;
       editor.update(
         () => {
