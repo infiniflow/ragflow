@@ -2535,7 +2535,7 @@ func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
 	svc := testDocumentService(t)
 	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
-		Run:    string(entity.TaskStatusRunning),
+		Action: IngestActionStart,
 		Delete: true,
 	})
 	if err == nil {
@@ -3405,7 +3405,7 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	ctx := t.Context()
 	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Run:    string(entity.TaskStatusCancel),
+		Action: IngestActionCancel,
 		Delete: true,
 	})
 	if err != nil {
@@ -3434,7 +3434,7 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Run:    string(entity.TaskStatusCancel),
+		Action: IngestActionCancel,
 	})
 	if err == nil {
 		t.Fatal("expected error when canceling an un-started document")
@@ -3462,7 +3462,7 @@ func TestIngest_CancelCompletedDocument(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Run:    string(entity.TaskStatusCancel),
+		Action: IngestActionCancel,
 	})
 	if err == nil {
 		t.Fatal("expected error when canceling a completed document")
@@ -3490,7 +3490,7 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Run:    string(entity.TaskStatusCancel),
+		Action: IngestActionCancel,
 	})
 	if err != nil {
 		t.Fatalf("Ingest(cancel) with in-flight task: %v", err)
@@ -3522,13 +3522,28 @@ func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Run:    string(entity.TaskStatusCancel),
+		Action: IngestActionCancel,
 	})
 	if err != nil {
 		t.Fatalf("Ingest(re-cancel) on stopped task: %v", err)
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+}
+
+func TestIngest_RejectsInvalidAction(t *testing.T) {
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Action: "invalid",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid action, got nil")
+	}
+	if code != common.CodeArgumentError {
+		t.Fatalf("code = %v, want %v", code, common.CodeArgumentError)
 	}
 }
 

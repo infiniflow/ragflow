@@ -940,7 +940,7 @@ func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"action":"start"}`)
 	h.Ingest(c)
 
 	if w.Code != http.StatusOK {
@@ -973,7 +973,7 @@ func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
 	r := setupDocumentIngestRoute("user-1", fake)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/v1/documents/ingest", strings.NewReader(`{"doc_ids":["doc-1","doc-2"],"run":1,"delete":true,"apply_kb":true}`))
+	req := httptest.NewRequest("POST", "/api/v1/documents/ingest", strings.NewReader(`{"doc_ids":["doc-1","doc-2"],"action":"start","delete":true,"apply_kb":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -996,8 +996,8 @@ func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
 	if len(fake.ingestReq.DocIDs) != 2 || fake.ingestReq.DocIDs[0] != "doc-1" || fake.ingestReq.DocIDs[1] != "doc-2" {
 		t.Fatalf("doc_ids = %#v, want [doc-1 doc-2]", fake.ingestReq.DocIDs)
 	}
-	if fmt.Sprint(fake.ingestReq.Run) != "1" {
-		t.Fatalf("run = %#v, want 1", fake.ingestReq.Run)
+	if fake.ingestReq.Action != "start" {
+		t.Fatalf("action = %#v, want start", fake.ingestReq.Action)
 	}
 	if !fake.ingestReq.Delete {
 		t.Fatal("delete = false, want true")
@@ -1019,7 +1019,7 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":"1"}`)
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"action":"start"}`)
 	h.Ingest(c)
 
 	if w.Code != http.StatusOK {
