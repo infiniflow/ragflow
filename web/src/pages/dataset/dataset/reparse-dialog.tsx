@@ -16,7 +16,6 @@ export const ReparseDialog = memo(
     handleOperationIconClick,
     chunk_num,
     enable_metadata = false,
-    hidden = false,
     visible = true,
     hideModal,
   }: DialogProps & {
@@ -28,24 +27,11 @@ export const ReparseDialog = memo(
     enable_metadata?: boolean;
     visible: boolean;
     hideModal: () => void;
-    hidden?: boolean;
   }) => {
     const [defaultValues, setDefaultValues] = useState<any>(null);
     const [fields, setFields] = useState<FormFieldConfig[]>([]);
     const { t } = useTranslation();
-    const handleOperationIconClickRef = useRef(handleOperationIconClick);
-    const hiddenRef = useRef(hidden);
 
-    useEffect(() => {
-      handleOperationIconClickRef.current = handleOperationIconClick;
-      hiddenRef.current = hidden;
-    });
-
-    useEffect(() => {
-      if (hiddenRef.current) {
-        handleOperationIconClickRef.current();
-      }
-    }, []);
     useEffect(() => {
       setDefaultValues({
         delete: chunk_num > 0,
@@ -139,7 +125,6 @@ export const ReparseDialog = memo(
         title={t(`knowledgeDetails.parseFile`)}
         onOk={() => handleSave()}
         onCancel={() => handleCancel()}
-        hidden={hidden}
         open={visible}
         okButtonText={t('common.confirm')}
         content={{
