@@ -283,3 +283,47 @@ func TestPinnedHTTPClientFollowsValidatedRedirectsPinned(t *testing.T) {
 		t.Fatalf("expected the redirect target body, got %q", body)
 	}
 }
+
+
+// TestPinnedHTTPClientRefusesHTTPSToHTTPDowngrade: a redirect from an https
+// origin to an http target must be refused before any validation, so headers
+// such as Authorization are never replayed over cleartext.
+func TestPinnedHTTPClientRefusesHTTPSToHTTPDowngrade(t *testing.T) {
+	origAssert := AssertURLSafe
+	defer func() { AssertURLSafe = origAssert }()
+	assertCalled := false
+	AssertURLSafe = func(rawURL string) (string, string, error) {
+		assertCalled = true
+		return "public.stub", "127.0.0.1", nil
+	}
+
+	client := PinnedHTTPClient("public.stub", "127.0.0.1", 5*time.Second)
+
+	first, err := http.NewRequest(http.MethodGet, "https://public.stub/login", nil)
+	if err != nil {
+		t.Fatalf("build origin request: %v", err)
+	}
+	first.Header.Set("Authorization", "Bearer secret")
+	next, err := http.NewRequest(http.MethodGet, "http://public.stub/login", nil)
+	if err != nil {
+		t.Fatalf("build redirect request: %v", err)
+	}
+	next.Header.Set("Authorization", "Bearer secret")
+
+	err = client.CheckRedirect(next, []*http.Request{first})
+	if err == nil || !strings.Contains(err.Error(), "downgrade") {
+		t.Fatalf("https->http redirect must be refused, got err=%v", err)
+	}
+	if assertCalled {
+		t.Fatalf("the downgrade must be rejected before the target is validated or pinned")
+	}
+
+	// The same hop staying on https is still validated and allowed.
+	same, _ := http.NewRequest(http.MethodGet, "https://public.stub/next", nil)
+	if err := client.CheckRedirect(same, []*http.Request{first}); err != nil {
+		t.Fatalf("https->https redirect should be allowed, got %v", err)
+	}
+	if !assertCalled {
+		t.Fatalf("an allowed hop must go through AssertURLSafe")
+	}
+}

@@ -314,6 +314,13 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 			if len(via) >= maxPinnedRedirects {
 				return fmt.Errorf("stopped after %d redirects", maxPinnedRedirects)
 			}
+			// Never follow an HTTPS -> HTTP downgrade: the request may carry
+			// credentials (Authorization, API-key headers rendered for MCP
+			// servers) that would otherwise be replayed over cleartext.
+			if len(via) > 0 && via[0].URL != nil && strings.EqualFold(via[0].URL.Scheme, "https") &&
+				!strings.EqualFold(req.URL.Scheme, "https") {
+				return fmt.Errorf("redirect to %s blocked: https to http downgrade", req.URL.Redacted())
+			}
 			host, ip, err := AssertURLSafe(req.URL.String())
 			if err != nil {
 				return fmt.Errorf("redirect to %s blocked: %w", req.URL.Redacted(), err)
