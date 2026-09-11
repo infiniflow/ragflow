@@ -2,7 +2,7 @@ import { UploadFormSchemaType } from '@/components/file-upload-dialog';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useRunDocument,
-  useUploadNextDocument,
+  useUploadDocument,
 } from '@/hooks/use-document-request';
 import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
@@ -13,7 +13,7 @@ export const useHandleUploadDocument = () => {
     hideModal: hideDocumentUploadModal,
     showModal: showDocumentUploadModal,
   } = useSetModalState();
-  const { uploadDocument, loading } = useUploadNextDocument();
+  const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
 
   const onDocumentUploadOk = useCallback(
@@ -47,11 +47,15 @@ export const useHandleUploadDocument = () => {
           return;
         }
 
-        if (isSuccess && parseOnCreation) {
+        // Trigger parsing for both full and partial success when parseOnCreation is enabled
+        if (
+          (isSuccess || isPartialSuccess) &&
+          parseOnCreation &&
+          ret.data?.length > 0
+        ) {
           runDocumentByIds({
             documentIds: ret.data.map((x: any) => x.id),
             run: 1,
-            shouldDelete: false,
           });
         }
 

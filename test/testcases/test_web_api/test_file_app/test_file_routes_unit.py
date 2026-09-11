@@ -176,7 +176,7 @@ def _load_file_api_module(monkeypatch):
 
     web_utils_mod = ModuleType("api.utils.web_utils")
     web_utils_mod.CONTENT_TYPE_MAP = {"txt": "text/plain"}
-    web_utils_mod.apply_safe_file_response_headers = lambda response, content_type, ext: response.headers.update({"content_type": content_type, "ext": ext})
+    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update({"content_type": content_type, "ext": ext, "filename": filename})
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     common_pkg = ModuleType("common")
@@ -325,6 +325,23 @@ def test_download_falls_back_to_document_storage(monkeypatch):
     assert res.data == b"fallback-blob"
     assert res.headers["content_type"] == "text/plain"
     assert res.headers["ext"] == "txt"
+    assert res.headers["filename"] == "doc.txt"
+
+
+@pytest.mark.p2
+def test_download_missing_blob_returns_error(monkeypatch):
+    module = _load_file_api_module(monkeypatch)
+    storage_calls = []
+
+    def _get(bucket, location):
+        storage_calls.append((bucket, location))
+        return None
+
+    monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=_get))
+    res = _run(module.download("tenant1", "file1"))
+
+    assert storage_calls == [("bucket1", "path1"), ("bucket2", "path2")]
+    assert res["message"] == "This file is empty."
 
 
 @pytest.mark.p2
@@ -338,4 +355,3 @@ def test_parent_and_ancestors_use_new_routes(monkeypatch):
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
     assert ancestors_res["code"] == 0
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
-

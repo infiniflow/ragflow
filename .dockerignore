@@ -1,0 +1,58 @@
+# RAGFlow .dockerignore
+# Reduces Docker build context sent to the daemon.
+# All excluded items are either rebuilt inside Docker, mounted from
+# infiniflow/ragflow_deps, or are local-only artifacts.
+
+# ── Python virtual environments ─────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# ── Frontend dependencies and build outputs ─────────────────────────────────
+web/node_modules/
+web/dist/
+
+# ── Runtime logs ────────────────────────────────────────────────────────────
+logs/
+*.log
+docker/ragflow-logs/
+
+# ── Docker runtime data ─────────────────────────────────────────────────────
+docker/data/
+docker/oceanbase/
+docker/seekdb/
+
+# ── Go and C++ build outputs ────────────────────────────────────────────────
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
+target/
+
+# ── ragflow_deps build context (built as a separate image, mounted ──
+# ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
+# Excluding the entire directory keeps the main build context small
+# regardless of which deps files download_deps.py currently fetches.
+# The deps image is built from this directory with:
+#   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
+ragflow_deps/
+
+# ── IDE and editor config ──────────────────────────────────────────────────
+.idea/
+.vscode/
+.cursor/
+.trae/
+.DS_Store
+
+# ── Test and coverage artifacts ─────────────────────────────────────────────
+coverage/
+htmlcov/
+.coverage
+.hypothesis/
+.nox/
+
+# ── Docker env (contains secrets) ───────────────────────────────────────────
+docker/.env

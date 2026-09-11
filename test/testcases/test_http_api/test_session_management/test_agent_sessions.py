@@ -56,9 +56,10 @@ def _agent_items(res):
         return data.get("canvas", [])
     return data
 
+
 @pytest.fixture(scope="function")
 def agent_id(HttpApiAuth, request):
-    res = list_agents(HttpApiAuth, {"page_size": 1000})
+    res = list_agents(HttpApiAuth, {"page_size": 100})
     assert res["code"] == 0, res
     for agent in _agent_items(res):
         if agent.get("title") == AGENT_TITLE:
@@ -81,7 +82,6 @@ def agent_id(HttpApiAuth, request):
 
 
 class TestAgentSessions:
-
     @pytest.mark.p2
     def test_agent_crud_validation_contract(self, HttpApiAuth, agent_id):
         res = list_agents(HttpApiAuth, {"id": "missing-agent-id", "title": "missing-agent-title"})

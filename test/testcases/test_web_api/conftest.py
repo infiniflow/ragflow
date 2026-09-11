@@ -83,9 +83,12 @@ def generate_test_files(request: FixtureRequest, tmp_path):
 def ragflow_tmp_dir(request, tmp_path_factory):
     class_name = request.cls.__name__
     return tmp_path_factory.mktemp(class_name)
+
+
 @pytest.fixture(scope="session")
 def client(token: str) -> RAGFlow:
     return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
+
 
 @pytest.fixture(scope="session")
 def WebApiAuth(auth):
@@ -104,7 +107,7 @@ def require_env_flag():
 @pytest.fixture(scope="function")
 def clear_datasets(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth):
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 
@@ -122,7 +125,7 @@ def clear_chats(request, WebApiAuth):
 @pytest.fixture(scope="class")
 def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 
@@ -133,7 +136,7 @@ def add_dataset(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
 @pytest.fixture(scope="function")
 def add_dataset_func(request: FixtureRequest, WebApiAuth: RAGFlowWebApiAuth) -> str:
     def cleanup():
-        res = list_datasets(WebApiAuth, params={"page_size": 1000})
+        res = list_datasets(WebApiAuth, params={"page_size": 100})
         kb_ids = [kb["id"] for kb in res["data"]]
         delete_datasets(WebApiAuth, {"ids": kb_ids})
 

@@ -16,11 +16,11 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents
+from common import bulk_upload_documents, list_all_documents
 
 
 class TestDocumentsDeletion:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
@@ -54,7 +54,7 @@ class TestDocumentsDeletion:
         documents = dataset.list_documents()
         assert len(documents) == remaining, str(documents)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload",
         [
@@ -74,7 +74,7 @@ class TestDocumentsDeletion:
         documents = dataset.list_documents()
         assert len(documents) == 3, str(documents)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_repeated_deletion(self, add_documents_func):
         dataset, documents = add_documents_func
         document_ids = [document.id for document in documents]
@@ -114,7 +114,7 @@ def test_delete_1k(add_dataset, tmp_path):
     count = 1_000
     dataset = add_dataset
     documents = bulk_upload_documents(dataset, count, tmp_path)
-    assert len(dataset.list_documents(page_size=count * 2)) == count
+    assert len(list_all_documents(dataset, limit=count + 1)) == count
 
     dataset.delete_documents(ids=[doc.id for doc in documents])
     assert len(dataset.list_documents()) == 0

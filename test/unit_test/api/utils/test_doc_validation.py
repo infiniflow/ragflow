@@ -17,8 +17,17 @@
 """Unit tests for api.apps.sdk.doc_validation module."""
 
 from unittest.mock import Mock
+
+import pytest
+from pydantic import ValidationError
+
+from api.utils.pagination_utils import REST_API_MAX_PAGE_SIZE, validate_rest_api_page_size
 from api.utils.validation_utils import (
+    CreateDatasetReq,
+    ListDatasetReq,
+    ListFileReq,
     ParserConfig,
+    UpdateDatasetReq,
     UpdateDocumentReq,
     validate_chunk_method,
     validate_document_name,
@@ -29,6 +38,16 @@ from api.db import FileType
 from common.constants import RetCode
 
 
+def test_rest_api_page_size_rejects_values_above_100():
+    assert validate_rest_api_page_size(REST_API_MAX_PAGE_SIZE) == REST_API_MAX_PAGE_SIZE
+    with pytest.raises(ValueError, match="page_size must be less than or equal to 100"):
+        validate_rest_api_page_size(REST_API_MAX_PAGE_SIZE + 1)
+    with pytest.raises(ValidationError, match="page_size must be less than or equal to 100"):
+        ListDatasetReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
+    with pytest.raises(ValidationError, match="page_size must be less than or equal to 100"):
+        ListFileReq(page_size=REST_API_MAX_PAGE_SIZE + 1)
+
+
 def test_validate_immutable_fields_no_changes():
     """Test when no immutable fields are present in request."""
     update_doc_req = UpdateDocumentReq()
@@ -36,7 +55,7 @@ def test_validate_immutable_fields_no_changes():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -49,7 +68,7 @@ def test_validate_immutable_fields_chunk_count_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -62,7 +81,7 @@ def test_validate_immutable_fields_token_count_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -75,7 +94,7 @@ def test_validate_immutable_fields_progress_matches():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -88,9 +107,9 @@ def test_validate_immutable_fields_chunk_count_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -101,9 +120,9 @@ def test_validate_immutable_fields_token_count_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -114,9 +133,9 @@ def test_validate_immutable_fields_progress_mismatch():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `progress`."
+    assert error_msg == "can't change `progress`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -128,18 +147,18 @@ def test_validate_immutable_fields_progress_boundary_values():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.0
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
-    
+
     # Test with 1.0
     update_doc_req = UpdateDocumentReq(progress=1.0)
     doc = Mock()
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 1.0
-    
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -152,7 +171,60 @@ def test_validate_immutable_fields_none_values():
     doc.chunk_num = 10
     doc.token_num = 100
     doc.progress = 0.5
-    
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg is None
+    assert error_code is None
+
+
+@pytest.mark.p2
+def test_validate_immutable_fields_zero_values_must_match():
+    """Regression: falsy zero values must still be validated, not skipped."""
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 10
+    doc.token_num = 100
+    doc.progress = 0.5
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "can't change `chunk_count`"
+    assert error_code == RetCode.DATA_ERROR
+
+
+@pytest.mark.p2
+def test_validate_immutable_fields_zero_token_count_mismatch_when_chunk_count_matches():
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 0
+    doc.token_num = 100
+    doc.progress = 0.0
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "can't change `token_count`"
+    assert error_code == RetCode.DATA_ERROR
+
+
+@pytest.mark.p2
+def test_validate_immutable_fields_zero_progress_mismatch_when_counts_match():
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 0
+    doc.token_num = 0
+    doc.progress = 0.5
+
+    error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
+    assert error_msg == "can't change `progress`"
+    assert error_code == RetCode.DATA_ERROR
+
+
+@pytest.mark.p2
+def test_validate_immutable_fields_zero_values_matching_doc():
+    update_doc_req = UpdateDocumentReq(chunk_count=0, token_count=0, progress=0.0)
+    doc = Mock()
+    doc.chunk_num = 0
+    doc.token_num = 0
+    doc.progress = 0.0
+
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
     assert error_msg is None
     assert error_code is None
@@ -169,6 +241,7 @@ def test_validate_document_name_valid():
     error_msg, error_code = validate_document_name(req_doc_name, doc, docs_from_name)
     assert error_msg is None
     assert error_code is None
+
 
 def test_validate_document_name_attr_error():
     """Test valid document name update."""
@@ -242,7 +315,7 @@ def test_validate_chunk_method_valid():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.pdf"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
     assert error_msg is None
     assert error_code is None
@@ -253,9 +326,9 @@ def test_validate_chunk_method_visual_not_supported():
     doc = Mock()
     doc.type = FileType.VISUAL
     doc.name = "image.jpg"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -264,9 +337,9 @@ def test_validate_chunk_method_ppt_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "presentation.ppt"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -275,9 +348,9 @@ def test_validate_chunk_method_pptx_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "presentation.pptx"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -286,9 +359,9 @@ def test_validate_chunk_method_pages_not_supported():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.pages"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -297,7 +370,7 @@ def test_validate_chunk_method_other_extensions_still_valid():
     doc = Mock()
     doc.type = FileType.PDF
     doc.name = "document.docx"
-    
+
     error_msg, error_code = validate_chunk_method(doc)
     assert error_msg is None
     assert error_code is None
@@ -312,3 +385,48 @@ def test_parser_config_normalizes_legacy_vectorize_table_column_role():
         "country": "metadata",
         "x": "both",
     }
+
+
+@pytest.mark.p2
+def test_create_dataset_req_accepts_language():
+    """`language` is now settable at dataset creation (issue #15703)."""
+    req = CreateDatasetReq(name="kb", language="Chinese")
+    assert req.model_dump(by_alias=True)["language"] == "Chinese"
+
+
+@pytest.mark.p2
+def test_create_dataset_req_language_defaults_to_none_when_omitted():
+    """Omitting `language` yields None so the service can fall back to the DB default."""
+    req = CreateDatasetReq(name="kb")
+    assert req.model_dump(by_alias=True)["language"] is None
+
+
+@pytest.mark.p2
+def test_create_dataset_req_language_respects_max_length():
+    with pytest.raises(ValidationError):
+        CreateDatasetReq(name="kb", language="x" * 33)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_create_dataset_req_language_rejects_blank(blank):
+    """Blank/whitespace-only language is rejected so it can't bypass the service None-guard."""
+    with pytest.raises(ValidationError):
+        CreateDatasetReq(name="kb", language=blank)
+
+
+@pytest.mark.p2
+def test_create_dataset_req_language_is_stripped():
+    """Surrounding whitespace is trimmed before storage."""
+    req = CreateDatasetReq(name="kb", language="  English  ")
+    assert req.model_dump(by_alias=True)["language"] == "English"
+
+
+@pytest.mark.p2
+def test_update_dataset_req_still_exposes_language():
+    """UpdateDatasetReq inherits `language` from CreateDatasetReq."""
+    import uuid
+
+    assert "language" in UpdateDatasetReq.model_fields
+    req = UpdateDatasetReq(dataset_id=uuid.uuid1().hex, language="English")
+    assert req.model_dump(by_alias=True)["language"] == "English"
