@@ -82,10 +82,12 @@ class StringTransform(Message, ABC):
             res.append(s)
         self.set_output("result", res)
 
-    def _merge(self, kwargs: dict[str, str] = {}):
+    def _merge(self, kwargs: dict[str, str] | None = None):
         if self.check_if_canceled("StringTransform merge processing"):
             return
 
+        if kwargs is None:
+            kwargs = {}
         script = self._param.script
         script, kwargs = self.get_kwargs(script, kwargs, self._param.delimiters[0])
 

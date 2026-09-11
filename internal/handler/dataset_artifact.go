@@ -105,6 +105,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
+	keywords := strings.TrimSpace(c.Query("keywords"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	if page < 1 {
@@ -116,7 +117,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	if pageSize > maxArtifactPageSize {
 		pageSize = maxArtifactPageSize
 	}
-	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, page, pageSize)
+	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -219,20 +220,6 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	common.SuccessWithData(c, detail, "success")
 }
 
-// DeleteArtifacts handles DELETE /artifacts — clear all wiki artifacts.
-func (h *DatasetArtifactHandler) DeleteArtifacts(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	deleted, err := h.svc.ClearWiki(c.Request.Context(), tenantID, c.Param("dataset_id"))
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
-		return
-	}
-	common.SuccessWithData(c, deleted, "success")
-}
-
 // ListArtifactTopics handles GET /artifacts/topics — list wiki topics.
 func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
@@ -240,7 +227,8 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID)
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -280,8 +268,10 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	common.SuccessWithData(c, graph, "success")
 }
 
-// ListStructures handles GET /artifacts/structure?kind=<kind> — the dataset-scope
-// structure graph for a resolved kind (mirrors Python get_dataset_structure).
+// ListStructures handles GET /artifacts/structure?kind=<kind>&keywords=<query> —
+// the dataset-scope structure graph for a resolved kind (mirrors Python
+// get_dataset_structure). A non-empty keywords value returns the matching
+// entity subgraph.
 // kind is REQUIRED: missing or invalid → 400 ARGUMENT_ERROR.
 func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
@@ -294,7 +284,12 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
 		return
 	}
-	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind}
+	in := service.DatasetStructureGraphInput{
+		TenantID:  tenantID,
+		DatasetID: datasetID,
+		Kind:      kind,
+		Keywords:  strings.TrimSpace(c.Query("keywords")),
+	}
 	resp, err := h.svc.GetDatasetStructure(c.Request.Context(), in)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidStructureKind) {
@@ -305,34 +300,6 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, resp, "success")
-}
-
-// DeleteStructures handles DELETE /artifacts/structure?kind=<kind>&wipe=<bool> —
-// cancel the kind's task (wipe=false) or delete its dataset rows (wipe=true).
-// kind is REQUIRED.
-func (h *DatasetArtifactHandler) DeleteStructures(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	datasetID := c.Param("dataset_id")
-	kind := c.Query("kind")
-	if kind == "" {
-		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
-		return
-	}
-	wipe := c.Query("wipe") == "true"
-	in := service.DatasetStructureGraphInput{TenantID: tenantID, DatasetID: datasetID, Kind: kind, Wipe: wipe}
-	n, err := h.svc.DeleteDatasetStructure(c.Request.Context(), in)
-	if err != nil {
-		if errors.Is(err, service.ErrInvalidStructureKind) {
-			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		} else {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		}
-		return
-	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
 // AnySkill handles HEAD /skills — any skill artifact present?
@@ -367,34 +334,6 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	// Response key is "items" (not "nav") — the frontend DatasetNavList reads
 	// data.items and Python list_nav_clusters/_nav_search return {"total","items"}.
 	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
-}
-
-// DeleteNavigation handles DELETE /navigation — delete all navigation clusters.
-func (h *DatasetArtifactHandler) DeleteNavigation(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	n, err := h.svc.DeleteNav(c.Request.Context(), tenantID, c.Param("dataset_id"))
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
-		return
-	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
-}
-
-// DeleteNavigationNode handles DELETE /navigation/<name> — delete a single navigation cluster.
-func (h *DatasetArtifactHandler) DeleteNavigationNode(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	n, err := h.svc.DeleteNavNode(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("name"))
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
-		return
-	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }
 
 // ListNavigationChildren handles GET /navigation/<name>/children — list children of a navigation cluster.
@@ -496,20 +435,4 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
 	}
 	common.SuccessWithData(c, resp, "success")
-}
-
-// DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
-func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	datasetID := c.Param("dataset_id")
-	documentID := c.Param("document_id")
-	n, err := h.svc.DeleteDocumentGraph(c.Request.Context(), tenantID, datasetID, documentID)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
-		return
-	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
 }

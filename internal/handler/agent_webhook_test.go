@@ -40,10 +40,11 @@ import (
 // without touching the database. Mirrors the pattern used by
 // waitFakeAgentService at internal/handler/agent_wait_for_user_test.go.
 type fakeCanvasLoader struct {
-	canvas *entity.UserCanvas
-	err    error
-	runErr error
-	events []canvas.RunEvent
+	canvas              *entity.UserCanvas
+	err                 error
+	runErr              error
+	events              []canvas.RunEvent
+	waitForCancellation bool
 }
 
 func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*entity.UserCanvas, error) {
@@ -53,9 +54,17 @@ func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*enti
 	return f.canvas, nil
 }
 
-func (f *fakeCanvasLoader) RunAgentWithWebhook(_ context.Context, _, _ string, _ map[string]any) (<-chan canvas.RunEvent, error) {
+func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, _, _ string, _ map[string]any) (<-chan canvas.RunEvent, error) {
 	if f.runErr != nil {
 		return nil, f.runErr
+	}
+	if f.waitForCancellation {
+		out := make(chan canvas.RunEvent)
+		go func() {
+			<-ctx.Done()
+			close(out)
+		}()
+		return out, nil
 	}
 	out := make(chan canvas.RunEvent, len(f.events))
 	for _, e := range f.events {
@@ -655,6 +664,120 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+func TestRunWebhookDetachedRecordsTimeoutTrace(t *testing.T) {
+	tests := []struct {
+		name   string
+		loader *fakeCanvasLoader
+	}{
+		{name: "during start", loader: &fakeCanvasLoader{runErr: context.DeadlineExceeded}},
+		{name: "during run", loader: &fakeCanvasLoader{waitForCancellation: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+			tt.loader.canvas = cv
+			h := &AgentHandler{loader: tt.loader}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				if err := ctx.Err(); err != nil {
+					t.Errorf("trace context error = %v, want nil", err)
+				}
+				trace = append(trace, ev)
+			}
+
+			ctx, cancel := context.WithTimeout(
+				service.WithAgentSessionID(t.Context(), "session-1"),
+				time.Nanosecond,
+			)
+			defer cancel()
+			<-ctx.Done()
+			h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
+
+			if len(trace) < 2 || trace[0].Type != "error" || !strings.Contains(trace[0].Data, "timed out") {
+				t.Fatalf("timeout trace = %+v, want error followed by failed finished event", trace)
+			}
+			assertWebhookFinishedTrace(t, trace, false)
+		})
+	}
+}
+
+func TestRunWebhookSyncRecordsCancelledTrace(t *testing.T) {
+	cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv, waitForCancellation: true}}
+	var trace []canvas.RunEvent
+	h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+		if err := ctx.Err(); err != nil {
+			t.Errorf("trace context error = %v, want nil", err)
+		}
+		trace = append(trace, ev)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
+
+	if result.status != http.StatusConflict {
+		t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
+	}
+	if len(trace) < 2 || trace[0].Type != "cancelled" || !strings.Contains(trace[0].Data, "cancelled") {
+		t.Fatalf("cancelled trace = %+v, want cancelled followed by failed finished event", trace)
+	}
+	assertWebhookFinishedTrace(t, trace, false)
+}
+
+func TestWebhookBufferedTerminalEventAfterCancellationUsesCleanupContext(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T, *AgentHandler, context.Context, *entity.UserCanvas)
+	}{
+		{
+			name: "detached",
+			run: func(_ *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
+				h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
+			},
+		},
+		{
+			name: "sync",
+			run: func(t *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
+				result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
+				if result.status != http.StatusConflict {
+					t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+			loader := &fakeCanvasLoader{
+				canvas: cv,
+				events: []canvas.RunEvent{{
+					Type: "cancelled",
+					Data: `{"message":"Agent run was cancelled."}`,
+				}},
+			}
+			h := &AgentHandler{loader: loader}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				if err := ctx.Err(); err != nil {
+					t.Errorf("trace context error = %v, want nil", err)
+				}
+				trace = append(trace, ev)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			tt.run(t, h, ctx, cv)
+
+			if len(trace) < 2 || trace[0].Type != "cancelled" {
+				t.Fatalf("cancelled trace = %+v, want cancelled followed by failed finished event", trace)
+			}
+			assertWebhookFinishedTrace(t, trace, false)
 		})
 	}
 }

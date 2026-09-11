@@ -159,9 +159,18 @@ type WikiPageItem struct {
 	Summary  string `json:"summary"`
 }
 
-// ListWikiPages lists wiki pages for a dataset with optional page_type/topic
-// filters and pagination.
-func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic string, page, pageSize int) ([]WikiPageItem, int64, error) {
+// wikiPageSelectFields are the engine fields ListWikiPages reads.
+var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
+
+// wikiPageOrderBy ranks wiki pages by connectivity then title.
+func wikiPageOrderBy() *types.OrderByExpr {
+	return (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd")
+}
+
+// ListWikiPages lists wiki pages for a dataset with optional page_type/topic/
+// keywords filters and pagination. keywords is a case-insensitive substring
+// match over title/slug/summary, mirroring Python list_wiki_pages.
+func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, datasetID, pageType, topic, keywords string, page, pageSize int) ([]WikiPageItem, int64, error) {
 	// Only surface the merged dataset-level pages. Each unique (page_type, slug)
 	// can also have a per-document source row (available_int=0); without this
 	// filter the same entity/concept would appear once per source doc. Python's
@@ -178,31 +187,91 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 		filter["topic_kwd"] = []string{kccommon.NormalizeWikiTopicPath(topic)}
 	}
 	offset := (page - 1) * pageSize
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"},
-		offset, pageSize, (&types.OrderByExpr{}).Desc("outlinks_int").Asc("title_kwd"))
-	if err != nil {
-		return nil, 0, err
+	if keywords == "" {
+		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
+			wikiPageSelectFields, offset, pageSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		return wikiPageItemsFromChunks(chunks), total, nil
 	}
+	// Wiki list search is intentionally metadata-based (substring over
+	// title/slug/summary): those fields exist on every row and behave the same
+	// across document-store backends, unlike full-text token fields. The engine
+	// has no cross-field substring filter, so scan the filtered rows in
+	// batches, match in memory, then apply the requested page slice — exactly
+	// what Python list_wiki_pages does for keywords.
+	kw := strings.ToLower(keywords)
+	matched := make([]WikiPageItem, 0)
+	const batchSize = 1000
+	for scanOffset := 0; ; scanOffset += batchSize {
+		batch, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
+			wikiPageSelectFields, scanOffset, batchSize, wikiPageOrderBy())
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, item := range wikiPageItemsFromChunks(batch) {
+			if wikiPageItemMatchesKeyword(item, kw) {
+				matched = append(matched, item)
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
+	}
+	total := int64(len(matched))
+	if offset >= len(matched) {
+		return []WikiPageItem{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[offset:end], total, nil
+}
+
+// wikiPageItemsFromChunks maps engine rows to wiki page summaries.
+func wikiPageItemsFromChunks(chunks []map[string]interface{}) []WikiPageItem {
 	items := make([]WikiPageItem, 0, len(chunks))
 	for _, c := range chunks {
-		pageType := firstStringValue(c["page_type_kwd"])
-		// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
-		// contract); expose the bare slug to the frontend so it can be placed in
-		// a single URL path segment (gin :slug does not match '/').
-		bareSlug := firstStringValue(c["slug_kwd"])
-		if pageType != "" {
-			bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
-		}
-		items = append(items, WikiPageItem{
-			Slug:     bareSlug,
-			Title:    firstStringValue(c["title_kwd"]),
-			PageType: pageType,
-			Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-			Summary:  firstStringValue(c["summary_with_weight"]),
-		})
+		items = append(items, wikiPageItemFromChunk(c))
 	}
-	return items, total, nil
+	return items
+}
+
+func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
+	pageType := firstStringValue(c["page_type_kwd"])
+	// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
+	// contract); expose the bare slug to the frontend so it can be placed in
+	// a single URL path segment (gin :slug does not match '/').
+	bareSlug := firstStringValue(c["slug_kwd"])
+	if pageType != "" {
+		bareSlug = strings.TrimPrefix(bareSlug, pageType+"/")
+	}
+	return WikiPageItem{
+		Slug:     bareSlug,
+		Title:    firstStringValue(c["title_kwd"]),
+		PageType: pageType,
+		Topic:    kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
+		Summary:  firstStringValue(c["summary_with_weight"]),
+	}
+}
+
+// wikiPageItemMatchesKeyword reports whether the lowercased keyword occurs in
+// the page title, slug or summary.
+func wikiPageItemMatchesKeyword(item WikiPageItem, lowerKeyword string) bool {
+	return containsFold(item.Title, lowerKeyword) ||
+		containsFold(item.Slug, lowerKeyword) ||
+		containsFold(item.Summary, lowerKeyword)
+}
+
+// containsFold reports whether lowerKeyword (already lowercased) occurs in s,
+// case-insensitively.
+func containsFold(s, lowerKeyword string) bool {
+	return strings.Contains(strings.ToLower(s), lowerKeyword)
 }
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
@@ -337,8 +406,10 @@ type WikiTopicItem struct {
 
 // ListWikiTopics aggregates materialized Wiki topic paths for a dataset. Topic
 // is the complete path and Title is its leaf segment; the frontend may derive a
-// navigation tree by splitting Topic on '/'.
-func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID string) ([]WikiTopicItem, int64, error) {
+// navigation tree by splitting Topic on '/'. keywords keeps only topics whose
+// own path matches or that hold a concept/entity page matching by
+// title/slug/summary, mirroring Python list_wiki_topics.
+func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID, keywords string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{"concept", "entity", "topic"},
@@ -358,6 +429,16 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		}
 	}
 	items := aggregateWikiTopicItems(chunks)
+	if keywords != "" {
+		// The topic tree must survive searching by a page that lives under a
+		// topic (e.g. "Daisy" under "General"), so topics also match when any
+		// of their concept/entity pages matches the keyword.
+		pageTopics, err := s.wikiTopicsWithKeywordPages(ctx, tenantID, datasetID, strings.ToLower(keywords))
+		if err != nil {
+			return nil, 0, err
+		}
+		items = filterWikiTopicItemsByKeyword(items, strings.ToLower(keywords), pageTopics)
+	}
 	// Sort topics by a deterministic rule. Plain UTF-8 byte order is chaotic for
 	// CJK (it sorts by Unicode code point, unrelated to pinyin/stroke). We use a
 	// CLDR-based collator (golang.org/x/text/collate) with the Chinese locale,
@@ -367,6 +448,62 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		return wikiTopicCollator.CompareString(items[i].Topic, items[j].Topic) < 0
 	})
 	return items, int64(len(items)), nil
+}
+
+// wikiTopicsWithKeywordPages scans the dataset's concept/entity wiki pages and
+// returns the normalized topic paths of the pages whose title, slug or summary
+// contains the keyword.
+func (s *DatasetArtifactService) wikiTopicsWithKeywordPages(ctx context.Context, tenantID, datasetID, lowerKeyword string) (map[string]bool, error) {
+	filter := map[string]interface{}{
+		"compile_kwd":   []string{CompileKwdWikiPage},
+		"page_type_kwd": []string{"concept", "entity"},
+	}
+	fields := []string{"topic_kwd", "title_kwd", "slug_kwd", "summary_with_weight"}
+	matching := make(map[string]bool)
+	const batchSize = 1000
+	for offset := 0; ; offset += batchSize {
+		batch, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, fields, offset, batchSize, nil)
+		if err != nil {
+			return nil, err
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, c := range batch {
+			topic := kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"]))
+			if topic == "" {
+				continue
+			}
+			if containsFold(firstStringValue(c["title_kwd"]), lowerKeyword) ||
+				containsFold(firstStringValue(c["slug_kwd"]), lowerKeyword) ||
+				containsFold(firstStringValue(c["summary_with_weight"]), lowerKeyword) {
+				matching[topic] = true
+			}
+		}
+		if len(batch) < batchSize {
+			break
+		}
+	}
+	return matching, nil
+}
+
+// filterWikiTopicItemsByKeyword keeps topics whose path or leaf title contains
+// the keyword, plus topics listed in pageMatched (topics holding a matching
+// page).
+func filterWikiTopicItemsByKeyword(items []WikiTopicItem, lowerKeyword string, pageMatched map[string]bool) []WikiTopicItem {
+	filtered := make([]WikiTopicItem, 0, len(items))
+	for _, item := range items {
+		if pageMatched[item.Topic] || wikiTopicItemMatchesKeyword(item, lowerKeyword) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// wikiTopicItemMatchesKeyword reports whether the lowercased keyword occurs in
+// the topic path or its leaf title.
+func wikiTopicItemMatchesKeyword(item WikiTopicItem, lowerKeyword string) bool {
+	return containsFold(item.Topic, lowerKeyword) || containsFold(item.Title, lowerKeyword)
 }
 
 func aggregateWikiTopicItems(chunks []map[string]interface{}) []WikiTopicItem {
@@ -700,69 +837,6 @@ func sortedSetKeys(set map[string]struct{}) []string {
 	return ids
 }
 
-// ClearWiki deletes all wiki artifacts for a dataset.
-func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datasetID string) (map[string]int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil, fmt.Errorf("document engine is not initialized")
-	}
-	kwds := []string{CompileKwdWikiPage, CompileKwdWikiEntity, CompileKwdWikiRelation, CompileKwdWikiAlter}
-	deleted := map[string]int{}
-	for _, kwd := range kwds {
-		chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{kwd}}, []string{"id"}, 0, 10000, nil)
-		if err != nil {
-			return nil, err
-		}
-		if len(chunks) == 0 {
-			deleted[kwd] = 0
-			continue
-		}
-		ids := make([]string, 0, len(chunks))
-		for _, c := range chunks {
-			if id, ok := c["id"].(string); ok {
-				ids = append(ids, id)
-			}
-		}
-		cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-		if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-			return nil, err
-		}
-		deleted[kwd] = len(ids)
-	}
-	return deleted, nil
-}
-
-// DeleteDocumentGraph deletes the structure graph of a single document.
-func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	filter := map[string]interface{}{
-		"doc_id":             []string{documentID},
-		"compiled_graph_kwd": []string{"graph"},
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
 // ListNavClusters returns the navigation clusters of a dataset. It delegates to
 // the ES-backed NavService and returns the frontend DatasetNavNode shape
 // (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
@@ -792,65 +866,6 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 		return nil, 0, err
 	}
 	return nodes, total, nil
-}
-
-// DeleteNav removes the direct nav_doc children of every root cluster of a
-// dataset. DEPRECATED — this is the minimal-loop approximation of Python
-// delete_nav: it drains only the immediate nav_doc rows under root clusters and
-// does NOT implement Python's full subtree traversal or empty-cluster cascade
-// cleanup. Prefer the NavService (future work) for a complete delete. Returns
-// the number of nav_doc rows removed.
-func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, c := range clusters {
-		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
-		if err != nil {
-			continue
-		}
-		for _, ch := range children {
-			if ch.DocID != "" {
-				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-					return deleted, err
-				}
-				deleted++
-			}
-		}
-	}
-	return deleted, nil
-}
-
-// DeleteNavNode deletes the direct nav_doc children of a named cluster.
-// DEPRECATED — the minimal loop only drains immediate doc children (returns the
-// count); it does NOT delete sub-clusters recursively nor perform Python's
-// empty-cluster cascade. A full tree-node delete is future NavService work.
-func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	// Minimal loop has no per-node delete; drain direct children's docs.
-	children, _, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, ch := range children {
-		if ch.DocID != "" {
-			if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-				return deleted, err
-			}
-			deleted++
-		}
-	}
-	return deleted, nil
 }
 
 // SkillTreeItem is a single skill-tree page summary.

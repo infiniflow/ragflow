@@ -1,4 +1,18 @@
-import { transformTokenChunkerParams } from './utils';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { Operator } from './constant';
+import {
+  generateNodeNamesWithIncreasingIndex,
+  getEmptyMessageNodeNames,
+  isEmptyMessageContent,
+  transformTokenChunkerParams,
+} from './utils';
+
+const createMessageNode = (name: string, content: unknown) => ({
+  id: `${Operator.Message}:${name}`,
+  type: 'ragNode',
+  position: { x: 0, y: 0 },
+  data: { label: Operator.Message, name, form: { content } },
+});
 
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {
@@ -35,5 +49,107 @@ describe('transformTokenChunkerParams', () => {
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
+  });
+});
+
+describe('Message component content validation', () => {
+  describe('isEmptyMessageContent', () => {
+    it('treats missing, non-array and blank-only content as empty', () => {
+      expect(isEmptyMessageContent()).toBe(true);
+      expect(isEmptyMessageContent(null)).toBe(true);
+      expect(isEmptyMessageContent('hello')).toBe(true);
+      expect(isEmptyMessageContent([])).toBe(true);
+      expect(isEmptyMessageContent(['', ' \t '])).toBe(true);
+      // Non-string entries never satisfy the backend either.
+      expect(isEmptyMessageContent([123])).toBe(true);
+    });
+
+    it('accepts content with at least one non-blank string entry', () => {
+      expect(isEmptyMessageContent(['hi'])).toBe(false);
+      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
+      expect(isEmptyMessageContent(['  text  '])).toBe(false);
+    });
+  });
+
+  describe('getEmptyMessageNodeNames', () => {
+    it('flags only Message nodes whose content is empty', () => {
+      const nodes = [
+        createMessageNode('回复消息_0', ['']),
+        createMessageNode('回复消息_1', ['ok']),
+        {
+          id: `${Operator.Agent}:x`,
+          type: 'ragNode',
+          position: { x: 0, y: 0 },
+          data: { label: Operator.Agent, name: '智能体_0', form: {} },
+        },
+      ];
+
+      expect(getEmptyMessageNodeNames(nodes as any)).toEqual(['回复消息_0']);
+    });
+  });
+});
+
+describe('generateNodeNamesWithIncreasingIndex', () => {
+  const createNamedNode = (name: string) =>
+    ({
+      id: `${Operator.Retrieval}:${name}`,
+      type: 'ragNode',
+      position: { x: 0, y: 0 },
+      data: { label: Operator.Retrieval, name, form: {} },
+    }) as RAGFlowNodeType;
+
+  it('uses the bare name for the first operator of a type', () => {
+    expect(generateNodeNamesWithIncreasingIndex('Retrieval', [])).toBe(
+      'Retrieval',
+    );
+  });
+
+  it('appends an index only from the second operator on', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+      ]),
+    ).toBe('Retrieval_1');
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('fills the gap between existing indexes', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_2'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('does not backfill index 0 when only suffixed names exist', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('treats a legacy _0 name as the first operator', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_0'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('ignores nodes of other types and non-indexed names', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Message'),
+        createNamedNode('Retrieval_beta'),
+        createNamedNode('Retrieval_1_extra'),
+      ]),
+    ).toBe('Retrieval');
   });
 });
