@@ -1,6 +1,13 @@
 {
     "factory_llm_infos": [
         {
+            "name": "AnonRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Synthorai",
             "logo": "",
             "tags": "LLM",
