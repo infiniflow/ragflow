@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -83,6 +84,20 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			return
 		}
 		ctx := c.Request.Context()
+		user, errorCode, errorMessage := GetUser(c)
+		if errorCode != common.CodeSuccess {
+			common.ErrorWithCode(c, errorCode, errorMessage)
+			c.Abort()
+			return
+		}
+		// Authorize, not just existence: the commit surface exposes artifact
+		// contents and history, so it needs the same access check the dataset
+		// routes apply.
+		if entityType == "datasets" && !h.kbDAO.Accessible(ctx, dao.DB, id, user.ID) {
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, fmt.Sprintf("%s not found", entityType))
+			c.Abort()
+			return
+		}
 		folderID, err := h.ResolveFolderID(ctx, entityType, id)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeNotFound, nil, fmt.Sprintf("%s folder not found", entityType))
@@ -111,6 +126,20 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 	return "", common.ErrNotFound
 }
 
+// folderAccessible reports whether userID may access the given workspace
+// folder. Every folder is a File row owned by a tenant: the commit surface
+// exposes artifact contents, history, and writes, so apply the same access
+// check the other file routes use instead of trusting a caller-supplied
+// folder id.
+func (h *FileCommitHandler) folderAccessible(c *gin.Context, userID, folderID string) bool {
+	ctx := c.Request.Context()
+	folder, err := h.fileDAO.GetByID(ctx, dao.DB, folderID)
+	if err != nil || folder == nil {
+		return false
+	}
+	return service.CheckFileTeamPermission(ctx, h.fileDAO, folder, userID)
+}
+
 // CreateCommitRequest represents the request body for creating a commit
 type CreateCommitRequest struct {
 	Message string              `json:"message" binding:"required"`
@@ -135,6 +164,11 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 	folderID := c.Param("folder_id")
 	if folderID == "" {
 		common.ResponseWithCodeData(c, common.CodeParamError, nil, "folder_id is required")
+		return
+	}
+
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
 		return
 	}
 
@@ -182,7 +216,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits [get]
 func (h *FileCommitHandler) ListCommits(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -194,6 +228,10 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	page := 1
 	if pageStr := c.Query("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
@@ -303,7 +341,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits/{commit_id} [get]
 func (h *FileCommitHandler) GetCommit(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -316,6 +354,10 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
@@ -361,7 +403,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits/{commit_id}/files [get]
 func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -374,6 +416,10 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
@@ -406,7 +452,7 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits/diff [get]
 func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -420,6 +466,10 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	fromCommit, err := h.commitService.GetCommit(ctx, fromID)
 	if err != nil {
@@ -455,7 +505,7 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/changes [get]
 func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -467,6 +517,10 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	changes, err := h.commitService.GetUncommittedChanges(ctx, folderID)
 	if err != nil {
@@ -488,7 +542,7 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits/{commit_id}/tree [get]
 func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -501,6 +555,10 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
@@ -533,7 +591,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{folder_id}/commits/{commit_id}/files/{file_id}/content [get]
 func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -548,6 +606,10 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 		return
 	}
 
+	if !h.folderAccessible(c, user.ID, folderID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Workspace not found")
+		return
+	}
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
@@ -578,7 +640,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{file_id}/versions [get]
 func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -591,6 +653,12 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
+	if err != nil || file == nil || !service.CheckFileTeamPermission(ctx, h.fileDAO, file, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "File not found")
+		return
+	}
+
 	versions, err := h.commitService.GetFileVersionHistory(ctx, fileID)
 	if err != nil {
 		jsonInternalError(c, err)

@@ -19,11 +19,12 @@
 // Input formats and extraction strategies:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
 //   - Markdown (md)    → heading-based Q&A
-//   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
-//   - JSON (pdf, docx) → delimiter-based on structured text sections
+//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
+//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
 //
-// Every Q&A pair becomes a single chunk with content_with_weight
-// formatted as "Question: {q}\tAnswer: {a}".
+// Every Q&A pair becomes a single chunk whose text is
+// "Question: {q}\tAnswer: {a}" (ingestion renames text to
+// content_with_weight at the index boundary).
 package chunker
 
 import (
@@ -111,7 +112,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	var isMarkdown bool
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatHTML:
-		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult))
+		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult), isCSV(upstream.Name))
 	case schema.PayloadFormatMarkdown:
 		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
 		isMarkdown = true
@@ -131,11 +132,16 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		if isMarkdown {
 			answer = renderMarkdown(answer)
 		}
+		// Text is the pipeline's canonical chunk carrier: ingestion hashes
+		// it into the chunk id and renames it to content_with_weight. A
+		// content_with_weight-only chunk would share one empty-text id with
+		// every sibling and the index write would collapse all Q&A pairs
+		// into a single chunk.
 		chunk := schema.ChunkDoc{
-			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
-			DocType:           "text",
-			ContentLtks:       contentLTKS,
-			ContentSmLtks:     contentSMLTKS,
+			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:       "text",
+			ContentLtks:   contentLTKS,
+			ContentSmLtks: contentSMLTKS,
 		}
 		//
 		// index), image id + coordinates carried from the source item.
@@ -193,6 +199,10 @@ func stringPtrVal(s *string) string {
 	return *s
 }
 
+func isCSV(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".csv")
+}
+
 // ---------------------------------------------------------------------------
 // HTML / spreadsheet QA extraction
 // ---------------------------------------------------------------------------
@@ -201,7 +211,7 @@ var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
 var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
 var htmlTag = regexp.MustCompile(`<[^>]+>`)
 
-func extractQATable(htmlStr string) []qaPair {
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
@@ -209,6 +219,10 @@ func extractQATable(htmlStr string) []qaPair {
 	pairs := make([]qaPair, 0, len(rows))
 	for _, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
+		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		if strictPairs && len(cells) != 2 {
+			continue
+		}
 		var texts []string
 		for _, cell := range cells {
 			t := html.UnescapeString(htmlTag.ReplaceAllString(cell[1], ""))
@@ -218,7 +232,9 @@ func extractQATable(htmlStr string) []qaPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1]})
+			// RowNum mirrors Python qa.py's enumerate over the extracted
+			// pairs (beAdoc(..., row_num=ii)) → top_int.
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)})
 		}
 	}
 	return pairs
@@ -422,7 +438,16 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		tmp := extractQAText(txt)
+		// XLSX (#18800) emits OutputFormat json with HTML tables in item
+		// text and doc_type_kwd=table. Route those through extractQATable
+		// so spreadsheet QA keeps working; plain text items stay on the
+		// delimiter path used by pdf/docx.
+		var tmp []qaPair
+		if itemDocType(item) == "table" {
+			tmp = extractQATable(txt, false)
+		} else {
+			tmp = extractQAText(txt)
+		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
 		for _, p := range tmp {
