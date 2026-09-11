@@ -177,9 +177,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// 	return common.Outputs{}, err
 	// }
 
-	// Buffer every product (plus the graph) in one slice; the component merges
-	// them into the upstream chunk stream (matching Python, which appends
-	// compiled units onto the chunk list).
+	// Buffer the deduplicated row products in one slice; the component merges
+	// them into the upstream chunk stream.
 	products := append([]common.Product{}, prods...)
 	// products = append(products, graphProduct)
 
