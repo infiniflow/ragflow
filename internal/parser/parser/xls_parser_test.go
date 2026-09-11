@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -42,13 +43,13 @@ func TestXLSParser_HTMLAndJSONOutput(t *testing.T) {
 	if res.OutputFormat != "json" {
 		t.Errorf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
 	}
-	if res.HTML == "" {
-		t.Errorf("res.HTML should not be empty")
-	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("res.JSON should have structured table items")
 	}
 	item := res.JSON[0]
+	if text, ok := item["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Errorf("table item text should contain rendered <table>, got %v", item["text"])
+	}
 	if item["doc_type_kwd"] != "table" {
 		t.Errorf("doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
 	}
@@ -72,7 +73,7 @@ func TestXLSParser_HTMLAndJSONOutput(t *testing.T) {
 	}
 }
 
-func TestXLSXParser_HTMLAndJSONOutput(t *testing.T) {
+func TestXLSXParser_JSONOutput(t *testing.T) {
 	data := createTestExcelBytes(t)
 	p, err := NewXLSXParser("excelize")
 	if err != nil {
@@ -90,11 +91,11 @@ func TestXLSXParser_HTMLAndJSONOutput(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatalf("res.JSON should have items")
 	}
-	if res.HTML == "" {
-		t.Errorf("res.HTML should be populated for preview compatibility")
+	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Errorf("item text should contain HTML table, got %v", res.JSON[0]["text"])
 	}
 
-	// Even if configured to "html", format is unified to "json" while HTML is populated
+	// Even if configured to legacy "html", format is unified to "json"
 	p.ConfigureFromSetup(map[string]any{
 		"output_format": "html",
 	})
@@ -105,7 +106,7 @@ func TestXLSXParser_HTMLAndJSONOutput(t *testing.T) {
 	if resHTML.OutputFormat != "json" {
 		t.Errorf("resHTML.OutputFormat = %q, want 'json'", resHTML.OutputFormat)
 	}
-	if resHTML.HTML == "" {
-		t.Errorf("resHTML.HTML should be populated")
+	if len(resHTML.JSON) == 0 {
+		t.Errorf("resHTML.JSON should have items")
 	}
 }

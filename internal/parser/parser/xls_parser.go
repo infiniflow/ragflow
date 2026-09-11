@@ -19,7 +19,6 @@ package parser
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 type XLSParser struct {
@@ -102,18 +101,10 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
 
-	var html strings.Builder
-	for _, it := range items {
-		if t, ok := it["text"].(string); ok {
-			html.WriteString(t)
-		}
-	}
-
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
 		JSON:         items,
-		HTML:         html.String(),
 		Warnings:     warnings,
 	}
 }

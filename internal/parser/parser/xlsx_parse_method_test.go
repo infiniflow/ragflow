@@ -173,8 +173,8 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON items is empty; want structured table items")
 	}
-	if !strings.Contains(res.HTML, "<table>") {
-		t.Fatalf("HTML = %q, want a rendered <table>", res.HTML)
+	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Fatalf("JSON item text = %v, want a rendered <table>", res.JSON[0]["text"])
 	}
 }
 

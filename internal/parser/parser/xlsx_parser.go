@@ -171,17 +171,10 @@ func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int
 }
 
 func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
-	var html strings.Builder
-	for _, it := range items {
-		if t, ok := it["text"].(string); ok {
-			html.WriteString(t)
-		}
-	}
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
 		JSON:         items,
-		HTML:         html.String(),
 		Warnings:     warnings,
 	}
 }

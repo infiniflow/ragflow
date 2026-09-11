@@ -138,7 +138,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 				"sheets":   1,
 			},
 			JSON: []map[string]any{NewTableJSONItem(emptyHTML, csvSheetName, [][]float64{{1, 1, 1, 1, 1}})},
-			HTML: emptyHTML,
 		}
 	}
 
@@ -171,8 +170,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			float64(ch.ColEnd),
 		}}))
 	}
-	htmlText := recordsToHTMLTableChunks(records, chunkRows, csvSheetName)
-
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
@@ -183,6 +180,5 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			"sheets":   1,
 		},
 		JSON: items,
-		HTML: htmlText,
 	}
 }

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -19,15 +20,14 @@ func TestCSVParser_BasicHTMLAndJSON(t *testing.T) {
 		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, "json")
 	}
 
-	if res.HTML == "" {
-		t.Fatal("res.HTML should not be empty")
-	}
-
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
 	}
 
 	item := res.JSON[0]
+	if text, ok := item["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Fatal("item text should contain rendered <table>")
+	}
 	if item["doc_type_kwd"] != "table" {
 		t.Errorf("item doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
 	}
@@ -66,8 +66,8 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
 	}
-	if res.HTML == "" {
-		t.Fatal("res.HTML should still be populated for preview compatibility")
+	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Fatal("item text should contain rendered <table>")
 	}
 }
 

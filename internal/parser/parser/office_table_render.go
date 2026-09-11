@@ -161,25 +161,7 @@ type htmlTableChunk struct {
 	ColEnd   int
 }
 
-// recordsToHTMLTableChunks renders records as one or more self-contained HTML
-// <table> chunks. The first row is always the header (<th>). Data rows are
-// split into chunks of chunkRows, each chunk being a complete <table> with
-// <caption> and a repeated header row. Chunks are joined with newlines.
-//
-// The tag schema is <table><caption>{caption}</caption><tr><th>…</th></tr>
-// <tr><td>…</td></tr>…</table>. Rows are intentionally NOT wrapped in
-// <thead>/<tbody>, so every <table> is one atomic chunk that downstream
-// chunkers can consume independently.
-func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
-	chunks := recordsToHTMLTableChunkList(records, chunkRows, caption, 1)
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, "")
-}
-
-// recordsToHTMLTableChunkList is the structured form of recordsToHTMLTableChunks.
+// recordsToHTMLTableChunkList renders records as structured htmlTableChunk items.
 // headerRowAbs is the 1-based workbook row number of records[0] (normally 1).
 func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption string, headerRowAbs int) []htmlTableChunk {
 	if headerRowAbs <= 0 {
