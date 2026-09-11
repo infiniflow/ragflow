@@ -230,7 +230,9 @@ class TestApplyMetaDataFilterBaseScope:
     def test_empty_base_keeps_filter_hits_deduped(self):
         flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
         metas = {"color": {"red": ["docA", "docA", "docB"]}}
-        assert set(self._run(flt, metas, [])) == {"docA", "docB"}
+        result = self._run(flt, metas, [])
+        assert set(result) == {"docA", "docB"}
+        assert len(result) == 2
 
     def test_duplicate_base_doc_ids_are_deduped(self):
         flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
