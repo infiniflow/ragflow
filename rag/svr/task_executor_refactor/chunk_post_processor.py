@@ -957,10 +957,11 @@ async def run_tree_templates(
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
     ``RaptorService.build_doc_tree`` and persists a single graph row
-    via ``_struct_upsert_graph_json``."""
+    via ``_struct_upsert_tree_graph_rows`` (per-row entity/relation rows --
+    the compact graph blob no longer exists)."""
     from rag.advanced_rag.knowlege_compile.structure import (
-        _struct_upsert_graph_json,
         _struct_upsert_tree_claim_rows,
+        _struct_upsert_tree_graph_rows,
     )
     from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
@@ -1061,13 +1062,13 @@ async def run_tree_templates(
             claims_by_chunk = _remap_claims_by_chunk(claims_by_chunk, chunk_id_remap)
         graph = raptor_tree_to_graph(tree)
         try:
-            await _struct_upsert_graph_json(
+            await _struct_upsert_tree_graph_rows(
                 graph,
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
                 doc_name,
-                compile_kwd="tree",
+                embedding_model,
                 compilation_template_id=template_id,
             )
         except Exception:

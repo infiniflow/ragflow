@@ -192,14 +192,14 @@ func raptorTreeToGraph(root *graphNode) ([]map[string]any, []map[string]any) {
 }
 
 // buildTreeGraph reconstructs the tree from the flat summary products and
-// produces the entity/relation/graph products Python writes for a tree variant
-// (_struct_upsert_tree_graph_rows + _struct_upsert_graph_json):
+// produces the per-row products Python writes for a tree variant
+// (_struct_upsert_tree_graph_rows):
 //   - one entity product per tree node (kind "entity", knowledge_graph_kwd via
 //     the writer), type "tree_node";
-//   - one relation product per parent→child edge (kind "relation");
-//   - one compact graph blob product (kind "graph") carrying the whole
-//     {entities, relations} projection, which is the /structure/graph discovery
-//     row (Python scans knowledge_graph_kwd="graph").
+//   - one relation product per parent→child edge (kind "relation").
+//
+// The compact graph blob (knowledge_graph_kwd="graph") is gone from the
+// storage model: the per-row rows ARE the graph, exactly like page_index.
 //
 // templateID is stamped into each row so the document-structure endpoint can
 // group by template id; compileKWD is "tree".
@@ -273,29 +273,6 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 		})
 	}
 
-	// Compact graph blob discovery row (knowledge_graph_kwd="graph").
-	graph := map[string]any{"entities": entities, "relations": relations}
-	graphContent := payloadJSON(graph)
-	graphVecs, err := deps.Embed.Encode(ctx, []string{graphContent})
-	if err != nil {
-		return nil, err
-	}
-	var gv []float32
-	if len(graphVecs) > 0 {
-		gv = graphVecs[0]
-	}
-	out = append(out, common.Product{
-		ID:       common.StableRowID(docID, "tree", "structure_graph"),
-		DocID:    docID,
-		TenantID: deps.TenantID,
-		Variant:  common.VariantTree,
-		Content:  graphContent,
-		Vector:   gv,
-		Meta: map[string]any{
-			"kind":        "graph",
-			"compile_kwd": "tree",
-		},
-	})
 	return out, nil
 }
 

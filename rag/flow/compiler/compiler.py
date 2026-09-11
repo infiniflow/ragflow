@@ -382,7 +382,6 @@ class Compiler(ProcessBase, LLM):
         from the current pipeline output instead.
         """
         from rag.advanced_rag.knowlege_compile.structure import (
-            _struct_upsert_graph_json,
             _struct_upsert_tree_graph_rows,
         )
         from rag.svr.task_executor_refactor.chunk_post_processor import (
@@ -468,15 +467,6 @@ class Compiler(ProcessBase, LLM):
                     doc_id,
                     doc_name,
                     embedding_model,
-                    compilation_template_id=template_id,
-                )
-                await _struct_upsert_graph_json(
-                    after_graph,
-                    tenant_id,
-                    kb_id,
-                    doc_id,
-                    doc_name,
-                    compile_kwd="tree",
                     compilation_template_id=template_id,
                 )
                 # Claims become their own searchable rows so global KNN can hit

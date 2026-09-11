@@ -57,7 +57,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
 	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
-	// plus a compact graph blob (knowledge_graph_kwd="graph"), so the
+	// plus per-row entity/relation rows (knowledge_graph_kwd="entity"|
+	// "relation"), so the
 	// document-structure /structure/graph endpoint can serve the tree. A failure
 	// here must not abort the whole tree compile — the summary nodes are already
 	// valid on their own — so it is best-effort and surfaced as a log.

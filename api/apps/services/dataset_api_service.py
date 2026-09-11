@@ -3737,38 +3737,49 @@ async def generate_nav(
                     }
                 )
 
-            # Prefer RAPTOR-generated summaries stored in the knowledge
-            # graph (compile_kwd="tree", knowledge_graph_kwd="graph")
-            # so that rebuilt nav descriptions match the original
-            # tree-compilation output.  Fall back to meta_fields.title
-            # or filename when the graph is absent.
+            # Tree summaries come from the per-row entity/relation rows
+            # (compile_kwd="tree") -- the compact graph blob no longer exists.
+            # One query per row kind, grouped per document, then projected with
+            # build_nav_graph_text: identical output to the old blob content,
+            # so rebuilt nav descriptions keep matching the original
+            # tree-compilation output. Fall back to meta_fields.title or
+            # filename when the rows are absent.
             raptor_summaries: dict[str, str] = {}
             pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
             if pack is not None:
                 try:
                     index_nm, _ = pack
                     from common.doc_store.doc_store_base import OrderByExpr
+                    from rag.advanced_rag.knowlege_compile.dataset_nav import build_nav_graph_text
 
-                    graph_res = settings.docStoreConn.search(
-                        select_fields=["doc_id", "content_with_weight"],
-                        highlight_fields=[],
-                        condition={"compile_kwd": ["tree"], "knowledge_graph_kwd": ["graph"]},
-                        match_expressions=[],
-                        order_by=OrderByExpr(),
-                        offset=0,
-                        limit=10000,
-                        index_names=index_nm,
-                        knowledgebase_ids=[dataset_id],
-                    )
-                    graph_map = settings.docStoreConn.get_fields(graph_res, ["doc_id", "content_with_weight"])
-                    for row in (graph_map or {}).values():
-                        gid = str(row.get("doc_id") or "")
-                        if not gid:
-                            continue
-                        try:
-                            graph = json.loads(row.get("content_with_weight") or "{}")
-                        except Exception:
-                            continue
+                    per_doc: dict[str, dict] = {}
+                    for kind in ("entity", "relation"):
+                        rows_res = settings.docStoreConn.search(
+                            select_fields=["doc_id", "content_with_weight"],
+                            highlight_fields=[],
+                            condition={"compile_kwd": ["tree"], "knowledge_graph_kwd": [kind]},
+                            match_expressions=[],
+                            order_by=OrderByExpr(),
+                            offset=0,
+                            limit=10000,
+                            index_names=index_nm,
+                            knowledgebase_ids=[dataset_id],
+                        )
+                        rows = settings.docStoreConn.get_fields(rows_res, ["doc_id", "content_with_weight"])
+                        for row in (rows or {}).values():
+                            gid = str(row.get("doc_id") or "")
+                            if not gid:
+                                continue
+                            try:
+                                payload = json.loads(row.get("content_with_weight") or "{}")
+                            except Exception:
+                                continue
+                            if not isinstance(payload, dict):
+                                continue
+                            bucket = "entities" if kind == "entity" else "relations"
+                            per_doc.setdefault(gid, {"entities": [], "relations": []})[bucket].append(payload)
+
+                    for gid, graph in per_doc.items():
                         # Build both:
                         #   - root_summary: first line of root desc (short,
                         #     for the display title / description field)
@@ -3785,7 +3796,7 @@ async def generate_nav(
                                 "graph_text": graph_text or root_summary,
                             }
                 except Exception:
-                    logging.exception("generate_nav: failed to read RAPTOR graph summaries for kb=%s", dataset_id)
+                    logging.exception("generate_nav: failed to read tree summaries for kb=%s", dataset_id)
 
             documents = []
             for d in all_docs:

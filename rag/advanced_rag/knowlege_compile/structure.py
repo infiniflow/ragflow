@@ -2882,23 +2882,6 @@ async def _struct_local_dedup_parallel(
     return deduped_entities + deduped_relations, dropped
 
 
-def _struct_graph_row_id(
-    doc_id: str,
-    compile_kwd: str,
-    compilation_template_id: str | None = None,
-) -> str:
-    """Stable id per (doc, compile_kwd, template). Without the template
-    suffix, two templates sharing a compile_kwd (e.g. both ``list``)
-    would overwrite each other's per-doc graph JSON row."""
-    tpl_part = compilation_template_id or ""
-    return xxhash.xxh64(
-        f"{doc_id}:structure_graph:{compile_kwd}:{tpl_part}".encode(
-            "utf-8",
-            "surrogatepass",
-        ),
-    ).hexdigest()
-
-
 async def _struct_rebuild_graph_json(
     tenant_id: str,
     kb_id: str,
@@ -3044,56 +3027,10 @@ async def cleanup_timeline_isolated_entities(
             compilation_template_id or "legacy",
         )
 
-    # Refresh the compact graph after source-row cleanup. This also handles
-    # the no-relation case, where every timeline entity is isolated.
-    await rebuild_structure_graph_json(
-        tenant_id,
-        kb_id,
-        doc_id,
-        doc_name,
-        "timeline",
-        compilation_template_id,
-    )
+    # No compact-graph refresh here: the graph blob (knowledge_graph_kwd="graph")
+    # is gone from the storage model -- the raw entity/relation rows above ARE
+    # the graph, so deleting the orphans is the whole cleanup.
     return len(orphan_ids)
-
-
-async def _struct_upsert_graph_json(
-    graph: dict,
-    tenant_id: str,
-    kb_id: str,
-    doc_id: str,
-    doc_name: str,
-    compile_kwd: str,
-    compilation_template_id: str | None = None,
-) -> None:
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    row_id = _struct_graph_row_id(doc_id, compile_kwd, compilation_template_id)
-    row = {
-        "id": row_id,
-        "content_with_weight": json.dumps(graph, ensure_ascii=False),
-        "compile_kwd": compile_kwd,
-        "knowledge_graph_kwd": "graph",
-        "doc_id": doc_id,
-        "docnm_kwd": doc_name,
-        "kb_id": kb_id,
-        "available_int": 0,
-    }
-    if compilation_template_id:
-        row["compilation_template_ids"] = [compilation_template_id]
-    old = await thread_pool_exec(settings.docStoreConn.get, row_id, index, [kb_id])
-    if old:
-        await thread_pool_exec(
-            settings.docStoreConn.update,
-            {"id": row_id},
-            {k: v for k, v in row.items() if k != "id"},
-            index,
-            kb_id,
-        )
-    else:
-        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
 
 
 # Upper bound on the claim rows listed when deciding which previous rows the
@@ -3333,25 +3270,21 @@ async def rebuild_structure_graph_json(
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> dict:
-    """Rebuild and persist the compact document-scoped structure graph,
-    scoped to one (doc, compile_kwd, template_id) triple."""
-    graph = await _struct_rebuild_graph_json(
+    """Rebuild the document-scoped structure graph dict from its raw
+    entity/relation rows, scoped to one (doc, compile_kwd, template_id) triple.
+
+    Read-only by design: the compact graph blob (knowledge_graph_kwd="graph")
+    is no longer part of the storage model -- the raw rows ARE the graph, so
+    there is nothing to persist. Callers consume the returned dict (e.g. the
+    page_index navigation summary).
+    """
+    return await _struct_rebuild_graph_json(
         tenant_id,
         kb_id,
         doc_id,
         compile_kwd,
         compilation_template_id,
     )
-    await _struct_upsert_graph_json(
-        graph,
-        tenant_id,
-        kb_id,
-        doc_id,
-        doc_name,
-        compile_kwd,
-        compilation_template_id,
-    )
-    return graph
 
 
 def _dataset_struct_graph_row_id(

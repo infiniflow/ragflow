@@ -101,29 +101,29 @@ async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict,
                 _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
 
         # Tree structure graph (uses ``compile_kwd``, not template kind).
-        # Parse-time tree compilation persists ONE graph blob instead of raw
-        # entity/relation rows, which the raw-row strategy cannot see at all —
-        # so the blob is expanded in-process first, and the raw-row strategy
-        # only runs for tree docs that DO carry raw rows (pipeline-Compiler
-        # tree). Both dedup through seen_ids.
-        chunks = await _expand_tree_blob_strategy(
+        # Tree compilation now writes the same per-row shape as page_index,
+        # so the raw-row strategy is the primary path. The blob strategy is
+        # kept only as a fallback for documents compiled before the migration
+        # (one graph blob instead of raw rows); it disappears once those docs
+        # are recompiled. Both dedup through seen_ids.
+        chunks = await _expand_compiled_strategy(
             tools,
             kb_id,
             tenant_id,
             doc_ids,
             query,
             seen_ids,
+            compile_kwd="tree",
             max_chunks=5,
         )
         if not chunks:
-            chunks = await _expand_compiled_strategy(
+            chunks = await _expand_tree_blob_strategy(
                 tools,
                 kb_id,
                 tenant_id,
                 doc_ids,
                 query,
                 seen_ids,
-                compile_kwd="tree",
                 max_chunks=5,
             )
         if chunks:
@@ -566,11 +566,12 @@ async def _expand_wiki_page_strategy(
     return new_chunks
 
 
-# --- Tree blob expansion ---
-# Parse-time ``tree`` compilation persists ONE graph blob per document
-# (``knowledge_graph_kwd="graph"``, ``compile_kwd="tree"``) and NO raw
-# entity/relation rows, so the raw-row strategy above is structurally blind to
-# tree-compiled documents. The blob carries the whole tree -- entities with
+# --- Tree blob expansion (legacy fallback) ---
+# Documents compiled BEFORE the per-row migration persist ONE graph blob per
+# document (``knowledge_graph_kwd="graph"``, ``compile_kwd="tree"``) and no raw
+# entity/relation rows. Current tree compilation writes the same per-row shape
+# as page_index, so this strategy only serves pre-migration docs until they
+# are recompiled. The blob carries the whole tree -- entities with
 # ``name``/``type``/``description``/``source_chunk_ids`` and parent-child
 # relations as ``{"from", "to"}`` -- so expansion runs over the JSON in-process.
 

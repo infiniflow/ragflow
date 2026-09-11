@@ -186,7 +186,12 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     # may also have entity/relation rows. Read BOTH and merge so navigation works
     # regardless of which shape a given compile type produced.
     rows: dict = {}
-    rows.update(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    # The compact graph blob (knowledge_graph_kwd="graph") is gone from the
+    # storage model: tree compilation now writes the same per-row shape as
+    # page_index, so this single entity/relation query covers every compiled
+    # doc. The legacy parser-config RAPTOR projection
+    # (compile_kwd="raptor_graph") is still read separately -- those rows
+    # carry no knowledge_graph_kwd.
     rows.update(
         await _query(
             {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity", "relation"]},
@@ -1208,23 +1213,11 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
         fields.append(vec_field)
 
     try:
-        # Same dual-shape logic as _load_compiled_structure: RAPTOR/tree writes a
-        # compact graph blob (knowledge_graph_kwd="graph"), while page_index /
-        # pipeline-Compiler tree write per-entity rows (knowledge_graph_kwd="entity").
-        # Read BOTH so vector beam descent works for either shape.
+        # Tree compilation now writes the same per-row shape as page_index
+        # (per-entity rows with their own vectors), so one entity query covers
+        # every compiled doc -- no graph-blob leg, and beam descent gets a real
+        # per-node vector for tree docs too.
         res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [kb_id],
-        )
-        res2 = await thread_pool_exec(
             settings.docStoreConn.search,
             fields,
             [],
@@ -1237,7 +1230,6 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
             [kb_id],
         )
         rows = settings.docStoreConn.get_fields(res, fields) or {}
-        rows.update(settings.docStoreConn.get_fields(res2, fields) or {})
     except Exception:
         _LOG.exception("[navigate_structure] _load_entities_with_vectors failed for doc=%s", doc_id)
         return []

@@ -921,22 +921,25 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_result(data=_response([bucket]))
 
     # ── normal mode: per-template subgraph sampling from the raw rows ──
-    # Metadata-only scan of the per-doc graph blob rows (one per
-    # (compile_kwd, template_id)) purely to discover buckets and resolve their
-    # display name/kind — WITHOUT loading the (potentially huge)
-    # content_with_weight. Each bucket's entities/relations are then fetched
-    # from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
+    # Metadata-only scan of the per-doc entity rows purely to discover buckets
+    # and resolve their display name/kind — WITHOUT loading the (potentially
+    # huge) content_with_weight. Each bucket's entities/relations are then
+    # fetched from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
+    # (The compact graph blob is gone from the storage model: tree compilation
+    # now writes the same per-row shape as page_index, so buckets are
+    # discovered from the entity rows themselves. The scan limit is raised
+    # accordingly -- a doc carries one row per entity, not one per template.)
     meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             meta_fields,
             [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
+            {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
             [],
             OrderByExpr(),
             0,
-            1000,
+            10000,
             index_name,
             [dataset_id],
         )
