@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -142,6 +143,7 @@ func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 func TestPDFParser_ParseWithResult_MinerUSendsServerURL(t *testing.T) {
 	withSSRFBypass(t)
 	var gotServerURL string
+	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
 			reader, err := r.MultipartReader()
@@ -160,7 +162,9 @@ func TestPDFParser_ParseWithResult_MinerUSendsServerURL(t *testing.T) {
 				}
 				if part.FormName() == "server_url" {
 					body, _ := io.ReadAll(part)
+					mu.Lock()
 					gotServerURL = string(body)
+					mu.Unlock()
 				}
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -188,7 +192,10 @@ func TestPDFParser_ParseWithResult_MinerUSendsServerURL(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := gotServerURL, "http://mineru-downstream:8080"; got != want {
+	mu.Lock()
+	got := gotServerURL
+	mu.Unlock()
+	if want := "http://mineru-downstream:8080"; got != want {
 		t.Fatalf("server_url = %q, want %q", got, want)
 	}
 }
