@@ -24,6 +24,9 @@ const (
 	// symbol so the routing contract cannot diverge (mirrors the RAGFLOW_TASKS
 	// JetStream subject in internal/engine/nats).
 	TaskSubject = "tasks.RAGFLOW"
+	// MaxManualPullMessages is the largest task batch the administrative queue
+	// pull endpoint accepts.
+	MaxManualPullMessages = 100
 
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"
@@ -31,7 +34,7 @@ const (
 	TaskTypeSyncer = "syncer"
 	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
 	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
-	// pool with ingestion tasks; processMessage dispatches them by TaskType.
+	// pool with ingestion tasks; handleAndExecute dispatches them by TaskType.
 	// The memory-specific payload (message_dict/memory_id/source_id) is
 	// carried in TaskMessage.Payload.
 	TaskTypeMemory = "memory"

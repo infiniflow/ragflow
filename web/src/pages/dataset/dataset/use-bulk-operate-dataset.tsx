@@ -1,3 +1,4 @@
+import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   UseRowSelectionType,
@@ -21,8 +22,11 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DocumentType } from './constant';
-import { isParserRunning } from './utils';
+import { buildMissingModelModalContent } from './parser-model-gap-content';
+import { useParserModelValidation } from './use-parser-model-validation';
+import { isDocumentProcessing } from './utils';
 
 export function useBulkOperateDataset({
   rowSelection,
@@ -42,6 +46,9 @@ export function useBulkOperateDataset({
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
   const { visible, showModal, hideModal } = useSetModalState();
+  const { findFilesMissingModels, goToDatasetConfiguration } =
+    useParserModelValidation();
+  const { knowledgeBase } = useKnowledgeBaseContext();
 
   const chunkNum = useMemo(() => {
     if (!documents.length) {
@@ -65,6 +72,66 @@ export function useBulkOperateDataset({
         toast.error(t('Please select a non-empty file list'));
         return;
       }
+
+      // Starting a parse requires the models of each file type to be
+      // configured; cancelling is always allowed.
+      if (run === 1) {
+        const selectedDocuments = documents.filter((x) =>
+          nonVirtualKeys.includes(x.id),
+        );
+        const gaps = findFilesMissingModels(
+          selectedDocuments.map((x) => x.name),
+        );
+        if (gaps.length > 0) {
+          hideModal();
+          const failingNames = new Set(gaps.map((gap) => gap.name));
+          const validIds = selectedDocuments
+            .filter((x) => !failingNames.has(x.name))
+            .map((x) => x.id);
+
+          if (validIds.length === 0) {
+            Modal.error({
+              title: t('knowledgeDetails.parseBlockedTitle'),
+              content: buildMissingModelModalContent(
+                t,
+                gaps,
+                'knowledgeDetails.parseBlockedHint',
+              ),
+              okText: t('knowledgeDetails.goToConfiguration'),
+              cancelText: t('common.cancel'),
+              closable: false,
+              onOk: goToDatasetConfiguration,
+            });
+            return;
+          }
+
+          Modal.warning({
+            title: t('knowledgeDetails.parseBlockedPartialTitle'),
+            content: (
+              <div className="space-y-2">
+                {buildMissingModelModalContent(
+                  t,
+                  gaps,
+                  'knowledgeDetails.parseBlockedHint',
+                )}
+                <p>
+                  {t('knowledgeDetails.parseValidFilesNote', {
+                    count: validIds.length,
+                  })}
+                </p>
+              </div>
+            ),
+            okText: t('knowledgeDetails.parseValidFiles'),
+            cancelText: t('common.cancel'),
+            closable: false,
+            onOk: async () => {
+              await runDocumentByIds({ documentIds: validIds, run, option });
+            },
+          });
+          return;
+        }
+      }
+
       await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
@@ -72,7 +139,15 @@ export function useBulkOperateDataset({
       });
       hideModal();
     },
-    [documents, runDocumentByIds, selectedRowKeys, hideModal, t],
+    [
+      documents,
+      runDocumentByIds,
+      selectedRowKeys,
+      hideModal,
+      t,
+      findFilesMissingModels,
+      goToDatasetConfiguration,
+    ],
   );
 
   const handleRunClick = useCallback(
@@ -81,6 +156,19 @@ export function useBulkOperateDataset({
     },
     [runDocument],
   );
+
+  // The confirmation only offers real choices when the selection has existing
+  // chunks to drop or auto-metadata to re-apply; otherwise run straight away.
+  const needsRunConfirm =
+    chunkNum > 0 || Boolean(knowledgeBase?.parser_config?.enable_metadata);
+
+  const handleRunMenuClick = useCallback(() => {
+    if (needsRunConfirm) {
+      showModal();
+      return;
+    }
+    handleRunClick();
+  }, [needsRunConfirm, showModal, handleRunClick]);
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -107,10 +195,7 @@ export function useBulkOperateDataset({
 
   const handleDelete = useCallback(() => {
     const deletedKeys = selectedRowKeys.filter(
-      (x) =>
-        !documents
-          .filter((y) => isParserRunning(y.run))
-          .some((y) => y.id === x),
+      (x) => !documents.filter(isDocumentProcessing).some((y) => y.id === x),
     );
     if (deletedKeys.length === 0) {
       toast.error(
@@ -139,7 +224,7 @@ export function useBulkOperateDataset({
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <LucidePlayCircle />,
-      onClick: () => showModal(),
+      onClick: handleRunMenuClick,
     },
     {
       id: 'cancel',

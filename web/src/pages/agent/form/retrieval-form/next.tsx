@@ -15,22 +15,15 @@ import {
 } from '@/components/rerank-candidates-count-item';
 
 import { TopNFormField } from '@/components/top-n-item';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
-import { Textarea } from '@/components/ui/textarea';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
 } from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo, useMemo } from 'react';
 import {
   UseFormReturn,
@@ -55,20 +48,47 @@ export const RetrievalPartialSchema = {
   keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
   ...rerankCandidatesCountSchema,
-  dataset_ids: z.array(z.string()),
+  dataset_ids: z.array(z.string()).optional(),
   rerank_id: z.string(),
-  empty_response: z.string(),
   cross_languages: z.array(z.string()),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
   user_id: z.string().optional(),
+  document_ids: z.string().optional(),
 };
 
-export const FormSchema = z.object({
-  query: z.string().optional(),
-  ...RetrievalPartialSchema,
-});
+export const FormSchema = z
+  .object({
+    query: z.string().optional(),
+    ...RetrievalPartialSchema,
+  })
+  .superRefine((data, ctx) => {
+    // A Retrieval node sourcing from datasets must name at least one dataset,
+    // and one sourcing from memories must name at least one memory. The
+    // backend otherwise rejects the run with a `dataset_ids`/`memory_ids is
+    // required` error that only surfaces at runtime.
+    if (
+      data.retrieval_from === RetrievalFrom.Dataset &&
+      (data.dataset_ids ?? []).length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dataset_ids'],
+        message: t('flow.retrievalDatasetRequired'),
+      });
+    }
+    if (
+      data.retrieval_from === RetrievalFrom.Memory &&
+      (data.memory_ids ?? []).length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['memory_ids'],
+        message: t('flow.retrievalMemoryRequired'),
+      });
+    }
+  });
 
 export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 
@@ -92,11 +112,14 @@ export function MemoryDatasetForm() {
       </RAGFlowFormItem>
       {retrievalFrom === RetrievalFrom.Memory ? (
         <>
-          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <MemoriesFormField
+            label={t('header.memories')}
+            required
+          ></MemoriesFormField>
           <UserIdFormField></UserIdFormField>
         </>
       ) : (
-        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+        <KnowledgeBaseFormField showVariable required></KnowledgeBaseFormField>
       )}
     </>
   );
@@ -111,31 +134,17 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
   return retrievalFrom === RetrievalFrom.Memory;
 }
 
-export function EmptyResponseField() {
+export function DocumentIdsFormField() {
   const { t } = useTranslation();
-  const form = useFormContext();
 
   return (
-    <FormField
-      control={form.control}
-      name="empty_response"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel tooltip={t('chat.emptyResponseTip')}>
-            {t('chat.emptyResponse')}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              placeholder={t('common.namePlaceholder')}
-              {...field}
-              autoComplete="off"
-              rows={4}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
+    <RAGFlowFormItem
+      name="document_ids"
+      label={t('flow.documentIds')}
+      tooltip={t('flow.documentIdsTip')}
+    >
+      <PromptEditor multiLine={false} showToolbar={false}></PromptEditor>
+    </RAGFlowFormItem>
   );
 }
 
@@ -181,6 +190,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
         <RAGFlowFormItem name="query" label={t('flow.query')}>
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
+        <DocumentIdsFormField></DocumentIdsFormField>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
@@ -199,7 +209,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>

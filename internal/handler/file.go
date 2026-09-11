@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -39,6 +38,14 @@ type FileHandler struct {
 	fileService          *file.FileService
 	userService          *service.UserService
 	file2DocumentService *document.File2DocumentService
+}
+
+func respondFileServiceError(c *gin.Context, err error) {
+	if errors.Is(err, file.ErrNoAuthorization) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "no authorization")
+		return
+	}
+	jsonInternalError(c, err)
 }
 
 // NewFileHandler create file handler
@@ -173,7 +180,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get parent folder with permission check
 	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -208,7 +215,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -242,7 +249,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -522,15 +529,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Determine content type based on extension and file type
 	contentType := utility.GetContentType(ext, file.Type)
 
-	// Set response headers
-	if contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	if utility.ShouldForceAttachment(ext, contentType) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		encodedName := url.QueryEscape(file.Name)
-		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
-	}
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, file.Name)
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)

@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +50,18 @@ import (
 type recordingTaskPublisher struct {
 	subject  string
 	messages []common.TaskMessage
+}
+
+type runningTaskPublisher struct {
+	db        *gorm.DB
+	published chan struct{}
+	once      sync.Once
+}
+
+func (p *runningTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.once.Do(func() { close(p.published) })
+	return p.db.Model(&entity.IngestionTask{}).Where("id = ?", msg.TaskID).
+		Update("status", common.RUNNING).Error
 }
 
 func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.TaskMessage) error {
@@ -422,8 +435,19 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	return setupServiceTestDBWithDSN(t, ":memory:")
+}
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
+}
+
+func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {
@@ -434,6 +458,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
+		&entity.PipelineOperationLog{},
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
@@ -470,6 +495,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
@@ -763,7 +789,7 @@ func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
 }
 
 func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -816,7 +842,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
 	activeLocation := "sync/github/doc-sync-update.txt"
-	if err := mockStorage.Put(context.Background(), "kb-sync", activeLocation, []byte("old content")); err != nil {
+	if err := mockStorage.Put(t.Context(), "kb-sync", activeLocation, []byte("old content")); err != nil {
 		t.Fatalf("seed active object: %v", err)
 	}
 	oldName := "old.txt"
@@ -863,7 +889,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected update failure")
 	}
-	got, err := mockStorage.Get(context.Background(), "kb-sync", activeLocation)
+	got, err := mockStorage.Get(t.Context(), "kb-sync", activeLocation)
 	if err != nil {
 		t.Fatalf("active object was removed: %v", err)
 	}
@@ -1266,8 +1292,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	if ingestionTask.UserID != "user-1" {
 		t.Fatalf("ingestion task user id = %q, want %q", ingestionTask.UserID, "user-1")
 	}
-	if ingestionTask.Status != common.CREATED {
-		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
+	if ingestionTask.Status != common.SCHEDULED {
+		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.SCHEDULED)
 	}
 
 	tasks, err := svc.taskDAO.GetByDocID(ctx, db, "doc-1")
@@ -1276,6 +1302,76 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Fatalf("expected no legacy task rows, got %d", len(tasks))
+	}
+}
+
+func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
+	db := setupConcurrentServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set document location: %v", err)
+	}
+
+	firstTaskLookup := make(chan struct{})
+	releaseFirstTaskLookup := make(chan struct{})
+	var blockFirstLookup sync.Once
+	const callbackName = "test:block-first-ingestion-task-lookup"
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		blockFirstLookup.Do(func() {
+			close(firstTaskLookup)
+			<-releaseFirstTaskLookup
+		})
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+
+	firstService := testDocumentService(t)
+	firstService.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+	secondPublisher := &runningTaskPublisher{db: db, published: make(chan struct{})}
+	secondService := testDocumentService(t)
+	secondService.ingestionTaskSvc.SetTaskPublisher(secondPublisher)
+	ctx := t.Context()
+	kb, err := firstService.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	doc, err := firstService.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- firstService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+	<-firstTaskLookup
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- secondService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+
+	secondPublishedBeforeFirstCompletes := false
+	select {
+	case <-secondPublisher.published:
+		secondPublishedBeforeFirstCompletes = true
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(releaseFirstTaskLookup)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first concurrent reparse: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second concurrent reparse: %v", err)
+	}
+	if secondPublishedBeforeFirstCompletes {
+		t.Fatal("second reparse published a task before the first reparse completed cleanup")
 	}
 }
 
@@ -1727,9 +1823,144 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "tenant-1", "nonexistent")
+	if !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+}
+
+// insertTestPreviewDoc creates a doc with a name/location and seeds its blob.
+func insertTestPreviewDoc(t *testing.T, db *gorm.DB, mockStorage *fakeUploadStorage, id, kbID, content string) {
+	t.Helper()
+	name := id + ".txt"
+	loc := id + ".txt"
+	doc := &entity.Document{
+		ID:           id,
+		KbID:         kbID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         &name,
+		Location:     &loc,
+		Suffix:       "txt",
+		Status:       sptr("1"),
+	}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("insert test doc: %v", err)
+	}
+	if err := mockStorage.Put(context.Background(), kbID, loc, []byte(content)); err != nil {
+		t.Fatalf("seed preview object: %v", err)
+	}
+}
+
+func useFakeStorage(t *testing.T) *fakeUploadStorage {
+	t.Helper()
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+	return mockStorage
+}
+
+func TestGetDocumentPreview_AccessControl(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	mockStorage := useFakeStorage(t)
+	insertTestKB(t, "kb-prev", "tenant-1", 1, 0, 0)
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev", "kb-prev", "preview body")
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+
+	// Dataset owner reads the original file.
+	p, err := svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev")
+	if err != nil {
+		t.Fatalf("owner preview: %v", err)
+	}
+	if string(p.Data) != "preview body" {
+		t.Fatalf("unexpected body: %q", string(p.Data))
+	}
+
+	// A member of the dataset's tenant reads it too.
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-prev", UserID: "user-2", TenantID: "tenant-1",
+		Role: "normal", InvitedBy: "tenant-1", Status: sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user_tenant: %v", err)
+	}
+	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev"); err != nil {
+		t.Fatalf("team member preview: %v", err)
+	}
+
+	// An unrelated user gets the same answer as for a missing document.
+	_, err = svc.GetDocumentPreview(ctx, "tenant-2", "doc-prev")
+	if !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+
+	// A private (ME) dataset stays owner-only even for tenant members: the
+	// same rule the chunk list applies via KnowledgebaseDAO.Accessible.
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-prev-me", TenantID: "tenant-1", Name: "private-kb", EmbdID: "embd-1",
+		CreatedBy: "user-1", Permission: string(entity.TenantPermissionMe),
+		DocNum: 1, Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert private kb: %v", err)
+	}
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-me", "kb-prev-me", "private body")
+
+	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+	p, err = svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev-me")
+	if err != nil {
+		t.Fatalf("owner preview private dataset: %v", err)
+	}
+	if string(p.Data) != "private body" {
+		t.Fatalf("unexpected private body: %q", string(p.Data))
+	}
+}
+
+func TestGetDocumentPreview_EmptyObject(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	mockStorage := useFakeStorage(t)
+	insertTestKB(t, "kb-prev-empty", "tenant-1", 1, 0, 0)
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
+
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-empty")
+	if !errors.Is(err, ErrPreviewFileEmpty) {
+		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
+	}
+}
+
+func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	useFakeStorage(t)
+	insertTestKB(t, "kb-prev-miss", "tenant-1", 1, 0, 0)
+	// Document exists but its blob was never seeded.
+	name := "doc.txt"
+	loc := "doc.txt"
+	if err := db.Create(&entity.Document{
+		ID: "doc-prev-miss", KbID: "kb-prev-miss", ParserID: "naive",
+		ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
+		Suffix: "txt", Status: sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert test doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-miss")
 	if err == nil {
-		t.Error("expected error for nonexistent document")
+		t.Fatal("expected storage read error")
+	}
+	if errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("storage failure must not be masked as document not found, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "kb-prev-miss") {
+		t.Fatalf("error should carry the storage address for diagnosis: %v", err)
 	}
 }
 
@@ -1799,22 +2030,142 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentAllowsZeroCounterLikePythonTruthyCheck(t *testing.T) {
+func TestUpdateDatasetDocumentRejectsZeroImmutableFields(t *testing.T) {
+	zeroCount := int64(0)
+	zeroProgress := 0.0
+	tests := []struct {
+		name    string
+		request UpdateDatasetDocumentRequest
+		present map[string]bool
+		wantErr string
+	}{
+		{name: "chunk count", request: UpdateDatasetDocumentRequest{ChunkCount: &zeroCount}, present: map[string]bool{"chunk_count": true}, wantErr: "can't change `chunk_count`"},
+		{name: "token count", request: UpdateDatasetDocumentRequest{TokenCount: &zeroCount}, present: map[string]bool{"token_count": true}, wantErr: "can't change `token_count`"},
+		{name: "progress", request: UpdateDatasetDocumentRequest{Progress: &zeroProgress}, present: map[string]bool{"progress": true}, wantErr: "can't change `progress`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("progress", 0.5).Error; err != nil {
+				t.Fatalf("prepare document: %v", err)
+			}
+
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &tt.request, tt.present)
+			if err == nil {
+				t.Fatalf("expected %s mutation error", tt.name)
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("err = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
+	tests := []struct {
+		name    string
+		request UpdateDocumentRequest
+		wantErr string
+	}{
+		{name: "progress", request: UpdateDocumentRequest{Progress: float64Ptr(0)}, wantErr: "can't change `progress`"},
+		{name: "run", request: UpdateDocumentRequest{Run: sptr("0")}, wantErr: "can't change `run`"},
+		{name: "progress message", request: UpdateDocumentRequest{ProgressMsg: sptr("reset")}, wantErr: "can't change `progress_msg`"},
+		{name: "chunk count", request: UpdateDocumentRequest{ChunkNum: int64Ptr(0)}, wantErr: "can't change `chunk_num`"},
+		{name: "token count", request: UpdateDocumentRequest{TokenNum: int64Ptr(0)}, wantErr: "can't change `token_num`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			run := "3"
+			progressMsg := "parsing"
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+				"progress":     0.5,
+				"run":          run,
+				"progress_msg": progressMsg,
+			}).Error; err != nil {
+				t.Fatalf("prepare document: %v", err)
+			}
+
+			code, err := testDocumentService(t).UpdateDocument(t.Context(), "doc-1", &tt.request)
+			if err == nil {
+				t.Fatalf("expected %s mutation error", tt.name)
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("err = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 10, 5)
+	insertTestFile(t, "file-1", "folder-1", "old.pdf", sptr("old.pdf"))
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	run := "3"
+	progressMsg := "complete"
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"progress":     1.0,
+		"run":          run,
+		"progress_msg": progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("prepare document: %v", err)
+	}
 
-	chunkCount := int64(0)
-	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ChunkCount: &chunkCount,
-	}, map[string]bool{"chunk_count": true})
+	newName := "new.pdf"
+	progress := 1.0
+	chunkNum := int64(5)
+	tokenNum := int64(10)
+	req := &UpdateDocumentRequest{
+		Name:        &newName,
+		Run:         &run,
+		TokenNum:    &tokenNum,
+		ChunkNum:    &chunkNum,
+		Progress:    &progress,
+		ProgressMsg: &progressMsg,
+	}
+	code, err := testDocumentService(t).UpdateDocument(t.Context(), "doc-1", req)
 	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+		t.Fatalf("UpdateDocument failed: code=%v err=%v", code, err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if doc.Name == nil || *doc.Name != newName {
+		t.Fatalf("name = %v, want %q", doc.Name, newName)
+	}
+	file, err := dao.NewFileDAO().GetByID(t.Context(), db, "file-1")
+	if err != nil {
+		t.Fatalf("get file: %v", err)
+	}
+	if file.Name != newName {
+		t.Fatalf("file name = %q, want %q", file.Name, newName)
+	}
+	if doc.Progress != progress || doc.Run == nil || *doc.Run != run || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
+		t.Fatalf("immutable fields changed: %#v", doc)
 	}
 }
+
+func float64Ptr(value float64) *float64 { return &value }
+
+func int64Ptr(value int64) *int64 { return &value }
 
 func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.T) {
 	db := setupServiceTestDB(t)
@@ -2057,6 +2408,58 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 				t.Fatalf("%s ingestion task must not be deleted", status)
 			}
 		})
+	}
+}
+
+func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	const callbackName = "test:start-ingestion-task-before-conditional-delete"
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Model(&entity.IngestionTask{}).
+			Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+			_ = tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil || !strings.Contains(err.Error(), "started running") {
+		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %q, want %q", task.Status, common.RUNNING)
+	}
+
+	updatedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if updatedDoc.TokenNum != 10 || updatedDoc.ChunkNum != 5 {
+		t.Fatalf("document counters = token:%d chunk:%d, want unchanged 10/5", updatedDoc.TokenNum, updatedDoc.ChunkNum)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("reload knowledgebase: %v", err)
+	}
+	if kb.TokenNum != 10 || kb.ChunkNum != 5 {
+		t.Fatalf("knowledgebase counters = token:%d chunk:%d, want unchanged 10/5", kb.TokenNum, kb.ChunkNum)
 	}
 }
 

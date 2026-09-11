@@ -1,0 +1,11 @@
+{
+  "label": "Search",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Learn how to create, configure, and use Search."
+  },
+  "customProps": {
+    "categoryIcon": "LucideSearch"
+  }
+}

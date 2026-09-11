@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -61,11 +60,10 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,

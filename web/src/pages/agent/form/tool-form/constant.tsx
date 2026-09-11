@@ -9,6 +9,7 @@ import GithubForm from './github-form';
 import GoogleForm from './google-form';
 import GoogleScholarForm from './google-scholar-form';
 import KeenableForm from './keenable-form';
+import SofyaForm from './sofya-form';
 import YouComForm from './youcom-form';
 import PubMedForm from './pubmed-form';
 import QueritForm from './querit-form';
@@ -44,4 +45,5 @@ export const ToolFormConfigMap = {
   [Operator.SearXNG]: SearXNGForm,
   [Operator.KeenableSearch]: KeenableForm,
   [Operator.YouComSearch]: YouComForm,
+  [Operator.SofyaSearch]: SofyaForm,
 };

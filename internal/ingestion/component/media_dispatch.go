@@ -21,7 +21,7 @@
 //
 // These follow the maybeDispatchPDFVision pattern: they bypass
 // dispatchParse and call the model directly from the component
-// layer, returning a parserDispatchResult.
+// layer, returning a parser.ParseResult.
 
 package component
 
@@ -32,9 +32,10 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
-	"ragflow/internal/common"
 
 	// Import image decoders for common formats.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -43,8 +44,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -64,12 +65,12 @@ func maybeDispatchVideo(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVIDEO {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	if _, ok := setups["video"]; !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 
 	// Video parsing is intentionally not implemented yet: the underlying
@@ -80,8 +81,10 @@ func maybeDispatchVideo(
 	// video_url. Returning an explicit error is safer than silently producing
 	// a description from the prompt text alone. The real implementation must
 	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
-	// Gemini: raw-bytes inline_data; Qwen: file://)
-	return parserDispatchResult{}, true,
+	// Gemini: raw-bytes inline_data; Qwen: file://).
+	// When video analysis is implemented, it emits standard Text JSON items:
+	// [{"text": transcript, "doc_type_kwd": "text"}] with output_format "json".
+	return parser.ParseResult{}, true,
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
@@ -101,17 +104,17 @@ func maybeDispatchImage(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	setup, ok := setups["image"]
 	if !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: image requires tenant_id")
 	}
 
@@ -154,15 +157,9 @@ func maybeDispatchImage(
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
 	// then use OCR text only; otherwise call cv_mdl.describe().
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
-	eng := strings.EqualFold(lang, "english")
-
-	if ocrText != "" {
-		wordCount := len(strings.Fields(ocrText))
-		charCount := len([]rune(ocrText))
-		if (eng && wordCount > 32) || charCount > 32 {
-			// OCR returned substantial text — skip VLM.
-			return imageDispatchResult(ocrText, dataURI), true, nil
-		}
+	if vlmGateShouldSkip(ocrText, lang) {
+		// OCR returned substantial text — skip VLM.
+		return imageDispatchResult(ocrText, dataURI), true, nil
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
@@ -186,7 +183,7 @@ func maybeDispatchImage(
 		if ocrText != "" {
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
@@ -210,7 +207,7 @@ func maybeDispatchImage(
 		if ocrText != "" {
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: picture describe: %w", err)
 	}
 	vlmText := ""
@@ -235,10 +232,9 @@ func maybeDispatchImage(
 // family: a single item carrying the combined text, the image attachment
 // (data URI), and doc_type_kwd "image". Mirrors Python
 // rag/app/picture.py:71-72.
-func imageDispatchResult(text, dataURI string) parserDispatchResult {
-	return parserDispatchResult{
+func imageDispatchResult(text, dataURI string) parser.ParseResult {
+	return parser.ParseResult{
 		OutputFormat: "json",
-		DocType:      "image",
 		JSON: []map[string]any{{
 			"text":         text,
 			"image":        dataURI,
@@ -261,17 +257,17 @@ func maybeDispatchAudio(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeAURAL {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	setup, ok := setups["audio"]
 	if !ok {
-		return parserDispatchResult{}, false, nil
+		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
@@ -291,20 +287,20 @@ func maybeDispatchAudio(
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 	}
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio speech2text model: %w", err)
 	}
 
 	tmpFile, err := writeTempAudioFile(filename, binary)
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("parser: audio temp file: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
 	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
-		return parserDispatchResult{}, true,
+		return parser.ParseResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)
 	}
 
@@ -313,29 +309,12 @@ func maybeDispatchAudio(
 		transcription = resp.Text
 	}
 
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "json"
-	}
-	// Diff 2.11: when output_format is "json" the transcription must be
-	// carried as a JSON item. Returning it only in Text made the Invoke
-	// switch silently drop it (the switch has no "json" branch and the
-	// JSON slice was empty). Mirror the JSON-item shape used by the
-	// other parser branches.
-	if outputFormat == "json" {
-		return parserDispatchResult{
-			OutputFormat: "json",
-			DocType:      "audio",
-			JSON: []map[string]any{{
-				"text":         transcription,
-				"doc_type_kwd": "audio",
-			}},
-		}, true, nil
-	}
-	return parserDispatchResult{
-		OutputFormat: outputFormat,
-		DocType:      "audio",
-		Text:         transcription,
+	return parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         transcription,
+			"doc_type_kwd": "text",
+		}},
 	}, true, nil
 }
 
@@ -444,6 +423,23 @@ func videoMIME(filename string) string {
 
 // --- OCR helpers for picture dispatch ---
 
+// vlmGateShouldSkip determines whether the OCR text is substantial enough
+// to skip the secondary VLM description call.
+// Mirrors Python picture.py:chunk():
+//
+//	txt = txt.strip()
+//	if (eng and len(txt.split()) > 32) or len(txt) > 32 -> skip VLM
+func vlmGateShouldSkip(ocrText, lang string) bool {
+	ocrText = strings.TrimSpace(ocrText)
+	if ocrText == "" {
+		return false
+	}
+	eng := strings.EqualFold(lang, "english")
+	wordCount := len(strings.Fields(ocrText))
+	charCount := utf8.RuneCountInString(ocrText)
+	return (eng && wordCount > 32) || charCount > 32
+}
+
 // runPaddleOCRImage tries PaddleOCR remote API for image text extraction.
 // Mirrors Python's picture.py:_try_paddleocr_image() which creates a
 // PaddleOCRParser and calls parse_image().
@@ -455,10 +451,10 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 	return client.ParseImage(binary, filename)
 }
 
-// runLocalImageOCR uses the DeepDoc inference service (/predict/ocr) to
-// detect and recognize text in an image. Mirrors Python's
-// deepdoc.vision.OCR (local ONNX pipeline), but routed through the
-// DeepDoc HTTP service which wraps the same ONNX models.
+// runLocalImageOCR detects and recognizes text in an image using the
+// in-process DeepDoc analyzer (ONNX models served locally via the native
+// backend). Mirrors Python's deepdoc.vision.OCR local ONNX pipeline; the
+// external HTTP service is no longer a backend (see parser.GetDocAnalyzer).
 //
 // Pipeline:
 //  1. Decode image bytes → image.Image
@@ -467,15 +463,7 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 //  4. Sort boxes by Y, then X (reading order)
 //  5. Join all recognized text with newlines
 func runLocalImageOCR(binary []byte) (string, error) {
-	deepdocURL := common.GetEnv(common.EnvDeepDocURL)
-	if deepdocURL == "" {
-		deepdocURL = common.GetEnv(common.EnvTensorrtDLAServer)
-	}
-	if deepdocURL == "" {
-		return "", fmt.Errorf("local OCR: DEEPDOC_URL not configured")
-	}
-
-	client, err := inference.NewClient(deepdocURL)
+	analyzer, err := parser.GetDocAnalyzer()
 	if err != nil {
 		return "", fmt.Errorf("local OCR: %w", err)
 	}
@@ -487,7 +475,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 
 	// Step 1: Detect text regions.
 	ctx := context.Background()
-	boxes, err := client.OCRDetect(ctx, img)
+	boxes, err := analyzer.OCRDetect(ctx, img)
 	if err != nil {
 		return "", fmt.Errorf("local OCR: detect: %w", err)
 	}
@@ -543,7 +531,7 @@ func runLocalImageOCR(binary []byte) (string, error) {
 			continue
 		}
 
-		recTexts, err := client.OCRRecognize(ctx, crop)
+		recTexts, err := analyzer.OCRRecognize(ctx, crop)
 		if err != nil {
 			continue // skip boxes that fail recognition
 		}

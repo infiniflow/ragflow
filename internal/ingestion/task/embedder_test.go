@@ -40,7 +40,7 @@ func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 		},
 	)
 	ctx := t.Context()
-	emb, err := resolver(ctx, "tenant-1", "kb-1", "should-be-ignored")
+	emb, embdID, err := resolver(ctx, "tenant-1", "kb-1")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
@@ -49,6 +49,9 @@ func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 	}
 	if gotTenantID != "tenant-1" || gotEmbdID != "kb-embd-1" {
 		t.Fatalf("resolver args = (%q, %q), want (tenant-1, kb-embd-1)", gotTenantID, gotEmbdID)
+	}
+	if embdID != "kb-embd-1" {
+		t.Fatalf("resolver embdID = %q, want kb-embd-1", embdID)
 	}
 }
 
@@ -63,12 +66,15 @@ func TestEmbedderResolver_EmptyKBEmbdIDReturnsNil(t *testing.T) {
 		},
 	)
 	ctx := t.Context()
-	emb, err := resolver(ctx, "tenant-1", "kb-1", "ignored")
+	emb, embdID, err := resolver(ctx, "tenant-1", "kb-1")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
 	if emb != nil {
 		t.Fatal("expected nil embedder when kb has no embd_id")
+	}
+	if embdID != "" {
+		t.Fatalf("expected empty embdID when kb has no embd_id, got %q", embdID)
 	}
 }
 

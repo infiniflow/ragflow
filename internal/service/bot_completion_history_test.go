@@ -26,7 +26,6 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -175,7 +174,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 	svc := NewBotService(nil, nil)
 
 	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
-	title, _, _, _, _, code, err := svc.AgentbotInputs(context.Background(),
+	title, _, _, _, _, code, err := svc.AgentbotInputs(t.Context(),
 		"tenant-B", "agent-victim")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
@@ -239,7 +238,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 
 	svc := NewBotService(nil, nil)
 	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
-		context.Background(), "owner-1", "agent-1")
+		t.Context(), "owner-1", "agent-1")
 	if err != nil {
 		t.Fatalf("AgentbotInputs: %v", err)
 	}
@@ -409,7 +408,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// llmService is nil — any attempt to reach the LLM path would
 	// fail loudly, so a successful run proves the LLM was skipped.
 	svc := NewBotService(nil, nil)
-	frames, code, err := svc.ChatbotCompletion(context.Background(),
+	frames, code, err := svc.ChatbotCompletion(t.Context(),
 		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
 	if err != nil {
 		t.Fatalf("ChatbotCompletion: %v", err)

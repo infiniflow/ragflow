@@ -45,7 +45,8 @@ After knowledge compilation is complete, enter the corresponding knowledge base 
 
 Knowledge artifacts can be divided by generation scope into document-level and knowledge-base-level artifacts:
 
-- **Document-level knowledge artifacts**: Graph, Tree, PageIndex, MindMap, and Timeline can generate corresponding document-level results during document knowledge compilation and can be viewed in Artifacts.
+- **Document-level knowledge artifacts**: Graph, Tree, PageIndex, MindMap, and Timeline can generate corresponding document-level results. Click a file name in the files list to view its artifacts.
+
 - **Knowledge-base-level knowledge artifacts**: Some knowledge artifacts support further generation of knowledge-base-level results based on documents in the knowledge base. After executing a knowledge-base-level generation task, you can view the generated results in Artifacts. Wiki is generated as a knowledge-base-level artifact. After knowledge compilation for related documents is complete, you need to go to the Artifacts page of the knowledge base and click generate. The system then generates Wiki based on the compilation results in the current knowledge base.
 
 ![Generate Wiki from Knowledge Artifacts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-view-knowledge-artifacts.png)

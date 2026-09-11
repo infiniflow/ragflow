@@ -2,7 +2,9 @@ import DocumentPreview from '@/components/document-preview';
 import DocumentHeader from '@/components/document-preview/document-header';
 import { Segmented, type SegmentedValue } from '@/components/ui/segmented';
 import Representation, {
+  type ClaimsPanelState,
   type ClickableNode,
+  type EvidencePanelState,
 } from '@/pages/chunk/representation';
 import { File, LayoutList } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -24,7 +26,12 @@ interface DocumentViewSwitchProps {
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
   url: string;
+  positions?: number[][];
   onChunkIdsChange?: (chunkIds: string[]) => void;
+  // The artifact tree publishes its claims / evidence panels upward so the page
+  // can render them as a resizable middle column instead of inside the tree.
+  onClaimsPanelChange?: (panel: ClaimsPanelState | null) => void;
+  onEvidencePanelChange?: (panel: EvidencePanelState | null) => void;
 }
 
 export default function DocumentViewSwitch({
@@ -33,7 +40,10 @@ export default function DocumentViewSwitch({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
   onChunkIdsChange,
+  onClaimsPanelChange,
+  onEvidencePanelChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Preview);
@@ -61,7 +71,7 @@ export default function DocumentViewSwitch({
       label: (
         <div className="flex items-center gap-1">
           <File className="h-4 w-4" />
-          <span>{t('common.preview', 'Preview')}</span>
+          <span>{t('common.preview')}</span>
         </div>
       ),
     },
@@ -70,6 +80,7 @@ export default function DocumentViewSwitch({
       label: (
         <div className="flex items-center gap-1">
           <LayoutList className="h-4 w-4" />
+          {/* Product term: kept as-is in every locale, like RAPTOR. */}
           <span>Artifact</span>
         </div>
       ),
@@ -100,9 +111,14 @@ export default function DocumentViewSwitch({
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}
             url={url}
+            positions={positions}
           />
         ) : (
-          <Representation onNodeClick={handleNodeClick} />
+          <Representation
+            onNodeClick={handleNodeClick}
+            onClaimsPanelChange={onClaimsPanelChange}
+            onEvidencePanelChange={onEvidencePanelChange}
+          />
         )}
       </div>
     </>

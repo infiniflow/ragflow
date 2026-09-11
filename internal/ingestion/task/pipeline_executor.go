@@ -31,7 +31,9 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -322,6 +324,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		s.taskCtx.Doc.ParserConfig,
 	)
 
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
+
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
@@ -423,20 +437,26 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-// markCompiledProductsHidden sets available_int=0 on the per-document compiled
-// knowledge products so they are hidden from the retriever until the dataset-level
-// post-processing consumer merges them into available_int=1 products (§11). A
-// chunk is a compiled product iff it carries the compile_kwd discriminator the
-// KnowledgeCompiler component stamps; ordinary source chunks (no compile_kwd)
-// keep the index default available_int=1 and remain immediately searchable.
-// Merged dataset-level products are written by the consumer, never here, so they are
-// never double-marked.
+// markCompiledProductsHidden stages wiki per-document page rows as
+// available_int=0. Only the wiki variant is hidden: its per-document page rows
+// are intermediate state for the consumer's merged pages (available_int=1) and
+// every wiki read path selects merged rows only.
+//
+// Tree / structure (page_index) / mindmap rows are the FINAL per-document
+// products — Python writes them visible at compile time
+// (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
+// claim recall / hybrid retrieval filter on available_int=1, so they stay
+// searchable here too. Merged dataset-level products are written by the
+// consumer, never here, so they are never double-marked.
 func markCompiledProductsHidden(chunks []map[string]any) {
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; !ok {
+		kwd := asCompiledKwd(ck)
+		if kwd == "" {
 			continue
 		}
-		ck["available_int"] = 0
+		if v, err := knowledge_compile.KwdToVariant(kwd); err == nil && v == kccommon.VariantWiki {
+			ck["available_int"] = 0
+		}
 	}
 }
 
@@ -522,18 +542,19 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	return nil
 }
 
-// applyDocumentAvailability stamps ordinary source chunks with available_int=0
-// when Document.status is "0" (disabled). Disabling before any chunks exist only
-// updates MySQL; without this, later parsing would still write searchable
-// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+// applyDocumentAvailability stamps every chunk — ordinary source chunks and
+// compiled products alike — with available_int=0 when Document.status is "0"
+// (disabled). Disabling before any chunks exist only updates MySQL; without
+// this, later parsing would still write searchable available_int=1 rows.
+// Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
+// so the stamp is a no-op for them; tree / structure rows become hidden
+// together with their document, matching Python's doc_id-scoped availability
+// toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
 		return
 	}
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; ok {
-			continue
-		}
 		ck["available_int"] = 0
 	}
 }
@@ -755,13 +776,16 @@ func recordPipelineLog(
 	// selection runs on a builtin registry pipeline: its canvasID is the
 	// parser_id, not a canvas row, so the log is titled with the document's
 	// parser_id, reuses the document thumbnail as avatar, and leaves
-	// pipeline_id empty.
+	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
+	// failure/cancel logs are recorded without a DSL, and their pipeline title
+	// and avatar must still resolve from the canvas row (mirrors the Python
+	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
 	if input.PipelineID != "" {
 		pipelineID = &input.PipelineID
-		if db != nil && strings.TrimSpace(input.DSL) != "" {
+		if db != nil {
 			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title
@@ -959,6 +983,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -989,23 +1021,48 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 
-	// Surface the debug-run result DSL to any sink that implements ResultSink
-	// (the DebugLogSink used by canvas-debug runs). This mirrors Python's
-	// END-marker `dsl` attachment (rag/flow/pipeline.py:98) so the front-end
-	// "View result" page can render parsed chunks. The probe is an optional
-	// capability: non-debug (DB-backed) sinks ignore it and the ProgressSink
-	// contract is unchanged, keeping the coupling one-directional.
-	if rs, ok := s.progressSink.(ResultSink); ok {
-		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL, output)
-		}
-	}
+	logDSL := s.buildLogDSL(dsl, output)
 
 	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, dsl, nil
+	return payload, logDSL, nil
+}
+
+// buildLogDSL returns the DSL string recorded for a pipeline run: the
+// run-result DSL (static canvas structure + each component's runtime outputs
+// merged into obj.params.outputs) when it can be built and marshaled,
+// otherwise the static dsl unchanged — log recording must never fail a run.
+//
+// BuildDebugResultDSL needs the full run output, which is in scope only inside
+// runPipelineWithDSL: the extracted payload returned there no longer carries
+// output["state"]. Two consumers:
+//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
+//     ResultSink capability (END-marker `dsl` attachment,
+//     rag/flow/pipeline.py:98);
+//   - persist (dataset parse) runs return its JSON as the log DSL so the
+//     pipeline operation log carries every component's output
+//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
+//     — without it the dataset log "View result" page renders blank panels.
+//
+// The sink probe stays an optional capability: non-debug (DB-backed) sinks
+// ignore it and the ProgressSink contract is unchanged.
+func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
+	logDSL := dsl
+	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
+		if rs, ok := s.progressSink.(ResultSink); ok {
+			rs.SetResult(resultDSL, output)
+		}
+		if raw, e := json.Marshal(resultDSL); e == nil {
+			logDSL = string(raw)
+		} else {
+			common.Warn(fmt.Sprintf("marshal run-result dsl for pipeline log: %v", e))
+		}
+	} else {
+		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
+	}
+	return logDSL
 }
 
 // debugPageCapPages is the number of leading pages a canvas-debug
@@ -1014,3 +1071,20 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
+	}
+	return inputs
+}
