@@ -23,7 +23,7 @@ from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.metadata_utils import apply_meta_data_filter
-from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
@@ -32,6 +32,21 @@ from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
+
+
+def _shared_embedding_id(records, mismatch_message: str):
+    """Return a stored embedding id when records share one resolved model.
+
+    Comparison uses ``validate_dataset_embedding_models`` so a tenant_model
+    UUID and a legacy ``model@instance@provider`` composite are compatible
+    when they refer to the same model. Empty or unresolved names stay
+    isolated. The returned value is an original stored ``embd_id`` (UUID or
+    composite) for ``resolve_model_config``, not a normalized base name.
+    """
+    err = validate_dataset_embedding_models(records)
+    if err:
+        raise Exception(mismatch_message)
+    return next((rec.embd_id for rec in records if rec.embd_id), None)
 
 
 class RetrievalParam(ToolParamBase):
@@ -132,13 +147,12 @@ class Retrieval(ToolBase, ABC):
         if not kbs:
             raise Exception("No dataset is selected.")
 
-        embd_nms = list(set([kb.embd_id for kb in kbs]))
-        assert len(embd_nms) == 1, "Knowledge bases use different embedding models."
+        embd_id = _shared_embedding_id(kbs, "Knowledge bases use different embedding models.")
 
         embd_mdl = None
-        if embd_nms:
+        if embd_id:
             tenant_id = self._canvas.get_tenant_id()
-            embd_model_config = resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_model_config = resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_id)
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
@@ -259,8 +273,7 @@ class Retrieval(ToolBase, ABC):
         if not memory_list:
             raise Exception("No memory is selected.")
 
-        embd_names = list({memory.embd_id for memory in memory_list})
-        assert len(embd_names) == 1, "Memory use different embedding models."
+        _shared_embedding_id(memory_list, "Memory use different embedding models.")
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}

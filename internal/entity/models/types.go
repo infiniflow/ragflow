@@ -215,6 +215,12 @@ type EmbedRequest struct {
 	Texts  []string // for text
 	Images [][]byte // for image
 	Urls   []string // for image
+	// Query selects the query-side encoding for providers that embed queries
+	// and documents differently (Python's LLMBundle.encode_queries vs encode):
+	// Cohere/Bedrock-Cohere input_type=search_query, Voyage input_type=query,
+	// Jina task=retrieval.query, NVIDIA input_type=query, DashScope
+	// text_type=query. Providers without an asymmetric mode ignore it.
+	Query bool
 }
 
 type EmbeddingConfig struct {
@@ -349,6 +355,12 @@ type ToolConfig struct {
 	MaxRounds       int             // max tool-calling rounds (default: 5)
 	MaxRetries      int             // max retries on failure (default: 3)
 	ToolCallSession ToolCallSession // session that executes tool calls
+	// TerminalTools names tools whose successful result is already the final
+	// answer. When a round executes one of them, the loop stops and returns
+	// that result instead of feeding it back for another model round. Mirrors
+	// Python's chat_mdl.terminal_tools short-circuit (chat_model.py:619-627).
+	// Empty disables the short-circuit (existing behaviour).
+	TerminalTools map[string]struct{}
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration
@@ -393,4 +405,19 @@ func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
 		MaxRetries:      defaultMaxRetries,
 		ToolCallSession: session,
 	}
+}
+
+// SetTerminalTools marks the named tools as terminal: once one executes
+// successfully, the tool loop stops and returns its result as the final answer
+// rather than re-invoking the model. Mirrors Python
+// `chat_mdl.mdl.terminal_tools = {...}`. Call after BindTools.
+func (cm *ChatModel) SetTerminalTools(names ...string) {
+	if cm.ToolConfig == nil {
+		return
+	}
+	term := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		term[n] = struct{}{}
+	}
+	cm.ToolConfig.TerminalTools = term
 }

@@ -4,7 +4,13 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Search, TriangleAlert, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Search,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -96,8 +102,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
 
     // A value matching no node means the referenced option is gone (e.g.
     // deleted) — unless `data` may simply not have loaded yet.
-    const missingValue =
-      value && !selectedNode && !loading ? value : undefined;
+    const missingValue = value && !selectedNode && !loading ? value : undefined;
 
     const isLeaf = useCallback(
       (node: TreeSelectNode) => !node.children?.length,
@@ -253,7 +258,9 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
               className,
             )}
           >
-            <span className={cn('truncate', !selectedNode && 'text-slate-400')}>
+            <span
+              className={cn('truncate', !selectedNode && 'text-text-secondary')}
+            >
               {missingValue ? (
                 renderMissingValue ? (
                   renderMissingValue(missingValue)
@@ -266,9 +273,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
               ) : renderSelected ? (
                 renderSelected(selectedNode)
               ) : (
-                selectedNode?.title ||
-                placeholder ||
-                t('common.pleaseSelect')
+                selectedNode?.title || placeholder || t('common.pleaseSelect')
               )}
             </span>
             <div className="flex items-center ml-2 flex-shrink-0">
@@ -290,10 +295,10 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
         >
           {showSearch && (
             <div className="flex items-center border-b px-3 py-2">
-              <Search className="h-4 w-4 text-slate-400 mr-2 flex-shrink-0" />
+              <Search className="h-4 w-4 mr-2 flex-shrink-0 text-text-disabled" />
               <input
                 type="text"
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                className="flex-1 bg-transparent text-sm outline-none placeholder:text-text-disabled"
                 placeholder={t('common.search')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

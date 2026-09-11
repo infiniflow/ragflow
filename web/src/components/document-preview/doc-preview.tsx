@@ -162,6 +162,10 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
 }) => {
   const editor = useDocxEditor({ initialFileName: 'document.docx' });
   const { importDocxFile, status, totalPages } = editor;
+  // importDocxFile is recreated whenever the library's internal state changes
+  // (after each import), which would re-trigger the fetch effect endlessly.
+  const importDocxFileRef = useRef(importDocxFile);
+  importDocxFileRef.current = importDocxFile;
   const { layout } = useDocxPageLayout(editor);
   const { containerWidth, setContainerRef } = useDocumentResizeObserver();
   const [loading, setLoading] = useState(false);
@@ -227,7 +231,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
 
-      await importDocxFile(file);
+      await importDocxFileRef.current(file);
 
       if (!cancelledRef.current) {
         setLoading(false);
@@ -239,7 +243,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         setLoading(false);
       }
     }
-  }, [url, importDocxFile]);
+  }, [url]);
 
   useEffect(() => {
     fetchDocument();
@@ -328,6 +332,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
               <DocxEditorViewer
                 editor={editor}
                 mode="read-only"
+                pageVirtualization={{ enabled: false }}
                 loadingState={
                   <div className="flex items-center justify-center p-8">
                     <Spin />
