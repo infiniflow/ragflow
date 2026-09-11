@@ -121,13 +121,22 @@ class Session(Base):
                     continue  # Skip lines that are not valid JSON
 
                 event = json_data.get("event", None)
-                if event and event != "message":
-                    continue
+                if event:
+                    if self.__session_type == "agent" and event not in {"message", "message_end"}:
+                        continue
+                    if self.__session_type == "chat" and event != "message":
+                        continue
 
-                if (self.__session_type == "agent" and event == "message_end") or (self.__session_type == "chat" and json_data.get("data") is True):
+                if self.__session_type == "chat" and json_data.get("data") is True:
                     return
                 if self.__session_type == "agent":
-                    yield self._structure_answer(json_data)
+                    message = self._structure_answer(json_data)
+                    if event == "message_end":
+                        message.content = ""
+                        if message.reference:
+                            yield message
+                        continue
+                    yield message
                 else:
                     yield self._structure_answer(json_data["data"])
         else:
@@ -139,15 +148,23 @@ class Session(Base):
 
     def _structure_answer(self, json_data):
         answer = ""
+        event = None
         if self.__session_type == "agent":
-            answer = json_data["data"]["content"]
+            event = json_data.get("event")
+            json_data = json_data["data"]
+            answer = json_data.get("content", "")
         elif self.__session_type == "chat":
             answer = json_data["answer"]
         reference = json_data.get("reference", {})
         temp_dict = {"content": answer, "role": "assistant"}
         if reference and "chunks" in reference:
             chunks = reference["chunks"]
+            if isinstance(chunks, dict):
+                chunks = list(chunks.values())
             temp_dict["reference"] = chunks
+            if self.__session_type == "agent":
+                reference_count = len(chunks) if isinstance(chunks, list) else 0
+                logger.debug("Session.ask parsed agent references session_id=%s event=%s reference_count=%s", self.id, event, reference_count)
         message = Message(self.rag, temp_dict)
         return message
 

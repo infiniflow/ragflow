@@ -84,7 +84,6 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
-  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
@@ -175,22 +174,20 @@ export interface IChunk {
 }
 
 export interface ITestingChunk {
-  chunk_id: string;
+  id: string;
   content_ltks: string;
-  content_with_weight: string;
-  doc_id: string;
-  doc_name: string;
-  img_id: string;
+  content: string;
+  document_id: string;
+  document_keyword: string;
   image_id: string;
-  important_kwd: any[];
-  kb_id: string;
+  important_keywords: any[];
+  questions?: any[];
+  dataset_id: string;
   similarity: number;
   term_similarity: number;
-  vector: number[];
   vector_similarity: number;
   highlight: string;
   positions: number[][];
-  docnm_kwd: string;
   doc_type_kwd: string;
   document_metadata?: Record<string, any>;
 }
@@ -289,6 +286,9 @@ export interface IArtifactAlteration {
   changed_doc_ids: string[];
   involved_doc_ids: string[];
   eligible_doc_ids: string[];
+  retry_required?: boolean;
+  retry_page_count?: number;
+  retry_page_slugs?: string[];
 }
 
 export interface IArtifactGraphRelation {
@@ -300,4 +300,6 @@ export interface IArtifactGraphRelation {
 export interface IArtifactGraph {
   entities: IArtifactGraphEntity[];
   relations: IArtifactGraphRelation[];
+  total_entities?: number;
+  returned_entities?: number;
 }

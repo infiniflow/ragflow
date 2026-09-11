@@ -20,7 +20,10 @@ async def test_dataset_navigation_search_ranks_across_all_bound_kbs(monkeypatch)
 
     async def fake_search_dataset_layers(kb_id, tenant_id, query, mode, top_k, doc_scope):
         assert query == "topic keywords"
-        assert mode == "nav_doc"
+        # Diverges from main's "nav_doc" on purpose: routing now descends the
+        # compiled nav TREE (BFS beam, `search_nav_tree_descent`) instead of
+        # flat-sweeping every nav_doc row. Same hybrid ranking underneath.
+        assert mode == "navigation_tree"
         assert top_k == _NAV_SEARCH_MAX_DOCS
         assert doc_scope is None
         if kb_id == kb1.id:

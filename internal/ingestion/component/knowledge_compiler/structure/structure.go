@@ -84,9 +84,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// ---- MAP ----
 	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
+	type extractedBatch struct {
+		nodes, edges []map[string]any
+		batchIDs     []string
+	}
+	extracted := make([]extractedBatch, len(batches))
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
+		i, batch := i, batch
 		jobs = append(jobs, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
@@ -96,12 +102,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
-			rows, err := buildRows(ctx, deps, cfg, nodes, edges, batchIDs)
-			if err != nil {
-				return err
-			}
-			// Distinct slice index per batch → no cross-goroutine contention.
-			perBatch[i] = rows
+			// Keep embedding out of the compiler-pool worker. buildRows calls
+			// Embed.Encode, which may submit its own batch jobs to that pool.
+			extracted[i] = extractedBatch{nodes: nodes, edges: edges, batchIDs: batchIDs}
 			return nil
 		})
 	}
@@ -110,6 +113,19 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// otherwise fall back to serial execution (historic default).
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
+	}
+	// Embed each extracted batch serially after all MAP jobs have returned.
+	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
+	// already occupied by the shared compiler pool.
+	for i, result := range extracted {
+		if len(result.batchIDs) == 0 {
+			continue
+		}
+		rows, err := buildRows(ctx, deps, cfg, result.nodes, result.edges, result.batchIDs)
+		if err != nil {
+			return common.Outputs{}, err
+		}
+		perBatch[i] = rows
 	}
 
 	// ---- DEDUP ----
@@ -156,16 +172,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// ---- GRAPH ----
-	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
-	if err != nil {
-		return common.Outputs{}, err
-	}
+	// graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
+	// if err != nil {
+	// 	return common.Outputs{}, err
+	// }
 
 	// Buffer every product (plus the graph) in one slice; the component merges
 	// them into the upstream chunk stream (matching Python, which appends
 	// compiled units onto the chunk list).
 	products := append([]common.Product{}, prods...)
-	products = append(products, graphProduct)
+	// products = append(products, graphProduct)
 
 	out := common.Outputs{
 		Products:          products,
