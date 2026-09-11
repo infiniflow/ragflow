@@ -20,7 +20,11 @@ export function useValues(node?: RAGFlowNodeType) {
       return { ...initialIterationValues, outputs: [] };
     }
 
-    return { ...formData, outputs: convertToArray(formData.outputs) };
+    return {
+      ...initialIterationValues,
+      ...formData,
+      outputs: convertToArray(formData.outputs || {}),
+    };
   }, [node?.data?.form]);
 
   return values;

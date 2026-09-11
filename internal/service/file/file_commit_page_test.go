@@ -1,7 +1,6 @@
 package file
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +38,7 @@ func newPageCommitTestDB(t *testing.T) *gorm.DB {
 func TestRecordPageEdit_CreatesCommitAndItem(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	in := PageEditCommitInput{
 		DatasetID:  "kb1",
@@ -102,7 +101,7 @@ func TestRecordPageEdit_CreatesCommitAndItem(t *testing.T) {
 func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	base := PageEditCommitInput{
 		DatasetID: "kb1",
@@ -139,7 +138,7 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mk := func(datasetID string) PageEditCommitInput {
 		return PageEditCommitInput{
@@ -191,7 +190,7 @@ func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 func TestRecordPageEdit_ConcurrentEditsFormLinearChain(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const edits = 8
 	var wg sync.WaitGroup
