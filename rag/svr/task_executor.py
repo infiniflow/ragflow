@@ -793,6 +793,16 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     return tk_count, vector_size
 
 
+def _record_terminal_pipeline_log_best_effort(doc_id, dataflow_id, pipeline):
+    try:
+        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+    except Exception:
+        logging.exception("Failed to persist terminal dataflow operation log")
+        return
+    get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
+
+
+
 def _normalize_dataflow_output(chunks):
     """Normalize pipeline output into the chunk shape used by indexing."""
     if "chunks" in chunks:
@@ -970,8 +980,7 @@ async def run_dataflow(task: dict):
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
     get_recording_context().record("dataflow_chunks", chunks)
-    ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
-    get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
+    _record_terminal_pipeline_log_best_effort(doc_id, dataflow_id, pipeline)
 
 
 RAPTOR_METHOD_SEARCH_LIMIT = 10000
