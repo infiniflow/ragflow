@@ -1706,7 +1706,7 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1") // owner = user-1, Accessible passes
 	insertChunkTestDoc(t, "doc-1", "kb-1")
-	// StopParsing now checks the IngestionTask status (not doc.Run).
+	// StopParsing checks the IngestionTask status.
 	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)

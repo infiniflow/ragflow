@@ -245,8 +245,11 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 // validateDocumentModifiable rejects configuration edits while the document is
 // actively parsing or scheduled.
 func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
-	if s.ingestionTaskDAO == nil || doc == nil || doc.ID == "" {
-		return common.CodeSuccess, nil
+	if s.ingestionTaskDAO == nil {
+		return common.CodeServerError, errors.New("ingestion task DAO not initialized")
+	}
+	if doc == nil || doc.ID == "" {
+		return common.CodeDataError, errors.New("document is nil or has empty ID")
 	}
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
@@ -255,11 +258,11 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	if task == nil {
 		return common.CodeSuccess, nil
 	}
-	switch task.Status {
-	case common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING:
+	switch {
+	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
 			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
-	case common.COMPLETED, common.STOPPED, common.FAILED:
+	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
 		return common.CodeDataError, fmt.Errorf("document has unrecognized task status %q", task.Status)

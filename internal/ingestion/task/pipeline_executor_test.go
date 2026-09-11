@@ -818,6 +818,40 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 	}
 }
 
+func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = t.Context()
+	var capturedLog *entity.PipelineOperationLog
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+		}).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			capturedLog = log
+			return nil
+		})
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedLog == nil {
+		t.Fatalf("expected pipeline operation log to be recorded")
+	}
+	if capturedLog.OperationStatus == "" {
+		t.Fatalf("expected OperationStatus to be non-empty")
+	}
+	if capturedLog.OperationStatus != string(entity.TaskStatusDone) {
+		t.Fatalf("expected OperationStatus = %q, got %q", entity.TaskStatusDone, capturedLog.OperationStatus)
+	}
+}
+
 // =============================================================================
 // Stub implementations for testing
 // =============================================================================

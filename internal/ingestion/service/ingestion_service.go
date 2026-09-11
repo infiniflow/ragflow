@@ -1050,8 +1050,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 }
 
 // markCancelProgress writes the cancelled-progress markers to the document
-// row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
-// appended timestamped cancel message (progress_msg += cancelMsg).
+// row: progress=-1 and an appended timestamped cancel message (progress_msg += cancelMsg).
 func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)

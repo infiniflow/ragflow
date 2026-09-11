@@ -660,9 +660,8 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
-		// RequestStop (STOPPING) and updates doc.run=CANCEL. Defer
-		// destruction (chunk deletion, counter reset) until the worker
-		// detects STOPPING and reaches a terminal state.
+		// RequestStop (STOPPING). Defer destruction (chunk deletion, counter
+		// reset) until the worker detects STOPPING and reaches a terminal state.
 
 		successCount++
 	}

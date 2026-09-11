@@ -1203,24 +1203,6 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 	}
 }
 
-// insertTestDocWithRun inserts a document with the given Run status for StopParseDocuments tests.
-func insertTestDocWithRun(t *testing.T, id, kbID, run string, tokenNum, chunkNum int64) {
-	t.Helper()
-	doc := &entity.Document{
-		ID:           id,
-		KbID:         kbID,
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		TokenNum:     tokenNum,
-		ChunkNum:     chunkNum,
-		Suffix:       ".txt",
-		Status:       sptr("1"),
-	}
-	if err := dao.DB.Create(doc).Error; err != nil {
-		t.Fatalf("insert test doc: %v", err)
-	}
-}
-
 // insertTestTaskWithProgress inserts a task with the given progress value.
 func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64) {
 	t.Helper()
@@ -1308,7 +1290,7 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	db := setupConcurrentServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
 		t.Fatalf("set document location: %v", err)
 	}
@@ -1379,7 +1361,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -1412,9 +1394,9 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc is already in CANCEL state — should still be accepted
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	// Task is already in STOPPED state — should still be accepted
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1434,8 +1416,8 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc with Run="0" (UNSTART) and no unfinished tasks → cannot cancel
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	// Doc with no task → cannot cancel
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1462,8 +1444,8 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc with Run="0" → cancelDocParse calls RequestStop on the ingestion task.
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	// Doc with active ingestion task → cancelDocParse calls RequestStop on the ingestion task.
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -1485,7 +1467,7 @@ func TestStopParseDocuments_WrongDataset(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestKB(t, "kb-2", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-2", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-2", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1528,7 +1510,7 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -2288,7 +2270,7 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	ctx := t.Context()
@@ -2347,7 +2329,7 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	ctx := t.Context()
 	staleDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -2383,7 +2365,7 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 			ctx := t.Context()
 			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -2408,7 +2390,7 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
 	const callbackName = "test:start-ingestion-task-before-conditional-delete"
@@ -2465,7 +2447,7 @@ func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 			ctx := t.Context()
 			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -3358,7 +3340,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	ctx := t.Context()
@@ -3420,7 +3402,7 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 }
 
 // TestIngest_CancelUnstartedDocument mirrors the Python /documents/ingest
-// behavior: canceling a document whose parse never started (run=UNSTART, no
+// behavior: canceling a document whose parse never started (no
 // ingestion task) must be rejected with code 102 and the Python message, not
 // an internal "no ingestion task found" error.
 func TestIngest_CancelUnstartedDocument(t *testing.T) {
@@ -3428,7 +3410,7 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3448,14 +3430,14 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 }
 
 // TestIngest_CancelCompletedDocument: canceling an already finished parse
-// (run=DONE, ingestion task COMPLETED) is rejected with the same Python
+// (ingestion task COMPLETED) is rejected with the same Python
 // message as the un-started case.
 func TestIngest_CancelCompletedDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	svc := testDocumentService(t)
@@ -3475,7 +3457,7 @@ func TestIngest_CancelCompletedDocument(t *testing.T) {
 	}
 }
 
-// TestIngest_CancelUnstartedWithInFlightTask: run=UNSTART but an ingestion
+// TestIngest_CancelUnstartedWithInFlightTask: an ingestion
 // task was just enqueued (CREATED) — cancel is allowed, matching the Python
 // has_unfinished_task branch.
 func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
@@ -3483,7 +3465,7 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)

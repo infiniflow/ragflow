@@ -54,10 +54,7 @@ func lockDocumentParse(docID string) func() {
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
-// The document run status is NOT set here; service.IngestionTaskService.StartRunning
-// sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED or SCHEDULED. Extracted from Ingest so
-// other entry points (e.g. ChunkService.Parse)
+// Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
@@ -101,7 +98,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docI
 		if task == nil {
 			continue
 		}
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
+		if common.IsRunningOrStopping(task.Status) {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", docID, task.Status)
 		}
 	}
@@ -286,7 +283,7 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID 
 }
 
 // StopParseDocuments stops parsing for the given documents in a dataset.
-// It sets Redis cancel signals for associated tasks and updates doc.run to CANCEL.
+// It requests stop for the associated ingestion tasks.
 // Returns a map with success_count and optionally errors.
 func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	deduped := common.Deduplicate(docIDs)
@@ -374,10 +371,9 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
-// errParseNotRunning is returned by CancelDocParse when the document is not in
-// a cancelable state: its run status is neither RUNNING nor CANCEL and it has
-// no in-flight ingestion task. Callers map it to their endpoint-specific
-// message (the Python /documents/ingest and /documents/stop messages differ).
+// errParseNotRunning is returned by CancelDocParse when the document has no
+// in-flight ingestion task and is not already stopped. Callers map it to their
+// endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
 var errParseNotRunning = errors.New("parse task is not in running status")
 
 // CancelDocParse stops the ingestion task for the document by calling
@@ -391,7 +387,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
 
-	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.SCHEDULED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	inFlight := task != nil && common.IsActiveTaskStatus(task.Status)
 	isStopped := task != nil && task.Status == common.STOPPED
 	if !inFlight && !isStopped {
 		return errParseNotRunning

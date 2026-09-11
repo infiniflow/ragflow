@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
@@ -515,7 +516,7 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 		case common.FAILED:
 			result["fail_count"] += row.Cnt
 		default:
-			result["unstart_count"] += row.Cnt
+			common.Warn(fmt.Sprintf("GetParsingStatusByKBID: unrecognized task status %q for dataset %s (count: %d)", *row.Status, kbID, row.Cnt))
 		}
 	}
 	return result, nil
