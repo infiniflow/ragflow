@@ -41,6 +41,7 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
+        data-testid="search-mindmap-sheet"
         className="top-24 p-0 flex flex-col gap-0 h-auto"
         closeIcon={false}
       >
@@ -59,21 +60,33 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
             />
           </div>
         </SheetHeader>
-        <div className="flex-1 p-4 overflow-hidden">
+        <div
+          data-testid="search-mindmap-body"
+          className="flex-1 p-4 overflow-hidden"
+        >
           {loading && (
-            <div className="rounded-lg w-full h-full">
+            <div
+              data-testid="search-mindmap-loading"
+              className="rounded-lg w-full h-full"
+            >
               <Progress value={percent} className="h-1 flex-1 min-w-10" />
             </div>
           )}
           {!loading && isEmptyMindMap && (
-            <div className="bg-bg-card rounded-lg w-full h-full flex items-center justify-center">
+            <div
+              data-testid="search-mindmap-empty"
+              className="bg-bg-card rounded-lg w-full h-full flex items-center justify-center"
+            >
               <p className="text-text-secondary">
                 {t('knowledgeCompilation.noStructureMindmap')}
               </p>
             </div>
           )}
           {!loading && !isEmptyMindMap && (
-            <div className="bg-bg-card rounded-lg w-full h-full">
+            <div
+              data-testid="search-mindmap-graph"
+              className="bg-bg-card rounded-lg w-full h-full"
+            >
               <IndentedTree data={data}></IndentedTree>
             </div>
           )}
