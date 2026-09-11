@@ -33,8 +33,6 @@ from unittest.mock import Mock
 import pytest
 from openpyxl import Workbook
 
-from common.token_utils import num_tokens_from_string
-
 DEFAULT_SETUP = {
     "parse_method": "deepdoc",
     "flatten_media_to_text": False,
@@ -123,41 +121,36 @@ def test_spreadsheet_table_chunk_is_self_contained(flow_modules):
     blob = build_xlsx({"Big": [["列1", "列2", "列3"]]}, pad_rows=600)
     items = parse(flow_modules, blob)["json"]
 
-    assert len(items) >= 3  # 600 data rows / 256 rows per chunk, or more by token budget
     for item in items:
         assert item["text"].count("<th>") == 3
         assert item["doc_type_kwd"] == "table"
 
 
-def test_narrow_table_splits_on_row_limit(flow_modules):
-    # The row ceiling (Go's defaultTableChunkRows) still applies when the token
-    # budget is not the binding constraint.
-    rows = [["h"]] + [[str(i)] for i in range(600)]
+def test_large_table_is_not_split(flow_modules):
+    """A sheet is one table chunk, however many rows it has."""
+    rows = [["h"]] + [[str(i)] for i in range(2000)]
     items = parse(flow_modules, build_xlsx({"Narrow": rows}))["json"]
 
-    assert len(items) == 3
+    assert len(items) == 1
+    # The chunk spans every data row.
+    assert items[0]["positions"] == [[0, 2, len(rows), 1, 1]]
 
 
-def test_wide_table_chunks_stay_within_token_budget(flow_modules):
-    """A 256-row block of a wide table is ~40k tokens.
+def test_wide_table_is_not_split(flow_modules):
+    """Even a wide table stays a single chunk.
 
-    The tokenizer truncates at ``max_length - 10``, so an oversized block would
-    silently hide its tail rows from vector retrieval. The token budget must
-    therefore cap a chunk even when the row ceiling is not reached.
+    Splitting it would cut inside ``<td>`` content or drop the delimiter
+    characters on the cut, which is the bug this parser output fixes.
     """
-    budget = flow_modules.parser.TABLE_CHUNK_TOKENS
     cols = 10
     header = [f"列{c}" for c in range(cols)]
-    rows = [[f"单元格{r}-{c}描述文本" for c in range(cols)] for r in range(256)]
+    rows = [[f"单元格{r}-{c}描述文本。" for c in range(cols)] for r in range(300)]
     items = parse(flow_modules, build_xlsx({"Wide": [header] + rows}))["json"]
 
-    assert len(items) > 1
-    row_tokens = max(num_tokens_from_string("<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>") for row in rows)
-    for item in items:
-        # A chunk may overflow the budget by at most one row.
-        assert num_tokens_from_string(item["text"]) <= budget + row_tokens
-        # Every chunk repeats the header, otherwise the columns are unreadable.
-        assert item["text"].count("<th>") == cols
+    assert len(items) == 1
+    assert items[0]["text"].count("<th>") == cols
+    # Punctuation inside cells must survive.
+    assert "。" in items[0]["text"]
 
 
 def test_header_only_sheet_still_emits_a_table(flow_modules):
