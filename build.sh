@@ -150,6 +150,38 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+    check_ort_version_consistency
+}
+
+# Fail fast when the ONNX Runtime native version is declared inconsistently.
+# The in-process (Go) DeepDoc backend statically links libonnxruntime.a built
+# from ONE exact ORT release; a mismatch links a wrong/missing .a and only fails
+# at runtime (dlopen(NULL) can't find OrtGetApiBase). The version is pinned in
+# four Go-side locations that must all agree.
+check_ort_version_consistency() {
+    print_section "Checking ONNX Runtime version consistency"
+
+    local env_go d1 d2 dockerfile
+    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+
+    if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
+        echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
+        exit 1
+    fi
+
+    if [ "$env_go" != "$d1" ] || [ "$env_go" != "$d2" ] || [ "$env_go" != "$dockerfile" ]; then
+        echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
+        printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
+        printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ ONNX Runtime native version consistent: ${env_go}${NC}"
 }
 
 # Check office_oxide native library
@@ -403,7 +435,8 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
@@ -411,6 +444,7 @@ build_go() {
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
+    set +x
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
@@ -542,32 +576,34 @@ setup_cgo_env() {
     if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
         # Collect every .a, but skip GPU-only providers we never build
         # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
+        #
+        # Select the ORT static lib that matches the Go deepdoc backend's
+        # required version (DeepDocORTVersion in internal/common/environments.go).
+        # Go and Python build/link against independent ORT versions, so the
+        # static_lib prefix legitimately holds more than one
+        # onnxruntime-linux-x64-static_lib-* dir at once (e.g. the Python-side
+        # 1.23.x next to the Go-side 1.29.0). We pick the dir that matches
+        # DeepDocORTVersion rather than failing when a second version dir is
+        # present. This avoids silently linking the wrong version while still
+        # keeping the bake self-documenting.
+        local ort_version
+        ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+            "${PROJECT_ROOT}/internal/common/environments.go" \
+            | sed -E 's/.*"([^"]+)".*/\1/')"
+        if [ -z "$ort_version" ]; then
+            echo "  Error: cannot parse DeepDocORTVersion from internal/common/environments.go" >&2
+            return 1
+        fi
         local ort_a=""
-        local seen_version_dir=""
         while IFS= read -r f; do
             case "$(basename "$f")" in
                 *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
             esac
-            # Guard against coexisting stale version dirs: if .a files span
-            # more than one onnxruntime-linux-x64-static_lib-* dir, fail fast
-            # instead of silently linking two ORT versions (duplicate symbols
-            # / wrong version). Re-run `download_deps.py` to prune stale dirs
-            # after a version bump, or remove the old dir by hand.
             case "$f" in
-                */onnxruntime-linux-x64-static_lib-*/lib/*.a)
-                    local vdir="${f#*/onnxruntime-linux-x64-static_lib-}"
-                    vdir="${vdir%%/*}"
-                    if [ -z "$seen_version_dir" ]; then
-                        seen_version_dir="$vdir"
-                    elif [ "$seen_version_dir" != "$vdir" ]; then
-                        echo "  Error: multiple ONNX Runtime versions found under $ONNXRUNTIME_STATIC_PREFIX" >&2
-                        echo "    $seen_version_dir  AND  $vdir" >&2
-                        echo "  Remove the stale version dir (or re-run download_deps.py to prune it)." >&2
-                        return 1
-                    fi
-                    ;;
+                # Only collect .a from the dir matching the required version.
+                */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+                    ort_a="$ort_a $f" ;;
             esac
-            ort_a="$ort_a $f"
         done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
 
         if [ -n "$ort_a" ]; then
@@ -602,7 +638,13 @@ setup_cgo_env() {
             # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
             # lookup needs at runtime (no --export-dynamic required).
         else
-            echo "  onnxruntime static_lib dir has no .a files; the in-process DeepDoc backend cannot link ORT" >&2
+            local avail
+            avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
+                -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            echo "  Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX" >&2
+            echo "    available: ${avail:-<none>}" >&2
+            echo "    DeepDocORTVersion=${ort_version}; bake/download the matching ORT (or update DeepDocORTVersion)." >&2
+            return 1
         fi
     else
         echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
@@ -807,6 +849,8 @@ OPTIONS:
                     InfiniFlow/deepdoc model snapshot; self-skip otherwise).
                     e.g. `$0 --test-native`
     --clean, -C     Clean all build artifacts
+    --check-ort-version  Verify the ONNX Runtime native version is declared
+                    consistently across all sources (exit 1 on mismatch).
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
                     (disabled by default, useful for smaller production binaries)
@@ -924,6 +968,9 @@ main() {
             ;;
         --clean|-C)
             clean
+            ;;
+        --check-ort-version)
+            check_ort_version_consistency
             ;;
         --run|-r)
             check_cpp_deps

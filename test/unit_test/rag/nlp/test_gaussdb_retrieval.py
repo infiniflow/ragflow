@@ -488,6 +488,7 @@ async def test_tc_ret_311_retrieval_keeps_term_only_gaussdb_scores_when_vector_w
             total=2,
             ids=["term-low", "term-zero"],
             query_vector=[0.1, 0.2],
+            highlight={},
             field={
                 "term-low": retrieval_chunk(0.1, "doc-low", "Low"),
                 "term-zero": retrieval_chunk(0.0, "doc-zero", "Zero"),

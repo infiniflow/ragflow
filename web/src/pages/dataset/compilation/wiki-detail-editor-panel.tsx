@@ -10,8 +10,8 @@ import {
 import { Spin } from '@/components/ui/spin';
 import type { Docagg } from '@/interfaces/database/chat';
 import type { IWikiCommitDetail } from '@/interfaces/database/dataset';
+import type { WikiPageType } from '@/utils/wiki-link-util';
 
-import type { WikiPageType } from './utils/parse-wiki-link';
 import { WikiVersionDiffPanel } from './wiki-version-diff-panel';
 
 type WikiDetailEditorPanelProps = {
