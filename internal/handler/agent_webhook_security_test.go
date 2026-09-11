@@ -477,3 +477,36 @@ func newSecurityCtx(canvasID string) *gin.Context {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+canvasID+"/webhook", nil)
 	return c
 }
+
+// TestValidateIPWhitelist_IgnoresForwardedForSpoof asserts the whitelist is
+// evaluated against the real socket peer, not the client-controlled
+// X-Forwarded-For / X-Real-IP headers. The server never configures trusted
+// proxies, so gin.ClientIP() would otherwise return the spoofed header value
+// and let any caller bypass the allowlist.
+func TestValidateIPWhitelist_IgnoresForwardedForSpoof(t *testing.T) {
+	// Real peer 192.168.1.5 is not on the list; the headers claim 10.0.0.5.
+	c := securityCtx(t, "192.168.1.5:0", map[string]string{
+		"X-Forwarded-For": "10.0.0.5",
+		"X-Real-IP":       "10.0.0.5",
+	})
+	cfg := map[string]any{"ip_whitelist": []any{"10.0.0.5", "10.0.0.0/8"}}
+	err := validateIPWhitelist(c, cfg)
+	if err == nil || !strings.Contains(err.Error(), "not allowed by whitelist") {
+		t.Fatalf("spoofed X-Forwarded-For must not satisfy the whitelist: err = %v", err)
+	}
+	if strings.Contains(err.Error(), "10.0.0.5") {
+		t.Fatalf("rejection should report the real peer, not the spoofed header: %v", err)
+	}
+}
+
+// TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof confirms a peer that is
+// genuinely on the list still passes even when the headers claim otherwise.
+func TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof(t *testing.T) {
+	c := securityCtx(t, "10.0.0.5:0", map[string]string{
+		"X-Forwarded-For": "8.8.8.8",
+	})
+	cfg := map[string]any{"ip_whitelist": []any{"10.0.0.0/8"}}
+	if err := validateIPWhitelist(c, cfg); err != nil {
+		t.Fatalf("real peer on the list must pass: err = %v", err)
+	}
+}
