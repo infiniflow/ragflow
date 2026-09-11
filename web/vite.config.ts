@@ -206,7 +206,7 @@ export default defineConfig(({ mode }) => {
       proxy,
     },
     assetsInclude: ['**/*.md'],
-    base: env.VITE_BASE_URL,
+    base: env.VITE_BASE_URL || '/',
     publicDir: 'public',
     cacheDir: './node_modules/.vite-cache',
     optimizeDeps: {
