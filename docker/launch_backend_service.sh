@@ -226,17 +226,25 @@ ensure_db_init() {
     echo "Database tables initialized."
 }
 
-run_mysql_migrations() {
+run_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
+        # The migrations contain MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
 
-    tools/scripts/run_migrations.sh
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        # The Go backend owns the model provider tables. --migrate is a
+        # standalone action: it runs the migrations and exits, so it is
+        # independent of any server actually starting.
+        echo "Running model provider table migrations (go)..."
+        bin/ragflow_server --migrate
+    else
+        tools/scripts/run_migrations.sh
+    fi
 }
 
 prepare_for_go() {
@@ -310,7 +318,7 @@ fi
 
 if [[ "$START_RAGFLOW" -eq 1 ]]; then
   ensure_db_init
-  run_mysql_migrations
+  run_migrations
 fi
 
 # Start task executors

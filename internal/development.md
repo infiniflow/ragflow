@@ -211,8 +211,8 @@ Note: admin server must be started first; otherwise, api server will encounter e
 ```
 
 ```bash
-# Start admin server and migrate database
-./bin/ragflow_server --admin --migrate
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
 ```
 
 ```bash

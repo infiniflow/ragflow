@@ -259,6 +259,35 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# One-shot Go migration. bin/ragflow_server --migrate is a standalone action: it
+# runs the migrations and exits, independent of any server mode.
+function run_go_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [[ "$db_type" == "gaussdb" || "$db_type" == "gauss" ]]; then
+        # The Go migrations emit MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+    echo "Running model provider table migrations..."
+    bin/ragflow_server --migrate
+}
+
+# Whether any Go server mode will run. These are the processes that used to
+# carry --migrate, so the standalone migration must run before them.
+function go_backend_enabled() {
+    if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+        return 0
+    fi
+    if [[ "${API_PROXY_SCHEME}" == "go" ]] || [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]] || [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -280,22 +309,24 @@ run_with_restart() {
   done
 }
 
+# --init-model-provider-tables keeps its documented "run migrations and exit"
+# meaning. It is explicit, so it migrates even when only the Python backend will
+# serve.
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
-    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
-    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-    else
-        #tools/scripts/run_migrations.sh
-        echo ""
-    fi
+    run_go_migrations
+    echo "Model provider table migrations finished. Exiting."
+    exit 0
+fi
+
+# Otherwise migrate once up front, before any Go server mode boots. --migrate is
+# a standalone action, so it is no longer attached to --api/--admin/--syncer.
+if go_backend_enabled; then
+    run_go_migrations
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer --migrate &
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
 fi
 
 sleep 5
@@ -309,7 +340,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
@@ -324,7 +355,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting RAGFlow go server..."
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate &
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
     fi
 fi
 
