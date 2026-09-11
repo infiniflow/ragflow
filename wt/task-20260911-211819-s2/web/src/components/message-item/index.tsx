@@ -1,0 +1,216 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { MessageType } from '@/constants/chat';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
+import {
+  IMessage,
+  IReference,
+  IReferenceChunk,
+  UploadResponseDataType,
+} from '@/interfaces/database/chat';
+import { cn } from '@/lib/utils';
+import classNames from 'classnames';
+import { isEmpty } from 'lodash';
+import { memo, useCallback, useMemo } from 'react';
+import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
+import MarkdownContent from '../markdown-content';
+import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
+import { ReferenceImageList } from '../next-message-item/reference-image-list';
+import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
+import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
+import { useTheme } from '../theme-provider';
+import { AssistantGroupButton, UserGroupButton } from './group-button';
+import styles from './index.module.less';
+
+interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
+  item: IMessage;
+  reference: IReference;
+  loading?: boolean;
+  sendLoading?: boolean;
+  visibleAvatar?: boolean;
+  nickname?: string;
+  avatar?: string;
+  avatarDialog?: string | null;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  index: number;
+  showLikeButton?: boolean;
+  showLoudspeaker?: boolean;
+  isLast?: boolean;
+}
+
+const MessageItem = ({
+  item,
+  reference,
+  loading = false,
+  avatar,
+  avatarDialog,
+  sendLoading = false,
+  clickDocumentButton,
+  index,
+  removeMessageById,
+  regenerateMessage,
+  showLikeButton = true,
+  showLoudspeaker = true,
+  visibleAvatar = true,
+  nickname,
+  isLast = false,
+}: IProps) => {
+  const { theme } = useTheme();
+  const isAssistant = item.role === MessageType.Assistant;
+  const isUser = item.role === MessageType.User;
+
+  const uploadedFiles = useMemo(() => {
+    return item?.files ?? [];
+  }, [item?.files]);
+
+  const referenceDocumentList = useMemo(() => {
+    return reference?.doc_aggs ?? [];
+  }, [reference?.doc_aggs]);
+
+  const documentDownloadInfos = useMemo(
+    () => item.downloads ?? [],
+    [item.downloads],
+  );
+  const messageContent = item.content;
+
+  const handleRegenerateMessage = useCallback(() => {
+    regenerateMessage?.(item);
+  }, [regenerateMessage, item]);
+
+  return (
+    <div
+      className={classNames(styles.messageItem, {
+        [styles.messageItemLeft]: item.role === MessageType.Assistant,
+        [styles.messageItemRight]: item.role === MessageType.User,
+      })}
+    >
+      <section
+        className={classNames(styles.messageItemSection, {
+          [styles.messageItemSectionLeft]: item.role === MessageType.Assistant,
+          [styles.messageItemSectionRight]: item.role === MessageType.User,
+        })}
+      >
+        <div
+          className={classNames(styles.messageItemContent, 'group', {
+            [styles.messageItemContentReverse]: item.role === MessageType.User,
+          })}
+        >
+          {visibleAvatar &&
+            (item.role === MessageType.User ? (
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatar ?? '/logo.svg'}
+                isPerson
+                name={nickname}
+              />
+            ) : avatarDialog ? (
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatarDialog}
+                isPerson
+              />
+            ) : (
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
+            ))}
+
+          <section className="flex min-w-0 gap-2 flex-1 flex-col">
+            {isAssistant ? (
+              index !== 0 && (
+                <AssistantGroupButton
+                  messageId={item.id}
+                  content={messageContent}
+                  prompt={item.prompt}
+                  showLikeButton={showLikeButton}
+                  audioBinary={item.audio_binary}
+                  showLoudspeaker={showLoudspeaker}
+                ></AssistantGroupButton>
+              )
+            ) : (
+              <UserGroupButton
+                content={messageContent}
+                messageId={item.id}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage && handleRegenerateMessage}
+                sendLoading={sendLoading}
+              ></UserGroupButton>
+            )}
+            {/* Show message content if there's any text besides the download */}
+            {(messageContent || sendLoading) && (
+              <div
+                className={cn(
+                  isAssistant
+                    ? theme === 'dark'
+                      ? styles.messageTextDark
+                      : styles.messageText
+                    : styles.messageUserText,
+                  { '!bg-bg-card': !isAssistant },
+                )}
+              >
+                {sendLoading && isLast && isEmpty(messageContent) ? (
+                  <LoadingDots className="text-text-secondary" />
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
+              </div>
+            )}
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
+            )}
+            {isAssistant && referenceDocumentList.length > 0 && (
+              <ReferenceDocumentList
+                list={referenceDocumentList}
+              ></ReferenceDocumentList>
+            )}
+            {isUser &&
+              Array.isArray(uploadedFiles) &&
+              uploadedFiles.length > 0 && (
+                <UploadedMessageFiles
+                  files={uploadedFiles as UploadResponseDataType[]}
+                ></UploadedMessageFiles>
+              )}
+            {documentDownloadInfos.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {documentDownloadInfos.map((downloadInfo, index) => (
+                  <div key={`${downloadInfo.filename}-${index}`}>
+                    {index > 0 && <div className="my-6 h-px bg-border" />}
+                    <DocumentDownloadButton downloadInfo={downloadInfo} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default memo(MessageItem);

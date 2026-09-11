@@ -1,0 +1,328 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package models
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"ragflow/internal/common"
+	"strings"
+)
+
+// UpstageModel implements ModelDriver for Upstage (Solar models).
+type UpstageModel struct {
+	baseModel BaseModel
+}
+
+// NewUpstageModel creates a new Upstage model instance.
+func NewUpstageModel(baseURL map[string]string, urlSuffix URLSuffix) *UpstageModel {
+	return &UpstageModel{
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
+		},
+	}
+}
+
+func (u *UpstageModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewUpstageModel(baseURL, u.baseModel.URLSuffix)
+}
+
+func (u *UpstageModel) Name() string {
+	return "upstage"
+}
+
+// ChatWithMessages sends multiple messages with roles and returns the response.
+func (u *UpstageModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	if chatModelConfig != nil {
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
+		}
+	}
+
+	body, err := u.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+}
+
+// ChatStreamlyWithSender sends messages and streams the response
+func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+		}
+
+		// reasoning_effort: same as the non-streaming path above.
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
+		}
+	}
+
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
+
+	return u.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
+}
+
+type upstageEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type upstageEmbeddingResponse struct {
+	Data   []upstageEmbeddingData `json:"data"`
+	Model  string                 `json:"model"`
+	Object string                 `json:"object"`
+}
+
+// Embed turns a list of texts into embedding vectors
+func (u *UpstageModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(request.Texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": request.Texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := u.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Upstage embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed upstageEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("upstage: response index %d out of range for %d inputs", item.Index, len(request.Texts))
+		}
+		if filled[item.Index] {
+			return nil, fmt.Errorf("upstage: duplicate embedding index %d in response", item.Index)
+		}
+		embeddings[item.Index] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     item.Index,
+		}
+		filled[item.Index] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("upstage: missing embedding for input index %d", i)
+		}
+	}
+
+	return embeddings, nil
+}
+
+// ListModels returns the list of model ids visible to the API key.
+func (u *UpstageModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := u.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	return ParseListModel(modelList), nil
+}
+
+// Balance is not exposed by the Upstage API, so this returns "no such method".
+func (u *UpstageModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+// CheckConnection runs a lightweight ListModels call to verify the API key.
+func (u *UpstageModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := u.ListModels(ctx, apiConfig)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Rerank calculates similarity scores between query and documents. Upstage
+// does not expose a public rerank API, so this returns "no such method".
+func (u *UpstageModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+// TranscribeAudio transcribe audio
+func (u *UpstageModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}
+
+func (u *UpstageModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", u.Name())
+}
+
+// AudioSpeech convert text to audio
+func (u *UpstageModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}
+
+func (u *UpstageModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", u.Name())
+}
+
+// OCRFile OCR file
+func (u *UpstageModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}
+
+// ParseFile parse file
+func (u *UpstageModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}
+
+func (u *UpstageModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}
+
+func (u *UpstageModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", u.Name())
+}

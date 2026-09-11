@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 160 160" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>yahoofinance</title>
+    <defs>
+        <rect id="path-1" x="0" y="0" width="160" height="160"></rect>
+        <polygon id="path-3" points="0.0045 1.2490009e-16 41.742 1.2490009e-16 41.742 44.2395 3.74700271e-16 44.2395">
+        </polygon>
+    </defs>
+    <g id="RAGFlow" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="tool-logo" transform="translate(-1244, -81)">
+            <g id="yahoofinance" transform="translate(1244, 81)">
+                <mask id="mask-2" fill="white">
+                    <use xlink:href="#path-1"></use>
+                </mask>
+                <use id="矩形" fill-opacity="0" fill="#D8D8D8" xlink:href="#path-1"></use>
+                <g id="RAGFlow" mask="url(#mask-2)">
+                    <g transform="translate(17, 17)">
+                        <polygon id="路径" fill="#6001D2" fill-rule="nonzero" points="0 0 126 0 126 126 0 126"></polygon>
+                        <path
+                            d="M66.186,49.5 L54.207,78.39 L42.327,49.5 L22.5,49.5 L44.604,99.1215 L36.648,117 L56.0655,117 L85.5,49.5 L66.186,49.5 Z M89.4915,75.9465 C82.3635,75.9465 77.013,81.306 77.013,87.5475 C77.013,93.681 82.1565,98.7525 89.073,98.7525 C96.2055,98.7525 101.5515,93.4875 101.5515,87.156 C101.5515,80.919 96.417,75.951 89.4915,75.951"
+                            id="形状" fill="#FFFFFF" fill-rule="nonzero"></path>
+                        <g id="编组" stroke-width="1" fill="none" fill-rule="evenodd"
+                            transform="translate(83.7225, 27.4185)">
+                            <g id="Clipped">
+                                <mask id="mask-4" fill="white">
+                                    <use xlink:href="#path-3"></use>
+                                </mask>
+                                <g id="yahoo-finance_svg__a"></g>
+                                <polygon id="路径" fill="#FFFFFF" fill-rule="nonzero" mask="url(#mask-4)"
+                                    points="19.719 1.2490009e-16 0.009 44.2395 22.0275 44.2395 41.7375 0.0045">
+                                </polygon>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>
