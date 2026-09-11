@@ -130,14 +130,24 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 // chunk-doc helpers
 // ---------------------------------------------------------------------------
 
-// itemText returns the text payload from a JSON-style chunk item,
-// preferring "text", then "content_with_weight".
+// requireChunkText enforces the pre-index wire contract before chunk-id
+// generation or image upload.
+func requireChunkText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
+}
+
+// itemText returns the canonical pre-index text payload from a chunk item.
 func itemText(it schema.ChunkDoc) (string, bool) {
 	if it.Text != "" {
 		return it.Text, true
-	}
-	if it.ContentWithWeight != "" {
-		return it.ContentWithWeight, true
 	}
 	return "", false
 }

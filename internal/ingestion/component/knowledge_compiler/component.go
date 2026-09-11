@@ -66,7 +66,7 @@ func NewKnowledgeCompilerComponent(name string, params map[string]any) (runtime.
 // Inputs documents the component's input surface for the catalog.
 func (c *KnowledgeCompilerComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text/content_with_weight.",
+		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text.",
 		"historical_candidates": "Optional []common.Candidate override for historical dedup (test/offline).",
 	}
 }
@@ -403,8 +403,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
 		doc := schema.ChunkDoc{
-			Text:              p.Content,
-			ContentWithWeight: p.Content,
+			Text: p.Content,
 		}
 		// Populate content_ltks / content_sm_ltks the same way the chunker
 		// components do (see chunker/tag.go, chunker/qa.go): coarse tokenize
@@ -844,9 +843,7 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		}
 		if t, ok := m["text"].(string); ok {
 			ch.Text = t
-		}
-		if cw, ok := m["content_with_weight"].(string); ok {
-			ch.Content = cw
+			ch.Content = t
 		}
 		// Reuse the embedding the upstream pipeline already computed on the
 		// chunk (stored under q_<dim>_vec); variants fall back to embedding
@@ -878,7 +875,7 @@ func init() {
 	meta := runtime.Metadata{
 		Version: "0.1.0",
 		Inputs: map[string]string{
-			"chunks":                "Upstream chunker/parser output chunks (id + text/content_with_weight).",
+			"chunks":                "Upstream chunker/parser output chunks (id + text).",
 			"historical_candidates": "Optional historical dedup candidates for offline/test runs.",
 		},
 		Outputs: chunkerOutputs,

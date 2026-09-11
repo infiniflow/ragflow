@@ -293,7 +293,7 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 // self.chat_mdl; the Go port exposes it explicitly).
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
+		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' field. Optional — when absent the LLM is called once with the resolved args.",
 		"llm_id": "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 	}
 }
@@ -1006,20 +1006,9 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 }
 
 // extractorChunkText resolves the body an extraction is run against.
-//
-// "text" wins over "content_with_weight": every chunker writes the
-// authoritative body to "text" (and derives the chunk id from it), while
-// "content_with_weight" may survive as pass-through metadata from an upstream
-// parser block. Preferring the latter would send the LLM a different body than
-// the one the chunk id — and therefore the cache entry — stands for. This is
-// the same priority the Tokenizer applies (normalizeChunkTextFallback) and the
-// chunkers apply (itemText). The fallback keeps a chunk that only carries the
-// structured field extractable rather than sending an empty body.
+// Pre-index components must carry canonical string "text" only.
 func extractorChunkText(ck map[string]any) string {
-	if v, _ := ck["text"].(string); strings.TrimSpace(v) != "" {
-		return v
-	}
-	v, _ := ck["content_with_weight"].(string)
+	v, _ := ck["text"].(string)
 	return v
 }
 
