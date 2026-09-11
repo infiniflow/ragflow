@@ -150,12 +150,6 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
-	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "_")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
-	}
-
 	// Build request body
 	reqBody := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -189,10 +183,6 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
-	}
 
 	// Build request body with streaming enabled
 	reqBody := buildOllamaRequestBody(modelConfig, modelName, messages, true)

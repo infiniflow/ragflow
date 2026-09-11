@@ -67,12 +67,6 @@ func (l *LmStudioModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
 
-	// For qwen/glm models, use async chat endpoint
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
-	}
-
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -113,10 +107,6 @@ func (l *LmStudioModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
-	modelType := strings.Split(modelName, "-")[0]
-	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
-	}
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
