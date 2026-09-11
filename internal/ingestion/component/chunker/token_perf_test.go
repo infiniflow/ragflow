@@ -30,4 +30,3 @@ func BenchmarkHardSplitPiece_CJK(b *testing.B) {
 	text := strings.Repeat("无句读长文知识库检索切分处理效率优化", 250)
 	benchHardSplit(b, text)
 }
-
