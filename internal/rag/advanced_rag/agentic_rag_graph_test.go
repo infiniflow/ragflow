@@ -15,6 +15,8 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/advanced_rag/harness"
 )
@@ -769,6 +771,87 @@ func (r *fanoutHitRetriever) Retrieve(_ context.Context, req harness.RetrieveReq
 	return []map[string]any{
 		{"chunk_id": "ex-" + which, "content": which + " term", "doc_name": "exact"},
 	}, nil
+}
+
+// claimTopUpEngine stands in for the doc engine across the three store reads
+// the channel-0 path makes: the has-compilation probe, the claim recall legs,
+// and the directed source-chunk fetch.
+type claimTopUpEngine struct {
+	engine.DocEngine
+}
+
+func (e *claimTopUpEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if _, ok := req.Filter["compile_kwd"]; ok {
+		// DatasetHasCompilation probe: the dataset IS compiled.
+		return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "row"}}}, nil
+	}
+	if ids, ok := req.Filter["id"].([]string); ok {
+		// LoadChunksForIDs: the source chunks behind the admitted claims.
+		rows := make([]map[string]interface{}, 0, len(ids))
+		for _, id := range ids {
+			rows = append(rows, map[string]interface{}{
+				"id":                  id,
+				"content_with_weight": "full text of " + id,
+				"doc_id":              "doc-1",
+			})
+		}
+		return &types.SearchResult{Chunks: rows}, nil
+	}
+	// Claim recall leg: one claim citing src-1.
+	payload, _ := json.Marshal(map[string]any{
+		"name":             "The tower is 330m tall",
+		"description":      "height",
+		"evidence":         []any{map[string]any{"quote": "330 metres"}},
+		"source_chunk_ids": []string{"src-1"},
+	})
+	return &types.SearchResult{Chunks: []map[string]interface{}{{
+		"content_with_weight": string(payload),
+		"source_chunk_ids":    []string{"src-1"},
+		"doc_id":              "doc-1",
+		"similarity":          0.9,
+	}}}, nil
+}
+
+// TestFanoutSearchEvidenceTopUp pins the channel-0 directional top-up (Python
+// _fanout_search:782-799): after a claim pseudo chunk is admitted, the source
+// chunk it cites is fetched by id and admitted too — the verbatim quote alone
+// does not carry the surrounding passage.
+func TestFanoutSearchEvidenceTopUp(t *testing.T) {
+	r := &channelRetriever{}
+	de := &claimTopUpEngine{}
+	// Unique tenant per run: the harness claim caches are process-global with a
+	// 300s TTL, and this test must pay the store reads itself.
+	tenant := fmt.Sprintf("tenant-topup-%d", time.Now().UnixNano())
+	deps := RAGTools{Search: harness.SearchDeps{
+		Backend:   r,
+		DocEngine: de,
+		TenantID:  tenant,
+		KbIDs:     []string{"kb-1"},
+	}}
+	st := &AgenticState{KB: &harness.Kbinfos{}}
+	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60)
+	if added != 2 {
+		t.Fatalf("added = %d, want 2 (the claim row + its source chunk)", added)
+	}
+	var claimEntry, srcEntry map[string]any
+	for _, c := range st.KB.Chunks {
+		id, _ := c["chunk_id"].(string)
+		switch {
+		case strings.HasPrefix(id, "claim_"):
+			claimEntry = c
+		case id == "src-1":
+			srcEntry = c
+		}
+	}
+	if claimEntry == nil {
+		t.Fatalf("claim pseudo chunk not admitted; pool = %v", st.KB.Chunks)
+	}
+	if srcEntry == nil {
+		t.Fatalf("source chunk behind the claim was not top-upped; pool = %v", st.KB.Chunks)
+	}
+	if got, _ := srcEntry["content_with_weight"].(string); got != "full text of src-1" {
+		t.Errorf("top-up content = %q, want the fetched source chunk text", got)
+	}
 }
 
 // draftModel returns a canned draft and records the prompt it was given.

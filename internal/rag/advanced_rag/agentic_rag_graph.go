@@ -968,6 +968,10 @@ const (
 	fanoutHybridTopN = 30
 	// fanoutSemanticQuota caps narrow-BYPASS hits admitted per fan-out.
 	fanoutSemanticQuota = 4
+	// evidenceTopUp caps how many of the chunks cited by the channel-0 claim
+	// rows to pull in verbatim (Python _EVIDENCE_TOP_UP). A directed fetch by
+	// id, not another recall.
+	evidenceTopUp = 8
 	// Narrowing budget for the exact leg (Python narrow_by_terms kwargs).
 	fanoutNarrowMaxOutPerChunk = 1200
 	fanoutNarrowMaxOutTotal    = 16000
@@ -1072,6 +1076,60 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			added++
 		}
 		return added >= room
+	}
+	// Channel 0 (Python _collect_evidence): claim/evidence rows lead the pool —
+	// they are the compact, verbatim-bearing proxy for the chunks they source.
+	// Gated on the dataset having compiled rows at all; best effort.
+	var channel0 [][]map[string]any
+	for _, q := range qs {
+		select {
+		case <-ctx.Done():
+			return 0
+		default:
+		}
+		if !harness.DatasetHasCompilation(ctx, sd) {
+			break
+		}
+		hits := harness.RecallDatasetClaims(ctx, sd, q, capPerQuery)
+		if len(hits) == 0 {
+			continue
+		}
+		pseudo := harness.ClaimPseudoChunks(hits)
+		channel0 = append(channel0, pseudo)
+		if admit(pseudo) {
+			return added
+		}
+	}
+	// Evidence top-up (Python _fanout_search:782-799): an evidence row carries a
+	// verbatim quote but not its surrounding passage, so pull exactly the chunks
+	// it cites instead of running another global recall. Deduped against the
+	// pool (a chunk the claim already quotes verbatim adds nothing new) and
+	// capped at evidenceTopUp ids. Best effort.
+	if len(channel0) > 0 {
+		var wanted []string
+		inWanted := map[string]bool{}
+		for _, pseudo := range channel0 {
+			for _, c := range pseudo {
+				ids, _ := c["source_chunk_ids"].([]string)
+				for _, cid := range ids {
+					cid = strings.TrimSpace(cid)
+					if cid == "" || seen[cid] || inWanted[cid] {
+						continue
+					}
+					inWanted[cid] = true
+					wanted = append(wanted, cid)
+				}
+			}
+		}
+		if len(wanted) > evidenceTopUp {
+			wanted = wanted[:evidenceTopUp]
+		}
+		if len(wanted) > 0 {
+			fetched := harness.LoadChunksForIDs(ctx, sd, wanted)
+			if len(fetched) > 0 && admit(fetched) {
+				return added
+			}
+		}
 	}
 	// Channel A across every fan-out first, then channel B.
 	for _, p := range pairs {

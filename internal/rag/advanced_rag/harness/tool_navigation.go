@@ -681,6 +681,17 @@ const (
 	// (RAPTOR blob path). Mirror _STRUCT_RECALL_TOP_N and _STRUCT_MAX_CHUNK_HITS.
 	structRecallTopN   = 24 // _STRUCT_RECALL_TOP_N: hybrid chunk hits recalled per document
 	structMaxChunkHits = 8  // _STRUCT_MAX_CHUNK_HITS: retrieved chunks shown per drilled doc
+
+	// Claim/evidence leg for the drill-down (Python navigation.py:1129-1146).
+	// Claim rows are scored FLAT against the query (hybrid BM25+KNN, RRF), so a
+	// bad early pick cannot prune the subtree holding the answer. Claim-first:
+	// when claims hit they REPLACE the drill-down — a claim is an atomic
+	// proposition carrying its own verbatim evidence, so a hit already is the
+	// answer material; the tree only labels where each claim sits.
+	structClaimLeg          = true // _STRUCT_CLAIM_LEG
+	structClaimTopN         = 8    // _STRUCT_CLAIM_TOP_N: claims rendered per document
+	structClaimFirst        = true // _STRUCT_CLAIM_FIRST
+	structClaimFirstMinHits = 1    // _STRUCT_CLAIM_FIRST_MIN_HITS
 )
 
 // queryTerms mirrors navigation.py's regex tokenizer: lowercase coarse word
@@ -1168,6 +1179,9 @@ type structureDrillout struct {
 	topScore   float64
 	chunkPaths map[string]string
 	selector   string
+	// claimHits is the count of claim rows that matched the query for this
+	// drill (Python stats["claim_hits"], set by the caller when non-empty).
+	claimHits int
 }
 
 // chunkHit is a retrieved chunk id with its retrieval score, the input shape of
@@ -1219,8 +1233,13 @@ func drillWithAncestors(names map[string]bool, parents map[string]string) map[st
 
 // renderTocDrilldown mirrors navigation.py _render_toc_drilldown: it renders a
 // query-focused outline of one document's compiled structure, choosing the nodes
-// to show by one of three strategies in priority order:
+// to show by one of four strategies in priority order:
 //
+//   - claimHits (claim-first, non-empty and >= structClaimFirstMinHits): claims
+//     matched the query directly. They are rendered as statement + verbatim
+//     evidence and take over the selection outright — nothing is drilled, no
+//     chunk snippets are loaded, and the tree only labels where each claim sits
+//     — selector "claim".
 //   - selected (non-empty): node names picked by the whole-TOC LLM pass, kept
 //     whole with their ancestors — selector "llm_toc".
 //   - chunkHits (non-empty): [(id, score)] from chunk retrieval (RAPTOR blob path);
@@ -1232,7 +1251,7 @@ func drillWithAncestors(names map[string]bool, parents map[string]string) map[st
 // When no terms/vector and neither selection is provided it falls back to the flat
 // outline. loader, when non-nil, fetches chunk texts so short snippets can be
 // appended; a nil loader skips the snippet pass.
-func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText, chunkHits []chunkHit, selected []string) structureDrillout {
+func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText, chunkHits []chunkHit, selected []string, claimHits []DocClaimHit) structureDrillout {
 	flat := func() structureDrillout {
 		out := renderOutline(nodes, rels)
 		n, p := outlineStats(nodes)
@@ -1252,8 +1271,39 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 	var selectedIDs []string
 	best := 0.0
 	selector := "beam"
+	claimFirst := structClaimFirst && len(claimHits) >= structClaimFirstMinHits
 
 	switch {
+	case claimFirst:
+		// Claims already carry the answer material (statement + verbatim
+		// evidence), so nothing is drilled: the tree's only remaining job is to
+		// show where each claim sits. Descending would re-derive the same facts
+		// and risk pruning past them (Python navigation.py:2183-2193).
+		var claimCIDs []string
+		for _, h := range claimHits {
+			if cid := strings.TrimSpace(h.ChunkID); cid != "" && !sliceContains(claimCIDs, cid) {
+				claimCIDs = append(claimCIDs, cid)
+			}
+		}
+		covering := nodesCoveringChunks(nodes, claimCIDs)
+		names := make(map[string]bool)
+		for _, n := range covering {
+			if _, ok := byName[n]; ok {
+				names[n] = true
+			}
+		}
+		keptNames = drillWithAncestors(names, parents)
+		for _, n := range sortedKeptNames(keptNames) {
+			if e, ok := byName[n]; ok {
+				kept = append(kept, e)
+			}
+		}
+		for _, h := range claimHits {
+			if h.Score > best {
+				best = h.Score
+			}
+		}
+		selector = "claim"
 	case len(selected) > 0:
 		names := make(map[string]bool)
 		for _, n := range selected {
@@ -1300,8 +1350,11 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		kept, parents, keptNames, best = drillKeptNodes(qvec, terms, nodes, rels)
 		selector = "beam"
 	}
-	if len(kept) == 0 && len(selectedIDs) == 0 {
+	if len(kept) == 0 && len(selectedIDs) == 0 && !(structClaimFirst && len(claimHits) > 0) {
 		// A strategy was chosen but kept nothing; still report which one ran.
+		// Claim-first is the exception (Python navigation.py:2215-2219): upper
+		// RAPTOR clusters carry no source_chunk_ids, so no node may cover a hit
+		// claim — bailing out here would throw the claims away.
 		out := flat()
 		out.selector = selector
 		return out
@@ -1360,12 +1413,59 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		indent := strings.Repeat("  ", depthOf[name])
 		lines = append(lines, navOutlineLine(indent, name, e.nodeType, e.desc, e.sourceChunkIDs))
 	}
+	// Claim/evidence lines come before the chunk snippets (Python
+	// navigation.py:2264-2283): a gated claim is a verified atomic fact carrying
+	// its verbatim quote, so it reads better than a truncated chunk and needs no
+	// chunk load at all. Its chunk is dropped from the snippet list below so the
+	// same content is not sent twice.
+	claimed := map[string]bool{}
+	for _, hit := range claimHits {
+		cid := strings.TrimSpace(hit.ChunkID)
+		if cid == "" || claimed[cid] {
+			continue
+		}
+		claimed[cid] = true
+		line := "- [claim] " + strings.TrimSpace(hit.Name)
+		if quote := docClaimQuote(hit); quote != "" {
+			line += " | Evidence: \"" + Snippet(quote, ClaimEvidenceChars) + "\""
+		}
+		line += " [chunks: " + cid + "]"
+		lines = append(lines, line)
+	}
+	// A claim's chunk still deserves a structural label — annotate it from the
+	// node that covers it, falling back to nothing when no node does (upper
+	// RAPTOR clusters carry no source_chunk_ids, so this stays honest rather
+	// than inventing a path) (Python navigation.py:2285-2294).
+	for cid := range claimed {
+		if _, ok := chunkPaths[cid]; ok {
+			continue
+		}
+		if owners := nodesCoveringChunks(nodes, []string{cid}); len(owners) > 0 {
+			chunkPaths[cid] = owners[0]
+		}
+	}
 	// Chunk snippets. When chunk retrieval did the selecting, the hits are shown
 	// as-is (filtering them back through the nodes would drop chunks no node
-	// covers); otherwise take the chunks behind the drilled nodes.
-	wanted := collectChunkIDs(kept, 32)
-	if len(selectedIDs) > 0 {
+	// covers); otherwise take the chunks behind the drilled nodes. Under
+	// claim-first a matched claim already renders its verbatim evidence, so
+	// nothing is loaded — loading the chunk behind it would echo the same
+	// passage a second time (Python navigation.py:2300-2303).
+	var wanted []string
+	if claimFirst {
+		wanted = nil
+	} else if len(selectedIDs) > 0 {
 		wanted = selectedIDs
+	} else {
+		wanted = collectChunkIDs(kept, 32)
+	}
+	if len(wanted) > 0 && len(claimed) > 0 {
+		filtered := make([]string, 0, len(wanted))
+		for _, c := range wanted {
+			if !claimed[c] {
+				filtered = append(filtered, c)
+			}
+		}
+		wanted = filtered
 	}
 	if len(wanted) > 0 && loader != nil {
 		chunks := loader(wanted)
@@ -1405,6 +1505,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		topScore:   best,
 		chunkPaths: chunkPaths,
 		selector:   selector,
+		claimHits:  len(claimHits),
 	}
 }
 
@@ -1515,14 +1616,38 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, indexName, ids) }
 
+	// Claim leg (Python _read_structures:1294-1306): flat hybrid claim recall
+	// for this document. Selection priority: claims when they hit, then
+	// whatever the tree's own shape supports.
+	var claimHits []DocClaimHit
+	if structClaimLeg {
+		kindList := make([]string, 0, len(kinds))
+		for k := range kinds {
+			kindList = append(kindList, k)
+		}
+		sort.Strings(kindList)
+		claimHits = RecallDocClaimHits(ctx, deps, query, docID, kindList, qvec, structClaimTopN)
+	}
+	// Claim-first: the claims decide, so nothing is drilled and no chunks are
+	// recalled to choose (Python _read_structures:1303-1306).
+	claimFirst := structClaimFirst && len(claimHits) >= structClaimFirstMinHits
+
 	// RAPTOR / shared-vector blobs cannot score their nodes against the query, so
 	// they defer to chunk retrieval for the drill (mirrors Python routing them to
 	// _recall_chunk_ids_in_doc). Per-node-vector structures keep the beam drill.
 	var chunkHits []chunkHit
-	if !hasDistinctNodeVectors(nodes) {
+	if !claimFirst && !hasDistinctNodeVectors(nodes) {
 		chunkHits = recallChunkIDsInDoc(ctx, deps.Backend, query, docID, tenantID, deps.KbIDs, 0)
 	}
-	drill := renderTocDrilldown(query, qvec, nodes, rels, loader, chunkHits, nil)
+	drill := renderTocDrilldown(query, qvec, nodes, rels, loader, chunkHits, nil, claimHits)
+	if len(claimHits) > 0 {
+		// Mirror the rendered claims into the shared evidence pool (Python
+		// _publish_claim_hits): the SCA, the slot prefill and the final compose
+		// all read ONLY the pool, so a claim that already states the fact must
+		// land there.
+		drill.claimHits = len(claimHits)
+		publishClaimHits(deps, claimHits, docID)
+	}
 	return drill, nodes, rels, ""
 }
 
@@ -1604,6 +1729,7 @@ func navigateStructures(ctx context.Context, tenantID, query string, docIDs []st
 		entities = append(entities, entityMaps(nodes)...)
 		agg.nodes += drill.nodes
 		agg.chunkPtrs += drill.chunkPtrs
+		agg.claimHits += drill.claimHits
 		if drill.topScore > agg.topScore {
 			agg.topScore = drill.topScore
 		}

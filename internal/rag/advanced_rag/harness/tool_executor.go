@@ -242,21 +242,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	if query == "" {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	router := e.deps.NavRouter
-	if router == nil {
-		// Default navigation-tree router mirrors Python _NAV_TREE_ROUTER = "chunk_agg":
-		// route documents by aggregating raw-chunk retrieval rather than by a nav-row
-		// KNN descent (nav.NewNavServiceRouter). A nil retrieval backend degrades to the
-		// nav-row router, which needs no backend.
-		if e.deps.Backend != nil {
-			router = nav.NewChunkAggRouter(
-				chunkAggRetrieveFrom(e.deps.Backend),
-				nav.ChunkAggSummarize(),
-			)
-		} else {
-			router = nav.NewNavServiceRouter()
-		}
-	}
+	router := e.navRouter()
 	// The tool argument is NOT threaded (Python _exec_navigate_tree,
 	// action_session.py:_exec_navigate_tree, calls _navigate_tree_impl(query, keywords=...) with
 	// no doc_scope), but the SESSION scope still applies: the impl routes through
@@ -431,6 +417,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		"chunk_ptrs":  drill.chunkPtrs,
 		"top_score":   drill.topScore,
 		"chunk_paths": drill.chunkPaths,
+		"claim_hits":  drill.claimHits,
 	}
 	if res.EmptyReason != "" {
 		return ToolOutcome{
@@ -445,9 +432,11 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		}, nil
 	}
 	// Reached structures but drilled to nothing usable: not an error, just weak —
-	// the orchestrator falls back to retrieval on status == poor.
+	// the orchestrator falls back to retrieval on status == poor. Claim-first
+	// hits are the exception: the claims carry the answer material and load no
+	// chunk snippets, so a zero chunk_ptr count with matched claims is a success.
 	status := StatusOK
-	if drill.chunkPtrs == 0 {
+	if drill.chunkPtrs == 0 && drill.claimHits == 0 {
 		status = StatusPoor
 	}
 	content := res.Text
@@ -468,19 +457,29 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 }
 
 // navRouter returns the navigation-tree router navigateTree and navigateStructure
-// share (mirrors Python's _NAV_TREE_ROUTER = "chunk_agg"; a nil retrieval backend
-// degrades to the nav-row router, which needs no backend).
+// share. It mirrors Python's agentic router choice: the navigation-tree route
+// asks for router="claim_agg" (dataset_api_service.search_dataset_layers) — the
+// claim leg runs first and decides the ranking when it hits, and raw-chunk
+// aggregation (chunk_agg) is the fallback. A nil retrieval backend degrades to
+// the nav-row router, which needs no backend.
 func (e *searchExecutor) navRouter() NavTreeRouter {
 	if e.deps.NavRouter != nil {
 		return e.deps.NavRouter
 	}
-	if e.deps.Backend != nil {
-		return nav.NewChunkAggRouter(
-			chunkAggRetrieveFrom(e.deps.Backend),
-			nav.ChunkAggSummarize(),
-		)
+	return defaultNavRouter(e.deps)
+}
+
+// defaultNavRouter builds the claim_agg router over the chunk_agg fallback.
+// See ClaimAggRouter and nav.NewChunkAggRouter.
+func defaultNavRouter(deps SearchDeps) NavTreeRouter {
+	if deps.Backend == nil {
+		return nav.NewNavServiceRouter()
 	}
-	return nav.NewNavServiceRouter()
+	return &ClaimAggRouter{
+		Deps:      deps,
+		Fallback:  nav.NewChunkAggRouter(chunkAggRetrieveFrom(deps.Backend), nav.ChunkAggSummarize()),
+		Summarize: nav.ChunkAggSummarize(),
+	}
 }
 
 func firstOr(xs []string, def string) string {
@@ -567,6 +566,49 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
 	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
+	// Claim-first, MUTUALLY EXCLUSIVE (Python _run_search: _claim_prefetch +
+	// _CLAIM_PREFETCH_EXCLUSIVE): when claim rows hit, their verbatim evidence
+	// IS the answer material — chunk snippets on top would echo the same
+	// passages and burn tokens. Claims carry chunk pointers, so deep-reading
+	// stays one list_chunks away. No hits → the chunk search runs exactly as
+	// before. Applies to the whole retrieve family + search_chunks, matching
+	// Python's _exec_retrieve/_exec_search_chunks (both route through
+	// _run_search). Best effort: any failure falls through without claims.
+	if name == "retrieve" || name == "search_chunks" || strings.HasPrefix(name, "grep") {
+		if len(queries) > 0 {
+			if claimPayload, _, claimPseudo, ok := ClaimPrefetch(ctx, e.deps, queries[0], seen); ok {
+				newEvidence := 0
+				e.deps.KB.Admit(func(p *PoolAdmitter) {
+					for _, pc := range claimPseudo {
+						if p.Full() {
+							continue
+						}
+						cid := ChunkIDOf(pc)
+						if seen[cid] {
+							continue
+						}
+						seen[cid] = true
+						evidenceIDs = append(evidenceIDs, cid)
+						payload = append(payload, passageFromChunk(pc))
+						if p.Add(pc) {
+							newEvidence++
+						}
+					}
+				})
+				status := StatusOK
+				if newEvidence == 0 {
+					status = StatusRedundant
+				}
+				return ToolOutcome{
+					Payload:     payload,
+					EvidenceIDs: evidenceIDs,
+					Status:      status,
+					Reason:      ReasonNone,
+					Metrics:     map[string]any{"hits": len(claimPayload), "new_evidence": newEvidence, "claims": len(claimPayload)},
+				}, nil
+			}
+		}
+	}
 	for _, q := range queries {
 		// Per-tool top_n (mirrors Python action_session: retrieve=10,
 		// search_chunks=20). They were previously collapsed onto e.req.TopN,
