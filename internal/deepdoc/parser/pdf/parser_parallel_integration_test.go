@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 // PDF fixtures. With Config.Parallelism removed, page concurrency is governed
 // by the process-wide worker pool.
 func TestParser_PageParallel_DeterministicOrder(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	fixtures := []string{
 		"03_multipage.pdf",

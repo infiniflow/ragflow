@@ -45,6 +45,20 @@ class APITokenService(CommonService):
 class API4ConversationService(CommonService):
     model = API4Conversation
 
+    @classmethod
+    @DB.connection_context()
+    def get_latest_agent_channel_session(cls, agent_id, user_id):
+        return (
+            cls.model.select()
+            .where(
+                cls.model.dialog_id == agent_id,
+                cls.model.user_id == user_id,
+                cls.model.source == "agent",
+            )
+            .order_by(cls.model.update_time.desc(), cls.model.create_time.desc())
+            .first()
+        )
+
     @staticmethod
     def _normalize_query_date(value, is_end=False):
         if "T" in value:

@@ -4,13 +4,18 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +36,16 @@ type pdfVisionPage struct {
 	HeightPts  float64
 	ImageURL   string
 }
+
+const (
+	monkeyOCRv2MaxResponseBytes     = 512 << 20
+	monkeyOCRv2MaxZIPMembers        = 10000
+	monkeyOCRv2MaxUncompressedBytes = 2 << 30
+	monkeyOCRv2MaxImageBytes        = 64 << 20
+	monkeyOCRv2DefaultTimeout       = 600 * time.Second
+)
+
+var monkeyOCRv2ImagePattern = regexp.MustCompile(`!\[([^]]*)\]\(([^)]+)\)`)
 
 var (
 	pdfVisionPromptLoader  = loadPDFVisionPrompt
@@ -65,9 +80,31 @@ func maybeDispatchPDFVision(
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
 	tenantID := getStringOr(inputs, "tenant_id", "")
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+
+	monkeySelector := layout
+	if strings.TrimSpace(monkeySelector) == "" {
+		monkeySelector = method
+	}
+	isMonkeyMatch := strings.EqualFold(strings.TrimSpace(method), "monkeyocrv2") ||
+		strings.HasPrefix(layoutLower, "monkeyocrv2") ||
+		strings.Contains(layoutLower, "@monkeyocrv2")
+	isMonkeyByUUID := false
+	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !isNamedPDFParseMethod(monkeySelector) {
+		isMonkeyByUUID = isMonkeyOCRv2LayoutModelID(ctx, db, tenantID, monkeySelector)
+	}
+	if isMonkeyMatch || isMonkeyByUUID {
+		modelRef := ""
+		if isMonkeyByUUID {
+			modelRef = monkeySelector
+		} else if strings.Contains(monkeySelector, "@") {
+			modelRef = monkeySelector
+		}
+		res, err := dispatchMonkeyOCRv2PDF(ctx, db, filename, binary, tenantID, setup, modelRef)
+		return res, true, err
+	}
 
 	// MinerU dispatch: parse_method "mineru" or layout_recognizer "@MinerU"
-	layoutLower := strings.ToLower(strings.TrimSpace(layout))
 	if strings.EqualFold(strings.TrimSpace(method), "mineru") ||
 		strings.HasPrefix(layoutLower, "mineru") ||
 		strings.Contains(layoutLower, "@mineru") {
@@ -143,6 +180,264 @@ func maybeDispatchPDFVision(
 		return parserDispatchResult{}, true, err
 	}
 	return res, true, nil
+}
+
+func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup, modelRef string) (parserDispatchResult, error) {
+	baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
+	timeout := monkeyOCRv2RequestTimeout(setup, nil)
+	if tenantID != "" {
+		var driver modelModule.ModelDriver
+		var apiConfig *modelModule.APIConfig
+		var err error
+		if modelRef != "" {
+			driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+		} else {
+			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCRv2")
+		}
+		if err == nil {
+			if !strings.EqualFold(driver.Name(), "monkeyocrv2") {
+				return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
+			}
+			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+			} else if configuredURL := monkeyOCRv2APIConfigValue(apiConfig, "monkeyocrv2_server_url", common.EnvMonkeyOCRv2ServerURL); configuredURL != "" {
+				baseURL = strings.TrimRight(configuredURL, "/")
+			}
+			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
+		} else if baseURL == "" {
+			return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
+		}
+	}
+	if baseURL == "" {
+		return parserDispatchResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires monkeyocrv2_server_url or MONKEYOCRV2_SERVER_URL")
+	}
+	zipBytes, err := monkeyOCRv2ParseRequest(ctx, baseURL+"/parse", filename, binary, timeout)
+	if err != nil {
+		return parserDispatchResult{}, err
+	}
+	sections, err := monkeyOCRv2ExtractSections(zipBytes)
+	if err != nil {
+		return parserDispatchResult{}, err
+	}
+	return parserDispatchResult{OutputFormat: "markdown", Markdown: strings.Join(sections, "\n\n")}, nil
+}
+
+var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
+
+func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
+	if db == nil || strings.TrimSpace(modelID) == "" {
+		return false
+	}
+	driver, _, _, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	return err == nil && strings.EqualFold(driver.Name(), "monkeyocrv2")
+}
+
+func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binary []byte, timeout time.Duration) ([]byte, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("files", filepath.Base(filename))
+	if err != nil {
+		return nil, err
+	}
+	if _, err = part.Write(binary); err != nil {
+		return nil, err
+	}
+	_ = writer.WriteField("start_page_id", "0")
+	_ = writer.WriteField("end_page_id", "99999")
+	if err = writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	client := *http.DefaultClient
+	client.Timeout = timeout
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("MonkeyOCRv2 request: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, monkeyOCRv2MaxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > monkeyOCRv2MaxResponseBytes {
+		return nil, fmt.Errorf("MonkeyOCRv2 response exceeds %d bytes", monkeyOCRv2MaxResponseBytes)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("MonkeyOCRv2 HTTP %d: %s", resp.StatusCode, string(data))
+	}
+	return data, nil
+}
+
+func monkeyOCRv2APIConfigValue(apiConfig *modelModule.APIConfig, keys ...string) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return ""
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(*apiConfig.ApiKey), &config); err != nil {
+		return ""
+	}
+	if nested, ok := config["api_key"].(map[string]any); ok {
+		config = nested
+	}
+	for _, key := range keys {
+		if value, ok := config[key]; ok && value != nil {
+			return strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	return ""
+}
+
+func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["monkeyocrv2_timeout"]; ok {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		value = monkeyOCRv2APIConfigValue(apiConfig, "monkeyocrv2_timeout", common.EnvMonkeyOCRv2Timeout)
+	}
+	if value == "" {
+		value = os.Getenv(common.EnvMonkeyOCRv2Timeout)
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return monkeyOCRv2DefaultTimeout
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
+	}
+	if len(reader.File) > monkeyOCRv2MaxZIPMembers {
+		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains too many files")
+	}
+	var uncompressed uint64
+	for _, file := range reader.File {
+		uncompressed += file.UncompressedSize64
+		if uncompressed > monkeyOCRv2MaxUncompressedBytes {
+			return nil, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
+		}
+	}
+	var canonicalJSON, legacyJSON []*zip.File
+	images := make(map[string]*zip.File)
+	for _, file := range reader.File {
+		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(file.Name))), "image/") {
+			images[path.Base(file.Name)] = file
+		}
+		cleanName := strings.TrimPrefix(path.Clean(file.Name), "./")
+		parts := strings.Split(cleanName, "/")
+		if len(parts) == 2 && parts[1] == parts[0]+".json" {
+			canonicalJSON = append(canonicalJSON, file)
+		}
+		if strings.Contains("/"+file.Name, "/jsons/") && strings.HasSuffix(file.Name, ".json") {
+			legacyJSON = append(legacyJSON, file)
+		}
+	}
+	candidates := canonicalJSON
+	if len(candidates) == 0 {
+		candidates = legacyJSON
+	}
+	if len(candidates) == 0 {
+		for _, file := range reader.File {
+			if strings.HasSuffix(file.Name, "all_results.json") {
+				candidates = append(candidates, file)
+			}
+		}
+	}
+	var sections []string
+	for _, file := range candidates {
+		rc, openErr := file.Open()
+		if openErr != nil {
+			return nil, openErr
+		}
+		data, readErr := io.ReadAll(rc)
+		rc.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		var raw any
+		if err = json.Unmarshal(data, &raw); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", file.Name, err)
+		}
+		sections = append(sections, monkeyOCRv2Texts(raw, images)...)
+	}
+	if len(sections) == 0 {
+		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
+	}
+	return sections, nil
+}
+
+func monkeyOCRv2Texts(raw any, images map[string]*zip.File) []string {
+	if object, ok := raw.(map[string]any); ok {
+		for _, key := range []string{"layouts", "content_list", "results", "items"} {
+			if value, exists := object[key]; exists {
+				return monkeyOCRv2Texts(value, images)
+			}
+		}
+		label := strings.ToLower(strings.ReplaceAll(getAnyString(object, "type", "label"), "_", "-"))
+		switch label {
+		case "page-header", "page-footer", "page-number", "discarded":
+			return nil
+		}
+		if label == "picture" || label == "figure" || label == "image" {
+			return monkeyOCRv2EmbeddedImage(getAnyString(object, "text", "content", "markdown"), images)
+		}
+		for _, key := range []string{"text", "content", "markdown", "table_body"} {
+			if text, ok := object[key].(string); ok && strings.TrimSpace(text) != "" {
+				return []string{text}
+			}
+		}
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	var result []string
+	for _, item := range items {
+		result = append(result, monkeyOCRv2Texts(item, images)...)
+	}
+	return result
+}
+
+func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File) []string {
+	match := monkeyOCRv2ImagePattern.FindStringSubmatch(markdown)
+	if len(match) != 3 {
+		return nil
+	}
+	file := images[path.Base(strings.Trim(strings.TrimSpace(match[2]), `"'`))]
+	if file == nil || file.UncompressedSize64 > monkeyOCRv2MaxImageBytes {
+		return nil
+	}
+	rc, err := file.Open()
+	if err != nil {
+		return nil
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, monkeyOCRv2MaxImageBytes+1))
+	rc.Close()
+	if err != nil || len(data) > monkeyOCRv2MaxImageBytes {
+		return nil
+	}
+	mediaType := mime.TypeByExtension(path.Ext(file.Name))
+	if mediaType == "" {
+		mediaType = http.DetectContentType(data)
+	}
+	return []string{fmt.Sprintf("![%s](data:%s;base64,%s)", match[1], mediaType, base64.StdEncoding.EncodeToString(data))}
+}
+
+func getAnyString(object map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := object[key].(string); ok {
+			return value
+		}
+	}
+	return ""
 }
 
 // dispatchMinerUPDF submits a PDF to the tenant's MinerU OCR model
@@ -565,7 +860,7 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 func isNamedPDFParseMethod(raw string) bool {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch method {
-	case "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
+	case "deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
 		return true
 	}
 	return false

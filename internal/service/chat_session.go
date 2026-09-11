@@ -432,6 +432,15 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			continue
 		}
 
+		writable, werr := s.ensureSessionWritable(ctx, userID, chatID, session)
+		if werr != nil {
+			return nil, "", common.CodeServerError, werr
+		}
+		if !writable {
+			errorsList = append(errorsList, fmt.Sprintf("No permission to delete the readonly session %s", sid))
+			continue
+		}
+
 		s.removeSessionUploadFiles(ctx, userID, session)
 
 		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, sid); err != nil {
@@ -555,11 +564,20 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
-	if _, err = s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID); err != nil {
+	session, err := s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID)
+	if err != nil {
 		if isChatSessionNotFound(err) {
 			return nil, common.CodeDataError, errors.New("session not found")
 		}
 		return nil, common.CodeServerError, err
+	}
+
+	writable, err := s.ensureSessionWritable(ctx, userID, chatID, session)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !writable {
+		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
 	}
 
 	if _, ok = req["message"]; ok {
@@ -604,7 +622,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		}
 	}
 
-	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
+	session, err = s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 	if err != nil {
 		if isChatSessionNotFound(err) {
 			return nil, common.CodeDataError, errors.New("fail to update a session")
@@ -630,6 +648,14 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 			return nil, common.CodeServerError, err
 		}
 		return nil, common.CodeDataError, errors.New("session not found")
+	}
+
+	writable, werr := s.ensureSessionWritable(ctx, userID, chatID, session)
+	if werr != nil {
+		return nil, common.CodeServerError, werr
+	}
+	if !writable {
+		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
 	}
 
 	// parseMessages / parseReferenceList return nil for
@@ -718,6 +744,12 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 			return nil, common.CodeServerError, err
 		}
 		return nil, common.CodeDataError, errors.New("session not found")
+	}
+
+	// Shared-session readonly rule: the chat owner (ownerTenantID) or the
+	// session's creator may leave feedback; other team members cannot.
+	if ownerTenantID != userID && (session.UserID == nil || *session.UserID != userID) {
+		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
 	}
 
 	thumbRaw, ok := req["thumbup"]
@@ -1133,6 +1165,25 @@ func (s *ChatSessionService) ensureOwnedChat(ctx context.Context, userID, chatID
 	return exists, nil
 }
 
+// errSharedSessionReadonly is returned when a caller who can read a chat
+// shared with their team tries to mutate a session created by someone else.
+var errSharedSessionReadonly = errors.New("shared session is readonly")
+
+// ensureSessionWritable enforces the shared-session readonly rule: team
+// members can read the sessions of a chat shared with their tenant, but a
+// session may only be mutated by the chat owner (the dialog tenant) or by
+// the session's creator. Everyone else sees the session readonly.
+func (s *ChatSessionService) ensureSessionWritable(ctx context.Context, userID, chatID string, session *entity.ChatSession) (bool, error) {
+	owns, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, userID, chatID)
+	if err != nil {
+		return false, err
+	}
+	if owns {
+		return true, nil
+	}
+	return session.UserID != nil && *session.UserID == userID, nil
+}
+
 func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, dialog *entity.Chat, includeAvatar bool) *ChatSessionPayload {
 	var avatar *string
 	if includeAvatar {
@@ -1497,6 +1548,12 @@ func (s *ChatSessionService) ChatCompletions(
 			if session.DialogID != chatID {
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
+			// Shared-session readonly rule: only the chat owner (the dialog
+			// tenant) or the session's creator may append to a session.
+			// Team members who can read the shared chat see it readonly.
+			if dialog.TenantID != userID && (session.UserID == nil || *session.UserID != userID) {
+				return fail(common.NewCodedError(common.CodeAuthenticationError, errSharedSessionReadonly.Error()))
+			}
 		} else {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID, storeHistory)
 			if err != nil {
@@ -1590,6 +1647,10 @@ func (s *ChatSessionService) ChatCompletions(
 					fullAnswer.WriteString("</think>")
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
+				} else if result.Reasoning != "" {
+					// In-think reasoning text between the markers (tool and
+					// harness paths) — keep it inside the <think> block.
+					fullAnswer.WriteString(result.Reasoning)
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
@@ -1637,6 +1698,15 @@ func (s *ChatSessionService) ChatCompletions(
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
 					deltaAnswer = result.Answer
+				} else if result.Reasoning != "" {
+					// In-think reasoning text arriving between the
+					// StartToThink / EndToThink markers (the tool path and the
+					// harness high/ultra path both deliver it via Reasoning so
+					// OpenAI-compat can map it to reasoning_content). Treat it
+					// as think-block content so the chat UI shows the
+					// reasoning instead of dropping it.
+					fullAnswer.WriteString(result.Reasoning)
+					deltaAnswer = result.Reasoning
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
