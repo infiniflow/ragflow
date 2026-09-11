@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
@@ -1089,3 +1090,101 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Tool spec / schema contract (moved here from action_session_schema_test.go)
+// ---------------------------------------------------------------------------
+
+// playbookAnchors are the 5-section contract every tool description must carry
+// (mirrors PLAYBOOK_ANCHORS in the Python action-session schema test).
+var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTPUT", "IF IT FAILS"}
+
+// executorSupportedParams lists the params the executor actually consumes per
+// tool (mirrors _EXECUTOR_SUPPORTED). The schema MUST NOT declare any param
+// outside this set — otherwise the model is told to fill an argument the runtime
+// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: doc_scope /
+// keywords are supported by the executor but intentionally NOT declared in the
+// schema (keep the description honest with the implementation).
+var executorSupportedParams = map[string]map[string]bool{
+	"retrieve":           {"query": true, "doc_scope": true},
+	"search_chunks":      {"query": true},
+	"list_chunks":        {"doc_id": true},
+	"navigate_tree":      {"query": true, "keywords": true},
+	"navigate_structure": {"doc_id": true, "query": true, "kind": true},
+	"calculate":          {"question": true, "facts": true},
+	"web_search":         {"query": true},
+}
+
+// TestToolSpecsHavePlaybookSections pins the PR: each of the 7 tools documents
+// the 5-section contract, within the token budget (cap 1200 chars).
+func TestToolSpecsHavePlaybookSections(t *testing.T) {
+	for _, name := range allTools {
+		desc := ToolMap[name].Function.Description
+		for _, anchor := range playbookAnchors {
+			if !strings.Contains(desc, anchor) {
+				t.Errorf("%s description missing anchor %q", name, anchor)
+			}
+		}
+		if n := utf8.RuneCountInString(desc); n > 1200 {
+			t.Errorf("%s description too long: %d chars (cap 1200)", name, n)
+		}
+	}
+}
+
+// TestActiveToolSpecsToolSurface pins mode -> exposed tool count: low=0,
+// medium/high=7, ultra=8, web-hidden=6.
+func TestActiveToolSpecsToolSurface(t *testing.T) {
+	cases := []struct {
+		mode string
+		web  bool
+		want int
+	}{
+		{"low", true, 0},
+		{"medium", true, 7},
+		{"high", true, 7},
+		{"ultra", true, 8},
+		{"medium", false, 6},
+	}
+	for _, c := range cases {
+		ts := &Toolset{ThinkingMode: c.mode, HasWebSearch: c.web}
+		if got := len(ts.ActiveToolSpecs()); got != c.want {
+			t.Errorf("mode=%s web=%t: tools = %d, want %d", c.mode, c.web, got, c.want)
+		}
+	}
+}
+
+// TestSchemaParamsMatchExecutor pins that no schema declares a param the
+// executor cannot consume (no ghost args).
+func TestSchemaParamsMatchExecutor(t *testing.T) {
+	for _, name := range allTools {
+		props, _ := ToolMap[name].Function.Parameters["properties"].(map[string]any)
+		supported := executorSupportedParams[name]
+		for param := range props {
+			if param == "decision" {
+				continue
+			}
+			if !supported[param] {
+				t.Errorf("%s declares unsupported param %q", name, param)
+			}
+		}
+	}
+}
+
+// TestActionRunPromptHasPlaybook pins that action_run.md exposes the TOOL
+// PLAYBOOK and only references real tools.
+func TestActionRunPromptHasPlaybook(t *testing.T) {
+	prompt := loadPrompt(nil, "action_run")
+	if !strings.Contains(prompt, "TOOL PLAYBOOK") {
+		t.Error("action_run prompt missing TOOL PLAYBOOK")
+	}
+	for _, tool := range []string{"navigate_structure", "calculate", "graph_explore"} {
+		if !strings.Contains(prompt, tool) {
+			t.Errorf("action_run prompt missing tool %q", tool)
+		}
+	}
+	for _, name := range append(append([]string{}, allTools...), GraphExploreTool) {
+		if _, ok := ToolMap[name]; !ok {
+			t.Errorf("%q referenced by the playbook is not in ToolMap", name)
+		}
+	}
+}

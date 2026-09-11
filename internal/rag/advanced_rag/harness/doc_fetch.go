@@ -130,20 +130,40 @@ func summarizeDocument(ctx context.Context, deps SearchDeps, docID string, maxTo
 	}
 
 	// Python :942-948 — the document becomes part of the evidence set, so its
-	// [ID]s stay citable; only the blocks added here are returned.
-	startIdx := 0
-	if deps.KB != nil {
-		startIdx = len(deps.KB.Chunks)
-		deps.KB.Merge(chunks, aggs)
-	} else {
+	// [ID]s stay citable; only the blocks of the chunks read here are returned.
+	//
+	// The blocks are picked by the SOURCE CHUNK, not by the pre-merge chunk
+	// count: KBPrompt skips a chunk with no content and stops when the token
+	// budget is exhausted, so block N is not chunk N — a slice taken at the
+	// pre-merge count can drop readable blocks, or point past the end and return
+	// nil for a document that was read fine (Python's `blocks[start_idx:]` has the
+	// same flaw; Go hits it more often because Merge deduplicates a document
+	// chunk that is already pooled, so the pre-merge count can even equal the
+	// post-merge count). Merge reports the pool position of every chunk this
+	// fetch contributed — deduplicated ones included — which makes the mapping
+	// exact; iterating it keeps the document's reading order.
+	if deps.KB == nil {
 		deps.KB = &Kbinfos{}
-		deps.KB.Merge(chunks, aggs)
 	}
-	blocks := prompts.KBPrompt(deps.KB.Chunks, budget)
-	if startIdx >= len(blocks) {
+	added := deps.KB.Merge(chunks, aggs)
+	blocks, sources := prompts.KBPromptWithSourceIndices(deps.KB.Chunks, budget)
+	blockAt := make(map[int]string, len(sources))
+	for i, src := range sources {
+		if _, seen := blockAt[src]; !seen {
+			blockAt[src] = blocks[i]
+		}
+	}
+	fresh := make([]string, 0, len(added))
+	for _, pos := range added {
+		if block, ok := blockAt[pos]; ok {
+			fresh = append(fresh, block)
+		}
+	}
+	// Nothing of this document survived the budget: the pool is already at the
+	// model window, so there is no block to hand back.
+	if len(fresh) == 0 {
 		return nil
 	}
-	fresh := blocks[startIdx:]
 
 	// Python :952-959 — without do_refer the model is told not to cite, so the
 	// rules must not be handed to it.

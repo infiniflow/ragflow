@@ -49,3 +49,61 @@ func TestMergeDedupsSameDocID(t *testing.T) {
 		t.Fatalf("same-doc_id aggs should dedup, got %d", len(kb.DocAggs))
 	}
 }
+
+// TestChunkKeyUsesTextFallback pins that the dedup key reads the SAME alias chain
+// as chunkText (content_with_weight -> content -> text). Reading only the first
+// two made two id-less, text-only chunks from one document share the doc-level
+// fallback key, so Merge/MemoryAdd discarded distinct evidence.
+func TestChunkKeyUsesTextFallback(t *testing.T) {
+	a := map[string]any{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}
+	b := map[string]any{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"}
+	if chunkKey(a) == chunkKey(b) {
+		t.Fatalf("distinct text-only chunks must not share a key: %q", chunkKey(a))
+	}
+	// The same text under any alias must produce the same key.
+	if c := map[string]any{"content": "alpha"}; chunkKey(a) != chunkKey(c) {
+		t.Errorf("text and content aliases must agree: %q vs %q", chunkKey(a), chunkKey(c))
+	}
+	// A chunk with no text at all still lands on the doc-level fallback.
+	if got := chunkKey(map[string]any{"doc_id": "d1", "docnm_kwd": "doc"}); got == "" {
+		t.Error("doc-level fallback key must not be empty")
+	}
+}
+
+// TestMergeKeepsDistinctTextOnlyChunks pins the end-to-end consequence for the
+// evidence pool: two id-less chunks that share only a document must both survive.
+func TestMergeKeepsDistinctTextOnlyChunks(t *testing.T) {
+	kb := &Kbinfos{}
+	added := kb.Merge([]map[string]any{
+		{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"},
+		{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"},
+	}, nil)
+	if len(kb.Chunks) != 2 {
+		t.Fatalf("chunks = %d, want 2 (distinct text-only evidence must not collapse)", len(kb.Chunks))
+	}
+	if len(added) != 2 {
+		t.Fatalf("added = %v, want 2 global indices", added)
+	}
+	// Re-merging identical content still dedups.
+	kb.Merge([]map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}}, nil)
+	if len(kb.Chunks) != 2 {
+		t.Fatalf("identical text must still dedup, chunks = %d", len(kb.Chunks))
+	}
+}
+
+// TestMemoryAddKeepsDistinctTextOnlyChunks pins the same consequence for the
+// lossless memory store.
+func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
+	kb := &Kbinfos{}
+	MemoryAdd(kb, []map[string]any{
+		{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"},
+		{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"},
+	})
+	if len(kb.Memory) != 2 {
+		t.Fatalf("memory = %d, want 2 (distinct text-only evidence must not collapse)", len(kb.Memory))
+	}
+	MemoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
+	if len(kb.Memory) != 2 {
+		t.Fatalf("identical text must still dedup, memory = %d", len(kb.Memory))
+	}
+}

@@ -34,8 +34,10 @@ import (
 // The store lives on Kbinfos.Memory so it travels with the request.
 
 const (
-	// grepMaxChunks caps how many chunks one grep returns (Python
-	// memory._GREP_MAX_CHUNKS = 6).
+	// grepMaxChunks is Python memory.grep's default cap (_GREP_MAX_CHUNKS = 6).
+	// MemoryGrep takes the limit explicitly and does NOT substitute this for a
+	// non-positive value (Python has no such guard), so callers that want the
+	// Python default pass it.
 	grepMaxChunks = 6
 	// grepMaxSentences caps sentences kept per chunk (hit + context).
 	grepMaxSentences = 4
@@ -134,12 +136,14 @@ func MemoryClear(kb *Kbinfos) {
 // terms are plain strings (entities / numbers / key phrases) as emitted by the
 // analysis LLM. Each returned chunk carries a narrowed "content" so the caller
 // can splice it straight into an evidence list. Empty on no-hit / no-memory.
+//
+// limit is the maximum number of chunks returned and is NOT normalized: Python's
+// grep has no such guard, so a limit <= 0 makes the `len(hits) >= limit` check
+// fire on the first hit (at most one chunk comes back). Callers wanting Python's
+// default pass grepMaxChunks.
 func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 	if kb == nil || len(kb.Memory) == 0 || len(terms) == 0 {
 		return nil
-	}
-	if limit <= 0 {
-		limit = grepMaxChunks
 	}
 	patterns, prefixPatterns := compileTerms(terms)
 	if len(patterns) == 0 && len(prefixPatterns) == 0 {
@@ -173,6 +177,13 @@ func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 					"doc_id":   c["doc_id"],
 					"chunk_id": c["chunk_id"],
 				})
+				// This branch continues past the shared cap below, so enforce the
+				// limit here too — otherwise a memory store full of matching short
+				// chunks comes back whole. Python's memory.grep enforces it in the
+				// same place.
+				if len(hits) >= limit {
+					break
+				}
 			}
 			continue
 		}

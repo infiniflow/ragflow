@@ -24,7 +24,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
@@ -596,20 +595,26 @@ func InitCL100KEncoder() error {
 }
 
 // NumTokensFromString returns the number of tokens in s using the cl100k_base
-// BPE encoding. Mirrors Python's num_tokens_from_string (common/token_utils.py):
-// returns 0 on encoder error.
+// BPE encoding.
 //
-// Callers must ensure InitCL100KEncoder has succeeded at startup; otherwise a
-// missing table makes this return 0 for every non-empty string. The startup
-// check is the fail-fast guard — this cheap hot-path function stays silent by
-// design so it can be called per-token without error plumbing.
+// A missing BPE table PANICS instead of returning 0. Python's
+// num_tokens_from_string (common/token_utils.py) resolves its encoder OUTSIDE the
+// try, so an unavailable table raises there — only an encode() failure is folded
+// into 0. Returning 0 here would fail OPEN (every budget would "fit"), which is
+// the exact silent-corruption mode that made a Go image missing
+// cl100k_base.tiktoken zero every token count. InitCL100KEncoder still runs at
+// startup (cmd/ragflow_server.go) so a bad deployment dies with a clear message,
+// and this function now stays loud too in case a caller bypasses that guard.
 func NumTokensFromString(s string) int {
 	if s == "" {
 		return 0
 	}
 	enc, err := getCL100KEncoder()
 	if err != nil {
-		return 0
+		panic(fmt.Sprintf("tokenizer.NumTokensFromString: cl100k_base BPE table unavailable: %v", err))
+	}
+	if enc == nil {
+		panic("tokenizer.NumTokensFromString: cl100k_base encoder is nil")
 	}
 	return len(enc.Encode(s, nil, nil))
 }
@@ -618,24 +623,20 @@ func NumTokensFromString(s string) int {
 // cl100k_base encoder. Mirrors Python's trim_content helper in
 // rag/prompts/generator.py: encoder.decode(encoder.encode(content)[:limit]).
 // Returns the original string if it already fits.
+//
+// Like Python's trim_content, an unavailable encoder PANICS: the previous
+// byte-length fallback silently produced a differently-truncated string instead
+// of surfacing the missing table. See NumTokensFromString.
 func TrimContentToTokenLimit(s string, limit int) string {
 	if limit < 0 {
 		limit = 0
 	}
 	enc, err := getCL100KEncoder()
 	if err != nil {
-		// Fail closed: fall back to byte-length trimming with UTF-8 safety.
-		if limit <= 0 {
-			return ""
-		}
-		b := []byte(s)
-		if len(b) <= limit {
-			return s
-		}
-		for limit > 0 && !utf8.Valid(b[:limit]) {
-			limit--
-		}
-		return string(b[:limit])
+		panic(fmt.Sprintf("tokenizer.TrimContentToTokenLimit: cl100k_base BPE table unavailable: %v", err))
+	}
+	if enc == nil {
+		panic("tokenizer.TrimContentToTokenLimit: cl100k_base encoder is nil")
 	}
 	tokens := enc.Encode(s, nil, nil)
 	if len(tokens) <= limit {

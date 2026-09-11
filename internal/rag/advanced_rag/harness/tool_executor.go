@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/service/nav"
@@ -333,7 +334,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 // It stays in the harness package because it depends on the agentic Retriever /
 // RetrieveRequest; the routing algorithm itself lives in internal/service/nav.
 func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
-	return func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, _ float64) []map[string]any {
+	return func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, _ float64) ([]map[string]any, error) {
 		chunks, err := r.Retrieve(ctx, RetrieveRequest{
 			Query:      query,
 			DatasetIDs: []string{kbID},
@@ -341,10 +342,13 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 			DocScope:   docScope,
 			TopN:       topN,
 		})
-		if err != nil || len(chunks) == 0 {
-			return nil
+		if err != nil {
+			// Surface the failure instead of folding it into an empty result:
+			// the router reports it as an error so the orchestrator takes its
+			// fallback rather than telling the model the tree routed nothing.
+			return nil, err
 		}
-		return chunks
+		return chunks, nil
 	}
 }
 
@@ -502,6 +506,35 @@ func argString(args map[string]any, key string) string {
 	return s
 }
 
+// evidencePoolCap is the hard cap on the shared evidence pool
+// (kbinfos["chunks"]). Mirrors Python _EVIDENCE_POOL_CAP (=60, the same ceiling
+// as _MAX_SNIPPET_POOL / _SCA_VIEW_CAP): once the pool is saturated, further
+// admits cannot reach the SCA view or improve the answer, so the action session
+// stops admitting chunks (observed pools otherwise grew to ~106).
+const evidencePoolCap = 60
+
+// evidencePoolFullLogged mirrors Python _EVIDENCE_POOL_STATE["full_logged"], which
+// Python documents as a PER-PROCESS flag (action_session.py:62-64: "Per-process
+// flag so the 'pool FULL' log line is emitted once per fill, not once per
+// rejected chunk"). So the line is emitted once per PROCESS — not once per
+// rejected chunk, and NOT once per session: a second session in the same process
+// stays silent, exactly as in Python. sync.Once because concurrent tool calls
+// run the check. The pool never shrinks mid-session, so no reset is needed.
+var evidencePoolFullLogged sync.Once
+
+// evidencePoolFull mirrors the early-stop at the top of Python _admit_evidence:
+// once the shared pool reaches evidencePoolCap, admit no further chunk and
+// return true so the caller skips it.
+func evidencePoolFull(pool *Kbinfos) bool {
+	if pool == nil || len(pool.Chunks) < evidencePoolCap {
+		return false
+	}
+	evidencePoolFullLogged.Do(func() {
+		_LOG.Printf("[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.", len(pool.Chunks), evidencePoolCap)
+	})
+	return true
+}
+
 // search runs one retrieval call for a tool invocation.
 //
 // Python's retrieve/search_chunks both funnel into tools/search.py, differing
@@ -571,10 +604,11 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// global switch can no longer disable the semantic leg.
 		//
 		// Python's search_chunks tool ALWAYS enables compiled-structure expansion
-		// (action_session.py:execute_tool passes use_compiled=True); retrieve/grep_search
-		// never do. So Go mirrors that: compiled is on for search_chunks and off
-		// for every other retrieve-family tool, independent of e.req.UseCompiled
-		// (which gates the L1 direct retrieve, not the action_session tool loop).
+		// in ALL modes, not just high (action_session.py:execute_tool passes
+		// use_compiled=True); retrieve/grep_search never do. So Go mirrors that:
+		// compiled is on for search_chunks and off for every other retrieve-family
+		// tool, independent of e.req.UseCompiled (which gates the L1 direct
+		// retrieve, not the action_session tool loop).
 		var searchFn func(context.Context, SearchDeps, SearchParams) ([]map[string]any, []map[string]any)
 		useCompiled := name == "search_chunks"
 		if useCompiled {
@@ -628,6 +662,11 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// not pool positions), and only chunks NEW to the shared pool appended
 		// to it — so REDUNDANT means "nothing new", not "nothing returned".
 		for _, c := range chunks {
+			// Python _admit_evidence early-stops at the top once the shared pool
+			// reaches the cap, BEFORE the per-call dedup.
+			if evidencePoolFull(e.deps.KB) {
+				continue
+			}
 			cid := ChunkIDOf(c)
 			if seen[cid] {
 				continue
@@ -920,14 +959,18 @@ type RuntimeRetriever struct{}
 func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([]map[string]any, error) {
 	svc := runtime.GetRetrievalService()
 	chunks, err := svc.Search(ctx, nil, runtime.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		DocScope:                 req.DocScope,
-		TopN:                     req.TopN,
-		TopK:                     req.TopK,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		SimilarityThreshold:      &req.SimilarityThreshold,
-		KeywordsSimilarityWeight: &req.KeywordsSimilarityWeight,
+		Query:                 req.Query,
+		DatasetIDs:            req.DatasetIDs,
+		DocScope:              req.DocScope,
+		TopN:                  req.TopN,
+		TopK:                  req.TopK,
+		RerankCandidatesCount: req.RerankCandidatesCount,
+		// Passed through as pointers: nil (the caller did not supply one) must
+		// stay nil so the retrieval service keeps its own default, while a zero
+		// is a real override. Taking the address of a zero value here forced
+		// "threshold 0 / full vector weight" onto every caller that omitted them.
+		SimilarityThreshold:      req.SimilarityThreshold,
+		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		TenantID:                 req.TenantID,
 		RankFeature:              req.RankFeature,
 		// ExcludeCompiled maps Python hybrid_search's

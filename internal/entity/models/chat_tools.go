@@ -162,7 +162,10 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		var toolAnswer string
 		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
 		if hit {
-			addRoundUsage(resp)
+			// This round's usage was already folded in by addRoundUsage above
+			// (it accumulates into aggUsage and forwards a per-round delta to the
+			// run-usage sink, which ADDS): calling it again here would count the
+			// round twice in both totalTokens and the recorded run usage.
 			return toolAnswer, totalTokens, nil
 		}
 		// history now carries this round's tool results; continue to the next round.

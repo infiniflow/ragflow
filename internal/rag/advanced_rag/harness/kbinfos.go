@@ -191,6 +191,12 @@ func chunkText(c map[string]any) string {
 // present; otherwise falls back to a content-derived key so chunks without an
 // id still dedup correctly (and never collide on a shared empty key).
 //
+// The content branch reuses chunkText — the SAME alias chain the rest of the
+// harness reads (content_with_weight -> content -> text). Reading only the first
+// two made two id-less chunks that carry just "text" fall through to the
+// doc-level fallback and share one key, so Merge/MemoryAdd discarded distinct
+// evidence.
+//
 // This diverges from Python _chunk_key (`chunk_id or id or id(ck)`): Python's
 // final fallback is `id(ck)` — the dict object's memory address — which means
 // two equivalent chunks returned as distinct objects never share a key, so
@@ -203,12 +209,7 @@ func chunkKey(c map[string]any) string {
 	if id, ok := c["id"].(string); ok && id != "" {
 		return "id:" + id
 	}
-	content := ""
-	if t, ok := c["content_with_weight"].(string); ok {
-		content = t
-	} else if t, ok := c["content"].(string); ok {
-		content = t
-	}
+	content := chunkText(c)
 	if content == "" {
 		// No stable identity: fall back to the doc reference so at least
 		// per-document grouping is preserved (rarely reached).
