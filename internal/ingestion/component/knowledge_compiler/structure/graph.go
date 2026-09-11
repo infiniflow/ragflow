@@ -46,7 +46,7 @@ func graphEntity(payload map[string]any, sourceChunkIDs []string) map[string]any
 	if description == "" {
 		description = strings.TrimSpace(stringOf(payload["definition_excerpt"]))
 	}
-	return map[string]any{
+	entity := map[string]any{
 		"aliases":          aliases,
 		"mention_count":    1,
 		"name":             name,
@@ -54,6 +54,25 @@ func graphEntity(payload map[string]any, sourceChunkIDs []string) map[string]any
 		"type":             typ,
 		"description":      description,
 	}
+	// Gate-verified verbatim evidence rides along for the artifacts detail
+	// panel (mirrors _struct_graph_entity's evidence projection). Rows compiled
+	// before the field existed simply omit it.
+	if evidence, ok := payload["evidence"].([]any); ok {
+		var verified []any
+		for _, e := range evidence {
+			m, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			if q := strings.TrimSpace(stringOf(m["quote"])); q != "" {
+				verified = append(verified, m)
+			}
+		}
+		if len(verified) > 0 {
+			entity["evidence"] = verified
+		}
+	}
+	return entity
 }
 
 // graphRelation mirrors _struct_graph_relation: project a relation payload to
@@ -103,7 +122,12 @@ func mergeGraphEntities(entities []map[string]any) []map[string]any {
 // compact {"entities": [...], "relations": [...]} graph from the surviving
 // structure products. Entity mention counts sum across rows sharing
 // (name, type); relation rows project verbatim (already deduped in-run).
-func RebuildStructureGraph(products []common.Product) map[string]any {
+//
+// compileType selects the kind-scoped post-processing: page_index templates
+// declare that every claim hangs off exactly one container, so orphans the
+// per-batch relation pass could not attach are re-parented (mirrors
+// _struct_attach_orphan_entities).
+func RebuildStructureGraph(products []common.Product, compileType string) map[string]any {
 	var entities []map[string]any
 	var relations []map[string]any
 	for _, p := range products {
@@ -123,10 +147,157 @@ func RebuildStructureGraph(products []common.Product) map[string]any {
 			}
 		}
 	}
+	if normalizeKind(compileType) == "page_index" || normalizeKind(compileType) == "pageindex" {
+		relations = attachOrphanEntities(entities, relations)
+	}
 	return map[string]any{
 		"entities":  mergeGraphEntities(entities),
 		"relations": relations,
 	}
+}
+
+// attachOrphanEntities mirrors _struct_attach_orphan_entities: re-parent leaf
+// entities the per-batch relation pass could not attach.
+//
+// Relations are extracted inside one batch, so a container living in another
+// batch is invisible to the edge prompt. Only types that NEVER act as a
+// container are repaired — an entity of such a type with no incoming edge is
+// missing its parent by definition, whereas a structural type (a heading) may
+// legitimately be a root. Containers are classified by TYPE, not instance: a
+// heading whose own children all fell in other batches never appears on a
+// "from" side, yet it is still the right parent. No type names are baked in —
+// containers are whatever appears on the "from" side.
+//
+// The parent is the container sharing the most source chunks with the orphan,
+// preferring the most specific one (fewest chunks of its own), because a
+// heading's source_chunk_ids are meant to cover its whole section.
+func attachOrphanEntities(entities, relations []map[string]any) []map[string]any {
+	if len(entities) == 0 || len(relations) == 0 {
+		return relations
+	}
+
+	childNames := map[string]bool{}
+	containerNames := map[string]bool{}
+	for _, r := range relations {
+		if name := strings.TrimSpace(stringOf(r["to"])); name != "" {
+			childNames[name] = true
+		}
+		if name := strings.TrimSpace(stringOf(r["from"])); name != "" {
+			containerNames[name] = true
+		}
+	}
+	if len(containerNames) == 0 {
+		return relations
+	}
+
+	byType := map[string][]map[string]any{}
+	for _, e := range entities {
+		typ := strings.TrimSpace(stringOf(e["type"]))
+		if typ == "" {
+			typ = "other"
+		}
+		byType[typ] = append(byType[typ], e)
+	}
+
+	// Classify by TYPE, not by instance (see doc comment above).
+	containerTypes := map[string]bool{}
+	for typ, ents := range byType {
+		for _, e := range ents {
+			if name := strings.TrimSpace(stringOf(e["name"])); containerNames[name] {
+				containerTypes[typ] = true
+				break
+			}
+		}
+	}
+	var containers []map[string]any
+	for _, e := range entities {
+		if containerTypes[strings.TrimSpace(stringOf(e["type"]))] {
+			containers = append(containers, e)
+		}
+	}
+	if len(containers) == 0 {
+		return relations
+	}
+
+	// Synthetic relations reuse the dominant existing relation type.
+	dominantType, best := "include", 0
+	counts := map[string]int{}
+	for _, r := range relations {
+		if t := strings.TrimSpace(stringOf(r["type"])); t != "" {
+			counts[t]++
+			if counts[t] > best {
+				best, dominantType = counts[t], t
+			}
+		}
+	}
+
+	existing := map[[2]string]bool{}
+	for _, r := range relations {
+		existing[[2]string{strings.TrimSpace(stringOf(r["from"])), strings.TrimSpace(stringOf(r["to"]))}] = true
+	}
+
+	var repaired []map[string]any
+	for _, ent := range entities {
+		name := strings.TrimSpace(stringOf(ent["name"]))
+		typ := strings.TrimSpace(stringOf(ent["type"]))
+		if typ == "" {
+			typ = "other"
+		}
+		if name == "" || containerTypes[typ] || childNames[name] {
+			continue
+		}
+		own := chunkSet(ent)
+		if len(own) == 0 {
+			continue
+		}
+		bestName := ""
+		bestOverlap, bestSpecificity := 0, 0
+		for _, cand := range containers {
+			candName := strings.TrimSpace(stringOf(cand["name"]))
+			if candName == "" || candName == name {
+				continue
+			}
+			candChunks := chunkSet(cand)
+			overlap := 0
+			for c := range own {
+				if candChunks[c] {
+					overlap++
+				}
+			}
+			if overlap <= 0 {
+				continue
+			}
+			// Most overlapping wins; ties go to the narrower container, which
+			// is the deeper (more specific) section.
+			if bestName == "" || overlap > bestOverlap || (overlap == bestOverlap && len(candChunks) < bestSpecificity) {
+				bestName, bestOverlap, bestSpecificity = candName, overlap, len(candChunks)
+			}
+		}
+		if bestName == "" {
+			continue
+		}
+		if existing[[2]string{bestName, name}] {
+			continue
+		}
+		existing[[2]string{bestName, name}] = true
+		repaired = append(repaired, map[string]any{"from": bestName, "to": name, "type": dominantType})
+	}
+
+	if len(repaired) > 0 {
+		// Mirrors Python's log line; the message lands in the compile log.
+		relations = append(relations, repaired...)
+	}
+	return relations
+}
+
+func chunkSet(entity map[string]any) map[string]bool {
+	out := map[string]bool{}
+	for _, c := range toStrings(entity["source_chunk_ids"]) {
+		if c = strings.TrimSpace(c); c != "" {
+			out[c] = true
+		}
+	}
+	return out
 }
 
 func mentionOf(entity map[string]any) int {

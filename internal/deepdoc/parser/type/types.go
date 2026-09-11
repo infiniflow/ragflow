@@ -296,6 +296,22 @@ type DocAnalyzer interface {
 	Health() bool
 }
 
+// NativeDocAnalyzerFactory, when set, supplies the local in-process DeepDoc
+// backend. The native backend (internal/deepdoc/parser/pdf/inference/
+// native_analyzer) registers itself here from its Register at process start;
+// the parser package then reads it without ever importing onnxruntime. It is
+// nil in builds/tests that do not opt into the native backend. The setter lives
+// in this dependency-free type package (rather than in the parser) so the
+// native backend implementation can register itself without importing the
+// parser, which would otherwise create a parser -> pdf -> native_analyzer ->
+// parser import cycle.
+var NativeDocAnalyzerFactory func() (DocAnalyzer, bool)
+
+// SetNativeDocAnalyzerFactory registers the in-process DeepDoc analyzer.
+func SetNativeDocAnalyzerFactory(f func() (DocAnalyzer, bool)) {
+	NativeDocAnalyzerFactory = f
+}
+
 // ── Outline ────────────────────────────────────────────────────────────
 
 // Outline represents one entry in a PDF's document outline (table of contents).

@@ -15,6 +15,7 @@
 #
 import json
 import logging
+import math
 import os
 import re
 
@@ -94,8 +95,12 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+        logging.debug("create_dataset: 'language' not provided; falling back to the model/database default.")
 
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
@@ -115,8 +120,6 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["metadata"] = fields
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
-    req.update(ext_fields)
-
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
     if not e:
@@ -319,9 +322,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if kb is None:
         return False, "Invalid Dataset ID"
 
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config into parser_config if present
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -341,9 +341,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
 
-    # Merge ext fields with req
-    req.update(ext_fields)
-
     # Extract connectors from request
     connectors = []
     if "connectors" in req:
@@ -361,10 +358,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
             req["parser_config"]["enable_children"] = False
             req["parser_config"]["parent_child"] = {}
 
-        parser_config = req["parser_config"]
-        req_ext_fields = parser_config.pop("ext", {})
-        parser_config.update(req_ext_fields)
-        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
+        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
@@ -438,9 +432,8 @@ def list_datasets(tenant_id: str, args: dict):
     name = args.get("name")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
-    ext_fields = args.get("ext", {})
-    parser_id = ext_fields.get("parser_id")
-    keywords = ext_fields.get("keywords", "")
+    parser_id = args.get("parser_id")
+    keywords = args.get("keywords", "")
     orderby = args.get("orderby", "create_time")
     desc_arg = args.get("desc", "true")
     if isinstance(desc_arg, str):
@@ -462,7 +455,7 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    owner_ids = [owner_id.strip() for owner_id in ext_fields.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
+    owner_ids = [owner_id.strip() for owner_id in args.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
     if owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         allowed_tenant_ids = {m["tenant_id"] for m in tenants}
@@ -502,7 +495,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
@@ -1572,6 +1568,7 @@ async def search_datasets(tenant_id: str, req: dict):
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
+        highlight=req.get("highlight", False),
         rank_feature=labels,
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
@@ -1599,8 +1596,8 @@ async def search_datasets(tenant_id: str, req: dict):
 # Artifact (knowledge compilation) page surface
 #
 # These three helpers power the dataset-level "Artifact" tab. They query rows
-# with ``compile_kwd="wiki_page"`` written by TaskHandler's
-# ``persist_wiki_pages``. The schema fields they rely on are:
+# with ``compile_kwd="wiki_page"`` written by incremental Wiki REFINE. The
+# schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
 #   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids
@@ -1909,7 +1906,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
 
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    empty = {"kind": kind, "templates": []}
+    empty = {"kind": kind, "templates": [], "total_entities": 0, "total_relations": 0, "returned_entities": 0, "returned_relations": 0}
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
@@ -2038,6 +2035,25 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             template_scope_by_id[tid] = "doc"
             kind_template_ids.append(tid)
 
+    template_scopes: dict[str, dict] = {}
+    total_entities = 0
+    total_relations = 0
+    for tid in kind_template_ids:
+        scope_kwd = template_scope_by_id.get(tid, "dataset")
+        scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+        if scope_kwd == "doc":
+            scope["doc_id"] = sorted(active_doc_ids)
+        template_scopes[tid] = scope
+        try:
+            _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+            _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
+            total_entities += entity_total
+            total_relations += relation_total
+        except Exception:
+            logging.exception("get_dataset_structure: bucket count failed for kb=%s template=%s", dataset_id, tid)
+    empty["total_entities"] = total_entities
+    empty["total_relations"] = total_relations
+
     # Detect datasets that have ONLY the legacy dataset_graph blob (no
     # entity/relation rows yet) so the fallback path below handles them.
     if not kind_template_ids and not has_templateless:
@@ -2111,20 +2127,24 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket = dict(bucket_meta)
         bucket["entities"] = kw_entities
         bucket["relations"] = kw_relations
-        return True, {"kind": kind, "templates": [bucket]}
+        return True, {
+            "kind": kind,
+            "templates": [bucket],
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(kw_entities),
+            "returned_relations": len(kw_relations),
+        }
 
     # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
     templates_out: list[dict] = []
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
-            if scope_kwd == "doc":
-                scope["doc_id"] = sorted(active_doc_ids)
             entities, relations = await sgc.build_bucket(
                 index_nm,
                 dataset_id,
-                scope,
+                template_scopes[tid],
                 excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
             )
         except Exception:
@@ -2174,14 +2194,19 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                     continue
                 reconstructed_compile_kwds.add(compile_kwd)
                 try:
+                    legacy_scope = {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)}
+                    _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+                    _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
                     entities, relations = await sgc.build_bucket(
                         index_nm,
                         dataset_id,
-                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        legacy_scope,
                         excluded_doc_ids=disabled_doc_ids,
                     )
                 except Exception:
                     continue
+                total_entities += entity_total
+                total_relations += relation_total
                 legacy_bucket["entities"].extend(entities)
                 legacy_bucket["relations"].extend(relations)
                 continue
@@ -2191,15 +2216,26 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
-            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
+            legacy_entities = [item for item in (graph.get("entities") or []) if isinstance(item, dict)]
+            legacy_relations = [item for item in (graph.get("relations") or []) if isinstance(item, dict)]
+            total_entities += len(legacy_entities)
+            total_relations += len(legacy_relations)
+            legacy_bucket["entities"].extend(legacy_entities)
+            legacy_bucket["relations"].extend(legacy_relations)
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
             if resolved_kind not in {"knowledge_graph", "mind_map", "timeline"} or legacy_bucket["entities"]:
                 templates_out.append(legacy_bucket)
 
-    return True, {"kind": kind, "templates": templates_out}
+    return True, {
+        "kind": kind,
+        "templates": templates_out,
+        "total_entities": total_entities,
+        "total_relations": total_relations,
+        "returned_entities": sum(len(template["entities"]) for template in templates_out),
+        "returned_relations": sum(len(template["relations"]) for template in templates_out),
+    }
 
 
 # ── artifacts/alteration: per-``kind`` provenance & eligibility mapping ──
@@ -2277,6 +2313,8 @@ async def _wiki_chunk_alteration(
     dataset_id: str,
     eligible_doc_ids: set[str],
     involved_doc_ids: set[str],
+    current_chunk_state: dict | None = None,
+    previous_map_state: dict | None = None,
 ) -> dict:
     """Compare active source chunks with the hashes used by Wiki MAP.
 
@@ -2295,15 +2333,15 @@ async def _wiki_chunk_alteration(
     if not eligible_doc_ids and not involved_doc_ids:
         return empty
 
-    from rag.advanced_rag.knowlege_compile.wiki import (
-        _wiki_compare_chunk_states,
-        _wiki_load_active_map_state,
-        _wiki_scan_current_chunk_state,
-    )
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_compare_chunk_states, _wiki_load_active_map_state, _wiki_scan_current_chunk_state
 
     try:
-        current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
-        previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        current = current_chunk_state
+        if current is None:
+            current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
+        previous = previous_map_state
+        if previous is None:
+            previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
     except Exception as exc:
         logging.exception("alteration: failed to compare Wiki chunk state for kb=%s", dataset_id)
         raise RuntimeError(f"Failed to compare Wiki chunk state for alteration (kb={dataset_id})") from exc
@@ -2365,7 +2403,15 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+async def _involved_doc_ids_paged(
+    index_nm,
+    dataset_id: str,
+    condition: dict,
+    field: str | list[str],
+    from_list: bool,
+    *,
+    raise_on_error: bool = False,
+) -> set:
     """Page a docStore search, folding provenance fields into a doc-id set.
 
     ``from_list`` reads the selected fields as lists of provenance document IDs;
@@ -2395,6 +2441,8 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
             rows = settings.docStoreConn.get_fields(res, select_fields) or {}
         except Exception:
             logging.exception("alteration: docStore search failed for kb=%s cond=%s", dataset_id, condition)
+            if raise_on_error:
+                raise
             rows = {}
 
         if not rows:
@@ -2413,10 +2461,58 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
     return involved
 
 
-async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> set:
+async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -> set[str]:
+    """Return eligible documents with available, not-yet-compiled source chunks."""
+    if not doc_ids:
+        return set()
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "available_int": [1],
+            "must_not": {"exists": "compile_kwd"},
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
+async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: str, doc_ids: set[str]) -> set[str]:
+    """Return documents that have produced a document-scoped structure graph."""
+    if not doc_ids:
+        return set()
+    stored_kinds = sorted(_ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or {kind})
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "scope_kwd": ["doc"],
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "compilation_template_kind_kwd": stored_kinds,
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
+async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
-        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}, "source_doc_ids", from_list=True)
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+        # Wiki MAP state is committed only after the compilation run has
+        # successfully completed.  Use that active snapshot as the
+        # compilation provenance, rather than wiki_page.source_doc_ids:
+        # a document can participate in MAP/REDUCE without producing a page
+        # (for example when the extractor finds no page-worthy entities).
+        state = wiki_map_state
+        if state is None:
+            state = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        return {str(item.get("doc_id")) for item in state.values() if item.get("doc_id")}
     if kind in _ALTERATION_KIND_TO_MERGED_ROW_KIND:
         condition = {
             "knowledge_graph_kwd": ["entity", "relation"],
@@ -2471,14 +2567,76 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
-        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+        if kind == "wiki":
+            # A document may match the Wiki template while still having no
+            # available source chunks (for example, parsing has not produced
+            # chunks yet or all chunks are disabled). Such a document is not
+            # an actionable Wiki input and must not be reported as newly
+            # uploaded.
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_scan_current_chunk_state
+
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            current_chunk_state = await _wiki_scan_current_chunk_state(
+                kb.tenant_id,
+                dataset_id,
+                eligible_doc_ids,
+            )
+            chunk_doc_ids = {str(item.get("doc_id")) for item in current_chunk_state.values() if item.get("doc_id")}
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: Wiki chunk eligibility kb=%s tenant=%s before=%d after=%d chunks=%d",
+                dataset_id,
+                kb.tenant_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+                len(current_chunk_state),
+            )
+        else:
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
+            eligible_doc_ids &= chunk_doc_ids
+            product_doc_ids = await _current_structure_product_doc_ids(index_nm, dataset_id, kind, eligible_doc_ids)
+            eligible_doc_ids &= product_doc_ids
+            logging.debug(
+                "alteration: structure eligibility kind=%s kb=%s before=%d after_chunks=%d after_products=%d",
+                kind,
+                dataset_id,
+                eligible_before_chunk_filter,
+                len(chunk_doc_ids),
+                len(eligible_doc_ids),
+            )
+        wiki_map_state = None
+        if kind == "wiki":
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+            wiki_map_state = await _wiki_load_active_map_state(kb.tenant_id, dataset_id)
+            logging.debug(
+                "alteration: Wiki MAP provenance kb=%s tenant=%s involved=%d eligible=%d",
+                dataset_id,
+                kb.tenant_id,
+                len({str(item.get("doc_id")) for item in wiki_map_state.values() if item.get("doc_id")}),
+                len(eligible_doc_ids),
+            )
+        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind, kb.tenant_id, wiki_map_state)
         if kind == "wiki":
             chunk_changes = await _wiki_chunk_alteration(
                 kb.tenant_id,
                 dataset_id,
                 eligible_doc_ids,
                 involved_doc_ids,
+                current_chunk_state,
+                wiki_map_state,
             )
+    else:
+        # Without the source index there are no current chunks that can be
+        # considered inputs for any structure kind.
+        eligible_doc_ids = set()
+        logging.debug(
+            "alteration: structure source index missing kind=%s kb=%s tenant=%s eligible=0",
+            kind,
+            dataset_id,
+            kb.tenant_id,
+        )
 
     # Wiki membership follows compilation eligibility. Disabling a document or
     # removing its Wiki template is therefore a removal; enabling it again or
@@ -2487,6 +2645,17 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
     result = _alteration_result(alteration_current_doc_ids, involved_doc_ids, eligible_doc_ids)
     if chunk_changes is not None:
         result.update(chunk_changes)
+    if kind == "wiki":
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        refine_failures = await _wiki_load_refine_failures(kb.tenant_id, dataset_id)
+        result.update(
+            {
+                "retry_required": bool(refine_failures),
+                "retry_page_count": len(refine_failures),
+                "retry_page_slugs": sorted(refine_failures),
+            }
+        )
     return True, result
 
 
@@ -3568,38 +3737,49 @@ async def generate_nav(
                     }
                 )
 
-            # Prefer RAPTOR-generated summaries stored in the knowledge
-            # graph (compile_kwd="tree", knowledge_graph_kwd="graph")
-            # so that rebuilt nav descriptions match the original
-            # tree-compilation output.  Fall back to meta_fields.title
-            # or filename when the graph is absent.
+            # Tree summaries come from the per-row entity/relation rows
+            # (compile_kwd="tree") -- the compact graph blob no longer exists.
+            # One query per row kind, grouped per document, then projected with
+            # build_nav_graph_text: identical output to the old blob content,
+            # so rebuilt nav descriptions keep matching the original
+            # tree-compilation output. Fall back to meta_fields.title or
+            # filename when the rows are absent.
             raptor_summaries: dict[str, str] = {}
             pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
             if pack is not None:
                 try:
                     index_nm, _ = pack
                     from common.doc_store.doc_store_base import OrderByExpr
+                    from rag.advanced_rag.knowlege_compile.dataset_nav import build_nav_graph_text
 
-                    graph_res = settings.docStoreConn.search(
-                        select_fields=["doc_id", "content_with_weight"],
-                        highlight_fields=[],
-                        condition={"compile_kwd": ["tree"], "knowledge_graph_kwd": ["graph"]},
-                        match_expressions=[],
-                        order_by=OrderByExpr(),
-                        offset=0,
-                        limit=10000,
-                        index_names=index_nm,
-                        knowledgebase_ids=[dataset_id],
-                    )
-                    graph_map = settings.docStoreConn.get_fields(graph_res, ["doc_id", "content_with_weight"])
-                    for row in (graph_map or {}).values():
-                        gid = str(row.get("doc_id") or "")
-                        if not gid:
-                            continue
-                        try:
-                            graph = json.loads(row.get("content_with_weight") or "{}")
-                        except Exception:
-                            continue
+                    per_doc: dict[str, dict] = {}
+                    for kind in ("entity", "relation"):
+                        rows_res = settings.docStoreConn.search(
+                            select_fields=["doc_id", "content_with_weight"],
+                            highlight_fields=[],
+                            condition={"compile_kwd": ["tree"], "knowledge_graph_kwd": [kind]},
+                            match_expressions=[],
+                            order_by=OrderByExpr(),
+                            offset=0,
+                            limit=10000,
+                            index_names=index_nm,
+                            knowledgebase_ids=[dataset_id],
+                        )
+                        rows = settings.docStoreConn.get_fields(rows_res, ["doc_id", "content_with_weight"])
+                        for row in (rows or {}).values():
+                            gid = str(row.get("doc_id") or "")
+                            if not gid:
+                                continue
+                            try:
+                                payload = json.loads(row.get("content_with_weight") or "{}")
+                            except Exception:
+                                continue
+                            if not isinstance(payload, dict):
+                                continue
+                            bucket = "entities" if kind == "entity" else "relations"
+                            per_doc.setdefault(gid, {"entities": [], "relations": []})[bucket].append(payload)
+
+                    for gid, graph in per_doc.items():
                         # Build both:
                         #   - root_summary: first line of root desc (short,
                         #     for the display title / description field)
@@ -3616,7 +3796,7 @@ async def generate_nav(
                                 "graph_text": graph_text or root_summary,
                             }
                 except Exception:
-                    logging.exception("generate_nav: failed to read RAPTOR graph summaries for kb=%s", dataset_id)
+                    logging.exception("generate_nav: failed to read tree summaries for kb=%s", dataset_id)
 
             documents = []
             for d in all_docs:
@@ -3689,7 +3869,7 @@ async def generate_nav(
             continue
         try:
             await upsert_dataset_nav_doc(
-                tenant_id=tenant_id,
+                tenant_id=kb.tenant_id,
                 kb_id=dataset_id,
                 doc_id=doc_id,
                 summary_or_tree=summary,
@@ -3716,6 +3896,32 @@ _LAYERS_HANDLERS: dict[str, str] = {
     "all": "_search_layers_all",
 }
 
+_NAV_CHUNK_AGG_POOL = 256
+
+_NAV_CHUNK_AGG_VEC_WEIGHT = 0.3
+
+_NAV_CHUNK_AGG_EXCLUDE_COMPILED = True
+
+_NAV_DOC_FOCUS_LIMIT = 3
+
+_NAV_CLAIM_POOL = 256
+
+_NAV_EVIDENCE_ROW_TYPES = ("claim",)
+
+
+# Router behind the "navigation_tree" mode. Two callers share the entry point:
+#
+#   "tree" — the artifacts UI (main branch's BFS beam descent over the nav
+#       cluster tree). This is the default, preserving upstream behaviour.
+#   "claim_agg" — the agentic rag router: the claim leg runs first and decides
+#       the ranking outright when it hits (a claim is an atomic proposition
+#       carrying its own vector and verbatim evidence), falling back to the
+#       chunk leg when the dataset has no claim rows or the leg comes back
+#       empty.
+#
+# Upstream's other experimental strategies (nav_doc / compiled_agg / fusion)
+# were dropped on this branch together with their implementations.
+
 
 async def search_dataset_layers(
     dataset_id: str,
@@ -3725,6 +3931,7 @@ async def search_dataset_layers(
     *,
     top_k: int | None = None,
     doc_scope: list[str] | None = None,
+    router: str | None = None,
 ) -> tuple[bool, dict]:
     """Unified search across different knowledge layers of a dataset.
 
@@ -3733,7 +3940,10 @@ async def search_dataset_layers(
             - chunk: raw document chunks (via the main retrieval pipeline)
             - nav_doc: navigation tree document leaves
             - nav_cluster: navigation tree cluster nodes
-            - navigation_tree: tree-structured BFS beam descent
+            - navigation_tree: document routing.  ``router`` picks the
+              strategy — the artifacts UI keeps main branch's ``"tree"`` beam
+              descent, while the agentic rag router asks for ``"claim_agg"``
+              (claim rows first, raw-chunk aggregation as the fallback).
             - all: union of all modes, deduplicated by doc_id with best score
         doc_scope: Optional set of documents to restrict the search to.  None or
             empty means all documents of the dataset.  Forwarded to every mode:
@@ -3781,7 +3991,10 @@ async def search_dataset_layers(
     elif mode == "nav_cluster":
         return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope)
+        # The artifacts UI keeps main branch's tree descent; the agentic rag
+        # router passes router="claim_agg" explicitly. Defaulting to "tree"
+        # preserves upstream behaviour for every existing caller.
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, router=router or "tree", doc_scope=doc_scope)
     elif mode == "chunk":
         return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
@@ -3818,18 +4031,403 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None):
-    from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, router: str = "chunk_agg", doc_scope=None):
+    """Route to documents using the requested navigation-tree strategy.
 
-    items = await search_nav_tree_descent(
-        tenant_id,
-        dataset_id,
-        query,
-        embd_mdl,
-        top_k=top_k,
-        doc_scope=doc_scope,
-    )
+    Two callers share this entry point with different strategies:
+
+      * the artifacts UI asks for ``router="tree"`` (main branch's BFS beam
+        descent over the nav cluster tree) — that stays the human-facing
+        default of ``mode="navigation_tree"``.
+      * the agentic rag router asks for ``router="claim_agg"``: the claim leg
+        runs first and decides the ranking outright when it hits — a claim is
+        an atomic proposition carrying its own vector and verbatim evidence,
+        so matching one means the document asserts that fact.  No claim rows,
+        or an empty claim leg, falls back to the chunk leg (PageIndex style:
+        hybrid chunk recall rolled up per document).
+
+    All strategies return the same item shape - ``doc_id``, a 0..1 ``score``,
+    and ``_nav`` carrying the document summary - so callers stay agnostic to
+    which one ran.
+    """
+    if router == "claim_agg":
+        _ok, claim_payload = await _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        if (claim_payload or {}).get("items"):
+            return _ok, claim_payload
+        return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+
+    if router == "tree":
+        from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
+
+        items = await search_nav_tree_descent(
+            tenant_id,
+            dataset_id,
+            query,
+            embd_mdl,
+            top_k=top_k,
+            doc_scope=doc_scope,
+        )
+        return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+    return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+
+
+async def _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents by rolling up raw-chunk hybrid hits (PageIndex style).
+
+    Retrieval runs over the chunk index — uncompressed text — and the hits are
+    aggregated per document with PageIndex's DocScore::
+
+        DocScore = sum(chunk scores) / sqrt(hits + 1)
+
+    The numerator rewards a document that matches several chunks; the
+    square-root denominator damps that reward so a long document cannot win on
+    volume alone.
+
+    Ordering uses DocScore, but the reported ``score`` is the document's best
+    chunk similarity: callers threshold on it (``_NAV_MIN_DOC_SCORE``), and
+    keeping a single chunk's similarity preserves the 0..1 scale those
+    thresholds were set against.
+    """
+    from common import settings
+
+    kwargs = {}
+    if doc_scope:
+        kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
+
+    pool = _NAV_CHUNK_AGG_POOL
+    # Term-only and dense scores live on different scales, so the weight (not the
+    # threshold) carries the "is there an embedding model" decision.
+    vector_weight = _NAV_CHUNK_AGG_VEC_WEIGHT if embd_mdl else 0
+    try:
+        ranks = await settings.retriever.retrieval(
+            query,
+            embd_mdl,
+            [tenant_id],
+            [dataset_id],
+            1,
+            # page_size == the pool, so every fused candidate reaches the
+            # aggregation below.
+            pool,
+            # No similarity floor: ranking is done by DocScore, so the pool must
+            # stay wide enough for a document to collect several hits.  A floor
+            # here would pre-empt the aggregation.
+            0.0,
+            vector_weight,
+            # knn_top_k is left at its default: it caps how many neighbours the
+            # vector leg feeds into fusion, and narrowing it to top_k would
+            # shrink the pool this strategy depends on.
+            rerank_candidates_count=pool,
+            must_not={"exists": "compile_kwd"} if _NAV_CHUNK_AGG_EXCLUDE_COMPILED else None,
+            **kwargs,
+        )
+    except Exception:
+        logging.exception("search_dataset_layers: chunk-agg retrieval failed for kb=%s", dataset_id)
+        return False, {"error": "chunk retrieval failed", "code": RetCode.SERVER_ERROR}
+
+    agg = _nav_aggregate_chunks(ranks.get("chunks", []))
+    if not agg:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    ranked = sorted(agg.items(), key=lambda kv: _nav_doc_score(kv[1]), reverse=True)
+    # Cap by the caller's top_k and by the focus limit.  Without the focus cap
+    # this router returned every document above the floor (measured 6-12),
+    # routing the RAGAgent into 3x the evidence and inflating every dynamic LLM
+    # call — the same regression the nav_doc router had, fixed here the same way.
+    limit = _NAV_DOC_FOCUS_LIMIT or (top_k or _NAV_CHUNK_AGG_POOL)
+    if limit > 0:
+        ranked = ranked[:limit]
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in ranked])
+    items = [
+        {
+            "doc_id": doc_id,
+            "score": round(entry["best"], 4),
+            "_nav": {"doc_id": doc_id, "description": summaries.get(doc_id, "")},
+            # Aggregation detail, surfaced for tuning the fetch multiplier.
+            "_agg": {"doc_score": round(_nav_doc_score(entry), 4), "hits": entry["hits"]},
+        }
+        for doc_id, entry in ranked
+    ]
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents through the compilers' claim rows.
+
+    A claim is an atomic
+    proposition carrying its own vector, so matching one means the document
+    actually asserts that fact — sharper than a chunk that merely mentions the
+    words. Tree claims live in their own rows with no ``knowledge_graph_kwd``;
+    page_index claims are graph entities that also satisfy this filter, since
+    they carry ``entity_type_kwd="claim"`` and ``scope_kwd="doc"``.
+
+    Returns ``ok=True, total=0`` when the KB has no claim rows — a raptor-less or
+    pre-claim KB is a legitimate empty leg, not a failure, so the caller can fall
+    back.
+    """
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id) if kb is not None else None
+    if pack is None:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
+
+    index_nm, _ = pack
+    pool = _NAV_CLAIM_POOL
+    fields = ["content_with_weight", "source_chunk_ids", "doc_id", "name_kwd"]
+
+    async def _recall(compile_kwds: tuple, row_types: tuple) -> dict:
+        """One hybrid pass over a single (compiler, row-type) pair."""
+        condition = {
+            "compile_kwd": list(compile_kwds),
+            "entity_type_kwd": list(row_types),
+            # Exclude the KB-wide merged rows written by the Build button.
+            "scope_kwd": ["doc"],
+        }
+        if doc_scope:
+            condition["doc_id"] = [str(d) for d in doc_scope if str(d).strip()]
+
+        # HYBRID recall: one BM25 leg (exact/proper-noun) + one KNN leg
+        # (paraphrase), merged by row id — the dict update dedupes rows hit by
+        # both legs.  No similarity threshold: the store ranks, the top-N are
+        # the hit set, and the caller's fallback is driven by emptiness alone.
+        from rag.advanced_rag.knowlege_compile.dataset_nav import _tokenize
+
+        legs: list[list] = []
+        if embd_mdl:
+            try:
+                legs.append(
+                    [
+                        await settings.retriever.get_vector(
+                            query,
+                            embd_mdl,
+                            top_k=pool,
+                            # HNSW ef_search — must be >= top_k or the ANN search collapses.
+                            num_candidates=pool,
+                        )
+                    ]
+                )
+            except Exception:
+                logging.exception("dataset_nav: evidence vector build failed for kb=%s", kb.id)
+        legs.append([MatchTextExpr(["content_ltks", "content_sm_ltks"], _tokenize(query), pool)])
+        fm: dict = {}
+        for exprs in legs:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields=fields,
+                highlight_fields=[],
+                condition=condition,
+                match_expressions=exprs,
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=pool,
+                index_names=index_nm,
+                knowledgebase_ids=[kb.id],
+            )
+            fm.update(settings.docStoreConn.get_fields(res, fields) or {})
+        return fm
+
+    try:
+        # Both compilers write their evidence rows as ``entity_type_kwd="claim"``
+        # (page_index's pre-rename ``fact``/``conclusion`` spellings are no longer
+        # searched — a recompile retypes them).  The two are still queried
+        # SEPARATELY, never as one mixed condition: a tree claim row carries no
+        # ``knowledge_graph_kwd`` while a page_index claim is a graph entity.
+        # Tree first: it is the compiled benchmark path, so the common case
+        # still costs a single pass.
+        field_map = await _recall(("tree",), ("claim",))
+        if not field_map:
+            field_map = await _recall(("page_index", "pageindex"), ("claim",))
+    except Exception:
+        logging.exception("dataset_nav: claim-agg retrieval failed for kb=%s", kb.id)
+        return False, {"error": "claim retrieval failed", "code": RetCode.SERVER_ERROR}
+
+    buckets = _nav_bucket_compiled_rows(field_map or {})
+    if not (buckets.get("claim") or {}):
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+    # No similarity gate: the hybrid recall returns the store's best-matching
+    # claims and the top-N ARE the hit set — the caller's fallback to the chunk
+    # leg is driven purely by this leg coming back empty.
+    ranked = _nav_rank_compiled_buckets(buckets, top_k)
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    # Compile rows can outlive a deleted document, and this leg reads the store
+    # directly, so it applies the existence check itself.
+    alive = await _nav_existing_doc_ids([doc_id for doc_id, _ in ranked])
+    ranked = [(d, e) for d, e in ranked if d in alive]
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    # Same focus cap as the sibling routers: routing to many documents makes the
+    # agent carry that many times the evidence in every later round.
+    focus = _NAV_DOC_FOCUS_LIMIT or (top_k or pool)
+    if focus > 0:
+        ranked = ranked[:focus]
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in ranked])
+    items = [
+        {
+            "doc_id": doc_id,
+            "score": round(entry["best"], 4),
+            "_nav": {"doc_id": doc_id, "description": summaries.get(doc_id, "")},
+            "_agg": {"fused": round(entry["score"], 4), "hits": entry["hits"], "legs": sorted(entry["legs"])},
+        }
+        for doc_id, entry in ranked
+    ]
+    return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
+    """Bin fetched compiled rows into the claim bucket.
+
+    The row ``type`` lives inside the ``content_with_weight`` payload —
+    ``entity_type_kwd`` is a graphrag field and is not written by the
+    compilation path — so rows are binned after the fetch.
+
+    Only claim rows are a routing leg: title/fact rows are not, so a row whose
+    type is not a claim is dropped here rather than binned.
+    """
+    claim_bucket: dict[str, dict] = {}
+    for row in field_map.values():
+        doc_id = str(row.get("doc_id") or "").strip()
+        if not doc_id:
+            continue
+        try:
+            payload = json.loads(str(row.get("content_with_weight") or "{}"))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        rtype = str(payload.get("type") or "").strip().lower()
+        if rtype not in _NAV_EVIDENCE_ROW_TYPES:
+            continue
+        score = float(row.get("similarity") or row.get("_score") or 0.0)
+        entry = claim_bucket.get(doc_id)
+        if entry is None:
+            claim_bucket[doc_id] = {"total": score, "best": score, "hits": 1}
+            continue
+        entry["total"] += score
+        entry["hits"] += 1
+        if score > entry["best"]:
+            entry["best"] = score
+    return {"claim": claim_bucket}
+
+
+def _nav_rank_compiled_buckets(buckets: dict, top_k) -> list[tuple[str, dict]]:
+    """Rank documents by the claim bucket alone.
+
+    Claims are the only compiled routing leg, so this is a straight DocScore
+    ranking over that bucket — there is no second compiled leg to fuse with.
+    """
+    merged: dict[str, dict] = {}
+    for doc_id, entry in (buckets.get("claim") or {}).items():
+        merged[doc_id] = {
+            "score": _nav_doc_score(entry),
+            "best": entry["best"],
+            "total": entry["total"],
+            "hits": entry["hits"],
+            "legs": {"claim"},
+        }
+
+    ranked = sorted(merged.items(), key=lambda kv: kv[1]["score"], reverse=True)
+    if top_k is not None and top_k > 0:
+        ranked = ranked[:top_k]
+    return ranked
+
+
+async def _nav_existing_doc_ids(doc_ids: list[str]) -> set[str]:
+    """Keep only documents that still exist.
+
+    Compiled rows are not necessarily cleaned up when a document is deleted, so
+    this leg has to repeat the existence check that ``retrieval`` applies to
+    chunk results.
+    """
+    if not doc_ids:
+        return set()
+    try:
+        return await settings.retriever._existing_doc_ids(list(doc_ids))
+    except Exception:
+        logging.exception("dataset_nav: doc existence check failed")
+        return set(doc_ids)
+
+
+def _nav_aggregate_chunks(chunks: list) -> dict[str, dict]:
+    """Roll chunk hits up per document: total, best and hit count per doc."""
+    agg: dict[str, dict] = {}
+    for c in chunks:
+        doc_id = str(c.get("doc_id") or "").strip()
+        if not doc_id:
+            continue
+        score = float(c.get("similarity") or c.get("score") or 0.0)
+        entry = agg.get(doc_id)
+        if entry is None:
+            agg[doc_id] = {"total": score, "best": score, "hits": 1}
+            continue
+        entry["total"] += score
+        entry["hits"] += 1
+        if score > entry["best"]:
+            entry["best"] = score
+    return agg
+
+
+def _nav_doc_score(entry: dict) -> float:
+    """PageIndex DocScore: hit scores summed, damped by hit count.
+
+    The sum rewards a document matching several chunks; the square-root
+    denominator damps it so a long document cannot win on volume alone.
+    """
+    return entry["total"] / math.sqrt(entry["hits"] + 1)
+
+
+async def _nav_doc_summaries(kb, doc_ids):
+    """Batch-load the nav_doc ``description`` of ``doc_ids`` in one store query.
+
+    Chunk-level routing finds a document without reading any nav row, but the
+    caller still needs a label for it.  The nav_doc row already holds the
+    document's overall summary, so read them in a single terms query rather
+    than making the caller load the document for a label.
+    """
+    if not doc_ids or kb is None:
+        return {}
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id)
+    if pack is None:
+        return {}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    # Single terms query shared by the whole batch; _nav_search would repeat the
+    # access check and KB load the caller already performed.
+    limit = max(1, min(len(doc_ids), 2000))
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "type_kwd": ["nav_doc"],
+        "doc_id": [str(d) for d in doc_ids][:limit],
+    }
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields=_NAV_FIELDS,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=limit,
+            index_names=index_nm,
+            knowledgebase_ids=[kb.id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+    except Exception:
+        logging.exception("dataset_nav: nav_doc summary lookup failed for kb=%s", kb.id)
+        return {}
+    summaries = {}
+    for row in (field_map or {}).values():
+        item = _nav_item(row)
+        doc_id = str(item.get("doc_id") or "").strip()
+        if doc_id:
+            summaries[doc_id] = str(item.get("description") or "").strip()
+    return summaries
 
 
 async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, **kwargs):
@@ -3877,11 +4475,14 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     tenant_ids = [tenant_id]
 
     kwargs = {}
-    if top_k is not None:
-        kwargs["knn_top_k"] = top_k
     if doc_scope:
         kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
 
+    # Here page_size IS the result set: chunks are returned as evidence, not
+    # aggregated into documents.  Keep it at the historical fetch size — raising
+    # it to the chunk_agg pool inflated the evidence pool ~7x (25 -> 191 chunks
+    # per question), which pushed every downstream LLM prompt and blew the
+    # 180s per-question research budget.
     fetch_k = max(top_k, 10) * 3 if top_k is not None else 1024
     try:
         ranks = await settings.retriever.retrieval(
@@ -3892,7 +4493,16 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
             1,
             fetch_k,
             0.0,
-            0.3,
+            _NAV_CHUNK_AGG_VEC_WEIGHT,
+            # The candidate pool only has to cover what is returned; it used to
+            # sit at the 64 default while page_size grew with top_k, which
+            # raises once page * page_size exceeds it.
+            rerank_candidates_count=max(_NAV_CHUNK_AGG_POOL, fetch_k),
+            # knn_top_k is left at its default: narrowing it to top_k caps how
+            # many neighbours the vector leg feeds into fusion.
+            # Chunk mode reports raw chunks; compiled rows are served by their
+            # own tools, so they must not be attributed to a document here.
+            must_not={"exists": "compile_kwd"} if _NAV_CHUNK_AGG_EXCLUDE_COMPILED else None,
             **kwargs,
         )
     except Exception:
@@ -3920,10 +4530,14 @@ async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, 
     """Run all modes and return the union of doc_ids, with best score per doc."""
     import asyncio as _asyncio
 
+    # The navigation_tree leg falls back to the chunk index whenever the dataset
+    # has no claim rows, so it overlaps the chunk leg below.  The union still dedups by
+    # doc_id and keeps the best score, so the overlap costs one extra retrieval
+    # without affecting the result — mode="all" is for comparison, not production.
     result_lists = await _asyncio.gather(
         _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
         _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
-        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope),
+        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         return_exceptions=True,
     )
@@ -4575,20 +5189,55 @@ async def get_wiki_graph(
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
-    Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
-    exactly as the frontend ``ForceGraph`` adapter consumes, or
+    Returns ``(True, {"entities": [...], "relations": [...], "total_entities": int,
+    "total_relations": int, "returned_entities": int, "returned_relations": int})``
+    shaped exactly as the frontend ``ForceGraph`` adapter consumes, or
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    empty = {"entities": [], "relations": []}
+    total_entities = 0
+    total_relations = 0
+
+    def _response(response_entities: list[dict], response_relations: list[dict]) -> dict:
+        return {
+            "entities": response_entities,
+            "relations": response_relations,
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(response_entities),
+            "returned_relations": len(response_relations),
+        }
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
-        return True, empty
+        return True, _response([], [])
     index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        for compile_kwd, count_name in ((_WIKI_GRAPH_ENTITY_KWD, "entities"), (_WIKI_GRAPH_RELATION_KWD, "relations")):
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"compile_kwd": [compile_kwd]},
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                index_nm,
+                [dataset_id],
+            )
+            if count_name == "entities":
+                total_entities = int(settings.docStoreConn.get_total(res) or 0)
+            else:
+                total_relations = int(settings.docStoreConn.get_total(res) or 0)
+    except Exception:
+        logging.exception("get_wiki_graph: graph count failed for kb=%s", dataset_id)
 
     keywords = (keywords or "").strip()
     # Entity budget: caller-overridable, clamped to a sane range so a bad param
@@ -4640,7 +5289,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, empty
+            return True, _response([], [])
 
         for row in (field_map or {}).values():
             payload = _wiki_entity_payload(row)
@@ -4651,7 +5300,7 @@ async def get_wiki_graph(
         if center_slug not in entities:
             # Caller pointed at a slug that doesn't exist; return empty
             # rather than a confusing partial graph.
-            return True, empty
+            return True, _response([], [])
 
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
@@ -4666,7 +5315,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, {"entities": list(entities.values()), "relations": []}
+            return True, _response(list(entities.values()), [])
 
         to_slugs: list[str] = []
         for row in (rel_map or {}).values():
@@ -4703,10 +5352,7 @@ async def get_wiki_graph(
                 if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
-        return True, {
-            "entities": list(entities.values()),
-            "relations": relations,
-        }
+        return True, _response(list(entities.values()), relations)
 
     # ---- Flow A — overview, top-weight paged with cumulative budget. ---
     cumulative_weight = 0
@@ -4812,10 +5458,7 @@ async def get_wiki_graph(
             break
         page += 1
 
-    return True, {
-        "entities": list(entities.values()),
-        "relations": relations,
-    }
+    return True, _response(list(entities.values()), relations)
 
 
 async def clear_wiki(dataset_id: str, tenant_id: str):

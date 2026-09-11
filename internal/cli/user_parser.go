@@ -2279,7 +2279,7 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 					p.nextToken()
 				case TokenLBracket:
 					// List value: parsed inside the switch below by
-					// cross_languages / doc_ids. No value is captured here.
+					// cross_languages / document_ids. No value is captured here.
 					paramValue = nil
 				default:
 					// EOF, ';', or any other non-value token: the option
@@ -2316,16 +2316,21 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 					default:
 						return nil, fmt.Errorf("WITH option %q must be true or false, got %q", paramName, s)
 					}
-				case "rerank_id", "tenant_rerank_id", "search_id", "meta_data_filter":
+				case "rerank_id", "search_id":
 					if valueToken != TokenQuotedString {
 						return nil, fmt.Errorf("WITH option %q must be a quoted string, got %s", paramName, tokenTypeDescription(valueToken, p.curToken))
 					}
-					// meta_data_filter JSON string is decoded into a map in
+					cmd.Params[paramName] = paramValue
+				case "metadata_condition":
+					if valueToken != TokenQuotedString {
+						return nil, fmt.Errorf("WITH option %q must be a quoted string, got %s", paramName, tokenTypeDescription(valueToken, p.curToken))
+					}
+					// metadata_condition JSON string is decoded into a map in
 					// the SearchOnDatasets handler; parser stores the raw
 					// string so the handler can surface a clean error on
 					// invalid JSON.
 					cmd.Params[paramName] = paramValue
-				case "cross_languages", "doc_ids":
+				case "cross_languages", "document_ids":
 					if p.curToken.Type != TokenLBracket {
 						return nil, fmt.Errorf("WITH option %q must be a list, e.g. %q ['a', 'b']", paramName, paramName)
 					}

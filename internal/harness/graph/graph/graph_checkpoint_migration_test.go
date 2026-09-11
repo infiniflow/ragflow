@@ -37,7 +37,7 @@ func TestCheckpointMigration_ParentChild_Mapping(t *testing.T) {
 
 	// Migrate back via the subgraph object (mapping stored in subgraph.checkpointMap).
 	sub, _ := csg.GetSubgraph("sub")
-	parentCPID, err := sub.MigrateCheckpoint(context.Background(), "thread1", subCPID, "")
+	parentCPID, err := sub.MigrateCheckpoint(t.Context(), "thread1", subCPID, "")
 	if err != nil {
 		t.Fatalf("MigrateCheckpoint to parent: %v", err)
 	}
@@ -63,8 +63,8 @@ func TestCheckpointMigration_MultipleSubgraphs(t *testing.T) {
 		t.Fatalf("AddSubgraph sub_b: %v", err)
 	}
 
-	subAID, _ := csg.MigrateCheckpoint(context.Background(), "t1", "parent_a", "sub_a")
-	subBID, _ := csg.MigrateCheckpoint(context.Background(), "t1", "parent_b", "sub_b")
+	subAID, _ := csg.MigrateCheckpoint(t.Context(), "t1", "parent_a", "sub_a")
+	subBID, _ := csg.MigrateCheckpoint(t.Context(), "t1", "parent_b", "sub_b")
 	if subAID == subBID {
 		t.Fatal("expected different checkpoint IDs")
 	}
@@ -72,11 +72,11 @@ func TestCheckpointMigration_MultipleSubgraphs(t *testing.T) {
 	// Migrate back via subgraph objects (mappings stored in subgraph checkpointMap).
 	subA, _ := csg.GetSubgraph("sub_a")
 	subB, _ := csg.GetSubgraph("sub_b")
-	backA, _ := subA.MigrateCheckpoint(context.Background(), "t1", subAID, "")
+	backA, _ := subA.MigrateCheckpoint(t.Context(), "t1", subAID, "")
 	if backA != "parent_a" {
 		t.Fatalf("expected parent_a, got %s", backA)
 	}
-	backB, _ := subB.MigrateCheckpoint(context.Background(), "t1", subBID, "")
+	backB, _ := subB.MigrateCheckpoint(t.Context(), "t1", subBID, "")
 	if backB != "parent_b" {
 		t.Fatalf("expected parent_b, got %s", backB)
 	}
@@ -138,7 +138,7 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 			constants.ConfigKeyThreadID: tid,
 		},
 	}
-	_, err = v1Compiled.Invoke(context.Background(), map[string]any{}, cfg)
+	_, err = v1Compiled.Invoke(t.Context(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("V1 Invoke: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 	if !ok {
 		t.Fatal("v1Compiled does not implement StateInspector")
 	}
-	snap, err := inspector.GetState(context.Background(), cfg)
+	snap, err := inspector.GetState(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("V1 GetState: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("V2 Compile: %v", err)
 	}
-	_, err = v2Compiled.Invoke(context.Background(), map[string]any{}, cfg)
+	_, err = v2Compiled.Invoke(t.Context(), map[string]any{}, cfg)
 	if err != nil {
 		t.Fatalf("V2 Invoke: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestCheckpointMigration_VersionEvolution(t *testing.T) {
 	if !ok2 {
 		t.Fatal("v2Compiled does not implement StateInspector")
 	}
-	snap2, err := inspector2.GetState(context.Background(), cfg)
+	snap2, err := inspector2.GetState(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("V2 GetState: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSubgraphPersistence_SharedCheckpointer(t *testing.T) {
 			constants.ConfigKeyThreadID: tid,
 		},
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err = cg.Invoke(ctx, map[string]any{}, cfg)
 	if err != nil {
@@ -243,7 +243,7 @@ func TestSubgraphPersistence_MultipleThreads_Isolated(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := 0; i < 3; i++ {
 		tid := fmt.Sprintf("isolated-thread-%d", i)
 		cfg := &types.RunnableConfig{
@@ -267,7 +267,7 @@ func TestCheckpointMigration_SubgraphNotFound(t *testing.T) {
 	oc, _ := outer.Compile()
 	csg := NewCompiledStateGraph(oc)
 
-	_, err := csg.MigrateCheckpoint(context.Background(), "t1", "cp1", "nonexistent")
+	_, err := csg.MigrateCheckpoint(t.Context(), "t1", "cp1", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent subgraph")
 	}
@@ -278,7 +278,7 @@ func TestCheckpointMigration_ParentNotFound(t *testing.T) {
 	oc, _ := outer.Compile()
 	csg := NewCompiledStateGraph(oc)
 
-	_, err := csg.MigrateCheckpoint(context.Background(), "t1", "cp1", "")
+	_, err := csg.MigrateCheckpoint(t.Context(), "t1", "cp1", "")
 	if err == nil {
 		t.Fatal("expected error when no parent exists")
 	}

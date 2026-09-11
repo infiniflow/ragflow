@@ -82,7 +82,7 @@ from api.db.joint_services.tenant_model_service import get_tenant_default_model_
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
-from rag.nlp import search, rag_tokenizer, add_positions
+from rag.nlp import search, rag_tokenizer, add_positions, DEFAULT_DELIMITER
 
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
@@ -98,6 +98,7 @@ from rag.svr.task_executor_limiter import (
 )
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from rag.utils.table_es_metadata import (
     aggregate_table_doc_metadata,
     merge_table_parser_config_from_kb,
@@ -172,7 +173,33 @@ FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
 
+
+def _redact_task_user(task: dict) -> dict:
+    """Copy a task dict for logs/heartbeat without the raw end-user identifier."""
+    payload = dict(task)
+    if "user_id" in payload:
+        payload["user_id"] = True
+    return payload
+
+
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
+# Recycle the worker process after this many completed tasks to release memory
+# that long-lived libraries cannot reclaim on their own -- notably ONNX
+# Runtime's BFCArena, which holds every chunk it allocates until the
+# InferenceSession is destroyed. The supervisor loop in `docker/entrypoint.sh`
+# (`while true; do ... task_executor.py & wait; sleep 1; done`) restarts the
+# process automatically after a clean exit.
+# 0 disables recycling and preserves the existing behaviour. A small value such
+# as 20 helps on lower-VRAM consumer GPUs where cumulative arena fragmentation
+# eventually surfaces as "Available memory of 0" allocation failures.
+# The threshold is a soft one: tasks already in flight when it is reached are
+# allowed to finish, so a worker may complete up to MAX_CONCURRENT_TASKS - 1
+# extra tasks before it exits.
+MAX_TASKS_PER_WORKER = int(os.environ.get("MAX_TASKS_PER_WORKER", "0"))
+# Only used when recycling is enabled: how long to let in-flight task_managers
+# finish before cancelling them, so a single hung task cannot block the exit.
+RECYCLE_SHUTDOWN_TIMEOUT = float(os.environ.get("RECYCLE_SHUTDOWN_TIMEOUT", "300"))
+_completed_task_count = 0
 stop_event = threading.Event()
 
 
@@ -288,6 +315,10 @@ async def collect():
             task["tenant_id"] = msg["tenant_id"]
         task["source_id"] = msg["source_id"]
         task["message_dict"] = msg["message_dict"]
+    # Redis-only: Task rows have no user_id column. Copy it onto the in-memory
+    # task so handle_task can install LLM request context for embedding calls.
+    if msg.get("user_id"):
+        task["user_id"] = msg["user_id"]
     return redis_msg, task
 
 
@@ -342,7 +373,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
         "parser_id": task["parser_id"],
         "chunk_token_num": parser_config_for_chunk.get("chunk_token_num", 128),
         "overlapped_percent": normalize_overlapped_percent(parser_config_for_chunk.get("overlapped_percent", 0)),
-        "delimiter": parser_config_for_chunk.get("delimiter", "\n!?。；！？"),
+        "delimiter": parser_config_for_chunk.get("delimiter", DEFAULT_DELIMITER),
         "from_page": task["from_page"],
         "to_page": task["to_page"],
         "language": task["language"],
@@ -745,7 +776,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = np.vstack(cnts_batches) if cnts_batches else np.array([])
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
-    if not filename_embd_weight:
+    if filename_embd_weight is None:
         filename_embd_weight = 0.1
     title_w = float(filename_embd_weight)
     if tts.ndim == 2 and cnts.ndim == 2 and tts.shape == cnts.shape:
@@ -769,6 +800,20 @@ def _record_terminal_pipeline_log_best_effort(doc_id, dataflow_id, pipeline):
         logging.exception("Failed to persist terminal dataflow operation log")
         return
     get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
+
+
+
+def _normalize_dataflow_output(chunks):
+    """Normalize pipeline output into the chunk shape used by indexing."""
+    if "chunks" in chunks:
+        return copy.deepcopy(chunks["chunks"]), "chunks"
+    if "json" in chunks:
+        return copy.deepcopy(chunks["json"]), "json"
+    for output_type in ("markdown", "text", "html"):
+        if output_type in chunks:
+            payload = chunks[output_type]
+            return ([{"text": payload}] if payload else []), output_type
+    return [], "empty"
 
 
 @timed_with_recording
@@ -815,24 +860,7 @@ async def run_dataflow(task: dict):
 
     embedding_token_consumption = chunks.get("embedding_token_consumption", 0)
     # The output key may exist with an empty payload; check presence, not truthiness.
-    if "chunks" in chunks:
-        chunks = copy.deepcopy(chunks["chunks"])
-        output_type = "chunks"
-    elif "json" in chunks:
-        chunks = copy.deepcopy(chunks["json"])
-        output_type = "json"
-    elif "markdown" in chunks:
-        chunks = [{"text": [chunks["markdown"]]}] if chunks["markdown"] else []
-        output_type = "markdown"
-    elif "text" in chunks:
-        chunks = [{"text": [chunks["text"]]}] if chunks["text"] else []
-        output_type = "text"
-    elif "html" in chunks:
-        chunks = [{"text": [chunks["html"]]}] if chunks["html"] else []
-        output_type = "html"
-    else:
-        chunks = []
-        output_type = "empty"
+    chunks, output_type = _normalize_dataflow_output(chunks)
 
     get_recording_context().record("pipeline_output_type", output_type)
     get_recording_context().record("pipeline_output_count", len(chunks))
@@ -1754,18 +1782,27 @@ async def do_handle_task(task):
                 logging.exception(f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
-async def handle_task():
+async def handle_task() -> bool:
+    """Pull one task off the queue and process it.
+
+    Returns True if a real task was processed (success or failure), False if the
+    queue was empty and the call was an idle poll, so callers can tell work apart
+    from idling and e.g. avoid advancing the recycle counter during quiet periods.
+    """
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
         await asyncio.sleep(5)
-        return
+        return False
+
+    logging.info(f"handle_task begin for task {json.dumps(task)}")
 
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
     task_id = task["id"]
+    ctx_token = set_llm_request_context(user_id=normalize_llm_user_id(task.get("user_id")))
     try:
-        CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
+        CURRENT_TASKS[task["id"]] = _redact_task_user(copy.deepcopy(task))
         run_mode = os.environ.get("TE_RUN_MODE", "0")
         logging.info(f"TE_RUN_MODE is {run_mode}")
 
@@ -1788,7 +1825,7 @@ async def handle_task():
 
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
-        logging.info(f"handle_task done for task {json.dumps(task)}")
+        logging.info(f"handle_task done for task {json.dumps(_redact_task_user(task))}")
     except TaskCanceledException as e:
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
@@ -1805,8 +1842,9 @@ async def handle_task():
         except Exception as e:
             logging.exception(f"[Exception]: {str(e)}")
             pass
-        logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        logging.exception(f"handle_task got exception for task {json.dumps(_redact_task_user(task))}")
     finally:
+        reset_llm_request_context(ctx_token)
         if not task.get("dataflow_id", ""):
             referred_document_id = None
             if task_type in _KB_FANOUT_TASK_TYPES:
@@ -1820,6 +1858,7 @@ async def handle_task():
             get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
 
     redis_msg.ack()
+    return True
 
 
 async def get_server_ip() -> str:
@@ -1915,9 +1954,16 @@ async def report_status():
 
 
 async def task_manager():
+    global _completed_task_count
+    processed = False
     try:
-        await handle_task()
+        processed = await handle_task()
     finally:
+        if processed and MAX_TASKS_PER_WORKER > 0:
+            _completed_task_count += 1
+            if _completed_task_count >= MAX_TASKS_PER_WORKER:
+                logging.warning(f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; signalling a clean exit so the supervisor can restart the worker.")
+                stop_event.set()
         task_limiter.release()
 
 
@@ -1966,9 +2012,24 @@ async def main():
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()
+            if stop_event.is_set():
+                # Another task_manager signalled shutdown while we were blocked
+                # on the semaphore; bail out cleanly instead of picking up one
+                # more task, so the supervisor can restart the worker.
+                logging.info("[recycle] stop_event observed after acquiring task_limiter; releasing the semaphore and exiting the main loop.")
+                task_limiter.release()
+                break
             t = asyncio.create_task(task_manager())
             tasks.append(t)
     finally:
+        if MAX_TASKS_PER_WORKER > 0 and tasks:
+            # Recycling is a planned exit, so let in-flight task_managers finish
+            # instead of discarding their work -- but bound the wait so a single
+            # hung task cannot keep the worker alive forever.
+            _, pending = await asyncio.wait(tasks, timeout=RECYCLE_SHUTDOWN_TIMEOUT)
+            if pending:
+                logging.warning(f"[recycle] {len(pending)} task(s) still running after {RECYCLE_SHUTDOWN_TIMEOUT}s grace; cancelling them.")
+            tasks = list(pending)
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

@@ -44,6 +44,10 @@ type RetrievalChunk struct {
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
+	// MomID is the parent chunk id when this chunk is a child fragment; empty
+	// for top-level chunks. Threaded through so the harness can run
+	// retrieval_by_children (child fragments are promoted to their parent chunk).
+	MomID string
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
@@ -60,16 +64,31 @@ type RetrievalRequest struct {
 	RerankID                 string
 	CrossLanguages           []string
 	TOCEnhance               bool
-	MetaDataFilter           map[string]any
-	RetrievalFrom            string
-	// DocScope restricts retrieval to a set of document ids (the doc_id list
-	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
+	// RankFeature mirrors Python RAGTools.retrieve's rank_feature argument:
+	// question-type tags (from label_question) the retriever uses to boost
+	// matching chunks. The Go engine consumes it as a tag → weight map, so it
+	// is *map[string]float64. Nil means no tag boost (fall back to enhancer).
+	RankFeature    *map[string]float64
+	MetaDataFilter map[string]any
+	RetrievalFrom  string
+	// DocScope restricts retrieval to a set of document ids (from document_ids
+	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// It is used for dataset-name resolution and memory access. Reads from
 	// CanvasState.Sys["user_id"] when empty (set by the Begin component at
 	// internal/agent/component/begin.go:82).
 	TenantID string
+	// UserID optionally filters memory messages by the user_id they were
+	// recorded with (the Retrieval node's "User ID" field, e.g. resolved
+	// from sys.user_id). Empty = no user filter. Only meaningful for
+	// retrieval_from=memory.
+	UserID string
+	// ExcludeCompiled excludes compiled-product rows from plain retrieval
+	// (Python hybrid_search passes must_not={"exists": "compile_kwd"},
+	// search.py:171). Compiled products have their own expansion step, so the
+	// base retrieval should surface ordinary document chunks only.
+	ExcludeCompiled bool
 }
 
 // RetrievalService is the knowledge-base search interface used by the tool.
