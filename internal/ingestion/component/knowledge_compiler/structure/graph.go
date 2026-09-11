@@ -71,16 +71,17 @@ func graphRelation(payload map[string]any) map[string]any {
 	return map[string]any{"from": src, "to": tgt, "type": typ}
 }
 
-// mergeGraphEntities mirrors _struct_merge_graph_entities: collapse entities
-// sharing (name, type) — mention_count sums, aliases/description/
+// mergeGraphEntities collapses entities sharing the same name — mention_count
+// sums, aliases/description/
 // source_chunk_ids union, first-seen order preserved.
 func mergeGraphEntities(entities []map[string]any) []map[string]any {
-	type key struct{ name, typ string }
+	type key struct{ name string }
 	merged := map[key]int{}
 	var order []key
 	var out []map[string]any
 	for _, entity := range entities {
-		k := key{name: entity["name"].(string), typ: entity["type"].(string)}
+		name, _ := entity["name"].(string)
+		k := key{name: normalizedEntityName(name)}
 		idx, ok := merged[k]
 		if !ok {
 			merged[k] = len(out)
@@ -90,6 +91,7 @@ func mergeGraphEntities(entities []map[string]any) []map[string]any {
 		}
 		target := out[idx]
 		target["mention_count"] = mentionOf(target) + mentionOf(entity)
+		target["type"] = preferredEntityType(stringOf(target["type"]), stringOf(entity["type"]))
 		target["aliases"] = unionOrdered(toStrings(target["aliases"]), toStrings(entity["aliases"]))
 		if target["description"] == "" && entity["description"] != "" {
 			target["description"] = entity["description"]
@@ -101,8 +103,8 @@ func mergeGraphEntities(entities []map[string]any) []map[string]any {
 
 // RebuildStructureGraph mirrors _struct_rebuild_graph_json: rebuild the
 // compact {"entities": [...], "relations": [...]} graph from the surviving
-// structure products. Entity mention counts sum across rows sharing
-// (name, type); relation rows project verbatim (already deduped in-run).
+// structure products. Entity mention counts sum across rows sharing a name;
+// relation rows project verbatim (already deduped in-run).
 func RebuildStructureGraph(products []common.Product) map[string]any {
 	var entities []map[string]any
 	var relations []map[string]any

@@ -289,14 +289,13 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
 }
 
-// dedupEntities order-preserving by (lowercased name, type).
+// dedupEntities preserves the first entity for each lowercased name.
 func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
 	var out []StructureGraphNode
 	seen := map[string]bool{}
 	for _, e := range entities {
 		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
-		typ := strings.ToLower(strings.TrimSpace(graphStr(e["type"])))
-		key := name + "\x00" + typ
+		key := name
 		if name == "" || seen[key] {
 			continue
 		}
@@ -779,12 +778,14 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		return resp, nil
 	}
 
-	// normal mode: discover buckets from per-doc graph blob rows. "id" is
-	// required for the same reason as dataset discovery (Infinity only projects
-	// listed fields; graphRowSearch keys by id).
-	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	// normal mode: discover buckets from per-doc entity/relation rows. Go no
+	// longer generates a compact per-document graph blob, so looking only for
+	// knowledge_graph_kwd="graph" would always return an empty response.
+	// "id" is required for the same reason as dataset discovery (Infinity only
+	// projects listed fields; graphRowSearch keys by id).
+	metaFields := []string{"id", "compile_kwd", "knowledge_graph_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
 	metaRows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
-		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 0, 1000, nil)
+		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}}, nil, 0, 1000, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1324,9 +1325,17 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		row  map[string]interface{}
 		node StructureGraphNode
 	}) {
-		key := firstStringValue(candidate.row["id"])
-		if key == "" {
-			key = strings.ToLower(strings.TrimSpace(graphStr(candidate.node["name"]))) + "\x00" + strings.ToLower(strings.TrimSpace(graphStr(candidate.node["type"])))
+		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
+		template := rowTemplateID(candidate.row)
+		if template == "" {
+			template = firstStringValue(candidate.row["compilation_template_kind_kwd"])
+		}
+		if template == "" {
+			template = firstStringValue(candidate.row["compile_kwd"])
+		}
+		key := template + "\x00" + name
+		if name == "" {
+			key = firstStringValue(candidate.row["id"])
 		}
 		if key != "" {
 			if candidateSeen[key] {

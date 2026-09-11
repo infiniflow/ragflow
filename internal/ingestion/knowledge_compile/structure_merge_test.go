@@ -37,10 +37,10 @@ func (f *fakeWriter) StripMergedSources(context.Context, string, string, []strin
 func (f *fakeWriter) ProjectWikiGraph(context.Context, string, string) error { return nil }
 func (f *fakeWriter) DropWikiGraph(context.Context, string, string) error    { return nil }
 
-// TestMergeStructureDataset_GroupsByNameType covers G1: structure products are
-// bucketed by (name, type), descriptions folded, source ids unioned, and only
+// TestMergeStructureDataset_GroupsByName covers G1: structure products are
+// bucketed by name, descriptions folded, source ids unioned, and only
 // scope_kwd="dataset" structure rows written.
-func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
+func TestMergeStructureDataset_GroupsByName(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
 		{Variant: kccommon.VariantStructure, DocID: "d1",
@@ -49,10 +49,10 @@ func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
 		{Variant: kccommon.VariantStructure, DocID: "d2",
 			Content: "Engine desc B",
 			Meta:    map[string]any{"name": "Engine", "entity_type": "component", "source_chunk_ids": []string{"c2"}}},
-		// different type -> separate bucket
+		// same name with a different type still belongs to the same graph node
 		{Variant: kccommon.VariantStructure, DocID: "d3",
-			Content: "Fuel desc",
-			Meta:    map[string]any{"name": "Fuel", "entity_type": "substance", "source_chunk_ids": []string{"c3"}}},
+			Content: "Engine desc C",
+			Meta:    map[string]any{"name": "Engine", "entity_type": "other", "source_chunk_ids": []string{"c3"}}},
 		// non-structure product ignored
 		{Variant: kccommon.VariantWiki, DocID: "d4", Content: "wiki page",
 			Meta: map[string]any{"name": "Ignored", "kind": "page"}},
@@ -61,29 +61,49 @@ func TestMergeStructureDataset_GroupsByNameType(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	fw := c.writer.(*fakeWriter)
-	if len(fw.buckets) != 2 {
-		t.Fatalf("want 2 buckets (Engine + Fuel), got %d", len(fw.buckets))
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket (Engine), got %d", len(fw.buckets))
 	}
-	var engineBucket, fuelBucket *StructureBucket
+	var engineBucket *StructureBucket
 	for i := range fw.buckets {
 		switch fw.buckets[i].Name {
 		case "Engine":
 			engineBucket = &fw.buckets[i]
-		case "Fuel":
-			fuelBucket = &fw.buckets[i]
 		}
 	}
-	if engineBucket == nil || fuelBucket == nil {
+	if engineBucket == nil {
 		t.Fatalf("missing expected buckets: %+v", fw.buckets)
 	}
 	if engineBucket.Type != "component" {
 		t.Errorf("Engine type = %q, want component", engineBucket.Type)
 	}
-	if !strings.Contains(engineBucket.Description, "Engine desc A") || !strings.Contains(engineBucket.Description, "Engine desc B") {
+	if !strings.Contains(engineBucket.Description, "Engine desc A") || !strings.Contains(engineBucket.Description, "Engine desc B") || !strings.Contains(engineBucket.Description, "Engine desc C") {
 		t.Errorf("Engine descriptions not folded: %q", engineBucket.Description)
 	}
-	if len(engineBucket.SourceDocIDs) != 2 {
-		t.Errorf("Engine source doc union = %v, want [d1 d2]", engineBucket.SourceDocIDs)
+	if len(engineBucket.SourceDocIDs) != 3 {
+		t.Errorf("Engine source doc union = %v, want [d1 d2 d3]", engineBucket.SourceDocIDs)
+	}
+}
+
+func TestMergeStructureDataset_IsolatesTemplates(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantStructure, DocID: "d1", TemplateID: "tpl1", Kind: "knowledge_graph", Content: "first", Meta: map[string]any{"name": "Engine", "entity_type": "component", "compile_kwd": "hypergraph"}},
+		{Variant: kccommon.VariantStructure, DocID: "d2", TemplateID: "tpl2", Kind: "knowledge_graph", Content: "second", Meta: map[string]any{"name": "engine", "entity_type": "system", "compile_kwd": "hypergraph"}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 2 {
+		t.Fatalf("same-name entities from different templates must remain isolated: %+v", buckets)
+	}
+	seen := map[string]bool{}
+	for _, bucket := range buckets {
+		seen[bucket.TemplateID] = true
+	}
+	if !seen["tpl1"] || !seen["tpl2"] {
+		t.Fatalf("template identities were lost: %+v", buckets)
 	}
 }
 
@@ -195,19 +215,25 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 // TestDatasetLevelStructureID_StableAndCaseInsensitive covers G1: the id is
 // deterministic and case-insensitive on name so merges hit the same row.
 func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
-	a := datasetLevelStructureID("t1", "kb1", "Engine", "component", "timeline", "")
-	b := datasetLevelStructureID("t1", "kb1", "engine", "component", "timeline", "")
+	a := datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "timeline", "")
+	b := datasetLevelStructureID("t1", "kb1", "tpl1", "engine", "component", "timeline", "")
 	if a != b {
 		t.Errorf("structure id should be case-insensitive on name: %q vs %q", a, b)
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "Fuel", "component", "timeline", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Fuel", "component", "timeline", "") {
 		t.Errorf("different names must yield different ids")
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "Engine", "component", "mindmap", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "mindmap", "") {
 		t.Errorf("different compile kinds must yield different ids")
 	}
-	if datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "causes") ==
-		datasetLevelStructureID("t1", "kb1", "A -> B", "relation", "graph", "contradicts") {
+	if a != datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "other", "timeline", "") {
+		t.Errorf("entity type must not change the dataset-level identity")
+	}
+	if a == datasetLevelStructureID("t1", "kb1", "tpl2", "Engine", "component", "timeline", "") {
+		t.Errorf("different templates must yield different ids")
+	}
+	if datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "causes") ==
+		datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "contradicts") {
 		t.Errorf("different relation types between the same endpoints must yield different ids")
 	}
 }

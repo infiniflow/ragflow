@@ -269,7 +269,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 
 // WriteMergedStructure writes the dataset-level structure merged rows for a KB
 // (G1/G4). Each StructureBucket is a scope_kwd="dataset" row with a stable
-// dataset-level id keyed on (name, type, raw compile kind), the folded
+// dataset-level id keyed on (template, name, raw compile kind), the folded
 // description, the union of source docs/chunks, and the bucket vector. Rows are
 // available_int=1 so the dataset-level structure index is searchable; the raw
 // compile kind (timeline/graph/mindmap) is stamped on compile_kwd and the
@@ -290,41 +290,9 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	now := time.Now()
-	// Read-modify-write: an incremental batch must not drop the source docs/chunks
-	// an earlier batch already accumulated for a (name,type) bucket, so load the
-	// existing dataset rows by their stable id and union their sources (review
-	// issue 3 / #3 Major).
-	existing := map[string]StructureBucket{}
-	{
-		ids := make([]string, 0, len(buckets))
-		for _, b := range buckets {
-			if b.Name == "" {
-				continue
-			}
-			ids = append(ids, datasetLevelStructureID(tenant, kb, b.Name, b.Type, b.CompileKwd, b.RelationType))
-		}
-		if len(ids) > 0 {
-			res, err := eng.Search(ctx, &types.SearchRequest{
-				IndexNames:   []string{baseName},
-				KbIDs:        []string{kb},
-				SelectFields: []string{"id", "source_doc_ids", "source_chunk_ids"},
-				Filter:       map[string]interface{}{"kb_id": kb, "id": ids},
-				Limit:        len(ids),
-			})
-			if err != nil {
-				return fmt.Errorf("structure merge read-modify-write load: %w", err)
-			}
-			for _, c := range res.Chunks {
-				id, _ := c["id"].(string)
-				if id == "" {
-					continue
-				}
-				existing[id] = StructureBucket{
-					SourceDocIDs:   firstStringSlice(c["source_doc_ids"]),
-					SourceChunkIDs: firstStringSlice(c["source_chunk_ids"]),
-				}
-			}
-		}
+	staleIDs, err := mergeExistingStructureBuckets(ctx, eng, baseName, tenant, kb, buckets)
+	if err != nil {
+		return err
 	}
 	rows := make([]map[string]interface{}, 0, len(buckets))
 	for _, b := range buckets {
@@ -335,12 +303,8 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		if b.Name == "" {
 			continue
 		}
-		bid := datasetLevelStructureID(tenant, kb, b.Name, b.Type, b.CompileKwd, b.RelationType)
-		// Union the current batch's sources with any already-accumulated ones.
-		if prev, ok := existing[bid]; ok {
-			b.SourceDocIDs = appendUnique(b.SourceDocIDs, prev.SourceDocIDs)
-			b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, prev.SourceChunkIDs)
-		}
+		template := structureTemplateIdentity(b.TemplateID, b.TemplateKind)
+		bid := datasetLevelStructureID(tenant, kb, template, b.Name, b.Type, b.CompileKwd, b.RelationType)
 		ckwd := b.CompileKwd
 		if ckwd == "" {
 			ckwd = compileKwdStructure
@@ -380,8 +344,8 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		payload := string(payloadBytes)
 		row := map[string]interface{}{
-			// Stable dataset-level id keyed on the (name, type) or (from, to)
-			// bucket plus the raw compile kind.
+			// Stable dataset-level id keyed on the template-scoped entity name or
+			// relation identity plus the raw compile kind.
 			"id":                   bid,
 			"doc_id":               kb,
 			"tenant_id":            tenant,
@@ -473,7 +437,158 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		})
 	}
-	return runCompilerJobs(ctx, jobs)
+	if err := runCompilerJobs(ctx, jobs); err != nil {
+		return err
+	}
+	if len(staleIDs) > 0 {
+		if _, err := eng.DeleteChunks(ctx, map[string]interface{}{"id": staleIDs, "kb_id": kb}, baseName, kb); err != nil {
+			return fmt.Errorf("structure merge remove superseded rows: %w", err)
+		}
+	}
+	return nil
+}
+
+func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, baseName, tenant, kb string, buckets []StructureBucket) ([]string, error) {
+	byIdentity := make(map[string]int, len(buckets))
+	compileKinds := make([]string, 0, len(buckets))
+	for i := range buckets {
+		byIdentity[structureBucketIdentity(buckets[i])] = i
+		compileKinds = appendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
+	}
+	if len(byIdentity) == 0 {
+		return nil, nil
+	}
+
+	const pageSize = 500
+	stale := map[string]bool{}
+	for offset := 0; ; offset += pageSize {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			SelectFields: []string{
+				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+				"knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+				"content_with_weight", "kc_payload", "source_doc_ids", "source_chunk_ids",
+			},
+			Filter: map[string]interface{}{
+				"kb_id":               kb,
+				"scope_kwd":           "dataset",
+				"compile_kwd":         compileKinds,
+				"knowledge_graph_kwd": []string{"entity", "relation"},
+			},
+			Offset: offset,
+			Limit:  pageSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("structure merge load existing rows: %w", err)
+		}
+		for _, row := range res.Chunks {
+			identity := structureRowIdentity(row)
+			idx, ok := byIdentity[identity]
+			if !ok {
+				continue
+			}
+			bucket := &buckets[idx]
+			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
+			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+			payload := structureRowPayload(row)
+			if bucket.FromEntity == "" && bucket.ToEntity == "" {
+				existingType := structureString(row["entity_type_kwd"])
+				if existingType == "" {
+					existingType = structureString(payload["type"])
+				}
+				bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
+			}
+			id := structureString(row["id"])
+			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
+			if id != "" && id != newID {
+				stale[id] = true
+			}
+		}
+		if len(res.Chunks) < pageSize {
+			break
+		}
+	}
+	ids := make([]string, 0, len(stale))
+	for id := range stale {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+func structureCompileKind(compileKwd string) string {
+	if compileKwd = strings.TrimSpace(compileKwd); compileKwd != "" {
+		return compileKwd
+	}
+	return compileKwdStructure
+}
+
+func structureBucketIdentity(bucket StructureBucket) string {
+	template := structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind)
+	compileKwd := structureCompileKind(bucket.CompileKwd)
+	if bucket.FromEntity != "" || bucket.ToEntity != "" {
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + strings.ToLower(strings.TrimSpace(bucket.RelationType)) + "\x00" + normalizedStructureEntityName(bucket.ToEntity)
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.Name)
+}
+
+func structureRowIdentity(row map[string]interface{}) string {
+	templateID := ""
+	if ids := firstStringSlice(row["compilation_template_ids"]); len(ids) > 0 {
+		templateID = ids[0]
+	}
+	template := structureTemplateIdentity(templateID, structureString(row["compilation_template_kind_kwd"]))
+	compileKwd := structureCompileKind(structureString(row["compile_kwd"]))
+	payload := structureRowPayload(row)
+	if strings.EqualFold(structureString(row["knowledge_graph_kwd"]), "relation") {
+		from := structureString(row["from_entity_kwd"])
+		to := structureString(row["to_entity_kwd"])
+		if from == "" {
+			from = structureString(payload["from"])
+		}
+		if to == "" {
+			to = structureString(payload["to"])
+		}
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(from) + "\x00" + strings.ToLower(strings.TrimSpace(structureString(payload["type"]))) + "\x00" + normalizedStructureEntityName(to)
+	}
+	name := structureString(row["name_kwd"])
+	if name == "" {
+		name = structureString(payload["name"])
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name)
+}
+
+func structureRowPayload(row map[string]interface{}) map[string]interface{} {
+	for _, field := range []string{"kc_payload", "content_with_weight"} {
+		value := structureString(row[field])
+		if value == "" {
+			continue
+		}
+		var payload map[string]interface{}
+		if json.Unmarshal([]byte(value), &payload) == nil {
+			return payload
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func structureString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []string:
+		if len(typed) > 0 {
+			return strings.TrimSpace(typed[0])
+		}
+	case []interface{}:
+		if len(typed) > 0 {
+			if text, ok := typed[0].(string); ok {
+				return strings.TrimSpace(text)
+			}
+		}
+	}
+	return ""
 }
 
 // DeleteStructureForDocs removes dataset-level structure rows whose source docs
@@ -599,14 +714,18 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 }
 
 // datasetLevelStructureID builds the stable dataset-level id for a structure
-// bucket, keyed on (name, type, compile kind, relation type). It must be
+// bucket, keyed on template, name, compile kind, and relation type. It must be
 // deterministic so an incremental merge read-modify-writes the same row (and a
 // rebuild clean removes it). Including the raw compile kind keeps
 // timeline/graph/mindmap buckets from colliding in the same dataset namespace;
 // including the relation type keeps two relation types between the same endpoints
 // (e.g. "causes" vs "contradicts") from colliding into one id (review fix).
-func datasetLevelStructureID(tenant, kb, name, typ, compileKwd, relationType string) string {
-	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+strings.ToLower(name)+"\x00"+typ+"\x00"+compileKwd+"\x00"+strings.ToLower(relationType))
+func datasetLevelStructureID(tenant, kb, template, name, typ, compileKwd, relationType string) string {
+	identity := template + "\x00" + normalizedStructureEntityName(name) + "\x00" + structureCompileKind(compileKwd)
+	if relationType != "" {
+		identity += "\x00" + typ + "\x00" + strings.ToLower(relationType)
+	}
+	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+identity)
 }
 
 // f32ToF64Slice converts a float32 vector to float64 for the engine's dense

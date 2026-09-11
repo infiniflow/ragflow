@@ -180,6 +180,18 @@ func (d *LLMMergeDecider) SetSubmitter(submit func(ctx context.Context, jobs []f
 
 // Decide implements MergeDecider.
 func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.Product, bestScore float64) (MergeDecision, common.Product, error) {
+	// Entity names are the graph's endpoint identity.  A type is descriptive
+	// metadata, not a second node identity; otherwise relations that only carry
+	// endpoint names become ambiguous when the same name is emitted with two
+	// different types.
+	if sameEntityName(existing, incoming) {
+		merged := mergeEntitiesByName(existing, incoming)
+		replacement, err := d.BuildReplacement(ctx, existing, incoming, merged)
+		if err != nil {
+			return DecisionKeepBoth, common.Product{}, err
+		}
+		return DecisionMerge, replacement, nil
+	}
 	if bestScore < d.Threshold {
 		return DecisionKeepBoth, common.Product{}, nil
 	}
@@ -195,6 +207,61 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 		return DecisionKeepBoth, common.Product{}, err
 	}
 	return DecisionMerge, replacement, nil
+}
+
+func sameEntityName(existing, incoming common.Product) bool {
+	if kind, _ := existing.Meta["kind"].(string); kind != "entity" {
+		return false
+	}
+	if kind, _ := incoming.Meta["kind"].(string); kind != "entity" {
+		return false
+	}
+	name := normalizedEntityName(entityNameValue(existing))
+	return name != "" && name == normalizedEntityName(entityNameValue(incoming))
+}
+
+func normalizedEntityName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+func preferredEntityType(existing, incoming string) string {
+	existing = strings.TrimSpace(existing)
+	incoming = strings.TrimSpace(incoming)
+	if existing == "" || strings.EqualFold(existing, "other") {
+		if incoming != "" && !strings.EqualFold(incoming, "other") {
+			return incoming
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return incoming
+}
+
+func mergeEntitiesByName(existing, incoming common.Product) map[string]any {
+	merged := parsePayload(existing.Content)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	existingPayload := parsePayload(existing.Content)
+	incomingPayload := parsePayload(incoming.Content)
+	for key, value := range incomingPayload {
+		if _, exists := merged[key]; !exists || strings.TrimSpace(stringOf(merged[key])) == "" {
+			merged[key] = value
+		}
+	}
+	merged["type"] = preferredEntityType(stringOf(existingPayload["type"]), stringOf(incomingPayload["type"]))
+	left := strings.TrimSpace(stringOf(existingPayload["description"]))
+	right := strings.TrimSpace(stringOf(incomingPayload["description"]))
+	if left != "" && right != "" && !strings.EqualFold(left, right) {
+		merged["description"] = left + "\n" + right
+	} else if left != "" {
+		merged["description"] = left
+	} else if right != "" {
+		merged["description"] = right
+	}
+	merged["aliases"] = unionOrdered(toStrings(merged["aliases"]), toStrings(incomingPayload["aliases"]))
+	return merged
 }
 
 // buildReplacement folds an LLM-merged payload back into a replacement Product
@@ -634,6 +701,7 @@ type MergeStats struct {
 	Inserted          int
 	Updated           int
 	DuplicatesDropped int
+	survivorID        string
 }
 
 // MergeIntoStore folds the incoming rows into store, using DedupeAdd so the
@@ -649,7 +717,9 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 	for _, row := range rows {
 		var droppedExisting common.Product
 		var dropped bool
+		var survivorID string
 		action, err := store.DedupeAdd(row, 0, func(existing common.Product, score float64) (common.KeepAction, common.Product, error) {
+			survivorID = existing.ID
 			d, replacement, e := decider.Decide(ctx, existing, row, score)
 			if e != nil {
 				return common.KeepAdd, common.Product{}, e
@@ -674,6 +744,7 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 		switch action {
 		case common.KeepDrop:
 			stats.DuplicatesDropped++
+			stats.survivorID = droppedExisting.ID
 			// Fold the incoming source_chunk_ids into the surviving entry.
 			if dropped && droppedExisting.ID != "" {
 				if ids := metaStrings(row.Meta, "source_chunk_ids"); len(ids) > 0 {
@@ -683,39 +754,42 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 		case common.KeepMerge:
 			stats.Updated++
 			stats.DuplicatesDropped++
+			stats.survivorID = survivorID
 		default:
 			stats.Inserted++
+			stats.survivorID = row.ID
 		}
 	}
 	return stats, nil
 }
 
-// GroupedDeduper mirrors _struct_local_dedup's group-by-filter-key behaviour:
-// rows are bucketed by their relation endpoints (entities share one bucket,
-// mirroring _struct_filter_key where entity rows carry no from/to), so an
-// entity never merges with a relation and relations only merge with
-// same-endpoint relations. One MemStore per bucket keeps cosine candidates
-// group-scoped. doc/compile/template are constant per run and therefore not
-// part of the key (they are in Python's key for the cross-document ES case).
+// GroupedDeduper keeps entities in one semantic candidate pool while tracking
+// exact names separately. Exact-name matches take precedence over vectors, so
+// same-name entities always merge regardless of their emitted type; different
+// names retain the existing alias/similarity dedupe behavior.
 type GroupedDeduper struct {
 	decider MergeDecider
 
-	mu     sync.Mutex
-	order  []string
-	stores map[string]*common.MemStore
-	stats  MergeStats
+	mu           sync.Mutex
+	order        []string
+	stores       map[string]*common.MemStore
+	entityByName map[string]string
+	stats        MergeStats
 }
 
 // NewGroupedDeduper constructs a deduper around the given decider.
 func NewGroupedDeduper(decider MergeDecider) *GroupedDeduper {
-	return &GroupedDeduper{decider: decider, stores: map[string]*common.MemStore{}}
+	return &GroupedDeduper{decider: decider, stores: map[string]*common.MemStore{}, entityByName: map[string]string{}}
 }
 
-// groupKey mirrors _struct_filter_key minus the per-run constants.
+// groupKey returns the graph identity used by the in-run deduper.
 func groupKey(row common.Product) string {
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		return "entity"
+	}
 	from, _ := row.Meta["from"].(string)
 	to, _ := row.Meta["to"].(string)
-	return from + "\x00" + to
+	return "relation\x00" + normalizedEntityName(from) + "\x00" + normalizedEntityName(to)
 }
 
 // Add folds one row into its endpoint bucket. Safe for concurrent use, but
@@ -732,14 +806,77 @@ func (g *GroupedDeduper) Add(ctx context.Context, row common.Product) error {
 	}
 	g.mu.Unlock()
 
-	s, err := MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+	var action common.KeepAction
+	var err error
+	var candidateID string
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		name := normalizedEntityName(entityNameValue(row))
+		g.mu.Lock()
+		candidateID = g.entityByName[name]
+		g.mu.Unlock()
+		if candidateID != "" {
+			action, err = store.DedupeAddByID(row, candidateID, func(existing common.Product, _ float64) (common.KeepAction, common.Product, error) {
+				d, replacement, e := g.decider.Decide(ctx, existing, row, 1)
+				if e != nil {
+					return common.KeepAdd, common.Product{}, e
+				}
+				switch d {
+				case DecisionDropIncoming:
+					return common.KeepDrop, common.Product{}, nil
+				case DecisionMerge:
+					return common.KeepMerge, replacement, nil
+				default:
+					return common.KeepAdd, common.Product{}, nil
+				}
+			})
+			if err == nil && action == common.KeepDrop {
+				store.MergeSourceChunkIDs(candidateID, metaStrings(row.Meta, "source_chunk_ids"))
+			}
+		} else {
+			var stats MergeStats
+			stats, err = MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+			candidateID = stats.survivorID
+			action = common.KeepAdd
+			if stats.Updated > 0 {
+				action = common.KeepMerge
+			} else if stats.DuplicatesDropped > 0 {
+				action = common.KeepDrop
+			}
+		}
+	} else {
+		var stats MergeStats
+		stats, err = MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+		action = common.KeepAdd
+		if stats.Updated > 0 {
+			action = common.KeepMerge
+		} else if stats.DuplicatesDropped > 0 {
+			action = common.KeepDrop
+		}
+	}
 	if err != nil {
 		return err
 	}
+	if action == common.KeepAdd {
+		candidateID = row.ID
+	}
 	g.mu.Lock()
-	g.stats.Inserted += s.Inserted
-	g.stats.Updated += s.Updated
-	g.stats.DuplicatesDropped += s.DuplicatesDropped
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		name := normalizedEntityName(entityNameValue(row))
+		if candidateID != "" {
+			g.entityByName[name] = candidateID
+		} else if action == common.KeepAdd && row.ID != "" {
+			g.entityByName[name] = row.ID
+		}
+	}
+	switch action {
+	case common.KeepMerge:
+		g.stats.Updated++
+		g.stats.DuplicatesDropped++
+	case common.KeepDrop:
+		g.stats.DuplicatesDropped++
+	default:
+		g.stats.Inserted++
+	}
 	g.mu.Unlock()
 	return nil
 }

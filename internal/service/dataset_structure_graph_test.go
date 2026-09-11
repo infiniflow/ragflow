@@ -64,11 +64,11 @@ func TestProjectRelation_FallsBackToKwdColumns(t *testing.T) {
 	}
 }
 
-// TestDedupEntities_OrderPreserving verifies dedup by (lowercased name, type).
+// TestDedupEntities_OrderPreserving verifies dedup by lowercased name.
 func TestDedupEntities_OrderPreserving(t *testing.T) {
 	in := []StructureGraphNode{
 		{"name": "A", "type": "x"},
-		{"name": "a", "type": "x"}, // dup (case-insensitive)
+		{"name": "a", "type": "other"}, // dup despite case and type differences
 		{"name": "B", "type": "y"},
 		{"name": ""}, // dropped (empty name)
 	}

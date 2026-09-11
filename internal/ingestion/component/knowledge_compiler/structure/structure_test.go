@@ -768,3 +768,101 @@ func TestCosineDecider(t *testing.T) {
 		t.Fatalf("expected keep at 0.5, got %v", got)
 	}
 }
+
+func TestMergeEntitiesByNameIgnoresType(t *testing.T) {
+	existing := common.Product{
+		Content: `{"name":"Engine","type":"component","description":"mechanical part"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "Engine", "entity_type": "component"},
+	}
+	incoming := common.Product{
+		Content: `{"name":"engine","type":"system","description":"controls the vehicle"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "engine", "entity_type": "system"},
+	}
+	if !sameEntityName(existing, incoming) {
+		t.Fatal("entities with the same name should share one identity regardless of type")
+	}
+	merged := mergeEntitiesByName(existing, incoming)
+	if merged["name"] != "Engine" || merged["type"] != "component" {
+		t.Fatalf("merge should preserve the first entity identity: %v", merged)
+	}
+	if !strings.Contains(stringOf(merged["description"]), "controls the vehicle") {
+		t.Fatalf("merge should retain both descriptions: %v", merged)
+	}
+}
+
+func TestGroupedDeduperMergesSameNameBeforeVectorSimilarity(t *testing.T) {
+	chat := &graphChat{}
+	deduper := NewGroupedDeduper(NewLLMMergeDecider(chat, "llm", constEmbedder{dim: 2}, 0.99))
+	rows := []common.Product{
+		{ID: "first", Content: `{"name":"Engine","type":"other","description":"first"}`, Vector: []float32{1, 0}, Meta: map[string]any{"kind": "entity", "name": "Engine", "entity_type": "other", "source_chunk_ids": []string{"c1"}}},
+		{ID: "second", Content: `{"name":" engine ","type":"component","description":"second"}`, Vector: []float32{0, 1}, Meta: map[string]any{"kind": "entity", "name": " engine ", "entity_type": "component", "source_chunk_ids": []string{"c2"}}},
+	}
+	for _, row := range rows {
+		if err := deduper.Add(context.Background(), row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := deduper.Rows()
+	if len(got) != 1 {
+		t.Fatalf("same-name entities must merge despite dissimilar vectors: %+v", got)
+	}
+	payload := parsePayload(got[0].Content)
+	if payload["type"] != "component" {
+		t.Fatalf("specific type should replace other: %v", payload)
+	}
+	if ids := metaStrings(got[0].Meta, "source_chunk_ids"); len(ids) != 2 {
+		t.Fatalf("source chunks were not merged: %v", ids)
+	}
+	if chat.mergeCalls != 0 {
+		t.Fatalf("exact-name merge should not call the LLM, got %d calls", chat.mergeCalls)
+	}
+}
+
+func TestMergeGraphEntitiesNormalizesName(t *testing.T) {
+	got := mergeGraphEntities([]map[string]any{
+		{"name": "Engine", "type": "other", "description": "first", "mention_count": 1},
+		{"name": " engine ", "type": "component", "description": "second", "mention_count": 1},
+	})
+	if len(got) != 1 {
+		t.Fatalf("case and surrounding whitespace must not split graph nodes: %+v", got)
+	}
+	if got[0]["type"] != "component" || mentionOf(got[0]) != 2 {
+		t.Fatalf("merged graph entity = %+v", got[0])
+	}
+}
+
+type similarityMergeDecider struct{}
+
+func (similarityMergeDecider) Decide(_ context.Context, existing, incoming common.Product, score float64) (MergeDecision, common.Product, error) {
+	if existing.ID == "" || score < 0.9 {
+		return DecisionKeepBoth, common.Product{}, nil
+	}
+	replacement := existing
+	replacement.Meta = make(map[string]any, len(existing.Meta))
+	for key, value := range existing.Meta {
+		replacement.Meta[key] = value
+	}
+	replacement.Meta["source_chunk_ids"] = unionOrdered(metaStrings(existing.Meta, "source_chunk_ids"), metaStrings(incoming.Meta, "source_chunk_ids"))
+	return DecisionMerge, replacement, nil
+}
+
+func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
+	deduper := NewGroupedDeduper(similarityMergeDecider{})
+	rows := []common.Product{
+		{ID: "canonical", Content: `{"name":"Alpha","type":"letter"}`, Vector: []float32{1, 0}, Meta: map[string]any{"kind": "entity", "name": "Alpha", "source_chunk_ids": []string{"c1"}}},
+		{ID: "alias-1", Content: `{"name":"Al","type":"letter"}`, Vector: []float32{1, 0}, Meta: map[string]any{"kind": "entity", "name": "Al", "source_chunk_ids": []string{"c2"}}},
+		{ID: "alias-2", Content: `{"name":"Al","type":"letter"}`, Vector: []float32{0, 1}, Meta: map[string]any{"kind": "entity", "name": "Al", "source_chunk_ids": []string{"c3"}}},
+	}
+	for _, row := range rows {
+		if err := deduper.Add(context.Background(), row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := deduper.Rows()
+	if len(got) != 1 {
+		t.Fatalf("semantic alias must remain addressable by its own name: %+v", got)
+	}
+	if ids := metaStrings(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
+		t.Fatalf("semantic and exact-name merges lost provenance: %v", ids)
+	}
+}

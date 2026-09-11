@@ -112,6 +112,58 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 	}
 }
 
+func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
+	oldID := "dataset_structure_old_type_identity"
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            oldID,
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "other",
+			"content_with_weight":           `{"name":"Engine","type":"other","description":"existing"}`,
+			"source_doc_ids":                []string{"d1"},
+			"source_chunk_ids":              []string{"c1"},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "engine", Type: "component", Description: "incoming", CompileKwd: "hypergraph",
+		TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d2"}, SourceChunkIDs: []string{"c2"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.insertedChunks) == 0 {
+		t.Fatal("new structure row was not inserted")
+	}
+	var entity map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["knowledge_graph_kwd"] == "entity" {
+			entity = row
+			break
+		}
+	}
+	if entity == nil {
+		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if entity["id"] == oldID {
+		t.Fatalf("old type-scoped id was reused: %v", entity["id"])
+	}
+	if entity["entity_type_kwd"] != "component" {
+		t.Fatalf("specific incoming type should replace existing other: %v", entity["entity_type_kwd"])
+	}
+	if got := firstStringSlice(entity["source_doc_ids"]); len(got) != 2 {
+		t.Fatalf("source documents were not migrated: %v", got)
+	}
+	ids, ok := eng.lastDeleteCond["id"].([]string)
+	if !ok || len(ids) != 1 || ids[0] != oldID {
+		t.Fatalf("superseded id was not deleted: %v", eng.lastDeleteCond)
+	}
+}
+
 // TestDeleteMergedScopesToMergedWikiRows locks the W1 contract: DeleteMerged
 // must only target dataset-level (available_int=1) wiki merged rows. The
 // structural filter (kb_id + available_int + wiki page/section compile_kwd) is
