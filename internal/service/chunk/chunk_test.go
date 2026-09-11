@@ -1156,11 +1156,11 @@ type parseTestDocEngine struct {
 	chunkStoreExists      bool // if true, ChunkStoreExists returns true
 }
 
-func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 
-func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 
@@ -1264,7 +1264,7 @@ type addChunkTestEngine struct {
 	insertErr      error
 }
 
-func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, _ string) ([]string, error) {
 	e.insertedChunks = chunks
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
@@ -1541,10 +1541,10 @@ type switchChunksEngineMock struct {
 	updateCalls []updateChunksCall
 }
 
-func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string) error {
+func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (m *switchChunksEngineMock) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, datasetID string) error {

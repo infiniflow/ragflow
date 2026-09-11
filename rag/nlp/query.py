@@ -39,8 +39,11 @@ class FulltextQueryer(QueryBase):
             "content_sm_ltks",
         ]
 
-    def question(self, txt, tbl="qa", min_match: float = 0.6):
+    def question(self, txt, tbl="qa", min_match: float = 0.6, language: str | None = None):
         original_query = txt
+        # Tokenize the query the way the dataset was indexed (rag/nlp/__init__.py
+        # calls set_language() per dataset before tokenizing chunks).
+        rag_tokenizer.tokenizer.set_language(language or "English")
         txt = self.add_space_between_eng_zh(txt)
 
         # Strip Infinity ESCAPABLE characters from the query.

@@ -257,7 +257,7 @@ class SereneDBConnection(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         if index_name.startswith("ragflow_doc_meta_"):
             cols = ", ".join(f"{k} {t}" for k, t in DOC_META_DDL.items())
             self._run(f"CREATE TABLE IF NOT EXISTS {index_name} ({cols})", fetch=False)

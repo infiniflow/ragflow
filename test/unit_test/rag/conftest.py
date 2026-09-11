@@ -31,12 +31,16 @@ from __future__ import annotations
 import importlib
 import logging
 import sys
+import threading
 import types
 
 import pytest
 
+from common.constants import MAXIMUM_PAGE_NUMBER
+
 _LOG = logging.getLogger(__name__)
 _PDF_PARSER_KEY = "deepdoc.parser.pdf_parser"
+_LOCK_KEY_PDFPLUMBER = "global_shared_lock_pdfplumber"
 
 
 def _restore_common_data_source_package() -> None:
@@ -62,6 +66,13 @@ _restore_common_data_source_package()
 
 
 def _make_pdf_parser_stub():
+    """Build a stand-in for ``deepdoc.parser.pdf_parser``.
+
+    It must carry every name the real module exports to the rest of the tree:
+    ``deepdoc/parser/__init__.py`` and the sibling parsers next to it bind these
+    at module scope, so a stub that omits one turns any transitive import of the
+    ``deepdoc.parser`` package into an ImportError.
+    """
     pdf_parser = types.ModuleType(_PDF_PARSER_KEY)
 
     class _StubPdfParser:
@@ -69,7 +80,24 @@ def _make_pdf_parser_stub():
         def remove_tag(text):
             return text
 
+    class _StubPlainParser:
+        def __call__(self, filename, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, **kwargs):
+            return [], []
+
+    class _StubVisionParser(_StubPdfParser):
+        def __init__(self, vision_model, *args, **kwargs):
+            self.vision_model = vision_model
+            self.outlines = []
+
     pdf_parser.RAGFlowPdfParser = _StubPdfParser
+    pdf_parser.PlainParser = _StubPlainParser
+    pdf_parser.VisionParser = _StubVisionParser
+    pdf_parser.MAXIMUM_PAGE_NUMBER = MAXIMUM_PAGE_NUMBER
+    pdf_parser.LOCK_KEY_pdfplumber = _LOCK_KEY_PDFPLUMBER
+    # The real module publishes the lock under this sys.modules key on import;
+    # callers reach for it with ``with sys.modules[LOCK_KEY_pdfplumber]``.
+    if _LOCK_KEY_PDFPLUMBER not in sys.modules:
+        sys.modules[_LOCK_KEY_PDFPLUMBER] = threading.Lock()
     return pdf_parser
 
 

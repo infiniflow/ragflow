@@ -311,7 +311,7 @@ class TaskHandler:
         idxnm = search.index_name(ctx.tenant_id)
         parser_id = ctx.parser_id
         # Create index if not exists
-        settings.docStoreConn.create_idx(idxnm, ctx.kb_id, vector_size, parser_id)
+        settings.docStoreConn.create_idx(idxnm, ctx.kb_id, vector_size, parser_id, ctx.language)
 
     async def _run_dataflow(self) -> None:
         """Run dataflow pipeline."""

@@ -57,6 +57,7 @@ func rerankOneChunk(t *testing.T, chunk map[string]interface{}) string {
 		"content_ltks",
 		nil,
 		nil,
+		"",
 	)
 
 	if len(driver.documents) != 1 {

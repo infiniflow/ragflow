@@ -389,7 +389,7 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 
 	// Get the document engine and insert
 	docEngine := engine.Get()
-	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
+	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID, "")
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert into dataset: "+err.Error())
 		return

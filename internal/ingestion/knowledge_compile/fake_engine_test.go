@@ -54,10 +54,10 @@ func (f *fakeEngine) DeleteChunks(_ context.Context, condition map[string]interf
 
 // --- stubs: the reader/writer path under test never exercises these. ---
 
-func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (f *fakeEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (f *fakeEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (f *fakeEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {

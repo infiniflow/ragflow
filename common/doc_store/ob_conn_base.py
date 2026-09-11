@@ -224,7 +224,7 @@ class OBConnectionBase(DocStoreConnection):
         """Create table using column definitions from subclass."""
         self._create_table_with_columns(table_name, self.get_column_definitions())
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         """Create index/table with all necessary indexes."""
         table_name = self.get_table_name(index_name, dataset_id)
         lock_prefix = self.get_lock_prefix()

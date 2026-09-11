@@ -593,7 +593,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-		}}, idx, in.KbID)
+		}}, idx, in.KbID, "")
 		return err
 	}
 
@@ -628,7 +628,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}}, idx, in.KbID, "")
 	if err != nil {
 		return err
 	}
@@ -649,7 +649,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}}, idx, in.KbID, "")
 	return err
 }
 
@@ -960,7 +960,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if vec := pickAnyVector(children, i2boolForTarget(spl.name, splitA)); len(vec) > 0 {
 			row["q_"+fmt.Sprintf("%d", len(vec))+"_vec"] = f32ToF64Slice(vec)
 		}
-		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID); err != nil {
+		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID, ""); err != nil {
 			return err
 		}
 	}

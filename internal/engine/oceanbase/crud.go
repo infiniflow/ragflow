@@ -26,7 +26,7 @@ import (
 )
 
 // InsertChunks writes chunks or memory messages with legacy REPLACE semantics.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID, language string) ([]string, error) {
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
@@ -48,7 +48,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		if vectorSize == 0 {
 			return nil, fmt.Errorf("cannot infer vector size from documents")
 		}
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", ""); err != nil {
 			return nil, err
 		}
 	} else if vectorSize > 0 {

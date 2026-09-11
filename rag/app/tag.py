@@ -139,7 +139,18 @@ def label_question(question, kbs):
         tag_kbs = KnowledgebaseService.get_by_ids(tag_kb_ids)
         if not tag_kbs:
             return tags
-        tags = settings.retriever.tag_query(question, list(set([kb.tenant_id for kb in tag_kbs])), tag_kb_ids, all_tags, kb.parser_config.get("topn_tags", 3))
+        from rag.nlp import dataset_language
+
+        # The tag datasets were indexed under their own language, so the tag
+        # query must tokenize with it - not with the searched datasets'.
+        tags = settings.retriever.tag_query(
+            question,
+            list(set([kb.tenant_id for kb in tag_kbs])),
+            tag_kb_ids,
+            all_tags,
+            kb.parser_config.get("topn_tags", 3),
+            language=dataset_language(tag_kbs),
+        )
     return tags
 
 

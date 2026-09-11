@@ -1373,7 +1373,7 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	if queryBuilder == nil {
 		queryBuilder = nlp.NewQueryBuilder()
 	}
-	if built, _ := queryBuilder.Question(question, "messages", similarityThreshold); built != nil {
+	if built, _ := queryBuilder.Question(question, "messages", similarityThreshold, ""); built != nil {
 		matchText.MatchingText = built.MatchingText
 		matchText.ExtraOptions = built.ExtraOptions
 		if matchText.ExtraOptions == nil {

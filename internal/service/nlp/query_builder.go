@@ -228,10 +228,14 @@ func (qb *QueryBuilder) NeedFineGrainedTokenize(tk string) bool {
 }
 
 // Question builds a full-text query expression based on input text.
-// References Python FulltextQueryer.question method.
-func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*types.MatchTextExpr, []string) {
+// References Python FulltextQueryer.question method. language is the dataset
+// language ("" = English) the query is tokenized with, so query tokens match
+// index tokens.
+func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64, language string) (*types.MatchTextExpr, []string) {
 	// originalQuery stores the original input text for later use in query expression.
 	originalQuery := txt
+
+	tok := tokenizer.New(language)
 
 	// Add space between English and Chinese
 	txtWithSpaces := qb.AddSpaceBetweenEngZh(txt)
@@ -263,7 +267,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		txtFinal := qb.RmWWW(txtNoStopWords)
 
 		// Tokenize using rag_tokenizer
-		tokenized, err := tokenizer.Tokenize(txtFinal)
+		tokenized, err := tok.Tokenize(txtFinal)
 		if err != nil {
 			// If tokenizer fails, use simple split
 			tokenized = txtFinal
@@ -282,7 +286,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// Calculate term weights using TermWeightDealer
 		// Reference: rag/nlp/query.py L56
 		// tws holds the term weight list for each token.
-		tws := qb.termWeight.Weights(tks, false)
+		tws := qb.termWeight.Weights(tks, false, language)
 
 		// Clean tokens and filter
 		// Reference: rag/nlp/query.py L57-60
@@ -417,7 +421,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 		// Get term weights
 		// termWeightList holds term weights for the current segment.
-		termWeightList := qb.termWeight.Weights([]string{segment}, true)
+		termWeightList := qb.termWeight.Weights([]string{segment}, true, language)
 
 		// Lookup synonyms
 		// syns are synonyms for the current segment.
@@ -445,7 +449,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			// sm holds fine‑grained tokens for the current term.
 			var sm []string
 			if qb.NeedFineGrainedTokenize(term) {
-				fineGrained, err := tokenizer.FineGrainedTokenize(term)
+				fineGrained, err := tok.FineGrainedTokenize(term)
 				if err == nil && fineGrained != "" {
 					sm = strings.Fields(fineGrained)
 				}
@@ -494,7 +498,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				if s == "" {
 					continue
 				}
-				fg, err := tokenizer.FineGrainedTokenize(s)
+				fg, err := tok.FineGrainedTokenize(s)
 				if err == nil && fg != "" {
 					// Quote if contains space
 					if strings.Contains(fg, " ") {
@@ -546,7 +550,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// Add proximity query if multiple tokens
 		if len(termWeightList) > 1 {
 			// tokenized is the tokenized version of the segment.
-			tokenized, _ := tokenizer.Tokenize(segment)
+			tokenized, _ := tok.Tokenize(segment)
 			if tokenized != "" {
 				tmsStr += fmt.Sprintf(` ("%s"~2)^1.5`, tokenized)
 			}
@@ -559,7 +563,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			for _, s := range syns {
 				s = qb.SubSpecialChar(s)
 				if s != "" {
-					tokenized, _ := tokenizer.Tokenize(s)
+					tokenized, _ := tok.Tokenize(s)
 					if tokenized != "" {
 						synParts = append(synParts, fmt.Sprintf(`"%s"`, tokenized))
 					}
