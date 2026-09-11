@@ -213,11 +213,19 @@ func isCSV(name string) bool {
 // The markup is parsed into a tree rather than matched with a regex because
 // this input is not guaranteed to be well formed: seven parsers render table
 // items (xlsx, csv, docx, html, pdf, …) and some of that markup originates
-// from user-supplied documents. A tree also settles the two cases a tag-level
-// scan cannot: a nested <table> is read as its own rows instead of being
-// mistaken for its parent's cells, and a row or cell missing its closing tag
-// is still recovered rather than dropped.
+// from user-supplied documents. A tree also settles the cases a tag-level
+// scan gets wrong: a nested <table> no longer terminates its enclosing row
+// early — that row keeps its own cells, with the nested table's text folded
+// into the cell holding it — and a row or cell missing its closing tag is
+// recovered rather than dropped.
 func tableRows(htmlStr string) [][]string {
+	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
+	// mode, so a bare row fragment would yield nothing. Give the parser the
+	// table context it needs instead of dropping the rows silently.
+	lower := strings.ToLower(htmlStr)
+	if strings.Contains(lower, "<tr") && !strings.Contains(lower, "<table") {
+		htmlStr = "<table>" + htmlStr + "</table>"
+	}
 	doc, err := html.Parse(strings.NewReader(htmlStr))
 	if err != nil {
 		return nil
@@ -232,8 +240,9 @@ func tableRows(htmlStr string) [][]string {
 					cells = append(cells, cellText(c))
 				}
 			}
-			// Return without descending: the cells above already collect a
-			// nested table's text, and its rows belong to it alone.
+			// Return without descending: the cells above already collected
+			// the nested table's text, so its rows must not be reported a
+			// second time as rows of the enclosing table.
 			rows = append(rows, cells)
 			return
 		}
@@ -247,8 +256,9 @@ func tableRows(htmlStr string) [][]string {
 
 // cellText returns the visible text of a table cell. The parser hands text
 // nodes over already unescaped, nested markup contributes its text without
-// its tags, and a <br> becomes a newline instead of silently gluing the two
-// halves of the cell together.
+// its tags (a nested table's cells are concatenated, not separated), and a
+// <br> becomes a newline instead of silently gluing the two halves of the
+// cell together.
 func cellText(cell *html.Node) string {
 	var sb strings.Builder
 	var walk func(*html.Node)

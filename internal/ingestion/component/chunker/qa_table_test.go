@@ -3,7 +3,6 @@ package chunker
 import (
 	"bytes"
 	"context"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -102,8 +101,8 @@ func TestXLSXQAMultilineCells(t *testing.T) {
 
 // Extraction must follow the table's structure rather than a tag pattern.
 // The markup is rendered by several parsers and some of it comes from
-// user-supplied documents, so it is not guaranteed to be well formed; a
-// tag-level scan mishandles every case below.
+// user-supplied documents, so it is not guaranteed to be well formed —
+// a tag-level scan mishandles most cases below.
 func TestExtractQATableFollowsStructure(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -142,11 +141,35 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 			want: [][2]string{{"q\nL2", "a"}},
 		},
 		{
-			// The pair must come from the outer row; the nested table's
-			// cells are content of the cell holding it, not siblings.
+			// The nested table's text is folded into the cell holding it, and
+			// its own rows are not reported as rows of the enclosing table.
 			name: "nested table",
 			html: "<table><tr><td><table><tr><td>in</td><td>x</td></tr></table></td><td>a</td></tr></table>",
 			want: [][2]string{{"inx", "a"}},
+		},
+		{
+			// A bare row fragment: the HTML5 "in body" mode would discard the
+			// <tr>, so it has to be parsed in a table context.
+			name: "row without a table wrapper",
+			html: "<tr><td>q</td><td>a</td></tr>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			name: "rows without a table wrapper",
+			html: "<tr><td>q</td><td>a</td></tr><tr><td>q2</td><td>a2</td></tr>",
+			want: [][2]string{{"q", "a"}, {"q2", "a2"}},
+		},
+		{
+			name: "rows wrapped in tbody only",
+			html: "<tbody><tr><td>q</td><td>a</td></tr></tbody>",
+			want: [][2]string{{"q", "a"}},
+		},
+		{
+			// Deliberately narrow: cells without a row are not a pair, matching
+			// the previous behaviour instead of inventing a row for them.
+			name: "cells without a row yield nothing",
+			html: "<td>q</td><td>a</td>",
+			want: nil,
 		},
 		{
 			name: "empty cell is skipped when picking the pair",
@@ -182,7 +205,7 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 				t.Fatalf("pairs = %v, want %v", got, tc.want)
 			}
 			for i := range got {
-				if !reflect.DeepEqual(got[i], tc.want[i]) {
+				if got[i] != tc.want[i] {
 					t.Errorf("pair %d = %q, want %q", i, got[i], tc.want[i])
 				}
 			}
