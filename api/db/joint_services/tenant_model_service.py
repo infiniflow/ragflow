@@ -26,6 +26,8 @@ from common.constants import (
     MINERU_ENV_KEYS,
     MISTRAL_OCR_DEFAULT_CONFIG,
     MISTRAL_OCR_ENV_KEYS,
+    MONKEYOCR_DEFAULT_CONFIG,
+    MONKEYOCR_ENV_KEYS,
     OPENDATALOADER_DEFAULT_CONFIG,
     OPENDATALOADER_ENV_KEYS,
     PADDLEOCR_DEFAULT_CONFIG,
@@ -520,6 +522,33 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
         "opendataloader-from-env",
         _collect_env_config(OPENDATALOADER_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG),
     )
+
+
+def ensure_monkeyocr_from_env(tenant_id: str) -> str | None:
+    env_config = _collect_env_config(MONKEYOCR_ENV_KEYS, MONKEYOCR_DEFAULT_CONFIG)
+    if not env_config:
+        logging.info("MonkeyOCR env provisioning skipped: no MONKEYOCR_* configuration detected (tenant_id=%s)", tenant_id)
+        return None
+    apiserver = (env_config.get("MONKEYOCR_APISERVER") or "").strip()
+    if not apiserver:
+        logging.info(
+            "MonkeyOCR env provisioning skipped: MONKEYOCR_APISERVER not set (tenant_id=%s)",
+            tenant_id,
+        )
+        return None
+    result = _ensure_ocr_provider_from_env(
+        tenant_id,
+        "MonkeyOCR",
+        "monkeyocr-from-env",
+        env_config,
+    )
+    if result:
+        logging.info(
+            "MonkeyOCR env provisioning created_or_reused (tenant_id=%s, model=%s)",
+            tenant_id,
+            result,
+        )
+    return result
 
 
 def ensure_somark_from_env(tenant_id: str) -> str | None:
