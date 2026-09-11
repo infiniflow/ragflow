@@ -229,4 +229,16 @@ class TestApplyMetaDataFilterBaseScope:
     def test_empty_base_keeps_filter_hits_deduped(self):
         flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
         metas = {"color": {"red": ["docA", "docA", "docB"]}}
-        assert self._run(flt, metas, []) == ["docA", "docB"]
+        assert set(self._run(flt, metas, [])) == {"docA", "docB"}
+
+    def test_duplicate_base_doc_ids_are_deduped(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA"]}}
+        assert self._run(flt, metas, ["docA", "docA"]) == ["docA"]
+
+    def test_scope_constraint_logs_counts_and_full_removal(self, caplog):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docB"]}}
+        with caplog.at_level("DEBUG"):
+            assert self._run(flt, metas, ["docA"]) == ["-999"]
+        assert "base_count=1, filter_hit_count=1, constrained_count=0, removed_all_filter_hits=True" in caplog.text

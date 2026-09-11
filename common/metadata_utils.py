@@ -219,12 +219,23 @@ async def apply_meta_data_filter(
         Mirrors ``constrainDocIDs`` in internal/service/metadata_filter.go.
         """
         filtered = dedupe_list(filtered)
+        base_count = len(base_doc_ids or [])
         if not base_doc_ids:
-            return filtered
-        if not filtered:
-            return []
-        allowed = set(filtered)
-        return [doc_id for doc_id in base_doc_ids if doc_id in allowed]
+            constrained = filtered
+        elif not filtered:
+            constrained = []
+        else:
+            allowed = set(filtered)
+            constrained = dedupe_list([doc_id for doc_id in base_doc_ids if doc_id in allowed])
+        logging.debug(
+            "Metadata filter scope constraint: base_count=%d, filter_hit_count=%d, "
+            "constrained_count=%d, removed_all_filter_hits=%s",
+            base_count,
+            len(filtered),
+            len(constrained),
+            bool(filtered) and bool(base_doc_ids) and not constrained,
+        )
+        return constrained
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
