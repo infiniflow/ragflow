@@ -213,12 +213,13 @@ func (c *OutlookConnector) getJSON(ctx context.Context, apiURL string, out any) 
 		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := c.httpClient.Do(req)
-		cancel()
 		if err != nil {
+			cancel()
 			lastErr = err
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 16*1024*1024))
 			resp.Body.Close()
+			cancel()
 			if resp.StatusCode < 400 {
 				if readErr != nil {
 					return readErr
