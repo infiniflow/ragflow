@@ -33,7 +33,7 @@ import { IModalProps } from '@/interfaces/common';
 import { extractTableColumns, isTableFile } from '@/utils/table-column-extract';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -73,6 +73,8 @@ function buildUploadFormSchema(t: TFunction) {
       )
       .min(1, { message: t('fileManager.pleaseUploadAtLeastOneFile') }),
     tableColumnMode: z.enum(['auto', 'manual']).optional(),
+    tableColumnNames: z.array(z.string()).optional(),
+    tableColumnNamesByFile: z.array(z.array(z.string())).optional(),
     tableColumnRoles: z
       .record(z.enum(['indexing', 'metadata', 'both']))
       .optional(),
@@ -107,6 +109,8 @@ function UploadForm({
       parseOnCreation: false,
       fileList: [],
       tableColumnMode: 'auto',
+      tableColumnNames: [],
+      tableColumnNamesByFile: [],
       tableColumnRoles: {},
     },
   });
@@ -114,26 +118,41 @@ function UploadForm({
   const [extractedColumns, setExtractedColumns] = useState<string[]>([]);
   const [columnMode, setColumnMode] = useState<'auto' | 'manual'>('auto');
   const [columnRoles, setColumnRoles] = useState<TableColumnRoles>({});
+  // Guards the async column-extraction loop: rapid file-list changes must not
+  // let a stale extraction overwrite the latest selection.
+  const extractionVersion = useRef(0);
 
   const handleFilesChange = useCallback(
     async (files: any[]) => {
+      const version = ++extractionVersion.current;
       if (!isTableParser || !files || files.length === 0) {
         setExtractedColumns([]);
+        form.setValue('tableColumnNames', []);
+        form.setValue('tableColumnNamesByFile', []);
         return;
       }
 
-      // Extract columns from the first table file
       const allColumns = new Set<string>();
+      const columnsByFile: string[][] = [];
       for (const f of files) {
         const file = f instanceof File ? f : f.file;
         if (file && isTableFile(file)) {
           const cols = await extractTableColumns(file);
           cols.forEach((c) => allColumns.add(c));
+          columnsByFile.push(cols);
+        } else {
+          columnsByFile.push([]);
         }
       }
-      setExtractedColumns(Array.from(allColumns));
+      const columns = Array.from(allColumns);
+      if (version !== extractionVersion.current) {
+        return;
+      }
+      setExtractedColumns(columns);
+      form.setValue('tableColumnNames', columns);
+      form.setValue('tableColumnNamesByFile', columnsByFile);
     },
-    [isTableParser],
+    [form, isTableParser],
   );
 
   const handleModeChange = (value: 'auto' | 'manual') => {

@@ -67,6 +67,9 @@ const SetupSchema = z
     enable_multi_column: z.boolean().optional(),
     remove_toc: z.boolean().optional(),
     remove_header_footer: z.boolean().optional(),
+    column_mode: z.enum(['auto', 'manual']).optional(),
+    column_roles: z.record(z.string(), z.string()).optional(),
+    column_names: z.array(z.string()).optional(),
     pages: z
       .array(
         z

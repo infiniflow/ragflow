@@ -34,6 +34,8 @@ type XLSXParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewXLSXParser(libType string) (*XLSXParser, error) {
@@ -74,6 +76,14 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
+	}
+	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
+		if mode != "" {
+			p.ColumnMode = mode
+		}
+		if roles != nil {
+			p.ColumnRoles = roles
+		}
 	}
 }
 
@@ -118,6 +128,31 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		chunkRows = defaultTableChunkRows
 	}
 
+	// Structured JSON row rendering applies only to the JSON output format.
+	// An html/markdown canvas setup must keep its legacy rendering even when
+	// a stale column_mode lingers, matching the CSV parser's gate.
+	if strings.EqualFold(p.OutputFormat, "json") && strings.TrimSpace(p.ColumnMode) != "" {
+		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
+		if err == nil {
+			return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
+		}
+
+		normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
+		if normalizeErr != nil {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
+		}
+		if !changed {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
+		}
+		items, allColumns, retryWarnings, sheets, retryErr := parseXLSXRowsJSON(normalized, p.ColumnMode, p.ColumnRoles)
+		if retryErr != nil {
+			return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+		}
+		warnings = append(normalizeWarnings, warnings...)
+		warnings = append(warnings, retryWarnings...)
+		return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
+	}
+
 	items, warnings, sheets, err := parseXLSXBytes(data, chunkRows)
 	if err == nil {
 		return xlsxParseResult(filename, items, warnings, sheets)
@@ -136,6 +171,58 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	warnings = append(normalizeWarnings, warnings...)
 	return xlsxParseResult(filename, items, warnings, sheets)
+}
+
+func parseXLSXRowsJSON(data []byte, columnMode string, columnRoles map[string]string) ([]map[string]any, []string, []string, int, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	allItems := make([]map[string]any, 0)
+	warnings := make([]string, 0)
+	allColSet := make(map[string]struct{})
+	allColumns := make([]string, 0)
+
+	for _, sheet := range sheets {
+		rows, err := f.GetRows(sheet)
+		if err != nil {
+			return nil, nil, warnings, len(sheets), fmt.Errorf("read XLSX sheet %q: %w", sheet, err)
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		rows = cleanIllegalControlChars(rows)
+		items, headers := RenderRowsToJSONChunks(rows, sheet, columnMode, columnRoles)
+		allItems = append(allItems, items...)
+		for _, h := range headers {
+			if _, ok := allColSet[h]; !ok {
+				allColSet[h] = struct{}{}
+				allColumns = append(allColumns, h)
+			}
+		}
+	}
+	return allItems, allColumns, warnings, len(sheets), nil
+}
+
+func xlsxRowParseResult(filename string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
+	return spreadsheetRowParseResult(filename, "xlsx", items, columns, warnings, sheets)
+}
+
+func spreadsheetRowParseResult(filename, format string, items []map[string]any, columns []string, warnings []string, sheets int) ParseResult {
+	return ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":               filename,
+			"format":             format,
+			"sheets":             sheets,
+			"table_column_names": columns,
+		},
+		JSON:     items,
+		Warnings: warnings,
+	}
 }
 
 func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int, error) {

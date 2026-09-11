@@ -162,6 +162,14 @@ func PublishGlobals(ctx context.Context, out map[string]any) {
 	SeedIngestionGlobals(ctx, out)
 }
 
+// GetGlobal returns a run-level field from CanvasState.Globals if present.
+func GetGlobal(ctx context.Context, key string) (any, bool) {
+	if st := canvasStateFromContext(ctx); st != nil {
+		return st.GetGlobal(key)
+	}
+	return nil, false
+}
+
 // GlobalOrInput resolves a run-level field from CanvasState.Globals first,
 // then from the component's own input map, then def. Globals is the canonical
 // home for shared run metadata; the input fallback keeps headless tests

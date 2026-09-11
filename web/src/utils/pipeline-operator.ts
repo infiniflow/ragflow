@@ -17,6 +17,7 @@
 import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
+  FileType,
   getInitialExtractorValues,
   initialGoExtractorValues,
   initialParserValues,
@@ -466,6 +467,49 @@ export function buildOperatorNode(
       rawForm,
       transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
+    if (operatorType === Operator.Parser && Array.isArray(rawForm.setups)) {
+      rawForm.setups = rawForm.setups.map((setup: any) => {
+        if (setup.fileFormat === FileType.Spreadsheet) {
+          // Saved API/DSL configs may carry either convention: Go saves
+          // column_* on the spreadsheet setup, Python saves table_column_*
+          // at the parser_config root. Accept both so the role selector
+          // initializes on either backend without clobbering explicit values.
+          const columnModeValue =
+            setup.column_mode || setup.table_column_mode;
+          const columnNamesValue =
+            setup.column_names?.length > 0
+              ? setup.column_names
+              : Array.isArray(setup.table_column_names) &&
+                  setup.table_column_names.length > 0
+                ? setup.table_column_names
+                : undefined;
+          const columnRolesValue =
+            setup.column_roles && Object.keys(setup.column_roles).length > 0
+              ? setup.column_roles
+              : setup.table_column_roles &&
+                  Object.keys(setup.table_column_roles).length > 0
+                ? setup.table_column_roles
+                : undefined;
+          const column_names =
+            columnNamesValue ??
+            (pipelineParserConfig.table_column_names ?? []);
+          const column_mode =
+            columnModeValue ||
+            pipelineParserConfig.table_column_mode ||
+            'auto';
+          const column_roles =
+            columnRolesValue ??
+            (pipelineParserConfig.table_column_roles ?? {});
+          return {
+            ...setup,
+            column_names,
+            column_mode,
+            column_roles,
+          };
+        }
+        return setup;
+      });
+    }
   }
 
   return {

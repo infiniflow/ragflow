@@ -39,7 +39,9 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -247,6 +249,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	parserConfigForStrip := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+	for _, stripKey := range indexdoc.TableParserStripDocMetadataKeys(parserConfigForStrip) {
+		delete(metadata, stripKey)
+	}
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)
@@ -255,6 +261,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 			if _, exists := metadata[k]; !exists {
 				metadata[k] = v
 			}
+		}
+	}
+
+	// Persist the parser-discovered column names on the document so the
+	// role selector can offer them without re-reading the file. The parser
+	// publishes them on its file metadata (file.table_column_names); the
+	// terminal payload carries that map through untouched (see
+	// buildParserOutputs), so read it from the run result — CanvasState
+	// globals are scoped to the pipeline run and are not visible here.
+	if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
+		if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
+			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
 		}
 	}
 
@@ -909,11 +927,83 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 		dslCPNs[s.CpnID] = struct{}{}
 	}
 	for cpnID := range parserConfig {
+		if cpnID == "table_column_mode" || cpnID == "table_column_roles" || cpnID == "table_column_names" {
+			continue
+		}
 		if _, ok := dslCPNs[cpnID]; !ok {
 			common.Warn(fmt.Sprintf(
 				"parser_config references cpnID %q not present in the pipeline DSL; it will be ignored at runtime", cpnID))
 		}
 	}
+}
+
+func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map[string]interface{} {
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+	mode, roles, names := indexdoc.ResolveTableColumnConfig(docConfig)
+	if mode == "" && len(roles) == 0 && len(names) == 0 {
+		return docConfig
+	}
+	parserCpnID := pipelinepkg.ExtractParserCpnID(dsl, component.ComponentNameParser)
+	if parserCpnID == "" {
+		return docConfig
+	}
+	cpnEntry, ok := docConfig[parserCpnID].(map[string]any)
+	if !ok {
+		cpnEntry = map[string]any{}
+		docConfig[parserCpnID] = cpnEntry
+	}
+	ssEntry, ok := cpnEntry["spreadsheet"].(map[string]any)
+	if !ok {
+		ssEntry = map[string]any{}
+		cpnEntry["spreadsheet"] = ssEntry
+	}
+	if mode != "" {
+		ssEntry["column_mode"] = mode
+	}
+	if len(roles) > 0 {
+		ssEntry["column_roles"] = roles
+	}
+	if len(names) > 0 {
+		ssEntry["column_names"] = names
+	}
+	common.Debug("inject table column override",
+		zap.String("parser", parserCpnID),
+		zap.String("column_mode", mode),
+		zap.Int("column_roles", len(roles)),
+		zap.Int("column_names", len(names)),
+	)
+	return docConfig
+}
+
+// mergeKBTableColumnFallback fills the table column keys a document does not
+// already define from the knowledgebase config, so an older document (uploaded
+// before column mode existed) still picks up dataset-level settings at task
+// time. Column discovery stays per-document: any document-level key wins outright,
+// only wholly-absent keys fall back — mirroring Python's
+// merge_table_parser_config_from_kb (rag/utils/table_es_metadata.py).
+func mergeKBTableColumnFallback(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
+	if kbConfig == nil {
+		return docConfig
+	}
+	mode, roles, names := indexdoc.ResolveTableColumnConfig(kbConfig)
+	if mode == "" && len(roles) == 0 && len(names) == 0 {
+		return docConfig
+	}
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+	if _, ok := docConfig["table_column_mode"]; !ok && mode != "" {
+		docConfig["table_column_mode"] = mode
+	}
+	if _, ok := docConfig["table_column_roles"]; !ok && len(roles) > 0 {
+		docConfig["table_column_roles"] = roles
+	}
+	if _, ok := docConfig["table_column_names"]; !ok && len(names) > 0 {
+		docConfig["table_column_names"] = names
+	}
+	return docConfig
 }
 
 func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
@@ -928,6 +1018,13 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
+
+	parserConfig = injectTableColumnOverride(parserConfig, []byte(dsl))
+	if s.taskCtx.KB.ParserConfig != nil {
+		parserConfig = mergeKBTableColumnFallback(parserConfig, map[string]interface{}(s.taskCtx.KB.ParserConfig))
+		parserConfig = injectTableColumnOverride(parserConfig, []byte(dsl))
+	}
+	s.taskCtx.Doc.ParserConfig = parserConfig
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -1080,4 +1177,101 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+func saveDocumentTableColumns(ctx context.Context, docID string, newNames []string) error {
+	if len(newNames) == 0 || docID == "" || dao.DB == nil {
+		return nil
+	}
+
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var doc entity.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", docID).
+			First(&doc).Error; err != nil {
+			return err
+		}
+
+		if doc.ParserConfig == nil {
+			doc.ParserConfig = entity.JSONMap{}
+		}
+		seen := make(map[string]struct{}, len(newNames))
+		names := make([]string, 0, len(newNames))
+		for _, n := range newNames {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
+			if _, ok := seen[n]; !ok {
+				seen[n] = struct{}{}
+				names = append(names, n)
+			}
+		}
+
+		doc.ParserConfig["table_column_names"] = names
+		doc.ParserConfig["table_column_roles"] = filterTableColumnRoles(doc.ParserConfig["table_column_roles"], seen)
+		for key, value := range doc.ParserConfig {
+			if !strings.HasPrefix(key, "Parser:") {
+				continue
+			}
+			componentConfig, ok := value.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			spreadsheet, ok := componentConfig["spreadsheet"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			spreadsheet["column_names"] = names
+			spreadsheet["column_roles"] = filterTableColumnRoles(spreadsheet["column_roles"], seen)
+		}
+		return tx.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", doc.ParserConfig).Error
+	})
+}
+
+func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]interface{} {
+	filtered := make(map[string]interface{})
+	switch roles := raw.(type) {
+	case map[string]interface{}:
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
+			}
+		}
+	case map[string]string:
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
+			}
+		}
+	}
+	return filtered
+}
+
+// tableColumnNamesFromPayload extracts the parser-discovered column names from
+// the terminal pipeline payload. The parser publishes them on its file
+// metadata (file.table_column_names); the chunker and tokenizer forward the
+// file map untouched, so the terminal output still carries it.
+func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
+	if pipelineOutput == nil {
+		return nil
+	}
+	fileMap, ok := pipelineOutput["file"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	switch names := fileMap["table_column_names"].(type) {
+	case []string:
+		return names
+	case []interface{}:
+		out := make([]string, 0, len(names))
+		for _, n := range names {
+			if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

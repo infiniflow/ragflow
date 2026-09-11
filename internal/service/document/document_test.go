@@ -943,7 +943,9 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	svc := testDocumentService(t)
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
 	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
-		"table_column_mode": "assist",
+		"table_column_mode":          "manual",
+		"table_column_roles":         map[string]interface{}{"Title": "indexing", "Owner": "metadata", "OtherFile": "both"},
+		"table_column_names_by_file": []interface{}{[]interface{}{"Title", "Owner"}},
 	})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
@@ -965,8 +967,17 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
 	cfg := doc["parser_config"].(map[string]interface{})
-	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
+	if cfg["existing"] != "value" || cfg["table_column_mode"] != "manual" {
 		t.Fatalf("parser_config=%v", cfg)
+	}
+	if !reflect.DeepEqual(cfg["table_column_names"], []interface{}{"Title", "Owner"}) {
+		t.Fatalf("table_column_names=%#v, want file-specific columns", cfg["table_column_names"])
+	}
+	if !reflect.DeepEqual(cfg["table_column_roles"], map[string]interface{}{"Title": "indexing", "Owner": "metadata"}) {
+		t.Fatalf("table_column_roles=%#v, want roles filtered to this file", cfg["table_column_roles"])
+	}
+	if _, exists := cfg["table_column_names_by_file"]; exists {
+		t.Fatalf("upload-only table_column_names_by_file leaked into document config: %#v", cfg)
 	}
 
 	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")
