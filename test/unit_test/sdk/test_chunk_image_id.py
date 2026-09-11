@@ -19,6 +19,7 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from urllib.parse import urlsplit
 
 import pytest
 from ragflow_sdk import Chunk, Document, RAGFlow
@@ -33,15 +34,23 @@ def chunk_api():
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
-            pass
+            """Keep local HTTP request logging out of the test output."""
 
         def respond(self):
-            state["requests"].append((self.command, self.path))
+            """Serve only the expected SDK method and endpoint combinations."""
+            path = urlsplit(self.path).path
+            state["requests"].append((self.command, path))
             self.rfile.read(int(self.headers.get("Content-Length", "0")))
-            if self.command == "POST" and self.path.endswith("/documents/doc/chunks"):
+            if (self.command, path) == ("POST", "/api/v1/datasets/kb/documents/doc/chunks"):
                 data = {"chunk": state["chunk"]}
-            else:
+            elif (self.command, path) in {
+                ("GET", "/api/v1/datasets/kb/documents/doc/chunks"),
+                ("POST", "/api/v1/retrieval"),
+            }:
                 data = {"chunks": [state["chunk"]], "total": 1}
+            else:
+                self.send_error(404, "Unexpected SDK endpoint")
+                return
             body = json.dumps({"code": 0, "data": data}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -66,6 +75,7 @@ def chunk_api():
 @pytest.mark.parametrize("endpoint", ["add", "list", "retrieve"])
 @pytest.mark.parametrize("image_id", ["kb-image-1", ""])
 def test_chunk_endpoints_preserve_image_id(chunk_api, endpoint, image_id):
+    """Preserve image IDs through the correct add, list and retrieval routes."""
     rag, state = chunk_api
     state["chunk"]["image_id"] = image_id
     doc = Document(rag, {"id": "doc", "dataset_id": "kb"})
@@ -78,13 +88,20 @@ def test_chunk_endpoints_preserve_image_id(chunk_api, endpoint, image_id):
     assert chunk.image_id == image_id
     assert chunk.to_json()["image_id"] == image_id
     assert chunk.content == "caption"
-    assert len(state["requests"]) == 1
+    expected_request = {
+        "add": ("POST", "/api/v1/datasets/kb/documents/doc/chunks"),
+        "list": ("GET", "/api/v1/datasets/kb/documents/doc/chunks"),
+        "retrieve": ("POST", "/api/v1/retrieval"),
+    }[endpoint]
+    assert state["requests"] == [expected_request]
 
 
 def test_chunk_without_an_image_field_defaults_to_empty_string():
+    """Use the documented empty default when the response omits image_id."""
     assert Chunk(None, {"id": "text-chunk"}).image_id == ""
 
 
 def test_unknown_chunk_fields_are_still_filtered():
+    """Keep unrelated response fields out of the public serialized chunk."""
     chunk = Chunk(None, {"id": "chunk", "internal_field": "not public"})
     assert "internal_field" not in chunk.to_json()
