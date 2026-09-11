@@ -297,8 +297,9 @@ class TestCleanMarkdownBlock:
         expected = "Unclosed block"
         assert clean_markdown_block(input_text) == expected
 
+        # Without a markdown opener, the closing fence may belong to content.
         input_text = "Unopened block\n```"
-        expected = "Unopened block"
+        expected = "Unopened block\n```"
         assert clean_markdown_block(input_text) == expected
 
     def test_mixed_whitespace_characters(self):
@@ -354,3 +355,23 @@ class TestCleanMarkdownBlock:
         input_text = "```markdown\nFirst line\n```\n```markdown\nSecond line\n```"
         expected = "First line\n```\n```markdown\nSecond line"
         assert clean_markdown_block(input_text) == expected
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "```python\nprint('hello')\n```",
+            '```json\n{"value": 1}\n```',
+            "```\ncode without a language\n```",
+            "An explanation.\n\n```python\nprint('hello')\n```",
+            "```python\nfirst()\n```\n\n```python\nsecond()\n```",
+            "  ```python\r\nprint('hello')\r\n```  ",
+        ],
+    )
+    def test_preserves_code_fences_without_markdown_wrapper(self, text):
+        """Preserve code blocks returned directly by a vision model."""
+        assert clean_markdown_block(text) == text.strip()
+
+    def test_preserves_code_fences_inside_markdown_wrapper(self):
+        """Remove only the outer markdown fences around a code example."""
+        content = "Example:\n```python\nprint('hello')\n```"
+        assert clean_markdown_block(f"```markdown\n{content}\n```") == content
