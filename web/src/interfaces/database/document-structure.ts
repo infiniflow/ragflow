@@ -11,6 +11,32 @@ export interface IStructureGraphEntity {
   mention_count?: number;
   source_chunk_ids?: string[];
   type?: string;
+  /** Leaf clusters only: claims sourced to this cluster's chunks. */
+  claim_count?: number;
+  /** page_index fact/conclusion only: gate-verified verbatim quotes. */
+  evidence?: IClaimEvidence[];
+}
+
+export interface IClaimEvidence {
+  quote: string;
+  chunk_id: string;
+  start?: number;
+  end?: number;
+}
+
+export interface IClaimItem {
+  name: string;
+  description?: string;
+  source_chunk_ids?: string[];
+  type?: string;
+  evidence?: IClaimEvidence[];
+}
+
+export interface IClaimsResponse {
+  claims: IClaimItem[];
+  total: number;
+  offset: number;
+  limit: number;
 }
 
 export interface IStructureGraphRelation {

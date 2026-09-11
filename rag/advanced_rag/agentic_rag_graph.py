@@ -142,7 +142,18 @@ def _select_sca_view(chunks: list, focus_terms: list[str], cap: int | None = Non
         return rel * 0.45 + min(cov_ratio, 1.0) * 0.45 + fresh
 
     ranked = sorted(list(enumerate(chunks)), key=lambda ic: _score(*ic), reverse=True)  # noqa: C414
-    view = [c for _, c in ranked[:capped]]
+
+    # Evidence rows first: an atomic proposition carrying a verbatim quote is
+    # what the reviewer should read before wading through raw passages.  Both
+    # groups keep their relevance order; only the grouping is lifted.
+    def _is_evidence(c: dict) -> bool:
+        return str(_chunk_id(c) or "").startswith(_EVIDENCE_CHUNK_PREFIX)
+
+    evidence = [c for _, c in ranked if _is_evidence(c)]
+    rest = [c for _, c in ranked if not _is_evidence(c)]
+    view = (evidence + rest)[:capped]
+    # identity is a hash of the SORTED id set, so this reordering cannot break
+    # the unproductive-round detector.
     ident = "|".join(sorted((_chunk_id(c) or "") for c in view))
     return view, str(hash(ident))
 
@@ -466,11 +477,24 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
     if mdl is None or not question:
         return [question] if question else []
     try:
-        ans, _ = await mdl.async_chat(
+        ans, usage = await mdl.async_chat(
             _FANOUT_PROMPT,
             [{"role": "user", "content": f"Question: {question}"}],
             dict(answer_conf or {}),
         )
+        # ``_base_chat_mdl`` deliberately bypasses CountingChatModel (it needs the
+        # innermost Base for decorator-style bind_tools), so this call's usage
+        # never reaches the phase table and the planner looks free of charge.
+        # Book it explicitly — otherwise every token measurement is short.
+        # ``async_chat`` returns (text, 0), not a usage mapping: read the
+        # model's own ``last_usage`` counter instead.
+        try:
+            from rag.advanced_rag.harness.stats import record_external_call
+
+            _u = usage if isinstance(usage, dict) else getattr(mdl, "last_usage", None)
+            record_external_call(_u if isinstance(_u, dict) else None)
+        except Exception:  # noqa: BLE001
+            pass
         fanouts = _parse_fanouts(str(ans or ""))
         if not fanouts:
             # The model answered the question instead of decomposing it (no JSON, or
@@ -482,6 +506,15 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
                     [{"role": "user", "content": f"Question: {question}"}],
                     dict(answer_conf or {}),
                 )
+                # The retry bypasses the counting proxy too — book it as well,
+                # or a retried planner still reports zero tokens.
+                try:
+                    from rag.advanced_rag.harness.stats import record_external_call
+
+                    _u2 = getattr(mdl, "last_usage", None)
+                    record_external_call(_u2 if isinstance(_u2, dict) else None)
+                except Exception:  # noqa: BLE001
+                    pass
                 fanouts = _parse_fanouts(str(ans2 or ""))
             except Exception:  # noqa: BLE001
                 _LOG.warning("[Planner] strict fan-out retry failed", exc_info=True)
@@ -500,6 +533,31 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
 # 30-chunk ceiling starved every enrichment channel dead (observed: Drill
 # admitted 0 for entire runs because prefetch filled the pool first).
 _MAX_SNIPPET_POOL = 60
+# id prefix of the pool entries synthesized from compiled evidence rows.
+_EVIDENCE_CHUNK_PREFIX = "claim_"
+# Ceiling for evidence rows (claim / fact-conclusion) inside the snippet pool.
+# Raised 12 -> 24: a claim is an atomic proposition with a verbatim quote
+# (~1.2k chars, ~300 tokens) while a raw chunk is far larger, so at equal pool
+# capacity evidence rows carry several times the answer material per token.
+# They are admitted FIRST because they are answer material; the raw channels now
+# get their own budget below so they cannot push them out.
+_EVIDENCE_POOL_QUOTA = 24
+# Separate ceiling for RAW passages. Storage and REVIEW are decoupled (the SCA
+# reads a ranked _SCA_VIEW_CAP view), but the pool's own composition decides how
+# much raw text every later prompt carries, so raw gets a tighter bound than the
+# pool as a whole. Room left above it is reserved for evidence rows.
+_RAW_SNIPPET_QUOTA = 30
+# How many of the chunks cited by admitted evidence rows to pull in verbatim.
+# This is a directed fetch (by id), not another recall.
+_EVIDENCE_TOP_UP = 8
+# Depth ceiling for gap → slot promotion.  Without it an insufficient verdict
+# could keep splitting the plan every round and never converge (the same failure
+# mode APT-RAG guards with its max_depth).
+_MAX_SLOT_DEPTH = 3
+# Hard ceiling on the slot table.  ``depth`` is never incremented (it describes
+# the research tree, not the gap-promotion rounds), so the depth test alone
+# cannot stop the table from growing one slot per round — this bound can.
+_MAX_SLOTS_TOTAL = 8
 _DRILL_RESERVE = 12  # slots kept free after the FIRST prefetch so the research
 #                       executor can top up evidence
 _SCA_VIEW_CAP = 60  # chunks shown to the Sufficient Context Agent per review (24 -> 60: 24 of 225 hid the answer-bearing table chunk from the SCA)
@@ -535,6 +593,22 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
     except Exception:  # noqa: BLE001
         _LOG.warning("[rag_agent] could not import fan-out search helpers", exc_info=True)
         return 0
+
+    # Evidence rows only exist on compiled datasets (tree -> claim, page_index ->
+    # fact/conclusion).  Gate the channel on the compilation probe: on an
+    # uncompiled dataset it would issue retrieval legs that can only come back
+    # empty while eating the snippet budget.
+    try:
+        from rag.advanced_rag.harness.tools.navigation import (
+            _evidence_row_types,
+            dataset_compilation_kinds,
+            recall_dataset_claims,
+        )
+
+        row_types = _evidence_row_types(await dataset_compilation_kinds(tools))
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[rag_agent] evidence-row probe unavailable; skipping channel", exc_info=True)
+        row_types = ()
 
     kbinfos = getattr(tools, "kbinfos", None)
     if kbinfos is None:
@@ -615,7 +689,51 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
             _LOG.warning("[rag_agent] hybrid channel failed for %r; skipping", fq, exc_info=True)
         return kept_a, kept_b
 
+    async def _collect_evidence() -> list:
+        """Channel 0: compiled evidence rows, folded into pool-shaped entries.
+
+        An evidence row is an atomic proposition plus its verbatim quote — it is
+        answer material, not a candidate to be narrowed — so it is admitted
+        ahead of both chunk channels.
+        """
+        import hashlib
+
+        async def _recall_one(fq: str) -> list:
+            try:
+                return await recall_dataset_claims(tools, fq, top_n=max(2, top_n))
+            except Exception:  # noqa: BLE001
+                _LOG.warning("[rag_agent] evidence recall failed for %r", fq, exc_info=True)
+                return []
+
+        # Parallel, like the chunk channels: a serial loop over the fan-outs
+        # would add every leg's latency straight onto the prefetch budget.
+        gathered = await asyncio.gather(*(_recall_one(fq) for fq in fanouts), return_exceptions=True)
+
+        out: list = []
+        for item in gathered:
+            if isinstance(item, BaseException) or not item:
+                continue
+            for c in item:
+                name = str(c.get("name") or "")
+                content = f"[evidence] {name}"
+                desc = str(c.get("description") or "")
+                if desc and desc != name:
+                    content += f" — {desc}"
+                if c.get("quote"):
+                    content += f'\nEvidence (verbatim): "{str(c["quote"])[:400]}"'
+                cid = _EVIDENCE_CHUNK_PREFIX + hashlib.md5(f"{c.get('doc_id')}:{name}".encode("utf-8", "ignore")).hexdigest()[:12]
+                out.append(
+                    {
+                        "chunk_id": cid,
+                        "content_with_weight": content[:1200],
+                        "doc_id": str(c.get("doc_id") or ""),
+                        "source_chunk_ids": list(c.get("chunk_ids") or []),
+                    }
+                )
+        return out
+
     # Search all fan-outs at once (parallel) — then merge into the shared pool.
+    evidence_chunks = await _collect_evidence() if row_types else []
     results = await asyncio.gather(*(_search_one(fq) for fq in fanouts), return_exceptions=True)
 
     # Cap the TOTAL evidence pool so the SCA never has to read unbounded chunks.
@@ -628,8 +746,10 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
     room = max(0, max_total - len(seen))
     added = 0
 
+    raw_added = 0
+
     def _admit(batch) -> bool:
-        nonlocal added
+        nonlocal added, raw_added
         if isinstance(batch, Exception) or not batch:
             return False
         stop = False
@@ -640,12 +760,43 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
             k = _chunk_id(c)
             if k and k in seen:
                 continue
+            is_evidence = bool(k) and str(k).startswith(_EVIDENCE_CHUNK_PREFIX)
+            # Raw passages get their own budget; anything left above it stays
+            # free for evidence rows, which are far denser answer material.
+            if not is_evidence and raw_added >= _RAW_SNIPPET_QUOTA:
+                continue
             if k:
                 seen.add(k)
             kbinfos.setdefault("chunks", []).append(c)
             added += 1
+            if not is_evidence:
+                raw_added += 1
         return stop
 
+    # Evidence rows first: they are answer material, so they must not be
+    # crowded out by the chunk channels.
+    if evidence_chunks:
+        evidence_chunks = evidence_chunks[:_EVIDENCE_POOL_QUOTA]
+        if _admit(evidence_chunks):
+            return added
+        # Directional top-up (external gathering): an evidence row carries a
+        # verbatim quote but not its surrounding passage, so pull exactly the
+        # chunks it cites instead of running another global recall.
+        wanted: list = []
+        for c in evidence_chunks:
+            for cid in c.get("source_chunk_ids") or []:
+                cid = str(cid or "").strip()
+                if cid and cid not in seen and cid not in wanted:
+                    wanted.append(cid)
+        if wanted:
+            try:
+                from rag.advanced_rag.harness.tools.navigation import _load_chunks_for_ids
+
+                fetched = await _load_chunks_for_ids(tools, wanted[:_EVIDENCE_TOP_UP])
+                if fetched and _admit(fetched):
+                    return added
+            except Exception:  # noqa: BLE001
+                _LOG.warning("[rag_agent] evidence top-up failed; continuing", exc_info=True)
     # Channel A first (exact matches earn their slots), then semantic extras.
     for pair in results:
         if isinstance(pair, Exception):
@@ -1189,6 +1340,40 @@ def build_agentic_graph(
         # (b) the next slot research pass picks these up via the persisted
         # slot_table + unresolved_slots — no separate feedback channel needed.
         _LOG.info("[QueryRewriter] insufficient round %d → %d targeted query(s): %s", int(state.get("search_rounds", 0)) + 1, len(queries), queries)
+
+        # DECOMPOSE (APT-RAG adaptive planning): a gap the rewriter only restates
+        # as a query stays flat — the same surface gets re-searched.  Promoting it
+        # to a slot gives the next research pass a typed unknown with its own
+        # action session, which is how the plan actually expands.  No extra LLM
+        # call: the SCA already told us what is missing (missing_fact + hint).
+        slot_table = state.get("slot_table")
+        if gaps and slot_table is not None and int(getattr(slot_table, "depth", 0) or 0) < _MAX_SLOT_DEPTH:
+            try:
+                from rag.advanced_rag.harness.action_session import Variable
+
+                slots = list(getattr(slot_table, "state", None) or [])
+                known = {str(c).strip().lower() for v in slots for c in (getattr(v, "question_clues", None) or [])}
+                next_id = max([int(getattr(v, "id", 0) or 0) for v in slots] or [0]) + 1
+                promoted = 0
+                for what, hint in gaps:
+                    if len(slots) >= _MAX_SLOTS_TOTAL:
+                        break
+                    key = str(what or "").strip().lower()
+                    if not key or key in known:
+                        continue
+                    clues = [str(what)[:200]]
+                    if hint:
+                        clues.append(str(hint)[:200])
+                    slots.append(Variable(id=next_id, type="entity", question_clues=clues))
+                    known.add(key)
+                    next_id += 1
+                    promoted += 1
+                if promoted:
+                    slot_table.state = slots
+                    _LOG.info("[QueryRewriter] decompose: %d gap(s) promoted to slots (depth=%s)", promoted, getattr(slot_table, "depth", 0))
+            except Exception:  # noqa: BLE001
+                _LOG.warning("[QueryRewriter] decompose failed; continuing", exc_info=True)
+
         ledger = [e for e in _safe_list(state.get("attempted"), "state.attempted") if isinstance(e, dict)]
         for q in queries:
             ledger.append({"q": q, "r": int(state.get("search_rounds", 0)) + 1, "new": int(added or 0)})
@@ -1198,6 +1383,8 @@ def build_agentic_graph(
             "search_rounds": int(state.get("search_rounds", 0)) + 1,
             "attempted": ledger,
             "kbinfos": tools.kbinfos,
+            # Carry the promoted slots so the next research pass sees them.
+            **({"slot_table": slot_table} if slot_table is not None else {}),
         }
 
     # ── Node: formalize_answer (Phase 5 Synthesis) ──
@@ -1219,9 +1406,9 @@ def build_agentic_graph(
             return "formalize_answer"
         # Evidence pool saturated at the SCA view cap: any further chunk lands
         # beyond what the SCA can read, so another search round cannot flip the
-        # sufficiency verdict. Short-circuit straight to finalize.
+        # sufficiency verdict. Gated to SECOND-or-later reviews on THIS branch: claim pseudo-chunks bypass the pool cap (direct append in _claim_prefetch), so a rewrite round can still add evidence — the FIRST SCA review must always get its rewrite round when insufficient, or hard multi-hop questions lose their only refinement pass and the retry moves to the outer agent as a whole new graph run (observed: research 30→43, wall +47%, R2 9→1).
         _pool = tools.kbinfos.get("chunks", [])
-        if len(_pool) >= _SCA_VIEW_CAP:
+        if len(_pool) >= _SCA_VIEW_CAP and int(state.get("search_rounds", 0)) >= 1:
             _LOG.info(
                 "[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.",
                 len(_pool),
@@ -1373,6 +1560,195 @@ async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: di
     return root, (first_queries or [question])
 
 
+# ── Evidence-guided batched answer generation (APT-RAG) ──
+# Slots whose sessions retrieved largely the same passages are answered in ONE
+# call with the deduplicated union of that evidence.  The threshold is
+# deliberately conservative: APT-RAG ships sim_threshold=0.0 (any overlap),
+# which merges weakly related slots and, worse, lets a single parse failure
+# blank every answer in the batch at once.
+# Both conditions must hold.  The absolute floor stops two tiny evidence sets
+# from merging on a single coincidental hit; the ratio gate stays LOW enough to
+# actually fire — measured FRAMES overlap was 0.03-0.2 mean, so the old 0.5
+# never triggered at all.  (APT-RAG ships 0.0; that is too loose for us because
+# one parse failure would blank every answer in the batch.)
+_EVIDENCE_BATCH_MIN_SIM = 0.15
+_EVIDENCE_BATCH_MIN_SHARED = 2
+_EVIDENCE_BATCH_MAX_SLOTS = 4
+_EVIDENCE_BATCH_MAX_CHARS = 12000
+
+_EVIDENCE_BATCH_PROMPT = (
+    "Answer each listed sub-question using ONLY the shared evidence below.\n"
+    "These sub-questions share this evidence, so read it once and answer all of them.\n"
+    "Return JSON only, mapping each sub-question id to its answer: "
+    '{"<id>": "<answer>", ...}. Use an empty string when the evidence does not '
+    "answer that sub-question. Never invent facts."
+)
+
+
+async def _batch_fill_slots(tools, slot_table, slot_evidence: dict, answer_conf: dict) -> int:
+    """Answer several unresolved slots in ONE call when their evidence overlaps.
+
+    Pure efficiency: neither the slot structure nor the evidence semantics
+    change — only the number of generation calls made over the same passages.
+    """
+    from rag.advanced_rag.harness.tools.search import _base_chat_mdl, _chunk_id
+
+    slots = [v for v in (getattr(slot_table, "state", None) or []) if not v.filled()]
+    ev: dict = {}
+    for v in slots:
+        ids = {str(i) for i in ((slot_evidence.get(str(v.id)) or {}).get("evidence_ids") or []) if str(i)}
+        if ids:
+            ev[v.id] = ids
+    if len(ev) < 2:
+        # Diagnostics: batching needs TWO slots that are both unresolved AND
+        # carrying evidence.  Log why it did not happen, otherwise a never-
+        # firing path is indistinguishable from a working one.
+        _LOG.info(
+            "[SlotResearch] batching skipped: unresolved=%d with_evidence=%d",
+            len(slots),
+            len(ev),
+        )
+        return 0
+
+    ids = list(ev)
+
+    def _sim(a, b) -> float:
+        union = ev[a] | ev[b]
+        return len(ev[a] & ev[b]) / len(union) if union else 0.0
+
+    # Largest-incompatible-first (APT-RAG): place the least compatible slot
+    # first, so it is not left without a cluster at the end.
+    order = sorted(ids, key=lambda i: -sum(1 for j in ids if j != i and _sim(i, j) < _EVIDENCE_BATCH_MIN_SIM))
+    clusters: list = []
+    for i in order:
+        for cl in clusters:
+            if len(cl) < _EVIDENCE_BATCH_MAX_SLOTS and all(len(ev[i] & ev[j]) >= _EVIDENCE_BATCH_MIN_SHARED and _sim(i, j) >= _EVIDENCE_BATCH_MIN_SIM for j in cl):
+                cl.append(i)
+                break
+        else:
+            clusters.append([i])
+
+    kbinfos = getattr(tools, "kbinfos", None) or {}
+    by_chunk_id = {}
+    for c in kbinfos.get("chunks") or []:
+        cid = _chunk_id(c)
+        if cid:
+            by_chunk_id[cid] = c
+    slot_by_id = {v.id: v for v in slots}
+
+    filled = 0
+    for cl in clusters:
+        if len(cl) < 2:
+            continue
+        union_ids: set = set()
+        for i in cl:
+            union_ids |= ev[i]
+        body, total = [], 0
+        for cid in union_ids:
+            c = by_chunk_id.get(cid)
+            if not c:
+                continue
+            text = str(c.get("content_with_weight") or c.get("content") or "").strip()
+            if not text:
+                continue
+            if total + len(text) > _EVIDENCE_BATCH_MAX_CHARS:
+                break
+            body.append(text)
+            total += len(text)
+        if not body:
+            continue
+
+        lines = []
+        for sid in cl:
+            v = slot_by_id.get(sid)
+            if v is None:
+                continue
+            clues = "; ".join(str(x) for x in (v.question_clues or []))[:300]
+            lines.append(f"- {sid}: {clues}")
+        if len(lines) < 2:
+            continue
+
+        user = "Sub-questions:\n" + "\n".join(lines) + "\n\nShared evidence:\n" + "\n---\n".join(body)
+        try:
+            mdl = _base_chat_mdl(tools)
+            if mdl is None:
+                return filled
+            ans, _ = await mdl.async_chat(
+                _EVIDENCE_BATCH_PROMPT,
+                [{"role": "user", "content": user}],
+                dict(answer_conf or {}),
+            )
+        except Exception:  # noqa: BLE001
+            _LOG.warning("[SlotResearch] batched answer call failed", exc_info=True)
+            continue
+
+        data = _extract_json_object(str(ans or ""))
+        if not isinstance(data, dict):
+            continue
+        for sid in cl:
+            v = slot_by_id.get(sid)
+            val = data.get(str(sid))
+            if v is not None and not v.filled() and isinstance(val, str) and val.strip():
+                v.candidate = val.strip()[:400]
+                filled += 1
+    return filled
+
+
+# Word-level coverage a pooled evidence row must reach before it is allowed to
+# answer a slot on its own.  Deliberately strict: a wrong prefill costs accuracy,
+# while a missed prefill only costs one session (which still runs).
+_EVIDENCE_PREFILL_COVERAGE = 0.6
+
+
+def _prefill_slots_from_evidence(slot_table, kbinfos: dict) -> int:
+    """Answer slots that an already-pooled evidence row directly answers.
+
+    An evidence row is an atomic proposition carrying a verbatim quote, so when
+    it already covers a slot's question there is nothing for an action session
+    to research — skipping it removes a WHOLE session (the dominant cost), not
+    just tokens inside one.  Saves calls, uses real evidence, and a wrong guess
+    is still caught later by the SCA.
+    """
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _query_to_terms
+
+    chunks = [c for c in ((kbinfos or {}).get("chunks") or []) if isinstance(c, dict)]
+    ev_rows = [c for c in chunks if str(_chunk_id(c) or "").startswith(_EVIDENCE_CHUNK_PREFIX)]
+    if not ev_rows:
+        return 0
+
+    filled = 0
+    for v in slot_table.unresolved():
+        clues = [str(x) for x in (getattr(v, "question_clues", None) or []) if str(x).strip()]
+        if not clues:
+            continue
+        terms: set = set()
+        for c in clues:
+            terms |= {t.lower() for t in _query_to_terms(c) if len(t) >= 3}
+        if not terms:
+            continue
+
+        best, best_cov = None, 0.0
+        for e in ev_rows:
+            text = str(e.get("content_with_weight") or "").lower()
+            if not text:
+                continue
+            cov = sum(1 for t in terms if t in text) / len(terms)
+            if cov > best_cov:
+                best, best_cov = e, cov
+        if best is None or best_cov < _EVIDENCE_PREFILL_COVERAGE:
+            continue
+
+        # The row renders as "[evidence] <name> — <desc>\nEvidence (verbatim): ..."
+        head = str(best.get("content_with_weight") or "").split("\n")[0]
+        name = head.replace("[evidence]", "").strip(" —-").strip()
+        if not name:
+            continue
+        v.candidate = name[:400]
+        v.candidate_strength = float(best_cov)
+        filled += 1
+    return filled
+
+
 async def _run_slot_research_pass(tools, question: str, state: AgenticState, answer_conf: dict, deadline_left: float) -> dict:
     """Drive ONE research round with slot-aware action
     sessions.
@@ -1402,6 +1778,16 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     sem = asyncio.Semaphore(2)
     base = getattr(tools, "kbinfos", None) or state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
     tools.kbinfos = dict(base)
+
+    # Evidence-row prefill: slots the pooled evidence already answers cost no
+    # action session at all — this is where whole calls get removed.
+    try:
+        prefill_n = _prefill_slots_from_evidence(slot_table, tools.kbinfos)
+        if prefill_n:
+            _LOG.info("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefill_n)
+            unresolved = slot_table.unresolved()
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[SlotResearch] evidence prefill failed", exc_info=True)
 
     # Shared cache across sessions to avoid duplicate retrievals
     shared_tool_cache = {}
@@ -1456,6 +1842,32 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
 
         ledger.append({"q": (r.found_answer or str(getattr(r, "messages", [])))[:80] if hasattr(r, "found_answer") else "", "new": 1})
 
+    # Evidence-overlap census (APT-RAG evidence-guided batching).  Batching only
+    # pays when sibling slots actually share retrieved evidence; this measures it
+    # instead of assuming it, and the numbers pick the clustering threshold.
+    try:
+        import itertools
+
+        ev_sets = [set(m.get("evidence_ids") or []) for m in session_evidence.values()]
+        ev_sets = [s for s in ev_sets if s]
+        if len(ev_sets) >= 2:
+            sims = []
+            for a, b in itertools.combinations(ev_sets, 2):
+                union = a | b
+                if union:
+                    sims.append(len(a & b) / len(union))
+            if sims:
+                _LOG.info(
+                    "[SlotResearch] evidence overlap: slots=%d pairs=%d mean_jaccard=%.3f max=%.3f nonzero_pairs=%d",
+                    len(ev_sets),
+                    len(sims),
+                    sum(sims) / len(sims),
+                    max(sims),
+                    sum(1 for s in sims if s > 0),
+                )
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[SlotResearch] evidence-overlap census failed", exc_info=True)
+
     # session_evidence is already keyed by slot_id; normalize into a
     # slot-evidence map the SCA consumer can read. Sessions that produced only
     # a collected answer (no slot patch) land under the "_answer" key.
@@ -1472,6 +1884,15 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
             "[SlotResearch] slot evidence bound: %s",
             {k: len(v["evidence_ids"]) for k, v in slot_evidence.items()},
         )
+
+    # Evidence-guided batching (APT-RAG): slots that retrieved the same passages
+    # get answered together instead of one generation call each.
+    try:
+        batched = await _batch_fill_slots(tools, slot_table, slot_evidence, answer_conf)
+        if batched:
+            _LOG.info("[SlotResearch] batched generation filled %d slot(s)", batched)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[SlotResearch] batched generation failed", exc_info=True)
 
     # Expose the updated table and its unresolved slots for the rewriter.
     out_table = slot_table

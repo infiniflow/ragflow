@@ -211,22 +211,27 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []any", out["chunks"])
 	}
-	// 2 input chunks + 3 entities + 2 relations = 7 total (the
-	// compiled knowledge units are merged into the upstream input chunks).
+	// 2 input chunks + 3 entities + 2 relations = 7 total. The structure
+	// variant no longer emits a separate compact graph blob (#19474): the
+	// per-row entity/relation products are the whole output, mirroring the
+	// storage-model change that dropped the knowledge_graph_kwd="graph" row.
 	if len(chunks) != 7 {
 		t.Fatalf("len(chunks) = %d, want 7 (2 input + 3 entities + 2 relations)", len(chunks))
 	}
 
-	// Entity and relation products are emitted individually, without an
-	// additional graph-summary chunk.
+	// No compact graph-summary chunk is emitted anymore.
+	graphChunks := 0
 	for _, c := range chunks {
 		cm, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
 		if kind, _ := cm["kc_kind"].(string); kind == "graph" {
-			t.Fatal("graph chunk emitted")
+			graphChunks++
 		}
+	}
+	if graphChunks != 0 {
+		t.Fatalf("graph chunks = %d, want 0 (graph blob removed by #19474)", graphChunks)
 	}
 }
 

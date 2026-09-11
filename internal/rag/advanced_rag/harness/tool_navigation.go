@@ -217,9 +217,6 @@ func parseFloats(v any) ([]float64, bool) {
 }
 
 func normalizeKind(row map[string]interface{}) string {
-	if ck, _ := row["compile_kwd"].(string); ck == "raptor_graph" {
-		return "raptor"
-	}
 	kind, _ := row["compilation_template_kind_kwd"].(string)
 	if kind == "" {
 		kind, _ = row["compile_kwd"].(string)
@@ -529,30 +526,31 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 // Python reads (navigation.py:_load_compiled_structure).
 type StructureRow struct {
 	// CompileKwd distinguishes the COMPILE TYPE (tree / page_index / timeline /
-	// raptor_graph / ...). NOT knowledge_graph_kwd.
+	// ...). NOT knowledge_graph_kwd.
 	CompileKwd string
 	// TemplateKind is the template-authored kind (compilation_template_kind_kwd).
 	TemplateKind string
 	// KnowledgeGraphKwd selects the ROW SHAPE:
-	//   "graph"    → one compact blob whose content is {"entities":[], "relations":[]}
-	//                (written by RAPTOR / tree compilation)
 	//   "entity"   → one row per node, content is a single entity dict
 	//   "relation" → one row per edge, content is a single relation dict
-	//                (written by page_index and the pipeline Compiler tree)
+	//                (written by page_index, tree, and the pipeline Compiler)
+	//   "graph"    → legacy: one compact blob {"entities":[], "relations":[]};
+	//                pre-migration tree rows only, nothing writes it anymore
 	KnowledgeGraphKwd string
 	// Content is the row's JSON payload.
 	Content string
 	// Vec is the row's q_<dim>_vec embedding, when the reader selected it. A
-	// graph blob row carries the one vector its nested nodes share (RAPTOR); a
-	// per-entity row carries that node's own vector (page_index).
+	// graph blob row carries the one vector its nested nodes share (legacy); a
+	// per-entity row carries that node's own vector.
 	Vec []float64
 }
 
 // StructureReader reads a document's compiled structure rows.
 //
-// Mirrors Python _load_compiled_structure, which issues
-// three doc-store queries (graph blob, per-entity/relation rows, raptor_graph)
-// and merges the matching buckets.
+// Mirrors Python _load_compiled_structure, which issues one doc-store query
+// over the per-entity/relation rows and merges the matching buckets (the
+// graph blob and the raptor_graph projection are gone from the storage
+// model).
 //
 // Go has no doc-store structured-query interface (see runtime.RetrievalService,
 // which only exposes Search), so this is a seam: the harness ships the full
@@ -568,7 +566,7 @@ type StructureReader interface {
 
 // normalizeKind is defined above; rowKind projects a StructureRow into that
 // shape. It mirrors Python _normalize_kind: the API's kind normalization
-// (page_index / knowledge_graph → timeline), plus the raptor_graph override.
+// (page_index / knowledge_graph → timeline).
 func rowKind(row StructureRow) string {
 	return normalizeKind(map[string]any{
 		"compile_kwd":                   row.CompileKwd,
