@@ -12,7 +12,7 @@ import { ILogInfo } from '../process-log-modal';
 import { RunningStatus } from './constant';
 import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { isDocumentQueued } from './utils';
-import { IFileLogList } from '../dataset-overview/interface';
+import type { IFileLogList } from '../dataset-overview/interface';
 
 const PollIntervalMs = 5000;
 
