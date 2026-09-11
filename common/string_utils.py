@@ -32,18 +32,20 @@ def remove_redundant_spaces(txt: str):
         str: Text with redundant spaces removed
     """
     # First pass: Remove spaces after left-boundary characters
-    # Matches: [non-alphanumeric-and-specific-right-punctuation] + [non-space]
-    # Removes spaces after characters like '(', '<', and other non-alphanumeric chars
+    # Matches: [non-word-char-and-specific-right-punctuation] + [non-space]
+    # Removes spaces after characters like '(', '<', and other non-word chars.
+    # `\w` (not `a-z0-9`) so that non-ASCII letters count as word chars and the
+    # space between two non-Latin words is preserved.
     # Examples:
     #   "( test" → "(test"
-    txt = re.sub(r"([^a-z0-9.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
+    txt = re.sub(r"([^\w.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
 
     # Second pass: Remove spaces before right-boundary characters
-    # Matches: [non-space] + [non-alphanumeric-and-specific-left-punctuation]
-    # Removes spaces before characters like non-')', non-',', non-'.', and non-alphanumeric chars
+    # Matches: [non-space] + [non-word-char-and-specific-left-punctuation]
+    # Removes spaces before characters like non-')', non-',', non-'.', and non-word chars
     # Examples:
     #   "world !" → "world!"
-    return re.sub(r"([^ ]) +([^a-z0-9.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
+    return re.sub(r"([^ ]) +([^\w.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
 
 
 def clean_markdown_block(text):
