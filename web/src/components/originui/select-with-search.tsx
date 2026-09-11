@@ -344,7 +344,7 @@ export const SelectWithSearch = forwardRef<
                               : 'combobox-option'
                           }
                           className={cn(
-                            "relative flex flex-col min-h-10 data-[selected='true']:bg-card-soft",
+                            "relative flex flex-col min-h-10 pr-8 data-[selected='true']:bg-card-soft",
                             option.description
                               ? 'items-start gap-1'
                               : 'justify-center items-start',
@@ -384,7 +384,7 @@ export const SelectWithSearch = forwardRef<
                           : 'combobox-option'
                       }
                       className={cn(
-                        "relative flex flex-col min-h-10 mb-1 data-[selected='true']:bg-card-soft",
+                        "relative flex flex-col min-h-10 mb-1 pr-8 data-[selected='true']:bg-card-soft",
                         group.description
                           ? 'items-start gap-1'
                           : 'justify-center items-start',
