@@ -778,14 +778,12 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		return resp, nil
 	}
 
-	// normal mode: discover buckets from per-doc entity/relation rows. Go no
-	// longer generates a compact per-document graph blob, so looking only for
-	// knowledge_graph_kwd="graph" would always return an empty response.
-	// "id" is required for the same reason as dataset discovery (Infinity only
-	// projects listed fields; graphRowSearch keys by id).
-	metaFields := []string{"id", "compile_kwd", "knowledge_graph_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	// normal mode: discover buckets from per-doc graph blob rows. "id" is
+	// required for the same reason as dataset discovery (Infinity only projects
+	// listed fields; graphRowSearch keys by id).
+	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
 	metaRows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
-		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}}, nil, 0, 1000, nil)
+		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"graph"}}, nil, 0, 1000, nil)
 	if err != nil {
 		return nil, err
 	}
