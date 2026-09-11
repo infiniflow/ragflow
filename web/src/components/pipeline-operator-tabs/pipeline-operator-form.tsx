@@ -24,15 +24,18 @@ import TokenChunkerForm from '@/pages/agent/form/token-chunker-form';
 import TokenizerForm from '@/pages/agent/form/tokenizer-form';
 import { getOperatorType } from '@/utils/pipeline-operator';
 import { memo, useCallback } from 'react';
+import { FieldErrors } from 'react-hook-form';
 
 type PipelineOperatorFormProps = {
   node: RAGFlowNodeType;
   onValuesChange?: (values: any) => void;
+  externalErrors?: FieldErrors;
 };
 
 const PipelineOperatorForm = ({
   node,
   onValuesChange,
+  externalErrors,
 }: PipelineOperatorFormProps) => {
   const operatorType = getOperatorType(
     (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
@@ -52,6 +55,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.TokenChunker:
@@ -60,6 +64,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.TitleChunker:
@@ -68,6 +73,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Extractor:
@@ -76,6 +82,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Compiler:
@@ -84,6 +91,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Tokenizer:
@@ -92,6 +100,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     default:
