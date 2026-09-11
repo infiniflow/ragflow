@@ -1643,3 +1643,43 @@ func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
 func TestToolLoopLineNilSink(t *testing.T) {
 	toolLoopLine(nil, "[Tool loop] Step 1: running rag...") // must not panic
 }
+
+// TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
+// path hands consumers the same reference shape as the non-reasoning one
+// (content / document_name / dataset_id — not the engine keys), and that the
+// source chunks are left untouched (no in-place vector stripping).
+func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
+	src := map[string]interface{}{
+		"chunk_id":            "c1",
+		"content_with_weight": "hello",
+		"docnm_kwd":           "Doc One",
+		"doc_id":              "d1",
+		"kb_id":               "kb1",
+		"vector":              []float64{0.1, 0.2},
+	}
+	kbinfos := map[string]interface{}{
+		"chunks":   []map[string]interface{}{src},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos)
+	if res.Reference == nil {
+		t.Fatal("a cited answer must carry a reference")
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 {
+		t.Fatalf("reference chunks = %#v, want 1", res.Reference["chunks"])
+	}
+	if chunks[0]["content"] != "hello" || chunks[0]["document_name"] != "Doc One" || chunks[0]["dataset_id"] != "kb1" {
+		t.Errorf("reference chunk = %#v, want the client-facing keys populated", chunks[0])
+	}
+	for _, engineKey := range []string{"content_with_weight", "docnm_kwd", "kb_id", "vector"} {
+		if _, has := chunks[0][engineKey]; has {
+			t.Errorf("reference chunk leaked engine key %q", engineKey)
+		}
+	}
+	if _, has := src["vector"]; !has {
+		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+	}
+}

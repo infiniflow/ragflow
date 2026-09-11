@@ -925,10 +925,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "retrieve",
-			Description: ("Keyword-first search of the fixed document corpus. Pass natural-" +
-				"language queries; returns SHORT snippets of the most relevant " +
-				"passages (exact-term matched where possible). Use multiple queries " +
-				"to cover different aspects. Supports 1-3 queries per call."),
+			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets.` +
+				`DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document.` +
+				`ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
+				`OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there.` +
+				`IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch.`,
 			Parameters: arrayParam("", 1, 3),
 		},
 	}
@@ -937,10 +938,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "list_chunks",
-			Description: ("Deep-read the FULL text of one document by doc_id (returned in " +
-				"retrieve snippets). Use for enumeration / count / arithmetic answers " +
-				"when snippets are insufficient. Returns all chunks of the document " +
-				"in reading order. One doc_id per call."),
+			Description: `WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result.` +
+				`DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first).` +
+				`ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result. ONLY doc_id is accepted; there is no chunk_ids argument, and the tool returns the whole document (capped at 30 chunks).` +
+				`OUTPUT: All chunks of the document in reading order. ok = new evidence; redundant = already in pool.` +
+				`IF IT FAILS: An unknown or blank doc_id yields an empty result (query-level miss, not a dataset fact) — pick a different doc_id or locate one first. Do not treat this as a reason to disable the tool.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -958,18 +960,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "search_chunks",
-			Description: ("SEMANTIC retrieval (hybrid vector+BM25) with COMPILED-STRUCTURE " +
-				"EXPANSION. Use as the PRIMARY recall tool when exact-term " +
-				"``retrieve`` returns nothing useful, or when the dataset is large and " +
-				"you are unsure which document holds the answer — the answer passage " +
-				"may share NO surface words with the query. " +
-				"Compiled expansion: automatically appends related chunks from the " +
-				"dataset's compiled structure (page index, tree/heading hierarchy, " +
-				"knowledge graph, wiki pages when present) so a semantic hit carries " +
-				"its structural neighbours (parent/child headings, sibling pages). " +
-				"If the dataset has NO compiled structure (incl. no wiki), expansion " +
-				"is a no-op — no error, just semantic hits. " +
-				"Returns snippet chunks ranked by relevance. 1-2 queries per call."),
+			Description: `WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries.` +
+				`DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve.` +
+				`ARGUMENTS: query — array of 1-2 strings. Compiled-structure expansion is automatic and a no-op on datasets without compiled structure, so no extra argument is needed.` +
+				`OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours (parent/child headings, sibling pages) appended. ok = new evidence; redundant = already seen.` +
+				`IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it.`,
 			Parameters: arrayParam("", 1, 2),
 		},
 	}
@@ -978,11 +973,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "web_search",
-			Description: ("Search the open WEB. Use ONLY when the needed fact is world " +
-				"knowledge / recent event / not covered by the fixed corpus — e.g. " +
-				"a current event, a person's alive-now status, or a statistic newer " +
-				"than the corpus. If the fact plausibly lives in the documents, " +
-				"prefer corpus tools (retrieve/search_chunks) first. 1-2 queries per call."),
+			Description: `WHEN TO CALL: The needed fact is world knowledge, a recent event, or newer than the corpus (a current event, a person's alive-now status, a fresh statistic). This tool only appears when a web provider is configured.` +
+				`DO NOT CALL: When the fact plausibly lives in the fixed corpus — prefer retrieve or search_chunks first. For corpus-only questions this tool is unavailable.` +
+				`ARGUMENTS: query — array of 1-2 strings.` +
+				`OUTPUT: Web results shaped like corpus chunks, merged into the same evidence pool.` +
+				`IF IT FAILS: error (no provider) — it will not appear at all this session; if it does appear and fails, switch to corpus tools permanently and do not retry it.`,
 			Parameters: arrayParam("", 1, 2),
 		},
 	}
@@ -997,23 +992,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "navigate_tree",
-			Description: ("LOCATE the RIGHT DOCUMENT among MANY before deep-reading. Use it " +
-				"BEFORE search_chunks when the dataset is large and you have no " +
-				"doc_id yet — it routes by TOPIC/CLUSTERING similarity over the " +
-				"compiled document-navigation tree (not exact surface words), so it " +
-				"finds the document even when your query words differ from its text. " +
-				"Returns candidate doc_ids + a first-chunk summary of each. " +
-				"This is the FIRST hop of a navigation chain: " +
-				"navigate_tree(query) -> doc_id -> navigate_structure(doc_id, ...) " +
-				"-> list_chunks(doc_id, chunk_ids). " +
-				"Use when: the question names a topic/entity/alias but you do not " +
-				"know which document discusses it; search_chunks returned scattered " +
-				"hits across many docs and you must pick the source. " +
-				"Do NOT use if you already hold a doc_id (go straight to " +
-				"navigate_structure) or if the answer is likely a single exact " +
-				"passage (prefer retrieve/search_chunks). " +
-				"If the dataset has no compiled document navigation tree, it returns " +
-				"empty — fall back to search_chunks."),
+			Description: `WHEN TO CALL: The question names a topic, entity, or alias but you do NOT know which document discusses it, especially on a large corpus. Routes by topic or cluster similarity over the compiled navigation tree.` +
+				`DO NOT CALL: When you already hold a doc_id (go straight to navigate_structure); when the answer is likely a single exact passage (use retrieve or search_chunks).` +
+				`ARGUMENTS: query — string, the topic / entity / alias whose document(s) to locate. Note: keywords is read by the executor but is NOT a declared parameter; do not pass it.` +
+				`OUTPUT: Candidate doc_ids plus a first-chunk summary of each; these become your known-docs set for the next step.` +
+				`IF IT FAILS: empty (no_structure) means the dataset has no compiled navigation tree — immediately switch to search_chunks. A second such empty disables this tool for the rest of the session, so do not retry it.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1031,18 +1014,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "navigate_structure",
-			Description: ("PINPOINT A PASSAGE inside ONE document using its compiled structure " +
-				"(heading/catalog tree, concept mindmap, or entity graph) — the " +
-				"in-document counterpart of navigate_tree. " +
-				"Use AFTER you know the doc_id (from navigate_tree / search_chunks / " +
-				"retrieve) and need to find where the answer lives WITHOUT reading " +
-				"every chunk. Returns the structure outline annotated with matching " +
-				"chunk_ids (reading-order aware). Then call list_chunks(doc_id, " +
-				"chunk_ids) to read exactly those. " +
-				"kind: 'catalog' (default) for page-index/heading/timeline trees, " +
-				"'mindmap' for concept maps, 'graph' for entity-relation graphs. " +
-				"If the document has NO compiled structure, an empty <doc/> is " +
-				"returned — fall back to list_chunks to read the full document."),
+			Description: `WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree.` +
+				`DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document).` +
+				`ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind).` +
+				`OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable.` +
+				`IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1059,19 +1035,11 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "calculate",
-			Description: ("COMPUTE a numeric answer by generating and safely running code. " +
-				"MANDATORY whenever the question asks you to DERIVE a number by " +
-				"combining facts you found (sum/difference/percentage/ratio/sort/" +
-				"compare/difference in length/age, price, area, growth, etc.) — do " +
-				"NOT do arithmetic mentally. Language-neutral: the question and " +
-				"facts may be in ANY language (English, Chinese, ...); pass the " +
-				"numbers verbatim as written in the evidence regardless of language. " +
-				"Steps: (1) collect every needed number first (retrieve / " +
-				"search_chunks / navigate_* / list_chunks); (2) call calculate with " +
-				"the question + ALL those numbers; (3) report the computed result " +
-				"verbatim. If a needed number is missing, search for it first — do " +
-				"not estimate. If the answer IS one of the stated numbers (no " +
-				"combination needed), answer directly without this tool."),
+			Description: `WHEN TO CALL: The question asks you to DERIVE a number by combining facts you found (sum / difference / percentage / ratio / sort / compare / length / age / price / area / growth). NEVER do arithmetic mentally.` +
+				`DO NOT CALL: When the answer IS one of the stated numbers (no combination needed) — answer directly. When a needed number is still missing — retrieve it first; do not estimate.` +
+				`ARGUMENTS: question — string, the user question verbatim. facts — array of strings, the numbers or facts found in evidence, verbatim (keep the original language; pass them exactly as written).` +
+				`OUTPUT: an object with expression and result — report the computed result verbatim.` +
+				`IF IT FAILS: poor (no numeric answer derivable) — retrieve more numbers, or answer directly if the answer is already stated. Never fabricate a computation.`,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -1177,6 +1145,10 @@ type Toolset struct {
 	// DisabledTools holds tools proven unavailable this session (no compiled
 	// structure of their kind).
 	DisabledTools map[string]bool
+	// mu guards DisabledTools: one Toolset is shared by a session's concurrent
+	// rag calls (models.appendToolResults runs a round's tool calls in parallel),
+	// so the map must not be written and read unsynchronized.
+	mu sync.Mutex
 	// Exec runs the tools.
 	Exec ToolExecutor
 }
@@ -1209,7 +1181,7 @@ func (t *Toolset) ActiveToolSpecs() []ToolSpec {
 		if name == "web_search" && !t.HasWebSearch {
 			continue
 		}
-		if t.DisabledTools[name] {
+		if t.IsDisabled(name) {
 			continue
 		}
 		if s, ok := ToolMap[name]; ok {
@@ -1226,6 +1198,8 @@ func (t *Toolset) DisableTool(name string) {
 	if _, ok := ToolMap[name]; !ok {
 		return
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.DisabledTools == nil {
 		t.DisabledTools = map[string]bool{}
 	}
@@ -1234,6 +1208,8 @@ func (t *Toolset) DisableTool(name string) {
 
 // IsDisabled reports whether name has been disabled this session.
 func (t *Toolset) IsDisabled(name string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return t.DisabledTools[name]
 }
 
@@ -1665,8 +1641,10 @@ type SessionState struct {
 	// ToolChars is the running total of tool-payload chars emitted so far
 	// (O(1) accounting; Python tracks the same counter as _tool_chars).
 	ToolChars int
-	// ToolCache avoids re-executing an identical (name, args) call.
-	ToolCache map[string]ToolOutcome
+	// ToolCache avoids re-executing an identical (name, args) call. It is the
+	// per-round cache shared with the round's other sessions, so it is a guarded
+	// *ToolCache rather than a bare map.
+	ToolCache *ToolCache
 	// SearchQueries accumulates retrieval queries for near-dup detection.
 	SearchQueries []string
 	// SkippedDup counts near-duplicate retrievals suppressed so far.
@@ -1821,7 +1799,7 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	}
 	used := s.ToolChars
 	if s.ToolCache == nil {
-		s.ToolCache = map[string]ToolOutcome{}
+		s.ToolCache = NewToolCache()
 	}
 	seenQueries := append([]string(nil), s.SearchQueries...)
 	skipped := 0
@@ -1867,14 +1845,16 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			continue
 		}
 
-		// Same-session cache: avoid re-running an identical (name, args) call.
+		// Same-round cache: avoid re-running an identical (name, args) call.
 		// The cache only avoids RE-EXECUTING; a response is still returned for
 		// every declared call, because the assistant message declared it.
+		// The cache is shared by a round's concurrent sessions, hence the guarded
+		// Get/Put.
 		cacheKey := callCacheKey(c)
-		oc, cached := s.ToolCache[cacheKey]
+		oc, cached := s.ToolCache.Get(cacheKey)
 		if !cached {
 			oc = ExecuteTool(ctx, s.Tools, c.Name, c.Args)
-			s.ToolCache[cacheKey] = oc
+			s.ToolCache.Put(cacheKey, oc)
 		}
 		if q != "" {
 			seenQueries = append(seenQueries, q)
@@ -2385,6 +2365,46 @@ func callCacheKey(c ToolCall) string {
 		raw = []byte("{}")
 	}
 	return c.Name + "|" + string(raw)
+}
+
+// ToolCache is the per-round tool-outcome cache. One instance is shared by a
+// round's CONCURRENT sessions: Python builds a single dict per round
+// (agentic_rag_graph.py:1407) and hands it to every session (:2030), and only
+// asyncio's cooperative scheduling keeps that safe. Go's sessions are goroutines
+// and concurrent map access is a FATAL error there, so the map is guarded.
+type ToolCache struct {
+	mu sync.Mutex
+	m  map[string]ToolOutcome
+}
+
+// NewToolCache returns an empty, concurrency-safe tool cache.
+func NewToolCache() *ToolCache { return &ToolCache{m: map[string]ToolOutcome{}} }
+
+// Get returns the cached outcome for key. A nil cache never holds anything, so a
+// session constructed without one simply re-executes (the pre-existing behavior).
+func (c *ToolCache) Get(key string) (ToolOutcome, bool) {
+	if c == nil {
+		return ToolOutcome{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	oc, ok := c.m[key]
+	return oc, ok
+}
+
+// Put stores the outcome for key. Two identical calls that lose the race both
+// compute and both store — Python's dict behaves the same way under asyncio (the
+// cache avoids re-executing DELIBERATE repeats, not simultaneous ones).
+func (c *ToolCache) Put(key string, oc ToolOutcome) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]ToolOutcome{}
+	}
+	c.m[key] = oc
 }
 
 // stripUnpairedToolCalls removes assistant tool_calls that never received a
@@ -3040,7 +3060,7 @@ type SessionDeps struct {
 // Returns an empty Result (no states) when no model is configured or the
 // session fails — mirroring Python, which logs and returns
 // Result(messages=[], new_states=[]) rather than propagating.
-func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache map[string]ToolOutcome, sharedSearchQueries []string) Result {
+func RunActionSession(ctx context.Context, deps SessionDeps, direction string, parent State, deadlineLeft float64, baseSummary string, sharedToolCache *ToolCache, sharedSearchQueries []string) Result {
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
@@ -3091,7 +3111,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		Direction:            direction,
 	}
 	if st.ToolCache == nil {
-		st.ToolCache = map[string]ToolOutcome{}
+		st.ToolCache = NewToolCache()
 	}
 
 	// The graph loop is bounded by the turn budget and the deadline; the context

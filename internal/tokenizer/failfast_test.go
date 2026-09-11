@@ -29,12 +29,13 @@ import (
 // guards — that a PRESENT table yields a working encoder (NumTokensFromString > 0)
 // rather than a silent 0.
 //
-// Background: NumTokensFromString swallows the loader error and returns 0, so a
-// Go image that forgot to bake cl100k_base.tiktoken silently zeroed every token
-// count while content_ltks (a separate C++ tokenizer) kept working. The fix is
-// to fail fast at startup via InitCL100KEncoder; this test must exercise BOTH
-// branches, otherwise it only re-asserts "missing → error" and leaves the
-// "present → counts" behaviour — the thing that regressed — uncovered.
+// Background: a Go image that forgot to bake cl100k_base.tiktoken silently zeroed
+// every token count while content_ltks (a separate C++ tokenizer) kept working.
+// TWO guards now cover it: InitCL100KEncoder fails fast at startup, and
+// NumTokensFromString / TrimContentToTokenLimit PANIC on a missing table
+// (mirroring Python's num_tokens_from_string / trim_content, which resolve the
+// encoder outside their try). This test exercises BOTH branches — including the
+// panic — because the "present → counts" behaviour is what regressed.
 //
 // Both branches reset the encoder cache and scope bpeSearchRoots to a temp dir,
 // so neither depends on the host (no leaked tiktoken cache in an ancestor, no
@@ -58,6 +59,18 @@ func TestInitCL100KEncoder_FailFast(t *testing.T) {
 		if !strings.Contains(err.Error(), "cl100k") {
 			t.Fatalf("InitCL100KEncoder error does not mention cl100k: %v", err)
 		}
+
+		// Python raises here; returning 0 (or byte-trimming) would fail OPEN.
+		mustPanic := func(what string, fn func()) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("%s: expected a panic, got none", what)
+				}
+			}()
+			fn()
+		}
+		mustPanic("NumTokensFromString with no table", func() { NumTokensFromString("hello world") })
+		mustPanic("TrimContentToTokenLimit with no table", func() { TrimContentToTokenLimit("hello world", 1) })
 	})
 
 	// present: copy a real table into an isolated dir (via TIKTOKEN_CACHE_DIR so

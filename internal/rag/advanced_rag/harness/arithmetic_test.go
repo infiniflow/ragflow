@@ -563,3 +563,27 @@ func TestComputeFromFactsFitsToContextBudget(t *testing.T) {
 		t.Errorf("value = %q, want 44", cf.Value)
 	}
 }
+
+// TestDateDiffCountsCalendarDays pins that date_diff counts calendar days rather
+// than a time.Duration: the latter saturates at its ~292-year int64 nanosecond
+// ceiling, so every longer span came back as 106751 days.
+func TestDateDiffCountsCalendarDays(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int64
+	}{
+		{"1941-07-28", "1959-07-17", 6563},   // the prompt's own example
+		{"1607-05-14", "2020-01-01", 150712}, // 412 years: past the Duration ceiling
+		{"2020-01-01", "1607-05-14", 150712}, // order-independent (abs)
+		{"1607-05-14", "1607-05-14", 0},
+	}
+	for _, tc := range cases {
+		got, err := dateDiff(tc.a, tc.b)
+		if err != nil {
+			t.Fatalf("dateDiff(%q, %q): %v", tc.a, tc.b, err)
+		}
+		if got != tc.want {
+			t.Errorf("dateDiff(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}

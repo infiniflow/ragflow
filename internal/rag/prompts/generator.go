@@ -38,12 +38,8 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
-
-// approxCharsPerToken approximates token cost of a string (see
-// tokenizer.NumTokensFromString) so the evidence budget can be enforced without
-// a tokenizer dependency.
-const approxCharsPerToken = 4
 
 var _LOG = common.StdLogger()
 
@@ -139,61 +135,92 @@ func CitationPrompt(userDefined string) string {
 	return strings.TrimSpace(string(data)) + citationIDSuffix
 }
 
+// kbpBlock renders one knowledge block (id / title / url / metadata / content)
+// for the given 1-based index. ok is false when the chunk carries no content,
+// which KBPrompt treats as "skip" (mirrors Python's `if not c: continue`).
+//
+// The block starts with a newline, mirroring Python's `"\nID: {}".format(...)`,
+// so a caller that joins the blocks with "\n" renders the same prompt Python
+// does.
+func kbpBlock(c map[string]any, index int) (string, bool) {
+	content := chunkText(c)
+	if strings.TrimSpace(content) == "" {
+		return "", false
+	}
+	block := fmt.Sprintf("\nID: %d", index)
+	if title := chunkTitle(c); title != "" {
+		block += "\n├── Title: " + flattenNewlines(title)
+	}
+	if url, _ := c["url"].(string); url != "" {
+		block += "\n├── URL: " + flattenNewlines(url)
+	}
+	if meta, ok := c["document_metadata"].(map[string]any); ok {
+		keys := make([]string, 0, len(meta))
+		for k := range meta {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if mv := meta[k]; mv != nil {
+				if v := flattenNewlines(fmt.Sprint(mv)); v != "" {
+					block += "\n├── " + k + ": " + v
+				}
+			}
+		}
+	}
+	block += "\n└── Content:\n" + content
+	return block, true
+}
+
 // KBPrompt mirrors rag/prompts/generator.kb_prompt: render chunks into the
 // numbered knowledge blocks the citation rules refer to.
 //
 // Blocks are numbered by position (1-based) so the model's [n] citations match
 // the block order it sees, matching Python's `ID: {i}` rendering (hash_id=False).
 //
+// The budget is applied to the COMPLETE rendered block (title / url / metadata /
+// content), measured in TOKENS with the same cl100k_base encoder Python's
+// num_tokens_from_string uses: budgeting only the content in a char approximation
+// left the decoration unaccounted, so the rendered prompt could exceed the budget
+// it claims to enforce.
+//
 // maxTokens must be positive: Python's caller applies its own budget
 // (min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS)) before calling.
 func KBPrompt(chunks []map[string]any, maxTokens int) []string {
-	budgetChars := int(float64(maxTokens) * 0.97 * approxCharsPerToken)
+	blocks, _ := KBPromptWithSourceIndices(chunks, maxTokens)
+	return blocks
+}
 
-	var selected []map[string]any
+// KBPromptWithSourceIndices is KBPrompt plus, for every rendered block, the
+// index in chunks it was rendered from.
+//
+// Callers that need "the blocks of these chunks" must use the indices instead of
+// assuming one block per chunk: a chunk with no content is skipped and the loop
+// stops at the token budget, so len(blocks) <= len(chunks) and blocks[i] is not
+// chunks[i]. Slicing by a chunk count can therefore drop readable blocks or
+// point past the end.
+func KBPromptWithSourceIndices(chunks []map[string]any, maxTokens int) ([]string, []int) {
+	out := make([]string, 0, len(chunks))
+	sources := make([]int, 0, len(chunks))
 	used := 0
-	for _, c := range chunks {
+	for idx, c := range chunks {
 		if c == nil {
 			continue
 		}
-		content := chunkText(c)
-		if strings.TrimSpace(content) == "" {
+		block, ok := kbpBlock(c, len(out)+1)
+		if !ok {
 			continue
 		}
-		n := len(content)
-		if budgetChars < used+n {
-			_LOG.Printf("[KBPrompt] Not all the retrieval into prompt: %d/%d", len(selected), len(chunks))
+		n := tokenizer.NumTokensFromString(block)
+		if float64(maxTokens)*0.97 < float64(used+n) {
+			_LOG.Printf("[KBPrompt] Not all the retrieval into prompt: %d/%d", len(out), len(chunks))
 			break
 		}
 		used += n
-		selected = append(selected, c)
-	}
-
-	out := make([]string, 0, len(selected))
-	for i, c := range selected {
-		block := fmt.Sprintf("ID: %d", i+1)
-		if title := chunkTitle(c); title != "" {
-			block += "\n├── Title: " + flattenNewlines(title)
-		}
-		if url, _ := c["url"].(string); url != "" {
-			block += "\n├── URL: " + flattenNewlines(url)
-		}
-		if meta, ok := c["document_metadata"].(map[string]any); ok {
-			keys := make([]string, 0, len(meta))
-			for k := range meta {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				if v := flattenNewlines(fmt.Sprint(meta[k])); v != "" {
-					block += "\n├── " + k + ": " + v
-				}
-			}
-		}
-		block += "\n└── Content:\n" + chunkText(c)
 		out = append(out, block)
+		sources = append(sources, idx)
 	}
-	return out
+	return out, sources
 }
 
 // flattenNewlines mirrors Python kb_prompt's `re.sub(r"\n+", " ", line)`.
@@ -204,10 +231,18 @@ func flattenNewlines(s string) string {
 // chunkText mirrors Python kb_prompt's
 // get_value(ck, "content", "content_with_weight").
 func chunkText(c map[string]any) string {
-	if v, ok := GetValue(c, "content", "content_with_weight").(string); ok {
-		return v
+	v := GetValue(c, "content", "content_with_weight")
+	if v == nil {
+		// Neither content field is present: return empty so KBPrompt skips the
+		// chunk (Python's `if not c: continue`). fmt.Sprint(nil) would yield the
+		// literal "<nil>", which would both render into the prompt and consume
+		// the token budget.
+		return ""
 	}
-	return fmt.Sprint(GetValue(c, "content", "content_with_weight"))
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return fmt.Sprint(v)
 }
 
 // chunkTitle mirrors Python kb_prompt's
