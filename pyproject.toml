@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.27.1"
+version = "0.27.2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -75,8 +75,8 @@ dependencies = [
     "mypy-boto3-s3==1.40.26",
     "Office365-REST-Python-Client==2.6.2",
     "ollama>=0.5.0",
-    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",  # must match internal/common.DeepDocORTVersion (native ORT minor)
-    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",  # must match internal/common.DeepDocORTVersion (native ORT minor)
+    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",  # Python-side only; versioned independently of the Go native ORT static lib (internal/common.DeepDocORTVersion)
+    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",  # Python-side only; versioned independently of the Go native ORT static lib (internal/common.DeepDocORTVersion)
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
     "opendal>=0.45.0,<0.46.0",

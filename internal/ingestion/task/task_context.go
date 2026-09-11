@@ -71,13 +71,6 @@ type TaskContext struct {
 	// lives only here, never re-derived from IngestionTask or MemoryPayload.
 	taskID string
 
-	// stopLease stops the broker-lease heartbeat started at admission
-	// (processMessage) for a queued/running memory task. It is set by the
-	// memory dispatch path before enqueueing and invoked by the worker's
-	// settlement defer before Ack/Nack. Doc (ingestion) tasks leave it nil —
-	// their heartbeat is started and stopped entirely inside settleMessage.
-	stopLease func()
-
 	// Handle is the message-queue ack handle for the task message that scheduled
 	// this context. The scheduler sets it before queueing; the worker decides
 	// the terminal Ack/Nack:
@@ -116,34 +109,6 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 		taskID:        task.ID,
 		IngestionTask: task,
 	}
-}
-
-// SetStopLease attaches the admission-started broker-lease stop function to a
-// memory task context so the worker can stop the heartbeat before settlement.
-// A nil stop is a no-op. Doc (ingestion) contexts never call this.
-func (c *TaskContext) SetStopLease(stop func()) {
-	if c != nil {
-		c.stopLease = stop
-	}
-}
-
-// StopLease invokes the attached stop function, if any, blocking until no
-// InProgress is in flight (Heartbeat.Stop semantics). It is safe to call with
-// no attached lease (doc path or direct-execution test path).
-func (c *TaskContext) StopLease() {
-	if c != nil && c.stopLease != nil {
-		c.stopLease()
-	}
-}
-
-// StopLeaseFn returns the attached stop function (nil when no admission
-// heartbeat was started), so callers can detect whether a lease exists without
-// invoking it.
-func (c *TaskContext) StopLeaseFn() func() {
-	if c == nil {
-		return nil
-	}
-	return c.stopLease
 }
 
 // ID returns the task identifier for claim/release and logging. It is the

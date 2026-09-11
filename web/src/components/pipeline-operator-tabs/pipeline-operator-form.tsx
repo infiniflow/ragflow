@@ -30,12 +30,16 @@ type PipelineOperatorFormProps = {
   node: RAGFlowNodeType;
   onValuesChange?: (values: any) => void;
   externalErrors?: FieldErrors;
+  // Dataset-side embeddings show a fixed set of parser file types; only the
+  // canvas parser allows add/remove.
+  fixedFileFormats?: boolean;
 };
 
 const PipelineOperatorForm = ({
   node,
   onValuesChange,
   externalErrors,
+  fixedFileFormats,
 }: PipelineOperatorFormProps) => {
   const operatorType = getOperatorType(
     (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
@@ -56,6 +60,7 @@ const PipelineOperatorForm = ({
           onValuesChange={handleValuesChange}
           hideOutputs
           externalErrors={externalErrors}
+          fixedFileFormats={fixedFileFormats}
         />
       );
     case Operator.TokenChunker:

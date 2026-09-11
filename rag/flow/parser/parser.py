@@ -306,15 +306,6 @@ class ParserParam(ProcessParamBase):
             html_output_format = html_config.get("output_format", "")
             self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
-        audio_config = self.setups.get("audio", "")
-        if audio_config:
-            audio_vlm = audio_config.get("vlm") or {}
-            self.check_empty(audio_vlm.get("llm_id"), "Audio VLM")
-
-        video_config = self.setups.get("video", "")
-        if video_config:
-            video_vlm = video_config.get("vlm") or {}
-            self.check_empty(video_vlm.get("llm_id"), "Video VLM")
         email_config = self.setups.get("email", "")
         if email_config:
             email_output_format = email_config.get("output_format", "")
@@ -1223,14 +1214,17 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an audio.")
 
         conf = self._param.setups["audio"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
         _, ext = os.path.splitext(name)
         with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-            seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
+            if vlm.get("llm_id"):
+                seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
+            else:
+                seq2txt_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.ASR)
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
@@ -1241,9 +1235,12 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
 
         conf = self._param.setups["video"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
-        cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
+        if vlm.get("llm_id"):
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
+        else:
+            cv_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.VISION)
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))

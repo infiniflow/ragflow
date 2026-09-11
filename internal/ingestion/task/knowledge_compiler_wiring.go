@@ -642,7 +642,7 @@ const kcChatRetryMax = 5
 // kcChatAttemptTimeout bounds a single Chat call per retry attempt. It matches
 // the non-streaming provider deadline so the knowledge-compiler adapter does
 // not cancel a valid long-running response before the provider does.
-const kcChatAttemptTimeout = 3 * time.Minute
+const kcChatAttemptTimeout = 20 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
