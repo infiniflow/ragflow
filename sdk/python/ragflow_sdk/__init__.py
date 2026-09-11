@@ -14,10 +14,6 @@
 #  limitations under the License.
 #
 
-from beartype.claw import beartype_this_package
-
-beartype_this_package()
-
 import importlib.metadata
 
 from .ragflow import RAGFlow
