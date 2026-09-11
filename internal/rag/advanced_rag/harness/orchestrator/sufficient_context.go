@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/rag/advanced_rag/harness"
 	"ragflow/internal/rag/prompts"
@@ -145,7 +146,7 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 		"overall_draft":  overallDraft,
 	})
 	_LOG.Printf("[SCA] unified review of %s (reports only, %d chars; overall draft %d chars)",
-		fmtClaimCount(len(claims)), len(claimsContext), len(overallDraft))
+		fmtClaimCount(len(claims)), utf8.RuneCountInString(claimsContext), utf8.RuneCountInString(overallDraft))
 
 	result, err := deps.Model.GenJSON(ctx, prompt)
 	if err != nil {
@@ -166,7 +167,7 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 			if !ok {
 				continue
 			}
-			cid := strings.TrimSpace(fmt.Sprint(m["claim_id"]))
+			cid := strOf(m["claim_id"])
 			if cid == "" {
 				continue
 			}
@@ -176,12 +177,12 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 					if s := strings.TrimSpace(fmt.Sprint(firstNonEmpty(um["assertion"], um["reason"]))); s != "" {
 						ungrounded = append(ungrounded, s)
 					}
-				} else if s := strings.TrimSpace(fmt.Sprint(u)); s != "" {
+				} else if s := strOf(u); s != "" {
 					ungrounded = append(ungrounded, s)
 				}
 			}
 			claimsOut[cid] = ClaimVerdict{
-				Grounded:           truthy(m["grounded"]),
+				Grounded:           coerceBool(m["grounded"]),
 				Ungrounded:         ungrounded,
 				MissingInformation: parseMissingInformation(m["missing_information"]),
 			}
@@ -195,19 +196,19 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 		if !ok {
 			continue
 		}
-		sqText := strings.TrimSpace(fmt.Sprint(m["sub_query"]))
+		sqText := strOf(m["sub_query"])
 		if sqText == "" {
 			continue
 		}
-		entry := SubQuery{SubQuery: sqText, Satisfied: truthy(m["satisfied"])}
+		entry := SubQuery{SubQuery: sqText, Satisfied: coerceBool(m["satisfied"])}
 		if !entry.Satisfied {
-			entry.MissingFact = strings.TrimSpace(fmt.Sprint(m["missing_fact"]))
-			entry.SearchHint = strings.TrimSpace(fmt.Sprint(m["search_hint"]))
+			entry.MissingFact = strOf(m["missing_fact"])
+			entry.SearchHint = strOf(m["search_hint"])
 		}
 		subQueries = append(subQueries, entry)
 	}
 
-	isSufficient := truthy(data["is_sufficient"])
+	isSufficient := coerceBool(data["is_sufficient"])
 
 	// Failsafe: the SCA judged the context insufficient but returned an EMPTY
 	// claims array (a known degradation on very long prompts). Without a gap, the
@@ -237,7 +238,7 @@ func SufficientContextAgent(ctx context.Context, deps SCADeps, question string, 
 		IsSufficient:   isSufficient,
 		Confidence:     clamp(data["confidence"]),
 		Contradictions: stringList(data["contradictions"]),
-		Reasoning:      strings.TrimSpace(fmt.Sprint(data["reasoning"])),
+		Reasoning:      strOf(data["reasoning"]),
 		SubQueries:     subQueries,
 		Claims:         claimsOut,
 	}
@@ -315,7 +316,6 @@ func renderClaimContext(claims []ClaimDraft, kb *harness.Kbinfos) string {
 			continue
 		}
 		block := fmt.Sprintf("Claim %s (draft):\n%s", c.ID, c.Draft)
-		used += len(block) + 2
 		var anchors []string
 		for _, eid := range c.EvidenceIDs {
 			ck, ok := id2chunk[strings.TrimSpace(eid)]
@@ -337,11 +337,23 @@ func renderClaimContext(claims []ClaimDraft, kb *harness.Kbinfos) string {
 			}
 		}
 		if len(anchors) > 0 {
-			anchorText := strings.Join(anchors, " | ")
-			block += "\n  Evidence: " + anchorText
-			used += len(anchorText) + 4
+			block += "\n  Evidence: " + strings.Join(anchors, " | ")
+		}
+		// Apply the budget to the COMPLETE block before appending it, trimming it
+		// to what remains: accounting the block only AFTER appending let a single
+		// oversized claim blow straight past scaClaimsContextMax (the cap the
+		// comment claims bounds the whole rendered context). Cut by rune
+		// (Python's str[:N]) so the trim never splits a multibyte character.
+		remaining := scaClaimsContextMax - used
+		if remaining <= 0 {
+			break
+		}
+		if r := []rune(block); len(r) > remaining {
+			block = string(r[:remaining])
 		}
 		blocks = append(blocks, block)
+		// The block plus the "\n\n" join separator.
+		used += utf8.RuneCountInString(block) + 2
 		if used >= scaClaimsContextMax {
 			break
 		}
@@ -370,8 +382,11 @@ func renderOverallDraft(claims []ClaimDraft) string {
 		return "(no overall draft)"
 	}
 	draft := strings.Join(parts, "\n")
-	if len(draft) > scaClaimsContextMax {
-		draft = draft[:scaClaimsContextMax]
+	// Truncate by RUNE, not byte: Python slices str[:N] by code point, and a byte
+	// slice through a multibyte (e.g. CJK) rune would emit invalid UTF-8 (or
+	// replacement characters) into the SCA prompt.
+	if r := []rune(draft); len(r) > scaClaimsContextMax {
+		draft = string(r[:scaClaimsContextMax])
 	}
 	return draft
 }
@@ -505,19 +520,26 @@ func clamp(v any) float64 {
 	return f
 }
 
-// truthy mirrors Python's builtin bool() on the raw JSON value, exactly as the
-// Python sufficient_context path evaluates these fields (e.g.
-// bool(item.get("grounded")), bool(result.get("is_sufficient"))). Python's bool()
-// treats ANY non-empty string as truthy — including the literal "false" or "0" —
-// because they are non-empty. We must not string-parse booleans here, or a model
-// that returns grounded:"false" as a string would wrongly collapse to False while
-// Python keeps it True. Only an empty string / 0 / nil / False is falsy.
-func truthy(v any) bool {
+// coerceBool reads an LLM-reported boolean, tolerating the string serialisations
+// a drifted model reply may carry. It deliberately does NOT use raw truthiness:
+// a non-empty string is truthy in both Go and Python, so bool("false") and
+// bool("0") are TRUE — which would silently INVERT a verdict, marking
+// insufficient context sufficient or an ungrounded claim grounded.
+//
+// The recognised true/false spellings are mapped explicitly; an empty or
+// unrecognised value fails CLOSED (false), matching this codebase's convention
+// that an unusable verdict is INSUFFICIENT (see the SCA-unavailable path in
+// agentic_rag_graph.go, which treats a timeout/unparsable reply as insufficient).
+func coerceBool(v any) bool {
 	switch t := v.(type) {
 	case bool:
 		return t
 	case string:
-		return t != ""
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true", "1", "yes", "y", "on":
+			return true
+		}
+		return false
 	case float64:
 		return t != 0
 	case int:
@@ -527,19 +549,29 @@ func truthy(v any) bool {
 	case nil:
 		return false
 	}
-	return true
+	return false
+}
+
+// strOf renders a raw JSON field as a trimmed string, mapping an absent or null
+// value (nil) to "". fmt.Sprint(nil) yields the literal "<nil>", which would
+// otherwise masquerade as a real claim id, sub-query, gap or reasoning text.
+func strOf(v any) string {
+	if v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
 }
 
 func parseMissingInformation(v any) []MissingPiece {
 	var out []MissingPiece
 	for _, m := range asSlice(v) {
 		if mm, ok := m.(map[string]any); ok {
-			what := strings.TrimSpace(fmt.Sprint(mm["what"]))
-			hint := strings.TrimSpace(fmt.Sprint(mm["search_hint"]))
+			what := strOf(mm["what"])
+			hint := strOf(mm["search_hint"])
 			if what != "" || hint != "" {
 				out = append(out, MissingPiece{What: what, SearchHint: hint})
 			}
-		} else if s := strings.TrimSpace(fmt.Sprint(m)); s != "" {
+		} else if s := strOf(m); s != "" {
 			out = append(out, MissingPiece{What: s})
 		}
 	}

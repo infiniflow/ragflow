@@ -16,7 +16,12 @@
 
 package models
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"ragflow/internal/tokenizer"
+)
 
 // stubSession returns a canned result per tool name.
 type stubSession struct {
@@ -168,5 +173,42 @@ func TestSendTerminalEmptyAnswerIsSilent(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("streamed %v, want nothing for an empty terminal answer", got)
+	}
+}
+
+// TestChatWithToolsCountsTerminalRoundUsageOnce pins that a terminal-tool round
+// contributes its tokens exactly once, in both the returned total and the
+// run-usage sink (whose Add accumulates): runToolLoop folds the round in before
+// the short-circuit decides.
+func TestChatWithToolsCountsTerminalRoundUsageOnce(t *testing.T) {
+	const (
+		answer = "[SUMMARY]"
+		total  = 15
+	)
+	driver := &captureToolDriver{resp: &ChatResponse{
+		ToolCalls: []map[string]interface{}{toolCallMsg("call-1", "summarize_document", `{"doc_id":"abc"}`)},
+		Usage:     &TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: total},
+	}}
+	modelName, apiKey := "m", "k"
+	cm := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	cm.ToolConfig = &ToolConfig{
+		Tools:           `[{"type":"function","function":{"name":"summarize_document"}}]`,
+		ToolCallSession: &stubSession{results: map[string]string{"summarize_document": answer}},
+		TerminalTools:   map[string]struct{}{"summarize_document": {}},
+	}
+
+	ctx := tokenizer.WithRunUsage(context.Background())
+	got, tokens, err := cm.ChatWithTools(ctx, "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{})
+	if err != nil {
+		t.Fatalf("ChatWithTools: %v", err)
+	}
+	if got != answer {
+		t.Fatalf("answer = %q, want the terminal result %q", got, answer)
+	}
+	if tokens != total {
+		t.Errorf("totalTokens = %d, want %d (the terminal round must be counted once)", tokens, total)
+	}
+	if _, _, runTotal, calls := tokenizer.GetRunUsage(ctx).Snapshot(); runTotal != total || calls != 1 {
+		t.Errorf("run usage total=%d calls=%d, want total=%d calls=1", runTotal, calls, total)
 	}
 }

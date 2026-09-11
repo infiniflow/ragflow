@@ -1380,11 +1380,14 @@ func dateDiff(a, b any) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	days := db.Sub(da).Hours() / 24
-	if days < 0 {
-		days = -days
+	// Both dates are midnight UTC, so a second-based difference is exact and
+	// avoids time.Duration's ~292-year int64 nanosecond ceiling, which SATURATES
+	// (every longer span came back as 106751 days).
+	seconds := db.Unix() - da.Unix()
+	if seconds < 0 {
+		seconds = -seconds
 	}
-	return int64(days), nil
+	return seconds / 86400, nil
 }
 
 func parseISODate(s string) (time.Time, error) {

@@ -333,7 +333,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 // It stays in the harness package because it depends on the agentic Retriever /
 // RetrieveRequest; the routing algorithm itself lives in internal/service/nav.
 func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
-	return func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, _ float64) []map[string]any {
+	return func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, _ float64) ([]map[string]any, error) {
 		chunks, err := r.Retrieve(ctx, RetrieveRequest{
 			Query:      query,
 			DatasetIDs: []string{kbID},
@@ -341,10 +341,13 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 			DocScope:   docScope,
 			TopN:       topN,
 		})
-		if err != nil || len(chunks) == 0 {
-			return nil
+		if err != nil {
+			// Surface the failure instead of folding it into an empty result:
+			// the router reports it as an error so the orchestrator takes its
+			// fallback rather than telling the model the tree routed nothing.
+			return nil, err
 		}
-		return chunks
+		return chunks, nil
 	}
 }
 
@@ -502,6 +505,17 @@ func argString(args map[string]any, key string) string {
 	return s
 }
 
+// evidencePoolCap is the hard cap on the shared evidence pool
+// (kbinfos["chunks"]). Mirrors Python _EVIDENCE_POOL_CAP (=60, the same ceiling
+// as _MAX_SNIPPET_POOL / _SCA_VIEW_CAP): once the pool is saturated, further
+// admits cannot reach the SCA view or improve the answer, so the action session
+// stops admitting chunks (observed pools otherwise grew to ~106).
+const evidencePoolCap = 60
+
+// The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
+// the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
+// while another session appends.
+
 // search runs one retrieval call for a tool invocation.
 //
 // Python's retrieve/search_chunks both funnel into tools/search.py, differing
@@ -549,13 +563,10 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	newChunks := 0
 	// Per-call admittance state, mirroring Python _run_search/_admit_evidence
 	// (action_session.py:_run_search): `seen` dedups chunks ACROSS the queries of
-	// this one call; kbSeen holds the shared pool's existing identities
-	// (Python `kb_seen`).
+	// this one call. The pool-side dedup is Kbinfos.Admit's job, against the LIVE
+	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
+	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
-	kbSeen := make(map[string]bool, len(e.deps.KB.Chunks))
-	for _, c := range e.deps.KB.Chunks {
-		kbSeen[chunkKey(c)] = true
-	}
 	for _, q := range queries {
 		// Per-tool top_n (mirrors Python action_session: retrieve=10,
 		// search_chunks=20). They were previously collapsed onto e.req.TopN,
@@ -571,10 +582,11 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// global switch can no longer disable the semantic leg.
 		//
 		// Python's search_chunks tool ALWAYS enables compiled-structure expansion
-		// (action_session.py:execute_tool passes use_compiled=True); retrieve/grep_search
-		// never do. So Go mirrors that: compiled is on for search_chunks and off
-		// for every other retrieve-family tool, independent of e.req.UseCompiled
-		// (which gates the L1 direct retrieve, not the action_session tool loop).
+		// in ALL modes, not just high (action_session.py:execute_tool passes
+		// use_compiled=True); retrieve/grep_search never do. So Go mirrors that:
+		// compiled is on for search_chunks and off for every other retrieve-family
+		// tool, independent of e.req.UseCompiled (which gates the L1 direct
+		// retrieve, not the action_session tool loop).
 		var searchFn func(context.Context, SearchDeps, SearchParams) ([]map[string]any, []map[string]any)
 		useCompiled := name == "search_chunks"
 		if useCompiled {
@@ -627,24 +639,33 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// id, the chunk ID as the evidence reference (Python's `ids` holds ids,
 		// not pool positions), and only chunks NEW to the shared pool appended
 		// to it — so REDUNDANT means "nothing new", not "nothing returned".
-		for _, c := range chunks {
-			cid := ChunkIDOf(c)
-			if seen[cid] {
-				continue
+		//
+		// ONE query's batch is one critical section: Python's per-query loop has
+		// no await (the awaits sit in the outer query loop, :691-700), so asyncio
+		// cannot interleave two sessions' batches. Locking per chunk would let
+		// them interleave into pool orders Python can never produce.
+		e.deps.KB.Admit(func(p *PoolAdmitter) {
+			for _, c := range chunks {
+				// Python _admit_evidence early-stops at the top once the shared pool
+				// reaches the cap, BEFORE the per-call dedup.
+				if p.Full() {
+					continue
+				}
+				cid := ChunkIDOf(c)
+				if seen[cid] {
+					continue
+				}
+				seen[cid] = true
+				evidenceIDs = append(evidenceIDs, cid)
+				payload = append(payload, passageFromChunk(c))
+				// Pool identity uses chunkKey (Go's stable key): Python's _chunk_key
+				// falls back to id(ck) — the dict's address — so an equivalent
+				// re-retrieved chunk never matches and is appended again.
+				if p.Add(c) {
+					newChunks++
+				}
 			}
-			seen[cid] = true
-			evidenceIDs = append(evidenceIDs, cid)
-			payload = append(payload, passageFromChunk(c))
-			// Pool identity uses chunkKey (Go's stable key): Python's _chunk_key
-			// falls back to id(ck) — the dict's address — so an equivalent
-			// re-retrieved chunk never matches and is appended again.
-			key := chunkKey(c)
-			if !kbSeen[key] {
-				kbSeen[key] = true
-				e.deps.KB.Chunks = append(e.deps.KB.Chunks, c)
-				newChunks++
-			}
-		}
+		})
 		// Pool this search's doc_aggs (skipped when it returned no chunks, like
 		// _merge_kbinfos).
 		e.deps.KB.MergeDocAggs(aggs)
@@ -920,14 +941,18 @@ type RuntimeRetriever struct{}
 func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([]map[string]any, error) {
 	svc := runtime.GetRetrievalService()
 	chunks, err := svc.Search(ctx, nil, runtime.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		DocScope:                 req.DocScope,
-		TopN:                     req.TopN,
-		TopK:                     req.TopK,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		SimilarityThreshold:      &req.SimilarityThreshold,
-		KeywordsSimilarityWeight: &req.KeywordsSimilarityWeight,
+		Query:                 req.Query,
+		DatasetIDs:            req.DatasetIDs,
+		DocScope:              req.DocScope,
+		TopN:                  req.TopN,
+		TopK:                  req.TopK,
+		RerankCandidatesCount: req.RerankCandidatesCount,
+		// Passed through as pointers: nil (the caller did not supply one) must
+		// stay nil so the retrieval service keeps its own default, while a zero
+		// is a real override. Taking the address of a zero value here forced
+		// "threshold 0 / full vector weight" onto every caller that omitted them.
+		SimilarityThreshold:      req.SimilarityThreshold,
+		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		TenantID:                 req.TenantID,
 		RankFeature:              req.RankFeature,
 		// ExcludeCompiled maps Python hybrid_search's

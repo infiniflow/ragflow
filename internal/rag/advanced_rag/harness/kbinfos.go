@@ -77,7 +77,15 @@ type SearchParams struct {
 type SearchFn func(ctx context.Context, p SearchParams) ([]map[string]any, []map[string]any)
 
 // Kbinfos is the shared accumulation store.
+//
+// ONE Kbinfos is shared by a round's CONCURRENT sessions (SessionDeps.KB; see
+// RunSlotResearchPass), so its mutable state is guarded by mu. Python needs no
+// lock — its sessions are coroutines and every admission stretch is await-free
+// (action_session.py:691-700), so asyncio cannot interleave two sessions'
+// batches. Go runs the same sessions on goroutines, so the critical sections
+// Python gets for free have to be locked explicitly: see Admit.
 type Kbinfos struct {
+	mu      sync.Mutex
 	Chunks  []map[string]any
 	DocAggs []map[string]any
 	// Memory is the lossless store of raw retrieved chunks backing the (lossy)
@@ -96,10 +104,99 @@ type Kbinfos struct {
 // HasChunks mirrors Python `bool(kbinfos.get("chunks"))`.
 func (k *Kbinfos) HasChunks() bool { return len(k.Chunks) > 0 }
 
+// Admit runs fn as ONE critical section over the evidence pool.
+//
+// The granularity is the caller's, and it must span the stretch Python leaves
+// await-free: ONE query's candidate batch, because the awaits sit in the OUTER
+// query loop (action_session.py:691-700). Locking per chunk would let two
+// sessions' batches interleave into pool orders Python cannot produce, and the
+// pool order is observable — it drives the rendered prompt order and the `ID: n`
+// numbering, extractRelevantEvidence's first-4 pick, and which chunks make it in
+// under the cap.
+//
+// Inside fn do, per chunk, exactly what _admit_evidence does, in its order:
+//
+//	p.Full()   → skip the chunk. The cap check precedes the per-call dedup
+//	             (:638-646), so a rejected chunk is NOT marked seen and is
+//	             retried once room frees.
+//	then the call-local dedup (`seen`) and payload/ids bookkeeping;
+//	p.Add(c)   → dedup against the live pool and append.
+func (k *Kbinfos) Admit(fn func(p *PoolAdmitter)) {
+	if k == nil {
+		// No pool bound: the callback still runs — a tool hands its passages back
+		// either way — but nothing is pooled and the cap never blocks, which is
+		// what the callers' old `if deps.KB != nil` guard did.
+		fn(&PoolAdmitter{})
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	fn(&PoolAdmitter{k: k})
+}
+
+// PoolAdmitter is the pool handle, valid only inside Kbinfos.Admit's callback.
+type PoolAdmitter struct{ k *Kbinfos }
+
+// Full mirrors the early stop at the top of _admit_evidence: at the cap the
+// chunk is skipped, and nothing about it is recorded (so a rejected chunk is
+// retried once room frees).
+//
+// The "pool FULL" line belongs here for the same reason it lives inside
+// _admit_evidence (:639-645), and it is emitted once per PROCESS — Python
+// documents _EVIDENCE_POOL_STATE as a "Per-process flag" (:62-64). sync.Once
+// because concurrent sessions call this under their own pool lock.
+func (p *PoolAdmitter) Full() bool {
+	if p.k == nil || len(p.k.Chunks) < evidencePoolCap {
+		return false
+	}
+	evidencePoolFullLogged.Do(func() {
+		_LOG.Printf("[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.", len(p.k.Chunks), evidencePoolCap)
+	})
+	return true
+}
+
+// evidencePoolFullLogged mirrors Python _EVIDENCE_POOL_STATE["full_logged"]: a
+// PER-PROCESS flag (action_session.py:62-64), so the line is emitted once per
+// process — not once per rejected chunk, and NOT once per session. The pool never
+// shrinks mid-process, so no reset is needed.
+var evidencePoolFullLogged sync.Once
+
+// Add appends c unless the LIVE pool already holds it, reporting whether it
+// appended — Python's "new to the shared pool" return.
+//
+// The test is against the live pool, not a snapshot taken when the call started
+// (Python's `kb_seen`, :690). That snapshot is exact only because nothing can
+// interleave with it; under Go's parallelism it would re-append a chunk another
+// session just pooled, which Python can never do.
+//
+// There is deliberately NO cap check here: the compiled-expansion path appends
+// uncapped in Python too, which is what pushes the pool past _EVIDENCE_POOL_CAP
+// (see the comment on evidencePoolCap). Callers that admit user-facing search
+// hits check Full() first.
+func (p *PoolAdmitter) Add(c map[string]any) bool {
+	if p.k == nil {
+		return false
+	}
+	if p.Index(c) >= 0 {
+		return false
+	}
+	p.k.Chunks = append(p.k.Chunks, c)
+	return true
+}
+
+// Index is the pool position of c's identity, or -1 when the pool lacks it (and
+// for an unbound pool): the positional contract of Merge — a deduped chunk still
+// reports its position.
+func (p *PoolAdmitter) Index(c map[string]any) int {
+	if p.k == nil {
+		return -1
+	}
+	return indexOfChunk(p.k.Chunks, chunkKey(c))
+}
+
 // Merge appends the given chunks/aggs, deduplicating by chunkKey, and returns the
 // GLOBAL index (position in k.Chunks) of every contributed chunk — deduped ones
-// included. len(result) is therefore NOT the count of new evidence: callers that
-// need that compare len(k.Chunks) before and after.
+// included.
 //
 // Mirrors orchestrator/direct.py:_merge_kbinfos, including its early return on an
 // empty chunk list (neither chunks nor doc_aggs are merged).
@@ -107,20 +204,16 @@ func (k *Kbinfos) Merge(chunks, aggs []map[string]any) []int {
 	if len(chunks) == 0 {
 		return nil
 	}
-	seen := make(map[string]bool, len(k.Chunks))
-	for _, c := range k.Chunks {
-		seen[chunkKey(c)] = true
-	}
-	var added []int
-	for _, c := range chunks {
-		kk := chunkKey(c)
-		if !seen[kk] {
-			seen[kk] = true
-			k.Chunks = append(k.Chunks, c)
+	added := make([]int, 0, len(chunks))
+	// One critical section for the whole merge: the dedup is against the live
+	// pool, so a concurrent session cannot slip the same chunk in between.
+	k.Admit(func(p *PoolAdmitter) {
+		for _, c := range chunks {
+			p.Add(c)
+			// Deduped chunks get an entry too: the return value is positional.
+			added = append(added, p.Index(c))
 		}
-		// Deduped chunks get an entry too: the return value is positional.
-		added = append(added, indexOfChunk(k.Chunks, kk))
-	}
+	})
 	k.MergeDocAggs(aggs)
 	return added
 }
@@ -132,9 +225,11 @@ func (k *Kbinfos) Merge(chunks, aggs []map[string]any) []int {
 // the search tool must record a search's aggregations even when every chunk it
 // returned was already pooled.
 func (k *Kbinfos) MergeDocAggs(aggs []map[string]any) {
-	if len(aggs) == 0 {
+	if k == nil || len(aggs) == 0 {
 		return
 	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	dseen := make(map[string]bool, len(k.DocAggs)+len(aggs))
 	for _, d := range k.DocAggs {
 		dseen[docAggKey(d)] = true
@@ -191,6 +286,12 @@ func chunkText(c map[string]any) string {
 // present; otherwise falls back to a content-derived key so chunks without an
 // id still dedup correctly (and never collide on a shared empty key).
 //
+// The content branch reuses chunkText — the SAME alias chain the rest of the
+// harness reads (content_with_weight -> content -> text). Reading only the first
+// two made two id-less chunks that carry just "text" fall through to the
+// doc-level fallback and share one key, so Merge/MemoryAdd discarded distinct
+// evidence.
+//
 // This diverges from Python _chunk_key (`chunk_id or id or id(ck)`): Python's
 // final fallback is `id(ck)` — the dict object's memory address — which means
 // two equivalent chunks returned as distinct objects never share a key, so
@@ -203,12 +304,7 @@ func chunkKey(c map[string]any) string {
 	if id, ok := c["id"].(string); ok && id != "" {
 		return "id:" + id
 	}
-	content := ""
-	if t, ok := c["content_with_weight"].(string); ok {
-		content = t
-	} else if t, ok := c["content"].(string); ok {
-		content = t
-	}
+	content := chunkText(c)
 	if content == "" {
 		// No stable identity: fall back to the doc reference so at least
 		// per-document grouping is preserved (rarely reached).
