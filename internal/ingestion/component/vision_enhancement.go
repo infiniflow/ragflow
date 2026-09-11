@@ -368,5 +368,6 @@ func defaultVisionChatInvoker(
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
 	vision := true
-	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	thinking := false
+	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision, Thinking: &thinking}, nil)
 }
