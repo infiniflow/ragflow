@@ -167,6 +167,27 @@ func TestRouteSCADisabledSCAClosesOut(t *testing.T) {
 	}
 }
 
+// TestRouteSCAFullPoolShortCircuits pins the PR: a pool at/over the SCA view cap
+// cannot flip the verdict, so routeSCA finalizes instead of researching — even
+// when the verdict is insufficient and headroom remains.
+func TestRouteSCAFullPoolShortCircuits(t *testing.T) {
+	st := &AgenticState{
+		Verdict:      VerdictInsufficient,
+		MaxLoops:     3,
+		SearchRounds: 0,
+		KB:           &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
+	}
+	st.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("full pool: expected formalize, got %v", n)
+	}
+	// One chunk below the cap still takes the normal research path.
+	st.KB.Chunks = make([]map[string]any, SCAViewCap-1)
+	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
+		t.Fatalf("below cap: expected rewrite, got %v", n)
+	}
+}
+
 func TestRouteSCAInsufficientStartsRewrite(t *testing.T) {
 	// Sufficient verdict closes out.
 	st := &AgenticState{Verdict: VerdictSufficient, MaxLoops: 3}
@@ -273,10 +294,12 @@ func TestExpandFanoutsFallbackOnBadJSON(t *testing.T) {
 	mdl := &scriptedModel{}
 	mdl.push("I cannot break this down.")
 	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "single question")
-	// Bad JSON: the loop falls back to line-splitting the model's reply, which
-	// yields the reply itself (single line), not the raw question.
-	if len(got) != 1 || got[0] != "I cannot break this down." {
-		t.Fatalf("expected line-split fallback, got %v", got)
+	// Bad JSON: the model answered in prose, so the loop line-splits the reply
+	// (yielding the reply itself, not the raw question). The loose path strips the
+	// Python `strip("-•0123456789. ")` cutset from both ends, so the trailing
+	// period is dropped exactly as `_parse_fanouts` would.
+	if len(got) != 1 || got[0] != "I cannot break this down" {
+		t.Fatalf("expected line-split fallback without the trailing period, got %v", got)
 	}
 }
 
@@ -333,6 +356,51 @@ func TestFanoutLooksLikeQueryBounds(t *testing.T) {
 	}
 	if fanoutLooksLikeQuery(strings.Repeat("a", fanoutMaxChars+1), false) {
 		t.Errorf("fan-outs over %d chars must be rejected", fanoutMaxChars)
+	}
+}
+
+// TestFanoutLooksLikeQueryCountsRunes pins Python len(): the 160-char cap counts
+// code points, so a CJK fan-out at the limit must survive even though it exceeds
+// 160 BYTES, and one over the limit must still be rejected.
+func TestFanoutLooksLikeQueryCountsRunes(t *testing.T) {
+	atLimit := strings.Repeat("中", fanoutMaxChars) // 160 chars / 480 bytes
+	if !fanoutLooksLikeQuery(atLimit, false) {
+		t.Errorf("a %d-character fan-out must pass: the cap counts characters, not bytes", fanoutMaxChars)
+	}
+	if fanoutLooksLikeQuery(atLimit+"中", false) {
+		t.Errorf("a %d-character fan-out must be rejected", fanoutMaxChars+1)
+	}
+}
+
+// TestParseFanoutsLooseStripsBothEnds pins Python `ln.strip("-•0123456789. ")`:
+// the bullet/numbering cutset is stripped from BOTH ends, so a trailing period is
+// not carried into the retrieval query (the leading "1." already was not).
+func TestParseFanoutsLooseStripsBothEnds(t *testing.T) {
+	got := parseFanouts("1. who opened the library.\n- when did it open?")
+	want := []string{"who opened the library", "when did it open?"}
+	if len(got) != len(want) {
+		t.Fatalf("parseFanouts = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestParseFanoutsSplitsOnAllLineBreaks pins Python `text.splitlines()`: a
+// carry-return separated reply yields one fan-out per line, not a single fused
+// blob (splitting on "\n" alone would keep the lone "\r" inline).
+func TestParseFanoutsSplitsOnAllLineBreaks(t *testing.T) {
+	got := parseFanouts("who opened it\rwhen did it open?")
+	want := []string{"who opened it", "when did it open?"}
+	if len(got) != len(want) {
+		t.Fatalf("parseFanouts = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
@@ -610,7 +678,13 @@ type channelRetriever struct {
 }
 
 func (r *channelRetriever) Retrieve(_ context.Context, req harness.RetrieveRequest) ([]map[string]any, error) {
-	r.weights = append(r.weights, req.KeywordsSimilarityWeight)
+	// Each leg names its weight explicitly; nil (the control was not supplied)
+	// is recorded as -1 so the assertions below catch a leg that drops it.
+	weight := -1.0
+	if req.KeywordsSimilarityWeight != nil {
+		weight = *req.KeywordsSimilarityWeight
+	}
+	r.weights = append(r.weights, weight)
 	r.topN = append(r.topN, req.TopN)
 	r.queries = append(r.queries, req.Query)
 	return nil, nil
@@ -1232,14 +1306,17 @@ func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
 func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	st := &AgenticState{UnresolvedSlots: []map[string]any{
 		{"question_clues": []string{"a", "b", "c"}},
-		{"question_clues": []string{"a", "d"}}, // duplicate "a" is dropped
+		{"question_clues": []string{"a", "d"}}, // Python appends without dedupe
 	}}
 	gaps := unresolvedClueGaps(st)
-	if len(gaps) != 3 {
-		t.Fatalf("gaps = %d, want 3 (2 from the first slot + 1 new from the second)", len(gaps))
+	if len(gaps) != 4 {
+		t.Fatalf("gaps = %d, want 4 (first two clues of each slot, duplicates kept)", len(gaps))
 	}
 	if gaps[0].What != "a" || gaps[0].SearchHint != "a" {
 		t.Errorf("gaps[0] = %+v, want what=hint=\"a\"", gaps[0])
+	}
+	if gaps[2].What != "a" || gaps[3].What != "d" {
+		t.Errorf("gaps = %+v, want the second slot's clues a,d appended verbatim", gaps)
 	}
 }
 
@@ -2490,25 +2567,25 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 
 	// First outer rag() call — unsatisfying verdict bumps the counter to 1.
 	recordConsecutiveUnanswerable(cache, VerdictInsufficient)
-	if cache.ConsecutiveUnanswerable != 1 {
+	if cache.ConsecutiveUnanswerable() != 1 {
 		t.Fatalf("after 1st outer rag() call: ConsecutiveUnanswerable = %d, want 1",
-			cache.ConsecutiveUnanswerable)
+			cache.ConsecutiveUnanswerable())
 	}
 
 	// Second outer rag() call — still unsatisfying: counter must reach 2 so the
 	// STOP guard can fire (the state the pre-fix code could never reach on the
 	// outer path, because deps.Cache was nil and the increment was skipped).
 	recordConsecutiveUnanswerable(cache, VerdictInsufficient)
-	if cache.ConsecutiveUnanswerable != 2 {
+	if cache.ConsecutiveUnanswerable() != 2 {
 		t.Fatalf("after 2nd outer rag() call: ConsecutiveUnanswerable = %d, want 2",
-			cache.ConsecutiveUnanswerable)
+			cache.ConsecutiveUnanswerable())
 	}
 
 	// A satisfying verdict resets the streak, matching Python rag (:921-924).
 	recordConsecutiveUnanswerable(cache, VerdictSufficient)
-	if cache.ConsecutiveUnanswerable != 0 {
+	if cache.ConsecutiveUnanswerable() != 0 {
 		t.Fatalf("after a SUFFICIENT verdict: ConsecutiveUnanswerable = %d, want 0",
-			cache.ConsecutiveUnanswerable)
+			cache.ConsecutiveUnanswerable())
 	}
 }
 

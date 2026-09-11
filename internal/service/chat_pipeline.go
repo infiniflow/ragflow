@@ -732,14 +732,6 @@ func (s *ChatPipelineService) AsyncChat(
 						})
 					}
 				}
-				// The harness streams think-then-answer inside ONE compose call;
-				// if it never reached a non-think delta (reasoning-only output)
-				// close the block so no consumer sees an unpaired <think>.
-				defer func() {
-					if harnessThinking {
-						sink("", false)
-					}
-				}()
 				// Python dialog_service.py:2077 — the web provider is handed to
 				// RAGTools only when the internet flag enables web search;
 				// otherwise web_search stays off the agentic tool surface.
@@ -748,6 +740,13 @@ func (s *ChatPipelineService) AsyncChat(
 					webSearch = s.harnessWebSearchFunc(chat.PromptConfig)
 				}
 				hk, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink)
+				// The harness streams think-then-answer inside ONE compose call.
+				// Close the block here, once that call (and its trailing
+				// narration line) has returned: a reasoning-only run would
+				// otherwise keep it open until the goroutine exits, emitting
+				// EndToThink after the Phase 10/11 answer or the Final below.
+				// No-op when no block is open.
+				sink("", false)
 				if hErr != nil {
 					common.Warn("harness retrieval failed", zap.Error(hErr))
 				} else {
@@ -3134,10 +3133,10 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 			ref[k] = v
 		}
 		if cRaw, ok := ref["chunks"].([]map[string]interface{}); ok {
-			for _, cm := range cRaw {
-				delete(cm, "vector")
-			}
-			ref["chunks"] = cRaw
+			// chunksFormat builds the client-facing shape (content, document_name,
+			// dataset_id, ...) in NEW maps, so the engine keys and the per-chunk
+			// vector never reach the reference and the shared chunks stay intact.
+			ref["chunks"] = chunksFormat(cRaw)
 		}
 		refs = ref
 	}
