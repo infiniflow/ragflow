@@ -874,7 +874,7 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
 		t.Fatal("vision chat must enable vision")
 	}
-	if drv.config.Thinking == nil || *drv.config.Thinking {
-		t.Fatal("vision chat must disable thinking")
+	if drv.config.Thinking != nil {
+		t.Fatal("non-Ollama vision chat must preserve provider thinking default")
 	}
 }

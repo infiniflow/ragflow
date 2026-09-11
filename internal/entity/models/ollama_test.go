@@ -181,6 +181,36 @@ func TestOllamaThinkingPayloadTriState(t *testing.T) {
 	}
 }
 
+func TestOllamaThinkingOverridesEffortOnlyForGPTOSS(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name, model string
+		want        any
+	}{
+		{name: "gpt-oss uses effort", model: "gpt-oss:20b", want: "high"},
+		{name: "other model keeps thinking", model: "llava", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]interface{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
+			}))
+			defer srv.Close()
+			thinking := false
+			effort := "high"
+			if _, err := newOllamaForChatTest(srv.URL).ChatWithMessages(t.Context(), tc.model, []Message{{Role: "user", Content: "hello"}}, &APIConfig{}, &ChatConfig{Thinking: &thinking, Effort: &effort}, nil); err != nil {
+				t.Fatalf("ChatWithMessages: %v", err)
+			}
+			if got := body["think"]; got != tc.want {
+				t.Fatalf("think=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOllamaListModels(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()

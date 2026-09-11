@@ -225,6 +225,17 @@ func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
 	}
 }
 
+func TestAskService_DisablesThinkingForSummary(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"}},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	collect(NewAskService(ret, nil, 0, 0).Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
+	if llm.gotConfig == nil || llm.gotConfig.Thinking == nil || *llm.gotConfig.Thinking {
+		t.Fatalf("summary must explicitly disable thinking, got %+v", llm.gotConfig)
+	}
+}
+
 func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 	ret := &fakeRetriever{result: &RetrievalTestResponse{
 		Chunks: []map[string]interface{}{
