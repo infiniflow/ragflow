@@ -5,7 +5,6 @@ package pdf
 import (
 	"image"
 
-	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -29,7 +28,7 @@ func (e *PDFOxideEngine) PageCount() (int, error) { return e.Inner.PageCount() }
 func (e *PDFOxideEngine) Close() error            { return e.Inner.Close() }
 
 func (e *PDFOxideEngine) Outlines() ([]pdf.Outline, error) {
-	ol := pdfium.ExtractOutlines(e.Inner.RawData())
+	ol := e.Inner.Outlines()
 	result := make([]pdf.Outline, len(ol))
 	for i, o := range ol {
 		result[i] = pdf.Outline{Title: o.Title, Level: o.Level, PageNumber: o.PageNumber}

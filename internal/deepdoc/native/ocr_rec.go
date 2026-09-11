@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -22,12 +23,26 @@ import (
 )
 
 const (
-	recH        = 48
-	recW        = 320
-	recSeqLen   = 40
-	recVocab    = 6625
-	recMaxBatch = 1
+	recH         = 48
+	recW         = 320
+	recSeqLen    = 40
+	recVocab     = 6625
+	recBatchSize = 16 // matches Python DeepDoc self.rec_batch_num = 16 in deepdoc/vision/ocr.py
+	// Bound one recognition tensor independently of the source image dimensions.
+	// Normal text lines are far below this width; rejecting larger tensors avoids
+	// turning a detector artifact into a multi-gigabyte allocation.
+	maxOCRRecWidth      = 4096
+	recBatchMemoryLimit = 256 << 20
 )
+
+type ocrRecItem struct {
+	idx    int
+	part   int
+	img    *Image
+	weight int
+}
+
+type ocrRecBatch []ocrRecItem
 
 // OCRRecResult is the recognized text for one cropped line.
 type OCRRecResult struct {
@@ -41,49 +56,146 @@ type OCRRecResult struct {
 // lines independently gets the same result as a standalone Python
 // TextRecognizer call.
 func RunOCRRec(ctx context.Context, modelDir string, img *Image) (OCRRecResult, error) {
-	chars, err := loadCharDict(filepath.Join(modelDir, "ocr.res"))
+	results, err := RunOCRRecBatchReal(ctx, modelDir, []*Image{img})
 	if err != nil {
 		return OCRRecResult{}, err
 	}
-	// A single image is its own batch: max_wh_ratio floors at recW/recH (matching
-	// TextRecognizer.__call__'s init) but rises to the line's own ratio when
-	// wider, so wide lines are NOT clamped back to 320.
-	maxWhRatio := float64(recW) / float64(recH)
-	if r := float64(img.W) / float64(img.H); r > maxWhRatio {
-		maxWhRatio = r
-	}
-	return recognizeLine(ctx, modelDir, img, maxWhRatio, chars)
+	return results[0], nil
 }
 
-// RunOCRRecBatchReal recognizes a batch of cropped text-line images with a
-// SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__: each line is
+// RunOCRRecBatchReal recognizes cropped text-line images in bounded batches,
+// mirroring deepdoc's TextRecognizer.__call__: each line is
 // resized to its own proportional width (recH * that line's wh_ratio), capped
 // by the batch-shared imgW (imgW = recH * max_wh_ratio, with max_wh_ratio
 // floored at 320/48), and zero-padded on the right out to imgW; all blobs are
-// concatenated into one {N,3,48,imgW} tensor, and the model runs once. The
-// output is split back into per-line sequences and CTC-decoded in order, so
-// the result is numerically identical to calling RunOCRRec on each line (each
-// line sees the same shared batch width), but amortized over one forward pass
-// instead of N.
-//
-// The shared batch width means a line is resized against the batch max wh_ratio,
-// not its own — exactly what deepdoc does inside a batch. A standalone call to
-// RunOCRRec (maxWhRatio floored at the line's own ratio when wider) is the
-// correct single-line equivalent and remains the unit of "one crop" inference.
+// concatenated into one {N,3,48,imgW} tensor per batch. The
+// output is split back into per-line sequences and CTC-decoded in input order,
+// amortizing inference across lines of similar width. Extremely wide crops are
+// split before inference so detector artifacts cannot create unbounded tensors;
+// normal crops stay on the Python-compatible path.
 func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]OCRRecResult, error) {
 	n := len(imgs)
 	if n == 0 {
 		return nil, nil
 	}
-	if n == 1 {
-		// Degenerate batch: fall back to the single-line path so callers get
-		// the exact same result as RunOCRRec (no batch-width widening).
-		res, err := RunOCRRec(ctx, modelDir, imgs[0])
+	// Python DeepDoc parity (deepdoc/vision/ocr.py TextRecognizer.__call__):
+	// 1. Calculate aspect ratio (w/h) of every line crop.
+	// 2. Sort by aspect ratio (argsort) so crops of similar width are batched together.
+	//    This prevents an anomalous full-width line from inflating the padding width
+	//    of all other normal-sized boxes on the page.
+	batches, err := planOCRRecBatches(imgs)
+	if err != nil {
+		return nil, err
+	}
+	fragments := make([]map[int]OCRRecResult, n)
+	fragmentWeights := make([]map[int]int, n)
+	for _, batch := range batches {
+		chunkImgs := make([]*Image, len(batch))
+		for i := range batch {
+			chunkImgs[i] = batch[i].img
+		}
+		chunkRes, err := runSingleOCRRecChunk(ctx, modelDir, chunkImgs)
 		if err != nil {
 			return nil, err
 		}
-		return []OCRRecResult{res}, nil
+		for i := range batch {
+			item := batch[i]
+			if fragments[item.idx] == nil {
+				fragments[item.idx] = make(map[int]OCRRecResult)
+				fragmentWeights[item.idx] = make(map[int]int)
+			}
+			fragments[item.idx][item.part] = chunkRes[i]
+			fragmentWeights[item.idx][item.part] = item.weight
+		}
 	}
+	results := make([]OCRRecResult, n)
+	for i := range results {
+		var totalWeight int
+		for part := 0; part < len(fragments[i]); part++ {
+			fragment := fragments[i][part]
+			weight := fragmentWeights[i][part]
+			results[i].Text += fragment.Text
+			results[i].Score += fragment.Score * float32(weight)
+			totalWeight += weight
+		}
+		if totalWeight > 0 {
+			results[i].Score /= float32(totalWeight)
+		}
+	}
+	return results, nil
+}
+
+func planOCRRecBatches(imgs []*Image) ([]ocrRecBatch, error) {
+	var items []ocrRecItem
+	for i := range imgs {
+		parts, err := splitWideOCRRecImage(imgs[i])
+		if err != nil {
+			return nil, err
+		}
+		for partIndex, part := range parts {
+			items = append(items, ocrRecItem{idx: i, part: partIndex, img: part, weight: part.W})
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return float64(items[i].img.W)/float64(items[i].img.H) < float64(items[j].img.W)/float64(items[j].img.H)
+	})
+	return planSortedOCRRecBatches(items)
+}
+
+func splitWideOCRRecImage(img *Image) ([]*Image, error) {
+	if img == nil || img.W <= 0 || img.H <= 0 || len(img.Pix) != img.W*img.H*3 {
+		return nil, fmt.Errorf("OCR recognition received an invalid image")
+	}
+	maxSourceWidth := max(1, maxOCRRecWidth*img.H/recH)
+	if img.W <= maxSourceWidth {
+		return []*Image{img}, nil
+	}
+	parts := make([]*Image, 0, (img.W+maxSourceWidth-1)/maxSourceWidth)
+	for x0 := 0; x0 < img.W; x0 += maxSourceWidth {
+		x1 := min(img.W, x0+maxSourceWidth)
+		part := &Image{W: x1 - x0, H: img.H, Pix: make([]byte, (x1-x0)*img.H*3)}
+		for y := 0; y < img.H; y++ {
+			copy(part.Pix[y*part.W*3:(y+1)*part.W*3], img.Pix[(y*img.W+x0)*3:(y*img.W+x1)*3])
+		}
+		parts = append(parts, part)
+	}
+	return parts, nil
+}
+
+func planSortedOCRRecBatches(items []ocrRecItem) ([]ocrRecBatch, error) {
+	var batches []ocrRecBatch
+	for len(items) > 0 {
+		batchLen := min(len(items), recBatchSize)
+		maxWidth := normalizedOCRRecWidth(items[batchLen-1].img)
+		if maxWidth > maxOCRRecWidth {
+			return nil, fmt.Errorf("OCR recognition width %d exceeds safety limit %d", maxWidth, maxOCRRecWidth)
+		}
+		for batchLen > 1 && estimateOCRRecBatchBytes(batchLen, maxWidth) > recBatchMemoryLimit {
+			batchLen--
+			maxWidth = normalizedOCRRecWidth(items[batchLen-1].img)
+		}
+		batches = append(batches, items[:batchLen])
+		items = items[batchLen:]
+	}
+	return batches, nil
+}
+
+func normalizedOCRRecWidth(img *Image) int {
+	ratio := math.Max(float64(recW)/recH, float64(img.W)/float64(img.H))
+	return int(math.Floor(recH * ratio))
+}
+
+func estimateOCRRecBatchBytes(batchSize, width int) int64 {
+	inputBytes := int64(batchSize) * 3 * recH * int64(width) * 4
+	sequenceLength := max(1, width/8)
+	outputBytes := int64(batchSize) * int64(sequenceLength) * recVocab * 4
+	// Input exists in the caller batch and the pooled session tensor; output
+	// exists in ORT and in the Go decode buffer until the ORT tensor is freed.
+	return 2*inputBytes + 2*outputBytes
+}
+
+func runSingleOCRRecChunk(ctx context.Context, modelDir string, imgs []*Image) ([]OCRRecResult, error) {
+	n := len(imgs)
 	chars, err := loadCharDict(filepath.Join(modelDir, "ocr.res"))
 	if err != nil {
 		return nil, err
@@ -95,31 +207,19 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		}
 	}
 	imgW := int(math.Floor(recH * maxWhRatio))
-	// Per-line resized content width (<= imgW), used to place each line's
-	// preprocessed blob into the shared concatenated tensor.
-	resizedWs := make([]int, n)
-	blobs := make([][]float32, n)
+	lineStride := 3 * recH * imgW
+	batch := make([]float32, n*lineStride)
 	for i, img := range imgs {
 		resizedW := int(math.Ceil(recH * (float64(img.W) / float64(img.H))))
 		if resizedW > imgW {
 			resizedW = imgW
 		}
-		resizedWs[i] = resizedW
-		blobs[i] = ocrRecPreprocess(img, resizedW, imgW)
-	}
-	// Concatenate: layout [N, 3, 48, imgW] with each line's blob at
-	// offset i*3*recH*imgW. ocrRecPreprocess already zero-fills to imgW, so a
-	// plain copy places it correctly at the line's N-slot.
-	batch := make([]float32, n*3*recH*imgW)
-	lineStride := 3 * recH * imgW
-	for i, b := range blobs {
-		copy(batch[i*lineStride:(i+1)*lineStride], b)
+		ocrRecPreprocessInto(batch[i*lineStride:(i+1)*lineStride], img, resizedW, imgW)
 	}
 
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the OCR-rec Run path).
+	// defaultIntraOpThreads() (0 = all cores by default, overridable by DEEPDOC_ORT_NUM_THREADS).
 	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", defaultIntraOpThreads())
 	if err != nil {
 		return nil, err
 	}
@@ -143,47 +243,20 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 	return results, nil
 }
 
-// recognizeLine runs the resize + session + CTC decode for one line at the
-// given batch max wh_ratio, mirroring deepdoc TextRecognizer.resize_norm_img
-// exactly: the tensor width is imgW = int(48 * max_wh_ratio) (floored at
-// 320/48 for narrow batches); the content is resized to resized_w =
-// min(ceil(48*ratio), imgW) and zero-padded on the right to imgW. Feeding the
-// unpadded own-width (no floor, no pad) — the naive resize — changes
-// recognition for narrow lines because the model sees a different width than
-// deepdoc.
-func recognizeLine(ctx context.Context, modelDir string, img *Image, maxWhRatio float64, chars []string) (OCRRecResult, error) {
-	ratio := float64(img.W) / float64(img.H)
-	imgW := int(math.Floor(recH * maxWhRatio))
-	resizedW := int(math.Ceil(recH * ratio))
-	if resizedW > imgW {
-		resizedW = imgW
-	}
-	blob := ocrRecPreprocess(img, resizedW, imgW)
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the OCR-rec Run path).
-	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
-	if err != nil {
-		return OCRRecResult{}, err
-	}
-	defer release()
-
-	out, err := sess.Run(ctx, blob)
-	if err != nil {
-		return OCRRecResult{}, err
-	}
-	return ocrRecCTCDecode(out, chars), nil
-}
-
 // ocrRecPreprocess builds the CHW float blob (/255, standardized) for a
 // text-line image resized to (resizedW, recH) and zero-padded on the right to
 // the full tensor width imgW. The session runs at imgW; padding mirrors
 // deepdoc's resize_norm_img (padding_im[:, :, 0:resized_w] = resized_image).
 func ocrRecPreprocess(img *Image, resizedW, imgW int) []float32 {
+	blob := make([]float32, 3*recH*imgW)
+	ocrRecPreprocessInto(blob, img, resizedW, imgW)
+	return blob
+}
+
+func ocrRecPreprocessInto(blob []float32, img *Image, resizedW, imgW int) {
 	bgr := img.ToBGR()
 	w, h := img.W, img.H
 	resized := bilinearResize(bgr, w, h, resizedW, recH)
-	blob := make([]float32, 3*recH*imgW) // zero-filled (padded right)
 	for y := 0; y < recH; y++ {
 		for x := 0; x < resizedW; x++ {
 			for c := 0; c < 3; c++ {
@@ -193,7 +266,6 @@ func ocrRecPreprocess(img *Image, resizedW, imgW int) []float32 {
 			}
 		}
 	}
-	return blob
 }
 
 // charDictCache memoises loadCharDict by the ocr.res path. RunOCRRec is called

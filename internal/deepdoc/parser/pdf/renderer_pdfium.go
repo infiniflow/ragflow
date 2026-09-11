@@ -5,7 +5,6 @@ package pdf
 import (
 	"image"
 
-	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -21,7 +20,7 @@ func pdfiumRender(engine pdf.PDFEngine, pageNum int) (image.Image, error) {
 	}
 	// Guard against typed nil: (*image.RGBA)(nil) wrapped as non-nil interface
 	// would panic on downstream .Bounds() / .At() calls.
-	img, err := pdfium.RenderPage(raw, pageNum, 216)
+	img, err := engine.RenderPageImage(pageNum, 216)
 	if err != nil {
 		return nil, err
 	}
