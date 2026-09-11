@@ -295,7 +295,16 @@ def query_message(filter_dict: dict, params: dict):
     # memory/utils/gaussdb_conn.py, "FusionExpr orders weights as text_weight,vector_weight".
     fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": f"{keywords_similarity_weight:g},{1 - keywords_similarity_weight:g}"})
 
-    return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
+    return MessageService.search_message(
+        memory_ids,
+        condition_dict,
+        uids,
+        [match_text, match_dense, fusion_expr],
+        params["top_n"],
+        # A dense-only retry reverses the requested balance when lexical
+        # matching is dominant, so limit it to semantic-dominant blends.
+        allow_dense_fallback=keywords_similarity_weight <= 0.5,
+    )
 
 
 def init_message_id_sequence():

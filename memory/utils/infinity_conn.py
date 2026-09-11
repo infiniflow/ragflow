@@ -28,6 +28,15 @@ from common.time_utils import date_string_to_timestamp
 from common.float_utils import format_minimum_should_match_percent
 
 
+def _apply_dense_filter(match_expr: MatchDenseExpr, condition_filter: str | None, fulltext_filter: str) -> None:
+    """Keep scope conditions on dense-only searches without weakening hybrid filters."""
+    if match_expr.extra_options is None:
+        match_expr.extra_options = {}
+    dense_filter = fulltext_filter or condition_filter
+    if dense_filter and "filter" not in match_expr.extra_options:
+        match_expr.extra_options["filter"] = dense_filter
+
+
 @singleton
 class InfinityConnection(InfinityConnectionBase):
     def __init__(self):
@@ -196,8 +205,7 @@ class InfinityConnection(InfinityConnectionBase):
                             matchExpr.extra_options[k] = str(v)
                     self.logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
                 elif isinstance(matchExpr, MatchDenseExpr):
-                    if filter_fulltext and "filter" not in matchExpr.extra_options:
-                        matchExpr.extra_options.update({"filter": filter_fulltext})
+                    _apply_dense_filter(matchExpr, filter_cond, filter_fulltext)
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)
