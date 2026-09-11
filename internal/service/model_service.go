@@ -4131,7 +4131,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if provErr != nil {
 		if errors.Is(provErr, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelName)
+			return nil, "", nil, 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, provErr)
 		}
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
 	}
@@ -4143,7 +4143,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if instErr != nil {
 		if errors.Is(instErr, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelName)
+			return nil, "", nil, 0, fmt.Errorf("%w: instance %q lookup failed: %w", errModelConfigUnavailable, instanceName, instErr)
 		}
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
 	}

@@ -500,6 +500,35 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
+func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for _, modelRef := range []string{
+		"unknown@ZHIPU-AI",
+		"unknown@default@OpenAI",
+	} {
+		t.Run(modelRef, func(t *testing.T) {
+			_, _, _, _, err := NewModelProviderService().ResolveModelConfig(
+				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			)
+			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+			}
+			if !strings.Contains(err.Error(), "lookup failed: record not found") {
+				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+			}
+		})
+	}
+}
+
 // TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
 // resolution paths accept empty configuration and unrelated typed fields.
 func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
