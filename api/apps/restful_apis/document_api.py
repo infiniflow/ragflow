@@ -1857,6 +1857,8 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        if not KnowledgebaseService.accessible(kb_id=bkt, user_id=current_user.id):
+            return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
