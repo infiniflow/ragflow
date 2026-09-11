@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/rag_analyzer_c_test.dir/link.d CMakeFiles/rag_analyzer_c_test.dir/rag_analyzer_c_test.cpp.o -o rag_analyzer_c_test  librag_tokenizer_c_api.a -lstdc++ -lm -Wl,-Bstatic -lpcre2-8 -lm -lpcre2-8 -Wl,-Bdynamic

@@ -1,0 +1,2 @@
+CREATE DATABASE IF NOT EXISTS rag_flow;
+USE rag_flow;
