@@ -47,6 +47,34 @@ def index_name(uid):
     return f"ragflow_{uid}"
 
 
+def _chunk_scalar(value) -> str:
+    """Normalize a doc-store scalar that Infinity may return as a one-item list."""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def is_kb_scoped_chunk(chunk: dict | None) -> bool:
+    """True for compilation/graph rows keyed to the KB, not a source document.
+
+    Wiki persist stamps ``doc_id = kb_id``. Those rows must not be treated as
+    leftover chunks from a deleted ``document`` row. A missing ``doc_id`` is
+    not enough on its own: only an explicit compilation marker (``compile_kwd``)
+    or the KB-id sentinel bypasses deleted-document pruning. Otherwise stale
+    ordinary chunks without ``doc_id`` would stay retrievable after their
+    source document is deleted.
+    """
+    if not isinstance(chunk, dict):
+        return False
+    doc_id = _chunk_scalar(chunk.get("doc_id"))
+    kb_id = _chunk_scalar(chunk.get("kb_id"))
+    if kb_id and doc_id == kb_id:
+        return True
+    if doc_id:
+        return False
+    return bool(_chunk_scalar(chunk.get("compile_kwd")))
+
+
 class Dealer:
     # Short-lived cache of "doc_id exists in MySQL" used by _prune_deleted_chunks.
     # Every retrieval would otherwise hit MySQL per query (fan-out searches and the
@@ -124,12 +152,39 @@ class Dealer:
         # is removed but the vector record is not fully cleaned up. We filter those
         # chunks here so chat/retrieval does not surface content from deleted docs.
         # Keep this as a fallback, not as the primary delete mechanism.
-        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
-        if not chunk_doc_ids:
+        fields = sres.field or {}
+        aligned_ids = [chunk_id for chunk_id in sres.ids if fields.get(chunk_id)]
+        if len(aligned_ids) != len(sres.ids):
+            fields = {chunk_id: fields[chunk_id] for chunk_id in aligned_ids}
+            highlight = sres.highlight
+            if highlight:
+                highlight = {chunk_id: highlight[chunk_id] for chunk_id in aligned_ids if chunk_id in highlight}
+            sres = self.SearchResult(
+                total=len(aligned_ids),
+                ids=aligned_ids,
+                query_vector=sres.query_vector,
+                field=fields,
+                highlight=highlight,
+                aggregation=sres.aggregation,
+                keywords=sres.keywords,
+                group_docs=sres.group_docs,
+            )
+
+        chunk_doc_ids = []
+        unscoped_missing_doc_id = False
+        for chunk in fields.values():
+            if not chunk or is_kb_scoped_chunk(chunk):
+                continue
+            doc_id = _chunk_scalar(chunk.get("doc_id"))
+            if doc_id:
+                chunk_doc_ids.append(doc_id)
+            else:
+                unscoped_missing_doc_id = True
+        if not chunk_doc_ids and not unscoped_missing_doc_id:
             return sres
 
-        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
-        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids) if chunk_doc_ids else set()
+        if chunk_doc_ids and not unscoped_missing_doc_id and len(existing_doc_ids) == len(set(chunk_doc_ids)):
             return sres
 
         filtered_ids = []
@@ -138,8 +193,17 @@ class Dealer:
         removed = 0
 
         for chunk_id in sres.ids:
-            chunk = sres.field.get(chunk_id)
-            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+            chunk = fields.get(chunk_id)
+            if not chunk:
+                removed += 1
+                continue
+            if is_kb_scoped_chunk(chunk):
+                filtered_ids.append(chunk_id)
+                filtered_field[chunk_id] = chunk
+                if sres.highlight and chunk_id in sres.highlight:
+                    filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+                continue
+            if _chunk_scalar(chunk.get("doc_id")) not in existing_doc_ids:
                 removed += 1
                 continue
 
