@@ -34,6 +34,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 )
 
 // MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
@@ -93,26 +94,33 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 // Name returns the underlying MCP tool name.
 func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 
-// Info returns eino-compatible tool metadata. InputSchema is
-// translated from the MCP tool's JSON Schema.
+// Info returns eino-compatible tool metadata. The MCP client stores the
+// full inputSchema object ({"type":"object","properties":{...},"required":
+// [...]}) on mcpTool.InputSchema, so we pass it through to eino's
+// JSON Schema channel untouched. That keeps the real parameter names under
+// "properties" (never the schema's top-level keys like "type"/"properties"/
+// "required") together with each property's type/description/required flag
+// and any richer keywords (enum, default, items, nested objects, anyOf/oneOf,
+// ...). A tool with no inputSchema takes no parameters: ParamsOneOf is left
+// nil so callers emit an empty object schema instead of an invalid schema.
 func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
-	// eino's schema.ParameterInfo shape: name → description.
-	// We translate the MCP tool's inputSchema.properties into a
-	// best-effort ParameterInfo map. For tools without a JSON schema
-	// the params map is empty — eino falls back to free-form args.
-	params := make(map[string]*schema.ParameterInfo, len(m.mcpTool.InputSchema))
-	for name := range m.mcpTool.InputSchema {
-		params[name] = &schema.ParameterInfo{
-			Type:     schema.String, // conservative default
-			Desc:     fmt.Sprintf("MCP tool parameter: %s", name),
-			Required: false, // MCP doesn't surface required; we err permissive
-		}
+	info := &schema.ToolInfo{
+		Name: m.mcpTool.Name,
+		Desc: m.mcpTool.Description,
 	}
-	return &schema.ToolInfo{
-		Name:        m.mcpTool.Name,
-		Desc:        m.mcpTool.Description,
-		ParamsOneOf: schema.NewParamsOneOfByParams(params),
-	}, nil
+	if len(m.mcpTool.InputSchema) == 0 {
+		return info, nil
+	}
+	var js jsonschema.Schema
+	raw, err := json.Marshal(m.mcpTool.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	if err := json.Unmarshal(raw, &js); err != nil {
+		return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(&js)
+	return info, nil
 }
 
 // InvokableRun is the eino entry point. When the adapter was

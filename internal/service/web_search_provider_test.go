@@ -25,6 +25,23 @@ import (
 	"testing"
 )
 
+// TestHarnessWebSearchFuncGatedByProvider pins that the harness web_search seam
+// is produced only when a provider is configured (mirroring Python's
+// RAGTools.web_search provider gate). A nil callback is what keeps the tool off
+// the agentic surface.
+func TestHarnessWebSearchFuncGatedByProvider(t *testing.T) {
+	s := &ChatPipelineService{}
+	if fn := s.harnessWebSearchFunc(nil); fn != nil {
+		t.Error("nil prompt config must yield no web-search callback")
+	}
+	if fn := s.harnessWebSearchFunc(map[string]interface{}{}); fn != nil {
+		t.Error("empty prompt config must yield no web-search callback")
+	}
+	if fn := s.harnessWebSearchFunc(map[string]interface{}{"tavily_api_key": "tvly-test"}); fn == nil {
+		t.Error("configured provider must yield a web-search callback")
+	}
+}
+
 func TestResolveWebSearchProviderUsesExistingTavilyConfig(t *testing.T) {
 	provider := resolveWebSearchProvider(map[string]interface{}{
 		"tavily_api_key": "tvly-test",
