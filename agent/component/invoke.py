@@ -192,12 +192,29 @@ class Invoke(ComponentBase, ABC):
         return url
 
     def _build_headers(self, kwargs: dict) -> dict:
-        if not self._param.headers:
+        raw_headers = self._param.headers
+        if raw_headers is None or (isinstance(raw_headers, str) and not raw_headers.strip()):
             return {}
 
-        headers = json.loads(self._param.headers)
+        if isinstance(raw_headers, dict):
+            headers = raw_headers
+        elif isinstance(raw_headers, str):
+            try:
+                headers = json.loads(raw_headers)
+            except json.JSONDecodeError as exc:
+                logging.warning(
+                    "Invoke headers ignored: invalid JSON (line=%s column=%s)",
+                    exc.lineno,
+                    exc.colno,
+                )
+                return {}
+        else:
+            logging.warning("Invoke headers ignored: unsupported type=%s", type(raw_headers).__name__)
+            return {}
+
         if not isinstance(headers, dict):
-            raise ValueError("Invoke headers must be a JSON object.")
+            logging.warning("Invoke headers ignored: decoded type=%s", type(headers).__name__)
+            return {}
 
         return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 

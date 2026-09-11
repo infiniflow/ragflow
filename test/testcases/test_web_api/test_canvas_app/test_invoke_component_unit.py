@@ -225,6 +225,38 @@ def test_header_empty(monkeypatch):
     assert mock_get.call_args[1]["headers"] == {}
 
 
+@pytest.mark.parametrize("headers", ['{"Authorization":"Bearer secret-token"', '["secret-token"]', "null"])
+def test_header_invalid_input_is_ignored_without_logging_raw_value(monkeypatch, caplog, headers):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, headers=headers)
+
+    with caplog.at_level("WARNING"):
+        assert invoke._build_headers({}) == {}
+
+    assert "secret-token" not in caplog.text
+
+
+def test_header_dict_is_accepted_and_interpolated(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(
+        module,
+        headers={"Authorization": "Bearer {token}"},
+        variable_values={"token": "secret-token"},
+    )
+
+    assert invoke._build_headers({}) == {"Authorization": "Bearer secret-token"}
+
+
+def test_header_unsupported_type_is_ignored(monkeypatch, caplog):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, headers=object())
+
+    with caplog.at_level("WARNING"):
+        assert invoke._build_headers({}) == {}
+
+    assert "object" in caplog.text
+
+
 @pytest.mark.p2
 def test_header_component_ref_variable(monkeypatch):
     module = _load_invoke_module(monkeypatch)

@@ -46,7 +46,7 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	}
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
+		t.Context(),
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
 	)
 

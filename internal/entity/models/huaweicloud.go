@@ -19,13 +19,12 @@ package models
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-
-	"github.com/goccy/go-json"
 )
 
 type HuaweiCloudModel struct {

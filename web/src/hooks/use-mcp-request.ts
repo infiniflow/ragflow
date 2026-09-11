@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponseType } from '@/interfaces/database/base';
 import {
   IExportedMcpServers,
@@ -30,6 +31,7 @@ import i18n from '@/locales/config';
 import mcpServerService, {
   listMcpServers,
 } from '@/services/mcp-server-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import {
@@ -51,7 +53,8 @@ export const enum McpApiAction {
 }
 
 export const useListMcpServer = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
@@ -81,6 +84,7 @@ export const useListMcpServer = () => {
     handleInputChange,
     setPagination,
     searchString,
+    setSearchString,
     pagination: { ...pagination, total: data?.total },
   };
 };
@@ -168,6 +172,7 @@ export const useDeleteMcpServer = () => {
         queryClient.invalidateQueries({
           queryKey: [McpApiAction.ListMcpServer],
         });
+        markListItemsDeleted(ListDeletionKey.McpServerList);
       }
       return data;
     },

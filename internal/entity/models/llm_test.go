@@ -5,10 +5,130 @@ import (
 	"errors"
 	"io"
 	"ragflow/internal/common"
+	"reflect"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestEinoChatModelRequiresExecuteCodeTool(t *testing.T) {
+	name := "chat"
+	base := NewChatModel(&streamSentinelDriver{}, &name, &APIConfig{})
+	model := NewEinoChatModel(base, nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bound.(*EinoChatModel).chatConfigForGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ToolChoice == nil || *cfg.ToolChoice != "required" {
+		t.Fatalf("ToolChoice = %v, want required", cfg.ToolChoice)
+	}
+	choice, ok := cfg.ToolChoiceValue.(map[string]any)
+	if !ok || choice["type"] != "function" {
+		t.Fatalf("ToolChoiceValue = %#v, want named function choice", cfg.ToolChoiceValue)
+	}
+}
+
+func TestEinoChatModelAllowsFinalAnswerAfterToolResult(t *testing.T) {
+	name := "chat"
+	driver := &captureToolDriver{resp: &ChatResponse{}}
+	model := NewEinoChatModel(NewChatModel(driver, &name, &APIConfig{}), nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bound.Generate(t.Context(), []*schema.Message{
+		schema.UserMessage("make a chart"),
+		{Role: schema.Tool, ToolCallID: "call-1", Content: "done"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
+		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
+	}
+}
+
+// TestEinoChatModelAppliesExplicitToolChoice pins that WithToolChoice actually
+// reaches the driver's configuration (its doc promises exactly that): a keyword
+// choice travels as the plain string with no object value, a named tool travels
+// in the OpenAI object form, and either overrides the execute_code default.
+func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
+	cases := []struct {
+		name       string
+		tools      []*schema.ToolInfo
+		choice     string
+		wantChoice string
+		wantValue  map[string]any // nil for the keyword forms
+	}{
+		{
+			name:       "keyword none overrides the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			choice:     "none",
+			wantChoice: "none",
+		},
+		{
+			name:       "explicit required without execute_code",
+			tools:      []*schema.ToolInfo{{Name: "rag"}},
+			choice:     "required",
+			wantChoice: "required",
+		},
+		{
+			name:       "named tool uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "rag"}, {Name: "summarize_document"}},
+			choice:     "summarize_document",
+			wantChoice: "summarize_document",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "summarize_document"},
+			},
+		},
+		{
+			name:       "no explicit choice keeps the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			wantChoice: "required",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "execute_code"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			modelName := "chat"
+			model := NewEinoChatModel(NewChatModel(&captureToolDriver{}, &modelName, &APIConfig{}), nil)
+			bound, err := model.WithTools(tc.tools)
+			if err != nil {
+				t.Fatalf("WithTools: %v", err)
+			}
+			wrapper := bound.(*EinoChatModel)
+			if tc.choice != "" {
+				wrapper = wrapper.WithToolChoice(tc.choice)
+			}
+			cfg, err := wrapper.chatConfigForGenerate()
+			if err != nil {
+				t.Fatalf("chatConfigForGenerate: %v", err)
+			}
+			if cfg.ToolChoice == nil {
+				t.Fatalf("ToolChoice = nil, want %q", tc.wantChoice)
+			}
+			if *cfg.ToolChoice != tc.wantChoice {
+				t.Fatalf("ToolChoice = %q, want %q", *cfg.ToolChoice, tc.wantChoice)
+			}
+			if tc.wantValue == nil {
+				if cfg.ToolChoiceValue != nil {
+					t.Errorf("ToolChoiceValue = %#v, want nil for a keyword choice", cfg.ToolChoiceValue)
+				}
+				return
+			}
+			if got, ok := cfg.ToolChoiceValue.(map[string]any); !ok || !reflect.DeepEqual(got, tc.wantValue) {
+				t.Errorf("ToolChoiceValue = %#v, want %#v", cfg.ToolChoiceValue, tc.wantValue)
+			}
+		})
+	}
+}
 
 func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	modelName := "chat"
@@ -189,6 +309,12 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 	if msg == nil || msg.Content != answer {
 		t.Fatalf("stream message = %#v, want final answer content", msg)
 	}
+	if driver.streamCalls != 1 || driver.generateCalls != 0 {
+		t.Fatalf("stream/generate calls = %d/%d, want 1/0", driver.streamCalls, driver.generateCalls)
+	}
+	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
+		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
+	}
 }
 
 func TestToInternalMessagesPreservesToolMessages(t *testing.T) {
@@ -222,8 +348,10 @@ func TestToInternalMessagesPreservesToolMessages(t *testing.T) {
 }
 
 type captureToolDriver struct {
-	resp       *ChatResponse
-	lastConfig *ChatConfig
+	resp          *ChatResponse
+	lastConfig    *ChatConfig
+	generateCalls int
+	streamCalls   int
 }
 
 type streamSentinelDriver struct {
@@ -247,10 +375,12 @@ func (d *captureToolDriver) NewInstance(baseURL map[string]string) ModelDriver {
 func (d *captureToolDriver) Name() string                                      { return "capture" }
 func (d *captureToolDriver) ChatWithMessages(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	d.lastConfig = cfg
+	d.generateCalls++
 	return d.resp, nil
 }
 func (d *captureToolDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	d.lastConfig = cfg
+	d.streamCalls++
 	if d.resp == nil {
 		return nil
 	}
