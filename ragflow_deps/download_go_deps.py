@@ -53,13 +53,35 @@ import zipfile
 import requests
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
-# THREE places (with that Go constant and the ORT_VERSION in
-# ragflow_deps/download_deps.py) that must carry the same ONNX Runtime native
-# release for the statically-linked Go DeepDoc backend. There is no single
-# source of truth — keep all three equal. The pip onnxruntime== pin
-# (pyproject.toml) and the onnxruntime_go binding minor (go.mod) must stay on
-# the same minor line.
-ORT_VERSION = "1.23.2"
+# FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_deps.py,
+# and ARG ORT_VERSION in Dockerfile_go) that must carry the same ONNX Runtime
+# native release for the statically-linked Go DeepDoc backend. There is no
+# single source of truth — keep all four equal. build.sh --check-ort-version
+# greps this file (and the other three) to fail fast on drift. (The Python pip
+# onnxruntime== pin in pyproject.toml is versioned independently and is not
+# part of this check.)
+#
+# Source of the native static archives: infiniflow/ragflow-build (our own
+# ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
+# account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
+# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`.
+ORT_VERSION = "1.29.0"
+
+
+def _ort_asset_name(version):
+    """Release asset filename under infiniflow/ragflow-build tag onnxruntime-v{version}."""
+    return f"onnxruntime-v{version}-linux-x86_64.zip"
+
+
+def _ort_extracted_dir(version):
+    """Top-level directory name INSIDE the release zip (what extractall creates)."""
+    return f"onnxruntime-v{version}-linux-x86_64"
+
+
+def _ort_normalized_dir(version):
+    """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib."""
+    return f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+
 
 # Mirrors internal/common.DeepDocModelFiles (Go in-process DeepDoc backend).
 # These are the ONLY weights the Go backend loads; the full InfiniFlow/deepdoc
@@ -76,7 +98,7 @@ def prune_stale_onnxruntime(static_lib_dir, version):
     symbols / wrong version, silently)."""
     if not os.path.isdir(static_lib_dir):
         return
-    expected = f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+    expected = _ort_normalized_dir(version)
     for name in os.listdir(static_lib_dir):
         if not name.startswith("onnxruntime-linux-x64-static_lib-"):
             continue
@@ -97,8 +119,8 @@ def extract_onnxruntime(static_lib_dir, archive_path, version):
     `static_lib_dir`. Returns True when that version is available afterwards
     (extracted now or already present), False when the archive is missing.
 
-    ORT ships a version-stamped top-level dir inside the zip
-    (onnxruntime-linux-x64-static_lib-<version>-glibc2_28/), so a present
+    The infiniflow/ragflow-build release zip carries a top-level dir named
+    onnxruntime-v{version}-linux-x86_64, so a present
     `static_lib_dir` is NOT evidence that THIS version is extracted: after a
     version bump the stale dir is pruned and the new one must be extracted.
     """
@@ -106,7 +128,7 @@ def extract_onnxruntime(static_lib_dir, archive_path, version):
         print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
         return False
     prune_stale_onnxruntime(static_lib_dir, version)
-    version_dir = os.path.join(static_lib_dir, f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28")
+    version_dir = os.path.join(static_lib_dir, _ort_normalized_dir(version))
     if os.path.isdir(version_dir) and has_static_archives(version_dir):
         print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
         return True
@@ -114,6 +136,18 @@ def extract_onnxruntime(static_lib_dir, archive_path, version):
     print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
     with zipfile.ZipFile(archive_path) as zf:
         zf.extractall(static_lib_dir)
+    # The infiniflow/ragflow-build release zip carries a top-level dir named
+    # onnxruntime-v{version}-linux-x86_64, but build.sh's glob and the stale
+    # checks above all expect onnxruntime-linux-x64-static_lib-{version}-glibc2_28.
+    # Rename it so every consumer shares one name convention (driven by
+    # ORT_VERSION).
+    extracted = os.path.join(static_lib_dir, _ort_extracted_dir(version))
+    normalized = os.path.join(static_lib_dir, _ort_normalized_dir(version))
+    if os.path.isdir(extracted) and extracted != normalized:
+        if os.path.exists(normalized):
+            shutil.rmtree(normalized)
+        print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
+        os.rename(extracted, normalized)
     return True
 
 
@@ -143,8 +177,8 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
-                f"https://gh-proxy.com/https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
-                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"https://gh-proxy.com/https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
+                _ort_asset_name(ORT_VERSION),
             ],
         ]
     else:
@@ -172,8 +206,8 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
-                f"https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
-                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
+                _ort_asset_name(ORT_VERSION),
             ],
         ]
 
@@ -312,7 +346,7 @@ if __name__ == "__main__":
 
     if not extract_onnxruntime(
         os.path.join(native_deps_dir, "onnxruntime", "static_lib"),
-        os.path.join(os.getcwd(), f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip"),
+        os.path.join(os.getcwd(), _ort_asset_name(ORT_VERSION)),
         ORT_VERSION,
     ):
         # The archive was not downloaded or failed to extract, so no .a landed.

@@ -1699,32 +1699,6 @@ Return ONLY JSON with this exact shape:
 }}
 """
 
-ES_GROUP_BATCH_MERGE_PROMPT = """You are judging multiple independent ES deduplication groups.
-
-For every group, compare every incoming item with that group's existing item.
-You must make a separate duplicated decision for every incoming item. Only
-incoming items marked duplicated=true may contribute to that group's merged
-payload. Incoming items marked duplicated=false must remain separate. Do not
-merge items from different groups and do not invent data.
-
-Return ONLY JSON with this exact shape:
-{{
-  "groups": [
-    {{
-      "group_id": "<group id>",
-      "decisions": [
-        {{"incoming_index": 0, "duplicated": true}},
-        {{"incoming_index": 1, "duplicated": false}}
-      ],
-      "merged": <merged JSON object when any item is duplicated, otherwise null>
-    }}
-  ]
-}}
-
-Groups:
-{groups}
-"""
-
 ES_GROUP_DECISION_BATCH_PROMPT = """You are judging multiple independent ES deduplication groups.
 
 For every incoming item, independently decide whether it is a duplicate of
@@ -1795,61 +1769,6 @@ async def _struct_judge_doc_storage_group_batch(group_specs: list[dict], chat_md
         }
     for spec in group_specs:
         result.setdefault(spec["request_group_id"], set())
-    return result
-
-
-async def _struct_merge_doc_storage_group_batch(group_specs: list[dict], chat_mdl) -> dict[str, tuple[list[dict], dict | None]]:
-    """Judge multiple old_id groups in one LLM request."""
-    prompt_groups = []
-    for spec in group_specs:
-        old_doc = spec["old_doc"]
-        incoming_docs = spec["incoming_docs"]
-        try:
-            existing_payload = json.loads(old_doc.get("content_with_weight") or "{}")
-            incoming_payloads = [json.loads(d.get("content_with_weight") or "{}") for d in incoming_docs]
-        except Exception:
-            logging.exception("merge: failed to parse grouped content_with_weight")
-            continue
-        if not isinstance(existing_payload, dict) or not all(isinstance(p, dict) for p in incoming_payloads):
-            continue
-        prompt_groups.append(
-            {
-                "group_id": spec["old_id"],
-                "existing": existing_payload,
-                "incoming": [{"index": i, "item": payload} for i, payload in enumerate(incoming_payloads)],
-            }
-        )
-    if not prompt_groups:
-        return {spec["old_id"]: (list(spec["incoming_docs"]), None) for spec in group_specs}
-
-    user_prompt = ES_GROUP_BATCH_MERGE_PROMPT.format(groups=json.dumps(prompt_groups, ensure_ascii=False))
-    system_prompt = MERGE_SYSTEM_PROMPT + "\n\n" + ES_GROUP_BATCH_MERGE_PROMPT.split("Groups:", 1)[0]
-    res = await gen_json(system_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}))
-    raw_groups = res.get("groups") if isinstance(res, dict) else None
-    if not isinstance(raw_groups, list):
-        return {spec["old_id"]: (list(spec["incoming_docs"]), None) for spec in group_specs}
-
-    result = {}
-    by_id = {spec["old_id"]: spec for spec in group_specs}
-    for raw in raw_groups:
-        if not isinstance(raw, dict) or raw.get("group_id") not in by_id:
-            continue
-        spec = by_id[raw["group_id"]]
-        decisions = raw.get("decisions")
-        merged = raw.get("merged")
-        if not isinstance(decisions, list):
-            result[spec["old_id"]] = (list(spec["incoming_docs"]), None)
-            continue
-        duplicate_indices = {item.get("incoming_index") for item in decisions if isinstance(item, dict) and item.get("duplicated") is True and isinstance(item.get("incoming_index"), int)}
-        duplicate_indices = {i for i in duplicate_indices if 0 <= i < len(spec["incoming_docs"])}
-        if not duplicate_indices or not isinstance(merged, dict):
-            result[spec["old_id"]] = (list(spec["incoming_docs"]), None)
-            continue
-        separate = [d for i, d in enumerate(spec["incoming_docs"]) if i not in duplicate_indices]
-        result[spec["old_id"]] = (separate, merged)
-
-    for spec in group_specs:
-        result.setdefault(spec["old_id"], (list(spec["incoming_docs"]), None))
     return result
 
 

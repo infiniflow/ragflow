@@ -521,56 +521,6 @@ def _build_canonical_entity_doc(
     return doc
 
 
-async def _save_canonical_entity(
-    tenant_id: str,
-    kb_id: str,
-    entity_name: str,
-    entity_type: str,
-    aliases: list[str],
-    source_doc_ids: list[str],
-    claim_count: int,
-    embedding: list[float] | None = None,
-    source_chunk_ids: list[str] | None = None,
-) -> None:
-    """Insert or update a canonical entity row."""
-    index = search.index_name(tenant_id)
-    doc = _build_canonical_entity_doc(
-        tenant_id,
-        kb_id,
-        entity_name,
-        entity_type,
-        aliases,
-        source_doc_ids,
-        claim_count,
-        embedding,
-        source_chunk_ids,
-    )
-
-    condition = {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": [entity_name]}
-    existing = await thread_pool_exec(
-        settings.docStoreConn.search,
-        ["entity_kwd"],
-        [],
-        condition,
-        [],
-        OrderByExpr(),
-        0,
-        1,
-        index,
-        [kb_id],
-    )
-    if settings.docStoreConn.get_fields(existing, ["entity_kwd"]):
-        await thread_pool_exec(
-            settings.docStoreConn.update,
-            {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": entity_name},
-            doc,
-            index,
-            kb_id,
-        )
-    else:
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-
-
 async def _update_canonical_entity(
     tenant_id: str,
     kb_id: str,
@@ -1933,24 +1883,6 @@ async def _wiki_load_doc_page_source(
             "map_checksum": row.get("map_checksum", ""),
         }
     return None
-
-
-async def _wiki_delete_doc_page_source(
-    tenant_id: str,
-    kb_id: str,
-    doc_id: str,
-) -> None:
-    """Delete doc_page_source record when a document is removed."""
-    index = search.index_name(tenant_id)
-    await thread_pool_exec(
-        settings.docStoreConn.delete,
-        {
-            "compile_kwd": [WIKI_DOC_PAGE_SOURCE_COMPILE_KWD],
-            "doc_id": [doc_id],
-        },
-        index,
-        kb_id,
-    )
 
 
 # ----- Mode A: no-plan REFINE -----------------------------------------------
@@ -4805,191 +4737,12 @@ async def _wiki_load_plan_group_members(tenant_id: str, kb_id: str) -> dict[str,
     return result
 
 
-async def wiki_handle_document_deleted(
-    tenant_id: str,
-    kb_id: str,
-    doc_id: str,
-    chat_mdl,
-    embd_mdl,
-    mode: str,
-) -> dict:
-    """Clean up wiki pages + canonical entities when a document is deleted.
-
-    Args:
-        mode: ``topic`` updates plan groups; ``entity`` does not.
-
-    Returns: {pages_modified, pages_deleted, errors}
-    """
-    summary = {"pages_modified": 0, "pages_deleted": 0, "errors": []}
-
-    # Step 1: Update canonical entity index (decrement claim_count)
-    dps = await _wiki_load_doc_page_source(tenant_id, kb_id, doc_id)
-    if not dps:
-        return summary
-
-    entity_names = dps.get("entity_names", [])
-    if entity_names:
-        canonical_index = await _load_canonical_entities(tenant_id, kb_id)
-        for ename in entity_names:
-            centry = canonical_index.get(ename)
-            if centry:
-                src_ids = centry.get("source_doc_ids", [])
-                if isinstance(src_ids, str):
-                    try:
-                        src_ids = json.loads(src_ids) if src_ids else []
-                    except (json.JSONDecodeError, TypeError):
-                        src_ids = []
-                if doc_id in src_ids:
-                    src_ids.remove(doc_id)
-
-                if not src_ids:
-                    await _delete_canonical_entity(tenant_id, kb_id, ename)
-                else:
-                    # Keep existing mention_count_int; the next REFINE phase
-                    # will recalculate claims precisely from wiki pages.
-                    # Removing the doc_id from source_doc_ids prevents future
-                    # incremental runs from re-tracking this deletion.
-                    await _save_canonical_entity(
-                        tenant_id,
-                        kb_id,
-                        ename,
-                        centry.get("entity_type_kwd", "entity"),
-                        centry.get("aliases", []),
-                        src_ids,
-                        centry.get("mention_count_int", len(src_ids)),
-                        source_chunk_ids=centry.get("source_chunk_ids", []),
-                    )
-
-    affected_page_ids = dps.get("page_ids", [])
-    if not affected_page_ids:
-        return summary
-
-    # Step 2: Update wiki pages
-    all_existing_pages = await _search_existing_pages(
-        tenant_id,
-        kb_id,
-        ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "entity_names_kwd", "page_type_kwd", "topic_kwd"],
-    )
-
-    for page_id in affected_page_ids:
-        try:
-            existing = all_existing_pages.get(page_id)
-            if not existing:
-                continue
-
-            source_doc_ids = existing.get("source_doc_ids", [])
-            if isinstance(source_doc_ids, str):
-                source_doc_ids = json.loads(source_doc_ids) if source_doc_ids else []
-
-            if doc_id in source_doc_ids:
-                source_doc_ids.remove(doc_id)
-
-            page_type = existing.get("page_type_kwd", "concept" if mode == "entity" else "entity")
-
-            if not source_doc_ids:
-                await _wiki_refine_page(
-                    mode="delete",
-                    page_id=page_id,
-                    page_title=existing.get("title_kwd", page_id),
-                    existing_page=existing,
-                    page_type_kwd=page_type,
-                    additions=None,
-                    retractions=None,
-                    source_chunks=[],
-                    claims=[],
-                    available_pages=[],
-                    contextual_hints="",
-                    chat_mdl=chat_mdl,
-                    embd_mdl=embd_mdl,
-                    tenant_id=tenant_id,
-                    kb_id=kb_id,
-                    page_version=existing.get("page_version_int", 0),
-                    source_doc_ids=source_doc_ids,
-                )
-                summary["pages_deleted"] += 1
-            else:
-                existing_claims = existing.get("claims", [])
-                if isinstance(existing_claims, str):
-                    existing_claims = json.loads(existing_claims) if existing_claims else []
-
-                retractions = [c for c in existing_claims if c.get("source_doc_id") == doc_id]
-                retained = [c for c in existing_claims if c.get("source_doc_id") != doc_id]
-
-                await _wiki_refine_page(
-                    mode="modify",
-                    page_id=page_id,
-                    page_title=existing.get("title_kwd", page_id),
-                    existing_page=existing,
-                    page_type_kwd=page_type,
-                    additions=[],
-                    retractions=retractions,
-                    source_chunks=[],
-                    claims=retained,
-                    available_pages=list(all_existing_pages.keys()),
-                    contextual_hints=_wiki_build_contextual_hints(page_id, existing, {}),
-                    chat_mdl=chat_mdl,
-                    embd_mdl=embd_mdl,
-                    tenant_id=tenant_id,
-                    kb_id=kb_id,
-                    page_version=existing.get("page_version_int", 0),
-                )
-                summary["pages_modified"] += 1
-
-            if mode == "topic":
-                plan_condition = {
-                    "compile_kwd": [WIKI_PLAN_GROUP_COMPILE_KWD],
-                    "page_id": [page_id],
-                }
-                index = search.index_name(tenant_id)
-                res_pg = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    ["entity_names", "source_doc_ids"],
-                    [],
-                    plan_condition,
-                    [],
-                    OrderByExpr(),
-                    0,
-                    1,
-                    index,
-                    [kb_id],
-                )
-                pg_map = settings.docStoreConn.get_fields(res_pg, ["entity_names", "source_doc_ids"])
-                for pg_row in pg_map.values():
-                    pg_src_ids = pg_row.get("source_doc_ids", [])
-                    if isinstance(pg_src_ids, str):
-                        pg_src_ids = json.loads(pg_src_ids)
-                    if doc_id in pg_src_ids:
-                        pg_src_ids.remove(doc_id)
-                    await _wiki_update_plan_group(
-                        tenant_id,
-                        kb_id,
-                        page_id,
-                        entity_names=json.loads(pg_row.get("entity_names", "[]")) if isinstance(pg_row.get("entity_names"), str) else pg_row.get("entity_names", []),
-                        page_version=existing.get("page_version_int", 0),
-                    )
-                    break
-
-        except Exception:
-            logging.exception("wiki: document deletion cleanup failed for page=%s doc=%s", page_id, doc_id)
-            summary["errors"].append(f"CLEANUP_FAILED:{page_id}")
-
-    await _wiki_delete_doc_page_source(tenant_id, kb_id, doc_id)
-
-    try:
-        await _wiki_finalize(tenant_id, kb_id, embd_mdl)
-    except Exception:
-        logging.exception("wiki: FINALIZE after deletion failed")
-
-    return summary
-
-
 __all__ = [
     "WIKI_PAGE_COMPILE_KWD",
     "WIKI_PLAN_GROUP_COMPILE_KWD",
     "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
     "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
     "wiki_compile_incremental",
-    "wiki_handle_document_deleted",
     "_wiki_reduce_entity",
     "_wiki_reduce_batch",
     "_wiki_match_entities",
@@ -4998,7 +4751,6 @@ __all__ = [
     "_wiki_refine_page",
     "_wiki_update_doc_page_source",
     "_load_canonical_entities",
-    "_save_canonical_entity",
     "_delete_canonical_entity",
     "_extract_raw_entities",
 ]
