@@ -768,9 +768,7 @@ def test_run_mineru_api_raises_with_status_and_body_on_non_ok(monkeypatch, tmp_p
         ("http://options.server", "http://parser.server", "http://options.server"),
     ],
 )
-def test_run_mineru_api_server_url_only_when_set(
-    monkeypatch, tmp_path, options_server_url, parser_server_url, expected
-):
+def test_run_mineru_api_server_url_only_when_set(monkeypatch, tmp_path, options_server_url, parser_server_url, expected):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser(mineru_api="http://mineru.local", mineru_server_url=parser_server_url)
 
