@@ -61,13 +61,16 @@ const (
 // Variants records the compile types (tree/structure/wiki/mindmap) produced by
 // the doc-level compile for this doc, so the consumer can group a claimed batch
 // into per-variant sub-batches and dispatch each to its own dataset-level
-// compile path. It is empty (nil) for deleted events and for events published
-// before this field existed; the consumer treats a nil/empty Variants as
-// "unknown/legacy" and falls back to the legacy unified path.
+// compile path. TaskTypes preserves the original frontend-facing category for
+// each template, so structure sub-kinds such as Graph, Timeline, and PageIndex
+// can be logged separately. Both fields are empty (nil) for deleted events and
+// for events published before they existed; the consumer falls back to the
+// legacy unified path when the fields are absent.
 type BacklogEntry struct {
 	DocID     string   `json:"doc_id"`
 	EventType string   `json:"event_type"`
 	Variants  []string `json:"variants,omitempty"`
+	TaskTypes []string `json:"task_types,omitempty"`
 }
 
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
@@ -92,8 +95,9 @@ type Publisher interface {
 	// idle workers. It is transactional so concurrent publishers do not clobber
 	// each other's backlog, and it always pairs the append with a notify.
 	// variants carries the doc-level compile types (tree/structure/wiki/mindmap)
-	// for completed events; it is nil for deleted events.
-	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error
+	// for completed events; taskTypes carries the frontend-facing categories for
+	// those templates. Both are nil for deleted events.
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error
 }
 
 // Claimer is the consumer-side role (Option E §11.5). A cluster of competing
@@ -216,8 +220,8 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 // workers. The append is transactional (concurrent publishers do not clobber
 // each other's backlog), and the notify is always paired with the append so a
 // producer never needs a separate Notify call.
-func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
-	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error {
+	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants, TaskTypes: taskTypes})
 }
 
 // loadRow fetches the dataset scheduling row (no lock). Returns nil (no error)
@@ -233,8 +237,8 @@ func (s *mysqlScheduler) loadRow(ctx context.Context, datasetID string) (*entity
 	return &row, nil
 }
 
-func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
-	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+func (s *mysqlScheduler) publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error {
+	return s.publishEntry(ctx, tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants, TaskTypes: taskTypes})
 }
 
 func (s *mysqlScheduler) publishEntry(ctx context.Context, tenantID, datasetID string, entry BacklogEntry) error {
@@ -783,8 +787,8 @@ func NewFakeScheduler() *FakeScheduler {
 func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
-func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
-	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error {
+	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants, TaskTypes: taskTypes})
 }
 
 // PublishedCount returns the total number of backlog events published across

@@ -278,7 +278,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	applyDocumentAvailability(chunks, docStatus)
 
-	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
+	oldCompiledProductIDs, oldCompiledVariants, oldCompiledTaskTypes, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +310,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
 	// consumer retract stale merged products when a template is removed.
 	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	eventTaskTypes := mergeTaskTypes(oldCompiledTaskTypes, compiledTaskTypes(chunks))
 	if len(eventVariants) > 0 {
-		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants, eventTaskTypes); err != nil {
 			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 		}
 	}
@@ -457,10 +458,10 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 // loadDocumentCompiledState snapshots the previous successful document
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
-func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, []string, error) {
 	docEngine := engine.Get()
 	if docEngine == nil || s == nil || s.taskCtx == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
@@ -476,7 +477,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
+			return nil, nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -494,7 +495,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			break
 		}
 	}
-	return oldIDs, compiledVariants(oldProducts), nil
+	return oldIDs, compiledVariants(oldProducts), compiledTaskTypes(oldProducts), nil
 }
 
 // reconcileDocumentCompiledProducts advances the document-level compiler
@@ -594,6 +595,54 @@ func compiledVariants(chunks []map[string]any) []string {
 	out := make([]string, 0, len(seen))
 	for k := range seen {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// compiledTaskTypes returns the sorted, de-duplicated frontend categories of
+// the compiled products in chunks. The raw template kind is preferred because
+// several kinds intentionally share the structure execution variant.
+func compiledTaskTypes(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		taskType := ""
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && strings.TrimSpace(kind) != "" {
+			if mapped, err := kccommon.KindToTaskType(kind); err == nil {
+				taskType = mapped
+			}
+		}
+		if taskType == "" {
+			if mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck)); err == nil {
+				taskType = kccommon.VariantToTaskType(mapped)
+			}
+		}
+		if taskType != "" {
+			seen[taskType] = struct{}{}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func mergeTaskTypes(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, taskType := range group {
+			if taskType = strings.TrimSpace(taskType); taskType != "" {
+				seen[taskType] = struct{}{}
+			}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func sortedTaskTypes(seen map[string]struct{}) []string {
+	out := make([]string, 0, len(seen))
+	for taskType := range seen {
+		out = append(out, taskType)
 	}
 	sort.Strings(out)
 	return out

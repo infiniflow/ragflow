@@ -34,7 +34,7 @@ import (
 // products do not wake the consumer because they cannot contribute to any
 // dataset-level knowledge artifact.
 func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Context, tenantID, datasetID, documentID string, status int) {
-	variants, err := s.documentKnowledgeCompileVariants(ctx, tenantID, datasetID, documentID)
+	variants, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, datasetID, documentID)
 	if err != nil {
 		common.Warn("document mutation: failed to resolve knowledge compile variants",
 			zap.String("document_id", documentID), zap.Error(err))
@@ -45,9 +45,9 @@ func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Contex
 	}
 	var publishErr error
 	if status == 0 {
-		publishErr = knowledge_compile.PublishDisabled(ctx, tenantID, datasetID, documentID, variants)
+		publishErr = knowledge_compile.PublishDisabled(ctx, tenantID, datasetID, documentID, variants, taskTypes)
 	} else {
-		publishErr = knowledge_compile.PublishEnabled(ctx, tenantID, datasetID, documentID, variants)
+		publishErr = knowledge_compile.PublishEnabled(ctx, tenantID, datasetID, documentID, variants, taskTypes)
 	}
 	if publishErr != nil {
 		common.Warn("document mutation: failed to publish knowledge compile status change",
@@ -55,12 +55,13 @@ func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Contex
 	}
 }
 
-func (s *DocumentService) documentKnowledgeCompileVariants(ctx context.Context, tenantID, datasetID, documentID string) ([]string, error) {
+func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, tenantID, datasetID, documentID string) ([]string, []string, error) {
 	if s.docEngine == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	seen := make(map[string]struct{})
+	seenVariants := make(map[string]struct{})
+	seenTaskTypes := make(map[string]struct{})
 	for offset := 0; ; offset += 1000 {
 		result, err := s.docEngine.Search(ctx, &types.SearchRequest{
 			IndexNames:   []string{indexName},
@@ -71,7 +72,7 @@ func (s *DocumentService) documentKnowledgeCompileVariants(ctx context.Context, 
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -83,17 +84,29 @@ func (s *DocumentService) documentKnowledgeCompileVariants(ctx context.Context, 
 				variant, variantErr = knowledge_compile.KwdToVariant(strings.TrimSpace(documentStoreString(row["compile_kwd"])))
 			}
 			if variantErr == nil {
-				seen[string(variant)] = struct{}{}
+				seenVariants[string(variant)] = struct{}{}
+				taskType, taskTypeErr := kccommon.KindToTaskType(kind)
+				if taskTypeErr != nil {
+					taskType = kccommon.VariantToTaskType(variant)
+				}
+				if taskType != "" {
+					seenTaskTypes[taskType] = struct{}{}
+				}
 			}
 		}
 		if int64(offset+len(result.Chunks)) >= result.Total {
 			break
 		}
 	}
-	variants := make([]string, 0, len(seen))
-	for variant := range seen {
+	variants := make([]string, 0, len(seenVariants))
+	for variant := range seenVariants {
 		variants = append(variants, variant)
 	}
 	sort.Strings(variants)
-	return variants, nil
+	taskTypes := make([]string, 0, len(seenTaskTypes))
+	for taskType := range seenTaskTypes {
+		taskTypes = append(taskTypes, taskType)
+	}
+	sort.Strings(taskTypes)
+	return variants, taskTypes, nil
 }
