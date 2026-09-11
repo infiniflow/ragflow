@@ -839,6 +839,7 @@ type deadlineCaptureDriver struct {
 	modelModule.ModelDriver
 	hasDeadline bool
 	remaining   time.Duration
+	config      *modelModule.ChatConfig
 }
 
 func (d *deadlineCaptureDriver) ChatWithMessages(
@@ -846,11 +847,12 @@ func (d *deadlineCaptureDriver) ChatWithMessages(
 	_ string,
 	_ []modelModule.Message,
 	_ *modelModule.APIConfig,
-	_ *modelModule.ChatConfig,
+	config *modelModule.ChatConfig,
 	_ *common.ModelUsage,
 ) (*modelModule.ChatResponse, error) {
 	deadline, ok := ctx.Deadline()
 	d.hasDeadline = ok
+	d.config = config
 	if ok {
 		d.remaining = time.Until(deadline)
 	}
@@ -868,5 +870,11 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 	}
 	if drv.remaining <= 0 || drv.remaining > visionChatTimeout+time.Second {
 		t.Fatalf("deadline remaining = %v, want ~%v", drv.remaining, visionChatTimeout)
+	}
+	if drv.config == nil || drv.config.Vision == nil || !*drv.config.Vision {
+		t.Fatal("vision chat must enable vision")
+	}
+	if drv.config.Thinking != nil {
+		t.Fatal("non-Ollama vision chat must preserve provider thinking default")
 	}
 }

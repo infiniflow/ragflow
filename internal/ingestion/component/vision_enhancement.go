@@ -368,5 +368,10 @@ func defaultVisionChatInvoker(
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
 	vision := true
-	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	config := &modelModule.ChatConfig{Vision: &vision}
+	if _, ok := driver.(*modelModule.OllamaModel); ok {
+		thinking := false
+		config.Thinking = &thinking
+	}
+	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, config, nil)
 }
