@@ -43,8 +43,8 @@ export interface ClickableNode {
   source_chunk_ids?: string[];
   /** Tree leaves only: whether this node has child clusters. */
   hasChildren?: boolean;
-  /** Leaf claim count (tree badge). 0/undefined ⇒ nothing for the claims panel. */
-  badge?: number;
+  /** Leaf claim badge (tree slot). 0/undefined ⇒ nothing for the claims panel. */
+  badge?: React.ReactNode;
   /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
   description?: string;
   evidence?: IClaimEvidence[];

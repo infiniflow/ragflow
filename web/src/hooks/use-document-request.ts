@@ -111,9 +111,9 @@ export const DocumentStructureKeys = {
   ) =>
     [
       DocumentStructureApiAction.FetchDocumentStructureGraph,
-      'claims',
       datasetId,
       documentId,
+      'claims',
       templateId,
       ...(chunkIds ?? []),
     ] as const,

@@ -15,12 +15,14 @@
  */
 
 import trim from 'lodash/trim';
+import { ClaimBadge } from '@/components/structure-graph/claim-badge';
 import { type TreeDataItem } from '@/components/ui/tree-view';
 import {
   type IArtifactGraph,
   type IArtifactGraphEntity,
 } from '@/interfaces/database/dataset';
 import {
+  type IClaimEvidence,
   type IStructureGraphEntity,
   type IStructureGraphRelation,
   type IStructureGraphTemplate,
@@ -30,6 +32,9 @@ import { type TreeData } from '@antv/g6/lib/types';
 declare module '@/components/ui/tree-view' {
   interface TreeDataItem {
     source_chunk_ids?: string[];
+    /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
+    description?: string;
+    evidence?: IClaimEvidence[];
   }
 }
 
@@ -88,8 +93,9 @@ function buildTreeDataItems(
         entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
         // Leaf clusters only: the tree shows this as a count badge and the
-        // claims themselves are fetched on click.
-        badge: entity.claim_count,
+        // claims themselves are fetched on click. The shared TreeView's
+        // badge slot is a ReactNode, so the claim domain owns the rendering.
+        badge: <ClaimBadge value={entity.claim_count} />,
         // page_index fact/conclusion: gate-verified quotes rendered in the
         // node's detail panel. Without badge/evidence/description the tree and
         // page_index nodes reached the click handler empty, so the detail panel

@@ -86,17 +86,9 @@ function ClaimCard({ claim }: { claim: IClaimItem }) {
 
 interface ClaimListProps {
   claims: IClaimItem[];
-  total: number;
-  loading: boolean;
-  onLoadMore?: () => void;
 }
 
-export function ClaimList({
-  claims,
-  total,
-  loading,
-  onLoadMore,
-}: ClaimListProps) {
+export function ClaimList({ claims }: ClaimListProps) {
   const { t } = useTranslation();
 
   if (!claims.length) {
@@ -114,21 +106,6 @@ export function ClaimList({
       {claims.map((claim, idx) => (
         <ClaimCard key={`${claim.name}-${idx}`} claim={claim} />
       ))}
-      {claims.length < total && onLoadMore && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          disabled={loading}
-          onClick={onLoadMore}
-        >
-          {loading && <Loader2 className="animate-spin" size={14} />}
-          {t('knowledgeCompilation.claimsLoadMore', {
-            remaining: total - claims.length,
-            defaultValue: `Load more (${total - claims.length} remaining)`,
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -152,14 +129,6 @@ export interface EvidencePanelState {
   onClose: () => void;
 }
 
-interface ClaimsPanelProps {
-  clusterName?: string;
-  claims: IClaimItem[];
-  total: number;
-  loading: boolean;
-  onClose: () => void;
-}
-
 // One leaf cluster's claims, opened from the tree's count badge. Rendered as a
 // full-height column between the artifact tree and the chunk list, so it shares
 // the frame language of those panels: a bordered header on top, a scrollable
@@ -170,7 +139,7 @@ export function ClaimsPanel({
   total,
   loading,
   onClose,
-}: ClaimsPanelProps) {
+}: ClaimsPanelState) {
   const { t } = useTranslation();
 
   return (
@@ -212,7 +181,7 @@ export function ClaimsPanel({
             })}
           </div>
         ) : (
-          <ClaimList claims={claims} total={total} loading={loading} />
+          <ClaimList claims={claims} />
         )}
       </div>
     </article>

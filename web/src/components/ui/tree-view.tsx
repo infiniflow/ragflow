@@ -3,7 +3,6 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { IClaimEvidence } from '@/interfaces/database/document-structure';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { cva } from 'class-variance-authority';
 import { ChevronRight } from 'lucide-react';
@@ -21,12 +20,13 @@ export interface TreeDataItem {
   id: string;
   name: string;
   entityType?: string;
-  /** Leaf-node count badge (e.g. claims sourced to this cluster). */
-  badge?: number;
-  /** page_index fact/conclusion: gate-verified verbatim quotes. */
-  evidence?: IClaimEvidence[];
-  description?: string;
-  source_chunk_ids?: string[];
+  /**
+   * Domain-agnostic trailing slot next to the node name. The tree renders
+   * whatever the caller passes (e.g. the structure graph's claim-count pill);
+   * the shared component knows nothing about the business meaning. Hidden
+   * callers simply omit it.
+   */
+  badge?: React.ReactNode;
   icon?: any;
   selectedIcon?: any;
   openIcon?: any;
@@ -53,24 +53,12 @@ type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
   defaultLeafIcon?: any;
 };
 
-// Small count pill for leaf nodes whose facts are inspectable (e.g. a tree
-// cluster's claim count). Hidden when zero/undefined so structural nodes stay
-// uncluttered.
-function ClaimBadge({ value }: { value?: number }) {
-  if (typeof value !== 'number' || value <= 0) return null;
-  return (
-    <span className="shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] leading-none text-accent-foreground">
-      {value}
-    </span>
-  );
-}
-
 const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
   if (!item.entityType) {
     return (
       <span className="flex min-w-0 flex-grow items-center gap-2 text-left">
         <span className="truncate text-sm">{item.name}</span>
-        <ClaimBadge value={item.badge} />
+        {item.badge}
       </span>
     );
   }
@@ -96,7 +84,7 @@ const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
       >
         {item.entityType}
       </span>
-      <ClaimBadge value={item.badge} />
+      {item.badge}
     </span>
   );
 };
