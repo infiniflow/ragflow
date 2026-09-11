@@ -322,7 +322,6 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // suffix and content hash. blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := utility.GenerateToken()
-	run := "0"
 	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
@@ -346,7 +345,6 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		Location:     &loc,
 		Size:         size,
 		Suffix:       suffix,
-		Run:          &run,
 		Status:       &status,
 	}
 	if blob != nil {
@@ -360,16 +358,16 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 // handler remaps (chunk_num→chunk_count, kb_id→dataset_id).
 func docToRawMap(doc *entity.Document) map[string]interface{} {
 	m := map[string]interface{}{
-		"id":            doc.ID,
-		"kb_id":         doc.KbID,
-		"parser_id":     doc.ParserID,
-		"parser_config": map[string]interface{}(doc.ParserConfig),
-		"created_by":    doc.CreatedBy,
-		"type":          doc.Type,
-		"source_type":   doc.SourceType,
-		"size":          doc.Size,
-		"chunk_num":     doc.ChunkNum,
-		"token_num":     doc.TokenNum,
+		"id":               doc.ID,
+		"kb_id":            doc.KbID,
+		"parser_id":        doc.ParserID,
+		"parser_config":    map[string]interface{}(doc.ParserConfig),
+		"created_by":       doc.CreatedBy,
+		"type":             doc.Type,
+		"source_type":      doc.SourceType,
+		"size":             doc.Size,
+		"chunk_num":        doc.ChunkNum,
+		"token_num":        doc.TokenNum,
 		"suffix":           doc.Suffix,
 		"ingestion_status": "UNSTART",
 	}

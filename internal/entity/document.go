@@ -40,7 +40,6 @@ type Document struct {
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash;size:32;index;default:''" json:"content_hash,omitempty"`
 	Suffix          string     `gorm:"column:suffix;size:32;not null;index" json:"suffix"`
-	Run             *string    `gorm:"column:run;size:1;index;default:'0'" json:"-"`
 	Status          *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
@@ -69,7 +68,6 @@ type DocumentListItem struct {
 	ProcessDuration float64    `gorm:"column:process_duration" json:"process_duration"`
 	ContentHash     *string    `gorm:"column:content_hash" json:"content_hash,omitempty"`
 	Suffix          string     `gorm:"column:suffix" json:"suffix"`
-	Run             *string    `gorm:"column:run" json:"-"`
 	IngestionStatus *string    `gorm:"column:ingestion_status" json:"ingestion_status,omitempty"`
 	Status          *string    `gorm:"column:status" json:"status,omitempty"`
 	CreateTime      *int64     `gorm:"column:create_time" json:"create_time,omitempty"`

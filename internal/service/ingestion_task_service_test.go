@@ -411,10 +411,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
-	finishedRun := string(entity.TaskStatusDone)
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"run":          finishedRun,
 			"progress":     float64(1.0),
 			"progress_msg": "done",
 		}).Error; err != nil {
@@ -439,8 +437,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
 		t.Fatalf("reload document: %v", err)
 	}
-	if doc.Run == nil || *doc.Run != finishedRun {
-		t.Fatalf("run = %v, want %q (terminal document must not be resurrected)", doc.Run, finishedRun)
+	if doc.Progress != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", doc.Progress)
 	}
 	if doc.ChunkNum != 10 || doc.TokenNum != 100 {
 		t.Fatalf("counters changed: chunk_num=%d token_num=%d, want 10/100", doc.ChunkNum, doc.TokenNum)

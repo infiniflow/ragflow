@@ -280,7 +280,12 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", id)
 		}
 
-		if doc.Run == nil || *doc.Run != RUNNING {
+		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, id)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", id, err)
+		}
+		if task == nil || task.Status == common.COMPLETED ||
+			task.Status == common.STOPPED || task.Status == common.FAILED {
 			return nil, common.CodeDataError, fmt.Errorf("can't stop parsing document that has not started or already completed")
 		}
 
@@ -290,7 +295,6 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 		}
 
 		info := map[string]interface{}{
-			"run":       "2",
 			"progress":  0,
 			"chunk_num": 0,
 		}

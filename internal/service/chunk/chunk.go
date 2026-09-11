@@ -74,9 +74,9 @@ func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
 
 // ChunkService chunk service
 type ChunkService struct {
-	docEngine      engine.DocEngine
-	embeddingCache *utility.EmbeddingLRU
-	kbDAO          *dao.KnowledgebaseDAO
+	docEngine        engine.DocEngine
+	embeddingCache   *utility.EmbeddingLRU
+	kbDAO            *dao.KnowledgebaseDAO
 	userTenantDAO    *dao.UserTenantDAO
 	documentDAO      *dao.DocumentDAO
 	taskDAO          *dao.TaskDAO

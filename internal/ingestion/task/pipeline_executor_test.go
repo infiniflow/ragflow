@@ -358,7 +358,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	defer cleanup()
 
 	docName := "terminal.pdf"
-	run := "1"
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
 		TenantID:   "tenant-1",
 		KbID:       "kb-1",
@@ -373,7 +372,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 			Type:         "pdf",
 			Name:         &docName,
 			Suffix:       ".pdf",
-			Run:          &run,
 		},
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
@@ -509,7 +507,6 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		t.Fatalf("seed knowledgebase: %v", err)
 	}
 	docName := "sample.avi"
-	run := "1"
 	if err := dao.DB.Create(&entity.Document{
 		ID:           "doc-1",
 		KbID:         "kb-1",
@@ -517,7 +514,6 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		Name:         &docName,
-		Run:          &run,
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}

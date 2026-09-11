@@ -452,4 +452,3 @@ func TestDocumentDAOGetParsingStatusByKBID(t *testing.T) {
 }
 
 func sp(s string) *string { return &s }
-

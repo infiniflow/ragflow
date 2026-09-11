@@ -479,4 +479,3 @@ func TestApplyCommonChunkMapping(t *testing.T) {
 		t.Error("result should be empty for unhandled field")
 	}
 }
-

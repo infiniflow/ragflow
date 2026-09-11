@@ -716,8 +716,7 @@ type PipelineLogInput struct {
 }
 
 // RecordPipelineLog persists a pipeline operation log without requiring
-// executor setup. Callers that already know a terminal state should pass it in
-// Status; otherwise the writer falls back to the latest document.run value.
+// executor setup. Callers should pass the status in Status.
 func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
@@ -791,9 +790,6 @@ func recordPipelineLog(
 	}
 
 	operationStatus := input.Status
-	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
-		operationStatus = *doc.Run
-	}
 	statusValue := "1"
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status

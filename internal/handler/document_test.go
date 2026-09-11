@@ -1441,7 +1441,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 		listIDs: []string{"doc-1", "doc-2", "doc-3"},
 		metadataByKBs: map[string]interface{}{
 			"author": map[string][]string{
-				"Alice": []string{"doc-2", "doc-4"},
+				"Alice": {"doc-2", "doc-4"},
 			},
 		},
 	}

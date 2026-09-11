@@ -207,8 +207,6 @@ func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string)
 	})
 }
 
-
-
 func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")

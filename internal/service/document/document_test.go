@@ -1215,7 +1215,6 @@ func insertTestDocWithRun(t *testing.T, id, kbID, run string, tokenNum, chunkNum
 		ChunkNum:     chunkNum,
 		Suffix:       ".txt",
 		Status:       sptr("1"),
-		Run:          &run,
 	}
 	if err := dao.DB.Create(doc).Error; err != nil {
 		t.Fatalf("insert test doc: %v", err)
@@ -2085,11 +2084,9 @@ func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-			run := "3"
 			progressMsg := "parsing"
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 				"progress":     0.5,
-				"run":          run,
 				"progress_msg": progressMsg,
 			}).Error; err != nil {
 				t.Fatalf("prepare document: %v", err)
@@ -2116,11 +2113,9 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 10, 5)
 	insertTestFile(t, "file-1", "folder-1", "old.pdf", sptr("old.pdf"))
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
-	run := "3"
 	progressMsg := "complete"
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 		"progress":     1.0,
-		"run":          run,
 		"progress_msg": progressMsg,
 	}).Error; err != nil {
 		t.Fatalf("prepare document: %v", err)
@@ -2156,7 +2151,7 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	if file.Name != newName {
 		t.Fatalf("file name = %q, want %q", file.Name, newName)
 	}
-	if doc.Progress != progress || doc.Run == nil || *doc.Run != run || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
+	if doc.Progress != progress || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
 		t.Fatalf("immutable fields changed: %#v", doc)
 	}
 }
@@ -3105,7 +3100,6 @@ func insertNamedTestDoc(t *testing.T, id, kbID, name string, tokenNum, chunkNum 
 		CreatedBy:    "tenant-1",
 		Suffix:       filepath.Ext(name),
 		Status:       sptr("1"),
-		Run:          sptr(string(entity.TaskStatusDone)),
 	}
 	if err := dao.DB.Create(doc).Error; err != nil {
 		t.Fatalf("insert named test doc: %v", err)
