@@ -185,23 +185,29 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	return logs, count, nil
 }
 
-// OpenPipelineOperationStatuses are the operation_status values of a
+// PipelineOperationStatusOpen returns the operation_status values of a
 // pipeline operation log row that a run is still moving through. A run owns
 // exactly one such row from CREATED to its terminal write (DONE/FAIL/CANCEL),
-// so later stages advance the same row instead of inserting a new one.
-var OpenPipelineOperationStatuses = []string{"0", "5", "1"}
+// so later stages advance the same row instead of inserting a new one. It is a
+// function, not a shared slice, so no caller can mutate the set.
+func PipelineOperationStatusOpen() []string {
+	return []string{
+		string(entity.TaskStatusUnstart),
+		string(entity.TaskStatusSchedule),
+		string(entity.TaskStatusRunning),
+	}
+}
 
-// GetOpenLogByDocumentID returns the newest open pipeline operation log for
-// a document, or nil when the document has no in-flight run. Open rows are
-// adopted by document_id alone: the ingestion_task.document_id unique index
-// guarantees at most one non-terminal task per document, so a stale open row
-// can only exist after its task was deleted — and the task-deleting paths
-// (Remove, rerun clear, delete-only ingest) drop it. A retry after a terminal
-// state therefore starts a fresh row instead of resurrecting the finished one.
+// GetOpenLogByDocumentID returns the newest open pipeline operation log for a
+// document, or nil when the document has no in-flight run. It is used to open
+// (or, for a task that never bound its row, adopt) the row for the document's
+// current run. It deliberately does not decide whether a terminal write may
+// proceed: that is bound to the run's own row id (ingestion_task.pipeline_log_id),
+// so a superseded run cannot adopt the replacement run's row.
 func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, db *gorm.DB, documentID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
 	err := db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses).
+		Where("document_id = ? AND operation_status IN ?", documentID, PipelineOperationStatusOpen()).
 		Order("create_time DESC").
 		Order("id DESC").
 		First(&log).Error
@@ -276,20 +282,18 @@ func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm
 	return log, nil
 }
 
-// AdvanceEarlyLog moves the open row for a document to a later status,
-// refreshing its queued message. It targets the newest open row in a single
-// statement: a concurrent advance that already moved the row out of the open
-// set is left alone (RowsAffected 0, reported as false) rather than being
-// overwritten, so competing writers cannot regress each other's status.
-func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, documentID, operationStatus, progressMsg string) (bool, error) {
+// AdvanceEarlyLog moves a run's own row to a later status, refreshing its
+// progress message. The row is targeted by id, so it can never touch another
+// run's row, and the update is guarded by the from-states the caller declares:
+// the transitions are monotonic (unstart -> schedule -> running), so a late
+// queued write cannot regress a row a concurrent writer already advanced
+// (RowsAffected 0, reported as false).
+func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) (bool, error) {
+	if logID == "" || len(fromStatuses) == 0 {
+		return false, nil
+	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where(`id = (
-			SELECT id FROM (
-				SELECT id FROM pipeline_operation_log
-				WHERE document_id = ? AND operation_status IN ?
-				ORDER BY create_time DESC, id DESC LIMIT 1
-			) AS open_row
-		)`, documentID, OpenPipelineOperationStatuses).
+		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
 		Updates(map[string]interface{}{
 			"operation_status": operationStatus,
 			"progress_msg":     progressMsg,
@@ -301,11 +305,12 @@ func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gor
 }
 
 // DeleteOpenLogsByDocumentID removes the open (non-terminal) rows for a
-// document. Used to clean up the early row when task creation rolls back, so
-// the detail page is not left with a permanently queued entry.
+// document. Used to clean up the early row when task creation rolls back or a
+// run is superseded, so the detail page is not left with a permanently queued
+// entry.
 func (dao *PipelineOperationLogDAO) DeleteOpenLogsByDocumentID(ctx context.Context, db *gorm.DB, documentID string) error {
 	return db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses).
+		Where("document_id = ? AND operation_status IN ?", documentID, PipelineOperationStatusOpen()).
 		Delete(&entity.PipelineOperationLog{}).Error
 }
 

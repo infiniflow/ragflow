@@ -713,6 +713,12 @@ type PipelineLogInput struct {
 	DSL        string
 	Status     string
 	Document   entity.Document
+	// OpenLogID is the id of the pipeline_operation_log row this run owns
+	// (ingestion_task.pipeline_log_id). When set, the terminal write updates
+	// exactly that row and never creates a second one — so a superseded run
+	// whose row was deleted cannot adopt the replacement run's row. Empty for
+	// legacy, debug-adjacent, or non-ingestion callers.
+	OpenLogID string
 }
 
 // RecordPipelineLog persists a pipeline operation log without requiring
@@ -721,8 +727,8 @@ type PipelineLogInput struct {
 //
 // When the run opened an early queued row (CREATED/SCHEDULED), the terminal
 // write advances that same row so the dataset detail page shows one entry per
-// run. Without an open row (legacy runs, debug-adjacent paths) it creates a
-// new row, preserving the previous behavior.
+// run. Without a bound row (legacy runs, debug-adjacent paths) it adopts the
+// document's open row, or creates a new row when none exists.
 func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
@@ -812,9 +818,9 @@ func recordPipelineLog(
 		documentName = *doc.Name
 	}
 	if db != nil {
-		if updated, err := reuseOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+		if handled, err := writeExistingLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
 			common.Warn(fmt.Sprintf("failed to advance open pipeline log for document %s: %v", input.DocumentID, err))
-		} else if updated {
+		} else if handled {
 			return nil
 		}
 	}
@@ -843,18 +849,30 @@ func recordPipelineLog(
 	return createFunc(ctx, db, log)
 }
 
-// reuseOpenLogRow advances the open row belonging to this run to its terminal
+// writeExistingLogRow advances the row this run already owns to its terminal
 // state, filling in the DSL, the pipeline identity, and the final progress
-// snapshot. It reports whether a row was reused; false means the caller must
-// Create a new row. The CAS on operation_status keeps a concurrent retry's
-// fresh queued row from being overwritten by this run's terminal write.
-func reuseOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
-	open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, input.DocumentID)
-	if err != nil {
-		return false, err
-	}
-	if open == nil {
-		return false, nil
+// snapshot. It reports whether the caller must stop (true) or insert a new row
+// (false).
+//
+// The row is targeted by OpenLogID when the caller has one, so a superseded run
+// whose row was deleted with the task can never reach into the replacement
+// run's row. Only when the caller has no bound row (legacy, debug-adjacent, or
+// non-ingestion callers) does it adopt the document's newest open row, so a
+// stray open row is closed rather than left queued. RowsAffected is not used to
+// decide whether to create: once a target row is known, the write is final —
+// a lost CAS means another writer already finalized this run or the row was
+// dropped with a superseded run, and neither may produce a second entry.
+func writeExistingLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
+	targetID := input.OpenLogID
+	if targetID == "" {
+		open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, input.DocumentID)
+		if err != nil {
+			return false, err
+		}
+		if open == nil {
+			return false, nil
+		}
+		targetID = open.ID
 	}
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
@@ -873,18 +891,22 @@ func reuseOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, o
 		updates["document_name"] = *doc.Name
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", open.ID, dao.OpenPipelineOperationStatuses).
+		Where("id = ? AND operation_status IN ?", targetID, dao.PipelineOperationStatusOpen()).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
 	}
-	return result.RowsAffected == 1, nil
+	return true, nil
 }
 
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	pipelineID := ""
 	if s.taskCtx.PipelineID != "" {
 		pipelineID = s.canvasID
+	}
+	openLogID := ""
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil {
+		openLogID = *s.taskCtx.IngestionTask.PipelineLogID
 	}
 	if err := recordPipelineLog(ctx, db, PipelineLogInput{
 		TenantID:   s.Tenant().ID,
@@ -894,6 +916,7 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		DSL:        dsl,
 		Status:     status,
 		Document:   s.taskCtx.Doc,
+		OpenLogID:  openLogID,
 	}, s.logCreateFunc); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}

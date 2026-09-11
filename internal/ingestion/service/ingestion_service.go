@@ -1218,11 +1218,18 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		return
 	}
 	ctx = context.WithoutCancel(ctx)
-	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, taskpkg.PipelineLogInput{
+	input := taskpkg.PipelineLogInput{
 		KbID:       ingestionTask.DatasetID,
 		DocumentID: ingestionTask.DocumentID,
 		Status:     status,
-	}); err != nil {
+	}
+	// Bind the write to this run's own row. A superseded run keeps the id of
+	// its (deleted or replaced) row, so its late terminal write can never reach
+	// into the replacement run's row.
+	if ingestionTask.PipelineLogID != nil {
+		input.OpenLogID = *ingestionTask.PipelineLogID
+	}
+	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
 }

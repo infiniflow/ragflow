@@ -951,6 +951,11 @@ func TestIngestionTaskServiceSupersedeOpensFreshEarlyLog(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("pipeline log rows = %d, want 1 (stale dropped, fresh queued)", count)
 	}
+	// The task must now be bound to the fresh row, so the superseded run's late
+	// terminal write (still holding the deleted id) cannot reach it.
+	if bound := loadTaskPipelineLogID(t, ctx, db, "task-1"); bound != open.ID {
+		t.Fatalf("task bound to %q, want the replacement row %q", bound, open.ID)
+	}
 }
 
 // TestIngestionTaskServiceCreateAndEnqueueRearmsCompletedTask locks in that a
@@ -1475,6 +1480,28 @@ func TestIngestionTaskServiceCreateForDocumentsOpensEarlyPipelineLog(t *testing.
 	if countPipelineLogs(t, db, "doc-1") != 1 {
 		t.Fatalf("expected exactly 1 pipeline log row for one run")
 	}
+	// The task must be bound to the row so the terminal writer knows which row
+	// belongs to this run.
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.PipelineLogID == nil || *task.PipelineLogID != open.ID {
+		t.Fatalf("task PipelineLogID = %v, want %q (row bound to the owning run)", task.PipelineLogID, open.ID)
+	}
+}
+
+// loadTaskPipelineLogID returns the pipeline-operation-log id bound to a task.
+func loadTaskPipelineLogID(t *testing.T, ctx context.Context, db *gorm.DB, taskID string) string {
+	t.Helper()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
+	if err != nil {
+		t.Fatalf("load task %s: %v", taskID, err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatalf("task %s has no bound pipeline log", taskID)
+	}
+	return *task.PipelineLogID
 }
 
 func TestIngestionTaskServiceStartRunningAdvancesEarlyPipelineLog(t *testing.T) {
@@ -1510,6 +1537,9 @@ func TestIngestionTaskServiceStartRunningAdvancesEarlyPipelineLog(t *testing.T) 
 	}
 	if countPipelineLogs(t, db, "doc-1") != 1 {
 		t.Fatalf("expected running to reuse the queued row, not insert a second one")
+	}
+	if bound := loadTaskPipelineLogID(t, ctx, db, task.ID); bound != open.ID {
+		t.Fatalf("task bound to %q, want the same running row %q", bound, open.ID)
 	}
 }
 
@@ -1588,5 +1618,97 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 	if countPipelineLogs(t, db, "doc-1") != 2 {
 		t.Fatalf("expected 2 pipeline log rows (finished + fresh queued)")
+	}
+}
+
+// TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic locks the monotonic
+// transition contract: a late queued write must not regress a row a concurrent
+// worker already moved to running.
+func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	queuedMsg := "Task is queued..."
+	early := &entity.PipelineOperationLog{
+		ID:              "log-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusUnstart),
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := dao.DB.Create(early).Error; err != nil {
+		t.Fatalf("seed early log: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "log-1").Error; err != nil {
+		t.Fatalf("bind task: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+
+	svc.advanceEarlyLog(ctx, task, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusSchedule) {
+		t.Fatalf("after schedule = %q, want %q", got, string(entity.TaskStatusSchedule))
+	}
+	svc.advanceEarlyLog(ctx, task, earlyLogFromStarted, string(entity.TaskStatusRunning), earlyLogMsgRunning, true)
+	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusRunning) {
+		t.Fatalf("after start = %q, want %q", got, string(entity.TaskStatusRunning))
+	}
+	// The enqueue-time scheduled write lands late; it must not regress the row.
+	svc.advanceEarlyLog(ctx, task, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.OperationStatus != string(entity.TaskStatusRunning) {
+		t.Fatalf("late scheduled write regressed the row to %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
+	}
+	if open.ID != "log-1" || countPipelineLogs(t, db, "doc-1") != 1 {
+		t.Fatalf("expected the same single row, got id=%q count=%d", open.ID, countPipelineLogs(t, db, "doc-1"))
+	}
+}
+
+// TestIngestionTaskServiceAdvanceReopenGuard locks the reopen contract: a
+// missing early row is re-created only while the task is still live. A terminal
+// task must never resurrect its closed row as a permanently queued entry.
+func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-terminal", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-live", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-terminal", "user-1", "doc-terminal", "kb-1", common.STOPPED)
+	insertTestIngestionTaskWithStatus(t, "task-live", "user-1", "doc-live", "kb-1", common.CREATED)
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+
+	terminal, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-terminal")
+	if err != nil {
+		t.Fatalf("load terminal task: %v", err)
+	}
+	svc.advanceEarlyLog(ctx, terminal, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	if got := countPipelineLogs(t, db, "doc-terminal"); got != 0 {
+		t.Fatalf("terminal task resurrected %d queued row(s); want none", got)
+	}
+
+	live, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-live")
+	if err != nil {
+		t.Fatalf("load live task: %v", err)
+	}
+	svc.advanceEarlyLog(ctx, live, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	open := loadOpenPipelineLog(t, ctx, db, "doc-live")
+	if open.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("OperationStatus = %q, want %q (reopen for a live task)", open.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+	if bound := loadTaskPipelineLogID(t, ctx, db, "task-live"); bound != open.ID {
+		t.Fatalf("task bound to %q, want reopened row %q", bound, open.ID)
 	}
 }

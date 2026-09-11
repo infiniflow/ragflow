@@ -28,6 +28,14 @@ type IngestionTask struct {
 	// frontend does not have to count DSL nodes itself. Written once the
 	// pipeline compiles the canvas (see pipeline.Run).
 	ComponentTotal int `gorm:"column:component_total;default:0" json:"component_total"`
+	// PipelineLogID is the id of the pipeline_operation_log row the task's
+	// current run owns. The service opens that row when the run is queued and
+	// binds it here, so the running advance and the terminal write update
+	// exactly this row instead of adopting whichever row happens to be open for
+	// the document. A superseded run keeps the id of its (deleted) row, so its
+	// late terminal write cannot touch the replacement run's row. nil for runs
+	// that never opened an early row.
+	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32" json:"-"`
 	BaseModel
 }
 

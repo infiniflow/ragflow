@@ -75,6 +75,14 @@ func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.
 	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
 }
 
+// UpdatePipelineLogID binds the task to the pipeline_operation_log row its
+// current run owns. The terminal writer updates exactly that row, so a
+// superseded run whose row was deleted or replaced cannot adopt the
+// replacement run's row.
+func (dao *IngestionTaskDAO) UpdatePipelineLogID(ctx context.Context, db *gorm.DB, taskID, logID string) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", logID).Error
+}
+
 type TaskInfo struct {
 	TaskID        string   `json:"task_id"`
 	FilesToDelete []string `json:"files_to_delete"`

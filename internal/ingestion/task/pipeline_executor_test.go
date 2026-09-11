@@ -668,6 +668,7 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 		KbID:       "kb-1",
 		DocumentID: "doc-1",
 		Status:     "3",
+		OpenLogID:  "early-log",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -677,7 +678,7 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 		t.Fatalf("count pipeline logs: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the queued row)", count)
+		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the bound queued row)", count)
 	}
 	var log entity.PipelineOperationLog
 	if err := dao.DB.First(&log, "id = ?", "early-log").Error; err != nil {
@@ -697,29 +698,97 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 	}
 }
 
-func TestRecordPipelineLog_ReusesOpenRowAfterTaskDeleted(t *testing.T) {
+// TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow locks the run-isolation
+// contract: a terminal write is bound to the row its own run opened, so a late
+// write from a superseded run (whose row was replaced) can neither finalize nor
+// even touch an open row belonging to another run of the same document.
+func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
 
-	// The task-deleting paths (Remove, rerun clear, delete-only ingest) drop
-	// the open early row, so a stale open row cannot survive to be adopted by
-	// a later run. This locks the other half of that contract: even if one
-	// did survive (e.g. a crash between the task delete and the log delete),
-	// the terminal writer still adopts it by document_id rather than leaving
-	// the run without a terminal entry.
-	staleMsg := "Task is queued..."
-	stale := &entity.PipelineOperationLog{
-		ID:              "stale-log",
+	// An open row for the document that belongs to a different run: either the
+	// superseded run's row (cleanup failed) or the replacement run's fresh
+	// queued row. It must survive the write below untouched.
+	otherMsg := "Task is queued..."
+	other := &entity.PipelineOperationLog{
+		ID:              "other-run-log",
 		DocumentID:      "doc-1",
 		TenantID:        "tenant-1",
 		KbID:            "kb-1",
 		ParserID:        "naive",
 		TaskType:        "Parse",
 		OperationStatus: "5",
-		ProgressMsg:     &staleMsg,
+		ProgressMsg:     &otherMsg,
 	}
-	if err := dao.DB.Create(stale).Error; err != nil {
-		t.Fatalf("seed stale log: %v", err)
+	if err := dao.DB.Create(other).Error; err != nil {
+		t.Fatalf("seed other run's log: %v", err)
+	}
+
+	run := "3"
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		Run:          &run,
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	// This run's own row was deleted along with the superseded task.
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+		OpenLogID:  "superseded-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "other-run-log").Error; err != nil {
+		t.Fatalf("reload other run's log: %v", err)
+	}
+	if reloaded.OperationStatus != "5" {
+		t.Fatalf("other run's row OperationStatus = %q, want %q (must not be touched)", reloaded.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (a bound missing row must not create a duplicate)", count)
+	}
+}
+
+// TestRecordPipelineLog_UnboundAdoptsOpenRow keeps the legacy contract for
+// callers that carry no bound row (debug-adjacent and non-ingestion paths): the
+// document's newest open row is adopted so a stray queued entry is closed
+// rather than left open.
+func TestRecordPipelineLog_UnboundAdoptsOpenRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openMsg := "Task is queued..."
+	open := &entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &openMsg,
+	}
+	if err := dao.DB.Create(open).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
 	}
 
 	run := "3"
@@ -748,19 +817,19 @@ func TestRecordPipelineLog_ReusesOpenRowAfterTaskDeleted(t *testing.T) {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
 
-	var staleReload entity.PipelineOperationLog
-	if err := dao.DB.First(&staleReload, "id = ?", "stale-log").Error; err != nil {
-		t.Fatalf("reload stale log: %v", err)
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("reload open log: %v", err)
 	}
-	if staleReload.OperationStatus != "3" {
-		t.Fatalf("stale row OperationStatus = %q, want %q (adopted as this run's row)", staleReload.OperationStatus, "3")
+	if reloaded.OperationStatus != "3" {
+		t.Fatalf("open row OperationStatus = %q, want %q (adopted by the unbound writer)", reloaded.OperationStatus, "3")
 	}
 	var count int64
 	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
 		t.Fatalf("count pipeline logs: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("pipeline log rows = %d, want 1 (surviving open row is adopted, not duplicated)", count)
+		t.Fatalf("pipeline log rows = %d, want 1 (adopted, not duplicated)", count)
 	}
 }
 
