@@ -71,6 +71,30 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 	return modelID, driver, apiKey, baseURL, nil
 }
 
+// modelImageCapability reports an explicitly known image capability. The
+// second result is false when the model is unknown, so local/test drivers keep
+// their historical multimodal behavior.
+func modelImageCapability(ctx context.Context, db *gorm.DB, modelRef, modelName string) (supports, known bool) {
+	if db != nil && modelRef != "" {
+		if row, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && row != nil {
+			return entity.ModelType(row.ModelType).Has(entity.ModelTypeImage2Text), true
+		}
+	}
+	if modelName == "" {
+		return false, false
+	}
+	model := dao.GetModelProviderManager().GetModelByNameOrAlias(modelName)
+	if model == nil || len(model.ModelTypes) == 0 {
+		return false, false
+	}
+	for _, typ := range model.ModelTypes {
+		if strings.EqualFold(typ, "vision") || strings.EqualFold(typ, "image2text") {
+			return true, true
+		}
+	}
+	return false, true
+}
+
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
 func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
