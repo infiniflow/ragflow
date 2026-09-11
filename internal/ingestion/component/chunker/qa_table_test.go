@@ -11,6 +11,8 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
+// xlsxWorkbook renders rows into an in-memory workbook so the tests run
+// against the real spreadsheet parser instead of hand-written markup.
 func xlsxWorkbook(t *testing.T, rows [][]string) []byte {
 	t.Helper()
 	f := excelize.NewFile()
@@ -30,6 +32,8 @@ func xlsxWorkbook(t *testing.T, rows [][]string) []byte {
 	return buf.Bytes()
 }
 
+// qaChunksFromXLSX drives a workbook through the real XLSX parser and then
+// the QA chunker, returning the chunks the pipeline would emit.
 func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	t.Helper()
 	p, err := parser.NewXLSXParser("")
@@ -61,6 +65,9 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	return chunks
 }
 
+// TestXLSXQARegression is the end-to-end smoke test: every row of the sheet
+// becomes one chunk. The chunker has no header concept, so the first row is
+// a Q&A pair like any other.
 func TestXLSXQARegression(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
 		{"question", "answer"},

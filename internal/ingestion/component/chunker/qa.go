@@ -277,6 +277,10 @@ func cellText(cell *html.Node) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// extractQATable turns table markup into Q&A pairs: the first two non-empty
+// cells of a row become the question and the answer. strictPairs is the CSV
+// contract (Python qa.py:365) and requires a row to have exactly two cells
+// instead of taking the first two.
 func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
