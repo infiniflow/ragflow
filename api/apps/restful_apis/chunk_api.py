@@ -911,31 +911,39 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_result(data=_response([bucket]))
 
     # ── normal mode: per-template subgraph sampling from the raw rows ──
-    # Metadata-only scan of the per-doc graph blob rows (one per
-    # (compile_kwd, template_id)) purely to discover buckets and resolve their
-    # display name/kind — WITHOUT loading the (potentially huge)
-    # content_with_weight. Each bucket's entities/relations are then fetched
-    # from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
-    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            meta_fields,
-            [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [dataset_id],
-        )
-        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
-    except Exception as e:
-        return server_error_response(e)
+    # Discover buckets from the authoritative entity/relation rows. The
+    # structure compiler no longer emits a synthetic ``graph`` row, and a
+    # paged metadata-only scan avoids loading payloads or truncating large docs.
+    meta_fields = ["id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    meta_rows: dict = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                meta_fields,
+                [],
+                {"doc_id": [document_id], "knowledge_graph_kwd": ["entity", "relation"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_name,
+                [dataset_id],
+            )
+            page_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+        except Exception as e:
+            return server_error_response(e)
+        if not page_rows:
+            break
+        meta_rows.update(page_rows)
+        if len(page_rows) < page_size:
+            break
+        offset += page_size
 
-    # Discover unique buckets. A template can own multiple compile_kwd blob
-    # rows; scoping by template_id folds them together, matching prior behavior.
+    # Discover unique buckets. A template can own multiple raw entity/relation
+    # rows; scoping by template_id folds them together.
     bucket_metas: dict[str, dict] = {}
     bucket_scopes: dict[str, dict] = {}
     for row in meta_rows.values():

@@ -511,6 +511,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	tomb := c.tombs[kb]
 	var completed []BacklogEntry
 	var deleted []string
+	var disabled []BacklogEntry
 	// Per-document tombstone clears are staged locally and committed only after
 	// the write/delete paths below return without error, so a failed batch
 	// leaves c.tombs untouched and can be retried on reclaim.
@@ -553,6 +554,8 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			}
 			tomb[docID] = 1
 			deleted = append(deleted, docID)
+		case EventTypeDisabled:
+			disabled = append(disabled, BacklogEntry{DocID: docID, EventType: string(EventTypeDisabled), Variants: st.variants})
 		case EventTypeCompleted:
 			// A re-ingest after an earlier deletion: clear the prior
 			// tombstone (deferred until the batch succeeds).
@@ -562,6 +565,8 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			// Preserve the winning event's variants so the dispatch below can
 			// route this doc to the matching dataset-level compile path (A0-4).
 			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Variants: st.variants})
+		case EventTypeEnabled:
+			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeEnabled), Variants: st.variants})
 		}
 	}
 	// Sort for deterministic iteration in the delete/load passes below.
@@ -580,9 +585,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		zap.String("dataset_id", kb),
 		zap.Int("completed_docs", len(completed)),
 		zap.Int("deleted_docs", len(deleted)),
+		zap.Int("disabled_docs", len(disabled)),
 		zap.Strings("entries", entryDetails))
 
-	if len(deleted) == 0 && len(completed) == 0 {
+	if len(deleted) == 0 && len(disabled) == 0 && len(completed) == 0 {
 		c.reportProgress(ctx, tenant, kb, token, 1, "completed", "No document products require merging")
 		return nil
 	}
@@ -613,54 +619,46 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		return nil
 	}
 
-	deduper, err := c.factory(tenant)
-	if err != nil || deduper == nil {
-		// A no-op deduper would silently disable dataset-level LLM merging: every
-		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
-		// merged row and duplicates would accumulate across runs. That degradation
-		// is never acceptable here, so fail loudly instead of papering over it.
-		common.Fatal("knowledge_compile: dataset-level LLM deduper unavailable, refusing to continue with a no-op merge",
-			zap.String("kb_id", kb),
-			zap.String("tenant_id", tenant),
-			zap.String("factory_err", func() string {
-				if err != nil {
-					return err.Error()
-				}
-				return "deduper factory returned nil"
-			}()))
-	}
 	c.reportProgress(ctx, tenant, kb, token, 0.12, "deleting", fmt.Sprintf("Deleting products for %d document(s)", len(deleted)))
 
-	// --- Deletion (two sequential DocEngine calls, no in-memory load) ---
-	// Deleted wins regardless of batch order, so we process deletions first.
-	// The deleted docs' products are never loaded into memory: the DocEngine
-	// does all the work in two calls:
+	// --- Retraction (sequential DocEngine calls, no in-memory load) ---
+	// Deleted and disabled docs are handled before completion merges. Their
+	// dataset-level contributions are removed without loading document products:
+	//   - deleted docs also lose their document-level compiled products;
+	//   - disabled docs retain document-level products for a later re-enable.
+	// The DocEngine does the dataset-level work in two calls:
 	//   1. DeleteDocLevelForDocs drops every per-document (doc-level) product of
-	//      the deleted docs in a single engine call.
+	//      deleted docs in a single engine call.
 	//   2. StripMergedSources removes the deleted doc ids from the source_doc_ids
 	//      array of every dataset-level merged product and deletes any product
 	//      whose array became empty.
 	// A merged product referencing several deleted docs is pruned in one pass,
 	// and an emptied product is removed exactly once.
-	if len(deleted) > 0 {
-		delIDs := make([]string, 0, len(deletedSet))
+	if len(deleted) > 0 || len(disabled) > 0 {
+		delIDs := make([]string, 0, len(deletedSet)+len(disabled))
 		for d := range deletedSet {
 			delIDs = append(delIDs, d)
 		}
+		for _, entry := range disabled {
+			delIDs = append(delIDs, entry.DocID)
+		}
+		delIDs = uniqueSortedStrings(delIDs)
 		// Each destructive write runs under the scheduler's per-dataset
 		// write/rebuild lock with the generation check performed INSIDE the lock,
 		// so a rewrite can neither land between the check and the write nor
 		// interleave with the write itself (it must wait for this lock). This
 		// closes the TOCTOU window where a worker past its fence could repopulate
 		// storage the rebuild just cleared.
-		if err := c.withWriteLock(ctx, kb, token, func() error {
-			return c.writer.DeleteDocLevelForDocs(ctx, tenant, kb, delIDs)
-		}); err != nil {
-			if errors.Is(err, errClaimSuperseded) {
-				common.Info("knowledge_compile: batch stale before delete, aborting (rewrite barrier)",
-					zap.String("dataset_id", kb))
+		if len(deleted) > 0 {
+			if err := c.withWriteLock(ctx, kb, token, func() error {
+				return c.writer.DeleteDocLevelForDocs(ctx, tenant, kb, deleted)
+			}); err != nil {
+				if errors.Is(err, errClaimSuperseded) {
+					common.Info("knowledge_compile: batch stale before delete, aborting (rewrite barrier)",
+						zap.String("dataset_id", kb))
+				}
+				return err
 			}
-			return err
 		}
 		// The second destructive call is its own locked section: a rewrite can
 		// land between the two, in which case the stale batch must not apply its
@@ -685,6 +683,31 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			}
 			return err
 		}
+	}
+	if len(completed) == 0 && len(wikiDiff.affectedKeys) == 0 {
+		c.mu.Lock()
+		for _, docID := range pendingTombClear {
+			delete(c.tombs[kb], docID)
+		}
+		c.mu.Unlock()
+		c.reportProgress(ctx, tenant, kb, token, 1, "completed", "Document availability changes applied")
+		return nil
+	}
+	deduper, err := c.factory(tenant)
+	if err != nil || deduper == nil {
+		// A no-op deduper would silently disable dataset-level LLM merging: every
+		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
+		// merged row and duplicates would accumulate across runs. That degradation
+		// is never acceptable here, so fail loudly instead of papering over it.
+		common.Fatal("knowledge_compile: dataset-level LLM deduper unavailable, refusing to continue with a no-op merge",
+			zap.String("kb_id", kb),
+			zap.String("tenant_id", tenant),
+			zap.String("factory_err", func() string {
+				if err != nil {
+					return err.Error()
+				}
+				return "deduper factory returned nil"
+			}()))
 	}
 
 	// --- Completion merge ---

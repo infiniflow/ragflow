@@ -3,8 +3,18 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
+
+const defaultMaxRerankTokens = 8196
+
+// ErrRerankTokenLimitPolicy identifies invalid token-limit configuration or oversized rerank input.
+var ErrRerankTokenLimitPolicy = errors.New("rerank token limit policy")
 
 // Message represents a chat message with role and content
 //
@@ -205,6 +215,12 @@ type EmbedRequest struct {
 	Texts  []string // for text
 	Images [][]byte // for image
 	Urls   []string // for image
+	// Query selects the query-side encoding for providers that embed queries
+	// and documents differently (Python's LLMBundle.encode_queries vs encode):
+	// Cohere/Bedrock-Cohere input_type=search_query, Voyage input_type=query,
+	// Jina task=retrieval.query, NVIDIA input_type=query, DashScope
+	// text_type=query. Providers without an asymmetric mode ignore it.
+	Query bool
 }
 
 type EmbeddingConfig struct {
@@ -283,19 +299,53 @@ type RerankModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	MaxTokens   int
 }
 
 // NewRerankModel creates a new RerankModel
-func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *RerankModel {
+func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int) *RerankModel {
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+		MaxTokens:   maxTokens,
 	}
 }
 
 // Rerank calculates similarity between query and texts
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	maxTokens := r.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
+	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
+	if mode == "" {
+		mode = "truncate"
+	}
+	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
+		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
+	}
+	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
+		queryTokens := tokenizer.NumTokensFromString(request.Query)
+		if mode == "truncate" {
+			documentTokens := max(maxTokens-queryTokens, 0)
+			documents := make([]string, len(request.Documents))
+			for i, document := range request.Documents {
+				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+			}
+			request.Documents = documents
+		} else {
+			for i, document := range request.Documents {
+				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
+				if inputTokens > maxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				}
+			}
+		}
+	}
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 
@@ -305,6 +355,12 @@ type ToolConfig struct {
 	MaxRounds       int             // max tool-calling rounds (default: 5)
 	MaxRetries      int             // max retries on failure (default: 3)
 	ToolCallSession ToolCallSession // session that executes tool calls
+	// TerminalTools names tools whose successful result is already the final
+	// answer. When a round executes one of them, the loop stops and returns
+	// that result instead of feeding it back for another model round. Mirrors
+	// Python's chat_mdl.terminal_tools short-circuit (chat_model.py:619-627).
+	// Empty disables the short-circuit (existing behaviour).
+	TerminalTools map[string]struct{}
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration
@@ -349,4 +405,19 @@ func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
 		MaxRetries:      defaultMaxRetries,
 		ToolCallSession: session,
 	}
+}
+
+// SetTerminalTools marks the named tools as terminal: once one executes
+// successfully, the tool loop stops and returns its result as the final answer
+// rather than re-invoking the model. Mirrors Python
+// `chat_mdl.mdl.terminal_tools = {...}`. Call after BindTools.
+func (cm *ChatModel) SetTerminalTools(names ...string) {
+	if cm.ToolConfig == nil {
+		return
+	}
+	term := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		term[n] = struct{}{}
+	}
+	cm.ToolConfig.TerminalTools = term
 }

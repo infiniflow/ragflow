@@ -556,7 +556,7 @@ func dedupKey(v any) string {
 
 // normValue is the Python _norm helper: "" for nil, else str(v).
 // Bools are rendered as "True" / "False" (Python's str() output) so
-// filter `=` comparisons match the Python DSL contract. Mirrors
+// filter `=` comparisons match the Python DSL  Mirrors
 // agent/component/list_operations.py:151-153.
 func normValue(v any) string {
 	if v == nil {

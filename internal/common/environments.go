@@ -34,6 +34,7 @@ func GetEnvSmall(key string) string {
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
+	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
@@ -237,6 +238,9 @@ const (
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
+//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//     (it fetches the files one by one, so it MUST be edited by hand when this
+//     slice changes);
 //   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
 //     (so .ort lands in the model dir automatically — no FILES edit needed);
 //   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
@@ -263,11 +267,12 @@ func HasModelFiles(dir string) bool {
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
-// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
-// THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
-// — NOT a single source of truth. The download URL and extracted dir name are
-// built from those ORT_VERSION constants, not from this one. The Go binding
+// DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
+// FOUR raw version declarations that must stay equal (the other three are
+// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py,
+// and ARG ORT_VERSION in Dockerfile_go) — NOT a single source of truth. The
+// download URL and extracted dir name are built from those ORT_VERSION
+// constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
@@ -275,11 +280,15 @@ func HasModelFiles(dir string) bool {
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, ALL of the following must change together (drift breaks the
-// static link or the runtime OrtGetApiBase lookup):
-//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
-//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
-//   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
-//     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
+// To bump ORT, the four Go-side native pins above must change together
+// (drift breaks the static link or the runtime OrtGetApiBase lookup):
+//   - DeepDocORTVersion (here, Go)
+//   - ORT_VERSION in ragflow_deps/download_go_deps.py
+//   - ORT_VERSION in ragflow_deps/download_deps.py
+//   - ARG ORT_VERSION in Dockerfile_go
+//
+// Separately, keep these on the same ORT minor line but version them
+// independently of the Go native lib (see pyproject.toml / development.md):
+//   - the onnxruntime== / onnxruntime-gpu== pins in pyproject.toml (Python side)
 //   - the onnxruntime_go binding minor in go.mod.
-const DeepDocORTVersion = "1.23.2"
+const DeepDocORTVersion = "1.29.0"

@@ -363,7 +363,7 @@ def test_deleted_chunk_not_in_retrieval_contract(rest_client, create_document):
     _retrieval_lacks_chunks(rest_client, dataset_id, content, [chunk_id])
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_document):
     dataset_id, document_id = create_document("retrieval_deleted_chunks_batch.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
