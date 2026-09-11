@@ -186,9 +186,7 @@ export function EmbeddingModelItem({
               >
                 {t('embeddingModel')}
               </FormLabel>
-              <div
-                className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
-              >
+              <div className={cn('text-text-primary', { 'w-3/4': line === 1 })}>
                 <FormControl>
                   <EmbeddingSelect
                     isEdit={!!isEdit}
@@ -500,9 +498,7 @@ export function LLMModelItem({
               >
                 {label ?? t('llmModel')}
               </FormLabel>
-              <div
-                className={cn('text-text-secondary', { 'w-3/4': line === 1 })}
-              >
+              <div className={cn('text-text-primary', { 'w-3/4': line === 1 })}>
                 <FormControl>
                   <LLMSelect
                     isEdit={!!isEdit}

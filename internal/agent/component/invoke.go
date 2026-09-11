@@ -85,7 +85,7 @@ func (i *InvokeComponent) Name() string { return i.name }
 
 // Invoke executes a single HTTP request and returns its response text as
 // `result`, matching the Python Invoke component. See Inputs() for the
-// param contract.
+// param
 //
 // SSRF flow (PR #15426):
 //  1. Validate the target URL via utility.AssertURLSafe (loopback /

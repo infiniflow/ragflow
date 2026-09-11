@@ -3662,6 +3662,88 @@ func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, te
 	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
 }
 
+// ResolveModelToolSupport reports whether the resolved chat model supports
+// function calling (tool calls). It mirrors Python dialog_service.rag_agent's
+// `if not getattr(chat_mdl, "is_tools", False)` gate: a model without tool
+// support must skip the outer rag_agent react loop and fall back to the direct
+// graph (Python falls back to async_chat).
+//
+// Precedence mirrors Python's tenant_model_service.get_model_config_by_id
+// (:363) `"is_tools": model_extra.get("is_tools", is_tool)`: the flag persisted
+// on the tenant model wins, and the provider catalog is only a default for
+// models enrolled without one. Reading the catalog first instead would send a
+// tenant-disabled model through the outer react loop — where a model that does
+// not actually call tools answers from its own knowledge and the retrieval
+// never runs.
+func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return false, fmt.Errorf("model ref is required")
+	}
+	// Tenant-model UUID path: the persisted extra flag first, then the catalog.
+	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
+		if ts, ok := extraToolSupport(modelObj.Extra); ok {
+			return ts, nil
+		}
+		if prov, perr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID); perr == nil && prov != nil {
+			return catalogToolSupport(prov.ProviderName, modelObj.ModelName), nil
+		}
+		return false, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	// Composite "model@instance@provider" path: parse and consult the catalog.
+	pureModelName, _, providerName, err := parseModelName(modelRef)
+	if err != nil {
+		return false, err
+	}
+	return catalogToolSupport(providerName, pureModelName), nil
+}
+
+// extraToolSupport reads the is_tools flag persisted on a tenant model's extra
+// JSON. The value is written as a JSON boolean (addModelToInstance stores
+// llm.Tools.Support verbatim) but has historically also been spelled as a
+// string, so both shapes are accepted. ok is false when the key is absent or
+// the extra blob is unreadable, letting the caller fall back to the catalog.
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	v, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true"), true
+	case float64:
+		return t != 0, true
+	}
+	return false, false
+}
+
+// catalogToolSupport reports whether a provider's catalog declares the named
+// model as supporting tool (function) calling. Returns false when the provider
+// or model is unknown. Mirrors RAGFlow's model_meta "is_tools" feature derived
+// from conf/models/*.json.
+func catalogToolSupport(providerName, modelName string) bool {
+	pm := dao.GetModelProviderManager()
+	provider := pm.FindProvider(providerName)
+	if provider == nil {
+		return false
+	}
+	mi := pm.FindModel(provider, modelName)
+	if mi == nil || mi.Tools == nil {
+		return false
+	}
+	return mi.Tools.Support
+}
+
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
 	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelName); err == nil {
 		if modelObj.Status != "active" {
