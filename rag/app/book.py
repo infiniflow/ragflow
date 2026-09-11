@@ -126,6 +126,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             **kwargs,
         )
 
+        tbls = tables
+
         if not sections and not tables:
             return []
 
