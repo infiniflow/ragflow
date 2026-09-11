@@ -32,7 +32,6 @@ func TestNormalizeKind(t *testing.T) {
 		row  map[string]interface{}
 		want string
 	}{
-		{map[string]interface{}{"compile_kwd": "raptor_graph"}, "raptor"},
 		{map[string]interface{}{"compilation_template_kind_kwd": "page_index"}, "timeline"},
 		{map[string]interface{}{"compilation_template_kind_kwd": "knowledge_graph"}, "timeline"},
 		{map[string]interface{}{"compilation_template_kind_kwd": "mindmap"}, "mindmap"},
@@ -239,15 +238,10 @@ func TestParseCompiledStructureKindFilterAndNormalization(t *testing.T) {
 		{CompileKwd: "page_index", KnowledgeGraphKwd: "entity", Content: `{"name": "A"}`},
 		{CompileKwd: "knowledge_graph", KnowledgeGraphKwd: "entity", Content: `{"name": "B"}`},
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "C"}`},
-		{CompileKwd: "raptor_graph", KnowledgeGraphKwd: "graph", Content: `{"entities": [{"name": "D"}]}`},
 	}
 	ents, _ := ParseCompiledStructure(rows, []string{"timeline"})
 	if len(ents) != 2 {
 		t.Errorf("timeline filter = %d entities, want 2 (page_index + knowledge_graph)", len(ents))
-	}
-	ents, _ = ParseCompiledStructure(rows, []string{"raptor"})
-	if len(ents) != 1 {
-		t.Errorf("raptor filter = %d entities, want 1", len(ents))
 	}
 	ents, _ = ParseCompiledStructure([]StructureRow{
 		{CompileKwd: "", TemplateKind: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "E"}`},

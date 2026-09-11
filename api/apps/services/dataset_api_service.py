@@ -4233,10 +4233,7 @@ async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl
         # SEPARATELY, never as one mixed condition: a tree claim row carries no
         # ``knowledge_graph_kwd`` while a page_index claim is a graph entity.
         # Tree first: it is the compiled benchmark path, so the common case
-        # still costs a single pass.  ``compile_kwd="raptor_graph"`` (the legacy
-        # parser-config RAPTOR graph projection) is NOT queried here: those rows
-        # carry no ``entity_type_kwd`` and the legacy path writes no claims, so
-        # the filter could never match.
+        # still costs a single pass.
         field_map = await _recall(("tree",), ("claim",))
         if not field_map:
             field_map = await _recall(("page_index", "pageindex"), ("claim",))

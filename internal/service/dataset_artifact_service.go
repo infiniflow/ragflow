@@ -42,7 +42,6 @@ const (
 	CompileKwdSkill        = "skill"
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
-	CompileKwdRaptorGraph  = "raptor_graph"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,

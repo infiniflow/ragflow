@@ -46,7 +46,7 @@ _LOG = logging.getLogger(__name__)
 # or a page index. ``_compilation_template_kind`` in the API folds page_index
 # and knowledge_graph into "timeline"; RAPTOR is its own bucket and is
 # inherently tree-like, so it counts too.
-_CATALOG_KINDS = {"tree", "timeline", "raptor", "page_index", "pageindex"}
+_CATALOG_KINDS = {"tree", "timeline", "page_index", "pageindex"}
 
 # Compiled-structure kinds that describe the document's *concepts*.
 _MINDMAP_KINDS = {"mindmap", "mind_map"}
@@ -189,24 +189,19 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     # The compact graph blob (knowledge_graph_kwd="graph") is gone from the
     # storage model: tree compilation now writes the same per-row shape as
     # page_index, so this single entity/relation query covers every compiled
-    # doc. The legacy parser-config RAPTOR projection
-    # (compile_kwd="raptor_graph") is still read separately -- those rows
-    # carry no knowledge_graph_kwd.
+    # doc.
     rows.update(
         await _query(
             {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity", "relation"]},
             3000,
         )
     )
-    rows.update(await _query({"doc_id": [doc_id], "compile_kwd": ["raptor_graph"]}, 16))
 
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
         compile_kwd = row.get("compile_kwd") or ""
         kind = _normalize_kind(row.get("compilation_template_kind_kwd") or compile_kwd)
-        if compile_kwd == "raptor_graph":
-            kind = "raptor"
         if kind not in kinds:
             continue
         try:
@@ -1080,7 +1075,7 @@ def _structure_kinds_for(kind: str) -> set:
     if k in ("mindmap", "mind_map", "concept"):
         return set(_MINDMAP_KINDS)
     if k in ("graph", "kg", "entity", "ontology"):
-        return {"graph", "ontology", "entity", "raptor"}
+        return {"graph", "ontology", "entity"}
     return set(_CATALOG_KINDS)
 
 
@@ -1755,7 +1750,7 @@ _CLAIM_PREFETCH_CACHE_CAP = 64
 # ``compile_kwd`` values the knowledge-compilation paths write.  A dataset whose
 # rows carry none of these has no compiled structure at all, so navigation
 # (claim recall, tree routing, in-document drill) can only come back empty.
-_COMPILATION_KWDS = ("tree", "page_index", "pageindex", "timeline", "dataset_nav", "raptor_graph")
+_COMPILATION_KWDS = ("tree", "page_index", "pageindex", "timeline", "dataset_nav")
 _COMPILATION_PROBE_TTL = 300.0
 
 
@@ -1764,9 +1759,6 @@ _COMPILATION_PROBE_TTL = 300.0
 # extraction, page_index via its own atomic claim type with gate-verified
 # verbatim evidence.  page_index's pre-rename ``fact``/``conclusion`` spellings
 # are deliberately NOT searched — a recompile retypes those rows.
-# ``raptor_graph`` (legacy parser-config RAPTOR graph projection) is absent on
-# purpose: those rows carry no ``entity_type_kwd`` and the legacy path writes no
-# claims, so it can never be an evidence-row kind.
 _EVIDENCE_ROW_TYPES_BY_COMPILE = {
     "tree": ("claim",),
     "raptor": ("claim",),

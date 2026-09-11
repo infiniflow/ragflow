@@ -786,53 +786,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     except Exception as e:
         return server_error_response(e)
 
-    # RAPTOR summary graph is stored as a standalone blob rather than raw
-    # knowledge_graph_kwd entity/relation rows, so include its arrays explicitly.
-    raptor_entities: list[dict] = []
-    raptor_relations: list[dict] = []
-    try:
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["content_with_weight", "compile_kwd"],
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
-    except Exception:
-        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
-        raptor_rows = {}
-    for row in raptor_rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        r_entities = graph.get("entities") or []
-        r_relations = graph.get("relations") or []
-        if isinstance(r_entities, list):
-            raptor_entities.extend(r_entities)
-        if isinstance(r_relations, list):
-            raptor_relations.extend(r_relations)
-    total_entities += len(raptor_entities)
-    total_relations += len(raptor_relations)
-
-    # Leaf clusters carry a claim-count badge: claims live in their own rows
-    # (entity_type_kwd="claim") so they don't drown the tree, but a bare leaf
-    # hides that its facts are inspectable. One scan for the whole document;
-    # failures are logged and the graph renders without badges.
-    if raptor_entities:
-        try:
-            await sgc.attach_claim_counts(raptor_entities, raptor_relations, index_name, dataset_id, document_id, "tree")
-        except Exception:
-            logging.exception("structure graph: claim count attach failed for doc=%s", document_id)
-
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
         if isinstance(raw, list):
@@ -967,13 +920,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         if not entities and not relations:
             continue
         grouped[bid] = {**meta, "entities": entities, "relations": relations}
-
-    # RAPTOR was loaded above so its full counts are also available to keyword
-    # responses; append it only in normal mode, matching the existing behavior.
-    if raptor_entities or raptor_relations:
-        rb = grouped.setdefault("raptor", {"template_id": "raptor", "template_name": "RAPTOR Summary", "kind": "raptor", "entities": [], "relations": []})
-        rb["entities"].extend(raptor_entities)
-        rb["relations"].extend(raptor_relations)
 
     # Order: configured templates first (in the user's chosen order),
     # then any discovered / legacy / raptor buckets after.
@@ -1183,10 +1129,6 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
 
     try:
         deleted = 0
-        if template_id == "raptor":
-            deleted += _delete({"doc_id": [document_id], "compile_kwd": ["raptor_graph"]})
-            return get_result(data={"deleted": deleted}, message=f"deleted {deleted} structure graph rows")
-
         if template_id.startswith("legacy:"):
             compile_kwd = template_id[len("legacy:") :].strip()
             if not compile_kwd:
