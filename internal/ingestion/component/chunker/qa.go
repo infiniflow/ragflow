@@ -32,12 +32,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"html"
 	"regexp"
 	"strings"
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
@@ -207,28 +207,81 @@ func isCSV(name string) bool {
 // HTML / spreadsheet QA extraction
 // ---------------------------------------------------------------------------
 
-var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
-var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
-var htmlTag = regexp.MustCompile(`<[^>]+>`)
+// tableRows walks the parsed HTML and returns the <td>/<th> text of every
+// <tr>, in document order.
+//
+// The markup is parsed into a tree rather than matched with a regex because
+// this input is not guaranteed to be well formed: seven parsers render table
+// items (xlsx, csv, docx, html, pdf, …) and some of that markup originates
+// from user-supplied documents. A tree also settles the two cases a tag-level
+// scan cannot: a nested <table> is read as its own rows instead of being
+// mistaken for its parent's cells, and a row or cell missing its closing tag
+// is still recovered rather than dropped.
+func tableRows(htmlStr string) [][]string {
+	doc, err := html.Parse(strings.NewReader(htmlStr))
+	if err != nil {
+		return nil
+	}
+	var rows [][]string
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "tr" {
+			var cells []string
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type == html.ElementNode && (c.Data == "td" || c.Data == "th") {
+					cells = append(cells, cellText(c))
+				}
+			}
+			// Return without descending: the cells above already collect a
+			// nested table's text, and its rows belong to it alone.
+			rows = append(rows, cells)
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	return rows
+}
+
+// cellText returns the visible text of a table cell. The parser hands text
+// nodes over already unescaped, nested markup contributes its text without
+// its tags, and a <br> becomes a newline instead of silently gluing the two
+// halves of the cell together.
+func cellText(cell *html.Node) string {
+	var sb strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		switch {
+		case n.Type == html.TextNode:
+			sb.WriteString(n.Data)
+		case n.Type == html.ElementNode && n.Data == "br":
+			sb.WriteByte('\n')
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(cell)
+	return strings.TrimSpace(sb.String())
+}
 
 func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
+	rows := tableRows(htmlStr)
 	pairs := make([]qaPair, 0, len(rows))
-	for _, row := range rows {
-		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
+	for _, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
 			continue
 		}
 		var texts []string
 		for _, cell := range cells {
-			t := html.UnescapeString(htmlTag.ReplaceAllString(cell[1], ""))
-			t = strings.TrimSpace(t)
-			if t != "" {
-				texts = append(texts, t)
+			if cell != "" {
+				texts = append(texts, cell)
 			}
 		}
 		if len(texts) >= 2 {
