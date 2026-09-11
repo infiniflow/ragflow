@@ -1189,6 +1189,41 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	}
 }
 
+func TestListDocumentsRejectsNumericRunFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?run=1", "user-1")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 wrapper, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+	if int(resp["code"].(float64)) != int(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "Invalid filter run status conditions: 1") {
+		t.Fatalf("expected error message to contain 'Invalid filter run status conditions: 1', got %q", msg)
+	}
+}
+
 func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB

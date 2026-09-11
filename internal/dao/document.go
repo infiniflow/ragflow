@@ -263,7 +263,7 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 		hasUnstart := false
 		otherStatuses := make([]string, 0, len(opts.RunStatuses))
 		for _, s := range opts.RunStatuses {
-			if strings.EqualFold(s, "UNSTART") || s == "0" {
+			if strings.EqualFold(s, "UNSTART") {
 				hasUnstart = true
 			} else {
 				otherStatuses = append(otherStatuses, s)

@@ -882,23 +882,17 @@ func queryValues(c *gin.Context, names ...string) []string {
 
 var runStatusMap = map[string]string{
 	"UNSTART":   "UNSTART",
-	"0":         "UNSTART",
 	"CREATED":   common.CREATED,
 	"SCHEDULED": common.SCHEDULED,
 	"SCHEDULE":  common.SCHEDULED,
-	"5":         common.SCHEDULED,
 	"RUNNING":   common.RUNNING,
-	"1":         common.RUNNING,
 	"STOPPING":  common.STOPPING,
 	"STOPPED":   common.STOPPED,
 	"CANCEL":    common.STOPPED,
-	"2":         common.STOPPED,
 	"COMPLETED": common.COMPLETED,
 	"DONE":      common.COMPLETED,
-	"3":         common.COMPLETED,
 	"FAILED":    common.FAILED,
 	"FAIL":      common.FAILED,
-	"4":         common.FAILED,
 }
 
 func normalizeRunStatusFilter(statuses []string) []string {
