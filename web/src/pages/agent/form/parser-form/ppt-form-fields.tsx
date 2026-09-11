@@ -53,7 +53,10 @@ export function PptFormFields({ prefix }: CommonProps) {
     // On a file-type switch the field remounts and react-hook-form re-seeds it
     // from the node's saved form data, so it can hold another file type's
     // static parse method (e.g. ocr) — reset it to DeepDOC in that case too.
-    if (isEmpty(current) || isForeignParseMethod(FileType.PowerPoint, current)) {
+    if (
+      isEmpty(current) ||
+      isForeignParseMethod(FileType.PowerPoint, current)
+    ) {
       form.setValue(parseMethodName, ParseDocumentType.DeepDOC, {
         shouldValidate: true,
         shouldDirty: true,

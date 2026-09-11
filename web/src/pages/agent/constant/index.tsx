@@ -88,9 +88,8 @@ export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
   rerank_candidates_count: 64,
-  kb_ids: [],
+  dataset_ids: [],
   rerank_id: '',
-  empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
   cross_languages: [],
@@ -208,6 +207,28 @@ export const initialYouComValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
   freshness: YouComFreshness.Any,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export enum SofyaSearchDepth {
+  Basic = 'basic',
+  Snippets = 'snippets',
+}
+
+export const initialSofyaValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  search_depth: SofyaSearchDepth.Basic,
   top_n: 10,
   outputs: {
     formalized_content: {
@@ -474,6 +495,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  max_concurrency: 0,
   outputs: {},
 };
 
@@ -775,6 +797,7 @@ export const RestrictedUpstreamMap = {
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -832,6 +855,7 @@ export const NodeMap = {
   [Operator.SearXNG]: 'ragNode',
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
+  [Operator.SofyaSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',

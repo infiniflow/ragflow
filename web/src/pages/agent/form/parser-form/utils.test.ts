@@ -9,7 +9,9 @@ describe('parser-form utils', () => {
     });
 
     it('returns DeepDOC for pdf/spreadsheet/powerpoint', () => {
-      expect(getInitialParseMethod(FileType.PDF)).toBe(ParseDocumentType.DeepDOC);
+      expect(getInitialParseMethod(FileType.PDF)).toBe(
+        ParseDocumentType.DeepDOC,
+      );
       expect(getInitialParseMethod(FileType.Spreadsheet)).toBe(
         ParseDocumentType.DeepDOC,
       );
@@ -26,19 +28,21 @@ describe('parser-form utils', () => {
   describe('isForeignParseMethod', () => {
     it('treats a static method from another file type as foreign', () => {
       // The bug: switching pdf -> image left DeepDOC in parse_method
-      expect(isForeignParseMethod(FileType.Image, ParseDocumentType.DeepDOC)).toBe(
+      expect(
+        isForeignParseMethod(FileType.Image, ParseDocumentType.DeepDOC),
+      ).toBe(true);
+      expect(isForeignParseMethod(FileType.PDF, ImageParseMethod.OCR)).toBe(
         true,
       );
-      expect(isForeignParseMethod(FileType.PDF, ImageParseMethod.OCR)).toBe(true);
     });
 
     it('accepts the file type’s own initial method', () => {
       expect(isForeignParseMethod(FileType.Image, ImageParseMethod.OCR)).toBe(
         false,
       );
-      expect(isForeignParseMethod(FileType.PDF, ParseDocumentType.DeepDOC)).toBe(
-        false,
-      );
+      expect(
+        isForeignParseMethod(FileType.PDF, ParseDocumentType.DeepDOC),
+      ).toBe(false);
     });
 
     it('never treats an LLM model id as foreign', () => {
