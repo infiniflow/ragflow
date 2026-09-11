@@ -32,6 +32,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.key_utils import _resolve_bedrock_credentials
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -1374,7 +1375,7 @@ class BedrockCV(Base):
     def _parse_credentials(self, key):
         from botocore.utils import validate_region_name
 
-        bedrock_key = json.loads(key)
+        bedrock_key = _resolve_bedrock_credentials(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
         self.aws_region = bedrock_key.get("bedrock_region")
         if not self.aws_region:
