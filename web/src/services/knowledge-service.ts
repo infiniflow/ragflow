@@ -411,10 +411,7 @@ export const listDocument = (
   return request.get(api.getDocumentList(params.id), { params: mergedParams });
 };
 
-export const documentFilter = (
-  kb_id: string,
-  params?: { keywords?: string },
-) =>
+export const documentFilter = (kb_id: string, params?: { keywords?: string }) =>
   request.get(api.getDatasetFilter(kb_id), {
     params: params?.keywords ? { keywords: params.keywords } : {},
   });
