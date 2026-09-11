@@ -228,16 +228,11 @@ type DownloadDocumentResp struct {
 	ContentType string
 }
 
-const (
-	IngestActionStart  = "start"
-	IngestActionCancel = "cancel"
-)
-
 type IngestDocumentRequest struct {
-	DocIDs  []string `json:"doc_ids" binding:"required"`
-	Action  string   `json:"action" binding:"required"`
-	Delete  bool     `json:"delete"`
-	ApplyKB bool     `json:"apply_kb"`
+	DocIDs  []string    `json:"doc_ids" binding:"required"`
+	Run     interface{} `json:"run" binding:"required"`
+	Delete  bool        `json:"delete"`
+	ApplyKB bool        `json:"apply_kb"`
 }
 
 // StartParseOptions controls StartParseDocuments behavior.

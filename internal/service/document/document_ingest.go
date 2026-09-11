@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
-	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -34,10 +33,7 @@ func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []stri
 }
 
 func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
-	action := strings.ToLower(strings.TrimSpace(req.Action))
-	if action != IngestActionStart && action != IngestActionCancel {
-		return common.CodeArgumentError, fmt.Errorf("invalid action: %q (must be %q or %q)", req.Action, IngestActionStart, IngestActionCancel)
-	}
+	run := fmt.Sprint(req.Run)
 
 	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
 	if err != nil {
@@ -77,7 +73,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 
 	// Batch pre-check for reparse with delete: use the validated doc IDs
 	// so we don't silently skip non-existent or unauthorized documents.
-	if action == IngestActionStart && req.Delete {
+	if run == string(entity.TaskStatusRunning) && req.Delete {
 		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
 			return common.CodeDataError, err
 		}
@@ -87,7 +83,11 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		doc := vd.doc
 		kb := vd.kb
 
-		if action == IngestActionStart {
+		// Start parsing: delegates to the shared start-parse flow. The
+		// document run status is set by service.IngestionTaskService.StartRunning
+		// when the task transitions from CREATED or SCHEDULED,
+		// not here.
+		if run == string(entity.TaskStatusRunning) {
 			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 				ApplyKB:         req.ApplyKB,
 				RerunWithDelete: req.Delete,
@@ -98,7 +98,12 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			continue
 		}
 
-		if action == IngestActionCancel {
+		// Cancel: RequestStop (STOPPING) and update doc state. Do NOT
+		// delete the ingestion task or chunks here — deletion races with
+		// the worker's async markStopped/settleToTerminal flow. Once the
+		// worker detects STOPPING and transitions to STOPPED, the task
+		// is terminal and can be safely cleaned up.
+		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
 				if errors.Is(err, errParseNotRunning) {
@@ -107,7 +112,46 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				}
 				return common.CodeDataError, err
 			}
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"progress": 0,
+			}); err != nil {
+				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
+				return common.CodeExceptionError, err
+			}
 			continue
+		}
+
+		// Delete-only: user asked to remove prior parse results without
+		// starting a new parse. RUNNING already continued above.
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+			"progress": 0,
+		}); err != nil {
+			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
+			return common.CodeExceptionError, err
+		}
+
+		if req.Delete {
+			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
+				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
+				}
+				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			}
+			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+			if s.docEngine != nil {
+				var exists bool
+				exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
+				if err != nil {
+					common.Error(fmt.Sprintf("go side, doc %s, ChunkStoreExists failed", doc.ID), err)
+					return common.CodeExceptionError, err
+				}
+				if exists {
+					if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+						common.Error(fmt.Sprintf("go side, doc %s, DeleteChunks failed", doc.ID), err)
+						return common.CodeExceptionError, err
+					}
+				}
+			}
 		}
 	}
 

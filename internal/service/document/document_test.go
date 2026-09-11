@@ -2517,7 +2517,7 @@ func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
 	svc := testDocumentService(t)
 	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
-		Action: IngestActionStart,
+		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
 	})
 	if err == nil {
@@ -3387,7 +3387,7 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	ctx := t.Context()
 	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: IngestActionCancel,
+		Run:    string(entity.TaskStatusCancel),
 		Delete: true,
 	})
 	if err != nil {
@@ -3416,7 +3416,7 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: IngestActionCancel,
+		Run:    string(entity.TaskStatusCancel),
 	})
 	if err == nil {
 		t.Fatal("expected error when canceling an un-started document")
@@ -3444,7 +3444,7 @@ func TestIngest_CancelCompletedDocument(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: IngestActionCancel,
+		Run:    string(entity.TaskStatusCancel),
 	})
 	if err == nil {
 		t.Fatal("expected error when canceling a completed document")
@@ -3472,7 +3472,7 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: IngestActionCancel,
+		Run:    string(entity.TaskStatusCancel),
 	})
 	if err != nil {
 		t.Fatalf("Ingest(cancel) with in-flight task: %v", err)
@@ -3504,7 +3504,7 @@ func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: IngestActionCancel,
+		Run:    string(entity.TaskStatusCancel),
 	})
 	if err != nil {
 		t.Fatalf("Ingest(re-cancel) on stopped task: %v", err)
@@ -3514,18 +3514,44 @@ func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	}
 }
 
-func TestIngest_RejectsInvalidAction(t *testing.T) {
+// TestIngest_DeleteOnlyCleansTasks verifies that when run is neither running nor
+// cancel, passing delete=true deletes prior tasks and resets progress to 0 without starting a parse.
+func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
 	svc := testDocumentService(t)
 	ctx := t.Context()
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
-		Action: "invalid",
+		Run:    "0",
+		Delete: true,
 	})
-	if err == nil {
-		t.Fatal("expected error for invalid action, got nil")
+	if err != nil {
+		t.Fatalf("Ingest(delete-only): %v", err)
 	}
-	if code != common.CodeArgumentError {
-		t.Fatalf("code = %v, want %v", code, common.CodeArgumentError)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("query task: %v", err)
+	}
+	if task != nil {
+		t.Fatal("expected task to be deleted in delete-only mode")
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("query doc: %v", err)
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("expected doc progress 0, got %v", doc.Progress)
 	}
 }
 
