@@ -860,6 +860,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
@@ -887,6 +888,14 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = resolved
 			if rerr != nil {
 				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
+			}
+		}
+	}
+	if state != nil {
+		if _, images := collectSysFiles(state); len(images) > 0 {
+			if supports, known := modelImageCapability(ctx, db, originalModelID, p.ModelID); known && !supports {
+				return nil, runtime.NewUserFacingError(fmt.Sprintf(
+					`Image input is not supported by the selected model %q. Please select a vision-capable model.`, p.ModelID))
 			}
 		}
 	}

@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
 )
 
 func TestRunnerRedactsInternalRunError(t *testing.T) {
@@ -67,5 +69,15 @@ func TestRunErrorEventPreservesPublicMessage(t *testing.T) {
 	}
 	if payload.Kind != "" {
 		t.Errorf("kind = %q, want empty for public runtime error", payload.Kind)
+	}
+}
+
+func TestRunErrorEventPreservesUserFacingMessage(t *testing.T) {
+	payload := runErrorEvent(runtime.NewUserFacingError("Image input is not supported by the selected model \"glm-4.7\". Please select a vision-capable model."))
+	if payload.Message != "Image input is not supported by the selected model \"glm-4.7\". Please select a vision-capable model." {
+		t.Errorf("message = %q, want clean user-facing message", payload.Message)
+	}
+	if payload.Kind != "user" {
+		t.Errorf("kind = %q, want user", payload.Kind)
 	}
 }
