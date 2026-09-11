@@ -11,8 +11,27 @@ from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
+import pytest
 
 from deepdoc.vision.ocr import _OPENCV_REMAP_MAX_DIM, OCR
+
+
+def _cv2_runtime_available() -> bool:
+    try:
+        cv2.resize(np.zeros((2, 2, 3), dtype=np.uint8), (1, 1))
+        return True
+    except Exception:
+        return False
+
+
+# Several unit test modules replace sys.modules["cv2"] with a stub that raises on
+# every call when the real OpenCV wheel cannot be imported, and never restore it.
+# Those modules are collected before this one, so the geometry checks below need
+# a live OpenCV runtime rather than whatever "cv2" currently resolves to.
+requires_cv2 = pytest.mark.skipif(
+    not _cv2_runtime_available(),
+    reason="OpenCV runtime is unavailable or stubbed out",
+)
 
 
 def _ocr_stub() -> OCR:
@@ -26,6 +45,7 @@ def test_opencv_remap_max_dim_below_shrt_max():
     assert _OPENCV_REMAP_MAX_DIM < 32767
 
 
+@requires_cv2
 def test_get_rotate_crop_image_handles_oversized_source():
     """Source wider than SHRT_MAX must not raise; crop stays under the limit."""
     ocr = _ocr_stub()
@@ -45,6 +65,7 @@ def test_get_rotate_crop_image_handles_oversized_source():
     assert cropped.shape[0] > 0 and cropped.shape[1] > 0
 
 
+@requires_cv2
 def test_get_rotate_crop_images_resizes_oversized_source_once():
     ocr = _ocr_stub()
     width = _OPENCV_REMAP_MAX_DIM + 100
@@ -62,6 +83,7 @@ def test_get_rotate_crop_images_resizes_oversized_source_once():
     resize.assert_called_once()
 
 
+@requires_cv2
 def test_get_rotate_crop_image_normal_page_unchanged_size():
     """In-bounds crops on normal pages keep the expected output geometry."""
     ocr = _ocr_stub()
@@ -74,6 +96,7 @@ def test_get_rotate_crop_image_normal_page_unchanged_size():
     assert cropped.shape[0] == 40
 
 
+@requires_cv2
 def test_get_rotate_crop_image_clamps_out_of_bounds_quad():
     ocr = _ocr_stub()
     img = np.zeros((100, 100, 3), dtype=np.uint8)
