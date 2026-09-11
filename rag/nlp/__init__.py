@@ -1645,6 +1645,12 @@ def concat_img(img1, img2):
 
 
 def _build_cks(sections, delimiter):
+    """Split ``(text, image, table)`` sections into typed chunks.
+
+    Text is buffered and split on the parsed ``delimiter`` field; each table
+    or image section becomes its own chunk. Returns
+    ``(cks, tables, images, has_custom)``.
+    """
     cks = []
     tables = []
     images = []
@@ -1659,6 +1665,29 @@ def _build_cks(sections, delimiter):
     pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
+
+    def _flush_seg():
+        """Emit pending text before a table/image chunk is appended.
+
+        Plain text is buffered in ``seg`` and only flushed when a delimiter
+        matches, whereas table/image chunks are appended immediately. Without
+        this flush the buffered text lands *after* the table/image, breaking
+        document order and swapping context_above / context_below in
+        _add_context() (which decides "above"/"below" by array position).
+        """
+        nonlocal seg
+        if seg and seg.strip():
+            s = seg.strip()
+            cks.append(
+                {
+                    "text": s,
+                    "image": None,
+                    "ck_type": "text",
+                    "tk_nums": num_tokens_from_string(s),
+                }
+            )
+        seg = ""
+
     for text, image, table in sections:
         # normalize text: ensure string and prepend newline for continuity
         if not text:
@@ -1668,6 +1697,7 @@ def _build_cks(sections, delimiter):
 
         if table:
             # table chunk
+            _flush_seg()
             ck_text = text + str(table)
             idx = len(cks)
             cks.append(
@@ -1683,6 +1713,7 @@ def _build_cks(sections, delimiter):
 
         if image:
             # image chunk (text kept as-is for context)
+            _flush_seg()
             idx = len(cks)
             cks.append(
                 {
