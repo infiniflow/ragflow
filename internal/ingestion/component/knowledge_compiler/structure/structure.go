@@ -220,11 +220,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		prods[i].Meta["compile_kwd"] = string(compileType)
 	}
 
-	// Buffer the deduplicated row products in one slice; the component merges
-	// them into the upstream chunk stream. (No compact graph blob: the
-	// knowledge_graph_kwd="graph" row is gone from the storage model -- the
-	// per-row entity/relation products above are the whole output, which also
-	// saves one embedding call per compile.)
+	// The deduplicated entity/relation products are the whole output; the
+	// component merges them into the upstream chunk stream. (The compact graph
+	// blob was removed: knowledge_graph_kwd="graph" is no longer a storage row,
+	// which also saves one embedding call per compile.)
 	products := append([]common.Product{}, prods...)
 
 	out := common.Outputs{

@@ -211,16 +211,15 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []any", out["chunks"])
 	}
-	// 2 input chunks + 3 entities + 2 relations + 1 graph summary = 8 total
-	// (the compiled knowledge units are merged into the upstream input chunks;
-	// the graph blob is the compact representation the artifacts UI and the
-	// dataset nav read, mirroring Python's compile_structure_from_text).
-	if len(chunks) != 8 {
-		t.Fatalf("len(chunks) = %d, want 8 (2 input + 3 entities + 2 relations + 1 graph)", len(chunks))
+	// 2 input chunks + 3 entities + 2 relations = 7 total. The structure
+	// variant no longer emits a separate compact graph blob (#19474): the
+	// per-row entity/relation products are the whole output, mirroring the
+	// storage-model change that dropped the knowledge_graph_kwd="graph" row.
+	if len(chunks) != 7 {
+		t.Fatalf("len(chunks) = %d, want 7 (2 input + 3 entities + 2 relations)", len(chunks))
 	}
 
-	// Exactly one graph-summary chunk is emitted alongside the individual
-	// entity/relation products.
+	// No compact graph-summary chunk is emitted anymore.
 	graphChunks := 0
 	for _, c := range chunks {
 		cm, ok := c.(map[string]any)
@@ -231,8 +230,8 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 			graphChunks++
 		}
 	}
-	if graphChunks != 1 {
-		t.Fatalf("graph chunks = %d, want 1", graphChunks)
+	if graphChunks != 0 {
+		t.Fatalf("graph chunks = %d, want 0 (graph blob removed by #19474)", graphChunks)
 	}
 }
 
@@ -636,8 +635,8 @@ func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 			}
 		}
 	}
-	if compiled != 6 {
-		t.Fatalf("compiled structure chunks = %d, want 6 (3 entities + 2 relations + 1 graph)", compiled)
+	if compiled != 5 {
+		t.Fatalf("compiled structure chunks = %d, want 5 (3 entities + 2 relations)", compiled)
 	}
 }
 

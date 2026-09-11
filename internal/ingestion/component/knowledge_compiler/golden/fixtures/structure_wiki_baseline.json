@@ -1,7 +1,7 @@
 {
-  "note": "Locked Go-side product-count gate for structure/wiki (PORT_PLAN.md 缺口 E). These counts are the golden contract for the fixed corpus with the deterministic mock LLM/embedder. They must be reconciled against the Python baseline (rag/advanced_rag/knowlege_compile/structure.py, wiki.py) when a live run is available; a change here is a deliberate, reviewed contract update. 2026-09-10: structure gate feeds a graph-kind parser_config (hypergraph path): 12 corpus chunks pack into one batch, and the mock extracts 5 entities (Alpha..Epsilon) + 6 relations (fixed Greek pairs) = 11, plus the compact graph summary row restored for parity with Python's compile_structure_from_text (which appends the graph blob) = 12.",
+  "note": "Locked Go-side product-count gate for structure/wiki (PORT_PLAN.md 缺口 E). These counts are the golden contract for the fixed corpus with the deterministic mock LLM/embedder. They must be reconciled against the Python baseline (rag/advanced_rag/knowlege_compile/structure.py, wiki.py) when a live run is available; a change here is a deliberate, reviewed contract update. 2026-09-11: structure gate feeds a graph-kind parser_config (hypergraph path): 12 corpus chunks pack into one batch, and the mock extracts 5 entities (Alpha..Epsilon) + 6 relations (fixed Greek pairs) = 11. The compact graph summary row is no longer emitted (removed by #19474: knowledge_graph_kwd=\"graph\" is gone from the storage model), so the structure gate is 11.",
   "schema_version": 1,
   "fixed_corpus_chunks": 12,
-  "structure_products": 12,
+  "structure_products": 11,
   "wiki_products": 1
 }
