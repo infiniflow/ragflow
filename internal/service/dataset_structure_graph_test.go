@@ -105,3 +105,24 @@ func TestRowTemplateID_FromList(t *testing.T) {
 		t.Errorf("rowTemplateID = %q, want tid1", got)
 	}
 }
+
+// TestResolveGraphBucket_UsesRawStructureMetadata covers the post-#19474
+// storage shape: entity/relation rows carry the template stamp, with no
+// synthetic knowledge_graph_kwd="graph" row available for discovery.
+func TestResolveGraphBucket_UsesRawStructureMetadata(t *testing.T) {
+	row := map[string]interface{}{
+		"knowledge_graph_kwd":           "entity",
+		"compilation_template_ids":      []string{"tree-1"},
+		"compilation_template_kind_kwd": "tree",
+		"compile_kwd":                   "tree",
+	}
+	meta, scope := resolveGraphBucket(row, map[string]map[string]interface{}{
+		"tree-1": {"template_name": "Tree", "kind": "tree"},
+	}, "doc-1")
+	if meta["template_id"] != "tree-1" || meta["template_name"] != "Tree" {
+		t.Fatalf("meta = %#v, want resolved template metadata", meta)
+	}
+	if got := scope["compilation_template_ids"].([]string); len(got) != 1 || got[0] != "tree-1" {
+		t.Fatalf("scope = %#v, want template-scoped raw-row filter", scope)
+	}
+}

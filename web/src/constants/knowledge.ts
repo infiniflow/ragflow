@@ -30,6 +30,9 @@ export enum RunningStatus {
   DONE = 'DONE', // need to refresh
   FAIL = 'FAIL', // need to refresh
   SCHEDULE = 'SCHEDULE',
+  // Go ingestion only: the task is enqueued but not started yet
+  // (ingestion_status CREATED / SCHEDULED).
+  QUEUED = 'QUEUED',
 }
 
 export enum RunningStatusOld {
@@ -41,6 +44,16 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export enum IngestionTaskStatus {
+  CREATED = 'CREATED',
+  SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
+}
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',
@@ -48,6 +61,7 @@ export const RunningStatusMap = {
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
   [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.QUEUED]: 'Queued',
 
   [RunningStatusOld.UNSTART]: 'Pending',
   [RunningStatusOld.RUNNING]: 'Running',
