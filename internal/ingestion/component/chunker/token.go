@@ -83,7 +83,6 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/tokenizer"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -1325,9 +1324,18 @@ func splitSentencesLossless(text string) []string {
 func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
 	var out []schema.ChunkDoc
 	rest := text
-	for tokenizeStr(rest) > target {
-		head := tokenizer.TrimContentToTokenLimit(rest, target)
-		if head == "" || head == rest {
+	for {
+		// One BPE pass per iteration instead of two: trimToTokenLimit (the
+		// package-level tokenizer seam, see title_cap.go) returns rest
+		// unchanged exactly when rest fits within target tokens, so its
+		// result doubles as the loop-exit condition. The shrinking remainder
+		// is still re-encoded from scratch each round — one encode per
+		// iteration, not two.
+		head := trimToTokenLimit(rest, target)
+		if head == rest {
+			break // rest already fits; the trailing append emits it
+		}
+		if head == "" {
 			break // cannot shrink further; avoid an infinite loop
 		}
 		// TrimContentToTokenLimit decodes a token prefix; if that lands on a

@@ -836,39 +836,6 @@ func sortedSetKeys(set map[string]struct{}) []string {
 	return ids
 }
 
-// ClearWiki deletes all wiki artifacts for a dataset.
-func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datasetID string) (map[string]int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil, fmt.Errorf("document engine is not initialized")
-	}
-	kwds := []string{CompileKwdWikiPage, CompileKwdWikiEntity, CompileKwdWikiRelation, CompileKwdWikiAlter}
-	deleted := map[string]int{}
-	for _, kwd := range kwds {
-		chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{kwd}}, []string{"id"}, 0, 10000, nil)
-		if err != nil {
-			return nil, err
-		}
-		if len(chunks) == 0 {
-			deleted[kwd] = 0
-			continue
-		}
-		ids := make([]string, 0, len(chunks))
-		for _, c := range chunks {
-			if id, ok := c["id"].(string); ok {
-				ids = append(ids, id)
-			}
-		}
-		cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-		if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-			return nil, err
-		}
-		deleted[kwd] = len(ids)
-	}
-	return deleted, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -928,65 +895,6 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 		return nil, 0, err
 	}
 	return nodes, total, nil
-}
-
-// DeleteNav removes the direct nav_doc children of every root cluster of a
-// dataset. DEPRECATED — this is the minimal-loop approximation of Python
-// delete_nav: it drains only the immediate nav_doc rows under root clusters and
-// does NOT implement Python's full subtree traversal or empty-cluster cascade
-// cleanup. Prefer the NavService (future work) for a complete delete. Returns
-// the number of nav_doc rows removed.
-func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, c := range clusters {
-		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
-		if err != nil {
-			continue
-		}
-		for _, ch := range children {
-			if ch.DocID != "" {
-				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-					return deleted, err
-				}
-				deleted++
-			}
-		}
-	}
-	return deleted, nil
-}
-
-// DeleteNavNode deletes the direct nav_doc children of a named cluster.
-// DEPRECATED — the minimal loop only drains immediate doc children (returns the
-// count); it does NOT delete sub-clusters recursively nor perform Python's
-// empty-cluster cascade. A full tree-node delete is future NavService work.
-func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	// Minimal loop has no per-node delete; drain direct children's docs.
-	children, _, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, ch := range children {
-		if ch.DocID != "" {
-			if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-				return deleted, err
-			}
-			deleted++
-		}
-	}
-	return deleted, nil
 }
 
 // SkillTreeItem is a single skill-tree page summary.

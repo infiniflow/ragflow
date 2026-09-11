@@ -362,19 +362,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Knowledge-compilation wiki artifacts
 				datasets.HEAD("/:dataset_id/artifacts", r.datasetArtifactHandler.AnyArtifact)
 				datasets.GET("/:dataset_id/artifacts", r.datasetArtifactHandler.ListArtifacts)
-				datasets.DELETE("/:dataset_id/artifacts", r.datasetArtifactHandler.DeleteArtifacts)
 				datasets.GET("/:dataset_id/artifacts/topics", r.datasetArtifactHandler.ListArtifactTopics)
 				datasets.GET("/:dataset_id/artifacts/alteration", r.datasetArtifactHandler.GetArtifactAlteration)
 				datasets.GET("/:dataset_id/artifacts/graph", r.datasetArtifactHandler.GetArtifactGraph)
 				datasets.GET("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.GetArtifact)
 				datasets.PUT("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.UpdateArtifact)
 				datasets.GET("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.ListStructures)
-				datasets.DELETE("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.DeleteStructures)
 
 				// Knowledge-compilation navigation
 				datasets.GET("/:dataset_id/navigation", r.datasetArtifactHandler.ListNavigation)
-				datasets.DELETE("/:dataset_id/navigation", r.datasetArtifactHandler.DeleteNavigation)
-				datasets.DELETE("/:dataset_id/navigation/:name", r.datasetArtifactHandler.DeleteNavigationNode)
 				datasets.GET("/:dataset_id/navigation/:name/children", r.datasetArtifactHandler.ListNavigationChildren)
 
 				// Knowledge-compilation skills

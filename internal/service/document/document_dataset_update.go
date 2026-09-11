@@ -94,6 +94,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			}
 		}
 		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
+		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
 

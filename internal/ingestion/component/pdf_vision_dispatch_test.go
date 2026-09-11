@@ -106,8 +106,29 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" {
+	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
 		t.Fatalf("result=%+v", result)
+	}
+
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+		t.Fatalf("resultMD=%+v", resultMD)
+	}
+}
+
+func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
+	result := buildMarkdownOCRDispatchResult("# Heading")
+	if result.OutputFormat != "markdown" {
+		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
+	}
+	if result.Markdown != "# Heading" {
+		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
+	}
+	if result.JSON != nil {
+		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
 	}
 }
 
@@ -160,14 +181,10 @@ func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ 
 	return &modelModule.OCRFileResponse{Text: &d.text}, nil
 }
 
-// TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown guards against the
-// format-mismatch bug: PaddleOCR backends always return markdown text via
-// OCRFile.Text, so the dispatch result MUST be labelled OutputFormat
-// "markdown" regardless of what setup["output_format"] says (the pdf default
-// is "json"). If the setup value leaked into OutputFormat, buildParserOutputs
-// would emit a nil "json" payload and the downstream TokenChunker would
-// consume an empty JSONResult -> "completed with 0 chunks".
-func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
+// TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization verifies
+// that PaddleOCR dispatch returns backend Markdown for the shared Parser
+// output normalizer, regardless of the normalized component setup format.
+func TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization(t *testing.T) {
 	orig := resolvePaddleOCRModelForDispatch
 	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
 
@@ -177,8 +194,7 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 		return &paddleOCRFakeDriver{text: md}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
 	}
 
-	// The real run had output_format=json in the pdf setup; the payload must
-	// still be labelled markdown because that is what the backend produced.
+	// 1. output_format="json": preserve Markdown for central normalization.
 	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "json"}, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf: %v", err)
@@ -186,20 +202,41 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 	if res.OutputFormat != "markdown" {
 		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
 	}
+	if res.JSON != nil {
+		t.Fatalf("res.JSON = %#v, want nil before central normalization", res.JSON)
+	}
 	if res.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
 	}
 
-	// Default setup (no output_format key) must behave identically.
-	res, err = dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
+	// 2. output_format="markdown": the backend payload is unchanged.
+	resMD, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "markdown"}, "some-uuid")
+	if err != nil {
+		t.Fatalf("dispatchPaddleOCRPdf (markdown): %v", err)
+	}
+	if resMD.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resMD.OutputFormat)
+	}
+	if resMD.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resMD.Markdown, md)
+	}
+	if resMD.JSON != nil {
+		t.Errorf("resMD.JSON = %#v, want nil before central normalization", resMD.JSON)
+	}
+
+	// 3. Default setup (no output_format key) follows the same central path.
+	resDef, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf (default setup): %v", err)
 	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
+	if resDef.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resDef.OutputFormat)
 	}
-	if res.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
+	if resDef.JSON != nil {
+		t.Fatalf("resDef.JSON = %#v, want nil before central normalization", resDef.JSON)
+	}
+	if resDef.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resDef.Markdown, md)
 	}
 }
 
