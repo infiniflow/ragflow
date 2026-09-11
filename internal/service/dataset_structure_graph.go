@@ -289,14 +289,13 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
 }
 
-// dedupEntities order-preserving by (lowercased name, type).
+// dedupEntities preserves the first entity for each lowercased name.
 func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
 	var out []StructureGraphNode
 	seen := map[string]bool{}
 	for _, e := range entities {
 		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
-		typ := strings.ToLower(strings.TrimSpace(graphStr(e["type"])))
-		key := name + "\x00" + typ
+		key := name
 		if name == "" || seen[key] {
 			continue
 		}
@@ -1337,9 +1336,17 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		row  map[string]interface{}
 		node StructureGraphNode
 	}) {
-		key := firstStringValue(candidate.row["id"])
-		if key == "" {
-			key = strings.ToLower(strings.TrimSpace(graphStr(candidate.node["name"]))) + "\x00" + strings.ToLower(strings.TrimSpace(graphStr(candidate.node["type"])))
+		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
+		template := rowTemplateID(candidate.row)
+		if template == "" {
+			template = firstStringValue(candidate.row["compilation_template_kind_kwd"])
+		}
+		if template == "" {
+			template = firstStringValue(candidate.row["compile_kwd"])
+		}
+		key := template + "\x00" + name
+		if name == "" {
+			key = firstStringValue(candidate.row["id"])
 		}
 		if key != "" {
 			if candidateSeen[key] {

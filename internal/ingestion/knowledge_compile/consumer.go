@@ -1494,22 +1494,22 @@ func pageIndexSummary(graphJSON string) string {
 }
 
 // mergeStructureDataset performs the dataset-level structure merge (G1/G4): it
-// groups the structure products of a batch by (name, type), folds their
+// groups the structure products of a batch by name, folds their
 // descriptions and source doc/chunk sets into one StructureBucket per group, and
 // writes scope_kwd="dataset" rows via WriteMergedStructure. This mirrors Python
 // dataset_structure_merger._merge_bucket but is a self-contained from-scratch
-// path (B3: the legacy unified merge never aggregated structure by name/type).
+// path (B3: the legacy unified merge never aggregated structure by name).
 func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
 	common.Info("knowledge_compile: mergeStructureDataset entry",
 		zap.String("kb_id", kb),
 		zap.Int("products", len(products)))
-	// Bucket by (lower(name), type, compile kind) for entities and
-	// (lower(from), lower(type), lower(to), compile kind) for relations —
+	// Bucket by (template, lower(name), compile kind) for entities and
+	// (template, lower(from), lower(type), lower(to), compile kind) for relations —
 	// relations have no "name" and must not be silently dropped (review issue 3),
 	// and the relation type + compile kind keep distinct structure kinds and
 	// distinct relation types from collapsing into one dataset row.
-	type ekey struct{ name, typ, ckwd string }
-	type rkey struct{ from, typ, to, ckwd string }
+	type ekey struct{ template, name, ckwd string }
+	type rkey struct{ template, from, typ, to, ckwd string }
 	entByKey := make(map[ekey]*StructureBucket, 16)
 	relByKey := make(map[rkey]*StructureBucket, 16)
 	// The authoritative Python (dataset_structure_merger._do_build) merges EVERY
@@ -1535,6 +1535,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			ckwd = compileKwdForVariant(p.Variant)
 		}
 		kind := metaString(p.Meta, "kind")
+		template := structureTemplateIdentity(p.TemplateID, p.Kind)
 		from := metaString(p.Meta, "from")
 		to := metaString(p.Meta, "to")
 		if kind == "relation" || (from != "" && to != "") {
@@ -1551,7 +1552,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if relType == "" {
 				relType = "related"
 			}
-			k := rkey{from: strings.ToLower(from), typ: strings.ToLower(relType), to: strings.ToLower(to), ckwd: ckwd}
+			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
 				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
@@ -1569,11 +1570,13 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		if name == "" {
 			continue
 		}
-		k := ekey{name: strings.ToLower(name), typ: typ, ckwd: ckwd}
+		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
 			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
+		} else {
+			b.Type = preferredStructureEntityType(b.Type, typ)
 		}
 		appendBucket(b, p)
 	}
@@ -1599,6 +1602,31 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		return buckets[i].Type < buckets[j].Type
 	})
 	return c.writer.WriteMergedStructure(ctx, tenant, kb, buckets)
+}
+
+func normalizedStructureEntityName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+func preferredStructureEntityType(existing, incoming string) string {
+	existing = strings.TrimSpace(existing)
+	incoming = strings.TrimSpace(incoming)
+	if existing == "" || strings.EqualFold(existing, "other") {
+		if incoming != "" && !strings.EqualFold(incoming, "other") {
+			return incoming
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return incoming
+}
+
+func structureTemplateIdentity(templateID, templateKind string) string {
+	if templateID = strings.TrimSpace(templateID); templateID != "" {
+		return templateID
+	}
+	return strings.TrimSpace(templateKind)
 }
 
 // appendBucket folds a structure product into a bucket: concatenates its
