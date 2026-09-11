@@ -33,7 +33,7 @@ func TestNarrowContent_KeepsKeywordSentence(t *testing.T) {
 	if !strings.Contains(nc, "key insight") {
 		t.Errorf("narrowed content missing keyword sentence: %q", nc)
 	}
-	if !strings.Contains(nc, "<em>rocket</em>") {
+	if !strings.Contains(nc, "*rocket*") {
 		t.Errorf("narrowed content missing highlight: %q", nc)
 	}
 }

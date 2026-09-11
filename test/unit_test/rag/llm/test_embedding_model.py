@@ -45,6 +45,7 @@ from rag.llm.embedding_model import (
     NvidiaEmbed,
     OllamaEmbed,
     OpenAIEmbed,
+    ReplicateEmbed,
     ZhipuEmbed,
 )
 from common.exceptions import ModelException
@@ -367,6 +368,22 @@ class TestNvidiaInputType:
         with patch("rag.llm.embedding_model.requests.post", return_value=self._mock_resp()) as post:
             embed.encode_queries("a query")
         assert post.call_args.kwargs["json"]["input_type"] == "query"
+
+
+@pytest.mark.p2
+class TestReplicateEmbedding:
+    def test_query_uses_run_and_returns_single_vector(self):
+        embed = ReplicateEmbed.__new__(ReplicateEmbed)
+        embed.model_name = "owner/model:version"
+        embed.client = MagicMock(spec=["run"])
+        embed.client.run.return_value = [[1.0, 2.0, 3.0]]
+
+        vector, tokens = embed.encode_queries("hello")
+
+        embed.client.run.assert_called_once_with("owner/model:version", input={"texts": ["hello"]})
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == num_tokens_from_string("hello")
 
 
 @pytest.mark.p2

@@ -1540,3 +1540,146 @@ func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
 		}
 	}
 }
+
+// stubHarness installs a fake harnessRetriever returning the given answer and
+// restores the previous one when the test ends.
+func stubHarness(t *testing.T, answer string) {
+	t.Helper()
+	prev := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = prev })
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		return HarnessResult{Answer: answer}, nil
+	}
+}
+
+// collectSink records every delta with its isThink flag.
+func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
+	return func(delta string, isThink bool) {
+		*got = append(*got, delta)
+		*thinks = append(*thinks, isThink)
+	}
+}
+
+// TestRetrieveViaHarnessEmitsToolLoopLines covers the Python
+// rag/llm/chat_model.py "[Tool loop]" lines that think_log forwarded from the
+// "rag.llm.chat_model" namespace.
+func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
+	stubHarness(t, "the final cited answer")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks))
+	if err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if answer != "the final cited answer" {
+		t.Fatalf("answer = %q", answer)
+	}
+
+	joined := strings.Join(got, "")
+	for _, want := range []string{
+		"[Tool loop] Deciding what to do next (step 1); available tools: rag",
+		"[Tool loop] Step 1: running rag...",
+		// A non-empty answer is the terminal case in Python.
+		"[Tool loop] The rag tool produced the final answer, done.",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q; got:\n%s", want, joined)
+		}
+	}
+	// Every line must be tagged as thinking and ThinkLineBreak-terminated so
+	// the HTML think block does not glue the stages together.
+	if len(thinks) != 3 {
+		t.Fatalf("got %d deltas, want 3: %#v", len(thinks), got)
+	}
+	for i, isThink := range thinks {
+		if !isThink {
+			t.Errorf("delta %d (%q) not tagged as thinking", i, got[i])
+		}
+		if !strings.HasSuffix(got[i], thinkLineBreak) {
+			t.Errorf("delta %d (%q) missing trailing %s", i, got[i], thinkLineBreak)
+		}
+	}
+}
+
+// TestRetrieveViaHarnessToolLoopObservation covers the non-terminal case: an
+// empty answer means the tool fed the next round, not the final reply.
+func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
+	stubHarness(t, "")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	joined := strings.Join(got, "")
+	if !strings.Contains(joined, "[Tool loop] The rag tool produced an observation for step 1.") {
+		t.Errorf("missing observation line; got:\n%s", joined)
+	}
+	if strings.Contains(joined, "final answer") {
+		t.Errorf("empty answer must not claim a final answer:\n%s", joined)
+	}
+}
+
+// TestRetrieveViaHarnessNaiveSkipsToolLoop guards the naive path: no agentic
+// loop runs, so no [Tool loop] narration must appear.
+func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
+	stubHarness(t, "x")
+
+	var got []string
+	var thinks []bool
+	s := &ChatPipelineService{}
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
+	}
+}
+
+// TestToolLoopLineNilSink guards the nil-sink path (streaming disabled).
+func TestToolLoopLineNilSink(t *testing.T) {
+	toolLoopLine(nil, "[Tool loop] Step 1: running rag...") // must not panic
+}
+
+// TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
+// path hands consumers the same reference shape as the non-reasoning one
+// (content / document_name / dataset_id — not the engine keys), and that the
+// source chunks are left untouched (no in-place vector stripping).
+func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
+	src := map[string]interface{}{
+		"chunk_id":            "c1",
+		"content_with_weight": "hello",
+		"docnm_kwd":           "Doc One",
+		"doc_id":              "d1",
+		"kb_id":               "kb1",
+		"vector":              []float64{0.1, 0.2},
+	}
+	kbinfos := map[string]interface{}{
+		"chunks":   []map[string]interface{}{src},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
+	}
+
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos)
+	if res.Reference == nil {
+		t.Fatal("a cited answer must carry a reference")
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 {
+		t.Fatalf("reference chunks = %#v, want 1", res.Reference["chunks"])
+	}
+	if chunks[0]["content"] != "hello" || chunks[0]["document_name"] != "Doc One" || chunks[0]["dataset_id"] != "kb1" {
+		t.Errorf("reference chunk = %#v, want the client-facing keys populated", chunks[0])
+	}
+	for _, engineKey := range []string{"content_with_weight", "docnm_kwd", "kb_id", "vector"} {
+		if _, has := chunks[0][engineKey]; has {
+			t.Errorf("reference chunk leaked engine key %q", engineKey)
+		}
+	}
+	if _, has := src["vector"]; !has {
+		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+	}
+}

@@ -75,7 +75,7 @@ function NoteNode({
         <section className="px-2 py-1 flex gap-2 items-center note-drag-handle rounded-t border-t-2 border-state-warning">
           <NotebookPen className="size-4" />
           <Form {...nameForm}>
-            <form className="flex-1">
+            <form onSubmit={nameForm.handleSubmit(() => {})} className="flex-1">
               <FormField
                 control={nameForm.control}
                 name="name"

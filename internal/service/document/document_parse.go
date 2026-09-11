@@ -570,5 +570,6 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 		}
 	}
 	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, doc.ID, status)
 	return nil
 }

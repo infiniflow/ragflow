@@ -51,13 +51,18 @@ type MarkdownParser struct {
 	OutputFormat       string
 	VLM                map[string]any
 	FlattenMediaToText bool
+	// FetchRemoteImages controls whether HTTP(S) Markdown images are
+	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
+	// callers normalizing untrusted backend responses may disable it.
+	FetchRemoteImages bool
 }
 
 func NewMarkdownParser(libType string) (*MarkdownParser, error) {
 	switch libType {
 	case GoMarkdown:
 		return &MarkdownParser{
-			libType: GoMarkdown,
+			libType:           GoMarkdown,
+			FetchRemoteImages: true,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported Markdown library type: %s", libType)
@@ -103,7 +108,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText)
+	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText, p.FetchRemoteImages)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -275,7 +280,7 @@ func markdownTableCells(line string) []string {
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
 // (<div>, <style>, …) are emitted as ordinary text with no ck_type.
-func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten bool) {
+func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool) {
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -342,10 +347,13 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 		// flatten is true, keep doc_type_kwd="text" (Python
 		// parser.py:1034: flatten_media_to_text overrides image).
 		if imgURL, ok := findBlockImage(child); ok {
-			if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
-				item["image"] = imgData
-				if !flatten {
-					item["doc_type_kwd"] = "image"
+			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
+			if fetchRemoteImages || !isRemote {
+				if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
+					item["image"] = imgData
+					if !flatten {
+						item["doc_type_kwd"] = "image"
+					}
 				}
 			}
 		}

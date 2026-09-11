@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"ragflow/internal/common"
+	"reflect"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -47,6 +48,85 @@ func TestEinoChatModelAllowsFinalAnswerAfterToolResult(t *testing.T) {
 	}
 	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
 		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
+	}
+}
+
+// TestEinoChatModelAppliesExplicitToolChoice pins that WithToolChoice actually
+// reaches the driver's configuration (its doc promises exactly that): a keyword
+// choice travels as the plain string with no object value, a named tool travels
+// in the OpenAI object form, and either overrides the execute_code default.
+func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
+	cases := []struct {
+		name       string
+		tools      []*schema.ToolInfo
+		choice     string
+		wantChoice string
+		wantValue  map[string]any // nil for the keyword forms
+	}{
+		{
+			name:       "keyword none overrides the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			choice:     "none",
+			wantChoice: "none",
+		},
+		{
+			name:       "explicit required without execute_code",
+			tools:      []*schema.ToolInfo{{Name: "rag"}},
+			choice:     "required",
+			wantChoice: "required",
+		},
+		{
+			name:       "named tool uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "rag"}, {Name: "summarize_document"}},
+			choice:     "summarize_document",
+			wantChoice: "summarize_document",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "summarize_document"},
+			},
+		},
+		{
+			name:       "no explicit choice keeps the execute_code default",
+			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
+			wantChoice: "required",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "execute_code"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			modelName := "chat"
+			model := NewEinoChatModel(NewChatModel(&captureToolDriver{}, &modelName, &APIConfig{}), nil)
+			bound, err := model.WithTools(tc.tools)
+			if err != nil {
+				t.Fatalf("WithTools: %v", err)
+			}
+			wrapper := bound.(*EinoChatModel)
+			if tc.choice != "" {
+				wrapper = wrapper.WithToolChoice(tc.choice)
+			}
+			cfg, err := wrapper.chatConfigForGenerate()
+			if err != nil {
+				t.Fatalf("chatConfigForGenerate: %v", err)
+			}
+			if cfg.ToolChoice == nil {
+				t.Fatalf("ToolChoice = nil, want %q", tc.wantChoice)
+			}
+			if *cfg.ToolChoice != tc.wantChoice {
+				t.Fatalf("ToolChoice = %q, want %q", *cfg.ToolChoice, tc.wantChoice)
+			}
+			if tc.wantValue == nil {
+				if cfg.ToolChoiceValue != nil {
+					t.Errorf("ToolChoiceValue = %#v, want nil for a keyword choice", cfg.ToolChoiceValue)
+				}
+				return
+			}
+			if got, ok := cfg.ToolChoiceValue.(map[string]any); !ok || !reflect.DeepEqual(got, tc.wantValue) {
+				t.Errorf("ToolChoiceValue = %#v, want %#v", cfg.ToolChoiceValue, tc.wantValue)
+			}
+		})
 	}
 }
 

@@ -1,11 +1,18 @@
 import { Collapse } from '@/components/collapse';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
+import { BlockButton, Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Form } from '@/components/ui/form';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
-import i18n from '@/locales/config';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useMemo } from 'react';
+import { LucideTrash2 } from 'lucide-react';
+import { memo, useCallback, useMemo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -21,14 +28,18 @@ import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
+import { FormSchema, ParserFormSchemaType } from './schema';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
 import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { withDefaultParserModels } from './utils';
+import { buildInitialParserSetup } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
+
+export { FormSchema } from './schema';
+export type { ParserFormSchemaType } from './schema';
 
 const outputList = buildOutputList(initialParserValues.outputs);
 
@@ -49,76 +60,11 @@ const FileFormatWidgetMap = {
 type ParserItemProps = {
   name: string;
   index: number;
+  canRemove: boolean;
+  onRemove: (index: number) => void;
 };
 
-const SetupSchema = z
-  .object({
-    fileFormat: z.string().nullish(),
-    // preprocess: z.array(z.string()).optional(),
-    output_format: z.string().optional(),
-    parse_method: z.string().optional(),
-    lang: z.string().optional(),
-    fields: z.array(z.string()).optional(),
-    vlm: z.object({ llm_id: z.string().optional() }).optional(),
-    flatten_media_to_text: z.boolean().optional(),
-    system_prompt: z.string().optional(),
-    table_result_type: z.string().optional(),
-    markdown_image_response_type: z.string().optional(),
-    enable_multi_column: z.boolean().optional(),
-    remove_toc: z.boolean().optional(),
-    remove_header_footer: z.boolean().optional(),
-    pages: z
-      .array(
-        z
-          .object({
-            // Keep these checks on the fields themselves: an object-level
-            // `superRefine` is skipped whenever the base shape fails to
-            // parse, so one missing sibling would silently swallow the
-            // other field's error.
-            from: z.coerce
-              .number()
-              .int(i18n.t('knowledgeDetails.pageRangeFromInvalid'))
-              .min(1, i18n.t('knowledgeDetails.pageRangeFromInvalid')),
-            to: z.coerce
-              .number()
-              .int(i18n.t('knowledgeDetails.pageRangeToInvalid'))
-              .min(1, i18n.t('knowledgeDetails.pageRangeToInvalid')),
-          })
-          .refine(({ from, to }) => to >= from, {
-            path: ['to'],
-            message: i18n.t('knowledgeDetails.pageRangeToInvalid'),
-          }),
-      )
-      .optional(),
-  })
-  .superRefine((values, ctx) => {
-    if (values.fileFormat === FileType.Email && !values.fields?.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['fields'],
-        message: 'Fields is required',
-      });
-    }
-    if (
-      (values.fileFormat === FileType.Video ||
-        values.fileFormat === FileType.Audio) &&
-      !values.vlm?.llm_id
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['vlm', 'llm_id'],
-        message: 'Model is required',
-      });
-    }
-  });
-
-export const FormSchema = z.object({
-  setups: z.array(SetupSchema),
-});
-
-export type ParserFormSchemaType = z.infer<typeof FormSchema>;
-
-function ParserItem({ name, index }: ParserItemProps) {
+function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
 
@@ -130,12 +76,31 @@ function ParserItem({ name, index }: ParserItemProps) {
       ? FileFormatWidgetMap[fileFormat as keyof typeof FileFormatWidgetMap]
       : () => <></>;
 
+  const handleRemove = useCallback(() => {
+    onRemove(index);
+  }, [onRemove, index]);
+
   return (
     <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-      {/* The file format is fixed per parser item; keep it registered so it is
+      {/* The file format has no visible input; keep it registered so it is
           still submitted with the form. */}
       <input type="hidden" {...form.register(`setups.${index}.fileFormat`)} />
-      <Collapse title={t(`flow.fileFormatOptions.${fileFormat}`)} defaultOpen>
+      <Collapse
+        title={t(`flow.fileFormatOptions.${fileFormat}`)}
+        defaultOpen
+        rightContent={
+          canRemove ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleRemove}
+            >
+              <LucideTrash2 className="size-4" />
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="space-y-5">
           <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
         </div>
@@ -150,18 +115,43 @@ function ParserItem({ name, index }: ParserItemProps) {
   );
 }
 
+type ParserFormProps = INextOperatorForm & {
+  // Dataset-side embeddings (settings page, document pipeline dialog) show a
+  // fixed set of file types; only the canvas parser allows add/remove.
+  fixedFileFormats?: boolean;
+};
+
+type AddFileTypeMenuItemProps = {
+  fileType: FileType;
+  onSelect: (fileType: FileType) => void;
+};
+
+function AddFileTypeMenuItem({ fileType, onSelect }: AddFileTypeMenuItemProps) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(() => {
+    onSelect(fileType);
+  }, [onSelect, fileType]);
+
+  return (
+    <DropdownMenuItem onSelect={handleSelect}>
+      {t(`flow.fileFormatOptions.${fileType}`)}
+    </DropdownMenuItem>
+  );
+}
+
 const ParserForm = ({
   node,
   onValuesChange,
   hideOutputs,
   externalErrors,
-}: INextOperatorForm) => {
+  fixedFileFormats,
+}: ParserFormProps) => {
+  const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
-  const formValues = useFormValues(initialParserValues, node);
-  const defaultValues = useMemo(
-    () => withDefaultParserModels(formValues, defaultModelDictionary),
-    [formValues, defaultModelDictionary],
-  );
+  // Show the saved values as-is: an empty llm_id means the user cleared the
+  // model, and the backend falls back to the tenant default at parse time.
+  // Prefilling it here would make a cleared model reappear and be written back.
+  const defaultValues = useFormValues(initialParserValues, node);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
@@ -172,7 +162,7 @@ const ParserForm = ({
   useSyncExternalFormErrors(form, externalErrors);
 
   const name = 'setups';
-  const { fields } = useFieldArray({
+  const { fields, append, remove } = useFieldArray({
     name,
     control: form.control,
   });
@@ -180,14 +170,58 @@ const ParserForm = ({
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
+  const remainingFileTypes = useMemo(() => {
+    const presentFileTypes = new Set(fields.map((x) => x.fileFormat));
+    return initialParserValues.setups
+      .map((x) => x.fileFormat)
+      .filter(
+        (fileType): fileType is FileType =>
+          !!fileType && !presentFileTypes.has(fileType),
+      );
+  }, [fields]);
+
+  const handleAddFileType = useCallback(
+    (fileType: FileType) => {
+      const setup = buildInitialParserSetup(fileType, defaultModelDictionary);
+      if (setup) {
+        append(setup);
+      }
+    },
+    [append, defaultModelDictionary],
+  );
+
+  const canRemove = !fixedFileFormats && fields.length > 1;
+
   return (
     <Form {...form}>
       <form className="space-y-5 px-5">
         {fields.map((field, index) => {
           return (
-            <ParserItem key={field.id} name={name} index={index}></ParserItem>
+            <ParserItem
+              key={field.id}
+              name={name}
+              index={index}
+              canRemove={canRemove}
+              onRemove={remove}
+            ></ParserItem>
           );
         })}
+        {!fixedFileFormats && remainingFileTypes.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <BlockButton type="button">{t('flow.addFileType')}</BlockButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {remainingFileTypes.map((fileType) => (
+                <AddFileTypeMenuItem
+                  key={fileType}
+                  fileType={fileType}
+                  onSelect={handleAddFileType}
+                />
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </form>
       {!hideOutputs && (
         <div className="p-5">

@@ -355,6 +355,20 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      continueUpload: '继续上传',
+      goToConfiguration: '前往配置',
+      uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
+      fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
+      missingModelAsr: '音频（ASR）',
+      missingModelVision: '视觉',
+      configureInDatasetSettingHint:
+        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      parseBlockedTitle: '无法解析',
+      parseBlockedPartialTitle: '部分文件无法解析',
+      parseBlockedHint:
+        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
+      parseValidFiles: '解析有效文件',
+      parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
@@ -539,18 +553,21 @@ export default {
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
       enableChildrenDelimiter: '子文本块用于检索',
       childrenDelimiter: '文本分段标识符',
       childrenDelimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
+      delimiterPreviewLabel: '切分位置：',
+      delimiterPreviewEmpty: '没有分隔符——文本将仅按大小切分。',
+      delimiterPreviewCount: '（{{count}}）',
 
       html4excel: '表格转 HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoTags: '自动标签提取',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
       setMetaData: '设置元数据',
@@ -794,7 +811,7 @@ export default {
 `,
       useRaptor: '使用召回增强 RAPTOR 策略',
       useRaptorTip:
-        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
+        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
@@ -855,7 +872,7 @@ export default {
       addTag: '增加标签',
       useGraphRag: '提取 Graph',
       useGraphRagTip:
-        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：Entities 和 Relations 提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：Entities 和 Relations 提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
@@ -1851,7 +1868,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit: '仅在 backend 为 vlm-http-client 时可填写',
+        serverUrlBackendLimit:
+          '仅在 backend 为 vlm-http-client 或 hybrid-http-client 时可填写',
         apiserver: 'MinerU API 服务器配置',
         outputDir: 'MinerU 输出目录路径',
         backend: 'MinerU 处理后端类型',
@@ -2876,6 +2894,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
+      documentIds: '文档 ID 列表',
+      documentIdsTip: '可选，限制检索范围的文档 ID 列表，支持引用上游变量',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
@@ -2957,14 +2977,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
-      retrievalDatasetRequired: '请选择知识库',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
-      retrievalMemoryRequired: '请选择记忆库',
-      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+        '该模板包含 {{num}} 处未绑定知识库的数据集检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalDatasetRequired: '请先选择知识库',
+      retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
@@ -2993,6 +3013,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         audio: '音频',
         video: '视频',
       },
+      addFileType: '添加文件类型',
+      atLeastOneFileType: '至少保留一个文件类型',
       fields: '字段',
       rule: '规则',
       addRule: '增加规则',

@@ -918,6 +918,22 @@ class LlmmanEmbed(LocalAIEmbed):
     _FACTORY_NAME = "llmman"
 
 
+class HubrisEmbed(OpenAIEmbed):
+    """Hubris embeddings.
+
+    The endpoint is fixed rather than configurable, matching HubrisChat. Hubris
+    is a hosted gateway on one known host, so a tenant-supplied ``base_url``
+    would have no legitimate use and would send the tenant's key elsewhere.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, self._BASE_URL)
+
+
 class OpenAI_APIEmbed(OpenAIEmbed):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
@@ -1130,8 +1146,8 @@ class ReplicateEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embed(self.model_name, input={"texts": [text]})
-        return np.array(res), num_tokens_from_string(text)
+        vectors, token_count = self.encode([text])
+        return vectors[0], token_count
 
 
 class BaiduYiyanEmbed(Base):
