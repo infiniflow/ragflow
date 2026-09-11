@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 export default {
   translation: {
     common: {
@@ -2440,6 +2441,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      fXMacroData: 'FXMacroData',
+      fXMacroDataDescription: '通过 FXMacroData 获取经济数据、外汇研究和经济发布日历。',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',

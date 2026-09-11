@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 export default {
   translation: {
     common: {
@@ -2816,6 +2817,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      fXMacroData: 'FXMacroData',
+      fXMacroDataDescription: 'Economic data, FX research and release calendars from FXMacroData.',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
         'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
