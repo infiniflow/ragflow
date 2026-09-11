@@ -1671,7 +1671,7 @@ class SystemAuditEvent(DataBaseModel):
 
     class Meta:
         db_table = "system_audit_event"
-        indexes = ((('correlation_id', 'create_time'), False),)
+        indexes = ((("correlation_id", "create_time"), False),)
 
 
 class BusinessDocumentCommand(DataBaseModel):
@@ -1738,6 +1738,36 @@ class BusinessDocumentExportArtifact(DataBaseModel):
     class Meta:
         db_table = "business_document_export_artifact"
         indexes = ((("document_id", "revision_id", "export_format"), True),)
+
+
+class BusinessDocumentExportStage(DataBaseModel):
+    """Durable cross-store ledger for staged and pending-cleanup export blobs."""
+
+    id = CharField(max_length=32, primary_key=True)
+    job_id = CharField(max_length=32, null=True, index=True)
+    document_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    owner_id = CharField(max_length=32, null=False, index=True)
+    artifact_id = CharField(max_length=32, null=False, index=True)
+    lease_token = CharField(max_length=32, null=True, unique=True)
+    revision_id = CharField(max_length=32, null=False, index=True)
+    export_format = CharField(max_length=16, null=False, index=True)
+    filename = CharField(max_length=255, null=False)
+    mime_type = CharField(max_length=128, null=False)
+    size = BigIntegerField(null=False)
+    content_hash = CharField(max_length=71, null=False)
+    storage_identity = CharField(max_length=71, null=False, unique=True)
+    storage_bucket = CharField(max_length=128, null=False)
+    storage_key = CharField(max_length=512, null=False)
+    state = CharField(max_length=16, null=False, default="RESERVED", index=True)
+    cleanup_after = BigIntegerField(null=False, default=0, index=True)
+    replaced_artifact_id = CharField(max_length=32, null=True)
+    replaced_storage_bucket = CharField(max_length=128, null=True)
+    replaced_storage_key = CharField(max_length=512, null=True)
+    replaced_content_hash = CharField(max_length=71, null=True)
+
+    class Meta:
+        db_table = "business_document_export_stage"
 
 
 class BusinessDocumentEvidenceSnapshot(DataBaseModel):
@@ -2058,8 +2088,12 @@ def migrate_business_document_catalog():
             if existing is None:
                 BusinessDocumentCatalog.create(id=item["id"], **values)
             else:
-                BusinessDocumentCatalog.update(**values).where(BusinessDocumentCatalog.id == item["id"]).execute()
-        BusinessDocumentCatalog.update(is_active=False).where((BusinessDocumentCatalog.source_id == source_id) & ~BusinessDocumentCatalog.id.in_(active_ids)).execute()
+                changed_values = {field: value for field, value in values.items() if getattr(existing, field) != value}
+                if changed_values:
+                    BusinessDocumentCatalog.update(**changed_values).where(BusinessDocumentCatalog.id == item["id"]).execute()
+        BusinessDocumentCatalog.update(is_active=False).where(
+            (BusinessDocumentCatalog.source_id == source_id) & ~BusinessDocumentCatalog.id.in_(active_ids) & (BusinessDocumentCatalog.is_active == True)  # noqa: E712
+        ).execute()
 
 
 def migrate_business_document_eva_bindings():
@@ -2068,11 +2102,7 @@ def migrate_business_document_eva_bindings():
     if not BusinessDocumentEvaBinding.table_exists():
         return
     linked_document_ids = set(BusinessDocumentEvaBinding.select(BusinessDocumentEvaBinding.document_id).scalars())
-    created_events = (
-        BusinessDocumentEvent.select()
-        .where(BusinessDocumentEvent.event_type == "DocumentCreated")
-        .order_by(BusinessDocumentEvent.document_id, BusinessDocumentEvent.sequence)
-    )
+    created_events = BusinessDocumentEvent.select().where(BusinessDocumentEvent.event_type == "DocumentCreated").order_by(BusinessDocumentEvent.document_id, BusinessDocumentEvent.sequence)
     for created in created_events:
         if created.document_id in linked_document_ids or not isinstance(created.payload, dict):
             continue
@@ -2081,10 +2111,7 @@ def migrate_business_document_eva_bindings():
             continue
         latest_resolution = (
             BusinessDocumentEvent.select()
-            .where(
-                (BusinessDocumentEvent.document_id == created.document_id)
-                & (BusinessDocumentEvent.event_type == "EvaBindingResolved")
-            )
+            .where((BusinessDocumentEvent.document_id == created.document_id) & (BusinessDocumentEvent.event_type == "EvaBindingResolved"))
             .order_by(BusinessDocumentEvent.sequence.desc())
             .first()
         )
@@ -2094,18 +2121,11 @@ def migrate_business_document_eva_bindings():
                 binding = resolved
         latest_pull = (
             BusinessDocumentEvent.select()
-            .where(
-                (BusinessDocumentEvent.document_id == created.document_id)
-                & (BusinessDocumentEvent.event_type == "EvaDocumentPulled")
-            )
+            .where((BusinessDocumentEvent.document_id == created.document_id) & (BusinessDocumentEvent.event_type == "EvaDocumentPulled"))
             .order_by(BusinessDocumentEvent.sequence.desc())
             .first()
         )
-        if (
-            latest_pull is not None
-            and isinstance(latest_pull.payload, dict)
-            and (latest_resolution is None or latest_pull.sequence > latest_resolution.sequence)
-        ):
+        if latest_pull is not None and isinstance(latest_pull.payload, dict) and (latest_resolution is None or latest_pull.sequence > latest_resolution.sequence):
             binding = dict(binding)
             binding.update(
                 {
@@ -2127,15 +2147,11 @@ def migrate_business_document_eva_bindings():
                 document_id=created.document_id,
                 status=str(binding.get("status") or "LINK_ONLY"),
                 page_url_key=hashlib.sha256(page_url.encode("utf-8")).hexdigest(),
-                eva_identity_key=hashlib.sha256(identity.encode("utf-8")).hexdigest()
-                if origin and project_id and document_id
-                else None,
+                eva_identity_key=hashlib.sha256(identity.encode("utf-8")).hexdigest() if origin and project_id and document_id else None,
                 binding=dict(binding),
             )
         except IntegrityError as ex:
-            raise RuntimeError(
-                f"EVA page linked to multiple business documents; resolve document {created.document_id} before migration"
-            ) from ex
+            raise RuntimeError(f"EVA page linked to multiple business documents; resolve document {created.document_id} before migration") from ex
 
 
 def update_tenant_llm_to_id_primary_key():

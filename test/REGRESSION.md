@@ -8,10 +8,10 @@ must not change the selection of unit tests or P0 document requirements.
 | Python unit | `python run_tests.py -i` | In-process dependencies and fixtures |
 | Standalone route units | `python -m pytest -o "pythonpath=. test/testcases" --confcutdir=test/testcases/restful_api test/testcases/restful_api/test_user_tenant_routes_unit.py test/testcases/restful_api/test_connector_routes_unit.py` | Only these reviewed in-process modules; excludes the parent live-model setup, keeps local fixtures and all test cases |
 | Browser result assertions | `python -m pytest test/unit_test/playwright test/unit_test/api/apps/services/test_search_consistency_assertions.py` | Reject missing requests, empty/error/truncated answers, and invalid search results |
-| Document coverage | `python -m pytest test/unit_test/api/apps/business_documents test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py --cov=api/apps/business_documents --cov-branch --cov-fail-under=79` | Domain, worker, evidence, export, authorization and API contracts; combined statement/branch coverage |
+| Document coverage | `python -m pytest test/unit_test/business_documents test/unit_test/api/apps/business_documents test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py --cov=api/apps/business_documents --cov=business_documents --cov-branch --cov-fail-under=79` | Pure domain/application, worker, evidence, export, authorization and API contracts across both Business Documents source roots; combined statement/branch coverage |
 | Document requirements | `python -m pytest test/evals/business_documents/test_golden_dialogue_harness.py test/evals/business_documents/test_live_quality_scorer.py` | All 24 scripted golden cases and deterministic scorer checks |
 | Document model quality | `python -m pytest test/evals/business_documents/test_live_model_quality.py` | Explicit dedicated QA model tenant via `BUSINESS_DOCUMENT_LIVE_LLM=1` and `BUSINESS_DOCUMENT_LIVE_TENANT_ID`; real LLM, controlled retrieval and SQLite; not live search or tenant-authorization evidence |
-| PostgreSQL races | `python -m pytest test/integration/test_business_document_postgres.py` | Requires `BUSINESS_DOCUMENT_TEST_POSTGRES_DSN`; separate connections and temporary schema with verified cleanup |
+| PostgreSQL and export-storage races | `python -m pytest test/integration/test_business_document_postgres.py` | Requires disposable `BUSINESS_DOCUMENT_TEST_POSTGRES_DSN` plus `BUSINESS_DOCUMENT_TEST_MINIO_ENDPOINT`, `BUSINESS_DOCUMENT_TEST_MINIO_USER`, and `BUSINESS_DOCUMENT_TEST_MINIO_PASSWORD`; separate DB connections, temporary schema, real MinIO `PUT` interruption and verified reconciliation |
 | Previous-release data | `python -m pytest test/integration/test_previous_release_data_upgrade.py` | Explicit disposable PostgreSQL cluster; real v1.12.0/current initializers, dump/restore, repeated initialization and injected DDL failure; no deployment-script acceptance |
 | MinIO backup/restore | `python -m pytest test/integration/test_minio_backup_restore.py` | Requires `RAGFLOW_MINIO_BACKUP_TEST=1`; creates its own containers/volumes, archives raw `/data`, restores and compares object bytes/metadata, verifies cleanup |
 | Coordinated PostgreSQL+MinIO restore | `$env:RAGFLOW_COORDINATED_BACKUP_TEST='1'; uv run pytest -q test/integration/test_postgres_minio_coordinated_restore.py` | Creates source and restore containers/volumes, freezes writes, restores a linked manifest/object pair, runs a missing-object negative control and verifies cleanup |
@@ -51,6 +51,11 @@ nonempty answer and a newly rendered assistant message.
 Never run live suites against shared customer data. Existing live API fixtures
 can delete tenant datasets/chats. CI uses disposable Compose projects; the
 PostgreSQL and MinIO race/storage lanes isolate and clean their own data.
+The Business Documents race lane fails closed when its PostgreSQL DSN is set
+without all three MinIO settings. CI starts a disposable MinIO container for
+the lane. Its storage fault is a deterministic `SystemExit` immediately after
+a successful real `PUT`; this verifies the durable recovery boundary but is
+not an OS-level kill/restart or deployment-supervisor test.
 
 The standalone route-unit command is restricted to the two explicitly listed
 mock-backed modules. Do not apply its `--confcutdir` to live API suites: their

@@ -1,1 +1,1 @@
-"""Pure domain rules for the locally owned Business Documents extension."""
+"""Pure domain rules and application scenarios for Business Documents."""

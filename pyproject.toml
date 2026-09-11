@@ -250,6 +250,9 @@ packages = [
     'agent.business_requirements.prompts',
     'agent.business_requirements.templates',
     'api',
+    'business_documents',
+    'business_documents.domain',
+    'business_documents.application',
     'deepdoc',
     'rag.graphrag',
     'tools.chatgpt_on_wechat.plugins',
@@ -268,6 +271,9 @@ packages = [
 agent = [
     "business_requirements/**/*.json",
     "business_requirements/**/*.md",
+]
+business_documents = [
+    "domain/*.json",
 ]
 
 [tool.ruff]
@@ -323,7 +329,7 @@ addopts = [
 [tool.coverage.run]
 # Source paths - adjust according to your project structure
 source = [
-    "api/", "rag/", "common/", "deepdoc/", "agent/",
+    "api/", "rag/", "common/", "deepdoc/", "agent/", "business_documents/",
 ]
 branch = true
 

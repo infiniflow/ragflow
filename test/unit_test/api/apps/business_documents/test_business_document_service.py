@@ -38,7 +38,7 @@ from api.apps.business_documents.assets import (
     section_hash,
     validate_document_ast,
 )
-from business_documents.domain.catalog import load_document_catalog
+from api.apps.business_documents.adapters.assignment import assign_business_document
 from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.service import BusinessDocumentService
 from api.apps.business_documents.worker import BusinessDocumentJobQueue
@@ -57,6 +57,7 @@ from api.db.db_models import (
     BusinessDocumentRevision,
     User,
 )
+from business_documents.domain.catalog import load_document_catalog
 from test.unit_test.api.apps.business_documents.helpers import VALID_ACTIVITY_SCENARIO, required_section_blocks
 
 
@@ -122,9 +123,11 @@ def test_catalog_sync_exposes_only_active_l5_entries_and_v3_derives_the_title(da
 
     monkeypatch.setattr(EvaDocumentChangeService, "find_title_matches", staticmethod(lambda *_args: []))
     migrate_business_document_catalog()
+    first_sync_timestamps = {row.id: (row.update_time, row.update_date) for row in BusinessDocumentCatalog.select()}
     migrate_business_document_catalog()
     first = catalog["items"][0]
     assert BusinessDocumentCatalog.select().count() == len(catalog["items"])
+    assert {row.id: (row.update_time, row.update_date) for row in BusinessDocumentCatalog.select()} == first_sync_timestamps
     BusinessDocumentCatalog.create(
         id="L4-test",
         title="Не разрешённый уровень",
@@ -1312,6 +1315,34 @@ def test_business_document_role_matrix_controls_create_edit_delete_and_assignmen
 
 
 @pytest.mark.p0
+def test_access_user_listing_uses_canonical_admin_role_normalization(database):
+    User.create(
+        id="forged-admin",
+        nickname="Forged admin",
+        email="forged-admin@example.com",
+        business_document_role="ADMIN",
+    )
+    User.create(
+        id="real-admin",
+        nickname="Real admin",
+        email="real-admin@example.com",
+        business_document_role="AUTHOR_CREATOR",
+        is_superuser=True,
+    )
+
+    users = BusinessDocumentService.list_access_users(
+        "moderator-1",
+        access_role="EXTENDED_MODERATOR",
+    )
+
+    roles = {item["user_id"]: item["role"] for item in users["items"]}
+    assert roles == {
+        "forged-admin": "AUTHOR_EDITOR",
+        "real-admin": "ADMIN",
+    }
+
+
+@pytest.mark.p0
 def test_extended_moderator_assigns_document_and_admin_manages_document_roles(database):
     User.create(id=AUTHOR, nickname="Первый автор", email="author-1@example.com")
     User.create(id="author-2", nickname="Второй автор", email="author-2@example.com")
@@ -1328,7 +1359,7 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
     }
 
     with pytest.raises(BusinessDocumentError) as denied:
-        BusinessDocumentService.assign_document(
+        assign_business_document(
             "moderator-1",
             document["document_id"],
             {"owner_id": "author-2", "expected_state_version": document["state_version"]},
@@ -1336,7 +1367,7 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
         )
     assert denied.value.code == "DOCUMENT_PERMISSION_DENIED"
 
-    assigned = BusinessDocumentService.assign_document(
+    assigned = assign_business_document(
         "moderator-1",
         document["document_id"],
         {"owner_id": "author-2", "expected_state_version": document["state_version"]},
@@ -1346,11 +1377,58 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
     assert assigned["owner_name"] == "Второй автор"
     assert assigned["state_version"] == document["state_version"] + 1
     assignment_event = BusinessDocumentEvent.get((BusinessDocumentEvent.document_id == document["document_id"]) & (BusinessDocumentEvent.event_type == "DocumentAssigned"))
+    assert assignment_event.sequence == assigned["state_version"]
+    assert assignment_event.event_type == "DocumentAssigned"
+    assert assignment_event.actor_type == "USER"
     assert assignment_event.actor_id == "moderator-1"
     assert assignment_event.payload == {"previous_owner_id": AUTHOR, "owner_id": "author-2"}
+    assert len(assignment_event.id) == 32
+    assert len(assignment_event.correlation_id) == 32
+    assert assignment_event.id != assignment_event.correlation_id
+    assert assignment_event.causation_id is None
+    assert assignment_event.create_time == assignment_event.update_time
+    assert assignment_event.create_date == assignment_event.update_date
 
     assert BusinessDocumentService.get_document(TENANT, document["document_id"], AUTHOR)["permissions"]["edit"] is False
     assert BusinessDocumentService.get_document(TENANT, document["document_id"], "author-2")["permissions"]["edit"] is True
+
+    persisted = BusinessDocument.get_by_id(document["document_id"])
+    unchanged_update_time = persisted.update_time
+    unchanged_update_date = persisted.update_date
+    event_count = BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count()
+    unchanged = assign_business_document(
+        "moderator-1",
+        document["document_id"],
+        {"owner_id": " author-2 ", "expected_state_version": assigned["state_version"]},
+        access_role="EXTENDED_MODERATOR",
+    )
+    persisted = BusinessDocument.get_by_id(document["document_id"])
+    assert unchanged["owner_id"] == "author-2"
+    assert unchanged["state_version"] == assigned["state_version"]
+    assert persisted.update_time == unchanged_update_time
+    assert persisted.update_date == unchanged_update_date
+    assert BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count() == event_count
+
+    with pytest.raises(BusinessDocumentError) as stale:
+        assign_business_document(
+            "moderator-1",
+            document["document_id"],
+            {"owner_id": "author-2", "expected_state_version": document["state_version"]},
+            access_role="EXTENDED_MODERATOR",
+        )
+    assert stale.value.code == "STATE_VERSION_CONFLICT"
+    assert stale.value.status == 409
+    assert stale.value.details == {"expected": document["state_version"], "actual": assigned["state_version"]}
+
+    reassigned = assign_business_document(
+        "admin-user",
+        document["document_id"],
+        {"owner_id": AUTHOR, "expected_state_version": assigned["state_version"]},
+        is_admin=True,
+    )
+    assert reassigned["owner_id"] == AUTHOR
+    assert reassigned["access_role"] == "ADMIN"
+    assert reassigned["state_version"] == assigned["state_version"] + 1
 
     changed_role = BusinessDocumentService.update_user_access_role(
         "admin-user",
@@ -1360,6 +1438,183 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
     )
     assert changed_role["role"] == "AUTHOR_EDITOR"
     assert User.get_by_id("author-2").business_document_role == "AUTHOR_EDITOR"
+
+
+@pytest.mark.p0
+def test_assignment_checks_permission_before_truthy_invalid_payload(database):
+    before_documents = BusinessDocument.select().count()
+    before_events = BusinessDocumentEvent.select().count()
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        assign_business_document(
+            "author-1",
+            "missing-document",
+            {"unexpected": True},
+            access_role="AUTHOR_EDITOR",
+        )
+
+    assert caught.value.code == "DOCUMENT_PERMISSION_DENIED"
+    assert caught.value.status == 403
+    assert caught.value.details == {}
+    assert BusinessDocument.select().count() == before_documents
+    assert BusinessDocumentEvent.select().count() == before_events
+
+
+@pytest.mark.p0
+def test_changed_assignment_rejects_active_job_without_invalidating_worker_state(database):
+    User.create(id="author-2", nickname="Второй автор", email="author-2-active-job@example.com")
+    document = _create(title="Assignment during active job")
+    accepted = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(document, "REQUEST_INTAKE_ASSESSMENT"),
+    )
+    before = BusinessDocument.get_by_id(document["document_id"])
+    before_events = BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count()
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        assign_business_document(
+            "moderator-1",
+            document["document_id"],
+            {
+                "owner_id": "author-2",
+                "expected_state_version": before.state_version,
+            },
+            access_role="EXTENDED_MODERATOR",
+        )
+
+    after = BusinessDocument.get_by_id(document["document_id"])
+    job = BusinessDocumentJob.get_by_id(accepted["job_id"])
+    assert caught.value.code == "OPERATION_IN_PROGRESS"
+    assert caught.value.status == 409
+    assert caught.value.details == {}
+    assert (after.owner_id, after.state_version, after.operation_state) == (
+        before.owner_id,
+        before.state_version,
+        before.operation_state,
+    )
+    assert job.status == "PENDING"
+    assert BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count() == before_events
+
+
+@pytest.mark.p0
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {"owner_id": " ", "expected_state_version": 1},
+        {"owner_id": "author-2", "expected_state_version": True},
+        {"owner_id": "author-2", "expected_state_version": "1"},
+    ],
+    ids=["null", "list", "missing-owner", "blank-owner", "boolean-version", "string-version"],
+)
+def test_assignment_rejects_invalid_payload_without_writes(database, payload):
+    User.create(id="author-2", nickname="Второй автор", email="author-2-invalid@example.com")
+    document = _create(title=f"Invalid assignment {type(payload).__name__}-{payload!s}")
+    before = BusinessDocument.get_by_id(document["document_id"])
+    event_count = BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count()
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        assign_business_document(
+            "moderator-1",
+            document["document_id"],
+            payload,
+            access_role="EXTENDED_MODERATOR",
+        )
+
+    after = BusinessDocument.get_by_id(document["document_id"])
+    assert caught.value.code == "INVALID_DOCUMENT_ASSIGNMENT"
+    assert caught.value.status == 422
+    assert (after.owner_id, after.state_version, after.update_time, after.update_date) == (
+        before.owner_id,
+        before.state_version,
+        before.update_time,
+        before.update_date,
+    )
+    assert BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count() == event_count
+
+
+@pytest.mark.p0
+@pytest.mark.parametrize(
+    "user_state",
+    [None, {"status": "0"}, {"is_active": "0"}],
+    ids=["missing", "disabled-status", "inactive"],
+)
+def test_assignment_rejects_missing_or_inactive_owner_without_writes(database, user_state):
+    document = _create(title=f"Unavailable assignment owner {user_state!s}")
+    if user_state is not None:
+        User.create(
+            id="unavailable-owner",
+            nickname="Недоступный автор",
+            email=f"unavailable-{next(iter(user_state))}@example.com",
+            **user_state,
+        )
+    event_count = BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count()
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        assign_business_document(
+            "moderator-1",
+            document["document_id"],
+            {"owner_id": "unavailable-owner", "expected_state_version": document["state_version"]},
+            access_role="EXTENDED_MODERATOR",
+        )
+
+    persisted = BusinessDocument.get_by_id(document["document_id"])
+    assert caught.value.code == "USER_NOT_FOUND"
+    assert caught.value.status == 404
+    assert persisted.owner_id == AUTHOR
+    assert persisted.state_version == document["state_version"]
+    assert BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count() == event_count
+
+
+@pytest.mark.p0
+def test_assignment_rejects_missing_document_without_events(database):
+    User.create(id="author-2", nickname="Второй автор", email="author-2-missing-document@example.com")
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        assign_business_document(
+            "moderator-1",
+            "missing-document",
+            {"owner_id": "author-2", "expected_state_version": 1},
+            access_role="EXTENDED_MODERATOR",
+        )
+
+    assert caught.value.code == "DOCUMENT_NOT_FOUND"
+    assert caught.value.status == 404
+    assert caught.value.details == {}
+    assert BusinessDocumentEvent.select().count() == 0
+
+
+@pytest.mark.p0
+def test_assignment_event_failure_rolls_back_owner_and_version(database, monkeypatch):
+    User.create(id="author-2", nickname="Второй автор", email="author-2-rollback@example.com")
+    document = _create(title="Assignment rollback")
+    before = BusinessDocument.get_by_id(document["document_id"])
+    event_count = BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count()
+
+    def fail_event(**_kwargs):
+        raise IntegrityError("forced assignment event failure")
+
+    monkeypatch.setattr(BusinessDocumentEvent, "create", staticmethod(fail_event))
+    with pytest.raises(IntegrityError, match="forced assignment event failure"):
+        assign_business_document(
+            "moderator-1",
+            document["document_id"],
+            {"owner_id": "author-2", "expected_state_version": document["state_version"]},
+            access_role="EXTENDED_MODERATOR",
+        )
+
+    after = BusinessDocument.get_by_id(document["document_id"])
+    assert (after.owner_id, after.state_version, after.update_time, after.update_date) == (
+        before.owner_id,
+        before.state_version,
+        before.update_time,
+        before.update_date,
+    )
+    assert BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document["document_id"]).count() == event_count
 
 
 @pytest.mark.p0

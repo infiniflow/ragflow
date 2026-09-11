@@ -48,30 +48,30 @@ def route_app(monkeypatch):
 
 @pytest.mark.p0
 @pytest.mark.asyncio
-async def test_create_and_command_reject_non_object_and_malformed_json(route_app):
+async def test_json_routes_reject_non_object_and_malformed_json(route_app):
     app, _module = route_app
     client = app.test_client()
     cases = (
-        ("/business-documents", [], "INVALID_DOCUMENT"),
-        ("/business-documents/doc-1/commands", [], "INVALID_COMMAND_REQUEST"),
+        ("post", "/business-documents", "INVALID_DOCUMENT"),
+        ("post", "/business-documents/doc-1/commands", "INVALID_COMMAND_REQUEST"),
+        ("put", "/business-documents/doc-1/owner", "INVALID_DOCUMENT_ASSIGNMENT"),
     )
-    for path, payload, error_code in cases:
-        response = await client.post(path, json=payload)
+    for method, path, error_code in cases:
+        request = getattr(client, method)
+        response = await request(path, json=[])
         body = await response.get_json()
         assert response.status_code == 422
         assert body["code"] == 422
         assert body["data"] == {"error_code": error_code, "details": {}}
 
-    for path, error_code in (
-        ("/business-documents", "INVALID_DOCUMENT"),
-        ("/business-documents/doc-1/commands", "INVALID_COMMAND_REQUEST"),
-    ):
-        malformed = await client.post(path, data="{", headers={"Content-Type": "application/json"})
+    for method, path, error_code in cases:
+        request = getattr(client, method)
+        malformed = await request(path, data="{", headers={"Content-Type": "application/json"})
         malformed_body = await malformed.get_json()
         assert malformed.status_code == 422
         assert malformed_body["data"]["error_code"] == error_code
 
-        empty = await client.post(path)
+        empty = await request(path)
         empty_body = await empty.get_json()
         assert empty.status_code == 422
         assert empty_body["data"]["error_code"] == error_code
@@ -165,7 +165,7 @@ async def test_access_filter_and_assignment_routes_pass_role_and_scope(route_app
 
     monkeypatch.setattr(module.BusinessDocumentService, "list_documents", staticmethod(list_documents))
     monkeypatch.setattr(module.BusinessDocumentService, "list_access_users", staticmethod(list_access_users))
-    monkeypatch.setattr(module.BusinessDocumentService, "assign_document", staticmethod(assign_document))
+    monkeypatch.setattr(module, "assign_business_document", assign_document)
     client = app.test_client()
 
     assert (await client.get("/business-documents?page=2&page_size=5&scope=mine")).status_code == 200
@@ -179,6 +179,39 @@ async def test_access_filter_and_assignment_routes_pass_role_and_scope(route_app
         ("users", ACTOR, False, "EXTENDED_MODERATOR"),
         ("assign", ACTOR, "doc-1", assignment, False, "EXTENDED_MODERATOR"),
     ]
+
+
+@pytest.mark.p0
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_code", "status", "details"),
+    [
+        ("DOCUMENT_PERMISSION_DENIED", 403, {}),
+        ("USER_NOT_FOUND", 404, {}),
+        ("DOCUMENT_NOT_FOUND", 404, {}),
+        ("STATE_VERSION_CONFLICT", 409, {"expected": 7, "actual": 8}),
+        ("OPERATION_IN_PROGRESS", 409, {}),
+        ("INVALID_DOCUMENT_ASSIGNMENT", 422, {}),
+    ],
+)
+async def test_assignment_route_preserves_application_error_envelope(route_app, monkeypatch, error_code, status, details):
+    app, module = route_app
+
+    def assign_document(*_args, **_kwargs):
+        raise module.BusinessDocumentError(error_code, "assignment failed", status, details)
+
+    monkeypatch.setattr(module, "assign_business_document", assign_document)
+    response = await app.test_client().put(
+        "/business-documents/doc-1/owner",
+        json={"owner_id": "author-2", "expected_state_version": 7},
+    )
+
+    assert response.status_code == status
+    assert await response.get_json() == {
+        "code": status,
+        "message": "assignment failed",
+        "data": {"error_code": error_code, "details": details},
+    }
 
 
 @pytest.mark.p0

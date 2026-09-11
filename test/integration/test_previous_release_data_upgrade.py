@@ -58,6 +58,7 @@ def assert_business_document_additions(snapshot):
     assert binding["last_pull_event_id"] == "t1-pull-event"
     assert binding["last_pull_review_cycle"] == 2
     assert binding["remote_version"] == "7"
+    assert snapshot["business_document_export_stage"] == []
 
 
 def _run(arguments, *, cwd=ROOT, env=None, input_data=None):

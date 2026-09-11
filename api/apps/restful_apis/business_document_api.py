@@ -22,6 +22,7 @@ from quart import Response, jsonify, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
+from api.apps.business_documents.adapters.assignment import assign_business_document
 from api.apps.business_documents.eva_changes import EvaDocumentChangeService
 from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.exports import BusinessDocumentExportService
@@ -296,7 +297,7 @@ async def assign_business_document_owner(document_id):
         if not data:
             raise BusinessDocumentError("INVALID_DOCUMENT_ASSIGNMENT", "Request body must be a valid JSON object", 422)
         result = await thread_pool_exec(
-            BusinessDocumentService.assign_document,
+            assign_business_document,
             current_user.id,
             document_id,
             data,

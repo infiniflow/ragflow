@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-09-10T08:19:52.326602+00:00",
-  "head": "db7d6cfc22b74853790b9f5fd21a55756cc56e86",
+  "verified_at": "2026-09-10T22:35:48.825813+00:00",
+  "head": "7045e856a9905264044a3f47d32cef8ac7c0e2a6",
   "official_commits": [
     {
       "sha": "cb93883f3f8c975eecb2fed81210effeb3bdb06f",
@@ -1737,18 +1737,49 @@
         "tools/quality/run_isolated_python.py": "A",
         "tools/quality/upstream-evidence.json": "M"
       }
+    },
+    {
+      "sha": "7045e856a9905264044a3f47d32cef8ac7c0e2a6",
+      "parents": [
+        "db7d6cfc22b74853790b9f5fd21a55756cc56e86"
+      ],
+      "tree": "336ff03945bc49387eacf5227ab7750347578d33",
+      "committed_at": "2026-09-10T11:35:29+03:00",
+      "subject": "fix CI regression evidence",
+      "changes_from_first_parent": {
+        ".github/workflows/browser-regression.yml": "M",
+        "docs/develop/architecture-checks-ru.md": "M",
+        "docs/develop/architecture-transition-ru.md": "M",
+        "docs/develop/t0-provenance-report-ru.md": "M",
+        "docs/develop/t3-architecture-policy-ru.md": "M",
+        "test/playwright/conftest.py": "M",
+        "test/playwright/e2e/test_managed_settings_access_ui.py": "M",
+        "test/playwright/mandatory-browser-cases.json": "M",
+        "test/unit_test/playwright/test_page_error_gate.py": "M",
+        "test/unit_test/tools/quality/test_browser_workflow.py": "M",
+        "test/unit_test/tools/quality/test_check_architecture_policy.py": "M",
+        "tools/quality/architecture-policy.json": "M",
+        "tools/quality/check_architecture_policy.py": "M",
+        "tools/quality/core-changes.yaml": "M",
+        "tools/quality/file-inventory.json": "M",
+        "tools/quality/module-map.yaml": "M",
+        "tools/quality/upstream-evidence.json": "M",
+        "web/src/utils/telemetry.test.ts": "A",
+        "web/src/utils/telemetry.ts": "M"
+      }
     }
   ],
   "local_refs_only_no_fetch": [
     "refs/remotes/origin/HEAD db7d6cfc22b74853790b9f5fd21a55756cc56e86",
+    "refs/remotes/origin/codex/fix-t3-ci-regressions-pr 7045e856a9905264044a3f47d32cef8ac7c0e2a6",
     "refs/remotes/origin/codex/t3-architecture-base-protocol 03c529786aae21db47855b8c1212ee1ace1e3ff1",
     "refs/remotes/origin/main db7d6cfc22b74853790b9f5fd21a55756cc56e86",
-    "refs/remotes/upstream/HEAD 2b8861ceb8997be20da9cc55d379253c4f0ec519",
-    "refs/remotes/upstream/main 2b8861ceb8997be20da9cc55d379253c4f0ec519",
+    "refs/remotes/upstream/HEAD 13458475c097f69f6f6ce3f7e1cc6b6693c84727",
+    "refs/remotes/upstream/main 13458475c097f69f6f6ce3f7e1cc6b6693c84727",
     "refs/remotes/upstream/main_backup 427e0540cab683a591a5f4a65a0b38bf9ee008b7"
   ],
   "graph_merge_base": "28ce77fe5f1e4301d3672221b509418d3c7acb77",
-  "baseline_diff_summary": "733 files changed, 152639 insertions(+), 2857 deletions(-)",
+  "baseline_diff_summary": "734 files changed, 152789 insertions(+), 2857 deletions(-)",
   "ancestry_only_merge": {
     "commit": "64f0bfdf0e724d006d61563a76964bf140bcfb4e",
     "first_parent": "268a5a9d60e19982ac329ec045d0ff9b0228b26b",

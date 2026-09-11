@@ -40,7 +40,7 @@ from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.exports import BusinessDocumentExportService
 from api.apps.business_documents.service import BusinessDocumentService
 from api.apps.business_documents.worker import BusinessDocumentJobQueue, BusinessDocumentWorker
-from api.db.db_models import BusinessDocument, BusinessDocumentEvent, BusinessDocumentExportArtifact, BusinessDocumentJob, BusinessDocumentRevision
+from api.db.db_models import BusinessDocument, BusinessDocumentEvent, BusinessDocumentExportArtifact, BusinessDocumentExportStage, BusinessDocumentJob, BusinessDocumentRevision
 from test.unit_test.api.apps.business_documents.helpers import required_section_blocks
 from common.time_utils import current_timestamp
 
@@ -897,6 +897,10 @@ class MemoryStorage:
         self.removed.append((bucket, key))
         self.objects.pop((bucket, key), None)
 
+    def remove_and_confirm_absent(self, bucket, key):
+        self.rm(bucket, key)
+        return (bucket, key) not in self.objects
+
 
 def _agreed_document():
     projection = _create()
@@ -945,12 +949,40 @@ def test_docx_export_requires_verified_storage_write(database):
     with pytest.raises(BusinessDocumentError) as caught:
         BusinessDocumentExportService.generate(job, storage=discarded)
     assert caught.value.code == "EXPORT_STORAGE_WRITE_FAILED"
-    assert discarded.removed
+    assert discarded.removed == []
+    assert BusinessDocumentExportStage.get().state == "RESERVED"
     assert BusinessDocumentExportArtifact.select().count() == 0
 
+    assert BusinessDocumentJobQueue.retry(
+        job.id,
+        "export-boundary-worker",
+        job.lease_token,
+        {"code": "EXPORT_STORAGE_WRITE_FAILED"},
+        delay_ms=0,
+    )
+    assert BusinessDocumentExportService.reconcile_staging(storage=discarded) == {
+        "scanned": 1,
+        "cleaned": 1,
+        "deferred": 0,
+        "failures": 0,
+    }
+    assert discarded.removed
+    assert BusinessDocumentExportStage.select().count() == 0
+
     storage = MemoryStorage()
-    artifact = BusinessDocumentExportService.generate(job, storage=storage)
-    row = BusinessDocumentExportArtifact.get_by_id(artifact["artifact_id"])
+    job = BusinessDocumentJobQueue.claim("export-boundary-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    BusinessDocumentService.complete_job(
+        TENANT,
+        "export-boundary-worker",
+        job.id,
+        prepared,
+        job.lease_token,
+    )
+    BusinessDocumentExportService.discard(prepared, storage=storage)
+    row = BusinessDocumentExportArtifact.get_by_id(prepared.artifact_id)
     assert storage.get(row.storage_bucket, row.storage_key).startswith(b"PK")
 
 

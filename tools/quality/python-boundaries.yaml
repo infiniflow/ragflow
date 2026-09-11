@@ -33,7 +33,7 @@ boundaries:
   - orm
   - http_framework
   - network_client
-  rationale: The owned domain package must remain importable without application bootstrap, ORM, HTTP frameworks, or network clients.
+  rationale: The owned root domain and application layers must remain importable without application bootstrap, ORM, HTTP frameworks, or network clients.
 connections:
 - id: business-documents-package-wiring
   owner_module: business-documents
@@ -45,6 +45,17 @@ connections:
   - business_documents
   allowed_forward_imports: []
   allowed_reverse_imports:
+  - source: api.apps.business_documents.service
+    target: business_documents.domain.access
+    symbols:
+    - BusinessDocumentRole
+    - normalize_role
+  - source: api.apps.business_documents.service
+    target: business_documents.domain.workflow
+    symbols:
+    - ACTIVE_JOB_STATUSES
+    - OperationState
+    - is_operation_quiescent
   - source: api.apps.business_documents.service
     target: business_documents.domain.names
     symbols:
@@ -62,7 +73,37 @@ connections:
     target: business_documents.domain.names
     symbols:
     - normalize_title
-  rationale: The root extension package has no direct core dependency; exact core-to-extension imports are limited to the known service, persistence, and EVA integration points.
+  - source: api.apps.business_documents.adapters.assignment
+    target: business_documents.application.assign_document
+    symbols:
+    - AssignDocument
+    - AssignDocumentCommand
+    - AssignDocumentError
+    - AssignmentUnitOfWork
+    - DocumentAssignedEvent
+  - source: api.apps.business_documents.adapters.assignment
+    target: business_documents.domain.access
+    symbols:
+    - BusinessDocumentRole
+  - source: api.apps.business_documents.adapters.assignment
+    target: business_documents.domain.assignment
+    symbols:
+    - DocumentOwnership
+  - source: api.apps.business_documents.adapters.assignment
+    target: business_documents.domain.workflow
+    symbols:
+    - ACTIVE_JOB_STATUSES
+  - source: api.apps.business_documents.authorization
+    target: business_documents.domain.access
+    symbols:
+    - BusinessDocumentRole
+    - can_assign_document
+    - normalize_role
+  - source: api.apps.business_documents.exports
+    target: business_documents.domain.workflow
+    symbols:
+    - OperationState
+  rationale: The root extension package has no direct core dependency; exact core-to-extension imports are limited to the known service, persistence, EVA, authorization, and assignment-adapter integration points.
 cycle_checks:
 - id: business-documents-domain-cycles
   owner_module: business-documents
@@ -70,7 +111,7 @@ cycle_checks:
   rule_id: ARC-03
   path_prefixes:
   - business_documents/
-  rationale: The owned pure domain package must not acquire an explicit runtime import cycle; package parent initialization edges are reported elsewhere and are not treated as explicit imports.
+  rationale: The owned pure domain and application package must not acquire an explicit runtime import cycle; package parent initialization edges are reported elsewhere and are not treated as explicit imports.
 - id: asr-service-cycles
   owner_module: asr
   profile: asr-service
@@ -95,6 +136,35 @@ runtime_probes:
     path: business_documents/domain/catalog.py
     required_symbols:
     - load_document_catalog
+  - module: business_documents.domain.access
+    path: business_documents/domain/access.py
+    required_symbols:
+    - BusinessDocumentRole
+    - normalize_role
+    - can_assign_document
+  - module: business_documents.domain.assignment
+    path: business_documents/domain/assignment.py
+    required_symbols:
+    - DocumentOwnership
+    - AssignmentDecision
+    - AssignmentOperationInProgress
+    - StateVersionMismatch
+    - decide_assignment
+  - module: business_documents.domain.workflow
+    path: business_documents/domain/workflow.py
+    required_symbols:
+    - OperationState
+    - ACTIVE_JOB_STATUSES
+    - is_operation_quiescent
+  - module: business_documents.application.assign_document
+    path: business_documents/application/assign_document.py
+    required_symbols:
+    - AssignDocumentCommand
+    - AssignDocumentResult
+    - DocumentAssignedEvent
+    - AssignDocumentError
+    - AssignmentUnitOfWork
+    - AssignDocument
   forbidden_module_prefixes:
   - admin
   - agent
@@ -104,7 +174,7 @@ runtime_probes:
   - peewee
   - quart
   - rag
-  rationale: A fresh interpreter must load the owned domain surface without application bootstrap, ORM, HTTP framework, network/process effects, output, or background threads.
+  rationale: A fresh interpreter must load the owned domain and application surfaces without application bootstrap, ORM, HTTP framework, network/process effects, output, or background threads.
 - id: business-documents-http-registration
   owner_module: business-documents
   profile: root-python-api-worker
@@ -121,6 +191,9 @@ runtime_probes:
   blueprint_name: business_document_api_runtime_probe
   url_prefix: /api/v1
   stub_modules:
+  - module: api.apps.business_documents.adapters.assignment
+    symbols:
+      assign_business_document: function
   - module: api.apps.business_documents.eva_changes
     symbols:
       EvaDocumentChangeService: class
@@ -313,8 +386,10 @@ runtime_probes:
   - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_dataset_search_adapter_forwards_actor_request_and_result
   - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_default_and_injected_adapters_keep_one_production_boundary
   - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_litellm_callback_drain_does_not_stop_or_clear_the_global_worker
-  expected_tests: 5
-  rationale: The two production adapters must preserve their exact tenant, prompt, retry, token-limit, actor, request and result contracts without external LLM or search calls, while dependency injection remains the same single production boundary.
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_storage_adapter_verifies_supported_backend_absence_without_compatibility_probes
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_storage_adapter_fails_closed_on_unknown_backend_and_storage_errors
+  expected_tests: 7
+  rationale: The production adapters must preserve their exact tenant, prompt, retry, token-limit, actor, request and result contracts without external LLM or search calls; export cleanup must prove object-specific absence for every supported storage backend and fail closed on unknown responses.
 - id: owned-frontend-registrations
   owner_module: frontend-foundation
   profile: frontend-web

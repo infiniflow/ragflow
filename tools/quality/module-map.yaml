@@ -22,6 +22,8 @@ modules:
   - Role/tenant checks, command idempotency, revision conflicts, worker and exports
   - Document settings and EVA linkage
   tests:
+  - test/unit_test/business_documents
+  - test/unit_test/tools/quality/test_business_document_assignment_metadata.py
   - test/unit_test/api/apps/business_documents
   - test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py
   - test/evals/business_documents
@@ -69,6 +71,9 @@ modules:
   - agent/business_requirements/prompts/review.v1.md
   - agent/business_requirements/templates/business_requirements.v1.json
   - api/apps/business_documents/__init__.py
+  - api/apps/business_documents/adapters/__init__.py
+  - api/apps/business_documents/adapters/assignment.py
+  - api/apps/business_documents/adapters/storage.py
   - api/apps/business_documents/ai.py
   - api/apps/business_documents/assets.py
   - api/apps/business_documents/authorization.py
@@ -81,10 +86,15 @@ modules:
   - api/apps/restful_apis/business_document_api.py
   - api/db/services/business_document_settings_service.py
   - business_documents/__init__.py
+  - business_documents/application/__init__.py
+  - business_documents/application/assign_document.py
   - business_documents/domain/__init__.py
+  - business_documents/domain/access.py
+  - business_documents/domain/assignment.py
   - business_documents/domain/bcm_bank_v15_l5.json
   - business_documents/domain/catalog.py
   - business_documents/domain/names.py
+  - business_documents/domain/workflow.py
   - docs/develop/business-documents-eva-title-binding-ru.md
   - test/evals/business_documents/live_quality.py
   - test/evals/business_documents/test_golden_dialogue_harness.py
@@ -107,6 +117,8 @@ modules:
   - test/unit_test/api/apps/business_documents/test_business_document_worker_exports.py
   - test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py
   - test/unit_test/api/db/services/test_business_document_settings_service.py
+  - test/unit_test/business_documents/application/test_assign_document.py
+  - test/unit_test/tools/quality/test_business_document_assignment_metadata.py
   - web/src/pages/admin/business-documents-settings.test.tsx
   - web/src/pages/admin/business-documents-settings.tsx
   - web/src/pages/business-documents/components/document-pane.tsx

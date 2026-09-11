@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: db7d6cfc22b74853790b9f5fd21a55756cc56e86
+head: 7045e856a9905264044a3f47d32cef8ac7c0e2a6
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -346,7 +346,7 @@ changes:
   paths:
   - path: api/db/db_models.py
     committed: M
-    staged: null
+    staged: M
     unstaged: null
   - path: common/time_utils.py
     committed: M
@@ -1512,11 +1512,11 @@ changes:
     unstaged: null
   - path: .github/workflows/sep-tests.yml
     committed: M
-    staged: null
+    staged: M
     unstaged: null
   - path: .github/workflows/tests.yml
     committed: M
-    staged: null
+    staged: M
     unstaged: null
   - path: .gitignore
     committed: M
@@ -1548,7 +1548,7 @@ changes:
     unstaged: null
   - path: pyproject.toml
     committed: M
-    staged: null
+    staged: M
     unstaged: null
   - path: ragflow_deps/download_deps.py
     committed: M
@@ -1560,7 +1560,7 @@ changes:
     unstaged: null
   - path: run_tests.py
     committed: M
-    staged: null
+    staged: M
     unstaged: null
   - path: test/playwright/auth/test_login_success_optional.py
     committed: M
@@ -1593,7 +1593,7 @@ changes:
   - path: test/playwright/conftest.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/e2e/test_dataset_upload_parse.py
     committed: M
     staged: null

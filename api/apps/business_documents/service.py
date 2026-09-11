@@ -39,8 +39,8 @@ from api.apps.business_documents.assets import (
     validate_contract,
     validate_document_ast,
 )
-from api.apps.business_documents.authorization import BusinessDocumentAccess, BusinessDocumentRole
-from api.apps.business_documents.contracts import CommandEnvelope, CommandType, LifecycleState, OperationState
+from api.apps.business_documents.authorization import BusinessDocumentAccess
+from api.apps.business_documents.contracts import CommandEnvelope, CommandType, LifecycleState
 from api.apps.business_documents.errors import BusinessDocumentError, ConflictError, NotFoundError, PermissionDeniedError, ValidationError
 from api.apps.business_documents.evidence import ensure_dataset_access, ensure_dataset_embedding_compatibility, related_file_search_enabled
 from api.db.db_models import (
@@ -53,6 +53,7 @@ from api.db.db_models import (
     BusinessDocumentEvaBinding,
     BusinessDocumentEvidenceSnapshot,
     BusinessDocumentExportArtifact,
+    BusinessDocumentExportStage,
     BusinessDocumentJob,
     BusinessDocumentProposal,
     BusinessDocumentProposalDecision,
@@ -60,7 +61,9 @@ from api.db.db_models import (
     BusinessDocumentRevision,
     User,
 )
+from business_documents.domain.access import BusinessDocumentRole, normalize_role
 from business_documents.domain.names import normalize_title, title_key
+from business_documents.domain.workflow import ACTIVE_JOB_STATUSES, OperationState, is_operation_quiescent
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 
@@ -79,6 +82,7 @@ _MODEL_TABLES = (
     BusinessDocumentCommand,
     BusinessDocumentJob,
     BusinessDocumentExportArtifact,
+    BusinessDocumentExportStage,
     BusinessDocumentEvidenceSnapshot,
 )
 
@@ -407,7 +411,7 @@ class BusinessDocumentService:
                     "user_id": user.id,
                     "nickname": user.nickname,
                     "email": user.email,
-                    "role": (BusinessDocumentRole.ADMIN.value if user.is_superuser else cls._normalized_access_role(user.business_document_role).value),
+                    "role": normalize_role(user.business_document_role, bool(user.is_superuser)).value,
                 }
                 for user in users.order_by(User.nickname.asc(), User.id.asc())
             ]
@@ -432,54 +436,6 @@ class BusinessDocumentService:
             raise ConflictError("ADMIN_ROLE_MANAGED_SEPARATELY", "A superuser always has administrator access")
         User.update(business_document_role=role.value, update_time=current_timestamp(), update_date=datetime.now()).where(User.id == user_id).execute()
         return {"user_id": user_id, "nickname": user.nickname, "role": role.value}
-
-    @classmethod
-    def assign_document(
-        cls,
-        actor_id: str,
-        document_id: str,
-        raw: object,
-        is_admin: bool = False,
-        access_role: BusinessDocumentRole | str = BusinessDocumentRole.AUTHOR_CREATOR,
-    ) -> dict[str, Any]:
-        access = BusinessDocumentAccess(actor_id, access_role, is_admin)
-        access.require_assign()
-        if not isinstance(raw, dict):
-            raise ValidationError("INVALID_DOCUMENT_ASSIGNMENT", "Request body must be a JSON object")
-        owner_id = raw.get("owner_id")
-        expected_state_version = raw.get("expected_state_version")
-        if not isinstance(owner_id, str) or not owner_id.strip():
-            raise ValidationError("INVALID_DOCUMENT_ASSIGNMENT", "owner_id must be a non-empty string")
-        if isinstance(expected_state_version, bool) or not isinstance(expected_state_version, int):
-            raise ValidationError("INVALID_DOCUMENT_ASSIGNMENT", "expected_state_version must be an integer")
-        new_owner = User.get_or_none((User.id == owner_id.strip()) & (User.status == "1") & (User.is_active == "1"))
-        if new_owner is None:
-            raise BusinessDocumentError("USER_NOT_FOUND", "Assigned user not found", 404)
-
-        database = BusinessDocument._meta.database
-        with database.atomic():
-            document = cls._get_accessible_document(document_id)
-            if document.state_version != expected_state_version:
-                raise ConflictError(
-                    "STATE_VERSION_CONFLICT",
-                    "The document changed since it was loaded",
-                    {"expected": expected_state_version, "actual": document.state_version},
-                )
-            if document.owner_id == new_owner.id:
-                return cls._project(document, access)
-            previous_owner_id = document.owner_id
-            new_version = document.state_version + 1
-            cls._optimistic_update(document, {"owner_id": new_owner.id, "state_version": new_version})
-            cls._create_event(
-                document.id,
-                new_version,
-                "DocumentAssigned",
-                "USER",
-                actor_id,
-                {"previous_owner_id": previous_owner_id, "owner_id": new_owner.id},
-                get_uuid(),
-            )
-        return cls._project(cls._get_accessible_document(document_id), access)
 
     @classmethod
     def list_revisions(cls, tenant_id: str, document_id: str, actor_id: str, is_admin: bool = False) -> list[dict[str, Any]]:
@@ -741,19 +697,24 @@ class BusinessDocumentService:
         if document is None:
             raise NotFoundError()
 
-        active_job = BusinessDocumentJob.select().where((BusinessDocumentJob.document_id == document_id) & (BusinessDocumentJob.status.in_(("PENDING", "RUNNING", "RETRY"))))
-        if document.operation_state not in {OperationState.IDLE.value, OperationState.FAILED.value} or active_job.exists():
+        active_job = BusinessDocumentJob.select().where((BusinessDocumentJob.document_id == document_id) & (BusinessDocumentJob.status.in_(ACTIVE_JOB_STATUSES)))
+        if not is_operation_quiescent(document.operation_state, active_job.exists()):
             raise ConflictError("OPERATION_IN_PROGRESS", "A document with an active operation cannot be deleted")
 
-        artifacts = list(BusinessDocumentExportArtifact.select().where(BusinessDocumentExportArtifact.document_id == document_id))
         database = BusinessDocument._meta.database
+        cleanup_stages: list[BusinessDocumentExportStage] = []
         with database.atomic():
-            document = BusinessDocument.get_or_none(BusinessDocument.id == document_id)
+            document = cls._get_document_for_update(document_id)
             if document is None:
                 raise NotFoundError()
-            active_job = BusinessDocumentJob.select().where((BusinessDocumentJob.document_id == document_id) & (BusinessDocumentJob.status.in_(("PENDING", "RUNNING", "RETRY"))))
-            if document.operation_state not in {OperationState.IDLE.value, OperationState.FAILED.value} or active_job.exists():
+            active_job = BusinessDocumentJob.select().where((BusinessDocumentJob.document_id == document_id) & (BusinessDocumentJob.status.in_(ACTIVE_JOB_STATUSES)))
+            if not is_operation_quiescent(document.operation_state, active_job.exists()):
                 raise ConflictError("OPERATION_IN_PROGRESS", "A document with an active operation cannot be deleted")
+            artifacts = list(BusinessDocumentExportArtifact.select().where(BusinessDocumentExportArtifact.document_id == document_id))
+            if artifacts:
+                from api.apps.business_documents.exports import BusinessDocumentExportService
+
+                cleanup_stages = [BusinessDocumentExportService.queue_artifact_cleanup(artifact) for artifact in artifacts]
             for model in (
                 BusinessDocumentEvaBinding,
                 BusinessDocumentEvidenceSnapshot,
@@ -773,20 +734,22 @@ class BusinessDocumentService:
             if deleted != 1:
                 raise ConflictError("DOCUMENT_DELETE_CONFLICT", "The document changed while it was being deleted")
 
+        from api.apps.business_documents.exports import BusinessDocumentExportService
+
         cleanup_failures = 0
         if artifacts:
-            if storage is None:
-                from common import settings
-
-                storage = settings.STORAGE_IMPL
-            for artifact in artifacts:
+            for stage in cleanup_stages:
                 try:
-                    if storage is None:
-                        raise RuntimeError("storage is not initialized")
-                    storage.rm(artifact.storage_bucket, artifact.storage_key)
+                    cleaned = BusinessDocumentExportService.cleanup_stage(stage.id, storage=storage)
                 except Exception:
+                    cleaned = False
+                    logging.exception("Unable to reconcile business document export stage %s", stage.id)
+                if not cleaned:
                     cleanup_failures += 1
-                    logging.exception("Unable to remove business document export artifact %s", artifact.id)
+        try:
+            BusinessDocumentExportService.reconcile_staging(storage=storage, document_id=document_id)
+        except Exception:
+            logging.exception("Unable to reconcile abandoned export stages for deleted business document %s", document_id)
         return {
             "document_id": document_id,
             "deleted": True,
@@ -821,7 +784,10 @@ class BusinessDocumentService:
         try:
             with database.atomic():
                 access = BusinessDocumentAccess(actor_id, access_role, is_admin)
-                document = cls._get_editable_document(document_id, access)
+                document = cls._get_document_for_update(document_id)
+                if document is None:
+                    raise NotFoundError()
+                access.require_edit(document.owner_id)
                 document_tenant_id = document.tenant_id
                 existing = BusinessDocumentCommand.get_or_none(
                     (BusinessDocumentCommand.tenant_id == document_tenant_id)
@@ -898,14 +864,9 @@ class BusinessDocumentService:
     ) -> dict[str, Any]:
         """Commit a worker result after rechecking the immutable job snapshot."""
 
-        if not isinstance(output, dict):
-            raise ValidationError("INVALID_JOB_OUTPUT", "Worker output must be a JSON object")
         database = BusinessDocument._meta.database
         with database.atomic():
-            job = BusinessDocumentJob.get_or_none((BusinessDocumentJob.id == job_id) & (BusinessDocumentJob.tenant_id == tenant_id))
-            if job is None:
-                raise BusinessDocumentError("JOB_NOT_FOUND", "Business document job not found", 404)
-            document = cls._get_document(tenant_id, job.document_id)
+            job, document = cls._get_job_context_for_update(tenant_id, job_id)
             if job.status == "COMPLETED":
                 return cls._project(document)
             cls._require_current_job_lease(job, actor_id, lease_token)
@@ -917,32 +878,54 @@ class BusinessDocumentService:
                     {"source": job.source_state_version, "actual": document.state_version},
                 )
 
+            committed_output = output
+            if job.job_type == "GENERATE_EXPORT":
+                from api.apps.business_documents.exports import BusinessDocumentExportService
+
+                committed_output = BusinessDocumentExportService.commit(output, document=document, job=job)
+            elif not isinstance(output, dict):
+                raise ValidationError("INVALID_JOB_OUTPUT", "Worker output must be a JSON object")
+
             if job.job_type == "ASSESS_INTAKE":
-                cls._complete_assessment(document, job, actor_id, output, execution)
+                cls._complete_assessment(document, job, actor_id, committed_output, execution)
             elif job.job_type == "ASSESS_REVIEW":
-                cls._complete_review_assessment(document, job, actor_id, output, execution)
+                cls._complete_review_assessment(document, job, actor_id, committed_output, execution)
             elif job.job_type == "GENERATE_DRAFT":
-                cls._complete_draft(document, job, actor_id, output, execution)
+                cls._complete_draft(document, job, actor_id, committed_output, execution)
             elif job.job_type == "PLAN_CHANGES":
-                cls._complete_changes(document, job, actor_id, output, execution)
+                cls._complete_changes(document, job, actor_id, committed_output, execution)
             elif job.job_type == "GENERATE_EXPORT":
-                cls._complete_export(document, job, actor_id, output, execution)
+                cls._complete_export(document, job, actor_id, committed_output, execution)
             else:
                 raise ValidationError("UNKNOWN_JOB_TYPE", "Unsupported business document job type", {"job_type": job.job_type})
             prompt_audit = cls._job_prompt_audit(job)
-            BusinessDocumentJob.update(
-                status="COMPLETED",
-                progress=1.0,
-                progress_stage="COMPLETED",
-                progress_message="Обработка завершена",
-                lease_owner=None,
-                lease_token=None,
-                lease_expires_at=None,
-                error=None,
-                result={"output": output, **prompt_audit, **({"execution": execution} if execution else {})},
-                update_time=current_timestamp(),
-                update_date=datetime.now(),
-            ).where(BusinessDocumentJob.id == job.id).execute()
+            completion_time = current_timestamp()
+            changed = (
+                BusinessDocumentJob.update(
+                    status="COMPLETED",
+                    progress=1.0,
+                    progress_stage="COMPLETED",
+                    progress_message="Обработка завершена",
+                    lease_owner=None,
+                    lease_token=None,
+                    lease_expires_at=None,
+                    error=None,
+                    result={"output": committed_output, **prompt_audit, **({"execution": execution} if execution else {})},
+                    update_time=completion_time,
+                    update_date=datetime.now(),
+                )
+                .where(
+                    (BusinessDocumentJob.id == job.id)
+                    & (BusinessDocumentJob.tenant_id == tenant_id)
+                    & (BusinessDocumentJob.status == "RUNNING")
+                    & (BusinessDocumentJob.lease_owner == actor_id)
+                    & (BusinessDocumentJob.lease_token == lease_token)
+                    & (BusinessDocumentJob.lease_expires_at > completion_time)
+                )
+                .execute()
+            )
+            if changed != 1:
+                raise ConflictError("JOB_LEASE_LOST", "Worker no longer owns a current lease for this job")
         return cls._project(cls._get_document(tenant_id, document.id))
 
     @classmethod
@@ -956,10 +939,7 @@ class BusinessDocumentService:
     ) -> dict[str, Any]:
         database = BusinessDocument._meta.database
         with database.atomic():
-            job = BusinessDocumentJob.get_or_none((BusinessDocumentJob.id == job_id) & (BusinessDocumentJob.tenant_id == tenant_id))
-            if job is None:
-                raise BusinessDocumentError("JOB_NOT_FOUND", "Business document job not found", 404)
-            document = cls._get_document(tenant_id, job.document_id)
+            job, document = cls._get_job_context_for_update(tenant_id, job_id)
             if job.status == "DEAD":
                 return cls._project(document)
             cls._require_current_job_lease(job, actor_id, lease_token)
@@ -969,17 +949,31 @@ class BusinessDocumentService:
                 {"operation_state": OperationState.FAILED.value, "last_error": error, "state_version": new_version},
             )
             cls._create_event(document.id, new_version, "BusinessDocumentJobFailed", "SYSTEM", actor_id, {"job_id": job.id, "error": error}, job.correlation_id)
-            BusinessDocumentJob.update(
-                status="DEAD",
-                progress_stage="FAILED",
-                progress_message="Не удалось завершить обработку",
-                lease_owner=None,
-                lease_token=None,
-                lease_expires_at=None,
-                error=error,
-                update_time=current_timestamp(),
-                update_date=datetime.now(),
-            ).where(BusinessDocumentJob.id == job.id).execute()
+            completion_time = current_timestamp()
+            changed = (
+                BusinessDocumentJob.update(
+                    status="DEAD",
+                    progress_stage="FAILED",
+                    progress_message="Не удалось завершить обработку",
+                    lease_owner=None,
+                    lease_token=None,
+                    lease_expires_at=None,
+                    error=error,
+                    update_time=completion_time,
+                    update_date=datetime.now(),
+                )
+                .where(
+                    (BusinessDocumentJob.id == job.id)
+                    & (BusinessDocumentJob.tenant_id == tenant_id)
+                    & (BusinessDocumentJob.status == "RUNNING")
+                    & (BusinessDocumentJob.lease_owner == actor_id)
+                    & (BusinessDocumentJob.lease_token == lease_token)
+                    & (BusinessDocumentJob.lease_expires_at > completion_time)
+                )
+                .execute()
+            )
+            if changed != 1:
+                raise ConflictError("JOB_LEASE_LOST", "Worker no longer owns a current lease for this job")
         return cls._project(cls._get_document(tenant_id, document.id))
 
     @classmethod
@@ -2230,7 +2224,7 @@ class BusinessDocumentService:
 
     @classmethod
     def _allowed_commands_values(cls, lifecycle_state, operation_state, document_id, review_cycle):
-        if operation_state not in {OperationState.IDLE.value, OperationState.FAILED.value} or lifecycle_state == LifecycleState.ARCHIVED.value:
+        if not is_operation_quiescent(operation_state) or lifecycle_state == LifecycleState.ARCHIVED.value:
             return []
         if lifecycle_state == LifecycleState.INTAKE.value:
             commands = [CommandType.ARCHIVE.value]
@@ -2424,14 +2418,6 @@ class BusinessDocumentService:
     def _job_request_author(job: BusinessDocumentJob, fallback: str) -> str:
         requested_by = job.payload.get("requested_by_actor_id") if isinstance(job.payload, dict) else None
         return requested_by if isinstance(requested_by, str) and requested_by else fallback
-
-    @staticmethod
-    def _normalized_access_role(value: object) -> BusinessDocumentRole:
-        try:
-            role = BusinessDocumentRole(value)
-        except (TypeError, ValueError):
-            return BusinessDocumentRole.AUTHOR_EDITOR
-        return BusinessDocumentRole.AUTHOR_EDITOR if role == BusinessDocumentRole.ADMIN else role
 
     @staticmethod
     def _legacy_revision_author(row: BusinessDocumentRevision) -> str | None:
@@ -2943,6 +2929,34 @@ class BusinessDocumentService:
         return document
 
     @staticmethod
+    def _get_document_for_update(document_id):
+        query = BusinessDocument.select().where(BusinessDocument.id == document_id)
+        if getattr(BusinessDocument._meta.database, "for_update", False):
+            query = query.for_update()
+        return query.first()
+
+    @classmethod
+    def _get_job_context_for_update(cls, tenant_id, job_id):
+        """Lock aggregate root then job so lease finalization is linearizable."""
+
+        hint = BusinessDocumentJob.select(BusinessDocumentJob.document_id).where((BusinessDocumentJob.id == job_id) & (BusinessDocumentJob.tenant_id == tenant_id)).first()
+        if hint is None:
+            raise BusinessDocumentError("JOB_NOT_FOUND", "Business document job not found", 404)
+        document_query = BusinessDocument.select().where((BusinessDocument.id == hint.document_id) & (BusinessDocument.tenant_id == tenant_id))
+        if getattr(BusinessDocument._meta.database, "for_update", False):
+            document_query = document_query.for_update()
+        document = document_query.first()
+        if document is None:
+            raise NotFoundError()
+        job_query = BusinessDocumentJob.select().where((BusinessDocumentJob.id == job_id) & (BusinessDocumentJob.document_id == document.id) & (BusinessDocumentJob.tenant_id == tenant_id))
+        if getattr(BusinessDocument._meta.database, "for_update", False):
+            job_query = job_query.for_update()
+        job = job_query.first()
+        if job is None:
+            raise BusinessDocumentError("JOB_NOT_FOUND", "Business document job not found", 404)
+        return job, document
+
+    @staticmethod
     def _require_lifecycle(document, lifecycle):
         if document.lifecycle_state != lifecycle.value:
             raise ConflictError(
@@ -2953,7 +2967,7 @@ class BusinessDocumentService:
 
     @staticmethod
     def _require_idle(document):
-        if document.operation_state not in {OperationState.IDLE.value, OperationState.FAILED.value}:
+        if not is_operation_quiescent(document.operation_state):
             raise ConflictError("OPERATION_IN_PROGRESS", "Another operation is already in progress", {"operation_state": document.operation_state})
 
     @staticmethod

@@ -22,7 +22,7 @@ from urllib.parse import quote
 from api.apps.business_documents.errors import BusinessDocumentError
 from peewee import IntegrityError
 
-from api.db.db_models import BusinessDocumentEvidenceSnapshot, BusinessDocumentJob
+from api.db.db_models import BusinessDocument, BusinessDocumentEvidenceSnapshot, BusinessDocumentJob
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 
@@ -291,7 +291,14 @@ class BusinessDocumentEvidence:
     def _pin(cls, job: BusinessDocumentJob, snapshot: dict[str, Any]) -> dict[str, Any]:
         database = BusinessDocumentJob._meta.database
         with database.atomic():
-            current = BusinessDocumentJob.get_or_none(BusinessDocumentJob.id == job.id)
+            document_query = BusinessDocument.select(BusinessDocument.id).where((BusinessDocument.id == job.document_id) & (BusinessDocument.tenant_id == job.tenant_id))
+            if getattr(database, "for_update", False):
+                document_query = document_query.for_update()
+            document = document_query.first()
+            job_query = BusinessDocumentJob.select().where((BusinessDocumentJob.id == job.id) & (BusinessDocumentJob.document_id == job.document_id) & (BusinessDocumentJob.tenant_id == job.tenant_id))
+            if getattr(database, "for_update", False):
+                job_query = job_query.for_update()
+            current = job_query.first() if document is not None else None
             if (
                 current is None
                 or current.status != "RUNNING"
@@ -309,9 +316,9 @@ class BusinessDocumentEvidence:
                 with database.atomic():
                     BusinessDocumentEvidenceSnapshot.create(
                         id=get_uuid(),
-                        job_id=job.id,
-                        document_id=job.document_id,
-                        tenant_id=job.tenant_id,
+                        job_id=current.id,
+                        document_id=document.id,
+                        tenant_id=current.tenant_id,
                         dataset_ids=list(snapshot["dataset_ids"]),
                         snapshot=snapshot,
                         evidence_hash=snapshot["evidence_hash"],

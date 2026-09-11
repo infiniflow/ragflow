@@ -39,6 +39,7 @@ from api.db.db_models import (
     BusinessDocument,
     BusinessDocumentEvent,
     BusinessDocumentExportArtifact,
+    BusinessDocumentExportStage,
     BusinessDocumentJob,
     BusinessDocumentProposal,
     BusinessDocumentRevision,
@@ -77,6 +78,13 @@ class MemoryStorage:
 
     def rm(self, bucket: str, key: str):
         self.objects.pop((bucket, key), None)
+
+    def obj_exist(self, bucket: str, key: str):
+        return (bucket, key) in self.objects
+
+    def remove_and_confirm_absent(self, bucket: str, key: str):
+        self.rm(bucket, key)
+        return not self.obj_exist(bucket, key)
 
 
 class FailingAI:
@@ -200,9 +208,15 @@ def _request_export(document, storage: MemoryStorage, export_format="EVA_WIKI"):
     )
     job = BusinessDocumentJobQueue.claim("export-worker", lease_ms=60_000)
     assert job is not None and job.id == requested["job_id"]
-    artifact = BusinessDocumentExportService.generate(job, storage=storage)
-    assert BusinessDocumentExportService.generate(job, storage=storage) == artifact
-    projection = BusinessDocumentService.complete_job(TENANT, "export-worker", job.id, artifact, job.lease_token)
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    assert BusinessDocumentExportService.generate(job, storage=storage) == prepared
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    assert BusinessDocumentExportStage.get_by_id(prepared.stage_id).state == "STORED"
+    projection = BusinessDocumentService.complete_job(TENANT, "export-worker", job.id, prepared, job.lease_token)
+    assert BusinessDocumentExportStage.get_by_id(prepared.stage_id).state == "COMMITTED"
+    BusinessDocumentExportService.discard(prepared, storage=storage)
+    assert BusinessDocumentExportStage.select().count() == 0
+    artifact = BusinessDocumentExportService.list_artifacts(TENANT, AUTHOR, document["document_id"])[0]
     return artifact, projection
 
 
@@ -272,6 +286,67 @@ def test_job_progress_is_fenced_and_projected_in_list_and_detail(database):
     )
     assert completed["latest_job"]["progress"] == 1.0
     assert completed["latest_job"]["progress_stage"] == "COMPLETED"
+
+
+@pytest.mark.p0
+def test_heartbeat_records_lease_loss_when_renewal_is_rejected(database, monkeypatch):
+    document = _create()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(document, "REQUEST_INTAKE_ASSESSMENT"),
+    )
+    job = BusinessDocumentJobQueue.claim("heartbeat-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+    renew_called = threading.Event()
+
+    def reject_renewal(*_args, **_kwargs):
+        renew_called.set()
+        return False
+
+    monkeypatch.setattr(BusinessDocumentJobQueue, "renew", reject_renewal)
+    heartbeat = worker_module._LeaseHeartbeat(job, "heartbeat-worker", 1)
+    heartbeat.start()
+    try:
+        assert renew_called.wait(timeout=2)
+        with pytest.raises(BusinessDocumentError) as caught:
+            heartbeat.ensure_current()
+        assert caught.value.code == "JOB_LEASE_LOST"
+    finally:
+        heartbeat.stop()
+
+
+@pytest.mark.p0
+def test_worker_abandons_rejected_progress_without_export_or_retry(database, monkeypatch):
+    document = _agreed_document()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            document,
+            "REQUEST_EXPORT",
+            {"revision_id": document["current_revision"]["revision_id"], "format": "MARKDOWN"},
+        ),
+    )
+    storage = MemoryStorage()
+    monkeypatch.setattr(BusinessDocumentJobQueue, "update_progress", lambda *_args, **_kwargs: False)
+
+    worker = BusinessDocumentWorker(
+        worker_id="lost-export-worker",
+        storage=storage,
+        lease_ms=60_000,
+        retry_base_ms=0,
+    )
+    assert worker.run_once() is True
+
+    job = BusinessDocumentJob.get_by_id(requested["job_id"])
+    assert job.status == "RUNNING"
+    assert job.lease_owner == "lost-export-worker"
+    assert job.attempt == 1
+    assert storage.put_count == 0
+    assert BusinessDocumentExportArtifact.select().count() == 0
 
 
 @pytest.mark.p0
@@ -367,6 +442,59 @@ def test_worker_start_is_singleton_and_wake_interrupts_idle_wait(database, monke
     stop.set()
     thread.join(timeout=1)
     assert not thread.is_alive()
+
+
+@pytest.mark.p0
+def test_worker_reconciles_export_stages_at_startup_and_when_idle(database, monkeypatch):
+    calls = []
+    stop = threading.Event()
+    worker = BusinessDocumentWorker()
+
+    monkeypatch.setattr(worker, "recover_stale", lambda: calls.append("recover") or (0, 0))
+    monkeypatch.setattr(
+        worker,
+        "reconcile_exports",
+        lambda: calls.append("reconcile") or {"scanned": 0, "cleaned": 0, "deferred": 0, "failures": 0},
+    )
+
+    def stop_after_empty_poll():
+        calls.append("poll")
+        stop.set()
+        return False
+
+    monkeypatch.setattr(worker, "run_once", stop_after_empty_poll)
+    worker_module._WAKE_EVENT.clear()
+
+    worker.run_forever(stop, poll_seconds=0)
+
+    assert calls == ["recover", "reconcile", "poll", "recover", "reconcile"]
+
+
+@pytest.mark.p0
+def test_worker_reconciles_export_stages_on_busy_maintenance_interval(database, monkeypatch):
+    calls = []
+    stop = threading.Event()
+    worker = BusinessDocumentWorker(maintenance_interval_seconds=60)
+    clock = iter((0.0, 61.0, 62.0))
+
+    monkeypatch.setattr(worker_module, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(worker, "recover_stale", lambda: calls.append("recover") or (0, 0))
+    monkeypatch.setattr(
+        worker,
+        "reconcile_exports",
+        lambda: calls.append("reconcile") or {"scanned": 0, "cleaned": 0, "deferred": 0, "failures": 0},
+    )
+
+    def stop_after_busy_poll():
+        calls.append("poll")
+        stop.set()
+        return True
+
+    monkeypatch.setattr(worker, "run_once", stop_after_busy_poll)
+
+    worker.run_forever(stop, poll_seconds=0)
+
+    assert calls == ["recover", "reconcile", "poll", "recover", "reconcile"]
 
 
 @pytest.mark.p0
@@ -494,6 +622,89 @@ def test_export_generation_is_idempotent_listable_downloadable_and_hash_verified
 
 
 @pytest.mark.p0
+def test_valid_export_is_reused_after_document_owner_changes(database):
+    document = _agreed_document()
+    storage = MemoryStorage()
+    artifact, projection = _request_export(document, storage, "MARKDOWN")
+    new_owner = "reassigned-author"
+    BusinessDocument.update(
+        owner_id=new_owner,
+        state_version=projection["state_version"] + 1,
+    ).where(BusinessDocument.id == document["document_id"]).execute()
+    reassigned = BusinessDocumentService.get_document(TENANT, document["document_id"], new_owner)
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        new_owner,
+        document["document_id"],
+        _command(
+            reassigned,
+            "REQUEST_EXPORT",
+            {"revision_id": reassigned["current_revision"]["revision_id"], "format": "MARKDOWN"},
+            suffix="-after-assignment",
+        ),
+    )
+    job = BusinessDocumentJobQueue.claim("reassigned-export-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    assert prepared.created_blob is False
+    assert prepared.artifact_id == artifact["artifact_id"]
+    BusinessDocumentService.complete_job(
+        TENANT,
+        "reassigned-export-worker",
+        job.id,
+        prepared,
+        job.lease_token,
+    )
+    BusinessDocumentExportService.discard(prepared, storage=storage)
+
+    assert BusinessDocumentExportService.list_artifacts(TENANT, new_owner, document["document_id"]) == [artifact]
+    assert storage.put_count == 1
+
+
+@pytest.mark.p0
+def test_export_event_failure_rolls_back_artifact_and_discards_staged_blob(database, monkeypatch):
+    document = _agreed_document()
+    storage = MemoryStorage()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            document,
+            "REQUEST_EXPORT",
+            {"revision_id": document["current_revision"]["revision_id"], "format": "MARKDOWN"},
+        ),
+    )
+    job = BusinessDocumentJobQueue.claim("rollback-export-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    before = BusinessDocument.get_by_id(document["document_id"])
+
+    def fail_event(*_args, **_kwargs):
+        raise RuntimeError("event insert failed")
+
+    monkeypatch.setattr(BusinessDocumentService, "_create_event", fail_event)
+    with pytest.raises(RuntimeError, match="event insert failed"):
+        BusinessDocumentService.complete_job(
+            TENANT,
+            "rollback-export-worker",
+            job.id,
+            prepared,
+            job.lease_token,
+        )
+    BusinessDocumentExportService.discard(prepared, storage=storage)
+
+    after = BusinessDocument.get_by_id(document["document_id"])
+    persisted_job = BusinessDocumentJob.get_by_id(job.id)
+    assert (after.state_version, after.operation_state) == (before.state_version, before.operation_state)
+    assert persisted_job.status == "RUNNING"
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    assert BusinessDocumentExportStage.select().count() == 0
+    assert storage.objects == {}
+
+
+@pytest.mark.p0
 def test_admin_delete_removes_export_bytes_and_complete_document_history(database):
     document = _agreed_document()
     storage = MemoryStorage()
@@ -513,10 +724,93 @@ def test_admin_delete_removes_export_bytes_and_complete_document_history(databas
 
 
 @pytest.mark.p0
+def test_admin_delete_retains_cleanup_ledger_until_blob_removal_is_verified(database):
+    class ToggleRemovalStorage(MemoryStorage):
+        allow_removal = False
+
+        def rm(self, bucket: str, key: str):
+            if self.allow_removal:
+                super().rm(bucket, key)
+
+    document = _agreed_document()
+    storage = ToggleRemovalStorage()
+    artifact, _ = _request_export(document, storage, "MARKDOWN")
+    row = BusinessDocumentExportArtifact.get_by_id(artifact["artifact_id"])
+    storage_location = (row.storage_bucket, row.storage_key)
+
+    result = BusinessDocumentService.delete_document("admin-user", document["document_id"], is_admin=True, storage=storage)
+
+    assert result == {
+        "document_id": document["document_id"],
+        "deleted": True,
+        "deleted_artifacts": 0,
+        "storage_cleanup_failures": 1,
+    }
+    stage = BusinessDocumentExportStage.get()
+    assert stage.state == "CLEANING"
+    assert storage_location in storage.objects
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    assert BusinessDocument.select().where(BusinessDocument.id == document["document_id"]).count() == 0
+
+    storage.allow_removal = True
+    reconciled = BusinessDocumentExportService.reconcile_staging(
+        storage=storage,
+        document_id=document["document_id"],
+        now_ms=stage.cleanup_after,
+    )
+    assert reconciled == {"scanned": 1, "cleaned": 1, "deferred": 0, "failures": 0}
+    assert BusinessDocumentExportStage.select().count() == 0
+    assert storage_location not in storage.objects
+
+
+@pytest.mark.p0
+def test_admin_delete_retains_cleanup_ledger_when_storage_reports_ambiguous_absence(database):
+    class AmbiguousRemovalStorage:
+        def __init__(self, objects):
+            self.objects = dict(objects)
+
+        def rm(self, _bucket: str, _key: str):
+            return None
+
+        def obj_exist(self, _bucket: str, _key: str):
+            return False
+
+        def get(self, _bucket: str, _key: str):
+            return None
+
+        def health(self):
+            return True
+
+    document = _agreed_document()
+    source_storage = MemoryStorage()
+    artifact, _ = _request_export(document, source_storage, "MARKDOWN")
+    row = BusinessDocumentExportArtifact.get_by_id(artifact["artifact_id"])
+    storage_location = (row.storage_bucket, row.storage_key)
+    storage = AmbiguousRemovalStorage(source_storage.objects)
+
+    result = BusinessDocumentService.delete_document("admin-user", document["document_id"], is_admin=True, storage=storage)
+
+    assert result["storage_cleanup_failures"] == 1
+    stage = BusinessDocumentExportStage.get()
+    assert stage.state == "CLEANING"
+    assert storage_location in storage.objects
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    assert BusinessDocument.select().where(BusinessDocument.id == document["document_id"]).count() == 0
+
+
+@pytest.mark.p0
 @pytest.mark.parametrize("damage", ["missing", "corrupt"])
 def test_repeated_export_atomically_repairs_poisoned_artifact_metadata(database, damage):
     document = _agreed_document()
     storage = MemoryStorage()
+    original, document = _request_export(document, storage, "MARKDOWN")
+    original_row = BusinessDocumentExportArtifact.get_by_id(original["artifact_id"])
+    original_key = (original_row.storage_bucket, original_row.storage_key)
+    if damage == "missing":
+        storage.objects.pop(original_key)
+    else:
+        storage.objects[original_key] = b"corrupt"
+
     requested = BusinessDocumentService.execute_command(
         TENANT,
         AUTHOR,
@@ -530,15 +824,11 @@ def test_repeated_export_atomically_repairs_poisoned_artifact_metadata(database,
     )
     job = BusinessDocumentJobQueue.claim(f"repair-{damage}", lease_ms=60_000)
     assert job is not None and job.id == requested["job_id"]
-    original = BusinessDocumentExportService.generate(job, storage=storage)
-    original_row = BusinessDocumentExportArtifact.get_by_id(original["artifact_id"])
-    original_key = (original_row.storage_bucket, original_row.storage_key)
-    if damage == "missing":
-        storage.objects.pop(original_key)
-    else:
-        storage.objects[original_key] = b"corrupt"
-
-    repaired = BusinessDocumentExportService.generate(job, storage=storage)
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    assert BusinessDocumentExportArtifact.get_by_id(original["artifact_id"]).id == original["artifact_id"]
+    BusinessDocumentService.complete_job(TENANT, f"repair-{damage}", job.id, prepared, job.lease_token)
+    BusinessDocumentExportService.discard(prepared, storage=storage)
+    repaired = BusinessDocumentExportService.list_artifacts(TENANT, AUTHOR, document["document_id"])[0]
 
     assert repaired["artifact_id"] != original["artifact_id"]
     assert BusinessDocumentExportArtifact.get_or_none(BusinessDocumentExportArtifact.id == original["artifact_id"]) is None
@@ -556,6 +846,224 @@ def test_repeated_export_atomically_repairs_poisoned_artifact_metadata(database,
     metadata, content = BusinessDocumentExportService.download(TENANT, AUTHOR, document["document_id"], repaired["artifact_id"], storage=storage)
     assert metadata == repaired
     assert f"sha256:{hashlib.sha256(content).hexdigest()}" == repaired["content_hash"]
+
+
+@pytest.mark.p0
+def test_reconciler_finishes_replacement_cleanup_after_committed_process_interruption(database):
+    document = _agreed_document()
+    storage = MemoryStorage()
+    original, projection = _request_export(document, storage, "MARKDOWN")
+    original_row = BusinessDocumentExportArtifact.get_by_id(original["artifact_id"])
+    original_location = (original_row.storage_bucket, original_row.storage_key)
+    storage.objects[original_location] = b"corrupt"
+
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            projection,
+            "REQUEST_EXPORT",
+            {"revision_id": projection["current_revision"]["revision_id"], "format": "MARKDOWN"},
+            suffix="-committed-interruption",
+        ),
+    )
+    job = BusinessDocumentJobQueue.claim("replacement-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    BusinessDocumentService.complete_job(TENANT, "replacement-worker", job.id, prepared, job.lease_token)
+
+    stage = BusinessDocumentExportStage.get_by_id(prepared.stage_id)
+    replacement_location = (prepared.storage_bucket, prepared.storage_key)
+    assert stage.state == "COMMITTED"
+    assert original_location in storage.objects
+    assert replacement_location in storage.objects
+
+    reconciled = BusinessDocumentExportService.reconcile_staging(storage=storage)
+
+    assert reconciled == {"scanned": 1, "cleaned": 1, "deferred": 0, "failures": 0}
+    assert BusinessDocumentExportStage.select().count() == 0
+    assert original_location not in storage.objects
+    assert replacement_location in storage.objects
+    assert BusinessDocumentExportArtifact.get_by_id(prepared.artifact_id).storage_key == prepared.storage_key
+
+
+@pytest.mark.p0
+def test_interrupted_export_after_put_is_deferred_while_live_and_reconciled_after_lease_recovery(database):
+    document = _agreed_document()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            document,
+            "REQUEST_EXPORT",
+            {"revision_id": document["current_revision"]["revision_id"], "format": "MARKDOWN"},
+        ),
+    )
+    job = BusinessDocumentJobQueue.claim("stale-export-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+
+    class InterruptedAfterPutStorage(MemoryStorage):
+        def put(self, bucket: str, key: str, content: bytes):
+            super().put(bucket, key, content)
+            raise SystemExit("simulated hard interruption after object PUT")
+
+    storage = InterruptedAfterPutStorage()
+    with pytest.raises(SystemExit, match="simulated hard interruption"):
+        BusinessDocumentExportService.generate(job, storage=storage)
+
+    stage = BusinessDocumentExportStage.get()
+    assert stage.state == "RESERVED"
+    assert (stage.storage_bucket, stage.storage_key) in storage.objects
+    live_result = BusinessDocumentExportService.reconcile_staging(storage=storage, now_ms=job.lease_expires_at - 1)
+    assert live_result == {"scanned": 1, "cleaned": 0, "deferred": 1, "failures": 0}
+    assert BusinessDocumentExportStage.get_by_id(stage.id).state == "RESERVED"
+
+    expired_at = current_timestamp() - 1
+    BusinessDocumentJob.update(max_attempts=1, lease_expires_at=expired_at).where(BusinessDocumentJob.id == job.id).execute()
+    assert BusinessDocumentJobQueue.recover_stale(now_ms=expired_at + 1) == (0, 1)
+    cleanup_at = BusinessDocumentExportStage.get_by_id(stage.id).cleanup_after
+    reconciled = BusinessDocumentExportService.reconcile_staging(storage=storage, now_ms=max(expired_at + 1, cleanup_at))
+
+    assert reconciled == {"scanned": 1, "cleaned": 1, "deferred": 0, "failures": 0}
+    assert BusinessDocumentExportStage.select().count() == 0
+    assert BusinessDocumentExportArtifact.select().count() == 0
+    assert storage.objects == {}
+
+
+@pytest.mark.p0
+def test_reconciler_rotates_a_deferred_live_stage_past_the_batch_limit(database):
+    document = _agreed_document()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            document,
+            "REQUEST_EXPORT",
+            {"revision_id": document["current_revision"]["revision_id"], "format": "MARKDOWN"},
+        ),
+    )
+    job = BusinessDocumentJobQueue.claim("live-export-worker", lease_ms=60_000)
+    assert job is not None and job.id == requested["job_id"]
+    storage = MemoryStorage()
+    prepared = BusinessDocumentExportService.generate(job, storage=storage)
+    live_stage = BusinessDocumentExportStage.get_by_id(prepared.stage_id)
+
+    orphan_content = b"orphaned export"
+    orphan_bucket = live_stage.storage_bucket
+    orphan_key = f"{live_stage.storage_key}.orphan"
+    orphan_id = "orphan-stage"
+    BusinessDocumentExportStage.create(
+        id=orphan_id,
+        job_id=None,
+        document_id=live_stage.document_id,
+        tenant_id=live_stage.tenant_id,
+        owner_id=live_stage.owner_id,
+        artifact_id="orphan-artifact",
+        lease_token=None,
+        revision_id=live_stage.revision_id,
+        export_format=live_stage.export_format,
+        filename=live_stage.filename,
+        mime_type=live_stage.mime_type,
+        size=len(orphan_content),
+        content_hash=f"sha256:{hashlib.sha256(orphan_content).hexdigest()}",
+        storage_identity=exports_module._storage_identity(orphan_bucket, orphan_key),
+        storage_bucket=orphan_bucket,
+        storage_key=orphan_key,
+        state="RESERVED",
+        cleanup_after=1,
+        create_time=current_timestamp(),
+        create_date=DateTime(2001, 1, 1),
+        update_time=current_timestamp(),
+        update_date=DateTime(2001, 1, 1),
+    )
+    storage.objects[(orphan_bucket, orphan_key)] = orphan_content
+
+    first = BusinessDocumentExportService.reconcile_staging(
+        storage=storage,
+        limit=1,
+        now_ms=job.lease_expires_at - 1,
+    )
+    second = BusinessDocumentExportService.reconcile_staging(
+        storage=storage,
+        limit=1,
+        now_ms=job.lease_expires_at - 1,
+    )
+
+    assert first == {"scanned": 1, "cleaned": 0, "deferred": 1, "failures": 0}
+    assert second == {"scanned": 1, "cleaned": 1, "deferred": 0, "failures": 0}
+    assert BusinessDocumentExportStage.get_by_id(live_stage.id).state == "STORED"
+    assert BusinessDocumentExportStage.get_or_none(BusinessDocumentExportStage.id == orphan_id) is None
+    assert (prepared.storage_bucket, prepared.storage_key) in storage.objects
+    assert (orphan_bucket, orphan_key) not in storage.objects
+
+
+@pytest.mark.p0
+def test_reclaimed_export_uses_lease_isolated_staging_keys(database, monkeypatch):
+    document = _agreed_document()
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(
+            document,
+            "REQUEST_EXPORT",
+            {"revision_id": document["current_revision"]["revision_id"], "format": "MARKDOWN"},
+        ),
+    )
+    rendered = iter((b"attempt-a", b"attempt-b"))
+    monkeypatch.setattr(
+        BusinessDocumentExportService,
+        "_render",
+        classmethod(lambda _cls, _export_format, _revision: next(rendered)),
+    )
+    storage = MemoryStorage()
+    first = BusinessDocumentJobQueue.claim("export-worker-a", lease_ms=60_000)
+    assert first is not None and first.id == requested["job_id"] and first.lease_token
+    first_prepared = BusinessDocumentExportService.generate(first, storage=storage)
+    assert BusinessDocumentJobQueue.retry(
+        first.id,
+        "export-worker-a",
+        first.lease_token,
+        {"code": "ATTEMPT_INTERRUPTED"},
+        delay_ms=0,
+    )
+    second = BusinessDocumentJobQueue.claim("export-worker-b", lease_ms=60_000)
+    assert second is not None and second.attempt == 2 and second.lease_token
+    second_prepared = BusinessDocumentExportService.generate(second, storage=storage)
+
+    with pytest.raises(BusinessDocumentError) as stale:
+        BusinessDocumentService.complete_job(
+            TENANT,
+            "export-worker-a",
+            first.id,
+            first_prepared,
+            first.lease_token,
+        )
+    assert stale.value.code == "JOB_LEASE_LOST"
+    assert second_prepared.storage_key != first_prepared.storage_key
+    assert first.lease_token in first_prepared.storage_key
+    assert second.lease_token in second_prepared.storage_key
+    assert second_prepared.lease_token == second.lease_token
+    assert storage.put_count == 2
+    BusinessDocumentService.complete_job(
+        TENANT,
+        "export-worker-b",
+        second.id,
+        second_prepared,
+        second.lease_token,
+    )
+    BusinessDocumentExportService.discard(first_prepared, storage=storage)
+    BusinessDocumentExportService.discard(second_prepared, storage=storage)
+
+    artifact = BusinessDocumentExportArtifact.get_by_id(second.id)
+    assert artifact.storage_key == second_prepared.storage_key
+    assert (artifact.storage_bucket, artifact.storage_key) in storage.objects
+    assert storage.objects[(artifact.storage_bucket, artifact.storage_key)] == b"attempt-b"
+    assert artifact.content_hash == f"sha256:{hashlib.sha256(b'attempt-b').hexdigest()}"
+    assert (first_prepared.storage_bucket, first_prepared.storage_key) not in storage.objects
 
 
 @pytest.mark.p0

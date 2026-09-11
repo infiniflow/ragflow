@@ -27,8 +27,11 @@ EXPECTED_ROUTES = {
     "create_business_document": ("/business-documents", ("POST",)),
     "list_business_documents": ("/business-documents", ("GET",)),
     "list_business_document_catalog": ("/business-documents/catalog", ("GET",)),
+    "list_business_document_access_users": ("/business-documents/access/users", ("GET",)),
+    "update_business_document_access_user": ("/business-documents/access/users/<user_id>", ("PATCH",)),
     "get_business_document": ("/business-documents/<document_id>", ("GET",)),
     "delete_business_document": ("/business-documents/<document_id>", ("DELETE",)),
+    "assign_business_document_owner": ("/business-documents/<document_id>/owner", ("PUT",)),
     "pull_business_document_from_eva": ("/business-documents/<document_id>/eva/pull", ("POST",)),
     "rebind_business_document_to_eva": ("/business-documents/<document_id>/eva/rebind", ("POST",)),
     "create_business_document_eva_change": ("/business-documents/<document_id>/eva/changes", ("POST",)),
@@ -56,8 +59,17 @@ def _route_contract(function: ast.AsyncFunctionDef) -> tuple[str, tuple[str, ...
     return path, tuple(_literal(methods_keyword.value))
 
 
+def _route_functions() -> dict[str, ast.AsyncFunctionDef]:
+    return {
+        node.name: node
+        for node in _module().body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and any(isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "route" for decorator in node.decorator_list)
+    }
+
+
 def test_http_surface_is_exact_and_every_route_requires_login():
-    functions = {node.name: node for node in _module().body if isinstance(node, ast.AsyncFunctionDef) and node.name in EXPECTED_ROUTES}
+    functions = _route_functions()
 
     assert set(functions) == set(EXPECTED_ROUTES)
     for name, expected in EXPECTED_ROUTES.items():
@@ -67,7 +79,7 @@ def test_http_surface_is_exact_and_every_route_requires_login():
 
 
 def test_mutating_routes_read_json_and_all_routes_map_domain_errors():
-    functions = {node.name: node for node in _module().body if isinstance(node, ast.AsyncFunctionDef) and node.name in EXPECTED_ROUTES}
+    functions = _route_functions()
 
     for name, function in functions.items():
         calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
@@ -83,6 +95,8 @@ def test_mutating_routes_read_json_and_all_routes_map_domain_errors():
             "prepare_eva_business_document_change",
             "publish_eva_business_document_change",
             "create_business_document",
+            "update_business_document_access_user",
+            "assign_business_document_owner",
             "pull_business_document_from_eva",
             "rebind_business_document_to_eva",
             "create_business_document_eva_change",

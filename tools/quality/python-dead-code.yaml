@@ -6,7 +6,7 @@ profiles:
   source_roots: [api, business_documents, common]
   path_prefixes:
   - business_documents/
-  rationale: Scan the pure owned domain package while treating public contracts and unresolved dynamic use conservatively.
+  rationale: Scan the pure owned domain and application packages while treating public contracts and unresolved dynamic use conservatively.
 - id: asr-service
   owner_module: asr
   source_roots: [services]

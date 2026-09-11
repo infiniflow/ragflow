@@ -202,7 +202,7 @@ EXAMPLES:
 
         # Add coverage
         if self.coverage:
-            for source in ("api", "rag", "common", "deepdoc", "agent"):
+            for source in ("api", "rag", "common", "deepdoc", "agent", "business_documents"):
                 cmd.extend(["--cov", str(self.project_root / source)])
             cmd.extend(["--cov-branch", "--cov-report", "html", "--cov-report", "term"])
 

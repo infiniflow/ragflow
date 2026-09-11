@@ -233,7 +233,7 @@ jobs:
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
           source .venv/bin/activate
-          pytest test/unit_test/api/apps/business_documents test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py --cov=api/apps/business_documents --cov-branch --cov-fail-under=79 --cov-report=xml:coverage-business-documents.xml
+          pytest test/unit_test/business_documents test/unit_test/api/apps/business_documents test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py --cov=api/apps/business_documents --cov=business_documents --cov-branch --cov-fail-under=79 --cov-report=xml:coverage-business-documents.xml
 
       - name: Deterministic business document requirements
         if: steps.detect_changes.outputs.has_python_changes == 'true'
@@ -246,7 +246,27 @@ jobs:
         env:
           BUSINESS_DOCUMENT_TEST_POSTGRES_DSN: postgresql://regression:regression-only@host.docker.internal:${{ job.services.regression-postgres.ports['5432'] }}/regression
         run: |
+          set -euo pipefail
           source .venv/bin/activate
+          minio_name="business-documents-minio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup_minio() { docker rm -f "${minio_name}" >/dev/null 2>&1 || true; }
+          trap cleanup_minio EXIT
+          docker run --rm -d --name "${minio_name}" --label codex.lane=business-document-export \
+            -p 127.0.0.1::9000 \
+            -e MINIO_ROOT_USER=regression \
+            -e MINIO_ROOT_PASSWORD=regression-only-minio \
+            pgsty/minio:RELEASE.2026-03-25T00-00-00Z server /data >/dev/null
+          minio_endpoint="$(docker port "${minio_name}" 9000/tcp)"
+          for _ in $(seq 1 80); do
+            if curl --noproxy '*' -fsS "http://${minio_endpoint}/minio/health/ready" >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl --noproxy '*' -fsS "http://${minio_endpoint}/minio/health/ready" >/dev/null
+          export BUSINESS_DOCUMENT_TEST_MINIO_ENDPOINT="http://${minio_endpoint}"
+          export BUSINESS_DOCUMENT_TEST_MINIO_USER=regression
+          export BUSINESS_DOCUMENT_TEST_MINIO_PASSWORD=regression-only-minio
           pytest test/integration/test_business_document_postgres.py
 
 

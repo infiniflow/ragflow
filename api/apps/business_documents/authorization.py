@@ -17,34 +17,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 
 from api.apps.business_documents.errors import PermissionDeniedError
+from business_documents.domain.access import BusinessDocumentRole as _BusinessDocumentRole
+from business_documents.domain.access import can_assign_document, normalize_role
 
 
-class BusinessDocumentRole(StrEnum):
-    AUTHOR_CREATOR = "AUTHOR_CREATOR"
-    AUTHOR_EDITOR = "AUTHOR_EDITOR"
-    MODERATOR_CREATOR = "MODERATOR_CREATOR"
-    EXTENDED_MODERATOR = "EXTENDED_MODERATOR"
-    ADMIN = "ADMIN"
+__all__ = ["BusinessDocumentAccess"]
 
 
 @dataclass(frozen=True)
 class BusinessDocumentAccess:
     actor_id: str
-    assigned_role: BusinessDocumentRole | str = BusinessDocumentRole.AUTHOR_CREATOR
+    assigned_role: _BusinessDocumentRole | str = _BusinessDocumentRole.AUTHOR_CREATOR
     is_admin: bool = False
 
     @property
-    def role(self) -> BusinessDocumentRole:
-        if self.is_admin:
-            return BusinessDocumentRole.ADMIN
-        try:
-            role = BusinessDocumentRole(self.assigned_role)
-        except ValueError:
-            return BusinessDocumentRole.AUTHOR_EDITOR
-        return BusinessDocumentRole.AUTHOR_EDITOR if role == BusinessDocumentRole.ADMIN else role
+    def role(self) -> _BusinessDocumentRole:
+        return normalize_role(self.assigned_role, self.is_admin)
 
     def capabilities(self) -> dict[str, bool]:
         role = self.role
@@ -52,20 +42,20 @@ class BusinessDocumentAccess:
             "read": True,
             "create": role
             in {
-                BusinessDocumentRole.AUTHOR_CREATOR,
-                BusinessDocumentRole.MODERATOR_CREATOR,
-                BusinessDocumentRole.EXTENDED_MODERATOR,
-                BusinessDocumentRole.ADMIN,
+                _BusinessDocumentRole.AUTHOR_CREATOR,
+                _BusinessDocumentRole.MODERATOR_CREATOR,
+                _BusinessDocumentRole.EXTENDED_MODERATOR,
+                _BusinessDocumentRole.ADMIN,
             },
             "edit_own": True,
             "edit_all": role
             in {
-                BusinessDocumentRole.MODERATOR_CREATOR,
-                BusinessDocumentRole.EXTENDED_MODERATOR,
-                BusinessDocumentRole.ADMIN,
+                _BusinessDocumentRole.MODERATOR_CREATOR,
+                _BusinessDocumentRole.EXTENDED_MODERATOR,
+                _BusinessDocumentRole.ADMIN,
             },
-            "delete": role in {BusinessDocumentRole.EXTENDED_MODERATOR, BusinessDocumentRole.ADMIN},
-            "assign": role in {BusinessDocumentRole.EXTENDED_MODERATOR, BusinessDocumentRole.ADMIN},
+            "delete": role in {_BusinessDocumentRole.EXTENDED_MODERATOR, _BusinessDocumentRole.ADMIN},
+            "assign": can_assign_document(self.assigned_role, self.is_admin),
         }
 
     def permissions(self, owner_id: str) -> dict[str, bool]:
@@ -90,5 +80,5 @@ class BusinessDocumentAccess:
             raise PermissionDeniedError("Only an extended moderator or administrator can delete business documents")
 
     def require_assign(self) -> None:
-        if not self.capabilities()["assign"]:
+        if not can_assign_document(self.assigned_role, self.is_admin):
             raise PermissionDeniedError("Only an extended moderator or administrator can assign business documents")

@@ -85,6 +85,10 @@
 
 ### T4. Пилот на business_documents
 
+**Текущий результат.** Выполнен первый сквозной срез: правила ролей, активности операции и назначения владельца вынесены в чистые `business_documents.domain`/`business_documents.application`, Peewee-транзакция реализована узким adapter, а HTTP-вход вызывает один application-сценарий; прежний `BusinessDocumentService.assign_document` удалён. В том же кандидате экспорт отделён от конкретного storage backend и получил durable staging/cleanup ledger с lease fencing, проверкой объекта и восстановлением после неоднозначного сбоя. Текущий совмещённый document lane выполняет 251 тест с branch coverage 81,08% при неизменном пороге 79%; отдельные PostgreSQL/MinIO race и interruption contracts выполнены. Exact T4 architecture slice для domain/import, package wiring, cycles, HTTP registration и production adapters возвращает `PASS` без findings. Широкий Python observer остаётся `INCOMPLETE` из-за известных динамических путей, а DEAD-01 — только `OBSERVED` с нулём статических кандидатов; эти результаты не являются полным архитектурным или dead-code verdict.
+
+T4 остаётся в работе: создание документа, lifecycle commands, AI/retrieval/EVA и остальные worker-сценарии ещё не перенесены в отдельные application boundaries. Их следует выделять следующими самостоятельными изменениями после фиксации и ревью текущего кандидата, не расширяя этот пилот и не объявляя завершённым весь этап.
+
 **Границы.** Правила ревизий/состояний/ролей → domain; сценарии → application; Peewee, retrieval, LLM, экспорт и EVA → adapters; HTTP и worker → входы в один application.
 
 **Порядок работ.** Сначала выявить side effects импортов и текущие транзакционные границы. Затем выделять один законченный сценарий за раз вместе с потребителями. Если размещение внутри `api/apps` запускает bootstrap, чистую собственную часть вынести в один корневой пакет, сохранив только транспортные входы в прежних местах. Не создавать новое общее ядро для всех функций RAGFlow.

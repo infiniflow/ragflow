@@ -20,10 +20,11 @@ import logging
 import os
 import threading
 from datetime import datetime
+from time import monotonic
 from typing import Any
 
 from api.apps.business_documents.ai import BusinessDocumentAI
-from api.apps.business_documents.errors import BusinessDocumentError
+from api.apps.business_documents.errors import BusinessDocumentError, ConflictError
 from api.apps.business_documents.evidence import BusinessDocumentEvidence, related_file_search_enabled
 from api.apps.business_documents.exports import BusinessDocumentExportService
 from api.apps.business_documents.service import BusinessDocumentService
@@ -252,6 +253,7 @@ class _LeaseHeartbeat:
         self._worker_id = worker_id
         self._lease_token = job.lease_token
         self._lease_ms = lease_ms
+        self._lost_event = threading.Event()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -269,8 +271,10 @@ class _LeaseHeartbeat:
                         self._lease_token,
                         lease_ms=self._lease_ms,
                     ):
+                        self._lost_event.set()
                         return
                 except Exception:
+                    self._lost_event.set()
                     logging.exception("Unable to renew business document job lease %s", self._job_id)
                     return
 
@@ -281,6 +285,10 @@ class _LeaseHeartbeat:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=2)
+
+    def ensure_current(self) -> None:
+        if self._lost_event.is_set():
+            raise ConflictError("JOB_LEASE_LOST", "Worker no longer owns a current lease for this job")
 
 
 class BusinessDocumentWorker:
@@ -294,6 +302,7 @@ class BusinessDocumentWorker:
         storage=None,
         lease_ms: int = 900_000,
         retry_base_ms: int = 5_000,
+        maintenance_interval_seconds: float = 60.0,
     ):
         self.worker_id = worker_id or get_uuid()
         self.ai = ai or BusinessDocumentAI()
@@ -302,26 +311,38 @@ class BusinessDocumentWorker:
         self.storage = storage
         self.lease_ms = lease_ms
         self.retry_base_ms = retry_base_ms
+        self.maintenance_interval_seconds = max(1.0, maintenance_interval_seconds)
 
     def recover_stale(self, *, now_ms: int | None = None) -> tuple[int, int]:
         return BusinessDocumentJobQueue.recover_stale(now_ms=now_ms)
+
+    def reconcile_exports(self, *, now_ms: int | None = None) -> dict[str, int]:
+        return self.export_service.reconcile_staging(storage=self.storage, now_ms=now_ms)
 
     def _set_progress(self, job: BusinessDocumentJob, progress: float, stage: str, message: str) -> None:
         if not job.lease_token:
             raise RuntimeError("Claimed job has no lease token")
         if not BusinessDocumentJobQueue.update_progress(job.id, self.worker_id, job.lease_token, progress, stage, message):
-            logging.warning("Unable to update progress for business document job %s", job.id)
+            raise ConflictError("JOB_LEASE_LOST", "Worker no longer owns a current lease for this job")
 
     def run_once(self, *, now_ms: int | None = None) -> bool:
         job = BusinessDocumentJobQueue.claim(self.worker_id, lease_ms=self.lease_ms, now_ms=now_ms)
         if job is None:
             return False
+        claimed_lease_token = job.lease_token
+        heartbeat = None
+        prepared_export = None
         try:
             heartbeat = _LeaseHeartbeat(job, self.worker_id, self.lease_ms)
             heartbeat.start()
             if job.job_type == "GENERATE_EXPORT":
                 self._set_progress(job, 0.35, "EXPORTING", "Формируем файл")
-                output = self.export_service.generate(job, storage=self.storage)
+                prepared_export = self.export_service.generate(
+                    job,
+                    storage=self.storage,
+                    ensure_current=heartbeat.ensure_current,
+                )
+                output = prepared_export
                 execution_audit = None
             else:
                 dataset_ids = job.payload.get("dataset_ids", []) if isinstance(job.payload, dict) else []
@@ -338,7 +359,7 @@ class BusinessDocumentWorker:
                     output = self.ai.process(job)
                 self._set_progress(job, 0.82, "VALIDATING", "Проверяем результат")
             self._set_progress(job, 0.92, "PERSISTING", "Сохраняем результат")
-            heartbeat.stop()
+            heartbeat.ensure_current()
             BusinessDocumentService.complete_job(
                 job.tenant_id,
                 self.worker_id,
@@ -348,18 +369,35 @@ class BusinessDocumentWorker:
                 execution_audit,
             )
         except Exception as error:
-            if "heartbeat" in locals():
+            if not isinstance(error, BusinessDocumentError) or error.code != "JOB_LEASE_LOST":
+                payload = _error_payload(error)
+                current_job = BusinessDocumentJob.get_or_none(BusinessDocumentJob.id == job.id)
+                if current_job is not None and current_job.lease_owner == self.worker_id and current_job.lease_token == claimed_lease_token:
+                    if current_job.attempt >= current_job.max_attempts:
+                        try:
+                            BusinessDocumentService.fail_job(
+                                current_job.tenant_id,
+                                self.worker_id,
+                                current_job.id,
+                                payload,
+                                claimed_lease_token,
+                            )
+                        except BusinessDocumentError:
+                            logging.exception("Unable to dead-letter business document job %s", current_job.id)
+                    else:
+                        delay = self.retry_base_ms * (2 ** max(0, current_job.attempt - 1))
+                        BusinessDocumentJobQueue.retry(
+                            current_job.id,
+                            self.worker_id,
+                            claimed_lease_token,
+                            payload,
+                            delay_ms=delay,
+                        )
+        finally:
+            if heartbeat is not None:
                 heartbeat.stop()
-            payload = _error_payload(error)
-            job = BusinessDocumentJob.get_by_id(job.id)
-            if job.attempt >= job.max_attempts:
-                try:
-                    BusinessDocumentService.fail_job(job.tenant_id, self.worker_id, job.id, payload, job.lease_token)
-                except BusinessDocumentError:
-                    logging.exception("Unable to dead-letter business document job %s", job.id)
-            else:
-                delay = self.retry_base_ms * (2 ** max(0, job.attempt - 1))
-                BusinessDocumentJobQueue.retry(job.id, self.worker_id, job.lease_token, payload, delay_ms=delay)
+            if prepared_export is not None:
+                self.export_service.discard(prepared_export, storage=self.storage)
         return True
 
     def run_forever(self, stop_event: threading.Event, *, poll_seconds: float = 2.0) -> None:
@@ -367,6 +405,11 @@ class BusinessDocumentWorker:
             self.recover_stale()
         except Exception:
             logging.exception("Business document stale-job recovery failed")
+        try:
+            self.reconcile_exports()
+        except Exception:
+            logging.exception("Business document export-stage reconciliation failed")
+        next_maintenance_at = monotonic() + self.maintenance_interval_seconds
         while not stop_event.is_set():
             try:
                 worked = self.run_once()
@@ -374,13 +417,30 @@ class BusinessDocumentWorker:
                 logging.exception("Business document worker poll failed")
                 worked = False
             if worked:
+                if monotonic() >= next_maintenance_at:
+                    try:
+                        self.recover_stale()
+                    except Exception:
+                        logging.exception("Business document periodic stale-job recovery failed")
+                    try:
+                        self.reconcile_exports()
+                    except Exception:
+                        logging.exception("Business document periodic export-stage reconciliation failed")
+                    next_maintenance_at = monotonic() + self.maintenance_interval_seconds
                 continue
+            recovered = dead = 0
             try:
                 recovered, dead = self.recover_stale()
-                if recovered or dead:
-                    continue
             except Exception:
                 logging.exception("Business document periodic stale-job recovery failed")
+            reconciled = {"cleaned": 0}
+            try:
+                reconciled = self.reconcile_exports()
+            except Exception:
+                logging.exception("Business document periodic export-stage reconciliation failed")
+            next_maintenance_at = monotonic() + self.maintenance_interval_seconds
+            if recovered or dead or reconciled["cleaned"]:
+                continue
             _WAKE_EVENT.wait(poll_seconds)
             _WAKE_EVENT.clear()
 

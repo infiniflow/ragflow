@@ -85,6 +85,35 @@ are Markdown, DOCX, and EvaWiki HTML code. Export never mutates a revision and
 never includes the review protocol. `START_REVIEW` opens a new append-only
 cycle on the same document; a different idea requires a new document/chat.
 
+Export bytes use a lease-attempt-specific object key. Before the first object
+write, the adapter commits an exact `RESERVED` staging record containing the
+bucket, key, digest, job lease and any artifact being replaced. Read-back hash
+verification moves it to `STORED`. Artifact metadata, the completion event,
+document state/version, job completion, and the ledger transition to
+`COMMITTED` are then published in one fenced database transaction.
+
+Cleanup first changes a non-live record to `CLEANING`, using the same
+document/job/stage lock order as publication. It deletes only unreferenced
+objects and removes the ledger only after an object-specific backend probe
+returns an explicit not-found result. Generic health checks and ambiguous
+`False`/`None` compatibility results never prove absence; an unavailable or
+inconclusive storage backend leaves a retryable row. The worker reconciles
+at startup, while idle, and on a bounded maintenance interval while busy, but
+defers a `RESERVED`/`STORED` attempt whose lease is still current. Administrative
+document deletion similarly commits `DELETE_PENDING` before deleting artifact
+metadata. A committed replacement retains both storage locations until the new
+object is referenced and the old one is verified absent. Deferred and failed
+rows receive an explicit `cleanup_after` deadline, so a bounded batch cannot be
+permanently occupied by live leases or one unavailable object.
+
+The export-adapter slice is covered by SQLite interruption/cleanup contracts,
+real PostgreSQL transaction races, and a real MinIO fault boundary that raises
+`SystemExit` immediately after a successful `PUT`, then expires the lease and
+proves reconciliation. This deterministic test preserves the same durable
+cross-store state as an abrupt stop; it does not itself kill and restart an OS
+process or prove deployment-supervisor recovery. Completion of this slice does
+not by itself declare all of T4 complete.
+
 ### Existing EVA document change workflow
 
 An existing EVA page follows a separate change-request workflow. It does not
@@ -145,7 +174,8 @@ axis and are not exposed as lifecycle states.
 
 ## Interaction contracts
 
-All state-changing requests use the canonical command envelope:
+Document lifecycle changes submitted to `POST /{id}/commands` use the canonical
+command envelope:
 
 ```json
 {
@@ -158,10 +188,29 @@ All state-changing requests use the canonical command envelope:
 }
 ```
 
-The backend either returns the stored response for an identical idempotency
-key, rejects key reuse with different content, or atomically appends one event
-and advances `state_version`. Model outputs cross the boundary only through the
-schemas in `contracts/`; semantic invariants are checked again in the domain.
+Owner assignment is a separate version-checked operation at `PUT /{id}/owner`,
+not a lifecycle command. Its JSON payload is:
+
+```json
+{
+  "owner_id": "user-id",
+  "expected_state_version": 12
+}
+```
+
+The assignment boundary checks the actor's assignment capability and commits
+the owner, state-version increment, and assignment event atomically. It does not
+require or interpret `command_id`, `idempotency_key`, `type`, or nested `payload`
+as command-envelope fields. A changed assignment is rejected with
+`OPERATION_IN_PROGRESS` while the aggregate has an active operation or job, so
+it cannot invalidate a worker's version fence. A current-version request for
+the existing owner remains a no-op and does not disturb that operation.
+
+For lifecycle commands, the backend either returns the stored response for an
+identical idempotency key, rejects key reuse with different content, or
+atomically appends one event and advances `state_version`. Model outputs cross
+the boundary only through the schemas in `contracts/`; semantic invariants are
+checked again in the domain.
 
 An optional create-time `dataset_ids` selection is immutable for the document
 and limited to 20 unique datasets. Dataset access is checked without revealing
@@ -185,16 +234,23 @@ section ID. Anchors use those strings, UTF-16 code-unit offsets with an
 exclusive end, and exact adjacent context. This makes the server renderer the
 only anchor formatter across Python and browser numeric/Unicode representations.
 
-The HTTP surface is rooted at `/api/v1/business-documents`:
+The key user-facing HTTP routes are rooted at `/api/v1/business-documents`;
+the exact registration inventory is enforced by `business-documents-http-registration`:
 
 - `POST /` creates an owner-only document.
 - `GET /` lists resumable owner documents.
+- `GET /catalog` exposes the allowed L5 document catalog.
+- `GET /access/users` and `PATCH /access/users/{user_id}` expose administrator-only role management.
 - `GET /{id}` returns the current projection.
+- `DELETE /{id}` removes an idle document and its owned records.
+- `PUT /{id}/owner` assigns an idle document through the application boundary.
 - `POST /{id}/commands` applies a command or creates a durable job.
 - `GET /{id}/revisions` and `GET /{id}/revisions/{revision_id}` expose immutable revisions.
 - `GET /{id}/jobs` exposes owner-checked job status without raw evidence.
 - `GET /{id}/exports` and `GET /{id}/exports/{artifact_id}/download` expose
   owner-checked artifact metadata and bytes.
+- `POST /{id}/eva/pull`, `/eva/rebind`, and `/eva/changes` expose the governed
+  document-side EVA synchronization actions.
 - Worker completion is never a public endpoint.
 - `GET /eva/sources` searches published pages through accessible EVA connectors.
 - `POST /eva/changes` creates a pinned change request; `GET /eva/changes` and
