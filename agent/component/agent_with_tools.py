@@ -305,7 +305,10 @@ class Agent(LLM, ToolBase):
                 yield fit_error
             return
 
-        need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+        # Snapshot as bool: `and` would keep the live chunks dict, which tool
+        # calls mutate mid-stream, flipping this condition after the opening
+        # <think> marker was already emitted and swallowing the closing one.
+        need2cite = bool(self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0)
         cited = False
         if need2cite and len(msg) < 7:
             self._append_system_prompt(msg, citation_prompt())
