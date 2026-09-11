@@ -322,10 +322,10 @@ func maybeDispatchAudio(
 	if outputFormat == "json" {
 		return parserDispatchResult{
 			OutputFormat: "json",
-			DocType:      "audio",
+			DocType:      "text",
 			JSON: []map[string]any{{
 				"text":         transcription,
-				"doc_type_kwd": "audio",
+				"doc_type_kwd": "text",
 			}},
 		}, true, nil
 	}

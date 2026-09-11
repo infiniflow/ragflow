@@ -318,8 +318,8 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	if got, _ := res.JSON[0]["text"].(string); got != want {
 		t.Fatalf("JSON[0].text = %q, want %q", got, want)
 	}
-	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "audio" {
-		t.Fatalf("JSON[0].doc_type_kwd = %q, want audio", got)
+	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "text" {
+		t.Fatalf("JSON[0].doc_type_kwd = %q, want text", got)
 	}
 }
 

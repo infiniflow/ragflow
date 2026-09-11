@@ -65,18 +65,29 @@ type ParserSetup map[string]any
 // ParserOutputs is the result of invoking the Parser component. The
 // wire format is "json", with structured JSON items as the only payload.
 type ParserOutputs struct {
+	// Name is the resolved source filename.
+	Name string `json:"name"`
+
+	// FileType is the canonical parser-resolved file extension.
+	FileType string `json:"file_type,omitempty"`
+
 	// OutputFormat is always "json". Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`
 
 	// JSON holds the list of structured sections (primary payload).
 	JSON []map[string]any `json:"json,omitempty"`
 
-	// File is the upstream file descriptor with parser-derived metadata
-	// (e.g., outlines) merged in. Mirrors the Python `set_output("file", ...)`
-	// at parser.py:609, 791, 828.
+	// Lang is the language used by downstream tokenization and model calls.
+	Lang string `json:"lang,omitempty"`
+
+	// File is backend-produced file metadata (for example page_count,
+	// outline, format, or sheets). The Go Parser component does not promise to
+	// merge this map with the upstream file descriptor.
 	File map[string]any `json:"file,omitempty"`
 
-	// Error is set when the component short-circuits with an error
-	// message (Python: set_output("_ERROR", ...)).
-	Error string `json:"_ERROR,omitempty"`
+	// DocID, Bucket, and Path let downstream chunkers reacquire the source PDF
+	// for preview cropping without carrying its binary in the payload.
+	DocID  string `json:"doc_id,omitempty"`
+	Bucket string `json:"bucket,omitempty"`
+	Path   string `json:"path,omitempty"`
 }

@@ -87,6 +87,14 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if _, ok := out["json"]; !ok {
 		t.Errorf("Outputs() missing key %q", "json")
 	}
+	for _, key := range []string{"name", "file_type", "lang", "file", "doc_id", "bucket", "path"} {
+		if _, ok := out[key]; !ok {
+			t.Errorf("Outputs() missing runtime output key %q", key)
+		}
+	}
+	if _, ok := out["_ERROR"]; ok {
+		t.Error("Outputs() must not advertise _ERROR; Parser failures return Go errors")
+	}
 }
 
 func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {

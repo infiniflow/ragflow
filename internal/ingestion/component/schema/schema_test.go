@@ -165,8 +165,15 @@ func TestParserFromUpstreamJSONRoundTrip(t *testing.T) {
 
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
+		Name:         "input.pdf",
+		FileType:     "pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
+		Lang:         "English",
+		File:         map[string]any{"name": "input.pdf", "page_count": float64(1)},
+		DocID:        "doc-1",
+		Bucket:       "bucket-1",
+		Path:         "tenant/doc-1.pdf",
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -184,6 +191,15 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	}
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
+	}
+	if decoded.Name != original.Name || decoded.FileType != original.FileType || decoded.Lang != original.Lang {
+		t.Errorf("parser identity round-trip mismatch: got name=%q file_type=%q lang=%q", decoded.Name, decoded.FileType, decoded.Lang)
+	}
+	if decoded.DocID != original.DocID || decoded.Bucket != original.Bucket || decoded.Path != original.Path {
+		t.Errorf("parser storage round-trip mismatch: got doc_id=%q bucket=%q path=%q", decoded.DocID, decoded.Bucket, decoded.Path)
+	}
+	if decoded.File["name"] != "input.pdf" {
+		t.Errorf("parser file metadata round-trip mismatch: got %#v", decoded.File)
 	}
 }
 

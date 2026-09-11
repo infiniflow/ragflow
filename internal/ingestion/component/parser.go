@@ -357,9 +357,14 @@ func (c *ParserComponent) Inputs() map[string]string {
 //	output_format string  — always "json".
 //	json          []map[string]any — canonical structured parser items.
 //	lang          string  — language for tokenization.
-//	_ERROR        string  — populated when the component short-
-//	                        circuits with an error message
-//	                        (mirrors Python set_output("_ERROR", ...)).
+//	file          map[string]any — backend-produced file metadata, when present.
+//	doc_id        string  — source document ID, when present.
+//	bucket        string  — source storage bucket, when present.
+//	path          string  — source storage path, when present.
+//
+// Parser failures are returned as Go errors. The canvas execution wrapper
+// preserves that error path and does not convert failures into an _ERROR
+// output field.
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
@@ -367,7 +372,10 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"output_format": "string: always \"json\".",
 		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
-		"_ERROR":        "string: set on short-circuit errors.",
+		"file":          "map[string]any: backend-produced file metadata, when present.",
+		"doc_id":        "string: source document ID, when present.",
+		"bucket":        "string: source storage bucket, when present.",
+		"path":          "string: source storage object path, when present.",
 	}
 }
 

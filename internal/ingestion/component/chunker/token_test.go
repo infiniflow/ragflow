@@ -361,6 +361,41 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 }
 
+// TestTokenChunker_SpreadsheetTablePreservesSelectionRange guards the Parser
+// JSON path: spreadsheet positions describe a sheet selection, not a PDF
+// bounding box, and a table item must pass through without proportional text
+// splitting or coordinate rewriting.
+func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"delimiter": "\n"})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	wantPositions := [][]float64{{1, 2, 10, 1, 5}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "book.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"text":         "<table><tr><td>A</td></tr>\n<tr><td>B</td></tr></table>",
+			"doc_type_kwd": "table",
+			"positions":    wantPositions,
+			"sheet":        "Sheet1",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
+	}
+	if got := chunks[0]["ck_type"]; got != "table" {
+		t.Errorf("ck_type = %v, want table", got)
+	}
+	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
+	}
+}
+
 // TestTokenChunker_NewRejectsBadParam enforces the param validation
 // at construction time (mirrors python `check()`).
 func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
