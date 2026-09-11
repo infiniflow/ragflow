@@ -58,3 +58,51 @@ func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
 		t.Fatalf("second autoMigrateRuntimeModels failed: %v", err)
 	}
 }
+
+// TestMigrateIngestionTaskPipelineLogID covers the upgrade path AutoMigrate
+// cannot handle on MySQL: an existing ingestion_task created before
+// pipeline_log_id existed must gain the column, and running the migration again
+// must be a no-op.
+func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ctx := context.Background()
+
+	// An ingestion_task table without the column, as created by an older build.
+	if err := db.Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NOT NULL,
+		document_id varchar(32) NOT NULL,
+		dataset_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	migrator := db.Migrator()
+	if migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+		t.Fatal("precondition failed: column already present")
+	}
+
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("migrateIngestionTaskPipelineLogID: %v", err)
+	}
+	if !migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+		t.Fatal("expected pipeline_log_id to be added")
+	}
+
+	// Idempotent: a second run must not fail on the existing column.
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("second migrateIngestionTaskPipelineLogID: %v", err)
+	}
+
+	// Missing table is a no-op, not an error.
+	fresh, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open second sqlite: %v", err)
+	}
+	if err := migrateIngestionTaskPipelineLogID(ctx, fresh); err != nil {
+		t.Fatalf("migration on a table-less database should be a no-op: %v", err)
+	}
+}
