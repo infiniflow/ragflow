@@ -69,7 +69,21 @@ def _make_pdf_parser_stub():
         def remove_tag(text):
             return text
 
+    class _StubPlainParser:
+        """Stand-in for deepdoc.parser.pdf_parser.PlainParser."""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _StubVisionParser:
+        """Stand-in for deepdoc.parser.pdf_parser.VisionParser."""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
     pdf_parser.RAGFlowPdfParser = _StubPdfParser
+    pdf_parser.PlainParser = _StubPlainParser
+    pdf_parser.VisionParser = _StubVisionParser
     return pdf_parser
 
 

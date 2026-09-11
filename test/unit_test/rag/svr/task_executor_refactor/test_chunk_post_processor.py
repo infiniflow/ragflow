@@ -13,9 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-"""Unit tests for chunk_post_processor keyword sanitization."""
+"""Unit tests for chunk_post_processor keyword sanitization and tree templates."""
 
-from unittest.mock import MagicMock, patch
+import inspect
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -23,6 +24,8 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
     _ES_KEYWORD_MAX_TERM_BYTES,
     _sanitize_keyword_term,
     extract_keywords,
+    raptor_tree_to_graph,
+    run_tree_templates,
 )
 from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_context
 
@@ -140,3 +143,88 @@ class TestExtractKeywords:
         assert len(docs[0]["important_kwd"]) == 1
         assert len(docs[0]["important_kwd"][0].encode("utf-8")) == _ES_KEYWORD_MAX_TERM_BYTES
         mock_tokenize.assert_called_once()
+
+
+class TestRunTreeTemplates:
+    """Tests for run_tree_templates persistence."""
+
+    @pytest.mark.asyncio
+    async def test_persists_tree_entity_rows_and_graph_blob(self):
+        """A parsed doc's tree must write BOTH the raw entity/relation rows
+        (what the structure-graph read path renders) and the compact graph
+        blob (what bucket discovery scans). Writing only the blob leaves the
+        Artifact panel empty for that document."""
+        ctx = make_task_context()
+        handler = MagicMock()
+        handler._task_context = ctx
+
+        canned_tree = {
+            "title": "Root summary",
+            "description": "Root node summary",
+            "children": [
+                {"title": "Leaf A", "description": "Leaf A summary", "source_chunk_ids": ["chunk_a"]},
+                {"title": "Leaf B", "description": "Leaf B summary", "source_chunk_ids": ["chunk_b"]},
+            ],
+        }
+        embedding_model = MagicMock()
+        embedding_model.encode.return_value = ([[0.1, 0.2]], 2)
+
+        with (
+            patch(
+                "rag.svr.task_executor_refactor.chunk_post_processor.load_chunks_with_vec",
+                new_callable=AsyncMock,
+                return_value=[("text a", [0.1, 0.2], "chunk_a"), ("text b", [0.3, 0.4], "chunk_b")],
+            ),
+            patch(
+                "rag.svr.task_executor_refactor.raptor_service.RaptorService.build_doc_tree",
+                new_callable=AsyncMock,
+                return_value=canned_tree,
+            ),
+            patch(
+                "rag.svr.task_executor_refactor.chunk_post_processor.rewrite_duplicate_tree_names",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "rag.advanced_rag.knowlege_compile.structure._struct_upsert_tree_graph_rows",
+                new_callable=AsyncMock,
+            ) as mock_rows,
+            patch(
+                "rag.advanced_rag.knowlege_compile.structure._struct_upsert_graph_json",
+                new_callable=AsyncMock,
+            ) as mock_blob,
+            patch(
+                "rag.advanced_rag.knowlege_compile.dataset_nav.upsert_dataset_nav_doc",
+                new_callable=AsyncMock,
+            ),
+        ):
+            # main added a required llm_pool argument to run_tree_templates
+            # after this branch diverged; pass it only when present so the test
+            # works against both this branch and the PR-merged tree.
+            call_kwargs = {}
+            if "llm_pool" in inspect.signature(run_tree_templates).parameters:
+                call_kwargs["llm_pool"] = MagicMock()
+            await run_tree_templates(
+                handler,
+                [("tpl_tree_1", {"kind": "tree"})],
+                {"tpl_tree_1": MagicMock()},
+                embedding_model,
+                "test.pdf",
+                **call_kwargs,
+            )
+
+        mock_rows.assert_awaited_once()
+        mock_blob.assert_awaited_once()
+
+        expected_graph = raptor_tree_to_graph(canned_tree)
+        assert expected_graph["entities"]
+
+        rows_args, rows_kwargs = mock_rows.await_args
+        blob_args, blob_kwargs = mock_blob.await_args
+        assert rows_kwargs.get("compilation_template_id") == "tpl_tree_1"
+        assert blob_kwargs.get("compilation_template_id") == "tpl_tree_1"
+        assert blob_kwargs.get("compile_kwd") == "tree"
+        # Both persist the same projected graph for the same doc.
+        rows_graph = rows_args[0] if rows_args else rows_kwargs.get("graph")
+        blob_graph = blob_args[0] if blob_args else blob_kwargs.get("graph")
+        assert rows_graph is blob_graph or rows_graph == blob_graph
+        assert rows_graph["entities"] == expected_graph["entities"]
