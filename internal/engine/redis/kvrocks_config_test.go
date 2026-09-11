@@ -57,19 +57,12 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// TestKvrocksDeploymentConfig guards the deployment artifacts that the parity
-// integration tests cannot reach on their own: the CI workflow must forward the
-// password into the container, and the compose healthcheck must authenticate
-// now that requirepass is enforced.
+// TestKvrocksDeploymentConfig guards the deployment artifact that no test can
+// reach on its own: the compose healthcheck must authenticate now that
+// requirepass is enforced. (The kvrocks-parity CI workflow used to be guarded
+// here too; it was removed along with the integration tests it ran.)
 func TestKvrocksDeploymentConfig(t *testing.T) {
 	root := repoRoot(t)
-
-	t.Run("WorkflowForwardsRedisPassword", func(t *testing.T) {
-		wf := readFile(t, filepath.Join(root, ".github/workflows/kvrocks-parity.yml"))
-		if !strings.Contains(wf, "-e REDIS_PASSWORD") {
-			t.Fatal("kvrocks-parity.yml: the docker run must forward REDIS_PASSWORD into the container (-e REDIS_PASSWORD); without it Kvrocks starts unauthenticated and the parity tests fail to AUTH")
-		}
-	})
 
 	t.Run("ComposeHealthcheckAuthenticates", func(t *testing.T) {
 		compose := readFile(t, filepath.Join(root, "docker/docker-compose-base.yml"))
