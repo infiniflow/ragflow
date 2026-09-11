@@ -17,6 +17,9 @@
 import importlib
 from unittest.mock import Mock
 
+import pytest
+from botocore.exceptions import ClientError
+
 # rag.utils.s3_conn and common.settings import each other (s3_conn needs
 # settings.S3; settings re-imports RAGFlowS3). The cycle resolves only when
 # common.settings is imported first, the same order the app uses. Importing it
@@ -63,3 +66,149 @@ def test_s3_health_returns_false_on_client_error(monkeypatch):
     client.head_bucket.side_effect = ConnectionError("unavailable")
 
     assert storage.health() is False
+
+
+def _client_error(code):
+    return ClientError({"Error": {"Code": code}}, "GetObject")
+
+
+def test_s3_put_succeeds_after_transient_failure(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    client.upload_fileobj.side_effect = [ConnectionError("temporary"), None]
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    assert storage.put("kb", "file.txt", b"data") is None
+    assert client.upload_fileobj.call_count == 2
+    reconnect.assert_called_once_with()
+    sleep.assert_called_once_with(1)
+
+
+def test_s3_put_succeeds_on_first_attempt(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+
+    assert storage.put("kb", "file.txt", b"data") is client.upload_fileobj.return_value
+    client.upload_fileobj.assert_called_once()
+
+
+def test_s3_put_succeeds_after_two_transient_failures(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    client.upload_fileobj.side_effect = [ConnectionError("one"), ConnectionError("two"), None]
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    assert storage.put("kb", "file.txt", b"data") is None
+    assert client.upload_fileobj.call_count == 3
+    assert reconnect.call_count == 2
+    assert sleep.call_args_list == [((1,), {}), ((2,), {})]
+
+
+def test_s3_put_exhaustion_reraises_and_uses_expected_retries(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    failure = ConnectionError("temporary")
+    client.upload_fileobj.side_effect = failure
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    with pytest.raises(ConnectionError) as raised:
+        storage.put("kb", "file.txt", b"data")
+
+    assert raised.value is failure
+    assert client.upload_fileobj.call_count == 3
+    assert reconnect.call_count == 2
+    assert sleep.call_args_list == [((1,), {}), ((2,), {})]
+
+
+def test_s3_put_reconnect_failure_preserves_operation_error(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    failure = ConnectionError("upload failed")
+    client.upload_fileobj.side_effect = failure
+    reconnect = Mock(return_value=False)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    with pytest.raises(ConnectionError) as raised:
+        storage.put("kb", "file.txt", b"data")
+
+    assert raised.value is failure
+    assert client.upload_fileobj.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_s3_get_succeeds_after_transient_failure(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    client.get_object.side_effect = [ConnectionError("temporary"), {"Body": Mock(read=Mock(return_value=b"data"))}]
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    assert storage.get("kb", "file.txt") == b"data"
+    assert client.get_object.call_count == 2
+    reconnect.assert_called_once_with()
+    sleep.assert_called_once_with(1)
+
+
+def test_s3_get_succeeds_on_first_attempt(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    client.get_object.return_value = {"Body": Mock(read=Mock(return_value=b"data"))}
+
+    assert storage.get("kb", "file.txt") == b"data"
+    client.get_object.assert_called_once()
+
+
+@pytest.mark.parametrize("code", ["404", "NoSuchKey", "NotFound"])
+def test_s3_get_missing_object_codes_return_none_without_retry(monkeypatch, code):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    client.get_object.side_effect = _client_error(code)
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    assert storage.get("kb", "missing.txt") is None
+    client.get_object.assert_called_once_with(Bucket="ragflow", Key="missing.txt")
+    reconnect.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_s3_get_non_not_found_client_error_exhausts_retries(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    failure = _client_error("AccessDenied")
+    client.get_object.side_effect = failure
+    reconnect = Mock(return_value=True)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    with pytest.raises(ClientError) as raised:
+        storage.get("kb", "file.txt")
+
+    assert raised.value is failure
+    assert client.get_object.call_count == 3
+    assert reconnect.call_count == 2
+    assert sleep.call_args_list == [((1,), {}), ((2,), {})]
+
+
+def test_s3_get_reconnect_failure_preserves_operation_error(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "ragflow"})
+    failure = ConnectionError("download failed")
+    client.get_object.side_effect = failure
+    reconnect = Mock(return_value=False)
+    monkeypatch.setattr(storage, "__open__", reconnect)
+    sleep = Mock()
+    monkeypatch.setattr(s3_conn.time, "sleep", sleep)
+
+    with pytest.raises(ConnectionError) as raised:
+        storage.get("kb", "file.txt")
+
+    assert raised.value is failure
+    assert client.get_object.call_count == 1
+    sleep.assert_not_called()
