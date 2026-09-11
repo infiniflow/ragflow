@@ -55,6 +55,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	// Rename duplicate summary titles whose descriptions differ (Python
+	// rewrite_duplicate_tree_names), BEFORE the graph projection: titles are
+	// the entity names and the relation endpoints, so two nodes sharing a
+	// title would render as one ambiguous node. Best-effort — a rewrite
+	// failure must not cost us the tree.
+	rewriteDuplicateTreeNames(ctx, deps, llmID, products)
+
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
 	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
 	// plus per-row entity/relation rows (knowledge_graph_kwd="entity"|

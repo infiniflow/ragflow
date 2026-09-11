@@ -8,7 +8,12 @@ package structure
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -116,6 +121,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		budget = 4096
 	}
 	batches := common.PackBatches(inputs.Chunks, budget, deps.Tokenizer)
+	// Python structure.py _STRUCT_MAX_CHUNKS_PER_BATCH: optional chunk-count cap
+	// per extraction batch (0 = window-packed only — a heading has to see its
+	// whole section to own it; the 4-per-batch rule belongs to tree's claim
+	// harvesting). Overridable for benchmarking, mirrored verbatim.
+	if v, err := strconv.Atoi(os.Getenv("STRUCT_MAX_CHUNKS_PER_BATCH")); err == nil && v > 0 {
+		batches = capBatchChunkCount(batches, v)
+	}
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: %d chunk(s) -> %d batch(es)", compileType, len(inputs.Chunks), len(batches)))
 	// Extraction and embedding are two phases (upstream): the pool workers only
 	// extract; buildRows (which calls Embed.Encode) runs serially afterwards so
 	// embedding batch jobs are never nested inside a compiler-pool worker.
@@ -126,9 +140,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	extracted := make([]extractedBatch, len(batches))
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
+	// The progress callback is supplied by the caller and is not required to be
+	// goroutine-safe; pool workers report out of order, so serialise it.
+	var progressMu sync.Mutex
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"%s-template: extracting batch %d/%d", compileType, i+1, len(batches)))
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
 				return nil
@@ -154,6 +173,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			// Embed.Encode, which may submit its own batch jobs to that pool;
 			// the serial loop after runBatches owns it.
 			extracted[i] = extractedBatch{nodes: nodes, edges: edges, batchIDs: batchIDs}
+			progressMu.Lock()
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"%s-template: batch %d/%d done: %d entities, %d relations",
+				compileType, i+1, len(batches), len(nodes), len(edges)))
+			progressMu.Unlock()
 			return nil
 		})
 	}
@@ -166,6 +190,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
+	rowCount := 0
 	for i, result := range extracted {
 		if len(result.batchIDs) == 0 {
 			continue
@@ -175,7 +200,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			return common.Outputs{}, err
 		}
 		perBatch[i] = rows
+		rowCount += len(rows)
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: deduplicating %d row(s)", compileType, rowCount))
 
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
@@ -194,6 +224,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 	stats := deduper.Stats()
 	prods := deduper.Rows()
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: dedup done: %d row(s), %d duplicate(s) dropped",
+		compileType, len(prods), stats.DuplicatesDropped))
 
 	// ---- KIND POST-PROCESSING ----
 	// Chain kinds (list/timeline): relations must form a strict linear chain;
@@ -225,10 +258,33 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// blob was removed: knowledge_graph_kwd="graph" is no longer a storage row,
 	// which also saves one embedding call per compile.)
 	products := append([]common.Product{}, prods...)
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: produced %d row(s)", compileType, len(products)))
 
 	out := common.Outputs{
 		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
 	}
 	return out, nil
+}
+
+// capBatchChunkCount splits window-packed batches into sub-batches of at most
+// cap chunks (Python batch_size_cap greedy mode, chunk-count cutoff). Order is
+// preserved; PackBatch labels are per-batch positional so sub-batches renumber
+// from C1 exactly like freshly packed batches.
+func capBatchChunkCount(batches [][]common.Chunk, cap int) [][]common.Chunk {
+	if cap < 1 {
+		return batches
+	}
+	var out [][]common.Chunk
+	for _, b := range batches {
+		for start := 0; start < len(b); start += cap {
+			end := start + cap
+			if end > len(b) {
+				end = len(b)
+			}
+			out = append(out, b[start:end])
+		}
+	}
+	return out
 }

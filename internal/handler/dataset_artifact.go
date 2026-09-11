@@ -507,6 +507,49 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	common.SuccessWithData(c, resp, "success")
 }
 
+// GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
+// page one document's claim/evidence rows (entity_type_kwd="claim"). The tree
+// UI fetches them per leaf cluster on demand: chunk_ids carries the cluster's
+// members, template_id scopes the compilation template, limit is capped at 100
+// (mirrors Python chunk_api.get_document_structure_claims).
+func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+
+	templateID := strings.TrimSpace(c.Query("template_id"))
+	var chunkIDs []string
+	for _, id := range strings.Split(c.Query("chunk_ids"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			chunkIDs = append(chunkIDs, id)
+		}
+	}
+	offset := 0
+	if v, err := strconv.Atoi(c.Query("offset")); err == nil && v > 0 {
+		offset = v
+	}
+	limit := 20
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil {
+		limit = v
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	claims, total, err := h.svc.ListDocumentStructureClaims(c.Request.Context(), tenantID, datasetID, documentID, templateID, chunkIDs, offset, limit)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, gin.H{"claims": claims, "total": total, "offset": offset, "limit": limit}, "success")
+}
+
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
 func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))

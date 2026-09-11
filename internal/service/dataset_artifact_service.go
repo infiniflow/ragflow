@@ -1138,3 +1138,154 @@ func toStringSlice(v interface{}) []string {
 	}
 	return []string{}
 }
+
+// claimRowTypes lists the entity_type_kwd values that carry a claim.
+// “claim“ is what every compiler writes now (page_index folded its
+// “fact“/“conclusion“ types into it); the older two spellings stay listed
+// so rows compiled before the rename keep showing up until a recompile.
+var claimRowTypes = []string{"claim", "fact", "conclusion"}
+
+// ListDocumentStructureClaims pages one document's claim/evidence rows
+// (entity_type_kwd="claim"), mirroring Python
+// structure_graph_common.list_claim_rows + chunk_api.get_document_structure_claims.
+//
+// “chunkIDs“ narrows the page to claims sourced from those chunks — the tree
+// UI passes a leaf cluster's members when the user expands it; without it the
+// endpoint pages the whole document. “templateID“ scopes by
+// compilation_template_ids; unlike Python we deliberately do NOT narrow by
+// compile_kwd on top of it: rows of one template always share one stamped
+// compile_kwd, so the template id alone scopes identically (Python's own
+// lookup there is documented as best-effort).
+func (s *DatasetArtifactService) ListDocumentStructureClaims(ctx context.Context, tenantID, datasetID, documentID, templateID string, chunkIDs []string, offset, limit int) ([]map[string]interface{}, int64, error) {
+	if limit < 1 {
+		limit = 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	filter := map[string]interface{}{
+		"doc_id":          []string{documentID},
+		"entity_type_kwd": claimRowTypes,
+	}
+	if templateID != "" {
+		filter["compilation_template_ids"] = []string{templateID}
+	}
+	if len(chunkIDs) > 0 {
+		deduped := appendUniqueSorted(chunkIDs)
+		if len(deduped) > 0 {
+			filter["source_chunk_ids"] = deduped
+		}
+	}
+
+	rows, total, err := graphRowSearch(ctx, tenantID, datasetID,
+		[]string{"content_with_weight", "source_chunk_ids"}, filter, nil, offset, limit, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	claims := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		if claim := projectClaimRow(row); claim != nil {
+			claims = append(claims, claim)
+		}
+	}
+	return claims, total, nil
+}
+
+// projectClaimRow projects a raw claim row to the API shape, keeping its
+// verbatim evidence. Unlike graph entities, the quote and its location ARE the
+// payload — that is what a compiled claim exists to carry (Python
+// structure_graph_common.project_claim).
+func projectClaimRow(row map[string]interface{}) map[string]interface{} {
+	payload := graphLoadPayload(row)
+	if payload == nil {
+		return nil
+	}
+	name := strings.TrimSpace(graphStr(payload["name"]))
+	if name == "" {
+		return nil
+	}
+
+	chunkIDs := appendUniqueSorted(stringSliceValue(row["source_chunk_ids"], payload["source_chunk_ids"]))
+	claim := map[string]interface{}{
+		"name":             name,
+		"description":      strings.TrimSpace(graphStr(payload["description"])),
+		"source_chunk_ids": chunkIDs,
+	}
+	if claim["description"] == "" {
+		claim["description"] = name
+	}
+	if typ := strings.TrimSpace(graphStr(payload["type"])); typ != "" {
+		claim["type"] = typ
+	}
+	if evidence := keptEvidence(payload["evidence"]); len(evidence) > 0 {
+		claim["evidence"] = evidence
+	}
+	return claim
+}
+
+// stringSliceValue coerces the row column first, falling back to the payload's
+// own source_chunk_ids (Python: row.source_chunk_ids or payload.source_chunk_ids).
+func stringSliceValue(values ...interface{}) []string {
+	for _, v := range values {
+		switch x := v.(type) {
+		case []string:
+			return x
+		case []interface{}:
+			out := make([]string, 0, len(x))
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					out = append(out, strings.TrimSpace(s))
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		case string:
+			if strings.TrimSpace(x) != "" {
+				return []string{x}
+			}
+		}
+	}
+	return nil
+}
+
+// keptEvidence drops evidence entries without a verbatim quote.
+func keptEvidence(v interface{}) []map[string]interface{} {
+	items, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	kept := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(graphStr(m["quote"])) == "" {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+// appendUniqueSorted deduplicates and sorts chunk ids (Python:
+// sorted({...}) over the requested chunk_ids; stable output for tests).
+func appendUniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
