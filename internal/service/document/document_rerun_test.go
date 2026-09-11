@@ -153,7 +153,7 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	}
 }
 
-func TestRerunDocument_ClearsQueuedTaskEarlyLog(t *testing.T) {
+func TestRerunDocument_ClearsQueuedTaskPreTerminalLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -177,7 +177,7 @@ func TestRerunDocument_ClearsQueuedTaskEarlyLog(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed queued log: %v", err)
 	}
-	// The clearing run owns this row, exactly as createEarlyLogBestEffort
+	// The clearing run owns this row, exactly as createOpenLogBestEffort
 	// binds it in production.
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
 		Update("pipeline_log_id", "queued-log").Error; err != nil {
@@ -198,10 +198,10 @@ func TestRerunDocument_ClearsQueuedTaskEarlyLog(t *testing.T) {
 	}
 }
 
-// TestRerunDocument_KeepsAnotherRunsEarlyLog locks the ownership boundary: the
+// TestRerunDocument_KeepsAnotherRunsPreTerminalLog locks the ownership boundary: the
 // rerun cleanup drops only the row the cleared task was bound to, so an open
 // row belonging to another run is left alone.
-func TestRerunDocument_KeepsAnotherRunsEarlyLog(t *testing.T) {
+func TestRerunDocument_KeepsAnotherRunsPreTerminalLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -245,7 +245,7 @@ func TestRerunDocument_KeepsAnotherRunsEarlyLog(t *testing.T) {
 		t.Fatalf("cleared run's own row should be deleted, got err=%v", err)
 	}
 	if err := db.First(&entity.PipelineOperationLog{}, "id = ?", "other-run-log").Error; err != nil {
-		t.Fatalf("another run's early row was deleted by this run's cleanup: %v", err)
+		t.Fatalf("another run's open row was deleted by this run's cleanup: %v", err)
 	}
 }
 

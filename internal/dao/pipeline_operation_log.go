@@ -185,12 +185,12 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	return logs, count, nil
 }
 
-// PipelineOperationStatusOpen returns the operation_status values of a
+// OpenPipelineOperationStatuses returns the operation_status values of a
 // pipeline operation log row that a run is still moving through. A run owns
 // exactly one such row from CREATED to its terminal write (DONE/FAIL/CANCEL),
 // so later stages advance the same row instead of inserting a new one. It is a
 // function, not a shared slice, so no caller can mutate the set.
-func PipelineOperationStatusOpen() []string {
+func OpenPipelineOperationStatuses() []string {
 	return []string{
 		string(entity.TaskStatusUnstart),
 		string(entity.TaskStatusSchedule),
@@ -199,15 +199,18 @@ func PipelineOperationStatusOpen() []string {
 }
 
 // GetOpenLogByDocumentID returns the newest open pipeline operation log for a
-// document, or nil when the document has no in-flight run. It is used to open
-// (or, for a task that never bound its row, adopt) the row for the document's
-// current run. It deliberately does not decide whether a terminal write may
-// proceed: that is bound to the run's own row id (ingestion_task.pipeline_log_id),
-// so a superseded run cannot adopt the replacement run's row.
+// document, or nil when the document has no in-flight run.
+//
+// It locates a row; it deliberately does not decide what may happen to it. The
+// create path drops whatever it finds (dropping a leftover from a run that no
+// longer exists), and the terminal writer adopts it only when the caller has no
+// bound row of its own. Whether a *terminal* write may touch a row is bound to
+// the run's own row id (ingestion_task.pipeline_log_id), so a superseded run
+// cannot reach the replacement run's row.
 func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, db *gorm.DB, documentID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
 	err := db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, PipelineOperationStatusOpen()).
+		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses()).
 		Order("create_time DESC").
 		Order("id DESC").
 		First(&log).Error
@@ -220,11 +223,11 @@ func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, 
 	return &log, nil
 }
 
-// EarlyLogInput carries the bookkeeping needed to open or advance the
+// OpenLogInput carries the bookkeeping needed to open or advance the
 // pre-terminal row for a queued run. It mirrors the PipelineOperationLog
 // columns that are known before the pipeline finishes; the DSL and the final
 // progress/counters stay empty until the terminal writer fills them in.
-type EarlyLogInput struct {
+type OpenLogInput struct {
 	DocumentID      string
 	KbID            string
 	TenantID        string
@@ -240,11 +243,11 @@ type EarlyLogInput struct {
 	ProgressMsg     string
 }
 
-// CreateEarlyLog opens the pre-terminal row for a queued run. Callers must
+// CreateOpenLog opens the pre-terminal row for a queued run. Callers must
 // have verified no open row exists (or accept a best-effort duplicate on a
 // lost race); the error is returned so tests can assert it, while production
 // callers log and continue.
-func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm.DB, input EarlyLogInput) (*entity.PipelineOperationLog, error) {
+func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.DB, input OpenLogInput) (*entity.PipelineOperationLog, error) {
 	now := time.Now().Local()
 	msg := input.ProgressMsg
 	log := &entity.PipelineOperationLog{
@@ -282,13 +285,13 @@ func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm
 	return log, nil
 }
 
-// AdvanceEarlyLog moves a run's own row to a later status, refreshing its
+// AdvanceOpenLog moves a run's own row to a later status, refreshing its
 // progress message. The row is targeted by id, so it can never touch another
 // run's row, and the update is guarded by the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
 // queued write cannot regress a row a concurrent writer already advanced.
 // A row that already left the declared from-states is left untouched.
-func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) error {
+func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) error {
 	if logID == "" || len(fromStatuses) == 0 {
 		return nil
 	}
@@ -301,7 +304,7 @@ func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gor
 }
 
 // DeleteOpenLogByID removes a run's own pre-terminal row. Used to clean up the
-// early row when a task is rolled back or removed, so the detail page is not
+// open row when a task is rolled back or removed, so the detail page is not
 // left with a permanently queued entry. Deleting by id (rather than by
 // document) keeps the cleanup away from a newer run's row, and the open-status
 // guard keeps it away from a terminal row, which is history.
@@ -310,7 +313,7 @@ func (dao *PipelineOperationLogDAO) DeleteOpenLogByID(ctx context.Context, db *g
 		return nil
 	}
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", logID, PipelineOperationStatusOpen()).
+		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
 		Delete(&entity.PipelineOperationLog{}).Error
 }
 

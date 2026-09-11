@@ -141,7 +141,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if taskExisted && deleted == 0 {
 		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
-	// The deleted CREATED/SCHEDULED task (if any) owned an open early
+	// The deleted CREATED/SCHEDULED task (if any) owned an open
 	// pipeline-operation-log row that no worker will ever close. Drop that
 	// run's row only: a concurrent re-parse may already own a newer one.
 	if deleted > 0 && task != nil && task.PipelineLogID != nil {

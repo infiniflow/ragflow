@@ -862,15 +862,15 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 		t.Fatalf("load open pipeline log: %v", openErr)
 	}
 	if open != nil {
-		t.Fatalf("expected early pipeline log to be deleted after publish failure, got %+v", open)
+		t.Fatalf("expected open pipeline log to be deleted after publish failure, got %+v", open)
 	}
 }
 
 func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	// Seed the document and KB so buildEarlyLogInput succeeds: without them no
-	// early row is created and the rollback cleanup below is never exercised.
+	// Seed the document and KB so buildOpenLogInput succeeds: without them no
+	// open row is created and the rollback cleanup below is never exercised.
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
@@ -899,7 +899,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	if reloaded.Status != common.FAILED {
 		t.Fatalf("status = %q, want %q", reloaded.Status, common.FAILED)
 	}
-	// The retry opened an early row before publishing; the failed publish must
+	// The retry opened an open row before publishing; the failed publish must
 	// take it back with the rolled-back task.
 	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
 		t.Fatalf("pipeline log rows = %d, want 0 after the retry rollback", got)
@@ -916,8 +916,8 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	queuedMsg := "Task is queued..."
-	early := &entity.PipelineOperationLog{
-		ID:              "early-log",
+	openLog := &entity.PipelineOperationLog{
+		ID:              "open-log",
 		DocumentID:      "doc-1",
 		TenantID:        "tenant-1",
 		KbID:            "kb-1",
@@ -926,14 +926,14 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 		OperationStatus: string(entity.TaskStatusUnstart),
 		ProgressMsg:     &queuedMsg,
 	}
-	if err := dao.DB.Create(early).Error; err != nil {
-		t.Fatalf("seed early log: %v", err)
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
 	}
 	// Removal cleanup is scoped to the row the task owns, as bound in
-	// production by createEarlyLogBestEffort.
+	// production by createOpenLogBestEffort.
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
-		Update("pipeline_log_id", "early-log").Error; err != nil {
-		t.Fatalf("bind early log: %v", err)
+		Update("pipeline_log_id", "open-log").Error; err != nil {
+		t.Fatalf("bind open log: %v", err)
 	}
 
 	userID := "user-1"
@@ -952,7 +952,7 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 		t.Fatalf("load open pipeline log: %v", err)
 	}
 	if open != nil {
-		t.Fatalf("expected open early row to be deleted with the task, got %+v", open)
+		t.Fatalf("expected open row to be deleted with the task, got %+v", open)
 	}
 }
 
@@ -1312,7 +1312,7 @@ func countPipelineLogs(t *testing.T, db *gorm.DB, documentID string) int {
 	return int(count)
 }
 
-func TestIngestionTaskServiceCreateForDocumentsOpensEarlyPipelineLog(t *testing.T) {
+func TestIngestionTaskServiceCreateForDocumentsOpensPreTerminalPipelineLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1362,7 +1362,7 @@ func loadTaskPipelineLogID(t *testing.T, ctx context.Context, db *gorm.DB, taskI
 	return *task.PipelineLogID
 }
 
-func TestIngestionTaskServiceStartRunningAdvancesEarlyPipelineLog(t *testing.T) {
+func TestIngestionTaskServiceStartRunningAdvancesPreTerminalPipelineLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1401,7 +1401,7 @@ func TestIngestionTaskServiceStartRunningAdvancesEarlyPipelineLog(t *testing.T) 
 	}
 }
 
-func TestIngestionTaskServiceRequestStopBeforeRunClosesEarlyPipelineLog(t *testing.T) {
+func TestIngestionTaskServiceRequestStopBeforeRunClosesPreTerminalPipelineLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1479,11 +1479,11 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 }
 
-// TestIngestionTaskServiceOpensEarlyLogBeforePublish locks the ordering that
+// TestIngestionTaskServiceOpensPreTerminalLogBeforePublish locks the ordering that
 // closes the orphan window: the run's row must exist before its message is
 // published, so a worker that claims and finishes the task immediately still
 // finds a row to terminalize.
-func TestIngestionTaskServiceOpensEarlyLogBeforePublish(t *testing.T) {
+func TestIngestionTaskServiceOpensPreTerminalLogBeforePublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1497,7 +1497,7 @@ func TestIngestionTaskServiceOpensEarlyLogBeforePublish(t *testing.T) {
 				t.Fatalf("load task at publish: %v", err)
 			}
 			if task.PipelineLogID == nil {
-				t.Fatal("task was published before its early log row was bound")
+				t.Fatal("task was published before its open log row was bound")
 			}
 			logIDAtPublish = *task.PipelineLogID
 		},
@@ -1509,7 +1509,7 @@ func TestIngestionTaskServiceOpensEarlyLogBeforePublish(t *testing.T) {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
 	if logIDAtPublish == "" {
-		t.Fatal("publish did not observe a bound early log row")
+		t.Fatal("publish did not observe a bound open log row")
 	}
 	open := loadOpenPipelineLog(t, t.Context(), db, "doc-1")
 	if open.ID != logIDAtPublish {
@@ -1517,11 +1517,11 @@ func TestIngestionTaskServiceOpensEarlyLogBeforePublish(t *testing.T) {
 	}
 }
 
-// TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesEarlyLog locks
+// TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog locks
 // the workerless STOPPING finalize: MQ redelivery of a STOPPING task stops it
 // without ever running a terminal pipeline-log writer, so StartRunning must
 // close the row itself.
-func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesEarlyLog(t *testing.T) {
+func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1663,7 +1663,7 @@ func TestIngestionTaskServiceNewRunReplacesStaleOpenRow(t *testing.T) {
 		t.Fatalf("reload task: %v", err)
 	}
 	if task.PipelineLogID == nil {
-		t.Fatal("task has no bound early log row")
+		t.Fatal("task has no bound open log row")
 	}
 	if *task.PipelineLogID == "stale-log" {
 		t.Fatalf("task adopted the stale row %q; want a fresh row", *task.PipelineLogID)
@@ -1686,10 +1686,10 @@ func TestIngestionTaskServiceNewRunReplacesStaleOpenRow(t *testing.T) {
 	}
 }
 
-// TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic locks the monotonic
+// TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic locks the monotonic
 // transition contract: a late queued write must not regress a row a concurrent
 // worker already moved to running.
-func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
+func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1697,7 +1697,7 @@ func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	queuedMsg := "Task is queued..."
-	early := &entity.PipelineOperationLog{
+	openLog := &entity.PipelineOperationLog{
 		ID:              "log-1",
 		DocumentID:      "doc-1",
 		TenantID:        "tenant-1",
@@ -1707,8 +1707,8 @@ func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
 		OperationStatus: string(entity.TaskStatusUnstart),
 		ProgressMsg:     &queuedMsg,
 	}
-	if err := dao.DB.Create(early).Error; err != nil {
-		t.Fatalf("seed early log: %v", err)
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
 	}
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "log-1").Error; err != nil {
 		t.Fatalf("bind task: %v", err)
@@ -1721,16 +1721,16 @@ func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
 		t.Fatalf("load task: %v", err)
 	}
 
-	svc.advanceEarlyLog(ctx, task, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusSchedule) {
 		t.Fatalf("after schedule = %q, want %q", got, string(entity.TaskStatusSchedule))
 	}
-	svc.advanceEarlyLog(ctx, task, earlyLogFromStarted, string(entity.TaskStatusRunning), earlyLogMsgRunning, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning, true)
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusRunning) {
 		t.Fatalf("after start = %q, want %q", got, string(entity.TaskStatusRunning))
 	}
 	// The enqueue-time scheduled write lands late; it must not regress the row.
-	svc.advanceEarlyLog(ctx, task, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
 	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
 	if open.OperationStatus != string(entity.TaskStatusRunning) {
 		t.Fatalf("late scheduled write regressed the row to %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
@@ -1741,7 +1741,7 @@ func TestIngestionTaskServiceEarlyLogAdvanceIsMonotonic(t *testing.T) {
 }
 
 // TestIngestionTaskServiceAdvanceReopenGuard locks the reopen contract: a
-// missing early row is re-created only while the task is still live. A terminal
+// missing open row is re-created only while the task is still live. A terminal
 // task must never resurrect its closed row as a permanently queued entry.
 func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
 	db := setupServiceTestDB(t)
@@ -1759,7 +1759,7 @@ func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load terminal task: %v", err)
 	}
-	svc.advanceEarlyLog(ctx, terminal, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
 	if got := countPipelineLogs(t, db, "doc-terminal"); got != 0 {
 		t.Fatalf("terminal task resurrected %d queued row(s); want none", got)
 	}
@@ -1768,7 +1768,7 @@ func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live task: %v", err)
 	}
-	svc.advanceEarlyLog(ctx, live, earlyLogFromQueued, string(entity.TaskStatusSchedule), earlyLogMsgQueued, true)
+	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
 	open := loadOpenPipelineLog(t, ctx, db, "doc-live")
 	if open.OperationStatus != string(entity.TaskStatusSchedule) {
 		t.Fatalf("OperationStatus = %q, want %q (reopen for a live task)", open.OperationStatus, string(entity.TaskStatusSchedule))

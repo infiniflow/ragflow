@@ -34,7 +34,7 @@ type IngestionTask struct {
 	// exactly this row instead of adopting whichever row happens to be open for
 	// the document. A superseded run keeps the id of its (deleted) row, so its
 	// late terminal write cannot touch the replacement run's row. nil for runs
-	// that never opened an early row.
+	// that never opened one.
 	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32" json:"-"`
 	BaseModel
 }

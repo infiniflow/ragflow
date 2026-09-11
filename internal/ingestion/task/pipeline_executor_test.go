@@ -620,13 +620,13 @@ func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
 	}
 }
 
-func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
+func TestRecordPipelineLog_ReusesOpenPreTerminalRow(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
 
 	queuedMsg := "Task is queued..."
-	early := &entity.PipelineOperationLog{
-		ID:              "early-log",
+	openLog := &entity.PipelineOperationLog{
+		ID:              "open-log",
 		DocumentID:      "doc-1",
 		TenantID:        "tenant-1",
 		KbID:            "kb-1",
@@ -639,8 +639,8 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 		OperationStatus: "5",
 		ProgressMsg:     &queuedMsg,
 	}
-	if err := dao.DB.Create(early).Error; err != nil {
-		t.Fatalf("seed early log: %v", err)
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
 	}
 
 	run := "3"
@@ -664,11 +664,11 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 	}
 
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		TenantID:   "tenant-1",
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "3",
-		OpenLogID:  "early-log",
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "open-log",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -681,8 +681,8 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the bound queued row)", count)
 	}
 	var log entity.PipelineOperationLog
-	if err := dao.DB.First(&log, "id = ?", "early-log").Error; err != nil {
-		t.Fatalf("load early log: %v", err)
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
 	}
 	if log.OperationStatus != "3" {
 		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
@@ -709,7 +709,7 @@ func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) 
 	openedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local)
 	queuedMsg := "Task is queued..."
 	if err := dao.DB.Create(&entity.PipelineOperationLog{
-		ID:              "early-log",
+		ID:              "open-log",
 		DocumentID:      "doc-1",
 		TenantID:        "tenant-1",
 		KbID:            "kb-1",
@@ -719,7 +719,7 @@ func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) 
 		ProgressMsg:     &queuedMsg,
 		ProcessBeginAt:  &openedAt,
 	}).Error; err != nil {
-		t.Fatalf("seed early log: %v", err)
+		t.Fatalf("seed open log: %v", err)
 	}
 
 	run := "4"
@@ -738,18 +738,18 @@ func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) 
 	}
 
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		TenantID:   "tenant-1",
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "4",
-		OpenLogID:  "early-log",
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "4",
+		PipelineLogID: "open-log",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
 
 	var log entity.PipelineOperationLog
-	if err := dao.DB.First(&log, "id = ?", "early-log").Error; err != nil {
-		t.Fatalf("load early log: %v", err)
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
 	}
 	if log.OperationStatus != "4" {
 		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
@@ -808,11 +808,11 @@ func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
 
 	// This run's own row was deleted along with the superseded task.
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		TenantID:   "tenant-1",
-		KbID:       "kb-1",
-		DocumentID: "doc-1",
-		Status:     "3",
-		OpenLogID:  "superseded-log",
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "superseded-log",
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -898,7 +898,7 @@ func TestRecordPipelineLog_UnboundAdoptsOpenRow(t *testing.T) {
 	}
 }
 
-func TestRecordPipelineLog_CreatesRowWithoutOpenEarlyRow(t *testing.T) {
+func TestRecordPipelineLog_CreatesRowWithoutOpenPreTerminalRow(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
 

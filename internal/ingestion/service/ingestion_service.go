@@ -1166,7 +1166,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	// its (deleted or replaced) row, so its late terminal write can never reach
 	// into the replacement run's row.
 	if ingestionTask.PipelineLogID != nil {
-		input.OpenLogID = *ingestionTask.PipelineLogID
+		input.PipelineLogID = *ingestionTask.PipelineLogID
 	}
 	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
