@@ -23,7 +23,7 @@ from io import BytesIO
 from common.decorator import singleton
 from common import settings
 
-MAX_RETRIES = 3
+MAX_ATTEMPTS = 3
 
 
 @singleton
@@ -149,7 +149,7 @@ class RAGFlowS3:
         that use ``auto`` to select their own location.
         """
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(MAX_ATTEMPTS):
             try:
                 if not self.bucket_exists(bucket):
                     bucket_config = {"Bucket": bucket}
@@ -164,8 +164,8 @@ class RAGFlowS3:
 
                 return r
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}, attempt {attempt + 1}/{MAX_RETRIES}")
-                if attempt == MAX_RETRIES - 1:
+                logging.exception(f"Fail put {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
                     raise
                 if not self.__open__():
                     raise
@@ -182,7 +182,7 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(MAX_ATTEMPTS):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
                 object_data = r["Body"].read()
@@ -193,15 +193,15 @@ class RAGFlowS3:
                 code = error.get("Code") if isinstance(error, dict) else None
                 if code in ("404", "NoSuchKey", "NotFound"):
                     return None
-                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_RETRIES}")
-                if attempt == MAX_RETRIES - 1:
+                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
                     raise
                 if not self.__open__():
                     raise
                 time.sleep(2**attempt)
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_RETRIES}")
-                if attempt == MAX_RETRIES - 1:
+                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
                     raise
                 if not self.__open__():
                     raise
