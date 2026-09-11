@@ -35,6 +35,7 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	pipelineLogDAO      *dao.PipelineOperationLogDAO
 	ingestionTaskSvc    *service.IngestionTaskService
 	docEngine           engine.DocEngine
 	metadataSvc         *service.MetadataService
@@ -58,6 +59,7 @@ func NewDocumentService() *DocumentService {
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
@@ -171,6 +173,16 @@ var (
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")
+
+	// ErrPreviewDocumentNotFound covers both "document row missing" and
+	// "caller may not read this document" so the preview endpoint cannot be
+	// used to probe foreign document IDs. Mirrors the Python preview route.
+	ErrPreviewDocumentNotFound = errors.New("document not found")
+	// ErrPreviewFileEmpty marks a document whose backing object has zero
+	// bytes; the handler maps it to Python's "This file is empty."
+	// preview response, so the sentinel text itself is never sent to
+	// clients.
+	ErrPreviewFileEmpty = errors.New("preview file empty")
 )
 
 var artifactContentTypes = map[string]string{

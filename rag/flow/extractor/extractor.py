@@ -78,13 +78,23 @@ class Extractor(ProcessBase, LLM):
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
         inputs = self.get_input_elements()
-        chunks = []
+        output_format = kwargs.get("output_format")
+        if output_format == "chunks":
+            chunks = deepcopy(kwargs.get("chunks") or [])
+        elif output_format == "json":
+            chunks = deepcopy(kwargs.get("json") or [])
+        elif output_format in ["markdown", "text", "html"]:
+            payload = kwargs.get(output_format) or ""
+            chunks = [{"text": payload}] if payload else []
+        else:
+            chunks = []
         chunks_key = ""
         args = {}
         for k, v in inputs.items():
             args[k] = v["value"]
             if isinstance(args[k], list):
-                chunks = deepcopy(args[k])
+                if not chunks:
+                    chunks = deepcopy(args[k])
                 chunks_key = k
 
         if chunks:
@@ -99,7 +109,8 @@ class Extractor(ProcessBase, LLM):
 
             prog = 0
             for i, ck in enumerate(chunks):
-                args[chunks_key] = ck["text"]
+                if chunks_key:
+                    args[chunks_key] = ck.get("text") or ck.get("content_with_weight") or ""
                 msg, sys_prompt = self._sys_prompt_and_msg([], args)
                 msg.insert(0, {"role": "system", "content": sys_prompt})
                 ck[self._param.field_name] = await self._generate_async(msg)

@@ -9,6 +9,10 @@ export enum ViewMode {
   Timeline = 'timeline',
 }
 
+export const VisibleViewModes = Object.values(ViewMode).filter(
+  (mode) => mode !== ViewMode.Skills,
+);
+
 export enum LeftPanelTab {
   Contents = 'contents',
   Graph = 'graph',
