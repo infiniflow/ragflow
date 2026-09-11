@@ -32,7 +32,7 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from flask import json
@@ -47,6 +47,7 @@ from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
+    SitemapConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -81,6 +82,7 @@ from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -106,6 +108,34 @@ def _redact_mailbox(value: str) -> str:
         local_mask = local if len(local) <= 2 else local[:2] + "***"
         return f"{local_mask}@***"
     return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
+async def _iterate_document_batches(generator):
+    """Yield connector batches, advancing thread-bridged iterators off the event loop.
+
+    Connectors that return an iterator flagged ``offload_next`` (see
+    ``common.data_source.sitemap_connector.iter_in_worker_thread``) may block in
+    ``next()`` while a batch is being fetched; that call is awaited through
+    ``asyncio.to_thread`` so ``asyncio.wait_for`` keeps enforcing the task timeout and
+    cancellation closes the source. Every other connector keeps its synchronous
+    iteration unchanged.
+    """
+    if not getattr(generator, "offload_next", False):
+        for item in generator:
+            yield item
+        return
+
+    sentinel = object()
+    try:
+        while True:
+            item = await asyncio.to_thread(next, generator, sentinel)
+            if item is sentinel:
+                return
+            yield item
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
 
 
 class SyncBase:
@@ -224,7 +254,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
 
@@ -508,6 +538,63 @@ class RSS(SyncBase):
             end_time,
         )
         return document_generator
+
+
+class Sitemap(SyncBase):
+    SOURCE_NAME: str = FileSource.SITEMAP
+
+    @staticmethod
+    def _sanitize_docs(gen):
+        """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
+        from urllib.parse import urlparse
+
+        for batch in gen:
+            sanitized = []
+            for doc in batch:
+                si = doc.semantic_identifier
+                if si.startswith(("http://", "https://")):
+                    parsed = urlparse(si)
+                    si = f"{parsed.netloc}{parsed.path}"
+                    if parsed.query:
+                        si += f"?{parsed.query}"
+                    if parsed.fragment:
+                        si += f"#{parsed.fragment}"
+                    si = si.strip("/")
+                    doc = doc.model_copy(update={"semantic_identifier": si})
+                sanitized.append(doc)
+            yield sanitized
+
+    async def _prepare_connector(self, task: dict):
+        """Build and validate the connector without starting any document traversal."""
+        self.connector = SitemapConnector.build_connector(self.conf)
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event
+        # loop, and tell the connector to stop if the task is cancelled meanwhile.
+        await validate_connector_in_thread(self.connector)
+        self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+    async def _initialize_for_prune(self, task: dict):
+        # Prune only needs the connector (for retrieve_all_slim_docs_perm_sync); do not start
+        # the batch producer thread that _generate() would create and the base class discard.
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        # Batches are produced in a worker thread (network I/O off the event-loop thread)
+        # and handed over through a bounded queue.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()), on_close=self.connector.cancel)
+
+        end_time = datetime.now(UTC).timestamp()
+        return iter_in_worker_thread(
+            self._sanitize_docs(
+                self.connector.poll_source(
+                    task["poll_range_start"].timestamp(),
+                    end_time,
+                )
+            ),
+            on_close=self.connector.cancel,
+        )
 
 
 class Confluence(SyncBase):
@@ -1385,6 +1472,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=self.conf.get("ca_cert_path"),
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
@@ -2218,6 +2306,7 @@ class Xquik(SyncBase):
 
 func_factory = {
     FileSource.RSS: RSS,
+    FileSource.SITEMAP: Sitemap,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,

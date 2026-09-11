@@ -32,6 +32,7 @@ from common.token_utils import num_tokens_from_string
 # Re-exported below for backwards compatibility; the canonical parser lives
 # in ``rag.nlp.delim``.
 from rag.nlp.delim import (
+    DEFAULT_DELIMITER,
     compile_delimiter_pattern,
     has_wrapped_delimiter,
     normalize_text_newlines,
@@ -194,6 +195,37 @@ def find_codec(blob):
             pass
 
     return "utf-8"
+
+
+def decode_text(blob, document_type="text"):
+    """Decode document bytes without silently accepting weak codec guesses."""
+    bom_codecs = (
+        (b"\x00\x00\xfe\xff", "utf-32-be"),
+        (b"\xff\xfe\x00\x00", "utf-32-le"),
+        (b"\xfe\xff", "utf-16-be"),
+        (b"\xff\xfe", "utf-16-le"),
+        (b"\xef\xbb\xbf", "utf-8-sig"),
+    )
+    for bom, encoding in bom_codecs:
+        if blob.startswith(bom):
+            return blob.decode(encoding), encoding
+
+    try:
+        return blob.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    detected = chardet.detect(blob[:1024])
+    encoding = detected.get("encoding")
+    confidence = detected.get("confidence") or 0.0
+    if encoding and encoding.lower().replace("-", "") in {"gb2312", "gbk"}:
+        encoding = "gb18030"
+    if not encoding or confidence < 0.8:
+        raise UnicodeError(f"Unable to reliably detect {document_type} encoding (confidence={confidence:.2f})")
+    try:
+        return blob.decode(encoding), encoding
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise UnicodeError(f"Unable to decode {document_type} as {encoding}") from exc
 
 
 QUESTION_PATTERN = [
@@ -446,6 +478,27 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
+        tokenize(d, ck, eng, language=language)
+        res.append(d)
+    return res
+
+
+def tokenize_chunks_with_positions(chunks_with_pos, doc, eng, child_delimiters_pattern=None, language="English"):
+    """Tokenize chunks that already carry real positions (Excel sheet/row).
+
+    chunks_with_pos: iterable of (text, position) where position is a 5-tuple
+    suitable for add_positions (first component 0-based).
+    """
+    res = []
+    for ck, pos in chunks_with_pos:
+        if not ck or not str(ck).strip():
+            continue
+        d = copy.deepcopy(doc)
+        add_positions(d, [pos])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck.removeprefix("\n")
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
+            continue
         tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
@@ -1394,7 +1447,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
     return out
 
 
-def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
         return []
@@ -1457,7 +1510,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     return _apply_overlap_unconditional(cks, overlapped_percent)
 
 
-def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split texts (with images) into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not texts or len(texts) != len(images):
         return [], []
@@ -1813,7 +1866,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
 def naive_merge_docx(
     sections,
     chunk_token_num=128,
-    delimiter="\n。；！？",
+    delimiter=DEFAULT_DELIMITER,
     table_context_size=0,
     image_context_size=0,
 ):

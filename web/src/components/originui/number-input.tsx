@@ -59,7 +59,7 @@ const NumberInput = forwardRef<
     hideIcons = false,
     integer = false,
     inputClassName,
-    precision,
+    precision = 2,
     ...props
   },
   ref,

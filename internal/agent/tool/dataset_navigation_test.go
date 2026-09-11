@@ -24,7 +24,7 @@ func (f *navRoutingFake) UpsertDoc(context.Context, nav.UpsertDocInput) error { 
 func (f *navRoutingFake) RemoveDoc(context.Context, string, string, string) error {
 	return nil
 }
-func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, _ int) ([]nav.NavHit, error) {
+func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, _ []string, _ int) ([]nav.NavHit, error) {
 	f.mu.Lock()
 	f.searched = append(f.searched, query)
 	f.mu.Unlock()
@@ -35,6 +35,9 @@ func (f *navRoutingFake) ListClusters(context.Context, string, string, int, int)
 }
 func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name string, _, _ int) ([]nav.NavNode, int64, error) {
 	return f.children[name], int64(len(f.children[name])), nil
+}
+func (f *navRoutingFake) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {
+	return map[string]string{}
 }
 func (f *navRoutingFake) searchedTopics() []string {
 	f.mu.Lock()

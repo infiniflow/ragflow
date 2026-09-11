@@ -23,52 +23,21 @@ import {
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import {
   getOperatorType,
-  transformApiConfigToForm,
   transformFormConfigToApi,
+  transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { addParserConfigIssues } from '../pipeline-operator-tabs/parser-config-validation';
 
 export interface IDocumentPipelineDialogProps {
   parserId: string;
   pipelineId?: string;
   parserConfig?: Record<string, any>;
-}
-
-/**
- * Converts the saved parser_config (API format, keyed by operator id) to the
- * form format expected by the operator tabs, mirroring
- * useFetchDatasetSettingOnMount on the dataset setting page.
- */
-function transformSavedParserConfigToForm(
-  parserConfig?: Record<string, any>,
-): Record<string, any> {
-  if (
-    !parserConfig ||
-    typeof parserConfig !== 'object' ||
-    Array.isArray(parserConfig)
-  ) {
-    return {};
-  }
-
-  const hasPipelineKeys = Object.keys(parserConfig).some((key) =>
-    key.includes(':'),
-  );
-  if (!hasPipelineKeys) {
-    return parserConfig;
-  }
-
-  const formParserConfig: Record<string, any> = {};
-  for (const [operatorId, config] of Object.entries(parserConfig)) {
-    formParserConfig[operatorId] = transformApiConfigToForm(
-      getOperatorType(operatorId),
-      config as Record<string, any>,
-    );
-  }
-  return formParserConfig;
 }
 
 export function useDocumentPipelineForm({
@@ -102,6 +71,7 @@ export function useDocumentPipelineForm({
               code: 'custom',
             });
           }
+          addParserConfigIssues(data.parser_config, ctx, t);
         }),
     [t],
   );
@@ -171,6 +141,12 @@ export function useDocumentPipelineForm({
   const handleOperatorValuesChange = useCallback(
     (operatorId: string, values: any) => {
       const currentParserConfig = form.getValues('parser_config') || {};
+      // Skip no-op syncs (e.g. a remounted tab pushing back the values it was
+      // just initialized with) — otherwise each setValue re-renders the tabs,
+      // which re-fires the operator form's change callback in a loop.
+      if (isEqual(currentParserConfig[operatorId], values)) {
+        return;
+      }
       form.setValue('parser_config', {
         ...currentParserConfig,
         [operatorId]: values,
@@ -178,6 +154,11 @@ export function useDocumentPipelineForm({
     },
     [form],
   );
+
+  const operatorValues = useWatch({
+    control: form.control,
+    name: 'parser_config',
+  });
 
   const showOperatorTabs =
     operatorNodes.length > 0 &&
@@ -215,6 +196,7 @@ export function useDocumentPipelineForm({
     activeTab,
     setActiveTab,
     handleOperatorValuesChange,
+    operatorValues,
     showOperatorTabs,
     buildSubmitData,
   };
