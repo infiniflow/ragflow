@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
 import ArXivForm from '../form/arxiv-form';
@@ -22,6 +23,7 @@ import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
+import FXMacroDataForm from '../form/fxmacrodata-form';
 import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
@@ -83,6 +85,7 @@ export const FormConfigMap = {
   [Operator.YouComSearch]: {
     component: YouComForm,
   },
+  [Operator.FXMacroData]: { component: FXMacroDataForm },
   [Operator.SofyaSearch]: {
     component: SofyaForm,
   },
