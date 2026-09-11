@@ -14,6 +14,15 @@
 #  limitations under the License.
 #
 
+# Keep runtime validation when beartype is installed, while allowing slim
+# plugin installs to import without the optional checker.
+try:
+    from beartype.claw import beartype_this_package
+
+    beartype_this_package()
+except ImportError:
+    pass
+
 from .ragflow_chat import RAGFlowChat
 
 __all__ = ["RAGFlowChat"]

@@ -13,3 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+# Keep runtime validation when beartype is installed, while allowing slim
+# builds to import without the optional checker.
+try:
+    from beartype.claw import beartype_this_package
+
+    beartype_this_package()
+except ImportError:
+    pass
