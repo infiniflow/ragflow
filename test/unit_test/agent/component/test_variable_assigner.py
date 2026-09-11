@@ -11,9 +11,13 @@ from agent.component.variable_assigner import VariableAssigner
         (False, False),
         ("yes", True),
         ("no", False),
+        ("YES", True),
+        ("No", False),
+        ("true", True),
+        ("FALSE", False),
     ],
 )
-def test_set_boolean_preserves_booleans_and_migrates_legacy_values(parameter, expected):
+def test_set_boolean_normalizes_boolean_spellings(parameter, expected):
     component = VariableAssigner.__new__(VariableAssigner)
 
     result = component._set(False, parameter)
