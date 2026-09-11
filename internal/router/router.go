@@ -340,6 +340,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
+			v1.POST("/retrieval", r.datasetsHandler.SearchDatasets)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")

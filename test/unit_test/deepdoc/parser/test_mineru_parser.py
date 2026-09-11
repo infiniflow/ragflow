@@ -413,6 +413,86 @@ def test_transfer_to_tables_emits_ordered_typed_media(monkeypatch, tmp_path):
 
 
 @pytest.mark.p1
+def test_transfer_to_tables_emits_chart_as_image_chunk(monkeypatch, tmp_path):
+    """MinerU 3.4.x VLM chart blocks (chart_caption/chart_footnote/img_path)
+    must surface as image chunks instead of being silently dropped (#19080)."""
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    chart_path = tmp_path / "chart.png"
+    module.Image.new("RGB", (2, 2), "blue").save(chart_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "img_path": str(chart_path),
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": ["Source: dataset"],
+            "sub_type": "line",
+            "vlm_description": "A blue square",
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+        },
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Caption without image"],
+            "chart_footnote": [],
+        },
+    ]
+
+    media = parser._transfer_to_tables(outputs)
+
+    # The chart with a readable image becomes an image chunk; the chart without
+    # an img_path is skipped (mirrors how IMAGE blocks behave).
+    assert len(media) == 1
+    image, texts = media[0][0]
+    chart_path.unlink()
+    assert isinstance(image, module.Image.Image)
+    assert image.getpixel((0, 0)) == (0, 0, 255)
+    assert texts == ["Figure 3", "Source: dataset", "A blue square"]
+
+
+@pytest.mark.p1
+def test_transfer_to_sections_routes_chart_like_image_per_parse_method(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": module.MinerUContentType.TEXT, "text": "Body", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["figure"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 2, 1, 3),
+        },
+    ]
+
+    # app chunkers consume media separately: the chart is excluded from text sections.
+    for app_method in ("naive", "manual", "paper"):
+        sections = parser._transfer_to_sections(outputs, parse_method=app_method, table_enable=True)
+        assert len(sections) == 1
+        assert sections[0][0].startswith("Body")
+
+    # raw consumers keep the chart as a text section (caption/footnote), like IMAGE.
+    raw_sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+    assert len(raw_sections) == 2
+    assert raw_sections[1][0].strip() == "figure"
+
+
+@pytest.mark.p1
+def test_transfer_to_sections_warns_on_unknown_type(monkeypatch, caplog):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {"type": "sidebar", "text": "ignored", "page_idx": 0, "bbox": (0, 0, 1, 1)},
+    ]
+
+    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+        parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert "Skip unsupported section type=sidebar" in caplog.text
+
+
+@pytest.mark.p1
 def test_tokenize_table_uses_payload_type_instead_of_html_content():
     from PIL import Image
 
@@ -848,3 +928,29 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
     assert module.MinerUParser.extract_positions(line_tag) == [
         ([0], 20.0, 170.0, 40.0, 340.0),
     ]
+
+
+def test_mineru_backend_matches_public_api(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    assert {b.value for b in module.MinerUBackend} == {
+        "pipeline",
+        "vlm-engine",
+        "hybrid-engine",
+        "vlm-http-client",
+        "hybrid-http-client",
+    }
+
+
+def test_check_installation_requires_server_url_for_hybrid_http_client(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    monkeypatch.setattr(
+        module.MinerUParser,
+        "_is_http_endpoint_valid",
+        staticmethod(lambda url, timeout=5: True),
+    )
+
+    ok, reason = parser.check_installation("hybrid-http-client", server_url=None)
+
+    assert ok is False
+    assert "MINERU_SERVER_URL" in reason

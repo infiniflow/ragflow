@@ -46,7 +46,6 @@ GO_ONLY_SKIPS = {
     },
     "Go validation or response contract does not match the established API contract": {
         "test_dataset_update_parser_config_valid_matrix_contract",
-        "test_dataset_update_parser_config_with_chunk_method_change_contract",
         "test_dataset_update_parser_config_invalid_contract",
         # Updating with `{"parser_config": {}}` / `None` is a valid no-op in Go (handled by
         # ParserConfigProvided). But the final GET asserts the stored parser_config equals Python's
@@ -153,7 +152,7 @@ def rest_client_noauth():
 @pytest.fixture
 def clear_datasets(rest_client):
     def _cleanup():
-        res = rest_client.delete("/datasets", json={"ids": None, "delete_all": True})
+        res = rest_client.delete("/datasets", json={"ids": None, "delete_all": True}, timeout=120)
         assert res.status_code == 200, res.text
         payload = res.json()
         assert payload["code"] in (0, 102), payload
@@ -190,7 +189,7 @@ def create_dataset(rest_client, clear_datasets):
     yield _create
 
     if created_ids:
-        res = rest_client.delete("/datasets", json={"ids": created_ids})
+        res = rest_client.delete("/datasets", json={"ids": created_ids}, timeout=120)
         assert res.status_code == 200
         payload = res.json()
         # Dataset may already be removed by test logic/cleanup.
