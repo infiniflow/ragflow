@@ -47,22 +47,24 @@ func setupMemoryTaskTestDB(t *testing.T) *gorm.DB {
 // newMemoryTaskPair returns matching UI and execution records.
 func newMemoryTaskPair(taskID string) (*entity.Task, *entity.MemoryTask) {
 	progressMsg := ""
-	return &entity.Task{
-			ID:          taskID,
-			DocID:       "memory-1",
-			TaskType:    "memory",
-			ProgressMsg: &progressMsg,
-		}, &entity.MemoryTask{
-			TaskID:   taskID,
-			MemoryID: "memory-1",
-			SourceID: 42,
-			Input: entity.JSONMap{
-				"user_id":    "user-1",
-				"user_input": "remember this",
-			},
-			State:     entity.MemoryTaskStatePending,
-			LastError: "",
-		}
+	task := &entity.Task{
+		ID:          taskID,
+		DocID:       "memory-1",
+		TaskType:    "memory",
+		ProgressMsg: &progressMsg,
+	}
+	memoryTask := &entity.MemoryTask{
+		TaskID:   taskID,
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input: entity.JSONMap{
+			"user_id":    "user-1",
+			"user_input": "remember this",
+		},
+		State:     entity.MemoryTaskStatePending,
+		LastError: "",
+	}
+	return task, memoryTask
 }
 
 // TestMemoryTaskDAOCreateWithTaskIsAtomic verifies a failed execution-record
