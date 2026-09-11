@@ -31,8 +31,8 @@ func TestCSVParser_BasicHTMLAndJSON(t *testing.T) {
 	if item["doc_type_kwd"] != "table" {
 		t.Errorf("item doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
 	}
-	if _, ok := item["ck_type"]; ok {
-		t.Errorf("parser table item must not include chunker-owned ck_type: %v", item["ck_type"])
+	if item["ck_type"] != "table" {
+		t.Errorf("item ck_type = %v, want 'table'", item["ck_type"])
 	}
 	if item["sheet"] != "Data" {
 		t.Errorf("item sheet = %v, want 'Data'", item["sheet"])
