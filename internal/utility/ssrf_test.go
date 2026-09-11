@@ -284,7 +284,6 @@ func TestPinnedHTTPClientFollowsValidatedRedirectsPinned(t *testing.T) {
 	}
 }
 
-
 // TestPinnedHTTPClientRefusesHTTPSToHTTPDowngrade: a redirect from an https
 // origin to an http target must be refused before any validation, so headers
 // such as Authorization are never replayed over cleartext.
