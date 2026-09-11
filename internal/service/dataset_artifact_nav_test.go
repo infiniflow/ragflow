@@ -21,7 +21,7 @@ func (f *fakeArtifactNav) RemoveDoc(_ context.Context, _, _, docID string) error
 	f.removedDocs = append(f.removedDocs, docID)
 	return nil
 }
-func (f *fakeArtifactNav) Search(context.Context, string, string, string, []float32, int) ([]nav.NavHit, error) {
+func (f *fakeArtifactNav) Search(context.Context, string, string, string, []float32, []string, int) ([]nav.NavHit, error) {
 	return nil, nil
 }
 func (f *fakeArtifactNav) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
@@ -29,6 +29,9 @@ func (f *fakeArtifactNav) ListClusters(context.Context, string, string, int, int
 }
 func (f *fakeArtifactNav) ListChildren(_ context.Context, _, _, name string, _, _ int) ([]nav.NavNode, int64, error) {
 	return f.children[name], int64(len(f.children[name])), nil
+}
+func (f *fakeArtifactNav) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {
+	return nil
 }
 
 // TestDeleteNav_RemovesOnlyDirectDocChildren documents the limited semantic of
@@ -48,7 +51,7 @@ func TestDeleteNav_RemovesOnlyDirectDocChildren(t *testing.T) {
 	defer func() { nav.SetNavService(prev) }()
 
 	svc := NewDatasetArtifactService()
-	n, err := svc.DeleteNav(context.Background(), "t1", "kb1")
+	n, err := svc.DeleteNav(t.Context(), "t1", "kb1")
 	if err != nil {
 		t.Fatalf("DeleteNav: %v", err)
 	}
@@ -79,7 +82,7 @@ func TestDeleteNavNode_RemovesDirectChildren(t *testing.T) {
 	defer func() { nav.SetNavService(prev) }()
 
 	svc := NewDatasetArtifactService()
-	n, err := svc.DeleteNavNode(context.Background(), "t1", "kb1", "C1")
+	n, err := svc.DeleteNavNode(t.Context(), "t1", "kb1", "C1")
 	if err != nil {
 		t.Fatalf("DeleteNavNode: %v", err)
 	}

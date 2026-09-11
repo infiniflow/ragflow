@@ -787,6 +787,19 @@ func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, e
 	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
 }
 
+// PublishedCount returns the total number of backlog events published across
+// all datasets. Tests use it to assert that a code path did not trigger a
+// dataset-level knowledge-compile rebuild (PublishCompleted).
+func (f *FakeScheduler) PublishedCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.rows {
+		n += len(r.backlog)
+	}
+	return n
+}
+
 func (f *FakeScheduler) publishEntry(tenantID, datasetID string, entry BacklogEntry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -248,7 +248,7 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 }
 
 // TestParallel_SingleItemError_Wrapped asserts the "item %d: %w"
-// wrapping contract. The lambda must return the wrapped error,
+// wrapping  The lambda must return the wrapped error,
 // other items must be drained.
 func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 	ctx := t.Context()

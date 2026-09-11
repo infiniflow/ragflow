@@ -22,7 +22,6 @@
 package service
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +31,7 @@ import (
 // a clear error rather than panicking.
 func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 	var s *MemoryMessageService
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
 	if err == nil {
 		t.Fatal("expected error from nil service")
 	}
@@ -45,7 +44,7 @@ func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 // short-circuits to an empty result with no error.
 func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 	s := &MemoryMessageService{memories: nil} // no lookups happen
-	res, err := s.QueueSaveToMemoryTask(context.Background(), nil, MemoryMessage{AgentID: "a1"})
+	res, err := s.QueueSaveToMemoryTask(t.Context(), nil, MemoryMessage{AgentID: "a1"})
 	if err != nil {
 		t.Fatalf("QueueSaveToMemoryTask: %v", err)
 	}
@@ -59,7 +58,7 @@ func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 // up front.
 func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	s := &MemoryMessageService{}
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{})
 	if err == nil {
 		t.Fatal("expected error for missing AgentID")
 	}

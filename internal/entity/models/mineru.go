@@ -81,7 +81,14 @@ func (m *MinerUModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 }
 
 func (m *MinerUModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	// MinerU.net is a document-parsing API: it accepts document URLs via
+	// ParseFile, not image OCR requests. OCRFile is exercised during model
+	// verification (verifyOCRModel), so delegate to CheckConnection which
+	// probes the doc_parse endpoint for reachability and authentication.
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return &OCRFileResponse{}, nil
 }
 
 func (m *MinerUModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {

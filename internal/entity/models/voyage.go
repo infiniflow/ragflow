@@ -83,9 +83,17 @@ func (v *VoyageModel) Embed(ctx context.Context, modelName *string, request Embe
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
+	// Python VoyageEmbed.embed passes input_type="document"; encode_queries
+	// passes "query". The Voyage API applies a different (asymmetric) encoding
+	// per input_type, so the field must be sent on both paths.
+	inputType := "document"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": request.Texts,
+		"model":      *modelName,
+		"input":      request.Texts,
+		"input_type": inputType,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["output_dimension"] = embeddingConfig.Dimension

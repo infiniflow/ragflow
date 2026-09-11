@@ -18,15 +18,19 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"ragflow/internal/utility"
 )
 
@@ -145,6 +149,52 @@ func TestInvoke_UsesNodeParams(t *testing.T) {
 	}
 	if got, _ := out["result"].(string); got != "configured" {
 		t.Errorf("result = %q, want configured", got)
+	}
+}
+
+func TestInvokeHeadersToleratesInvalidInput(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  any
+		want map[string]any
+	}{
+		{name: "malformed JSON", raw: `{"Authorization":"Bearer secret-token"`, want: nil},
+		{name: "empty", raw: "", want: nil},
+		{name: "array", raw: `["secret-token"]`, want: nil},
+		{name: "scalar", raw: `true`, want: nil},
+		{name: "null", raw: "null", want: nil},
+		{name: "unsupported", raw: 42, want: nil},
+		{name: "object", raw: `{"X-Test":"yes"}`, want: map[string]any{"X-Test": "yes"}},
+		{name: "direct map", raw: map[string]any{"X-Test": "yes"}, want: map[string]any{"X-Test": "yes"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := invokeHeaders(tt.raw)
+			if err != nil {
+				t.Fatalf("invokeHeaders() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("invokeHeaders() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInvokeHeadersDoesNotLogRawPayload(t *testing.T) {
+	previous := zap.L()
+	core, logs := observer.New(zap.WarnLevel)
+	zap.ReplaceGlobals(zap.New(core))
+	t.Cleanup(func() { zap.ReplaceGlobals(previous) })
+
+	const secret = "Bearer secret-token"
+	if _, err := invokeHeaders(`{"Authorization":"` + secret); err != nil {
+		t.Fatalf("invokeHeaders() error = %v", err)
+	}
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+			t.Fatalf("log contains raw header payload: %#v", entry)
+		}
 	}
 }
 
