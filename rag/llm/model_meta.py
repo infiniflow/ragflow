@@ -1149,6 +1149,18 @@ class Hubris(OpenAIAPICompatible):
         return f"{self._BASE_URL}/models"
 
 
+class DaoXE(OpenAIAPICompatible):
+    """DaoXE catalog lister.
+
+    The live catalog is account-scoped and changes over time, so the list is
+    read from the gateway's own ``/v1/models`` endpoint (inherited behavior)
+    rather than pinned in ``conf/models/daoxe.json``, which stays empty on
+    purpose.
+    """
+
+    _FACTORY_NAME = "DaoXE"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

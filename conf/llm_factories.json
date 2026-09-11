@@ -2033,6 +2033,14 @@
             "llm": []
         },
         {
+            "name": "DaoXE",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [],
+            "rank": "885"
+        },
+        {
             "name": "DeepSeek",
             "logo": "",
             "tags": "LLM",
