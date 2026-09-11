@@ -46,9 +46,10 @@ import (
 // a new instance, never mutating in place — see eino's
 // components/model/interface.go:84-99 for the rationale).
 type EinoChatModel struct {
-	inner   *ChatModel
-	chatCfg *ChatConfig
-	tools   []*schema.ToolInfo
+	inner      *ChatModel
+	chatCfg    *ChatConfig
+	tools      []*schema.ToolInfo
+	toolChoice *string
 }
 
 // NewEinoChatModel wraps an existing RAGFlow *ChatModel so it can be passed
@@ -261,6 +262,8 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 			choice = "required"
 			break
 		}
+		//if m.toolChoice != nil {
+		//	choice = *m.toolChoice
 	}
 	cfg.ToolChoice = &choice
 	for _, tool := range m.tools {
@@ -457,6 +460,21 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 	cp := *m
 	cp.tools = append([]*schema.ToolInfo(nil), tools...)
 	return &cp, nil
+}
+
+// WithToolChoice returns a NEW EinoChatModel instance constrained to the given
+// tool_choice string ("auto", "none", "required", or a specific tool name).
+// Empty string leaves the default ("auto"). Mirrors eino's WithToolChoice but
+// operates on the RAGFlow wrapper so the choice reaches the driver's request
+// body via chatConfigForGenerate.
+func (m *EinoChatModel) WithToolChoice(choice string) *EinoChatModel {
+	cp := *m
+	if choice == "" {
+		cp.toolChoice = nil
+		return &cp
+	}
+	cp.toolChoice = &choice
+	return &cp
 }
 
 // Tools returns the tools currently bound to the wrapper (used by

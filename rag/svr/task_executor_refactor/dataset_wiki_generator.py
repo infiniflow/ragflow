@@ -1114,6 +1114,7 @@ async def run_wiki_incremental(
                     tenant_id=ctx.tenant_id,
                     kb_id=ctx.kb_id,
                     language=ctx.language,
+                    callback=lambda p, msg: progress(p, msg),
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
