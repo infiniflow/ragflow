@@ -381,13 +381,15 @@ class PooledConnectionRetryMixin:
             self._state.connection_loss = None
         return transaction
 
-    def commit(self, *args, **kwargs):
+    def commit(self):
         if getattr(self._state, "connection_loss", None) is not None:
+            logging.debug("Suppressing commit after database connection loss")
             return
         return super().commit()
 
-    def rollback(self, *args, **kwargs):
+    def rollback(self):
         if getattr(self._state, "connection_loss", None) is not None:
+            logging.debug("Suppressing rollback after database connection loss")
             return
         return super().rollback()
 
@@ -404,7 +406,7 @@ class PooledConnectionRetryMixin:
 
 def _is_mysql_connection_error(error):
     args = getattr(error, "args", ())
-    if args and args[0] in {2006, 2013}:
+    if args and isinstance(args[0], int) and args[0] in {2006, 2013}:
         return True
     if error.__class__.__name__ == "InterfaceError":
         return True
