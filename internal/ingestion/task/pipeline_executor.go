@@ -883,12 +883,20 @@ func writeExistingLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInpu
 		"avatar":           pipelineAvatar,
 		"progress":         doc.Progress,
 		"progress_msg":     doc.ProgressMsg,
-		"process_begin_at": doc.ProcessBeginAt,
 		"process_duration": doc.ProcessDuration,
 		"parser_id":        doc.ParserID,
+		"source_from":      strings.SplitN(doc.SourceType, "/", 2)[0],
+		"document_suffix":  doc.Suffix,
+		"document_type":    doc.Type,
 	}
 	if doc.Name != nil {
 		updates["document_name"] = *doc.Name
+	}
+	// The early row was opened with a timestamp. Keep it when the reloaded
+	// document carries none (a run that never reached the progress sink), so
+	// the queued entry does not lose its start time.
+	if doc.ProcessBeginAt != nil {
+		updates["process_begin_at"] = doc.ProcessBeginAt
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", targetID, dao.PipelineOperationStatusOpen()).

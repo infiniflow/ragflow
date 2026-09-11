@@ -286,31 +286,31 @@ func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm
 // progress message. The row is targeted by id, so it can never touch another
 // run's row, and the update is guarded by the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
-// queued write cannot regress a row a concurrent writer already advanced
-// (RowsAffected 0, reported as false).
-func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) (bool, error) {
+// queued write cannot regress a row a concurrent writer already advanced.
+// A row that already left the declared from-states is left untouched.
+func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) error {
 	if logID == "" || len(fromStatuses) == 0 {
-		return false, nil
+		return nil
 	}
-	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
 		Updates(map[string]interface{}{
 			"operation_status": operationStatus,
 			"progress_msg":     progressMsg,
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected == 1, nil
+		}).Error
 }
 
-// DeleteOpenLogsByDocumentID removes the open (non-terminal) rows for a
-// document. Used to clean up the early row when task creation rolls back or a
-// run is superseded, so the detail page is not left with a permanently queued
-// entry.
-func (dao *PipelineOperationLogDAO) DeleteOpenLogsByDocumentID(ctx context.Context, db *gorm.DB, documentID string) error {
-	return db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, PipelineOperationStatusOpen()).
+// DeleteOpenLogByID removes a run's own pre-terminal row. Used to clean up the
+// early row when a task is rolled back or removed, so the detail page is not
+// left with a permanently queued entry. Deleting by id (rather than by
+// document) keeps the cleanup away from a newer run's row, and the open-status
+// guard keeps it away from a terminal row, which is history.
+func (dao *PipelineOperationLogDAO) DeleteOpenLogByID(ctx context.Context, db *gorm.DB, logID string) error {
+	if logID == "" {
+		return nil
+	}
+	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", logID, PipelineOperationStatusOpen()).
 		Delete(&entity.PipelineOperationLog{}).Error
 }
 

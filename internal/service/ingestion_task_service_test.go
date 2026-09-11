@@ -920,6 +920,12 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 	if err := dao.DB.Create(early).Error; err != nil {
 		t.Fatalf("seed early log: %v", err)
 	}
+	// Removal cleanup is scoped to the row the task owns, as bound in
+	// production by createEarlyLogBestEffort.
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "early-log").Error; err != nil {
+		t.Fatalf("bind early log: %v", err)
+	}
 
 	userID := "user-1"
 	info, err := svc.Remove(ctx, "task-1", &userID)
@@ -1461,6 +1467,149 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 	if countPipelineLogs(t, db, "doc-1") != 2 {
 		t.Fatalf("expected 2 pipeline log rows (finished + fresh queued)")
+	}
+}
+
+// TestIngestionTaskServiceOpensEarlyLogBeforePublish locks the ordering that
+// closes the orphan window: the run's row must exist before its message is
+// published, so a worker that claims and finishes the task immediately still
+// finds a row to terminalize.
+func TestIngestionTaskServiceOpensEarlyLogBeforePublish(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	var logIDAtPublish string
+	publisher := &recordingTaskPublisher{
+		beforeReturn: func(taskID string) {
+			task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+			if err != nil {
+				t.Fatalf("load task at publish: %v", err)
+			}
+			if task.PipelineLogID == nil {
+				t.Fatal("task was published before its early log row was bound")
+			}
+			logIDAtPublish = *task.PipelineLogID
+		},
+	}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	if _, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"}); err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if logIDAtPublish == "" {
+		t.Fatal("publish did not observe a bound early log row")
+	}
+	open := loadOpenPipelineLog(t, t.Context(), db, "doc-1")
+	if open.ID != logIDAtPublish {
+		t.Fatalf("open row = %q, want the row bound before publish %q", open.ID, logIDAtPublish)
+	}
+}
+
+// TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesEarlyLog locks
+// the workerless STOPPING finalize: MQ redelivery of a STOPPING task stops it
+// without ever running a terminal pipeline-log writer, so StartRunning must
+// close the row itself.
+func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesEarlyLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPING)
+
+	runningMsg := "Task is running..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "running-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &runningMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed running log: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "running-log").Error; err != nil {
+		t.Fatalf("bind running log: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	task, err := svc.StartRunning(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+	var done entity.PipelineOperationLog
+	if err := db.First(&done, "id = ?", "running-log").Error; err != nil {
+		t.Fatalf("load running log: %v", err)
+	}
+	if done.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("OperationStatus = %q, want %q (workerless stop must close the row)", done.OperationStatus, string(entity.TaskStatusCancel))
+	}
+}
+
+// TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow locks the ownership
+// rule: a run reuses the row it is bound to, never an unrelated open row that
+// happens to exist for the same document.
+func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	queuedMsg := "Task is queued..."
+	seed := func(id, status string) {
+		t.Helper()
+		if err := dao.DB.Create(&entity.PipelineOperationLog{
+			ID:              id,
+			DocumentID:      "doc-1",
+			TenantID:        "tenant-1",
+			KbID:            "kb-1",
+			ParserID:        "naive",
+			TaskType:        "Parse",
+			OperationStatus: status,
+			ProgressMsg:     &queuedMsg,
+		}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	seed("bound-log", string(entity.TaskStatusUnstart))
+	seed("unrelated-log", string(entity.TaskStatusSchedule))
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "bound-log").Error; err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	if _, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	}); err != nil {
+		t.Fatalf("CreateAndEnqueue failed: %v", err)
+	}
+
+	if got := countPipelineLogs(t, db, "doc-1"); got != 2 {
+		t.Fatalf("pipeline log rows = %d, want 2 (bound row advanced, no third row created)", got)
+	}
+	if bound := loadTaskPipelineLogID(t, t.Context(), db, "task-1"); bound != "bound-log" {
+		t.Fatalf("task bound to %q, want its own row bound-log", bound)
+	}
+	var bound entity.PipelineOperationLog
+	if err := db.First(&bound, "id = ?", "bound-log").Error; err != nil {
+		t.Fatalf("load bound log: %v", err)
+	}
+	if bound.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("bound row status = %q, want %q", bound.OperationStatus, string(entity.TaskStatusSchedule))
 	}
 }
 

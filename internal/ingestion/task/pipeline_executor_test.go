@@ -698,6 +698,71 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 	}
 }
 
+// TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone locks the
+// timestamp handover: the terminal snapshot must not blank the start time the
+// queued row was opened with when the document carries none (a run that never
+// reached the progress sink).
+func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local)
+	queuedMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "early-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &queuedMsg,
+		ProcessBeginAt:  &openedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed early log: %v", err)
+	}
+
+	run := "4"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		Run:          &run,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "4",
+		OpenLogID:  "early-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "early-log").Error; err != nil {
+		t.Fatalf("load early log: %v", err)
+	}
+	if log.OperationStatus != "4" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.ProcessBeginAt == nil || !log.ProcessBeginAt.Equal(openedAt) {
+		t.Fatalf("ProcessBeginAt = %v, want the queued row's %v", log.ProcessBeginAt, openedAt)
+	}
+	if log.SourceFrom != "local" || log.DocumentSuffix != ".pdf" || log.DocumentType != "pdf" {
+		t.Fatalf("terminal write did not refresh document metadata: source_from=%q suffix=%q type=%q",
+			log.SourceFrom, log.DocumentSuffix, log.DocumentType)
+	}
+}
+
 // TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow locks the run-isolation
 // contract: a terminal write is bound to the row its own run opened, so a late
 // write from a superseded run (whose row was replaced) can neither finalize nor

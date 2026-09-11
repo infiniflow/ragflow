@@ -257,6 +257,10 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		// that RequestStop set would otherwise leak until TTL and cancel the
 		// next run of this task at the worker's pre-start check.
 		clearCancelFlag(ctx, taskID)
+		// Same reason as RequestStop's CREATED/SCHEDULED branch: the stop
+		// finalizes without a worker, so no terminal pipeline-log writer will
+		// close the early row. Close it here or it stays RUNNING forever.
+		s.advanceEarlyLog(ctx, task, earlyLogFromOpen, string(entity.TaskStatusCancel), earlyLogMsgStopped, false)
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -349,7 +353,7 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	// The task row is gone, so no worker will ever reach the terminal writer
 	// for this run. Drop its open early row, otherwise the detail page keeps a
 	// queued entry.
-	s.deleteEarlyLogBestEffort(ctx, task.DocumentID)
+	s.deleteEarlyLogBestEffort(ctx, task)
 	return info, nil
 }
 
@@ -466,7 +470,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			// opens (and binds) a new one.
 			s.createEarlyLogBestEffort(ctx, existing, string(entity.TaskStatusUnstart), earlyLogMsgQueued, kbCache)
 			if err = s.enqueueTask(existing.ID); err != nil {
-				s.deleteEarlyLogBestEffort(ctx, existing.DocumentID)
+				s.deleteEarlyLogBestEffort(ctx, existing)
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
 					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
 				}
@@ -482,23 +486,21 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	// Publish first: the worker (or request stop) can only observe the task
-	// once the message is out, and the early-log write below deliberately
-	// lags so the queued entry never appears before the task is dispatchable.
-	// A worker that wins the race lands the task in RUNNING; the worker's own
-	// advance then opens and binds the row, which the late markScheduled write
-	// must not regress (see below).
+	// Open the pre-terminal row the dataset detail page reads *before*
+	// publishing. Once the message is out a worker can claim the task and run
+	// it to a terminal state, and the terminal writer must always find the row
+	// it is bound to; a row created after publication could be inserted too
+	// late and stay queued forever. The prior run (if any) is terminal, so no
+	// open row exists and this never duplicates. Best-effort: on a DB blip the
+	// row is simply missing and markScheduledAfterPublish re-opens it at "5".
+	s.createEarlyLogBestEffort(ctx, created, string(entity.TaskStatusUnstart), earlyLogMsgQueued, kbCache)
 	if err = s.enqueueTask(created.ID); err != nil {
+		s.deleteEarlyLogBestEffort(ctx, created)
 		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
 			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
 		}
 		return nil, err
 	}
-	// Open the pre-terminal row the dataset detail page reads. The prior run
-	// (if any) is terminal, so no open row exists and this never duplicates.
-	// Best-effort: on a DB blip the row is simply missing and the
-	// markScheduled fallback below re-opens it at "5".
-	s.createEarlyLogBestEffort(ctx, created, string(entity.TaskStatusUnstart), earlyLogMsgQueued, kbCache)
 	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
@@ -606,25 +608,38 @@ const (
 var (
 	earlyLogFromQueued  = []string{string(entity.TaskStatusUnstart)}
 	earlyLogFromStarted = []string{string(entity.TaskStatusUnstart), string(entity.TaskStatusSchedule)}
+	// earlyLogFromOpen accepts every pre-terminal state: closing a row to a
+	// terminal status is a valid successor of any of them.
+	earlyLogFromOpen = dao.PipelineOperationStatusOpen()
 )
 
 // createEarlyLogBestEffort opens the pre-terminal row the dataset detail page
-// reads and binds it to the task. Best-effort: never fails task creation. An
-// existing open row is adopted (and bound) instead of duplicated, so a run
-// never owns two queued rows. The caller passes the status/message so a
-// late-created row carries the current status.
+// reads and binds it to the task. Best-effort: never fails task creation. The
+// caller passes the status/message so a late-created row carries the current
+// status.
+//
+// A run that already owns a row keeps it: a still-open row is reused, and a
+// row left over from a previous run (terminal, so no longer open) is replaced.
+// Only an unbound task falls back to the document's open row — that is the
+// legacy/adopt path, and it is the one place a document-wide lookup is safe.
 func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) {
 	if task == nil || s.pipelineLogDAO == nil {
 		return
 	}
-	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", task.DocumentID, err))
-		return
-	}
-	if open != nil {
-		s.bindEarlyLog(ctx, task, open.ID)
-		return
+	if bound := task.PipelineLogID; bound != nil && *bound != "" {
+		if s.earlyLogRowIsOpen(ctx, *bound) {
+			return
+		}
+	} else {
+		open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
+		if err != nil {
+			common.Warn(fmt.Sprintf("CreateAndEnqueue: check open pipeline log for document %s: %v", task.DocumentID, err))
+			return
+		}
+		if open != nil {
+			s.bindEarlyLog(ctx, task, open.ID)
+			return
+		}
 	}
 	input, err := s.buildEarlyLogInput(ctx, task, operationStatus, progressMsg, kbCache)
 	if err != nil {
@@ -637,6 +652,20 @@ func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, tas
 		return
 	}
 	s.bindEarlyLog(ctx, task, log.ID)
+}
+
+// earlyLogRowIsOpen reports whether the row a task is bound to still exists in
+// a pre-terminal state. A missing or already-final row means the run needs a
+// fresh one.
+func (s *IngestionTaskService) earlyLogRowIsOpen(ctx context.Context, logID string) bool {
+	log, err := s.pipelineLogDAO.GetByID(ctx, dao.DB, logID)
+	if err != nil {
+		if !dao.IsNotFoundErr(err) {
+			common.Warn(fmt.Sprintf("CreateAndEnqueue: load pipeline log %s: %v", logID, err))
+		}
+		return false
+	}
+	return slices.Contains(dao.PipelineOperationStatusOpen(), log.OperationStatus)
 }
 
 // bindEarlyLog records the run's log row on the task so the running advance and
@@ -652,23 +681,23 @@ func (s *IngestionTaskService) bindEarlyLog(ctx context.Context, task *entity.In
 	}
 }
 
-// advanceEarlyLog moves the task's own row to operationStatus from one of
-// fromStatuses, opening a fresh row when none exists and reopen is set.
-// Best-effort: never fails task transitions.
+// advanceEarlyLog moves the task's own bound row to operationStatus from one of
+// fromStatuses. Best-effort: never fails task transitions.
 //
-// A run whose row was already closed (stopped, superseded, rolled back) must
-// never resurrect it: reopening is skipped once the task is terminal, otherwise
-// the detail page would keep a permanently queued entry.
+// It never looks the row up by document: only the row this run is bound to is
+// advanced, so a concurrent run's row can be neither regressed nor adopted. A
+// task with no bound row (legacy task, or a lost best-effort create) opens one,
+// but only while the task is still live — a terminal task must never resurrect
+// a closed row as a permanently queued entry.
 func (s *IngestionTaskService) advanceEarlyLog(ctx context.Context, task *entity.IngestionTask, fromStatuses []string, operationStatus, progressMsg string, reopen bool) {
 	if task == nil || task.DocumentID == "" || s.pipelineLogDAO == nil {
 		return
 	}
-	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
-	if err != nil {
-		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", task.DocumentID, operationStatus, err))
-		return
+	logID := ""
+	if task.PipelineLogID != nil {
+		logID = *task.PipelineLogID
 	}
-	if open == nil {
+	if logID == "" {
 		terminal := task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED
 		if !reopen || terminal {
 			return
@@ -676,28 +705,21 @@ func (s *IngestionTaskService) advanceEarlyLog(ctx context.Context, task *entity
 		s.createEarlyLogBestEffort(ctx, task, operationStatus, progressMsg, nil)
 		return
 	}
-	// The enqueue-time create may have succeeded without the id reaching the
-	// task row (lost update); adopt the document's open row so this run still
-	// owns exactly one row.
-	if task.PipelineLogID == nil || *task.PipelineLogID != open.ID {
-		s.bindEarlyLog(ctx, task, open.ID)
-	}
-	if !slices.Contains(fromStatuses, open.OperationStatus) {
-		return
-	}
-	if _, err = s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, open.ID, fromStatuses, operationStatus, progressMsg); err != nil {
+	if err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, logID, fromStatuses, operationStatus, progressMsg); err != nil {
 		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", task.DocumentID, operationStatus, err))
 	}
 }
 
-// deleteEarlyLogBestEffort drops open rows for a document so a rolled-back
-// or deleted run leaves no permanently queued entry on the detail page.
-func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, documentID string) {
-	if documentID == "" || s.pipelineLogDAO == nil {
+// deleteEarlyLogBestEffort drops the open row a run owns, so a rolled-back or
+// deleted run leaves no permanently queued entry on the detail page. Only the
+// run's own open row goes: a terminal row is history, and a newer run's row is
+// not this caller's to drop.
+func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil || task.PipelineLogID == nil || s.pipelineLogDAO == nil {
 		return
 	}
-	if err := s.pipelineLogDAO.DeleteOpenLogsByDocumentID(ctx, dao.DB, documentID); err != nil {
-		common.Warn(fmt.Sprintf("CreateAndEnqueue: delete early pipeline log for document %s: %v", documentID, err))
+	if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, *task.PipelineLogID); err != nil {
+		common.Warn(fmt.Sprintf("CreateAndEnqueue: delete early pipeline log for document %s: %v", task.DocumentID, err))
 	}
 }
 
