@@ -63,6 +63,12 @@ class RAGFlowConnector:
     _CACHE_TTL = 300
     # Keep in sync with api.utils.pagination_utils.REST_API_MAX_PAGE_SIZE.
     _REST_API_MAX_PAGE_SIZE = 100
+    # Fixed rerank candidate window sent with every retrieval request, so the
+    # ranking cannot shift between pages of one pagination sequence (the backend
+    # reranks this many candidates before slicing the requested page). Requests
+    # whose page * page_size exceeds it are rejected up front. Keep in sync with
+    # mcpRerankCandidatesCount in internal/handler/mcp_server.go.
+    _RERANK_CANDIDATES_COUNT = 512
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -294,6 +300,19 @@ class RAGFlowConnector:
                 logging.info("MCP retrieval found no accessible datasets for current user")
                 raise Exception([types.TextContent(type="text", text="No accessible datasets found.")])
 
+        if page * page_size > self._RERANK_CANDIDATES_COUNT:
+            # Fail here rather than letting the backend reject the request: a
+            # window past the fixed candidate pool cannot be served with a
+            # stable ranking anyway.
+            raise Exception(
+                [
+                    types.TextContent(
+                        type="text",
+                        text=(f"page * page_size ({page * page_size}) exceeds the fixed rerank candidate window ({self._RERANK_CANDIDATES_COUNT}); narrow page or page_size."),
+                    )
+                ]
+            )
+
         data_json = {
             "page": page,
             "page_size": page_size,
@@ -301,6 +320,10 @@ class RAGFlowConnector:
             "vector_similarity_weight": vector_similarity_weight,
             "top_k": top_k,
             "rerank_id": rerank_id,
+            # A fixed window (not page * page_size) keeps the rerank pool — and
+            # therefore the ranking — identical on every page of a pagination
+            # sequence, so pages cannot drift, duplicate, or skip results.
+            "rerank_candidates_count": self._RERANK_CANDIDATES_COUNT,
             "keyword": keyword,
             "question": question,
             "dataset_ids": dataset_ids,

@@ -388,7 +388,7 @@ export default {
       action: 'Action',
       parsingStatus: "Statut d'analyse",
       parsingStatusTip:
-        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https: //ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
+        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
       processBeginAt: 'Commencé à',
       processDuration: 'Durée',
       progressMsg: 'Progression',
@@ -456,7 +456,7 @@ export default {
         'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
-        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https: //ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       autoQuestions: 'Questions automatiques',
       autoQuestionsTip:
         "Extrait automatiquement N questions par segment. N'interrompt pas l'analyse si une erreur survient. Consomme aussi des tokens. Voir la documentation.",
@@ -632,7 +632,7 @@ export default {
       // Les contenus HTML comme "book", "laws", etc. sont laissés en l'état pour ne pas altérer leur structure technique.
       useRaptor: 'Utiliser RAPTOR pour améliorer la récupération',
       useRaptorTip:
-        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https: //ragflow.io/docs/dev/enable_raptor pour plus d'informations.",
+        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree pour plus d'informations.",
       prompt: 'Prompt',
       promptTip:
         'Décrivez la tâche attendue du LLM, ses réponses, ses exigences, etc. Utilisez `/` pour afficher les variables disponibles.',
@@ -685,7 +685,7 @@ export default {
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l\'année 2025".',
       community: 'Génération de rapports communautaires',
-      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https: //www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
+      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
       theDocumentBeingParsedCannotBeDeleted:
         "Le document en cours d'analyse ne peut pas être supprimé",
       lastWeek: 'de la semaine dernière',
@@ -1011,7 +1011,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       quoteTip: 'Afficher ou non le texte original en référence.',
       selfRag: 'Self-RAG',
       selfRagTip:
-        'Veuillez vous référer à : https: //huggingface.co/papers/2310.11511',
+        'Veuillez vous référer à : https://huggingface.co/papers/2310.11511',
       overview: 'ID de discussion',
       pv: 'Nombre de messages',
       uv: "Nombre d'utilisateurs actifs",
@@ -2230,7 +2230,7 @@ Exemple : Virtual Hosted Style`,
       },
       akShare: 'AkShare',
       akShareDescription:
-        'Un composant qui obtient des nouvelles sur les actions depuis https: //www.eastmoney.com/.',
+        'Un composant qui obtient des nouvelles sur les actions depuis https://www.eastmoney.com/.',
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'Un composant qui interroge des informations sur une société cotée en bourse à partir de son symbole boursier.',
