@@ -42,8 +42,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     liveDoc ??
     documents.find((item: IDocumentInfo) => item.id === record?.id) ??
     record;
-  const queued =
-    isGoBackend && !!sourceDoc && isDocumentQueued(sourceDoc);
+  const queued = isGoBackend && !!sourceDoc && isDocumentQueued(sourceDoc);
 
   // The Go backend reports a queued document via ingestion_status while the
   // legacy document.progress_msg stays empty until the worker starts. Fall
