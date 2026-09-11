@@ -46,7 +46,7 @@ class TestChunksList:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [

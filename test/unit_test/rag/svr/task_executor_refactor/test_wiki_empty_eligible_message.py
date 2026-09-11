@@ -66,6 +66,7 @@ _STUB_NAMES = (
     "rag",
     "rag.advanced_rag",
     "rag.advanced_rag.knowlege_compile",
+    "rag.advanced_rag.knowlege_compile._common",
     "rag.nlp",
     "rag.utils",
     "rag.utils.es_connection",
@@ -112,6 +113,10 @@ def _load_wiki_generator(monkeypatch):
     # Set __path__ on the knowlege_compile stub so that submodules like
     # ``structure`` resolve as packages rather than attribute lookups.
     sys.modules["rag.advanced_rag.knowlege_compile"].__path__ = [os.path.join(_REPO_ROOT, "rag", "advanced_rag", "knowlege_compile")]
+    _stub_module(
+        "rag.advanced_rag.knowlege_compile._common",
+        env_int=lambda _name, default, **_kwargs: default,
+    )
     sys.modules["rag.advanced_rag.knowlege_compile"].structure = ModuleType("rag.advanced_rag.knowlege_compile.structure")
     sys.modules["rag.advanced_rag.knowlege_compile.structure"] = sys.modules["rag.advanced_rag.knowlege_compile"].structure
     sys.modules["rag.advanced_rag.knowlege_compile.structure"].LLMCallPool = type("LLMCallPool", (), {})
@@ -126,7 +131,6 @@ def _load_wiki_generator(monkeypatch):
         _wiki_scan_current_chunk_state=lambda *_args, **_kwargs: [],
         wiki_map_from_chunks=lambda *_args, **_kwargs: [],
         wiki_plan_from_reduction=lambda *_args, **_kwargs: [],
-        wiki_reduce_from_extracts=lambda *_args, **_kwargs: [],
         wiki_refine_from_plan=lambda *_args, **_kwargs: [],
     )
     _stub_module("rag.nlp", search=ModuleType("rag.nlp.search"))

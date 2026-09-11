@@ -103,7 +103,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.0` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -214,7 +214,7 @@ The OAuth configuration for signing up or signing in to RAGFlow using a third-pa
   - `userinfo_url`: URL for obtaining user information (username, email, etc.).
   - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
   - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
 :::tip NOTE
 The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
@@ -227,7 +227,7 @@ oauth:
     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
     token_url: "https://your-oauth-provider.com/oauth/token"
     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
 
   oidc:
     display_name: "OIDC"
@@ -235,7 +235,7 @@ oauth:
     client_secret: "your_client_secret"
     issuer: "https://your-oauth-provider.com/oidc"
     scope: "openid email profile"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
 
   github:
     # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
@@ -244,27 +244,20 @@ oauth:
     display_name: "Github"
     client_id: "your_client_id"
     client_secret: "your_client_secret"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 ```
 :::
 
 ### `user_default_llm`
 
-The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
+Assigning default models to newly registered users through `user_default_llm` is deprecated and no longer supported in the open-source version. Uncommenting this section in **service_conf.yaml.template** does not configure models for new users.
 
-- `factory`: The LLM supplier. Available options:
-  - `"OpenAI"`
-  - `"DeepSeek"`
-  - `"Moonshot"`
-  - `"Tongyi-Qianwen"`
-  - `"VolcEngine"`
-  - `"ZHIPU-AI"`
-- `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
-- `allowed_factories`: If this is set, the users will be allowed to add only the factories in this list.
-  - `"OpenAI"`
-  - `"DeepSeek"`
-  - `"Moonshot"`
+Each tenant must configure its own model provider instances and credentials. New users do not automatically inherit an administrator's configured instances or default model selections.
 
-:::tip NOTE
-If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
+Go to **User settings** **>** **Model providers** to configure provider instances, add models, and select default models. See [Configure Model API Key](../../guides/models/llm_api_key_setup.md) for instructions.
+
+The Enterprise Edition provides role-level default model settings.
+
+:::note Builtin embedding
+If you deploy TEI, keep the shipped `user_default_llm.default_models.embedding_model` connection settings in **service_conf.yaml.template**. They are used by the TEI `Builtin` embedding service and do not assign administrator-owned model instances to new tenants.
 :::
