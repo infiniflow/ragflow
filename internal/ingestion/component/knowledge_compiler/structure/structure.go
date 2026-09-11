@@ -117,9 +117,18 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		budget = 4096
 	}
 	batches := common.PackBatches(inputs.Chunks, budget, deps.Tokenizer)
+	// Extraction and embedding are two phases (upstream): the pool workers only
+	// extract; buildRows (which calls Embed.Encode) runs serially afterwards so
+	// embedding batch jobs are never nested inside a compiler-pool worker.
+	type extractedBatch struct {
+		nodes, edges []map[string]any
+		batchIDs     []string
+	}
+	extracted := make([]extractedBatch, len(batches))
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
+		i, batch := i, batch
 		jobs = append(jobs, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
@@ -130,10 +139,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				return err
 			}
 			// Evidence gate (mirrors Python _struct_process_batch): validate
-			// quotes while the batch's source text is still in hand, before
-			// embedding so the vector is built from the surviving payload.
-			// Relations are gated only when the template asked them to carry
-			// evidence.
+			// quotes while the batch's source text is still in hand. It is
+			// pure validation — no embedding — so it stays inside the worker,
+			// and the vectors buildRows builds later are computed from the
+			// surviving payload. Relations are gated only when the template
+			// asked them to carry evidence.
 			textByID := batchTextByID(batch)
 			if len(textByID) > 0 {
 				nodes, _, _ = ValidatePayloadEvidence(nodes, textByID, gateMode)
@@ -141,12 +151,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 					edges, _, _ = ValidatePayloadEvidence(edges, textByID, gateMode)
 				}
 			}
-			rows, err := buildRows(ctx, deps, cfg, nodes, edges, batchIDs)
-			if err != nil {
-				return err
-			}
-			// Distinct slice index per batch → no cross-goroutine contention.
-			perBatch[i] = rows
+			// Keep embedding out of the compiler-pool worker. buildRows calls
+			// Embed.Encode, which may submit its own batch jobs to that pool;
+			// the serial loop after runBatches owns it.
+			extracted[i] = extractedBatch{nodes: nodes, edges: edges, batchIDs: batchIDs}
 			return nil
 		})
 	}
@@ -155,6 +163,19 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// otherwise fall back to serial execution (historic default).
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
+	}
+	// Embed each extracted batch serially after all MAP jobs have returned.
+	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
+	// already occupied by the shared compiler pool.
+	for i, result := range extracted {
+		if len(result.batchIDs) == 0 {
+			continue
+		}
+		rows, err := buildRows(ctx, deps, cfg, result.nodes, result.edges, result.batchIDs)
+		if err != nil {
+			return common.Outputs{}, err
+		}
+		perBatch[i] = rows
 	}
 
 	// ---- DEDUP ----

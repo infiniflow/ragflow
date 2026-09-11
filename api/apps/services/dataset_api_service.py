@@ -1596,8 +1596,8 @@ async def search_datasets(tenant_id: str, req: dict):
 # Artifact (knowledge compilation) page surface
 #
 # These three helpers power the dataset-level "Artifact" tab. They query rows
-# with ``compile_kwd="wiki_page"`` written by TaskHandler's
-# ``persist_wiki_pages``. The schema fields they rely on are:
+# with ``compile_kwd="wiki_page"`` written by incremental Wiki REFINE. The
+# schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
 #   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids

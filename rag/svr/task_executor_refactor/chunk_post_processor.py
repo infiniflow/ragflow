@@ -355,19 +355,6 @@ async def apply_tags(docs: list[dict], ctx: TaskContext) -> None:
         ctx.progress_cb(msg=f"Tagging {len(docs)} chunks completed in {timer() - st:.2f}s")
 
 
-def count_with_key(docs: list[dict], key: str) -> int:
-    """Count docs that have a specific key.
-
-    Args:
-        docs: List of chunk dictionaries.
-        key: The key to check for.
-
-    Returns:
-        Count of docs that have the key.
-    """
-    return sum(1 for d in docs if d.get(key))
-
-
 # =====================================================================
 # Document post-chunking pipeline
 # ---------------------------------------------------------------------
