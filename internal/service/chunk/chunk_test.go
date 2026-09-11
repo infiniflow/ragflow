@@ -199,12 +199,6 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
-	if doc.Run == nil {
-		t.Fatalf("expected doc run to remain nil, got %q", *doc.Run)
-	}
-	if *doc.Run != "0" {
-		t.Fatalf("expected doc run status is '1', got %q", *doc.Run)
-	}
 	if doc.ChunkNum != 7 {
 		t.Fatalf("expected chunk_num to remain 7, got %d", doc.ChunkNum)
 	}
@@ -289,10 +283,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	datasetID := "kb-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, "doc-1", datasetID)
-	running := string(entity.TaskStatusRunning)
-	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
-		t.Fatalf("mark doc running: %v", err)
-	}
+	insertChunkTestIngestionTask(t, "task-1", userID, "doc-1", datasetID, common.RUNNING)
 
 	svc := newParseTestService(t)
 	ctx := t.Context()
@@ -303,7 +294,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "currently being processed") {
+	if !strings.Contains(err.Error(), "ingestion task is RUNNING") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1773,9 +1764,9 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 
 	svc := newParseTestService(t)
 	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
-		// Simulate CancelDocParse: set doc.run=CANCEL.
-		return dao.DB.Model(&entity.Document{}).Where("id = ?", doc.ID).
-			Update("run", string(entity.TaskStatusCancel)).Error
+		// Simulate CancelDocParse: stop task.
+		return dao.DB.Model(&entity.IngestionTask{}).Where("document_id = ?", doc.ID).
+			Update("status", common.STOPPED).Error
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine

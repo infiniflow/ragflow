@@ -354,22 +354,20 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	}
 }
 
-// TestStartRunningMarksDocumentRunning locks in that starting a CREATED task
-// mirrors the transition to its document: run=RUNNING and progress counters
-// reset, with a fresh process_begin_at. The document bookkeeping is owned by
-// the task-lifecycle transition, not the ingestion worker's execution path.
-func TestStartRunningMarksDocumentRunning(t *testing.T) {
+// TestStartRunningResetsDocumentProgress locks in that starting a CREATED task
+// resets its document progress counters, with a fresh process_begin_at. The
+// document bookkeeping is owned by the task-lifecycle transition, not the
+// ingestion worker's execution path.
+func TestStartRunningResetsDocumentProgress(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
-	// Seed the document as a partially-processed, non-RUNNING state that the
-	// start transition must clobber.
+	// Seed the document as a partially-processed state that the start transition must reset.
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"run":          string(entity.TaskStatusDone),
 			"progress":     float64(0.5),
 			"progress_msg": "partial",
 		}).Error; err != nil {
@@ -385,9 +383,6 @@ func TestStartRunningMarksDocumentRunning(t *testing.T) {
 	var doc entity.Document
 	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
 		t.Fatalf("reload document: %v", err)
-	}
-	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
-		t.Fatalf("run = %v, want RUNNING(%q)", doc.Run, string(entity.TaskStatusRunning))
 	}
 	if doc.Progress != 0 {
 		t.Fatalf("progress = %f, want 0", doc.Progress)

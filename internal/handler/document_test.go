@@ -1169,8 +1169,8 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	if len(fake.filterOpts.Suffixes) != 1 || fake.filterOpts.Suffixes[0] != "pdf" {
 		t.Fatalf("expected suffix pdf, got %#v", fake.filterOpts.Suffixes)
 	}
-	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != string(entity.TaskStatusDone) {
-		t.Fatalf("expected run DONE to map to %q, got %#v", string(entity.TaskStatusDone), fake.filterOpts.RunStatuses)
+	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != common.COMPLETED {
+		t.Fatalf("expected run DONE to map to %q, got %#v", common.COMPLETED, fake.filterOpts.RunStatuses)
 	}
 	if len(fake.filterOpts.Types) != 1 || fake.filterOpts.Types[0] != "doc" {
 		t.Fatalf("expected type doc, got %#v", fake.filterOpts.Types)
@@ -1238,7 +1238,7 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 	}
 }
 
-func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
+func TestListDocumentsHandlerReturnsUnstartWhenNoIngestionTask(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB
 	dao.DB = db
@@ -1281,8 +1281,11 @@ func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
 	if len(response.Data.Docs) != 1 {
 		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
 	}
-	if _, exists := response.Data.Docs[0]["ingestion_status"]; exists {
-		t.Fatalf("ingestion_status should be omitted when no ingestion task exists")
+	if got := response.Data.Docs[0]["ingestion_status"]; got != "UNSTART" {
+		t.Fatalf("ingestion_status = %v, want UNSTART", got)
+	}
+	if _, exists := response.Data.Docs[0]["run"]; exists {
+		t.Fatalf("run field should not exist in response")
 	}
 }
 

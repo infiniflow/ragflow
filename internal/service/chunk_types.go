@@ -466,7 +466,11 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 
 	// Build document info, mirroring Python's _map_doc key renames:
 	// kb_id→dataset_id, parser_id→chunk_method, token_num→token_count,
-	// chunk_num→chunk_count, run→text status.
+	ingestionStatus := "UNSTART"
+	if task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, doc.ID); err == nil && task != nil && task.Status != "" {
+		ingestionStatus = task.Status
+	}
+
 	timeFormat := "2006-01-02T15:04:05"
 	docInfo := map[string]interface{}{
 		"id":               doc.ID,
@@ -489,7 +493,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              ChunkDocRunText(doc.Run),
+		"ingestion_status": ingestionStatus,
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -937,28 +941,6 @@ func isInternalField(k string) bool {
 
 // applyCommonChunkMapping applies field mappings shared between GetChunk and
 // ListChunks. Returns true if the field was handled.
-// chunkDocRunText maps the document run code to its text form, mirroring
-// Python's _map_doc run_mapping.
-func ChunkDocRunText(run *string) interface{} {
-	if run == nil {
-		return nil
-	}
-	switch *run {
-	case "0":
-		return "UNSTART"
-	case "1":
-		return "RUNNING"
-	case "2":
-		return "CANCEL"
-	case "3":
-		return "DONE"
-	case "4":
-		return "FAIL"
-	case "5":
-		return "SCHEDULE"
-	}
-	return *run
-}
 
 func applyCommonChunkMapping(result map[string]interface{}, k string, v interface{}) bool {
 	switch k {

@@ -370,8 +370,8 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 		"size":          doc.Size,
 		"chunk_num":     doc.ChunkNum,
 		"token_num":     doc.TokenNum,
-		"suffix":        doc.Suffix,
-		"run":           "0",
+		"suffix":           doc.Suffix,
+		"ingestion_status": "UNSTART",
 	}
 	if doc.Name != nil {
 		m["name"] = *doc.Name

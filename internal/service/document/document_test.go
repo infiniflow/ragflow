@@ -1398,13 +1398,13 @@ func TestStopParseDocuments_Success(t *testing.T) {
 		t.Fatalf("expected success_count=1, got %d", sc)
 	}
 
-	// Verify document run status updated to CANCEL
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc == nil || doc.Run == nil {
-		t.Fatal("doc not found or run is nil")
+	// Verify ingestion task status updated to STOPPED
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
 	}
-	if *doc.Run != string(entity.TaskStatusCancel) {
-		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusCancel), *doc.Run)
+	if task.Status != common.STOPPED {
+		t.Fatalf("expected task status=%s, got %s", common.STOPPED, task.Status)
 	}
 }
 
@@ -2075,7 +2075,6 @@ func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
 		wantErr string
 	}{
 		{name: "progress", request: UpdateDocumentRequest{Progress: float64Ptr(0)}, wantErr: "can't change `progress`"},
-		{name: "run", request: UpdateDocumentRequest{Run: sptr("0")}, wantErr: "can't change `run`"},
 		{name: "progress message", request: UpdateDocumentRequest{ProgressMsg: sptr("reset")}, wantErr: "can't change `progress_msg`"},
 		{name: "chunk count", request: UpdateDocumentRequest{ChunkNum: int64Ptr(0)}, wantErr: "can't change `chunk_num`"},
 		{name: "token count", request: UpdateDocumentRequest{TokenNum: int64Ptr(0)}, wantErr: "can't change `token_num`"},
@@ -2133,7 +2132,6 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	tokenNum := int64(10)
 	req := &UpdateDocumentRequest{
 		Name:        &newName,
-		Run:         &run,
 		TokenNum:    &tokenNum,
 		ChunkNum:    &chunkNum,
 		Progress:    &progress,
@@ -2243,8 +2241,8 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
-	if resp.ParserID != chunkMethod || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
-		t.Fatalf("response = %+v, want method=%s run=UNSTART counts=0", resp, chunkMethod)
+	if resp.ParserID != chunkMethod || resp.IngestionStatus != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
+		t.Fatalf("response = %+v, want method=%s ingestion_status=UNSTART counts=0", resp, chunkMethod)
 	}
 
 	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -3507,21 +3505,24 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc == nil || doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
-		t.Fatalf("expected doc run=CANCEL, got %v", doc.Run)
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("expected task status=%s, got %s", common.STOPPED, task.Status)
 	}
 }
 
-// TestIngest_CancelAgainWithoutTask: re-canceling a document already in
-// CANCEL state is accepted even when its ingestion task is gone — Python
-// treats run=CANCEL as cancelable and cancel_all_task_of is a no-op.
-func TestIngest_CancelAgainWithoutTask(t *testing.T) {
+// TestIngest_CancelAgainWhenAlreadyStopped: re-canceling a document whose task is
+// already STOPPED is accepted as a no-op.
+func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3530,7 +3531,7 @@ func TestIngest_CancelAgainWithoutTask(t *testing.T) {
 		Run:    string(entity.TaskStatusCancel),
 	})
 	if err != nil {
-		t.Fatalf("Ingest(re-cancel) without task: %v", err)
+		t.Fatalf("Ingest(re-cancel) on stopped task: %v", err)
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
@@ -3548,7 +3549,7 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "1", "halfway"); err != nil {
+	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "halfway"); err != nil {
 		t.Fatalf("UpdateRunProgress failed: %v", err)
 	}
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -3557,9 +3558,6 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	}
 	if doc.Progress != 0.5 {
 		t.Fatalf("progress = %v, want 0.5", doc.Progress)
-	}
-	if doc.Run == nil || *doc.Run != "1" {
-		t.Fatalf("run = %v, want 1", doc.Run)
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)

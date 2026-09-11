@@ -480,28 +480,3 @@ func TestApplyCommonChunkMapping(t *testing.T) {
 	}
 }
 
-func TestChunkDocRunText(t *testing.T) {
-	strPtr := func(s string) *string { return &s }
-	cases := []struct {
-		name string
-		run  *string
-		want interface{}
-	}{
-		{name: "nil returns nil", run: nil, want: nil},
-		{name: "0 UNSTART", run: strPtr("0"), want: "UNSTART"},
-		{name: "1 RUNNING", run: strPtr("1"), want: "RUNNING"},
-		{name: "2 CANCEL", run: strPtr("2"), want: "CANCEL"},
-		{name: "3 DONE", run: strPtr("3"), want: "DONE"},
-		{name: "4 FAIL", run: strPtr("4"), want: "FAIL"},
-		{name: "5 SCHEDULE", run: strPtr("5"), want: "SCHEDULE"},
-		{name: "unknown returns raw", run: strPtr("999"), want: "999"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ChunkDocRunText(tc.run)
-			if got != tc.want {
-				t.Fatalf("chunkDocRunText(%v) = %v, want %v", tc.run, got, tc.want)
-			}
-		})
-	}
-}

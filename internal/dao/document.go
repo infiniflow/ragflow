@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
 
@@ -131,6 +132,20 @@ func (dao *DocumentDAO) ListByKBID(ctx context.Context, db *gorm.DB, kbID, keywo
 	})
 }
 
+const latestIngestionTaskJoin = `LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id
+	AND NOT EXISTS (
+		SELECT 1
+		FROM ingestion_task newer_ingestion_task
+		WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+		  AND (
+			COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+			OR (
+				COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+				AND newer_ingestion_task.id > ingestion_task.id
+			)
+		  )
+	)`
+
 // ListByKBIDWithOptions lists documents by knowledge base ID with filters.
 func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
 	var documents []*entity.DocumentListItem
@@ -145,22 +160,17 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
 		Joins("LEFT JOIN user ON document.created_by = user.id").
-		Joins(`LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id
-			AND NOT EXISTS (
-				SELECT 1
-				FROM ingestion_task newer_ingestion_task
-				WHERE newer_ingestion_task.document_id = ingestion_task.document_id
-				  AND (
-					COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
-					OR (
-						COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
-						AND newer_ingestion_task.id > ingestion_task.id
-					)
-				  )
-			)`)
+		Joins(latestIngestionTaskJoin)
+
+	countQuery := db.WithContext(ctx).Table("document").
+		Joins("JOIN file2document ON file2document.document_id = document.id").
+		Joins("JOIN file ON file.id = file2document.file_id")
+	if len(opts.RunStatuses) > 0 {
+		countQuery = countQuery.Joins(latestIngestionTaskJoin)
+	}
 
 	listQuery = applyDocumentListFilters(listQuery, opts, true)
-	countQuery := applyDocumentListFilters(db.WithContext(ctx).Model(&entity.Document{}), opts, false)
+	countQuery = applyDocumentListFilters(countQuery, opts, true)
 
 	if err := countQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -184,15 +194,16 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 // GetFilterByKBID returns aggregate filter counts for documents in a dataset.
 func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts DocumentListOptions) (map[string]interface{}, int64, error) {
 	var rows []struct {
-		ID     string  `gorm:"column:id"`
-		Run    *string `gorm:"column:run"`
-		Suffix string  `gorm:"column:suffix"`
+		ID              string  `gorm:"column:id"`
+		IngestionStatus *string `gorm:"column:ingestion_status"`
+		Suffix          string  `gorm:"column:suffix"`
 	}
 
 	query := db.WithContext(ctx).Table("document").
-		Select("document.id, document.run, document.suffix").
+		Select("document.id, ingestion_task.status as ingestion_status, document.suffix").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
-		Joins("JOIN file ON file.id = file2document.file_id")
+		Joins("JOIN file ON file.id = file2document.file_id").
+		Joins(latestIngestionTaskJoin)
 	query = applyDocumentListFilters(query, opts, true)
 
 	if err := query.Scan(&rows).Error; err != nil {
@@ -200,20 +211,22 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 	}
 
 	suffixCounter := map[string]int64{}
-	runStatusCounter := map[string]int64{}
+	statusCounter := map[string]int64{}
 	for _, row := range rows {
 		if row.Suffix != "" {
 			suffixCounter[row.Suffix]++
 		}
-		if row.Run != nil {
-			runStatusCounter[*row.Run]++
+		status := "UNSTART"
+		if row.IngestionStatus != nil && *row.IngestionStatus != "" {
+			status = *row.IngestionStatus
 		}
+		statusCounter[status]++
 	}
 
 	return map[string]interface{}{
-		"suffix":     suffixCounter,
-		"run_status": runStatusCounter,
-		"metadata":   map[string]interface{}{},
+		"suffix":           suffixCounter,
+		"ingestion_status": statusCounter,
+		"metadata":         map[string]interface{}{},
 	}, int64(len(rows)), nil
 }
 
@@ -224,6 +237,9 @@ func (dao *DocumentDAO) ListIDsByKBIDWithOptions(ctx context.Context, db *gorm.D
 		Select("document.id").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id")
+	if len(opts.RunStatuses) > 0 {
+		query = query.Joins(latestIngestionTaskJoin)
+	}
 	query = applyDocumentListFilters(query, opts, true)
 	if err := query.Scan(&ids).Error; err != nil {
 		return nil, err
@@ -244,7 +260,22 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}
 	if len(opts.RunStatuses) > 0 {
-		query = query.Where(column("run")+" IN ?", opts.RunStatuses)
+		hasUnstart := false
+		otherStatuses := make([]string, 0, len(opts.RunStatuses))
+		for _, s := range opts.RunStatuses {
+			if strings.EqualFold(s, "UNSTART") || s == "0" {
+				hasUnstart = true
+			} else {
+				otherStatuses = append(otherStatuses, s)
+			}
+		}
+		if hasUnstart && len(otherStatuses) > 0 {
+			query = query.Where("(ingestion_task.status IN ? OR ingestion_task.id IS NULL OR ingestion_task.status = ?)", otherStatuses, "UNSTART")
+		} else if hasUnstart {
+			query = query.Where("(ingestion_task.id IS NULL OR ingestion_task.status = ?)", "UNSTART")
+		} else {
+			query = query.Where("ingestion_task.status IN ?", otherStatuses)
+		}
 	}
 	if len(opts.Types) > 0 {
 		query = query.Where(column("type")+" IN ?", opts.Types)
@@ -278,8 +309,8 @@ func documentListOrderColumn(orderBy string) string {
 		return "document.size"
 	case "type":
 		return "document.type"
-	case "run":
-		return "document.run"
+	case "run", "ingestion_status":
+		return "COALESCE(ingestion_task.status, 'UNSTART')"
 	default:
 		return "document.create_time"
 	}
@@ -454,31 +485,37 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 	}
 
 	var rows []struct {
-		Run *string `gorm:"column:run"`
-		Cnt int64   `gorm:"column:cnt"`
+		Status *string `gorm:"column:status"`
+		Cnt    int64   `gorm:"column:cnt"`
 	}
-	err := db.WithContext(ctx).Model(&entity.Document{}).
-		Select("run, COUNT(id) as cnt").
-		Where("kb_id = ?", kbID).
-		Group("run").
+	err := db.WithContext(ctx).Table("document").
+		Select("ingestion_task.status, COUNT(document.id) as cnt").
+		Joins(latestIngestionTaskJoin).
+		Where("document.kb_id = ?", kbID).
+		Group("ingestion_task.status").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 
-	statusFieldMap := map[string]string{
-		string(entity.TaskStatusUnstart): "unstart_count",
-		string(entity.TaskStatusRunning): "running_count",
-		string(entity.TaskStatusCancel):  "cancel_count",
-		string(entity.TaskStatusDone):    "done_count",
-		string(entity.TaskStatusFail):    "fail_count",
-	}
 	for _, row := range rows {
-		if row.Run == nil {
+		if row.Status == nil || *row.Status == "" {
+			result["unstart_count"] += row.Cnt
 			continue
 		}
-		if field, ok := statusFieldMap[*row.Run]; ok {
-			result[field] = row.Cnt
+		switch *row.Status {
+		case common.CREATED, common.SCHEDULED:
+			result["unstart_count"] += row.Cnt
+		case common.RUNNING, common.STOPPING:
+			result["running_count"] += row.Cnt
+		case common.STOPPED:
+			result["cancel_count"] += row.Cnt
+		case common.COMPLETED:
+			result["done_count"] += row.Cnt
+		case common.FAILED:
+			result["fail_count"] += row.Cnt
+		default:
+			result["unstart_count"] += row.Cnt
 		}
 	}
 	return result, nil

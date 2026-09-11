@@ -111,7 +111,7 @@ func (s *DocumentService) GetDocumentByID(ctx context.Context, id string) (*Docu
 		return nil, err
 	}
 
-	return s.toResponse(document), nil
+	return s.toResponse(ctx, document), nil
 }
 
 // UpdateDocument update document
@@ -134,7 +134,6 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 		tokenNum:            req.TokenNum,
 		tokenNumRequestName: "token_num",
 		progress:            req.Progress,
-		run:                 req.Run,
 		progressMsg:         req.ProgressMsg,
 	}); err != nil {
 		return common.CodeDataError, err
@@ -200,13 +199,12 @@ func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string
 }
 
 // UpdateRunProgress mirrors a pipeline run's live progress into the document
-// row so the document-list endpoint (which reads document.progress/run/
+// row so the document-list endpoint (which reads document.progress/
 // progress_msg) reflects in-flight Go pipeline progress. Best-effort by
 // design; callers log and continue on error.
-func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
+func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, progressMsg string) error {
 	updates := map[string]interface{}{
 		"progress":     progress,
-		"run":          run,
 		"progress_msg": progressMsg,
 	}
 	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
@@ -221,13 +219,12 @@ func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, p
 	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
 }
 
-// UpdateRunState mirrors live progress and status into the document row when
+// UpdateRunState mirrors live progress into the document row when
 // the existing progress log cannot be read. It intentionally leaves the log
 // untouched so a later event can retry seeding and append it safely.
-func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64, run string) error {
+func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64) error {
 	updates := map[string]interface{}{
 		"progress": progress,
-		"run":      run,
 	}
 	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
 		return err

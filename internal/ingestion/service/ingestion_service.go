@@ -1064,7 +1064,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+cancelMsg)
 }
 
 // markTimeoutProgress writes the timeout-progress markers to the document
@@ -1082,7 +1082,7 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+timeoutMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another

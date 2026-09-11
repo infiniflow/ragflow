@@ -112,20 +112,12 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				}
 				return common.CodeDataError, err
 			}
-			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"run":      string(entity.TaskStatusCancel),
-				"progress": 0,
-			}); err != nil {
-				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
-				return common.CodeExceptionError, err
-			}
 			continue
 		}
 
 		// Delete-only: user asked to remove prior parse results without
 		// starting a new parse. RUNNING already continued above.
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-			"run":      run,
 			"progress": 0,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)

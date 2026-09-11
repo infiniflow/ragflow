@@ -209,14 +209,10 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		if err != nil {
 			return nil, err
 		}
-		// The task just started running: mirror it to the document so its
-		// run status and progress counters reflect real processing, not
-		// just API acceptance. Best-effort - a DB blip here must not fail
-		// the task transition and trigger a redelivery loop. run uses the
-		// document's numeric TaskStatus enum ("1"), not the task's string
-		// status label.
+		// The task just started running: reset document progress counters to
+		// reflect real processing. Best-effort - a DB blip here must not fail
+		// the task transition and trigger a redelivery loop.
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
-			"run":              string(entity.TaskStatusRunning),
 			"progress":         float64(0),
 			"chunk_num":        int64(0),
 			"token_num":        int64(0),
