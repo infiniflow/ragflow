@@ -468,7 +468,7 @@ export default {
       chunkMethod: '切片方法',
       enabled: '启用',
       disabled: '禁用',
-      action: '动作',
+      action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
         '文本解析的时间取决于诸多因素。如果开启了 Graph、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
@@ -481,7 +481,7 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
@@ -504,6 +504,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失败',
+      runningStatusQueued: '排队中',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',
@@ -511,9 +512,11 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
+      pageRangeFromInvalid: '起始页码必须为大于 0 的整数',
+      pageRangeToInvalid: '结束页码必须为不小于起始页码的整数',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
@@ -536,18 +539,21 @@ export default {
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
       enableChildrenDelimiter: '子文本块用于检索',
       childrenDelimiter: '文本分段标识符',
       childrenDelimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
+      delimiterPreviewLabel: '切分位置：',
+      delimiterPreviewEmpty: '没有分隔符——文本将仅按大小切分。',
+      delimiterPreviewCount: '（{{count}}）',
 
       html4excel: '表格转 HTML',
-      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 Token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoTags: '自动标签提取',
       redo: '是否清空已有 {{chunkNum}}个 Chunk？',
       setMetaData: '设置元数据',
@@ -688,6 +694,7 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      imageLoadFailed: '图片加载失败',
       audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
@@ -778,13 +785,6 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
-      knowledgeGraph: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
-
-<p>文件分块后，使用分块提取整个文档的 Graph 和 Mindmap。此方法将简单的方法应用于分块文件：
-连续的文本将被切成大约 512 个 Token 数的块。</p>
-<p>接下来，将分块传输到 LLM 以提取 Graph 和 Mindmap 的节点和边。</p>
-
-注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
@@ -797,7 +797,7 @@ export default {
 `,
       useRaptor: '使用召回增强 RAPTOR 策略',
       useRaptorTip:
-        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
+        'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
@@ -833,8 +833,9 @@ export default {
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
-      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
+      tagMessage: '请选择标签',
       frequency: '频次',
       searchTags: '搜索标签',
       tagCloud: '云',
@@ -851,13 +852,13 @@ export default {
       <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
-      <p> 详见：https://ragflow.io/docs/dev/use_tag_sets </p>
+      <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
       `,
       tags: '标签',
       addTag: '增加标签',
       useGraphRag: '提取 Graph',
       useGraphRagTip:
-        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+        '基于知识库内所有切好的文本块构建 Graph，用以提升多跳和复杂问题回答的正确率。请注意：构建 Graph 将消耗大量 Token 和时间。详见 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：Entities 和 Relations 提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：Entities 和 Relations 提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
@@ -973,7 +974,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       variable: '变量',
       variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
       {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
-      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
+      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '关键字',
       variableKeyMessage: '请输入变量 key',
@@ -1274,6 +1275,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
       azureDevOpsContentTypesTip:
         '选择要索引的内容：源文件、拉取请求，或两者。',
+      sitemapDescription:
+        '连接公开的 sitemap.xml，将其中列出的网页和 PDF 文档同步到知识库。',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL 过滤（正则）',
+      dataSourceFieldFollowPdfLinks: '跟随 PDF 链接',
+      dataSourceFieldRestrictPdfToDomain: '仅限 sitemap 所在域名的 PDF',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapUrlTip:
+        '要抓取的 sitemap.xml 或 sitemap 索引的 URL，例如 https://example.com/sitemap.xml。sitemap 索引会被递归跟随（最多 5 层）。',
+      sitemapUrlFilterTip:
+        '可选的正则表达式。仅索引与之匹配的 URL，例如 ^https://example\\.com/docs/ 可将同步限制在站点的某个栏目。',
+      sitemapFollowPdfLinksTip: '同时索引已抓取 HTML 页面中链接的 PDF 文件。',
+      sitemapRestrictPdfToDomainTip: '仅跟随与 sitemap 同域名下的 PDF 链接。',
+      sitemapUserAgentTip:
+        '每次请求发送的 User-Agent 请求头。留空则使用 RAGFlow-SitemapConnector/1.0。',
+      sitemapBatchSizeTip: '每批抓取并发送到 RAGFlow 的页面数量。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -1556,12 +1573,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalTitle: '删除聊天渠道',
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
-      connectDialog: '关联助手',
-      connectDialogTitle: '将 {{name}} 关联到助手',
-      selectDialog: '选择助手',
+      connectDialog: '关联助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
+      selectDialog: '选择助手或智能体',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
-      notConnected: '未关联助手',
+        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+      notConnected: '未关联助手或智能体',
+      chatChannelAssistant: '聊天助手',
+      chatChannelAgent: '智能体',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
@@ -1835,7 +1854,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit: '仅在 backend 为 vlm-http-client 时可填写',
+        serverUrlBackendLimit:
+          '仅在 backend 为 vlm-http-client 或 hybrid-http-client 时可填写',
         apiserver: 'MinerU API 服务器配置',
         outputDir: 'MinerU 输出目录路径',
         backend: 'MinerU 处理后端类型',
@@ -1989,19 +2009,19 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'PageIndex',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
-      noWikiPages: '暂无 Wiki 页面',
+      noWikiPages: '暂无 Wiki',
       noSkills: '暂无 Skills',
       noStructureGraph: '暂无 Graph',
       noStructureMindmap: '暂无 Mindmap',
       noStructureTimeline: '暂无 Timeline',
       contents: '导航',
       topics: 'Topic',
-      selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
+      graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
@@ -2240,11 +2260,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       flattenMediaToText: '禁用视觉模型',
       flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',
       script: '脚本',
       iterationItemDescription:
         '它是迭代过程中的当前元素，可以被后续流程引用和操作。',
+      maxConcurrency: '最大并发数',
+      maxConcurrencyTip: '0 或 1 表示逐项串行。大于 1 时按该数量并行处理。',
       guidingQuestion: '引导问题',
       onFailure: '异常时',
       userPromptDefaultValue:
@@ -2403,6 +2426,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2750,6 +2782,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      debugRunLimits:
+        '调试运行用于验证流程能否正常执行：PDF 仅解析前 2 页（其他格式解析全部）；若含分块节点，仅取前 3 个分块预览；若含知识编译节点，仅本地验证、不会触发知识库重建或通知。',
       template: '模板转换',
       templateDescription:
         '该组件用于排版各种组件的输出。1、支持 Jinja2 模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
@@ -2780,6 +2814,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
@@ -2922,8 +2957,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '分词器',
-      tokenizerRequired: '请先添加 Tokenizer 节点',
+      tokenizer: '索引器',
+      tokenizerRequired: '请先添加索引器节点',
+      nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
+      agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
+      retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{num}} 处未绑定知识库的数据集检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalDatasetRequired: '请先选择知识库',
+      retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
@@ -2938,7 +2983,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compiler: '编译器',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
-      fileFormats: '文件类型',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: '表格',
@@ -2954,7 +2998,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         video: '视频',
       },
       fields: '字段',
-      addParser: '增加解析器',
       rule: '规则',
       addRule: '增加规则',
       addRegularExpressions: '增加正则表达式',

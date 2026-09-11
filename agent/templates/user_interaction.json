@@ -112,7 +112,7 @@
                                     "cross_languages": [],
                                     "description": "",
                                     "empty_response": "",
-                                    "kb_ids": [],
+                                    "dataset_ids": [],
                                     "retrieval_from": "dataset",
                                     "keywords_similarity_weight": 0.7,
                                     "outputs": {
@@ -128,7 +128,7 @@
                                     "rerank_id": "",
                                     "similarity_threshold": 0.2,
                                     "toc_enhance": false,
-                                    "top_k": 1024,
+                                    "rerank_candidates_count": 64,
                                     "top_n": 8,
                                     "use_kg": false
                                 },
@@ -423,7 +423,7 @@
                                         "cross_languages": [],
                                         "description": "",
                                         "empty_response": "",
-                                        "kb_ids": [],
+                                        "dataset_ids": [],
                                         "retrieval_from": "dataset",
                                         "keywords_similarity_weight": 0.7,
                                         "outputs": {
@@ -439,7 +439,7 @@
                                         "rerank_id": "",
                                         "similarity_threshold": 0.2,
                                         "toc_enhance": false,
-                                        "top_k": 1024,
+                                        "rerank_candidates_count": 64,
                                         "top_n": 8,
                                         "use_kg": false
                                     },

@@ -241,7 +241,15 @@ type stubNavEmbedder struct{}
 func (stubNavEmbedder) Encode(_ context.Context, _ string, texts []string) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
-		dim := 8
+		// The ES document index template (mapping.json, the ragflow_*
+		// dynamic_templates) maps q_<dim>_vec to a dense_vector field only for
+		// the standard embedding dimensions 512/768/1024/1536. The integration
+		// test runs NavService.Search as a real knn query against that index,
+		// so the synthetic vector must use one of those dimensions — otherwise
+		// ES dynamically maps q_<dim>_vec as a plain float array and the knn
+		// query fails with "[knn] queries are only supported on [dense_vector]
+		// fields". 1024 is the canonical RAGFlow embedding size.
+		dim := 1024
 		v := make([]float32, dim)
 		for d := 0; d < dim; d++ {
 			v[d] = float32(int(t[0]) + d)
@@ -262,7 +270,7 @@ func newTestNav(eng *memNavEngine) *NavService {
 func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
 		t.Fatalf("UpsertDoc: %v", err)
 	}
 	if len(eng.rows) == 0 {
@@ -287,10 +295,10 @@ func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 func TestNavService_ListClusters_FiltersRoot(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, total, err := ns.ListClusters(context.Background(), "t1", "kb1", 0, 10)
+	clusters, total, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,10 +412,10 @@ func TestNodeFromRow_ReadableName(t *testing.T) {
 func TestNavService_Search_ReturnsHit(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	hits, err := ns.Search(context.Background(), "t1", "kb1", "aaa", nil, 5)
+	hits, err := ns.Search(t.Context(), "t1", "kb1", "aaa", nil, nil, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,6 +424,99 @@ func TestNavService_Search_ReturnsHit(t *testing.T) {
 	}
 	if hits[0].Name == "" {
 		t.Error("hit name empty")
+	}
+}
+
+// TestNavService_Search_DocScope pins search_dataset_nav's doc_scope semantics
+// (dataset_nav.py:1364-1387, 1444-1465) on the nav-row read: a nav_doc leaf
+// matches on doc_id, a nav_cluster row on coverage, a cluster's coverage is
+// trimmed to the scope, and the scope is applied BEFORE the top_k truncation —
+// a scoped read must not come back empty (or short) because out-of-scope rows
+// ranked higher.
+func TestNavService_Search_DocScope(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+
+	const dim = 1024
+	vec := func(w float64) []float64 {
+		v := make([]float64, dim)
+		v[0] = w
+		return v
+	}
+	row := func(typ, docID, title string, docIDs []string, w float64) map[string]interface{} {
+		r := map[string]interface{}{
+			"compile_kwd": navCompileKwd,
+			"type_kwd":    typ,
+			"doc_id":      docID,
+			"title_kwd":   title,
+			"q_1024_vec":  vec(w),
+		}
+		if len(docIDs) > 0 {
+			r["doc_ids_kwd"] = docIDs
+		}
+		return r
+	}
+	// Three out-of-scope leaves outrank the single in-scope leaf (cosine 1.0 vs
+	// 0.5), so a scoped read truncated to one row only fills its cap if the
+	// scope is applied over a wide-enough pool.
+	rows := []map[string]interface{}{
+		row(nav.TypeNavDoc, "dx1", "out 1", nil, 1),
+		row(nav.TypeNavDoc, "dx2", "out 2", nil, 1),
+		row(nav.TypeNavDoc, "dx3", "out 3", nil, 1),
+		row(nav.TypeNavDoc, "d1", "in scope", nil, 0.5),
+		row(nav.TypeNavCluster, "kb1", "covering d1+d2", []string{"d1", "d2"}, 0.4),
+		row(nav.TypeNavCluster, "kb1", "covering d2 only", []string{"d2"}, 1),
+	}
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+		t.Fatal(err)
+	}
+	q := make([]float32, dim)
+	q[0] = 1
+
+	all, err := ns.Search(t.Context(), "t1", "kb1", "q", q, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != len(rows) {
+		t.Fatalf("unscoped hits = %d, want %d (nil scope must not restrict)", len(all), len(rows))
+	}
+
+	scoped, err := ns.Search(t.Context(), "t1", "kb1", "q", q, []string{" d1 "}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotLeaf, gotCluster bool
+	for _, h := range scoped {
+		switch h.DocID {
+		case "d1":
+			gotLeaf = true
+		case "kb1":
+			gotCluster = true
+			if len(h.DocIDs) != 1 || h.DocIDs[0] != "d1" {
+				t.Errorf("cluster coverage = %v, want [d1] (trimmed to the scope)", h.DocIDs)
+			}
+		default:
+			t.Errorf("out-of-scope hit %q surfaced in a scoped read", h.DocID)
+		}
+	}
+	if !gotLeaf || !gotCluster {
+		t.Fatalf("scoped hits = %+v, want d1 plus the cluster covering it", scoped)
+	}
+	for _, h := range scoped {
+		if h.Name == "covering d2 only" {
+			t.Error("a cluster whose coverage does not intersect the scope must not surface")
+		}
+	}
+
+	// The scope is applied to the pool, not after the engine truncation: the
+	// top-ranked rows here are all out of scope, yet the in-scope leaf still
+	// comes back as the single hit.
+	one, err := ns.Search(t.Context(), "t1", "kb1", "q", q, []string{"d1"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one) != 1 || one[0].DocID != "d1" {
+		t.Fatalf("top_k=1 scoped hits = %+v, want exactly the in-scope leaf d1", one)
 	}
 }
 
@@ -429,13 +530,13 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	ns := newTestNav(eng)
 	// Two docs that merge into one root cluster (same first char -> identical
 	// stub vectors -> sim=1.0 >= merge threshold).
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, _, err := ns.ListClusters(context.Background(), "t1", "kb1", 0, 10)
+	clusters, _, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +547,7 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 		t.Fatalf("cluster doc_count = %d, want 2 (both docs merged into the cluster)", clusters[0].DocCount)
 	}
 	name := clusters[0].Name
-	children, total, err := ns.ListChildren(context.Background(), "t1", "kb1", name, 0, 10)
+	children, total, err := ns.ListChildren(t.Context(), "t1", "kb1", name, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,10 +574,10 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 func TestNavService_NavDocDepth(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
 		t.Fatal(err)
 	}
 	// The nav_doc for d2 sits under the root cluster; its depth_int must be 1.
@@ -496,10 +597,10 @@ func TestNavService_RemoveDoc_CascadesToEmptyCluster(t *testing.T) {
 	eng := newMemNavEngine()
 	ns := newTestNav(eng)
 	// d1 creates a root cluster (name derived from its summary hash).
-	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "alpha")); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d1"); err != nil {
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d1"); err != nil {
 		t.Fatal(err)
 	}
 	// The nav_doc is gone, and the root cluster (now empty) is pruned.
@@ -550,10 +651,10 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 			"doc_count_int": 1,
 		})
 	}
-	if _, err := eng.InsertChunks(context.Background(), rows, idx, "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err != nil {
+	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {
 		t.Fatal(err)
 	}
 	splitA := clusterName + ":A"
@@ -609,7 +710,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	}
 	// A production nav_doc has doc_id but no doc_ids_kwd. Removing one after a
 	// split must update the replacement cluster that inherited its membership.
-	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d00"); err != nil {
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d00"); err != nil {
 		t.Fatalf("RemoveDoc after split: %v", err)
 	}
 	var remainingCount, remainingIDs int

@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import os
 import string
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
@@ -46,6 +48,48 @@ from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import INPUT_UTILIZATION, gen_json, split_chunks
+
+
+def env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    """Read a non-empty integer environment override, or return ``default``."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except ValueError:
+            logging.warning("Invalid integer environment variable %s=%r; using %d", name, raw, default)
+            value = default
+    if minimum is not None and value < minimum:
+        logging.warning("Environment variable %s=%d is below minimum %d; using %d", name, value, minimum, minimum)
+        value = minimum
+    logging.debug("Resolved environment variable %s=%d", name, value)
+    return value
+
+
+def env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    """Read a non-empty float environment override, or return ``default``."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        value = default
+    else:
+        try:
+            value = float(raw)
+        except ValueError:
+            logging.warning("Invalid float environment variable %s=%r; using %s", name, raw, default)
+            value = default
+    if not math.isfinite(value):
+        logging.warning("Environment variable %s=%r is not finite; using %s", name, value, default)
+        value = default
+    if minimum is not None and value < minimum:
+        logging.warning("Environment variable %s=%s is below minimum %s; using %s", name, value, minimum, minimum)
+        value = minimum
+    if maximum is not None and value > maximum:
+        logging.warning("Environment variable %s=%s is above maximum %s; using %s", name, value, maximum, maximum)
+        value = maximum
+    logging.debug("Resolved environment variable %s=%s", name, value)
+    return value
 
 
 def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dict:
@@ -154,30 +198,6 @@ def union_ordered(*lists: Optional[Iterable]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Token-budget calculation for split_chunks
-# ---------------------------------------------------------------------------
-
-
-def make_input_budget(
-    chat_mdl,
-    *prompts: str,
-    floor: int = 1024,
-    utilization: float = INPUT_UTILIZATION,
-) -> int:
-    """``chat_mdl.max_length * utilization - num_tokens(sum of prompts)``,
-    floored at ``floor``.
-
-    Mirrors the budget idiom used by ``compile_structure_from_text`` and
-    ``wiki_map_from_chunks``: caller passes the constant prompt scaffolding
-    (system prompt + user template) — ``split_chunks`` then sizes batches
-    to leave that much room.
-    """
-    overhead = num_tokens_from_string("".join(p or "" for p in prompts))
-    budget = int(chat_mdl.max_length * utilization) - overhead
-    return max(budget, floor)
-
-
-# ---------------------------------------------------------------------------
 # Defensive LLMBundle validation
 # ---------------------------------------------------------------------------
 
@@ -210,111 +230,6 @@ def ensure_llm_bundle(mdl, method: str, *, label: str = "model"):
         type(mdl).__name__,
     )
     return None
-
-
-# ---------------------------------------------------------------------------
-# ES I/O wrappers
-# ---------------------------------------------------------------------------
-
-
-async def doc_storage_search(
-    select_fields: list[str],
-    condition: dict,
-    *,
-    tenant_id: str,
-    kb_ids: list[str],
-    match_expressions: list | None = None,
-    offset: int = 0,
-    limit: int = 1000,
-    label: str = "doc_storage_search",
-) -> dict:
-    """Thin wrapper around ``docStoreConn.search`` + ``get_fields``.
-
-    Returns ``{row_id: row_dict}``. Returns ``{}`` on failure (with a
-    logged exception). ``label`` is included in the failure log so each
-    call site is identifiable.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            select_fields,
-            [],
-            condition,
-            match_expressions or [],
-            OrderByExpr(),
-            offset,
-            limit,
-            index,
-            kb_ids,
-        )
-        return settings.docStoreConn.get_fields(res, select_fields) or {}
-    except Exception:
-        logging.exception("%s failed (condition=%r)", label, condition)
-        return {}
-
-
-async def doc_storage_insert(
-    rows: list[dict],
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_insert",
-) -> None:
-    """Bulk insert wrapped in ``thread_pool_exec``. Logs on failure."""
-    if not rows:
-        return
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
-    except Exception:
-        logging.exception("%s failed (%d row(s))", label, len(rows))
-
-
-async def doc_storage_delete(
-    condition: dict,
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_delete",
-) -> None:
-    """Bulk delete wrapped in ``thread_pool_exec``. Best-effort; logs on
-    failure (some callers rely on id-based upsert as a fallback)."""
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        await thread_pool_exec(settings.docStoreConn.delete, condition, index, kb_id)
-    except Exception:
-        logging.debug("%s failed (condition=%r); caller may rely on id-upsert", label, condition)
-
-
-async def doc_storage_upsert_one(
-    filter_condition: dict,
-    row: dict,
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_upsert_one",
-) -> None:
-    """Delete-by-filter then insert. Used when an in-place update would
-    require knowing the existing row's id and we'd rather drop+re-create.
-
-    Best-effort delete (failures are debug-logged) followed by the insert.
-    Set ``row["id"]`` to a stable value derived from the filter
-    (:func:`stable_row_id`) so id-based dedup at the connector catches any
-    race that bypasses the delete.
-    """
-    await doc_storage_delete(filter_condition, tenant_id, kb_id, label=f"{label}.delete")
-    await doc_storage_insert([row], tenant_id, kb_id, label=f"{label}.insert")
 
 
 # ---------------------------------------------------------------------------
@@ -978,12 +893,7 @@ __all__ = [
     "encode",
     "tokenize_for_search",
     "union_ordered",
-    "make_input_budget",
     "ensure_llm_bundle",
-    "doc_storage_search",
-    "doc_storage_insert",
-    "doc_storage_delete",
-    "doc_storage_upsert_one",
     "find_vec_field",
     # New engines
     "normalize_key",
