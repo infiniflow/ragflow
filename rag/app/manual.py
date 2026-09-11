@@ -180,6 +180,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             parse_method="manual",
             **kwargs,
         )
+        if sections is None:
+            raise RuntimeError(f"PDF parser '{name}' returned no sections")
 
         def _normalize_section(section):
             # pad section to length 3: (txt, sec_id, poss)
@@ -192,13 +194,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             txt, layoutno, poss = section
             if isinstance(poss, str):
-                poss = getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]]
-                if poss:
-                    first = poss[0]  # tuple: ([pn], x1, x2, y1, y2)
-                    pn = first[0]
-                    if isinstance(pn, list) and pn:
-                        pn = pn[0]  # [pn] -> pn
-                        poss[0] = (pn, *first[1:])
+                # extract_positions returns 0-based page indices in a list:
+                # ([page], left, right, top, bottom). tag() adds +1 for MinerU
+                # so crop() receives 1-based local pages.
+                extracted = getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or []
+                normalized = []
+                for item in extracted:
+                    if not item or len(item) < 5:
+                        continue
+                    pns, left, right, top, bottom = item[0], item[1], item[2], item[3], item[4]
+                    pages = pns if isinstance(pns, list) else [pns]
+                    for pn in pages:
+                        normalized.append((int(pn), left, right, top, bottom))
+                poss = normalized
 
             return (txt, layoutno, poss)
 
@@ -258,14 +266,23 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         chunks = []
         last_sid = -2
         tk_cnt = 0
-        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])):
-            poss = "\t".join([tag(*pos) for pos in poss])
+
+        def _section_sort_key(item):
+            poss = item[-1]
+            if not poss:
+                return (0, 0, 0)
+            pn, left, _right, top, _bottom = poss[0]
+            return (pn, top, left)
+
+        for txt, sec_id, poss in sorted(sections, key=_section_sort_key):
+            # PlainParser / text-only sections may have empty positions; keep them.
+            pos_tags = "\t".join([tag(*pos) for pos in poss]) if poss else ""
             if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
                 if chunks:
-                    chunks[-1] += "\n" + txt + poss
+                    chunks[-1] += "\n" + txt + pos_tags
                     tk_cnt += num_tokens_from_string(txt)
                     continue
-            chunks.append(txt + poss)
+            chunks.append(txt + pos_tags)
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
