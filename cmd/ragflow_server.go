@@ -650,8 +650,9 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	}
 	defer tokenizer.Close()
 
-	// Fail fast if the cl100k_base BPE table is missing: without it
-	// NumTokensFromString silently returns 0, corrupting every token budget.
+	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
+	// TrimContentToTokenLimit now panic rather than degrading silently, so this
+	// trades a mid-request panic for a clear startup failure.
 	if err := tokenizer.InitCL100KEncoder(); err != nil {
 		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
 	}
@@ -800,8 +801,9 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 	}
 	defer tokenizer.Close()
 
-	// Fail fast if the cl100k_base BPE table is missing: without it
-	// NumTokensFromString silently returns 0, corrupting every token budget.
+	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
+	// TrimContentToTokenLimit now panic rather than degrading silently, so this
+	// trades a mid-request panic for a clear startup failure.
 	if err := tokenizer.InitCL100KEncoder(); err != nil {
 		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
 	}

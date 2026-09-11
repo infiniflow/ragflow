@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 func TestGetValue(t *testing.T) {
@@ -140,5 +142,103 @@ func TestCitationPromptCarriesIllustrativeIDCaveat(t *testing.T) {
 func TestCitationPromptHonoursOverride(t *testing.T) {
 	if got := CitationPrompt("Cite as [n]."); got != "Cite as [n]." {
 		t.Errorf("CitationPrompt(override) = %q, want the override verbatim", got)
+	}
+}
+
+// TestKBPromptSkipsChunksWithoutContent pins Python's `if not c: continue`: a
+// chunk whose content fields are absent (or explicitly null) must be skipped,
+// not rendered as "\n└── Content:\n<nil>".
+func TestKBPromptSkipsChunksWithoutContent(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "a"},                              // neither content field
+		{"chunk_id": "b", "content": nil},              // explicit null
+		{"chunk_id": "c", "content_with_weight": "hi"}, // the only usable chunk
+	}
+	got := KBPrompt(chunks, 1000)
+	if len(got) != 1 {
+		t.Fatalf("blocks = %d, want 1 (content-less chunks must be skipped): %v", len(got), got)
+	}
+	if strings.Contains(got[0], "<nil>") {
+		t.Errorf("block rendered a nil field: %q", got[0])
+	}
+	if !strings.Contains(got[0], "hi") {
+		t.Errorf("block lost its content: %q", got[0])
+	}
+}
+
+// TestKBPromptSkipsNilMetadataValues pins Python draw_node's `if not line: return
+// ""` for None: a null metadata value must not render as "<nil>".
+func TestKBPromptSkipsNilMetadataValues(t *testing.T) {
+	got := KBPrompt([]map[string]any{{
+		"content":           "body",
+		"document_metadata": map[string]any{"author": nil, "page": "3"},
+	}}, 1000)
+	if len(got) != 1 {
+		t.Fatalf("blocks = %d, want 1", len(got))
+	}
+	if strings.Contains(got[0], "<nil>") {
+		t.Errorf("nil metadata rendered literally: %q", got[0])
+	}
+	if !strings.Contains(got[0], "page: 3") {
+		t.Errorf("non-nil metadata lost: %q", got[0])
+	}
+}
+
+// TestKBPromptBudgetsCompleteBlock pins that the budget covers the title / url /
+// metadata decoration, not just the content: a tiny-content chunk whose block is
+// dominated by metadata must be dropped when it cannot fit the token budget.
+func TestKBPromptBudgetsCompleteBlock(t *testing.T) {
+	lean := map[string]any{"content": "hi"}
+	fat := map[string]any{
+		"content":           "hi",
+		"document_metadata": map[string]any{"blob": strings.Repeat("x", 500)},
+	}
+	leanBlock, _ := kbpBlock(lean, 1)
+	fatBlock, _ := kbpBlock(fat, 1)
+	leanTokens := tokenizer.NumTokensFromString(leanBlock)
+	fatTokens := tokenizer.NumTokensFromString(fatBlock)
+	if leanTokens == 0 || fatTokens <= leanTokens {
+		t.Fatalf("cl100k tokenizer unavailable: lean=%d fat=%d tokens", leanTokens, fatTokens)
+	}
+	// A budget that just fits the lean block must reject the metadata-heavy one.
+	maxTokens := int(float64(leanTokens)/0.97) + 1
+	if got := KBPrompt([]map[string]any{fat}, maxTokens); len(got) != 0 {
+		t.Errorf("metadata-heavy block (%d tokens) must not fit a ~%d-token budget; got %d block(s)",
+			fatTokens, maxTokens, len(got))
+	}
+	if got := KBPrompt([]map[string]any{lean}, maxTokens); len(got) != 1 {
+		t.Errorf("lean block (%d tokens) should fit a ~%d-token budget; got %d block(s)",
+			leanTokens, maxTokens, len(got))
+	}
+}
+
+// TestKBPromptWithSourceIndicesTracksRenderedChunks locks the contract callers
+// need to slice blocks safely: every rendered block reports the index of the
+// chunk it came from, and a chunk with no content contributes no block. A caller
+// that slices by a chunk count instead would shift by the skipped chunks.
+func TestKBPromptWithSourceIndicesTracksRenderedChunks(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c0", "content": ""}, // skipped: no content
+		{"chunk_id": "c1", "content": "first body"},
+		nil, // skipped: not a chunk
+		{"chunk_id": "c2", "content": "second body"},
+	}
+
+	blocks, sources := KBPromptWithSourceIndices(chunks, 100000)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2 (only the chunks with content)", len(blocks))
+	}
+	want := []int{1, 3}
+	if !reflect.DeepEqual(sources, want) {
+		t.Fatalf("sources = %v, want %v", sources, want)
+	}
+	for i, src := range sources {
+		if got := chunks[src]["chunk_id"]; got != nil && !strings.Contains(blocks[i], "Content:") {
+			t.Errorf("block %d (source %v) is not a rendered chunk: %q", i, got, blocks[i])
+		}
+	}
+	// KBPrompt keeps the same rendering, just without the source indices.
+	if plain := KBPrompt(chunks, 100000); !reflect.DeepEqual(plain, blocks) {
+		t.Fatalf("KBPrompt = %v, want the same blocks as KBPromptWithSourceIndices", plain)
 	}
 }

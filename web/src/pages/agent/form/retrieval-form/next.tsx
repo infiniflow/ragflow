@@ -55,6 +55,7 @@ export const RetrievalPartialSchema = {
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
   user_id: z.string().optional(),
+  document_ids: z.string().optional(),
 };
 
 export const FormSchema = z
@@ -133,6 +134,20 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
   return retrievalFrom === RetrievalFrom.Memory;
 }
 
+export function DocumentIdsFormField() {
+  const { t } = useTranslation();
+
+  return (
+    <RAGFlowFormItem
+      name="document_ids"
+      label={t('flow.documentIds')}
+      tooltip={t('flow.documentIdsTip')}
+    >
+      <PromptEditor multiLine={false} showToolbar={false}></PromptEditor>
+    </RAGFlowFormItem>
+  );
+}
+
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
@@ -175,6 +190,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
         <RAGFlowFormItem name="query" label={t('flow.query')}>
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
+        <DocumentIdsFormField></DocumentIdsFormField>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">

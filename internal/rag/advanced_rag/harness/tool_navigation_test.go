@@ -19,6 +19,7 @@ package harness
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -155,11 +156,108 @@ func TestNavigateTreeBadArgsAndInfra(t *testing.T) {
 	if got := NavigateTree(context.Background(), nil, NavTreeInput{Query: "q"}); got.EmptyReason != ReasonInfra {
 		t.Errorf("no router: reason = %q, want infra", got.EmptyReason)
 	}
+	// Every configured dataset failed to answer: infra, NOT no_structure. Route()
+	// reports "no compiled tree" as (nil, nil), so a non-nil error is a failure —
+	// a dataset-level verdict drawn from zero successful reads would mislabel an
+	// outage, and no_structure is the verdict the session strikes a tool out on.
 	got := NavigateTree(context.Background(), &stubRouter{err: errors.New("ES down")}, NavTreeInput{
 		Query: "q", KbIDs: []string{"kb1"},
 	})
-	if got.EmptyReason != ReasonNoStructure {
-		t.Errorf("backend error: reason = %q, want no_structure (no dataset verdict)", got.EmptyReason)
+	if got.EmptyReason != ReasonInfra {
+		t.Errorf("backend error: reason = %q, want infra", got.EmptyReason)
+	}
+	if !got.HasStructure() {
+		t.Error("an outage must not read as a structure absence (HasStructure must stay true)")
+	}
+}
+
+// perKBRouter answers each dataset differently, so a partially failed fan-out can
+// be exercised; stubRouter answers the same for every dataset.
+type perKBRouter struct {
+	results map[string][][2]string
+	errs    map[string]error
+}
+
+func (r *perKBRouter) Route(_ context.Context, _, kbID, _ string, _ []string, _ int) ([][2]string, error) {
+	if err := r.errs[kbID]; err != nil {
+		return nil, err
+	}
+	return r.results[kbID], nil
+}
+
+// TestNavigateTreePartialFailureIsInfra pins the mixed fan-out: one dataset fails
+// while another legitimately reports no compiled tree. The failed read leaves the
+// datasets' state unknown, so the answer must stay infra — concluding
+// no_structure there would end the tool on evidence that was never read.
+func TestNavigateTreePartialFailureIsInfra(t *testing.T) {
+	got := NavigateTree(context.Background(), &perKBRouter{
+		results: map[string][][2]string{"kb2": nil}, // kb2 answered: no compiled tree
+		errs:    map[string]error{"kb1": errors.New("ES down")},
+	}, NavTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
+	if got.EmptyReason != ReasonInfra {
+		t.Errorf("partial failure: reason = %q, want infra", got.EmptyReason)
+	}
+	// A failed descent has no Python counterpart to copy — Python lets the
+	// exception escape and navigation.py has no empty_reason for it — so this
+	// label is the port's own wording; only the XML shape must be Python's.
+	if want := "<tree_navigation count=\"0\" error=\"nav tree descent failed\">\n</tree_navigation>"; got.Text != want {
+		t.Errorf("partial failure: text = %q, want %q", got.Text, want)
+	}
+
+	// A dataset that answered AND routed still wins: one failed read must not
+	// discard the documents another dataset returned.
+	got = NavigateTree(context.Background(), &perKBRouter{
+		results: map[string][][2]string{"kb2": [][2]string{{"doc-a", "summary"}}},
+		errs:    map[string]error{"kb1": errors.New("ES down")},
+	}, NavTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
+	if got.EmptyReason != "" || len(got.DocIDs) != 1 || got.DocIDs[0] != "doc-a" {
+		t.Errorf("partial success: reason = %q, doc_ids = %v, want doc-a from kb2", got.EmptyReason, got.DocIDs)
+	}
+}
+
+// TestNavigateTreeEmptyXMLMatchesPython pins the text each empty NavResult carries.
+// Python builds it in place: `count="0"` plus an `error="..."` attribute that is
+// OMITTED for a query-level miss (navigation.py:877 "no retriever", :880 "query is
+// required", :899 no attribute). The model does not read it — both sides replace
+// every empty_reason with their own note (action_session.py:869-876,
+// tool_executor.go:402) — but the NavResult value must match.
+func TestNavigateTreeEmptyXMLMatchesPython(t *testing.T) {
+	cases := []struct {
+		name string
+		got  NavResult
+		want string
+	}{
+		{
+			"bad_args",
+			NavigateTree(context.Background(), &stubRouter{}, NavTreeInput{}),
+			"<tree_navigation count=\"0\" error=\"query is required\">\n</tree_navigation>",
+		},
+		{
+			"infra: no router",
+			NavigateTree(context.Background(), nil, NavTreeInput{Query: "q"}),
+			"<tree_navigation count=\"0\" error=\"no retriever\">\n</tree_navigation>",
+		},
+		{
+			"no_doc: no attribute",
+			NavigateTree(context.Background(), &stubRouter{emptyResult: true}, NavTreeInput{
+				Query: "q", KbIDs: []string{"kb1"},
+			}),
+			"<tree_navigation count=\"0\">\n</tree_navigation>",
+		},
+		{
+			// Go-only state: Python's nav-tree route has no no_structure verdict,
+			// so this label is the port's own wording.
+			"no_structure",
+			NavigateTree(context.Background(), &stubRouter{nilResult: true}, NavTreeInput{
+				Query: "q", KbIDs: []string{"kb1"},
+			}),
+			"<tree_navigation count=\"0\" error=\"no compiled navigation tree\">\n</tree_navigation>",
+		},
+	}
+	for _, c := range cases {
+		if c.got.Text != c.want {
+			t.Errorf("%s: text = %q, want %q", c.name, c.got.Text, c.want)
+		}
 	}
 }
 
@@ -652,6 +750,61 @@ func TestBuildTocTreeNoRelationsYieldsIsolatedRoots(t *testing.T) {
 	}
 }
 
+// TestStructureGraphFromRawMissingFieldsStayEmpty pins the compiled-payload
+// defaults: a field a compiled row simply does not carry must read as absent, so
+// the renderers apply Python's defaults ("other" for a type, "related_to" for a
+// relation type) and a relation with a missing endpoint is DROPPED. fmt.Sprint(nil)
+// returns the non-empty string "<nil>", which defeated all three: the model read
+// "- Name (<nil>): <nil>" and the tree grew a phantom edge to "<nil>"
+// (navigation.py:1714-1715, 1783-1788).
+func TestStructureGraphFromRawMissingFieldsStayEmpty(t *testing.T) {
+	rawEntities := []map[string]any{
+		{"name": "Bare"},                    // no type, no description
+		{"name": "Typed", "type": "PERSON"}, // no description
+		{"name": "   ", "type": "PERSON"},   // nameless rows are dropped
+	}
+	rawRels := []map[string]any{
+		{"from": "A", "to": "B"}, // no type
+		{"from": "A"},            // missing endpoint -> dropped
+		{"to": "B"},              // missing endpoint -> dropped
+		{"from": "A", "to": "A"}, // self-loop -> dropped
+	}
+	nodes, rels := structureGraphFromRaw(rawEntities, rawRels)
+
+	if len(nodes) != 2 {
+		t.Fatalf("entities = %+v, want 2 (the nameless row dropped)", nodes)
+	}
+	if nodes[0].Type != "" || nodes[0].Description != "" {
+		t.Errorf("missing fields = %q/%q, want empty so the renderer defaults the type to \"other\"",
+			nodes[0].Type, nodes[0].Description)
+	}
+	if nodes[1].Type != "PERSON" || nodes[1].Description != "" {
+		t.Errorf("entity = %+v, want PERSON with an empty description", nodes[1])
+	}
+	if len(rels) != 1 {
+		t.Errorf("relations = %+v, want only the complete one", rels)
+	}
+	if rels[0].relType != "" {
+		t.Errorf("relation type = %q, want empty so the renderer defaults it to \"related_to\"", rels[0].relType)
+	}
+
+	// End to end: the outline the model reads must show the Python defaults, not
+	// "<nil>" and not the dropped relations.
+	outline := renderOutline(structureNodesFromEntities(nodes), rels)
+	if strings.Contains(outline, "<nil>") {
+		t.Fatalf("outline leaks <nil>:\n%s", outline)
+	}
+	if !strings.Contains(outline, "- Bare (other)") {
+		t.Errorf("outline = %q, want the missing type defaulted to \"other\"", outline)
+	}
+	if !strings.Contains(outline, "- A -[related_to]-> B") {
+		t.Errorf("outline = %q, want the missing relation type defaulted to \"related_to\"", outline)
+	}
+	if got := strings.Count(outline, "->"); got != 1 {
+		t.Errorf("outline has %d relation line(s), want 1 (missing endpoints and self-loops dropped):\n%s", got, outline)
+	}
+}
+
 // TestStructureDocSegmentFormat locks the per-doc XML shape navigateStructures
 // renders for each routed/requested document, mirroring Python's
 // <doc rank doc_id doc_title="" entities relations> element (navigation.py
@@ -808,6 +961,101 @@ func TestRenderTocDrilloutBeamFallback(t *testing.T) {
 	if out.selector != "beam" {
 		t.Errorf("selector = %q, want beam", out.selector)
 	}
+}
+
+// stableDrillout runs call repeatedly and fails if any kept-node-derived output
+// differs between runs (Go randomises map iteration per range statement).
+func stableDrillout(t *testing.T, call func() structureDrillout) structureDrillout {
+	t.Helper()
+	first := call()
+	for i := 1; i < 64; i++ {
+		got := call()
+		if got.outline != first.outline || got.chunkPtrs != first.chunkPtrs || got.nodes != first.nodes ||
+			!reflect.DeepEqual(got.chunkPaths, first.chunkPaths) {
+			t.Fatalf("run %d differs from run 0:\n--- run 0\n%s\n--- run %d\n%s",
+				i, first.outline, i, got.outline)
+		}
+	}
+	return first
+}
+
+// assertKeptNodeOrder requires the outline's node lines to appear in the sorted
+// order the kept names are materialised in.
+func assertKeptNodeOrder(t *testing.T, outline string) {
+	t.Helper()
+	prev := -1
+	for _, name := range []string{"Alpha", "Beta", "Gamma", "Root"} {
+		at := strings.Index(outline, "- "+name+" (")
+		if at < 0 {
+			continue // this strategy did not keep the node
+		}
+		if at < prev {
+			t.Errorf("node line %q is out of sorted order:\n%s", name, outline)
+		}
+		prev = at
+	}
+}
+
+// TestTocDrilldownKeptOrderIsDeterministic pins the kept-node ordering across all
+// three selection strategies. kept drives the rendered outline, chunkPaths (first
+// writer wins for a chunk covered by several nodes) and the capped chunk list
+// whose snippets reach the model, so an arbitrary order hands back a different
+// outline AND a different chunk subset on every run. Python iterates a kept_names
+// SET (navigation.py:1660, 1673, 1594) — arbitrary, and hash-randomised per
+// process — so there is no canonical order to mirror; the port sorts the names.
+func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
+	nodes := []structureNode{
+		{name: "Root", nodeType: "tree_node", desc: "root node", sourceChunkIDs: []string{"r1", "shared"}},
+		{name: "Beta", nodeType: "tree_node", desc: "beta node", sourceChunkIDs: []string{"b1", "b2"}},
+		{name: "Alpha", nodeType: "tree_node", desc: "alpha node", sourceChunkIDs: []string{"a1", "a2"}},
+		{name: "Gamma", nodeType: "tree_node", desc: "gamma node", sourceChunkIDs: []string{"g1", "shared"}},
+	}
+	rels := []structureRel{
+		// Deliberately not the order the node names sort in.
+		{from: "Root", to: "Beta"},
+		{from: "Root", to: "Alpha"},
+		{from: "Root", to: "Gamma"},
+	}
+
+	t.Run("llm_toc", func(t *testing.T) {
+		// The model's picks arrive in ITS order; it must not leak into the output.
+		got := stableDrillout(t, func() structureDrillout {
+			return renderTocDrilldown("q", nil, nodes, rels, drillLoader, nil, []string{"Gamma", "Alpha", "Beta"})
+		})
+		assertKeptNodeOrder(t, got.outline)
+		// chunkPaths follows the same order: "shared" is covered by both Gamma and
+		// Root, and sorted order visits Gamma first, so Gamma's path wins.
+		want := map[string]string{
+			"a1": "Root -> Alpha", "a2": "Root -> Alpha",
+			"b1": "Root -> Beta", "b2": "Root -> Beta",
+			"g1": "Root -> Gamma", "shared": "Root -> Gamma",
+			"r1": "Root",
+		}
+		if !reflect.DeepEqual(got.chunkPaths, want) {
+			t.Errorf("chunkPaths = %v, want %v", got.chunkPaths, want)
+		}
+		// Snippets are capped at structMaxChunks in kept order, so "r1" (Root sorts
+		// last) sits outside a stable, repeatable window.
+		if !strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
+			t.Errorf("outline's snippet window is not the first %d chunks in kept order:\n%s",
+				structMaxChunks, got.outline)
+		}
+	})
+
+	t.Run("chunk_retrieval", func(t *testing.T) {
+		got := stableDrillout(t, func() structureDrillout {
+			return renderTocDrilldown("q", nil, nodes, rels, drillLoader,
+				[]chunkHit{{id: "g1", score: 0.9}, {id: "a1", score: 0.7}}, nil)
+		})
+		assertKeptNodeOrder(t, got.outline)
+	})
+
+	t.Run("beam", func(t *testing.T) {
+		got := stableDrillout(t, func() structureDrillout {
+			return renderTocDrilldown("alpha beta gamma root", nil, nodes, rels, drillLoader, nil, nil)
+		})
+		assertKeptNodeOrder(t, got.outline)
+	})
 }
 
 func TestParseCompiledStructureCarriesVec(t *testing.T) {

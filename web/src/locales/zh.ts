@@ -355,6 +355,20 @@ export default {
       dataFlowRequired: '数据流必填',
     },
     knowledgeDetails: {
+      continueUpload: '继续上传',
+      goToConfiguration: '前往配置',
+      uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
+      fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
+      missingModelAsr: '音频（ASR）',
+      missingModelVision: '视觉',
+      configureInDatasetSettingHint:
+        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      parseBlockedTitle: '无法解析',
+      parseBlockedPartialTitle: '部分文件无法解析',
+      parseBlockedHint:
+        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
+      parseValidFiles: '解析有效文件',
+      parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
         fields: '字段',
         selectFiles: '已选择 {{count}} 个文件',
@@ -539,11 +553,14 @@ export default {
       topKTip: `与 Rerank 模型配合使用，用于设置传给 Rerank 模型的文本块数量。`,
       delimiter: `文本分段标识符`,
       delimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
       enableChildrenDelimiter: '子文本块用于检索',
       childrenDelimiter: '文本分段标识符',
       childrenDelimiterTip:
-        '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+        '分隔符字符串会被解析为分隔符列表。反引号（` `）用于界定分隔符：一对匹配的反引号会将其中的字符作为一个多字符分隔符；反引号外的每个字符都会作为独立分隔符。分隔符按长度从长到短匹配。例如：\\n`##`; 会解析为三个分隔符——换行符（\\n）、两个井号（##）和分号（;），文本遇到其中任意一个都会被切分。单字符分隔符（例如 !?; → !、?、;）无需反引号；多字符分隔符（例如 ##、END）必须用反引号包裹。',
+      delimiterPreviewLabel: '切分位置：',
+      delimiterPreviewEmpty: '没有分隔符——文本将仅按大小切分。',
+      delimiterPreviewCount: '（{{count}}）',
 
       html4excel: '表格转 HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
@@ -2877,6 +2894,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
+      documentIds: '文档 ID 列表',
+      documentIdsTip: '可选，限制检索范围的文档 ID 列表，支持引用上游变量',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
@@ -2994,6 +3013,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         audio: '音频',
         video: '视频',
       },
+      addFileType: '添加文件类型',
+      atLeastOneFileType: '至少保留一个文件类型',
       fields: '字段',
       rule: '规则',
       addRule: '增加规则',

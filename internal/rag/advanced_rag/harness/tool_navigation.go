@@ -134,16 +134,35 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 		kindList = append(kindList, k)
 	}
 	rawEntities, rawRels := ParseCompiledStructure(rows, kindList)
+	return structureGraphFromRaw(rawEntities, rawRels)
+}
+
+// structureGraphFromRaw maps what ParseCompiledStructure returns onto the typed
+// entities/relations the drill-down consumes.
+//
+// A field the compiled payload omits must read as ABSENT, not as its Go
+// rendering: fmt.Sprint(nil) is the non-empty string "<nil>", which survives
+// navTypeOr's empty check and reaches the model as "- Name (<nil>): <nil>" with
+// a phantom edge to "<nil>". Python renders "- Name (other)" and no description,
+// because `(e.get("type") or "other")` / `(e.get("description") or "")` treat a
+// missing key as falsy (navigation.py:1714-1715), and it DROPS a relation with a
+// missing endpoint instead of keeping it (navigation.py:1783-1786). Leaving the
+// field empty is also what lets the renderers apply Python's defaults —
+// "other" for a type (navigation.py:1714), "related_to" for a relation type
+// (navigation.py:1788).
+func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureEntity, []structureRel) {
 	var out []structureEntity
 	for _, e := range rawEntities {
 		name, _ := e["name"].(string)
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
+		typ, _ := e["type"].(string)
+		desc, _ := e["description"].(string)
 		se := structureEntity{
 			Name:        name,
-			Type:        fmt.Sprint(e["type"]),
-			Description: fmt.Sprint(e["description"]),
+			Type:        typ,
+			Description: desc,
 		}
 		if v, ok := e["_vec"].([]float64); ok {
 			se.Vec = v
@@ -159,16 +178,19 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 	}
 	var rels []structureRel
 	for _, r := range rawRels {
-		p := strings.TrimSpace(fmt.Sprint(r["from"]))
-		c := strings.TrimSpace(fmt.Sprint(r["to"]))
+		pRaw, _ := r["from"].(string)
+		cRaw, _ := r["to"].(string)
+		p := strings.TrimSpace(pRaw)
+		c := strings.TrimSpace(cRaw)
 		// Python _build_toc_tree skips empty or self-loop relations.
 		if p == "" || c == "" || p == c {
 			continue
 		}
+		relType, _ := r["type"].(string)
 		rels = append(rels, structureRel{
 			from:    p,
 			to:      c,
-			relType: fmt.Sprint(r["type"]),
+			relType: relType,
 		})
 	}
 	return out, rels
@@ -333,9 +355,23 @@ type NavResult struct {
 // A query-level miss is not a structure absence.
 func (n NavResult) HasStructure() bool { return n.EmptyReason != ReasonNoStructure }
 
-// navEmpty returns an empty NavResult with the given reason and matching status.
+// navEmpty returns an empty NavResult carrying Python's <tree_navigation> text:
+// count="0" plus an error="<label>" attribute, omitted when label is empty —
+// exactly the shapes navigation.py builds (:877 "no retriever", :880 "query is
+// required", :899 no attribute at all for a query-level miss). That text is not
+// what the model reads for an empty result — both sides substitute their own
+// note for every empty_reason (action_session.py:869-876, tool_executor.go:402)
+// — but the NavResult must still carry it. The status is derived from the reason
+// by ReasonStatus.
 func navEmpty(reason, label string) NavResult {
-	return NavResult{EmptyReason: reason}
+	attr := ""
+	if label != "" {
+		attr = ` error="` + XMLEscape(label) + `"`
+	}
+	return NavResult{
+		EmptyReason: reason,
+		Text:        "<tree_navigation count=\"0\"" + attr + ">\n</tree_navigation>",
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +427,9 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 		return navEmpty(ReasonBadArgs, "query is required")
 	}
 	if router == nil {
-		return navEmpty(ReasonInfra, "no nav tree router")
+		// Python's counterpart is a missing retriever, and the error label is its
+		// string verbatim (navigation.py:877): the router IS the retrieval backend.
+		return navEmpty(ReasonInfra, "no retriever")
 	}
 	// Descend on the topic + keywords: routing descends on similarity and does
 	// not require keyword hits, so keywords only enrich the query.
@@ -429,6 +467,18 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 		}
 	}
 	if !anyTree {
+		if anyError != nil {
+			// A backend failure is an INFRASTRUCTURE error, not a dataset verdict:
+			// no read succeeded, so "this dataset has no tree" would be a verdict
+			// drawn from zero evidence — and Route() documents that contract
+			// itself ("(nil, nil) when the dataset has no compiled tree at all",
+			// so a non-nil error is a failure, not an absence). Python never
+			// reaches no_structure from a failed descent either: its nav-tree
+			// route yields only infra / bad_args / no_doc (navigation.py:877-899),
+			// while no_structure belongs to the STRUCTURE path, where a successful
+			// read found zero entities (:1046).
+			return navEmpty(ReasonInfra, "nav tree descent failed")
+		}
 		// Every dataset lacks a compiled tree — a DATASET-level fact, so the
 		// caller may disable the tool for the session.
 		return navEmpty(ReasonNoStructure, "no compiled navigation tree")
@@ -436,9 +486,10 @@ func NavigateTree(ctx context.Context, router NavTreeRouter, in NavTreeInput) Na
 	if len(ordered) == 0 {
 		// Structure exists but THIS query reached nothing: a query-level miss.
 		// The dataset may still have a tree a better-formed query would hit.
-		return navEmpty(ReasonNoDoc, "no document routed")
+		// No error attribute: Python's query-level miss carries none
+		// (navigation.py:899), unlike infra/bad_args.
+		return navEmpty(ReasonNoDoc, "")
 	}
-	_ = anyError
 
 	// Cap after dedup, preserving the score order.
 	if len(ordered) > navTreeMaxDocs {
@@ -982,6 +1033,8 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		frontier = next
 		depth++
 	}
+	// Order-independent (see drillWithAncestors): the ancestor closure is the same
+	// SET whatever order the names are visited in.
 	for name := range keptNames {
 		cur := parents[name]
 		guard := 0
@@ -992,7 +1045,7 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		}
 	}
 	var kept []structureNode
-	for n := range keptNames {
+	for _, n := range sortedKeptNames(keptNames) {
 		if e, ok := byName[n]; ok {
 			kept = append(kept, e)
 		}
@@ -1126,9 +1179,34 @@ type chunkHit struct {
 	score float64
 }
 
+// sortedKeptNames returns a kept-name set as a sorted slice.
+//
+// The kept set is a map because it is used for membership tests, but three
+// order-sensitive outputs are materialised from it: the rendered outline
+// (kept[:structMaxNodes]), chunkPaths (first writer wins for a chunk covered by
+// several nodes) and collectChunkIDs(kept, 32) — the chunk list whose snippets
+// reach the model. Python iterates the kept_names SET (navigation.py:1660, 1673 and
+// _drill_kept_nodes:1594), so its order is arbitrary and, because str hashing is
+// randomised per process, not even reproducible across runs: there is no
+// canonical order to mirror. Go randomises map iteration per range statement, so
+// leaving it to the map would vary those three outputs even between two calls in
+// one process; sorting gives a stable, machine-independent order instead.
+func sortedKeptNames(names map[string]bool) []string {
+	out := make([]string, 0, len(names))
+	for n := range names {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // drillWithAncestors pulls the ancestors of names into the kept set so a path
 // renders as root -> ... -> node, mirroring _with_ancestors in _render_toc_drilldown.
 func drillWithAncestors(names map[string]bool, parents map[string]string) map[string]bool {
+	// Ranging a map while adding keys visits the new ones in an unspecified order,
+	// but the result is order-independent: every start walks up to the root (or the
+	// depth guard), so the SET is the same whatever order the names are visited in
+	// — the same closure Python builds from its `list(names)` snapshot (:1648).
 	for name := range names {
 		cur := parents[name]
 		guard := 0
@@ -1186,7 +1264,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 			}
 		}
 		keptNames = drillWithAncestors(names, parents)
-		for n := range keptNames {
+		for _, n := range sortedKeptNames(keptNames) {
 			if e, ok := byName[n]; ok {
 				kept = append(kept, e)
 			}
@@ -1209,7 +1287,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 			}
 		}
 		keptNames = drillWithAncestors(names, parents)
-		for n := range keptNames {
+		for _, n := range sortedKeptNames(keptNames) {
 			if e, ok := byName[n]; ok {
 				kept = append(kept, e)
 			}
@@ -1230,7 +1308,9 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		out.selector = selector
 		return out
 	}
-	// depth_of: node -> number of kept ancestors (rendering indentation).
+	// depth_of: node -> number of kept ancestors (rendering indentation). The
+	// iteration order does not matter here: each entry is a pure function of
+	// (node, parents, keptNames), so the map comes out the same either way.
 	depthOf := map[string]int{}
 	for n := range keptNames {
 		d := 0

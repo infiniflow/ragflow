@@ -18,6 +18,7 @@ package nav
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 )
@@ -60,7 +61,7 @@ func TestAggregateChunks(t *testing.T) {
 func TestChunkAggRouterRoute(t *testing.T) {
 	ctx := context.Background()
 	rtr := &ChunkAggRouter{
-		Retrieve: func(_ context.Context, _, _ string, _ string, _ []string, topN int, vecWeight float64) []map[string]any {
+		Retrieve: func(_ context.Context, _, _ string, _ string, _ []string, topN int, vecWeight float64) ([]map[string]any, error) {
 			if vecWeight != chunkAggVecWeight {
 				t.Errorf("vecWeight = %v, want %v", vecWeight, chunkAggVecWeight)
 			}
@@ -71,7 +72,7 @@ func TestChunkAggRouterRoute(t *testing.T) {
 				{"doc_id": "d1", "similarity": 0.9},
 				{"doc_id": "d1", "similarity": 0.7},
 				{"doc_id": "d2", "similarity": 0.4},
-			}
+			}, nil
 		},
 		Summarize: func(_ context.Context, _, _ string, ids []string) map[string]string {
 			out := map[string]string{}
@@ -110,8 +111,8 @@ func TestChunkAggRouterEmpty(t *testing.T) {
 func TestChunkAggRouterNoRoute(t *testing.T) {
 	ctx := context.Background()
 	rtr := &ChunkAggRouter{
-		Retrieve: func(_ context.Context, _, _ string, _ string, _ []string, _ int, _ float64) []map[string]any {
-			return nil
+		Retrieve: func(_ context.Context, _, _ string, _ string, _ []string, _ int, _ float64) ([]map[string]any, error) {
+			return nil, nil
 		},
 	}
 	routed, err := rtr.Route(ctx, "t", "kb", "q", nil, 5)
@@ -123,5 +124,26 @@ func TestChunkAggRouterNoRoute(t *testing.T) {
 	}
 	if len(routed) != 0 {
 		t.Errorf("routed len = %d, want 0", len(routed))
+	}
+}
+
+// TestChunkAggRouterPropagatesRetrievalError pins the router contract: a
+// retrieval FAILURE is an error, not "no document routed". Python's
+// _search_layers_nav_chunk_agg returns ok=False/SERVER_ERROR there, reserving
+// ok=True/total=0 for an empty aggregation.
+func TestChunkAggRouterPropagatesRetrievalError(t *testing.T) {
+	ctx := context.Background()
+	wantErr := errors.New("ES down")
+	rtr := &ChunkAggRouter{
+		Retrieve: func(_ context.Context, _, _ string, _ string, _ []string, _ int, _ float64) ([]map[string]any, error) {
+			return nil, wantErr
+		},
+	}
+	routed, err := rtr.Route(ctx, "t", "kb", "q", nil, 5)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if routed != nil {
+		t.Errorf("routed = %v, want nil alongside the error", routed)
 	}
 }

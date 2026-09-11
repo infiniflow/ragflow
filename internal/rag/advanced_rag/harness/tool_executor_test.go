@@ -17,6 +17,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -28,12 +29,17 @@ import (
 )
 
 // stubRetrievalService returns a fixed set of child chunks so the harness
-// retireval path can be exercised without a live search backend.
+// retireval path can be exercised without a live search backend. lastReq, when
+// set, receives the request the harness handed down.
 type stubRetrievalService struct {
-	chunks []runtime.RetrievalChunk
+	chunks  []runtime.RetrievalChunk
+	lastReq *runtime.RetrievalRequest
 }
 
-func (s stubRetrievalService) Search(_ context.Context, _ *gorm.DB, _ runtime.RetrievalRequest) ([]runtime.RetrievalChunk, error) {
+func (s stubRetrievalService) Search(_ context.Context, _ *gorm.DB, req runtime.RetrievalRequest) ([]runtime.RetrievalChunk, error) {
+	if s.lastReq != nil {
+		*s.lastReq = req
+	}
 	return s.chunks, nil
 }
 
@@ -50,6 +56,78 @@ func (s stubDocEngine) GetChunk(_ context.Context, _, chunkID string, _ []string
 		return p, nil
 	}
 	return nil, fmt.Errorf("parent %s not found", chunkID)
+}
+
+// TestRuntimeRetrieverPreservesUnsetControls pins the presence semantics of the
+// retrieval controls: an omitted threshold/weight must reach the retrieval
+// service as nil so it keeps its own default, while an explicit zero is a real
+// override. Taking the address of a zero value used to force "no threshold
+// floor + the vector leg at full weight" onto every caller that omitted them.
+func TestRuntimeRetrieverPreservesUnsetControls(t *testing.T) {
+	prev := runtime.GetRetrievalService()
+	var got runtime.RetrievalRequest
+	runtime.SetRetrievalService(stubRetrievalService{lastReq: &got})
+	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
+
+	r := &RuntimeRetriever{}
+	if _, err := r.Retrieve(context.Background(), RetrieveRequest{Query: "q", DatasetIDs: []string{"kb-1"}}); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if got.SimilarityThreshold != nil || got.KeywordsSimilarityWeight != nil {
+		t.Errorf("omitted controls = %v / %v, want nil so the service keeps its defaults",
+			got.SimilarityThreshold, got.KeywordsSimilarityWeight)
+	}
+
+	threshold, weight := 0.35, 0.3
+	if _, err := r.Retrieve(context.Background(), RetrieveRequest{
+		Query:                    "q",
+		SimilarityThreshold:      &threshold,
+		KeywordsSimilarityWeight: &weight,
+	}); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != threshold {
+		t.Errorf("SimilarityThreshold = %v, want %v", got.SimilarityThreshold, threshold)
+	}
+	if got.KeywordsSimilarityWeight == nil || *got.KeywordsSimilarityWeight != weight {
+		t.Errorf("KeywordsSimilarityWeight = %v, want %v", got.KeywordsSimilarityWeight, weight)
+	}
+}
+
+// TestChunkAggRetrieveLeavesControlsUnset pins the caller side: the chunk-agg
+// retriever has no threshold/weight of its own, so it must omit both rather
+// than pass zero overrides.
+func TestChunkAggRetrieveLeavesControlsUnset(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{{"chunk_id": "c1"}}}
+
+	chunks, err := chunkAggRetrieveFrom(r)(context.Background(), "t1", "kb-1", "q", nil, 5, 0.9)
+	if err != nil {
+		t.Fatalf("chunkAggRetrieveFrom: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want the retrieved chunk", len(chunks))
+	}
+	req := r.lastReq(t)
+	if req.SimilarityThreshold != nil || req.KeywordsSimilarityWeight != nil {
+		t.Errorf("controls = %v / %v, want nil (zero is a valid value, not an unset marker)",
+			req.SimilarityThreshold, req.KeywordsSimilarityWeight)
+	}
+}
+
+// TestChunkAggRetrievePropagatesError pins the adapter half of the router
+// contract: a retrieval failure must reach the router as an error, not as an
+// empty chunk list (which the router would report as a successful empty route).
+func TestChunkAggRetrievePropagatesError(t *testing.T) {
+	wantErr := errors.New("retrieval down")
+	r := &stubRetriever{err: wantErr}
+
+	chunks, err := chunkAggRetrieveFrom(r)(context.Background(), "t1", "kb-1", "q", nil, 5, 0.9)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if chunks != nil {
+		t.Errorf("chunks = %v, want nil alongside the error", chunks)
+	}
 }
 
 // TestRuntimeRetrieverPromotesChildrenToParent verifies that
@@ -340,6 +418,39 @@ func TestListChunksCapsDeepReadAndOutput(t *testing.T) {
 	}
 	if len(oc.Payload) != listChunksMaxOut {
 		t.Errorf("payload = %d, want output cap %d", len(oc.Payload), listChunksMaxOut)
+	}
+}
+
+// TestEvidencePoolCapStopsAdmitting pins the PR's _EVIDENCE_POOL_CAP early-stop:
+// once the shared pool reaches the cap, a search admits no further chunk, so its
+// outcome collapses to MISS (nothing new was admitted) — a saturated session
+// stops bloating the pool beyond what the SCA view can read.
+func TestEvidencePoolCapStopsAdmitting(t *testing.T) {
+	pre := make([]map[string]any, 0, evidencePoolCap)
+	for i := 0; i < evidencePoolCap; i++ {
+		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "old"})
+	}
+	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
+	kb.Chunks = pre
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if oc.Status != StatusMiss {
+		t.Errorf("status = %s, want %s (a full pool admits nothing)", oc.Status, StatusMiss)
+	}
+	if len(kb.Chunks) != evidencePoolCap {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at the cap %d", len(kb.Chunks), evidencePoolCap)
+	}
+	// Dropping one chunk frees a slot and admission resumes.
+	kb.Chunks = kb.Chunks[:evidencePoolCap-1]
+	oc, err = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
+	if err != nil {
+		t.Fatalf("retrieve after freeing a slot: %v", err)
+	}
+	if oc.Status != StatusOK {
+		t.Errorf("status after freeing a slot = %s, want %s", oc.Status, StatusOK)
 	}
 }
 

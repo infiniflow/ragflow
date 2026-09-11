@@ -19,7 +19,11 @@ package advanced_rag
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -284,7 +288,7 @@ func TestResolveEffectiveQuestionHandlesEmpty(t *testing.T) {
 // rag() calls.
 func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 2
+	cache.consecutiveUnanswerable = 2
 	resp := &RunResponse{
 		Verdict:     VerdictInsufficient,
 		SCAFeedback: "evidence is not yet sufficient",
@@ -305,7 +309,7 @@ func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 // re-ask rather than tell the agent to stop.
 func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 1
+	cache.consecutiveUnanswerable = 1
 	resp := &RunResponse{
 		Verdict:     VerdictInsufficient,
 		SCAFeedback: "evidence is not yet sufficient",
@@ -329,7 +333,7 @@ func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 // missing SCA feedback all yield "".
 func TestResearchStatusTrailerSkipsSufficientOrEmpty(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 2
+	cache.consecutiveUnanswerable = 2
 
 	cases := []struct {
 		name string
@@ -499,5 +503,177 @@ func TestFitEvidenceTrimsOversizedEvidence(t *testing.T) {
 	}
 	if got == "" {
 		t.Fatal("evidence must not be trimmed to nothing")
+	}
+}
+
+// TestOuterReactSessionPublishMergesPerCallResults pins the locked merge: a
+// round's rag calls run concurrently, so each publishes its own evidence and
+// answer and none may be lost. Run with -race.
+func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	const calls = 4
+
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session.publish(
+				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), Verdict: fmt.Sprintf("verdict-%d", i)},
+				&harness.Kbinfos{
+					Chunks:  []map[string]any{{"chunk_id": fmt.Sprintf("c%d", i)}},
+					DocAggs: []map[string]any{{"doc_id": fmt.Sprintf("d%d", i)}},
+					Memory:  []map[string]any{{"id": fmt.Sprintf("m%d", i)}},
+				})
+		}(i)
+	}
+	wg.Wait()
+
+	if len(session.kb.Chunks) != calls || len(session.kb.DocAggs) != calls || len(session.kb.Memory) != calls {
+		t.Fatalf("merged evidence = %d chunks / %d doc_aggs / %d memory, want %d each",
+			len(session.kb.Chunks), len(session.kb.DocAggs), len(session.kb.Memory), calls)
+	}
+	seen := map[string]bool{}
+	for _, c := range session.kb.Chunks {
+		id, _ := c["chunk_id"].(string)
+		seen[id] = true
+	}
+	for i := 0; i < calls; i++ {
+		if !seen[fmt.Sprintf("c%d", i)] {
+			t.Errorf("merged chunks lost c%d: %v", i, seen)
+		}
+	}
+	if !strings.HasPrefix(session.resp.Answer, "answer-") {
+		t.Errorf("answer = %q, want one call's answer", session.resp.Answer)
+	}
+	if !strings.HasPrefix(session.resp.Verdict, "verdict-") {
+		t.Errorf("verdict = %q, want one call's verdict", session.resp.Verdict)
+	}
+}
+
+// TestOuterReactSessionToolCallKeepsSharedRequestIntact pins the per-call
+// isolation: models.appendToolResults runs a round's rag calls concurrently
+// (chat_tools.go), so a call must apply its rewritten question and its cleared
+// images to a COPY — never to the request a concurrent call is reading.
+// Run with -race.
+func TestOuterReactSessionToolCallKeepsSharedRequestIntact(t *testing.T) {
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx:    context.Background(),
+		spec:   spec,
+		kb:     &harness.Kbinfos{},
+		resp:   &RunResponse{Mode: spec},
+		logger: log.New(io.Discard, "", 0),
+		req: harness.RunRequest{
+			Question: "original question",
+			Images:   []string{"data:image/png;base64,AAAA"},
+		},
+	}
+
+	var wg sync.WaitGroup
+	for _, q := range []string{"first question", "second question"} {
+		wg.Add(1)
+		go func(q string) {
+			defer wg.Done()
+			if _, err := session.ToolCall("rag", map[string]interface{}{"question": q}); err != nil {
+				t.Errorf("ToolCall(%q): %v", q, err)
+			}
+		}(q)
+	}
+	wg.Wait()
+
+	if session.req.Question != "original question" {
+		t.Errorf("shared request question = %q, want it untouched (each call works on a copy)", session.req.Question)
+	}
+	if len(session.req.Images) != 1 {
+		t.Errorf("shared request images = %v, want them untouched", session.req.Images)
+	}
+}
+
+// ragTestChunkIDs lists a chunk pool's ids in order.
+func ragTestChunkIDs(chunks []map[string]any) []string {
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		id, _ := c["chunk_id"].(string)
+		out = append(out, id)
+	}
+	return out
+}
+
+// TestRAGCacheConsecutiveUnanswerableIsSerialized pins that the counter lives
+// behind the cache's lock: a round's concurrent rag() calls bump the SAME shared
+// cache, so an unsynchronized increment would race and lose updates.
+// Run with -race.
+func TestRAGCacheConsecutiveUnanswerableIsSerialized(t *testing.T) {
+	cache := NewRAGCache()
+	const calls = 8
+
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache.NoteUnanswerable(VerdictInsufficient)
+		}()
+	}
+	wg.Wait()
+
+	if got := cache.ConsecutiveUnanswerable(); got != calls {
+		t.Errorf("ConsecutiveUnanswerable = %d, want %d (increments must not be lost)", got, calls)
+	}
+	cache.NoteUnanswerable(VerdictSufficient)
+	if got := cache.ConsecutiveUnanswerable(); got != 0 {
+		t.Errorf("after a SUFFICIENT verdict = %d, want 0", got)
+	}
+	if got := (*RAGCache)(nil).ConsecutiveUnanswerable(); got != 0 {
+		t.Errorf("nil cache = %d, want 0", got)
+	}
+	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient) // must not panic
+}
+
+// TestOuterReactSessionSelectsWinningCallEvidence pins the citation fix: the
+// terminal fold returns the LOWEST-INDEX terminal rag call's answer while
+// publish() records completion order, so the session must hand back THAT call's
+// evidence — otherwise the answer's [ID:n] markers address another call's chunks.
+func TestOuterReactSessionSelectsWinningCallEvidence(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	winner := &harness.Kbinfos{
+		Chunks:     []map[string]any{{"chunk_id": "w0"}, {"chunk_id": "w1"}},
+		DocAggs:    []map[string]any{{"doc_id": "dw"}},
+		Memory:     []map[string]any{{"id": "mw"}},
+		PreSummary: "winner summary",
+	}
+	loser := &harness.Kbinfos{Chunks: []map[string]any{{"chunk_id": "l0"}}}
+
+	// The losing call finishes FIRST, i.e. completion order ≠ index order.
+	session.publish(&RunResponse{Answer: "answer-loser"}, loser)
+	session.publish(&RunResponse{Answer: "answer-winner"}, winner)
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 3 || got[0] != "l0" {
+		t.Fatalf("unselected union = %v, want the loser's chunk first (that is the misalignment)", got)
+	}
+
+	session.selectEvidence("answer-winner")
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 2 || got[0] != "w0" || got[1] != "w1" {
+		t.Errorf("chunks after selection = %v, want the winner's [w0 w1] in its own order", got)
+	}
+	if len(session.kb.DocAggs) != 1 || len(session.kb.Memory) != 1 || session.kb.PreSummary != "winner summary" {
+		t.Errorf("winner's evidence fields not restored: %+v", session.kb)
+	}
+}
+
+// TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch keeps the fallback:
+// an answer no rag call produced (the terminal tool was summarize_document, or
+// the outer model answered itself) leaves the union in place.
+func TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	session.publish(&RunResponse{Answer: "answer-a"}, &harness.Kbinfos{Chunks: []map[string]any{{"chunk_id": "a0"}}})
+
+	session.selectEvidence("a summarize_document result")
+	session.selectEvidence("")
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 1 || got[0] != "a0" {
+		t.Errorf("chunks = %v, want the union kept when no call matches", got)
 	}
 }

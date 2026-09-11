@@ -357,6 +357,11 @@ func resolveKGScope(deps SearchDeps, docScope, datasetIDs []string) []kgScope {
 				key := DocTenant{KBID: owner.KBID, TenantID: owner.TenantID}
 				byOwner[key] = append(byOwner[key], docID)
 			}
+		} else {
+			// Python's per-doc lookup raises here (exploration.py:68); Go degrades
+			// to the bound datasets below, so the lost owner grouping must not be
+			// silent.
+			_LOG.Printf("[Graph explore] doc-tenant resolution failed for %d doc(s); falling back to the bound datasets: %v", len(docScope), err)
 		}
 	}
 
@@ -463,7 +468,7 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 		// (1) Seeds: dense KNN (similarity>=_KG_SEED_SIM) over the scoped entity
 		// rows, re-ranked by mention_count_int desc; falls back to keyword match
 		// when the embedding model is unavailable.
-		seedRows := kgSeedSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, text, scopeKwd, seedVec)
+		seedRows := kgSeedSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, text, scopeKwd, seedVec, deps.IndexName)
 		var seeds []kgEntity
 		for _, r := range seedRows {
 			if e, ok := kgParseEntity(r); ok {
@@ -479,9 +484,9 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 			}
 			terms := endpointTerms(frontier)
 			relRows := kgSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, "relation", "", kgRelLimit, scopeKwd,
-				map[string]interface{}{"from_entity_kwd": terms}, "", 0)
+				map[string]interface{}{"from_entity_kwd": terms}, "", 0, deps.IndexName)
 			relRows = append(relRows, kgSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, "relation", "", kgRelLimit, scopeKwd,
-				map[string]interface{}{"to_entity_kwd": terms}, "", 0)...)
+				map[string]interface{}{"to_entity_kwd": terms}, "", 0, deps.IndexName)...)
 			// Dedup keys: Python keeps a relation unless its source row id is
 			// already seen (rel_rows is a dict keyed by row id), so the same
 			// endpoint pair from *different* rows survives. Mirror that: prefer
@@ -535,7 +540,7 @@ func ExploreGraph(ctx context.Context, deps SearchDeps, tenantID string, dataset
 				limit = len(neighFiltered)
 			}
 			neighRows := kgSearch(ctx, de, sc.TenantID, sc.KBID, sc.Docs, "entity", "", limit, scopeKwd,
-				map[string]interface{}{"name_kwd": endpointTerms(neighFiltered)}, "", 0)
+				map[string]interface{}{"name_kwd": endpointTerms(neighFiltered)}, "", 0, deps.IndexName)
 			var neighbours []kgEntity
 			for _, r := range neighRows {
 				if e, ok := kgParseEntity(r); ok {
@@ -674,8 +679,9 @@ func defaultSeedEncoder(ctx context.Context, tenantID, text string) []float64 {
 // kgSeedSearch searches the compiled KG entity rows for seeds (mirrors Python
 // _kg_search dense branch): dense KNN over name_kwd with similarity>=0.8,
 // re-ranked by mention_count_int desc, top kgSeeds. Falls back to keyword match
-// when seedVec is nil (embedding model unavailable).
-func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, text, scopeKwd string, seedVec []float64) []map[string]interface{} {
+// when seedVec is nil (embedding model unavailable). indexName is the caller's
+// configured index override (deps.IndexName); empty keeps ragflow_<tenantID>.
+func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, text, scopeKwd string, seedVec []float64, indexName string) []map[string]interface{} {
 	if seedVec != nil {
 		dense := &types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(seedVec)),
@@ -685,11 +691,11 @@ func kgSeedSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID strin
 			TopN:              kgSeedPool,
 			ExtraOptions:      map[string]interface{}{"similarity": kgSeedSim},
 		}
-		rows := kgSearchRaw(ctx, de, tenantID, kbID, docIDs, "entity", scopeKwd, nil, []interface{}{dense}, "mention_count_int", kgSeedPool)
+		rows := kgSearchRaw(ctx, de, tenantID, kbID, docIDs, "entity", scopeKwd, nil, []interface{}{dense}, "mention_count_int", kgSeedPool, indexName)
 		return topMentionCount(rows, kgSeeds)
 	}
 	// Text fallback (mirrors Python _kg_search `embed_mdl is None` path).
-	return kgSearch(ctx, de, tenantID, kbID, docIDs, "entity", text, kgSeeds, scopeKwd, nil, "mention_count_int", kgSeedPool)
+	return kgSearch(ctx, de, tenantID, kbID, docIDs, "entity", text, kgSeeds, scopeKwd, nil, "mention_count_int", kgSeedPool, indexName)
 }
 
 // topMentionCount re-ranks rows by mention_count_int desc and returns topN.
@@ -719,8 +725,15 @@ func mentionCount(row map[string]interface{}) int {
 
 // kgSearchRaw is the low-level KG row search with explicit match exprs and any
 // extra filter keys (e.g. from_entity_kwd/to_entity_kwd/name_kwd).
-func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, scopeKwd string, extra map[string]interface{}, matchExprs []interface{}, orderDesc string, limit int) []map[string]interface{} {
-	idx := fmt.Sprintf("ragflow_%s", tenantID)
+//
+// indexName is the caller's configured index override (deps.IndexName): the KG
+// rows are written to the same index the chunk loads read (ExploreGraph loads
+// its evidence with indexNameFor(deps.TenantID, deps.IndexName)), so a tenant
+// that overrides the name must have it honoured here too — otherwise the walk
+// queries one index and loads passages from another. Empty falls back to
+// ragflow_<tenantID>, which is what Python's search.index_name always returns.
+func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, scopeKwd string, extra map[string]interface{}, matchExprs []interface{}, orderDesc string, limit int, indexName string) []map[string]interface{} {
+	idx := indexNameFor(tenantID, indexName)
 	condition := map[string]interface{}{"knowledge_graph_kwd": kind}
 	if scopeKwd != "" {
 		condition["scope_kwd"] = scopeKwd
@@ -754,7 +767,7 @@ func kgSearchRaw(ctx context.Context, de engine.DocEngine, tenantID, kbID string
 // kgSearch searches the compiled KG rows of one KB (mirrors Python _kg_search),
 // using keyword match. It only builds the MatchTextExpr (with the pool-based
 // TopN) and delegates the request construction to kgSearchRaw.
-func kgSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, text string, topN int, scopeKwd string, extra map[string]interface{}, orderDesc string, pool int) []map[string]interface{} {
+func kgSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, docIDs []string, kind, text string, topN int, scopeKwd string, extra map[string]interface{}, orderDesc string, pool int, indexName string) []map[string]interface{} {
 	var matchExprs []interface{}
 	if text != "" {
 		knnTopN := topN
@@ -767,7 +780,7 @@ func kgSearch(ctx context.Context, de engine.DocEngine, tenantID, kbID string, d
 			TopN:         knnTopN,
 		}}
 	}
-	return kgSearchRaw(ctx, de, tenantID, kbID, docIDs, kind, scopeKwd, extra, matchExprs, orderDesc, topN)
+	return kgSearchRaw(ctx, de, tenantID, kbID, docIDs, kind, scopeKwd, extra, matchExprs, orderDesc, topN, indexName)
 }
 
 func kgParseEntity(row map[string]interface{}) (kgEntity, bool) {

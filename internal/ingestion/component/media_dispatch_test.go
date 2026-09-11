@@ -318,15 +318,12 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	if got, _ := res.JSON[0]["text"].(string); got != want {
 		t.Fatalf("JSON[0].text = %q, want %q", got, want)
 	}
-	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "audio" {
-		t.Fatalf("JSON[0].doc_type_kwd = %q, want audio", got)
+	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "text" {
+		t.Fatalf("JSON[0].doc_type_kwd = %q, want text", got)
 	}
 }
 
-// TestMaybeDispatchAudio_TextCarriesTranscription guards the text path: with
-// output_format "text" the transcription stays in the Text field and JSON is
-// empty (current default after aligning with Python parser.py:232).
-func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
+func TestMaybeDispatchAudio_IgnoresLegacyOutputFormat(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	defer func() { resolveTenantModelByType = origResolver }()
 
@@ -355,24 +352,20 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true for AURAL file")
 	}
-	if res.OutputFormat != "text" {
-		t.Fatalf("OutputFormat = %q, want text", res.OutputFormat)
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
 	}
-	if res.Text != want {
-		t.Fatalf("Text = %q, want %q", res.Text, want)
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if len(res.JSON) != 0 {
-		t.Fatalf("JSON len = %d, want 0 for text output", len(res.JSON))
+	if got, _ := res.JSON[0]["text"].(string); got != want {
+		t.Fatalf("JSON[0].text = %q, want %q", got, want)
 	}
 }
 
 // TestMaybeDispatchAudio_DefaultOutputFormatJson covers the
-// maybeDispatchAudio fallback: when an audio setup omits
-// output_format entirely, the dispatch defaults to "json" and wraps
-// the transcription as a JSON item. (The defaultSetups value is
-// "text" to mirror the Python audio setup in parser.py; this test
-// deliberately supplies an empty setup to exercise the fallback
-// inside the dispatch itself.)
+// maybeDispatchAudio always returns a JSON transcription item, including when
+// the setup has no output_format key.
 func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}

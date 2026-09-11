@@ -228,6 +228,41 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// Email's structured body item can have no text for a header-only
+	// message. Parser emits the second text item specifically so headers are
+	// still indexed through the JSON path.
+	items := []map[string]any{
+		{"from": "sender@example.com", "subject": "Status", "doc_type_kwd": "text"},
+		{"text": "from:sender@example.com\nsubject:Status\n", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "message.eml",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("chunks missing: %#v", out["chunks"])
+	}
+	for _, chunk := range chunks {
+		if text, _ := chunk["text"].(string); strings.Contains(text, "subject:Status") {
+			return
+		}
+	}
+	t.Fatalf("header item was not indexed: %#v", chunks)
+}
+
 // TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
 // regression lock for #17889: when merging adjacent segments, only
 // "text" segments may be merged; "table"/"image" (any non-text type)
@@ -280,6 +315,10 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 		got, _ := ch["doc_type_kwd"].(string)
 		if got != wantTypes[i] {
 			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
+		}
+		ckType, _ := ch["ck_type"].(string)
+		if ckType != wantTypes[i] {
+			t.Errorf("chunk %d: ck_type = %q, want %q (derived from doc_type_kwd)", i, ckType, wantTypes[i])
 		}
 	}
 	// The two text segments on either side of the table/image must remain
@@ -354,6 +393,41 @@ func TestTokenChunker_InputsOutputs_NonEmpty(t *testing.T) {
 	}
 	if len(meta.Outputs) == 0 {
 		t.Error("outputs metadata is empty")
+	}
+}
+
+// TestTokenChunker_SpreadsheetTablePreservesSelectionRange guards the Parser
+// JSON path: spreadsheet positions describe a sheet selection, not a PDF
+// bounding box, and a table item must pass through without proportional text
+// splitting or coordinate rewriting.
+func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"delimiter": "\n"})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	wantPositions := [][]float64{{1, 2, 10, 1, 5}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "book.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"text":         "<table><tr><td>A</td></tr>\n<tr><td>B</td></tr></table>",
+			"doc_type_kwd": "table",
+			"positions":    wantPositions,
+			"sheet":        "Sheet1",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
+	}
+	if got := chunks[0]["ck_type"]; got != "table" {
+		t.Errorf("ck_type = %v, want table", got)
+	}
+	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
+		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
 	}
 }
 

@@ -167,11 +167,14 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if !strings.Contains(res.HTML, "<table>") {
-		t.Fatalf("HTML = %q, want a rendered <table>", res.HTML)
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON items is empty; want structured table items")
+	}
+	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
+		t.Fatalf("JSON item text = %v, want a rendered <table>", res.JSON[0]["text"])
 	}
 }
 

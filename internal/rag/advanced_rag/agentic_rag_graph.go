@@ -50,6 +50,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/cloudwego/eino/compose"
@@ -811,7 +812,9 @@ func fanoutLooksLikeQuery(line string, loose bool) bool {
 			return false
 		}
 	}
-	if len(s) > fanoutMaxChars {
+	// Python len() counts characters, not bytes; a byte-based cap would reject a
+	// legitimate CJK fan-out well below the 160-character limit.
+	if utf8.RuneCountInString(s) > fanoutMaxChars {
 		return false
 	}
 	words := len(strings.Fields(s))
@@ -819,6 +822,17 @@ func fanoutLooksLikeQuery(line string, loose bool) bool {
 		return false
 	}
 	return words <= fanoutMaxWords
+}
+
+// fanoutLineBreak reports whether r is a Python str.splitlines() line boundary.
+// Splitting on "\n" alone misses a lone "\r" and the other Unicode line breaks a
+// model could emit, so the loose path would fuse several fan-out lines into one.
+func fanoutLineBreak(r rune) bool {
+	switch r {
+	case '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
+		return true
+	}
+	return false
 }
 
 // parseFanouts mirrors Python _parse_fanouts: extract fan-outs from a
@@ -837,11 +851,15 @@ func parseFanouts(text string) []string {
 		// look like a search query are kept — answer sentences and source
 		// lists are dropped.
 		loose = true
-		for _, ln := range strings.Split(text, "\n") {
-			ln = strings.TrimSpace(strings.TrimLeft(ln, "-•0123456789. "))
-			if ln != "" {
-				raw = append(raw, ln)
+		// Python `text.splitlines()`: split on every line boundary, not just "\n".
+		for _, ln := range strings.FieldsFunc(text, fanoutLineBreak) {
+			if strings.TrimSpace(ln) == "" {
+				continue
 			}
+			// Python `ln.strip("-•0123456789. ").strip()` strips the bullet /
+			// numbering cutset from BOTH ends, then trims whitespace, so a
+			// trailing period/digit never leaks into the retrieval query.
+			raw = append(raw, strings.TrimSpace(strings.Trim(ln, "-•0123456789. ")))
 		}
 	}
 	kept := make([]string, 0, len(raw))
@@ -1408,7 +1426,6 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 // when the SCA produced no structured gaps.
 func unresolvedClueGaps(st *AgenticState) []orchestrator.MissingPiece {
 	var gaps []orchestrator.MissingPiece
-	seen := map[string]bool{}
 	for _, us := range st.UnresolvedSlots {
 		clues, ok := us["question_clues"].([]string)
 		if !ok {
@@ -1419,10 +1436,9 @@ func unresolvedClueGaps(st *AgenticState) []orchestrator.MissingPiece {
 				break
 			}
 			qc = strings.TrimSpace(qc)
-			if qc == "" || seen[qc] {
+			if qc == "" {
 				continue
 			}
-			seen[qc] = true
 			gaps = append(gaps, orchestrator.MissingPiece{What: qc, SearchHint: qc})
 		}
 	}
@@ -1977,6 +1993,13 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 	if st.NoProgress {
 		return nodeFormalizeAnswer
 	}
+	// Evidence pool saturated at the SCA view cap: any further chunk lands
+	// beyond what the SCA can read, so another search round cannot flip the
+	// sufficiency verdict. Short-circuit straight to finalize.
+	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap {
+		_LOG.Printf("[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.", len(st.KB.Chunks), SCAViewCap)
+		return nodeFormalizeAnswer
+	}
 	if !enableSCA {
 		// medium: single research pass — the SCA verdict is informational only.
 		return nodeFormalizeAnswer
@@ -2224,7 +2247,7 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 	}
 
 	// Shared across sessions so duplicate retrievals are served from cache.
-	sharedToolCache := map[string]harness.ToolOutcome{}
+	sharedToolCache := harness.NewToolCache()
 	var sharedSearchQueries []string
 
 	sem := make(chan struct{}, slotSessionConcurrency)
@@ -3032,15 +3055,10 @@ func NewAgenticLoop() AgenticLoop {
 // accumulates across the outer react loop's multiple rag() calls within a single
 // turn — which is exactly why Rag() must build deps.Cache before branching into
 // the outer loop (otherwise the "STOP calling rag again" guard would never fire).
+// Those calls run concurrently, so the update itself is RAGCache.NoteUnanswerable
+// (locked); this wrapper only keeps the call site's name.
 func recordConsecutiveUnanswerable(cache *RAGCache, verdict string) {
-	if cache == nil {
-		return
-	}
-	if verdict == VerdictSufficient {
-		cache.ConsecutiveUnanswerable = 0
-	} else {
-		cache.ConsecutiveUnanswerable++
-	}
+	cache.NoteUnanswerable(verdict)
 }
 
 // graphRecursionLimit mirrors Python run_agentic_rag — the graph aborts

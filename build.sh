@@ -150,6 +150,38 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+    check_ort_version_consistency
+}
+
+# Fail fast when the ONNX Runtime native version is declared inconsistently.
+# The in-process (Go) DeepDoc backend statically links libonnxruntime.a built
+# from ONE exact ORT release; a mismatch links a wrong/missing .a and only fails
+# at runtime (dlopen(NULL) can't find OrtGetApiBase). The version is pinned in
+# four Go-side locations that must all agree.
+check_ort_version_consistency() {
+    print_section "Checking ONNX Runtime version consistency"
+
+    local env_go d1 d2 dockerfile
+    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+
+    if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
+        echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
+        exit 1
+    fi
+
+    if [ "$env_go" != "$d1" ] || [ "$env_go" != "$d2" ] || [ "$env_go" != "$dockerfile" ]; then
+        echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
+        printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
+        printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ ONNX Runtime native version consistent: ${env_go}${NC}"
 }
 
 # Check office_oxide native library
@@ -206,6 +238,47 @@ check_pdfium_deps() {
 }
 
 # Check pdf_oxide static library.
+# pdf_oxide_validate_version <pool_text> <required_version>
+#
+# Validates the pdf_oxide version embedded in a lib's string constant pool
+# against the pinned <required_version>. The marker "pdf_oxide <version>" is
+# merged into Rust's constant pool and has no fixed length, so a suffixed build
+# (e.g. 0.3.73.1) and a clean 0.3.73 whose next pooled constant begins with a
+# digit are byte-identical and cannot be told apart.
+#
+# Capture exactly three dotted segments and reject any trailing [0-9.] as
+# ambiguous, rather than silently truncating it into a (wrong) match.
+#
+# Returns:
+#   0  exact match (prints the found version)
+#   1  version missing or mismatched (prints the found version, or empty)
+#   2  ambiguous: the marker is followed by extra digits/dots in the pool
+pdf_oxide_validate_version() {
+    local pool_text="$1" required="$2"
+    local found esc
+    found=$(printf '%s\n' "$pool_text" \
+        | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
+    if [ -z "$found" ]; then
+        return 1
+    fi
+    # A digit or dot immediately after the captured "pdf_oxide X.Y.Z" marker
+    # means a suffixed build (0.3.73.1) or a constant concatenated on to the
+    # version. Treat it as ambiguous rather than as a wrong version.
+    # Anchor to the exact captured version (dots escaped) so the third segment
+    # cannot backtrack and swallow the trailing digit, which would otherwise
+    # flag a clean 0.3.73<letter> marker as ambiguous.
+    esc="${found//./\\.}"
+    if printf '%s\n' "$pool_text" | grep -qE "pdf_oxide ${esc}[0-9.]"; then
+        return 2
+    fi
+    if [ "$found" != "$required" ]; then
+        printf '%s\n' "$found"
+        return 1
+    fi
+    printf '%s\n' "$found"
+    return 0
+}
+
 check_pdf_oxide_deps() {
     _seed_from_system "pdf_oxide" || true
     # Map platform to tarball-internal subdirectory.
@@ -236,25 +309,39 @@ check_pdf_oxide_deps() {
         # lib left over from an earlier pin is reused silently and the upgrade
         # becomes a no-op.
         #
-        # The marker here differs from office_oxide: instead of a standalone
-        # "0.1.9" line it is "pdf_oxide <version>" merged into Rust's string
-        # constant pool, so a whole-line match cannot be used. Extract the
-        # version and compare it exactly — a substring match would let a pin of
-        # "0.3.7" accept a 0.3.73 lib. The "pdf_oxide " prefix keeps bare
-        # version numbers of vendored dependencies out of the match.
-        local found_version
-        found_version=$(strings "$lib_path" 2>/dev/null \
-            | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
-        if [ "$found_version" != "$PDF_OXIDE_VERSION" ]; then
-            echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
-            echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
-            echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
-            echo "    uv run python3 ragflow_deps/download_go_deps.py"
-            return 1
-        fi
-        echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
-        return 0
+        # The version marker "pdf_oxide <version>" is merged into Rust's string
+        # constant pool (unlike office_oxide's standalone "0.1.9" line), so we
+        # capture exactly three dotted segments and reject any trailing [0-9.]
+        # as ambiguous — a suffixed build (0.3.73.1) or a constant that is
+        # byte-identical to one must not be silently accepted. The "pdf_oxide "
+        # prefix keeps bare version numbers of vendored dependencies out of the
+        # match.
+        local pool_text found_version rc
+        pool_text=$(strings "$lib_path" 2>/dev/null)
+        found_version=$(pdf_oxide_validate_version "$pool_text" "$PDF_OXIDE_VERSION"); rc=$?
+        case "$rc" in
+            0)
+                echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
+                return 0
+                ;;
+            2)
+                echo -e "${RED}Error: pdf_oxide native lib version ambiguous${NC}"
+                echo "  The version marker is followed by extra digits/dots in the"
+                echo "  string pool; this is usually a suffixed build (e.g. ${PDF_OXIDE_VERSION}.1)"
+                echo "  or a concatenated constant byte-identical to one. Refresh the lib"
+                echo "  to a clean pin."
+                echo "  Required: v${PDF_OXIDE_VERSION}"
+                return 1
+                ;;
+            *)
+                echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
+                echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
+                echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
+                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+                echo "    uv run python3 ragflow_deps/download_go_deps.py"
+                return 1
+                ;;
+        esac
     fi
 
     echo "  pdf_oxide (static) not found"
@@ -544,32 +631,34 @@ setup_cgo_env() {
     if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
         # Collect every .a, but skip GPU-only providers we never build
         # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
+        #
+        # Select the ORT static lib that matches the Go deepdoc backend's
+        # required version (DeepDocORTVersion in internal/common/environments.go).
+        # Go and Python build/link against independent ORT versions, so the
+        # static_lib prefix legitimately holds more than one
+        # onnxruntime-linux-x64-static_lib-* dir at once (e.g. the Python-side
+        # 1.23.x next to the Go-side 1.29.0). We pick the dir that matches
+        # DeepDocORTVersion rather than failing when a second version dir is
+        # present. This avoids silently linking the wrong version while still
+        # keeping the bake self-documenting.
+        local ort_version
+        ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+            "${PROJECT_ROOT}/internal/common/environments.go" \
+            | sed -E 's/.*"([^"]+)".*/\1/')"
+        if [ -z "$ort_version" ]; then
+            echo "  Error: cannot parse DeepDocORTVersion from internal/common/environments.go" >&2
+            return 1
+        fi
         local ort_a=""
-        local seen_version_dir=""
         while IFS= read -r f; do
             case "$(basename "$f")" in
                 *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
             esac
-            # Guard against coexisting stale version dirs: if .a files span
-            # more than one onnxruntime-linux-x64-static_lib-* dir, fail fast
-            # instead of silently linking two ORT versions (duplicate symbols
-            # / wrong version). Re-run `download_deps.py` to prune stale dirs
-            # after a version bump, or remove the old dir by hand.
             case "$f" in
-                */onnxruntime-linux-x64-static_lib-*/lib/*.a)
-                    local vdir="${f#*/onnxruntime-linux-x64-static_lib-}"
-                    vdir="${vdir%%/*}"
-                    if [ -z "$seen_version_dir" ]; then
-                        seen_version_dir="$vdir"
-                    elif [ "$seen_version_dir" != "$vdir" ]; then
-                        echo "  Error: multiple ONNX Runtime versions found under $ONNXRUNTIME_STATIC_PREFIX" >&2
-                        echo "    $seen_version_dir  AND  $vdir" >&2
-                        echo "  Remove the stale version dir (or re-run download_deps.py to prune it)." >&2
-                        return 1
-                    fi
-                    ;;
+                # Only collect .a from the dir matching the required version.
+                */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+                    ort_a="$ort_a $f" ;;
             esac
-            ort_a="$ort_a $f"
         done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
 
         if [ -n "$ort_a" ]; then
@@ -604,7 +693,13 @@ setup_cgo_env() {
             # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
             # lookup needs at runtime (no --export-dynamic required).
         else
-            echo "  onnxruntime static_lib dir has no .a files; the in-process DeepDoc backend cannot link ORT" >&2
+            local avail
+            avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
+                -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            echo "  Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX" >&2
+            echo "    available: ${avail:-<none>}" >&2
+            echo "    DeepDocORTVersion=${ort_version}; bake/download the matching ORT (or update DeepDocORTVersion)." >&2
+            return 1
         fi
     else
         echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
@@ -809,6 +904,8 @@ OPTIONS:
                     InfiniFlow/deepdoc model snapshot; self-skip otherwise).
                     e.g. `$0 --test-native`
     --clean, -C     Clean all build artifacts
+    --check-ort-version  Verify the ONNX Runtime native version is declared
+                    consistently across all sources (exit 1 on mismatch).
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
                     (disabled by default, useful for smaller production binaries)
@@ -927,6 +1024,9 @@ main() {
         --clean|-C)
             clean
             ;;
+        --check-ort-version)
+            check_ort_version_consistency
+            ;;
         --run|-r)
             check_cpp_deps
             check_go_deps
@@ -953,4 +1053,8 @@ main() {
     esac
 }
 
-main "$@"
+# Only run the build when executed directly. When sourced (e.g. by tests),
+# skip main so the version-gate helpers can be unit-tested in isolation.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi
