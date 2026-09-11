@@ -884,15 +884,11 @@ var runStatusMap = map[string]string{
 	"UNSTART":   "UNSTART",
 	"CREATED":   common.CREATED,
 	"SCHEDULED": common.SCHEDULED,
-	"SCHEDULE":  common.SCHEDULED,
 	"RUNNING":   common.RUNNING,
 	"STOPPING":  common.STOPPING,
 	"STOPPED":   common.STOPPED,
-	"CANCEL":    common.STOPPED,
 	"COMPLETED": common.COMPLETED,
-	"DONE":      common.COMPLETED,
 	"FAILED":    common.FAILED,
-	"FAIL":      common.FAILED,
 }
 
 func normalizeRunStatusFilter(statuses []string) []string {
