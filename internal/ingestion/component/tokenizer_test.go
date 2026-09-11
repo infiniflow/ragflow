@@ -61,7 +61,7 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		{"text": "bravo chunk text"},
 		{"text": "charlie chunk text"},
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"tenant_id":     "t1",
 		"model_id":      "embd-1",
 		"kb_id":         "kb-1",
@@ -132,7 +132,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 		chunks[i] = map[string]any{"text": txt}
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
 	})
@@ -161,7 +161,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "note.txt",
 		"output_format": "text",
 		"text":          "plain payload",
@@ -187,7 +187,7 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "note.pdf",
 		"output_format": "json",
 		"json":          []map[string]any{{"text": "row one"}, {"text": "row two"}},
@@ -215,7 +215,7 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 		{"text": "two"},
 		{"text": "three"},
 	}
-	if _, err := c.Invoke(context.Background(), nil, map[string]any{
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -237,7 +237,7 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
@@ -272,7 +272,7 @@ func TestTokenizerComponent_Invoke_KeywordSplitCommaOnly(t *testing.T) {
 
 	check := func(keywords string, want []string) {
 		t.Helper()
-		out, err := c.Invoke(context.Background(), nil, map[string]any{
+		out, err := c.Invoke(t.Context(), nil, map[string]any{
 			"output_format": "chunks",
 			"chunks":        []map[string]any{{"text": "alpha", "keywords": keywords}},
 		})
@@ -313,7 +313,7 @@ func TestTokenizerComponent_Invoke_KeywordSplitCommaOnly(t *testing.T) {
 func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 	requireTokenizerPool(t)
 	c, _ := withStubEmbedder(t, 4)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -344,7 +344,7 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbedNoResolver(t *testing.T) {
 	requireTokenizerPool(t)
 	c, _ := NewTokenizerComponent(nil)
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
@@ -364,7 +364,7 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	stub.err = errors.New("simulated upstream error")
 
-	_, err := c.Invoke(context.Background(), nil, map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
@@ -385,13 +385,13 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) { return wrong, "", nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
 	c := cIntf.(*TokenizerComponent)
 	_ = stub
-	_, err = c.Invoke(context.Background(), nil, map[string]any{
+	_, err = c.Invoke(t.Context(), nil, map[string]any{
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
@@ -525,13 +525,13 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
 			{vectors: [][]float64{{2, 2}}, tokenCount: 5},
 		}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -735,18 +735,18 @@ func floatSliceClose(got, want []float64) bool {
 
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(B): %v", err)
