@@ -16,7 +16,8 @@ import { cloneDeep } from 'lodash';
 import { IngestionTaskStatus, RunningStatus } from './constant';
 
 export const isParserRunning = (text: RunningStatus) => {
-  const isRunning = text === RunningStatus.RUNNING;
+  const isRunning =
+    text === RunningStatus.RUNNING || text === RunningStatus.SCHEDULE;
   return isRunning;
 };
 
