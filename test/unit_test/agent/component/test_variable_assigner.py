@@ -18,6 +18,7 @@ from agent.component.variable_assigner import VariableAssigner
     ],
 )
 def test_set_boolean_normalizes_boolean_spellings(parameter, expected):
+    # Boolean normalization does not access instance state, so initialization is unnecessary.
     component = VariableAssigner.__new__(VariableAssigner)
 
     result = component._set(False, parameter)
