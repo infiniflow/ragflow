@@ -160,6 +160,36 @@ def test_wide_table_chunks_stay_within_token_budget(flow_modules):
         assert item["text"].count("<th>") == cols
 
 
+def test_header_only_sheet_still_emits_a_table(flow_modules):
+    """A template sheet with no data rows must not vanish.
+
+    ``ExcelParser.html`` computes the chunk count from the data-row count, so a
+    sheet holding only its header row used to yield zero chunks and disappear
+    silently. Go emits a captioned header-only table in that case
+    (``office_table_render.go``, ``nData == 0``).
+    """
+    blob = build_xlsx({"Template": [["姓名", "电话", "地址"]]})
+    items = parse(flow_modules, blob)["json"]
+
+    assert len(items) == 1
+    assert items[0]["doc_type_kwd"] == "table"
+    # Row 1 is the header row; there is no data row below it.
+    assert items[0]["positions"] == [[0, 1, 1, 1, 3]]
+    text = items[0]["text"].strip()
+    assert text.startswith("<table>") and text.endswith("</table>")
+    assert text.count("<th>") == 3
+
+
+def test_header_only_sheet_is_kept_next_to_a_data_sheet(flow_modules):
+    blob = build_xlsx({"Data": [["a", "b"], ["1", "2"]], "Empty": [["x", "y", "z"]]})
+    items = parse(flow_modules, blob)["json"]
+
+    assert len(items) == 2
+    # Both sheets survive, the empty one last.
+    assert [i["positions"][0][0] for i in items] == [0, 1]
+    assert all(i["doc_type_kwd"] == "table" for i in items)
+
+
 def test_spreadsheet_flatten_media_to_text_marks_tables_as_text(flow_modules):
     blob = build_xlsx({"S": [["a", "b"], ["1", "2"]]})
     items = parse(flow_modules, blob, flatten_media_to_text=True)["json"]

@@ -79,6 +79,8 @@ TABLE_CHUNK_ROWS = 256
 # ceiling alone is not enough: a wide table reaches tens of thousands of tokens
 # well before 256 rows, and the tokenizer truncates at ``max_length - 10``,
 # which silently hides the tail of the chunk from vector retrieval.
+# ``max_length`` defaults to 8192 (``tenant_llm_service.py``) and LLMBundle
+# further truncates at 95% of it (~7782), so 4096 keeps roughly 2x headroom.
 TABLE_CHUNK_TOKENS = 4096
 
 _ROW_RE = re.compile(r"<tr>.*?</tr>", flags=re.DOTALL)
