@@ -209,10 +209,38 @@ async def apply_meta_data_filter(
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
         return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
+    def _constrain(filtered: list[str]) -> list[str]:
+        """Intersect metadata-filter hits with the caller-scoped base doc ids.
+
+        ``base_doc_ids`` is the retrieval scope the caller already narrowed to
+        (explicit ``document_ids``, a dialog-scoped doc set, ...). The metadata
+        filter must *narrow* that scope, not widen it: a doc outside the base
+        scope, or inside it but not matching the filter, must not be searched.
+        Mirrors ``constrainDocIDs`` in internal/service/metadata_filter.go.
+        """
+        filtered = dedupe_list(filtered)
+        base_count = len(base_doc_ids or [])
+        if not base_doc_ids:
+            constrained = filtered
+        elif not filtered:
+            constrained = []
+        else:
+            allowed = set(filtered)
+            constrained = dedupe_list([doc_id for doc_id in base_doc_ids if doc_id in allowed])
+        logging.debug(
+            "Metadata filter scope constraint: base_count=%d, filter_hit_count=%d, "
+            "constrained_count=%d, removed_all_filter_hits=%s",
+            base_count,
+            len(filtered),
+            len(constrained),
+            bool(filtered) and bool(base_doc_ids) and not constrained,
+        )
+        return constrained
+
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+        doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
     elif method == "semi_auto":
@@ -234,7 +262,7 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+                doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None
     elif method == "manual":
@@ -242,7 +270,7 @@ async def apply_meta_data_filter(
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
         logging.debug(f"Metadata filter(manual): {filters}")
-        doc_ids.extend(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
+        doc_ids = _constrain(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
         if filters and not doc_ids:
             doc_ids = ["-999"]
 
