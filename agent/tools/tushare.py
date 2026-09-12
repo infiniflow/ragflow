@@ -15,20 +15,34 @@
 #
 import json
 import logging
+import os
 from abc import ABC
 import pandas as pd
 import time
 import requests
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
+from common.connection_utils import timeout
 from common.http_client import DEFAULT_TIMEOUT
 
 
-class TuShareParam(ComponentParamBase):
+class TuShareParam(ToolParamBase):
     """
     Define the TuShare component parameters.
     """
 
     def __init__(self):
+        self.meta: ToolMeta = {
+            "name": "tushare_news",
+            "description": "TuShare retrieves financial quick news from mainstream Chinese financial portals and filters it by keyword.",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "Keyword used to filter the returned news items by content.",
+                    "default": "{sys.query}",
+                    "required": True,
+                }
+            },
+        }
         super().__init__()
         self.token = "xxx"
         self.src = "eastmoney"
@@ -39,47 +53,60 @@ class TuShareParam(ComponentParamBase):
     def check(self):
         self.check_valid_value(self.src, "Quick News Source", ["sina", "wallstreetcn", "10jqka", "eastmoney", "yuncaijing", "fenghuang", "jinrongjie"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {"query": {"name": "Keyword", "type": "line"}}
 
-class TuShare(ComponentBase, ABC):
+
+class TuShare(ToolBase, ABC):
     component_name = "TuShare"
 
-    def _run(self, history, **kwargs):
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
+    def _invoke(self, **kwargs):
         if self.check_if_canceled("TuShare processing"):
             return
 
-        ans = self.get_input()
-        ans = ",".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return TuShare.be_output("")
+        query = kwargs.get("query")
+        if not query:
+            self.set_output("formalized_content", "")
+            return ""
 
         try:
+            params = {"api_name": "news", "token": self._param.token, "params": {"src": self._param.src, "start_date": self._param.start_date, "end_date": self._param.end_date}}
+            response = requests.post(url="https://api.tushare.pro", data=json.dumps(params).encode("utf-8"), timeout=DEFAULT_TIMEOUT)
+            response = response.json()
+
             if self.check_if_canceled("TuShare processing"):
                 return
 
-            tus_res = []
-            params = {"api_name": "news", "token": self._param.token, "params": {"src": self._param.src, "start_date": self._param.start_date, "end_date": self._param.end_date}}
-            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode("utf-8"), timeout=DEFAULT_TIMEOUT)
-            response = response.json()
-            if self.check_if_canceled("TuShare processing"):
-                return
             if response["code"] != 0:
-                return TuShare.be_output(response["msg"])
-            df = pd.DataFrame(response["data"]["items"])
-            df.columns = response["data"]["fields"]
+                msg = response["msg"]
+                self.set_output("_ERROR", msg)
+                return msg
+
+            # Pass the field names to the constructor rather than assigning
+            # `df.columns` afterwards: when TuShare returns no rows the frame
+            # has zero columns and the assignment raises a length mismatch.
+            df = pd.DataFrame(response["data"]["items"], columns=response["data"]["fields"])
+
             if self.check_if_canceled("TuShare processing"):
                 return
-            keyword = self._param.keyword or ans
+
+            keyword = self._param.keyword or query
             logging.info(
                 "TuShare news filter keyword source=%s",
-                "param.keyword" if self._param.keyword else "upstream_input",
+                "param.keyword" if self._param.keyword else "tool_query",
             )
-            tus_res.append({"content": (df[df["content"].str.contains(keyword, case=False, na=False, regex=False)]).to_markdown()})
+            res = (df[df["content"].str.contains(keyword, case=False, na=False, regex=False)]).to_markdown()
+            self.set_output("formalized_content", res)
+            return res
         except Exception as e:
             if self.check_if_canceled("TuShare processing"):
                 return
-            return TuShare.be_output("**ERROR**: " + str(e))
 
-        if not tus_res:
-            return TuShare.be_output("")
+            logging.exception(f"TuShare error: {e}")
+            msg = f"TuShare error: {e}"
+            self.set_output("_ERROR", msg)
+            return msg
 
-        return pd.DataFrame(tus_res)
+    def thoughts(self) -> str:
+        return "Looking up {} financial news for: {}".format(self._param.src, self.get_input().get("query", "-_-!"))
