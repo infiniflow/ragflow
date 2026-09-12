@@ -123,8 +123,7 @@ class DataOperations(ComponentBase, ABC):
     def match_rule(self, obj, rule):
         key = rule.get("key")
         op = (rule.get("operator") or "equals").lower()
-        target = self.norm(rule.get("value"))
-        target = self._canvas.get_value_with_variable(target) or target
+        target = self._canvas.get_value_with_variable(self.norm(rule.get("value")))
         if key not in obj:
             return False
         val = obj.get(key, None)
@@ -163,7 +162,12 @@ class DataOperations(ComponentBase, ABC):
                 k = (item.get("key") or "").strip()
                 if not k:
                     continue
-                new_obj[k] = self._canvas.get_value_with_variable(item.get("value")) or item.get("value")
+                value = item.get("value")
+                if isinstance(value, str):
+                    # Resolve templates directly: an empty resolution is a
+                    # legitimate value, not a signal to keep the raw text.
+                    value = self._canvas.get_value_with_variable(value)
+                new_obj[k] = value
             results.append(new_obj)
         self.set_output("result", results)
 
