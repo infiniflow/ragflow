@@ -733,6 +733,93 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	}
 }
 
+func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.T) {
+	withSSRFBypass(t)
+	var gotBackend, gotServerURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("ParseMultipartForm: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			gotBackend = r.FormValue("backend")
+			gotServerURL = r.FormValue("server_url")
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"http-client"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := server.URL
+	apiKey := `{"mineru_backend":"vlm-http-client","mineru_server_url":"http://vllm-host:30000"}`
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{Param: param, Setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := gotBackend, "vlm-http-client"; got != want {
+		t.Fatalf("backend = %q, want %q", got, want)
+	}
+	if got, want := gotServerURL, "http://vllm-host:30000"; got != want {
+		t.Fatalf("server_url = %q, want %q", got, want)
+	}
+	if md, _ := out["markdown"].(string); !strings.Contains(md, "http-client") {
+		t.Fatalf("markdown payload = %#v", out["markdown"])
+	}
+}
+
+func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := "http://mineru-api:8888"
+	apiKey := `{"mineru_backend":"hybrid-http-client"}`
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	c := &ParserComponent{Param: param, Setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err == nil {
+		t.Fatal("Invoke: want error when mineru_server_url is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "mineru_server_url") {
+		t.Fatalf("error = %q, want mineru_server_url context", err.Error())
+	}
+}
+
 func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/parse" {

@@ -164,3 +164,92 @@ func TestMinerUUploadShape(t *testing.T) {
 		t.Fatalf("multipart body = %q, want backend field", body.String())
 	}
 }
+
+func TestPDFParser_ParseWithResult_MinerUSendsServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	var gotServerURL string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
+			reader, err := r.MultipartReader()
+			if err != nil {
+				t.Errorf("MultipartReader: %v", err)
+				return
+			}
+			for {
+				part, err := reader.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Errorf("NextPart: %v", err)
+					return
+				}
+				if part.FormName() == "server_url" {
+					body, _ := io.ReadAll(part)
+					gotServerURL = string(body)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"task_id":"task-http"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-http/result":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# HTTP\n"}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":       "MinerU",
+		"output_format":      "markdown",
+		"mineru_apiserver":   server.URL,
+		"mineru_backend":     "vlm-http-client",
+		"mineru_server_url":  "http://vllm-host:30000",
+	})
+
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, want := gotServerURL, "http://vllm-host:30000"; got != want {
+		t.Fatalf("server_url = %q, want %q", got, want)
+	}
+}
+
+func TestPDFParser_ParseWithResult_MinerURequiresServerURLForHTTPClientBackend(t *testing.T) {
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":     "MinerU",
+		"mineru_apiserver": "http://mineru-api:8888",
+		"mineru_backend":   "hybrid-http-client",
+	})
+
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err == nil {
+		t.Fatal("ParseWithResult: want error when mineru_server_url is missing, got nil")
+	}
+	if !strings.Contains(res.Err.Error(), "mineru_server_url") {
+		t.Fatalf("error = %q, want mineru_server_url context", res.Err.Error())
+	}
+}
+
+func TestPDFParser_ParseWithResult_MinerURejectsInvalidBackend(t *testing.T) {
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":     "MinerU",
+		"mineru_apiserver": "http://mineru-api:8888",
+		"mineru_backend":   "vlm-transformers",
+	})
+
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err == nil {
+		t.Fatal("ParseWithResult: want error for invalid backend, got nil")
+	}
+	if !strings.Contains(res.Err.Error(), "invalid backend") {
+		t.Fatalf("error = %q, want invalid backend context", res.Err.Error())
+	}
+}
