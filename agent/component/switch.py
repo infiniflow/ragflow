@@ -76,7 +76,12 @@ class Switch(ComponentBase, ABC):
                 self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
                 if isinstance(cpn_v, numbers.Number):
-                    operatee = float(operatee)
+                    try:
+                        operatee = float(operatee)
+                    except (TypeError, ValueError):
+                        # Keep the raw value: an unparseable comparison
+                        # target must not crash the canvas run.
+                        pass
                 res.append(self.process_operator(cpn_v, item["operator"], operatee))
                 if cond["logical_operator"] != "and" and any(res):
                     self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
@@ -115,22 +120,42 @@ class Switch(ComponentBase, ABC):
             try:
                 return True if float(input) > float(value) else False
             except Exception:
-                return True if input > value else False
+                try:
+                    return True if input > value else False
+                except TypeError:
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "<":
             try:
                 return True if float(input) < float(value) else False
             except Exception:
-                return True if input < value else False
+                try:
+                    return True if input < value else False
+                except TypeError:
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "≥":
             try:
                 return True if float(input) >= float(value) else False
             except Exception:
-                return True if input >= value else False
+                try:
+                    return True if input >= value else False
+                except TypeError:
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "≤":
             try:
                 return True if float(input) <= float(value) else False
             except Exception:
-                return True if input <= value else False
+                try:
+                    return True if input <= value else False
+                except TypeError:
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
 
         raise ValueError(f"Not supported operator: {operator}")
 
