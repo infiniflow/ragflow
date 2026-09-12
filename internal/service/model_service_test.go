@@ -1119,3 +1119,41 @@ func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *t
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", got)
 	}
 }
+
+func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	// Force the second delete (tenant_model_instance) to fail so the
+	// transaction must roll back the already-applied tenant_model delete.
+	if err := db.Callback().Delete().Before("gorm:DELETE").Register(
+		"test:fail_tenant_model_instance_delete",
+		func(tx *gorm.DB) {
+			if tx.Statement != nil && tx.Statement.Table == "tenant_model_instance" {
+				_ = tx.AddError(errors.New("forced tenant_model_instance delete failure"))
+			}
+		},
+	); err != nil {
+		t.Fatalf("failed to register failing delete callback: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Delete().Remove("test:fail_tenant_model_instance_delete")
+	})
+
+	code, err := NewModelProviderService().DropProviderInstances(t.Context(), "provider-1", "user-1", []string{"instance-1"})
+	if err == nil {
+		t.Fatalf("DropProviderInstances() error = nil, want forced instance delete failure")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code = %v, want %v", code, common.CodeServerError)
+	}
+
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-1").Count(&modelCount).Error; err != nil {
+		t.Fatalf("failed to count tenant models: %v", err)
+	}
+	if modelCount != 1 {
+		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
+	}
+}
