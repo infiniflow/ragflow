@@ -23,9 +23,10 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 
 	datasetIDsByTenant := make(map[string][]string)
 	for _, rawID := range datasetIDs {
+		inputID := rawID
 		rawID = strings.TrimSpace(rawID)
 		if rawID == "" {
-			continue
+			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", inputID)
 		}
 		datasetID, err := normalizeDatasetID(rawID)
 		if err != nil {
@@ -41,18 +42,29 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			}
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
-		if kb.DocNum <= 0 {
-			continue
-		}
 		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	const pageSize = 10000
 	merged := make(map[string]int)
 	for tenantID, kbIDs := range datasetIDsByTenant {
+		indexName := fmt.Sprintf("ragflow_%s", tenantID)
+		// Python retriever.all_tags checks the first dataset's store before querying the group.
+		exists, err := d.docEngine.ChunkStoreExists(ctx, indexName, kbIDs[0])
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
+		}
+		if !exists {
+			continue
+		}
 		for offset := 0; ; offset += pageSize {
+			if err := ctx.Err(); err != nil {
+				return nil, common.CodeServerError, err
+			}
 			searchResp, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
-				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+				IndexNames:   []string{indexName},
 				KbIDs:        kbIDs,
 				Offset:       offset,
 				Limit:        pageSize,
@@ -60,6 +72,9 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			})
 			if err != nil {
 				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
+			}
+			if searchResp == nil {
+				return nil, common.CodeServerError, errors.New("document engine returned no search result")
 			}
 			for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
 				tag, _ := agg["key"].(string)
