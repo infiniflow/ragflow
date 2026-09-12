@@ -407,7 +407,10 @@ async def retrieval_test(tenant_id, dataset_id=None):
             kb_ids=kb_ids,
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
         )
-    elif metadata_condition:
+    elif metadata_condition and convert_conditions(metadata_condition):
+        # An empty conditions list is no filter at all: the Go search service
+        # returns the base doc ids unchanged in that case, and scoping the
+        # search to a nonexistent doc here would silently return zero chunks.
         filtered_doc_ids = filter_doc_ids_by_metadata(
             kb_ids,
             convert_conditions(metadata_condition),
