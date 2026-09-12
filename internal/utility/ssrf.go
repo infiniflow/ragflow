@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -242,11 +243,47 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 	return nil
 }
 
+// maxPinnedRedirects mirrors net/http's default redirect budget.
+const maxPinnedRedirects = 10
+
+// pinTable maps validated hostnames to the IP AssertURLSafe resolved for
+// them. It grows as redirects are followed so every hop is dialed pinned.
+type pinTable struct {
+	mu  sync.Mutex
+	ips map[string]string
+}
+
+func (p *pinTable) set(hostname, ip string) {
+	if hostname == "" || ip == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ips[hostname] = ip
+}
+
+func (p *pinTable) get(hostname string) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ip, ok := p.ips[hostname]
+	return ip, ok
+}
+
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
 // scoped to this client only.
+//
+// Redirects are re-validated: net/http follows up to ten redirects by
+// default, and the pin only covers the hostname the caller validated, so a
+// public server answering 302 Location: http://169.254.169.254/... would
+// otherwise be dialed straight through, unchecked and unpinned. Each hop is
+// therefore passed through AssertURLSafe and its resolved IP added to the
+// pin table before the client follows it. Callers that need a different
+// policy (e.g. refusing redirects outright) still override CheckRedirect.
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+	pins := &pinTable{ips: map[string]string{}}
+	pins.set(hostname, resolvedIP)
 	dialer := &net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,
@@ -258,8 +295,10 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, splitErr := net.SplitHostPort(addr)
-			if splitErr == nil && host == hostname && resolvedIP != "" {
-				return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+			if splitErr == nil {
+				if ip, ok := pins.get(host); ok {
+					return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+				}
 			}
 			return dialer.DialContext(ctx, network, addr)
 		},
@@ -271,5 +310,23 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxPinnedRedirects {
+				return fmt.Errorf("stopped after %d redirects", maxPinnedRedirects)
+			}
+			// Never follow an HTTPS -> HTTP downgrade: the request may carry
+			// credentials (Authorization, API-key headers rendered for MCP
+			// servers) that would otherwise be replayed over cleartext.
+			if len(via) > 0 && via[0].URL != nil && strings.EqualFold(via[0].URL.Scheme, "https") &&
+				!strings.EqualFold(req.URL.Scheme, "https") {
+				return fmt.Errorf("redirect to %s blocked: https to http downgrade", req.URL.Redacted())
+			}
+			host, ip, err := AssertURLSafe(req.URL.String())
+			if err != nil {
+				return fmt.Errorf("redirect to %s blocked: %w", req.URL.Redacted(), err)
+			}
+			pins.set(host, ip)
+			return nil
+		},
 	}
 }

@@ -17,8 +17,14 @@
 package utility
 
 import (
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAssertURLSafe(t *testing.T) {
@@ -196,3 +202,127 @@ func TestAssertURLSafe(t *testing.T) {
 type mockErr struct{ s string }
 
 func (e *mockErr) Error() string { return e.s }
+
+// TestPinnedHTTPClientRevalidatesRedirects: the pin only covers the hostname
+// AssertURLSafe validated. A redirect to any other host must go through the
+// same guard (and be pinned in turn), otherwise an attacker-controlled public
+// server can 302 the client onto loopback, link-local or RFC1918 targets.
+func TestPinnedHTTPClientRevalidatesRedirects(t *testing.T) {
+	origLookup := LookupHost
+	defer func() { LookupHost = origLookup }()
+	// Every hostname resolves to loopback: the redirect target must then be
+	// rejected as non-public by AssertURLSafe.
+	LookupHost = func(host string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+
+	internalHit := false
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		internalHit = true
+		_, _ = w.Write([]byte("secret"))
+	}))
+	defer internal.Close()
+
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, internal.URL+"/latest/meta-data/", http.StatusFound)
+	}))
+	defer public.Close()
+
+	_, publicPort, err := net.SplitHostPort(strings.TrimPrefix(public.URL, "http://"))
+	if err != nil {
+		t.Fatalf("split public addr: %v", err)
+	}
+	// "public.stub" stands in for a hostname AssertURLSafe accepted and pinned.
+	client := PinnedHTTPClient("public.stub", "127.0.0.1", 5*time.Second)
+
+	resp, err := client.Get("http://public.stub:" + publicPort + "/")
+	if err == nil {
+		resp.Body.Close()
+	}
+	if internalHit {
+		t.Fatalf("redirect target on a non-public address was fetched; the SSRF guard was bypassed")
+	}
+	if err == nil || !strings.Contains(err.Error(), "non-public address") {
+		t.Fatalf("expected the redirect to be rejected as non-public, got err=%v", err)
+	}
+}
+
+// A redirect to a host that passes the guard is followed, and the new hop is
+// dialed through its own pin rather than a fresh DNS lookup.
+func TestPinnedHTTPClientFollowsValidatedRedirectsPinned(t *testing.T) {
+	origAssert := AssertURLSafe
+	defer func() { AssertURLSafe = origAssert }()
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("landed"))
+	}))
+	defer target.Close()
+	_, targetPort, _ := net.SplitHostPort(strings.TrimPrefix(target.URL, "http://"))
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect to a hostname that only the pin table can resolve.
+		http.Redirect(w, r, "http://second.stub:"+targetPort+"/", http.StatusFound)
+	}))
+	defer first.Close()
+	_, firstPort, _ := net.SplitHostPort(strings.TrimPrefix(first.URL, "http://"))
+
+	AssertURLSafe = func(rawURL string) (string, string, error) {
+		u, err := url.Parse(rawURL)
+		if err != nil {
+			return "", "", err
+		}
+		return u.Hostname(), "127.0.0.1", nil
+	}
+
+	client := PinnedHTTPClient("first.stub", "127.0.0.1", 5*time.Second)
+	resp, err := client.Get("http://first.stub:" + firstPort + "/")
+	if err != nil {
+		t.Fatalf("validated redirect should be followed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "landed" {
+		t.Fatalf("expected the redirect target body, got %q", body)
+	}
+}
+
+// TestPinnedHTTPClientRefusesHTTPSToHTTPDowngrade: a redirect from an https
+// origin to an http target must be refused before any validation, so headers
+// such as Authorization are never replayed over cleartext.
+func TestPinnedHTTPClientRefusesHTTPSToHTTPDowngrade(t *testing.T) {
+	origAssert := AssertURLSafe
+	defer func() { AssertURLSafe = origAssert }()
+	assertCalled := false
+	AssertURLSafe = func(rawURL string) (string, string, error) {
+		assertCalled = true
+		return "public.stub", "127.0.0.1", nil
+	}
+
+	client := PinnedHTTPClient("public.stub", "127.0.0.1", 5*time.Second)
+
+	first, err := http.NewRequest(http.MethodGet, "https://public.stub/login", nil)
+	if err != nil {
+		t.Fatalf("build origin request: %v", err)
+	}
+	first.Header.Set("Authorization", "Bearer secret")
+	next, err := http.NewRequest(http.MethodGet, "http://public.stub/login", nil)
+	if err != nil {
+		t.Fatalf("build redirect request: %v", err)
+	}
+	next.Header.Set("Authorization", "Bearer secret")
+
+	err = client.CheckRedirect(next, []*http.Request{first})
+	if err == nil || !strings.Contains(err.Error(), "downgrade") {
+		t.Fatalf("https->http redirect must be refused, got err=%v", err)
+	}
+	if assertCalled {
+		t.Fatalf("the downgrade must be rejected before the target is validated or pinned")
+	}
+
+	// The same hop staying on https is still validated and allowed.
+	same, _ := http.NewRequest(http.MethodGet, "https://public.stub/next", nil)
+	if err := client.CheckRedirect(same, []*http.Request{first}); err != nil {
+		t.Fatalf("https->https redirect should be allowed, got %v", err)
+	}
+	if !assertCalled {
+		t.Fatalf("an allowed hop must go through AssertURLSafe")
+	}
+}
