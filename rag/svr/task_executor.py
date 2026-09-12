@@ -12,11 +12,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import argparse
 import time
 
+from rag.svr.task_executor_cli import log_task_executor_index_usage, parse_task_executor_args, resolve_task_executor_index
+from rag.svr.task_executor_refactor.recording_context import NullRecordingContext, RecordingContext, get_recording_context, set_recording_context, timed_with_recording
 from rag.svr.task_executor_refactor.task_manager import TaskManager
-from rag.svr.task_executor_refactor.recording_context import timed_with_recording, get_recording_context, RecordingContext, set_recording_context, NullRecordingContext
 
 start_ts = time.time()
 
@@ -2030,19 +2030,16 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Parse command line arguments (consistent with SAAS version)
-    parser = argparse.ArgumentParser(description="Task Executor")
-    parser.add_argument("-i", "--index", type=str, default="0")
-    parser.add_argument("-t", "--type", type=str, default="common", help="[common, graphrag, raptor, resume]")
-    args = parser.parse_args()
+    args = parse_task_executor_args()
 
     # Update global variables
     TASK_TYPE = args.type
-    TE_IDX = args.index
+    TE_IDX = resolve_task_executor_index(args)
     CONSUMER_NAME = f"task_executor_{TASK_TYPE}_{TE_IDX}"
 
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
+    log_task_executor_index_usage(args)
     try:
         asyncio.run(main())
     except Exception as e:
