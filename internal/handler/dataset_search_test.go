@@ -283,3 +283,43 @@ func decodeSearchResponse(t *testing.T, rec *httptest.ResponseRecorder) map[stri
 	}
 	return body
 }
+
+// TestSearchDatasetsAllowsSavedSearchWithoutDatasetIDs: with a search_id
+// the dataset ids may come from the saved search app's config, so the
+// handler must not reject the request (Python merges the config before
+// checking dataset_ids). Without either, it still rejects.
+func TestSearchDatasetsAllowsSavedSearchWithoutDatasetIDs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{}}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello","search_id":"search-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	h.SearchDatasets(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search_id without dataset_ids rejected: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fake.req == nil {
+		t.Fatal("service never called")
+	}
+
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	c2, _ := gin.CreateTestContext(rec2)
+	c2.Request = req2
+	c2.Set("user", &entity.User{ID: "user-1"})
+	h.SearchDatasets(c2)
+
+	var body struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &body); err != nil || body.Code == 0 {
+		t.Fatalf("request without dataset_ids and without search_id must be rejected, got: %s", rec2.Body.String())
+	}
+}

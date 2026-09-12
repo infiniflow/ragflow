@@ -37,7 +37,7 @@ type EmbeddingCheckResponse struct {
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
 type SearchDatasetsRequest struct {
-	DatasetIDs             []string               `json:"dataset_ids" binding:"required"`
+	DatasetIDs             []string               `json:"dataset_ids"`
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	PageSize               *int                   `json:"page_size,omitempty"`
