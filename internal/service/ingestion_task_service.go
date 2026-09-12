@@ -397,24 +397,20 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 				return nil, err
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
+		case common.STOPPING:
+			// A stop was already requested for this run (the document's run
+			// field already reports CANCEL), so re-parsing must finalize the
+			// stop instead of failing. Without this, a task whose worker died
+			// between RequestStop and markStopped stays STOPPING forever and
+			// every later parse of the document errors with "already exists,
+			// status: STOPPING".
+			stopped, stopErr := s.finalizeRequestedStop(ctx, existing.ID)
+			if stopErr != nil {
+				return nil, stopErr
+			}
+			return s.recycleTerminalTask(ctx, stopped, common.STOPPED)
 		case common.FAILED, common.STOPPED:
-			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
-			if err != nil {
-				return nil, err
-			}
-			// The previous run is terminal, so any leftover Redis cancel flag
-			// is stale: a genuine cancel of the new run can only come through
-			// RequestStop once the task is RUNNING again. Clear it so the
-			// re-queued task is not cancelled at the worker's pre-start check.
-			clearCancelFlag(ctx, existing.ID)
-			if err = s.enqueueTask(existing.ID); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
-					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
-				}
-				return nil, err
-			}
-			return s.markScheduledAfterPublish(ctx, existing.ID)
+			return s.recycleTerminalTask(ctx, existing, existing.Status)
 		default:
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
@@ -431,6 +427,50 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 		return nil, err
 	}
 	return s.markScheduledAfterPublish(ctx, created.ID)
+}
+
+// finalizeRequestedStop completes a stop that RequestStop started but no
+// worker came back to finish: STOPPING → STOPPED. The transition is
+// CAS-guarded; when the owning worker wins the race and finalizes first, the
+// conflict resolves by re-reading the row, because STOPPING can only ever
+// move to STOPPED.
+func (s *IngestionTaskService) finalizeRequestedStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.transition(ctx, taskID, common.STOPPED)
+	if err == nil {
+		return task, nil
+	}
+	var conflict *TaskStatusConflictError
+	if !errors.As(err, &conflict) {
+		return nil, err
+	}
+	current, getErr := s.GetTask(ctx, taskID)
+	if getErr != nil || current == nil || current.Status != common.STOPPED {
+		return nil, err
+	}
+	return current, nil
+}
+
+// recycleTerminalTask resets a finished task row (FAILED/STOPPED) for a new
+// run: transition back to CREATED, drop the stale Redis cancel flag, publish,
+// then mark SCHEDULED. On publish failure the row rolls back to
+// originalStatus.
+func (s *IngestionTaskService) recycleTerminalTask(ctx context.Context, task *entity.IngestionTask, originalStatus string) (*entity.IngestionTask, error) {
+	recycled, err := s.transition(ctx, task.ID, common.CREATED)
+	if err != nil {
+		return nil, err
+	}
+	// The previous run is over, so any leftover Redis cancel flag is stale: a
+	// genuine cancel of the new run can only come through RequestStop once
+	// the task is RUNNING again. Clear it so the re-queued task is not
+	// cancelled at the worker's pre-start check.
+	clearCancelFlag(ctx, recycled.ID)
+	if err = s.enqueueTask(recycled.ID); err != nil {
+		if rollbackErr := s.rollbackRetriedTask(ctx, recycled.ID, originalStatus); rollbackErr != nil {
+			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", recycled.ID, err, rollbackErr)
+		}
+		return nil, err
+	}
+	return s.markScheduledAfterPublish(ctx, recycled.ID)
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {

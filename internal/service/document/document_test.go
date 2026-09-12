@@ -2382,10 +2382,12 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 
 // TestClearDocumentParseResults_RejectsNonTerminalIngestionTask verifies
 // that reparsing is refused while a document's ingestion task is still
-// RUNNING or STOPPING. Deleting a non-terminal task would let the in-flight
-// worker keep writing chunks and corrupt the new run's results.
+// RUNNING. Deleting a running task would let the in-flight worker keep
+// writing chunks and corrupt the new run's results. A STOPPING task is
+// covered separately: its stop was already requested, so the row survives
+// for CreateAndEnqueue to finalize and recycle.
 func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T) {
-	for _, status := range []string{common.RUNNING, common.STOPPING} {
+	for _, status := range []string{common.RUNNING} {
 		t.Run(status, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
@@ -2408,6 +2410,40 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 				t.Fatalf("%s ingestion task must not be deleted", status)
 			}
 		})
+	}
+}
+
+// TestClearDocumentParseResults_AllowsStoppingTask verifies that a STOPPING
+// ingestion task no longer blocks re-parse cleanup: the stop was already
+// requested, so the counters are cleared while the row itself survives for
+// CreateAndEnqueue to finalize (STOPPING → STOPPED) and recycle.
+func TestClearDocumentParseResults_AllowsStoppingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPING)
+
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("get doc: %v", err)
+	}
+	svc := testDocumentService(t)
+
+	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults with STOPPING task failed: %v", err)
+	}
+	task, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if task == nil {
+		t.Fatal("STOPPING ingestion task must survive the clear for CreateAndEnqueue to recycle")
+	}
+	if task.Status != common.STOPPING {
+		t.Fatalf("task status = %q, want unchanged %q", task.Status, common.STOPPING)
+	}
+	updatedDoc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if updatedDoc.TokenNum != 0 || updatedDoc.ChunkNum != 0 {
+		t.Fatalf("doc counters = token:%d chunk:%d, want zero", updatedDoc.TokenNum, updatedDoc.ChunkNum)
 	}
 }
 
@@ -2516,10 +2552,14 @@ func TestAssertIngestionTasksTerminal_AcceptsAllTerminal(t *testing.T) {
 	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.STOPPED)
+	insertTestDoc(t, "doc-3", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-3", "user-1", "doc-3", "kb-1", common.STOPPING)
 
 	ctx := t.Context()
 	svc := testDocumentService(t)
-	if err := svc.AssertIngestionTasksTerminal(ctx, []string{"doc-1", "doc-2"}); err != nil {
+	// STOPPING is accepted: the stop was already requested, and the enqueue
+	// path finalizes the task instead of rejecting the re-parse.
+	if err := svc.AssertIngestionTasksTerminal(ctx, []string{"doc-1", "doc-2", "doc-3"}); err != nil {
 		t.Fatalf("expected nil for all-terminal batch, got %v", err)
 	}
 }

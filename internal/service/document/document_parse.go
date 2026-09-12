@@ -88,10 +88,12 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	return nil
 }
 
-// AssertIngestionTasksTerminal verifies none of the documents has an
-// in-flight (RUNNING/STOPPING) ingestion task. Used as a batch pre-check
-// before re-parsing so a single non-terminal doc rejects the whole request
-// up front instead of partially cleaning some docs then failing.
+// AssertIngestionTasksTerminal verifies none of the documents has a RUNNING
+// ingestion task. Used as a batch pre-check before re-parsing so a single
+// actively-parsing doc rejects the whole request up front instead of
+// partially cleaning some docs then failing. A STOPPING task does not block
+// re-parse: its stop was already requested, and CreateAndEnqueue finalizes it
+// (STOPPING → STOPPED) and recycles the row for the new run.
 func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
 		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
@@ -101,7 +103,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docI
 		if task == nil {
 			continue
 		}
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
+		if task.Status == common.RUNNING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", docID, task.Status)
 		}
 	}
@@ -113,32 +115,35 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		return fmt.Errorf("document is nil")
 	}
 
-	// Refuse to clear a non-terminal ingestion task. An in-flight worker
-	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
-	// corrupt the new run's results. The caller must stop the task first
-	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
-	// SCHEDULED.
+	// Refuse to clear a RUNNING ingestion task: an in-flight worker would
+	// keep writing chunks and corrupt the new run's results. The caller must
+	// stop the task first. A STOPPING task is allowed through: its stop was
+	// already requested (the Redis cancel flag is still set, so a live worker
+	// aborts on its next cancel poll) and CreateAndEnqueue finalizes the
+	// STOPPING row instead of leaving it to block re-parse forever.
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
 	}
-	taskExisted := task != nil
-	if task != nil {
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
-			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
-		}
-		taskExisted = true
+	if task != nil && task.Status == common.RUNNING {
+		return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 	}
 
-	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
-	// RUNNING/STOPPING tasks untouched so the check-then-delete window
-	// between GetByDocumentID and the delete cannot delete a task that just
-	// transitioned to RUNNING. In that case, do not clear its parse results.
-	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID)
+	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically,
+	// leaving RUNNING/STOPPING tasks untouched so the check-then-delete
+	// window between GetByDocumentID and the delete cannot delete a task
+	// that just transitioned to RUNNING. A surviving STOPPING row is fine —
+	// CreateAndEnqueue finalizes and recycles it — but a surviving RUNNING
+	// row means a worker just claimed the task and its results must not be
+	// cleared underneath it.
+	if _, err = s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID); err != nil {
+		return err
+	}
+	survivor, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return err
 	}
-	if taskExisted && deleted == 0 {
+	if survivor != nil && survivor.Status == common.RUNNING {
 		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
 
