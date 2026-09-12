@@ -44,10 +44,12 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
         if e and mcp_server.tenant_id == current_user.id:
             server_key = mcp_server.name
             exported_servers[server_key] = {
+                **mcp_server.variables,
                 "type": mcp_server.server_type,
                 "url": mcp_server.url,
-                "name": mcp_server.name,
+                "name": mcp_server.variables.get("name", mcp_server.name),
                 "authorization_token": mcp_server.variables.get("authorization_token", ""),
+                "headers": mcp_server.headers or {},
                 "tools": mcp_server.variables.get("tools", {}),
             }
 
@@ -279,6 +281,19 @@ async def import_multiple() -> Response:
                 results.append({"server": server_name, "success": False, "message": url_error})
                 continue
 
+            headers = config.get("headers", {})
+            if not isinstance(headers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
+                results.append({"server": server_name, "success": False, "message": "MCP headers must be a string-to-string object."})
+                continue
+            headers = dict(headers)
+            if "authorization_token" in config:
+                if not isinstance(config["authorization_token"], str):
+                    results.append({"server": server_name, "success": False, "message": "authorization_token must be a string."})
+                    continue
+                headers.setdefault("authorization_token", config["authorization_token"])
+            variables = {k: v for k, v in config.items() if k not in {"type", "url", "headers"}}
+            variables.setdefault("authorization_token", "")
+
             base_name = server_name
             new_name = base_name
             counter = 0
@@ -296,11 +311,11 @@ async def import_multiple() -> Response:
                 "name": new_name,
                 "url": config["url"],
                 "server_type": config["type"],
-                "variables": {"authorization_token": config.get("authorization_token", "")},
+                # Use the same headers for discovery and later agent calls.
+                "headers": headers,
+                "variables": variables,
             }
 
-            headers = {"authorization_token": config["authorization_token"]} if "authorization_token" in config else {}
-            variables = {k: v for k, v in config.items() if k not in {"type", "url", "headers"}}
             mcp_server = MCPServer(id=new_name, name=new_name, url=config["url"], server_type=config["type"], variables=variables, headers=headers)
             with pin_dns_global(hostname, resolved_ip):
                 server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)

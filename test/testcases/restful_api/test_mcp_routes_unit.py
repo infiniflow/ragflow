@@ -611,6 +611,70 @@ def test_import_multiple_missing_servers_and_exception(monkeypatch):
 
 
 @pytest.mark.p2
+def test_import_custom_headers_survive_discovery_persistence_and_export(monkeypatch):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
+    headers = {"User-Agent": "ragflow", "X-Custom-Token": "${custom_token}"}
+    _set_request_json(
+        monkeypatch, module, {"mcpServers": {"research": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": headers, "custom_token": "example-token", "name": "header-identity"}}}
+    )
+    discovered = []
+    stored = []
+
+    async def discover(_func, servers, _timeout):
+        discovered.append(servers[0].headers)
+        return {servers[0].name: [{"name": "web_search"}]}, None
+
+    monkeypatch.setattr(module, "thread_pool_exec", discover)
+    monkeypatch.setattr(module.MCPServerService, "insert", lambda **data: stored.append(data) or True)
+    result = _run(module.import_multiple.__wrapped__())
+    assert result["data"]["results"][0]["success"] is True
+    assert discovered == [headers]
+    assert stored[0]["headers"] == headers
+    assert stored[0]["variables"]["custom_token"] == "example-token"
+    assert stored[0]["variables"]["name"] == "header-identity"
+    saved = _DummyMCPServer(**stored[0])
+    monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _id: (True, saved))
+    assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["headers"] == headers
+    assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["custom_token"] == "example-token"
+    assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["name"] == "header-identity"
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("headers", [[], {"User-Agent": 123}, "not-json"])
+def test_import_invalid_headers_do_not_discover_or_insert(monkeypatch, headers):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
+    _set_request_json(monkeypatch, module, {"mcpServers": {"bad": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": headers}}})
+    monkeypatch.setattr(module.MCPServerService, "insert", lambda **_data: pytest.fail("Invalid headers must not be saved"))
+
+    async def forbidden_discovery(*_args):
+        pytest.fail("Invalid headers must not reach discovery")
+
+    monkeypatch.setattr(module, "thread_pool_exec", forbidden_discovery)
+    result = _run(module.import_multiple.__wrapped__())
+    assert result["data"]["results"][0]["success"] is False
+    assert "headers" in result["data"]["results"][0]["message"].lower()
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("token", [123, None, {}, []])
+def test_import_rejects_non_string_authorization_token_before_discovery(monkeypatch, token):
+    module = _load_mcp_api(monkeypatch)
+    _stub_url_safety(monkeypatch, module)
+    _set_request_json(monkeypatch, module, {"mcpServers": {"bad": {"type": "streamable-http", "url": "https://example.com/mcp", "authorization_token": token}}})
+
+    async def forbidden_discovery(*_args):
+        pytest.fail("Invalid authorization token must not reach discovery")
+
+    monkeypatch.setattr(module, "thread_pool_exec", forbidden_discovery)
+    monkeypatch.setattr(module.MCPServerService, "insert", lambda **_data: pytest.fail("Invalid token must not be saved"))
+    result = _run(module.import_multiple.__wrapped__())
+    assert result["data"]["results"][0]["success"] is False
+    assert "authorization_token" in result["data"]["results"][0]["message"]
+
+
+@pytest.mark.p2
 def test_import_multiple_mixed_results(monkeypatch):
     module = _load_mcp_api(monkeypatch)
     _stub_url_safety(monkeypatch, module, {"http://unsafe"})

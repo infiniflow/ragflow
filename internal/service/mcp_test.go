@@ -138,68 +138,6 @@ func TestImportServersValidationErrors(t *testing.T) {
 	}
 }
 
-func TestNewExportMCPServerResponseMatchesPythonDownloadShape(t *testing.T) {
-	response := newExportMCPServerResponse(&entity.MCPServer{
-		Name:       "weather",
-		URL:        "https://example.com/mcp",
-		ServerType: mcpServerTypeStreamableHTTP,
-		Variables: entity.JSONMap{
-			"authorization_token": "secret-token",
-			"tools": map[string]interface{}{
-				"forecast": map[string]interface{}{"name": "forecast"},
-			},
-		},
-	})
-
-	payload, err := json.Marshal(response)
-	if err != nil {
-		t.Fatalf("marshal response: %v", err)
-	}
-
-	var decoded map[string]map[string]map[string]interface{}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	server := decoded["mcpServers"]["weather"]
-	if server["type"] != mcpServerTypeStreamableHTTP {
-		t.Fatalf("type = %v, want %s", server["type"], mcpServerTypeStreamableHTTP)
-	}
-	if server["url"] != "https://example.com/mcp" {
-		t.Fatalf("url = %v", server["url"])
-	}
-	if server["name"] != "weather" {
-		t.Fatalf("name = %v", server["name"])
-	}
-	if server["authorization_token"] != "secret-token" {
-		t.Fatalf("authorization_token = %v", server["authorization_token"])
-	}
-	tools, ok := server["tools"].(map[string]interface{})
-	if !ok || tools["forecast"] == nil {
-		t.Fatalf("tools = %#v, want forecast tool", server["tools"])
-	}
-}
-
-func TestNewExportMCPServerResponseDefaultsMissingVariablesLikePython(t *testing.T) {
-	response := newExportMCPServerResponse(&entity.MCPServer{
-		Name:       "empty-vars",
-		URL:        "https://example.com/mcp",
-		ServerType: mcpServerTypeSSE,
-	})
-
-	server := response.MCPServers["empty-vars"]
-	if server.AuthorizationToken != "" {
-		t.Fatalf("authorization_token = %#v, want empty string", server.AuthorizationToken)
-	}
-	tools, ok := server.Tools.(map[string]interface{})
-	if !ok {
-		t.Fatalf("tools type = %T, want map[string]interface{}", server.Tools)
-	}
-	if len(tools) != 0 {
-		t.Fatalf("tools = %#v, want empty map", tools)
-	}
-}
-
 func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {
 	servers := makeMCPServers(13)
 

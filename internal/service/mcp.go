@@ -94,18 +94,6 @@ type MCPServerListItem struct {
 	UpdateDate  *string        `json:"update_date"`
 }
 
-type ExportMCPServer struct {
-	Type               string      `json:"type"`
-	URL                string      `json:"url"`
-	Name               string      `json:"name"`
-	AuthorizationToken interface{} `json:"authorization_token"`
-	Tools              interface{} `json:"tools"`
-}
-
-type ExportMCPServerResponse struct {
-	MCPServers map[string]ExportMCPServer `json:"mcpServers"`
-}
-
 // ListMCPServersResponse is the response payload for listing MCP servers.
 type ListMCPServersResponse struct {
 	MCPServers []*MCPServerListItem `json:"mcp_servers"`
@@ -251,33 +239,6 @@ func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) 
 		return nil, code, err
 	}
 	return newExportMCPServerResponse(server), common.CodeSuccess, nil
-}
-
-func newExportMCPServerResponse(server *entity.MCPServer) *ExportMCPServerResponse {
-	vars := server.Variables
-	if vars == nil {
-		vars = entity.JSONMap{}
-	}
-
-	token := interface{}("")
-	if value, ok := vars["authorization_token"]; ok {
-		token = value
-	}
-	tools := vars["tools"]
-	if tools == nil {
-		tools = map[string]interface{}{}
-	}
-	return &ExportMCPServerResponse{
-		MCPServers: map[string]ExportMCPServer{
-			server.Name: {
-				Type:               server.ServerType,
-				URL:                server.URL,
-				Name:               server.Name,
-				AuthorizationToken: token,
-				Tools:              tools,
-			},
-		},
-	}
 }
 
 // UpdateMCPServer updates an MCP server owned by a tenant.
