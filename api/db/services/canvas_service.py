@@ -27,8 +27,8 @@ from api.db.services.common_service import CommonService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.misc_utils import get_uuid, thread_pool_exec
 from common.constants import StatusEnum
+from common.token_utils import get_encoder
 from api.utils.api_utils import get_data_openai
-import tiktoken
 from peewee import fn
 
 
@@ -427,7 +427,14 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
 
 
 async def completion_openai(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
-    tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+    # Build the cl100k_base encoder on first use, not on every call. The
+    # shared `common.token_utils.get_encoder` helper caches the encoding in
+    # `tiktoken.registry.ENCODINGS`, so this route is a no-op on every call
+    # after the first. Module imports that never reach `completion_openai`
+    # no longer pay the BPE-table cost (the BPE table is read from
+    # `TIKTOKEN_CACHE_DIR` and downloaded from openaipublic.blob.core on a
+    # cold cache).
+    tiktoken_encoder = get_encoder()
     prompt_tokens = len(tiktoken_encoder.encode(str(question)))
     user_id = kwargs.get("user_id", "")
 
