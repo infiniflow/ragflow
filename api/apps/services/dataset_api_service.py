@@ -1343,7 +1343,12 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
-    n = int(req.get("check_num", 5))
+    try:
+        n = int(req.get("check_num", 5))
+    except (TypeError, ValueError):
+        return False, "`check_num` must be an integer."
+    if n <= 0:
+        return False, "`check_num` must be greater than 0."
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=kb.tenant_id, kb_id=dataset_id, n=n)
     logging.info("check_embedding: dataset=%s sampled=%d chunks", dataset_id, len(samples))
 

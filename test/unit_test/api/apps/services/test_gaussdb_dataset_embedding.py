@@ -230,3 +230,35 @@ def test_tc_wrt_207_check_embedding_compares_gaussdb_valid_vectors_once(monkeypa
     assert result["summary"]["valid"] == 1
     assert result["summary"]["avg_cos_sim"] == 1.0
     assert result["results"][0]["vector_dim"] == 4
+
+
+def test_check_embedding_rejects_non_integer_check_num(monkeypatch):
+    module = _load_dataset_module(monkeypatch)
+
+    _install_module(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=FailIfCalledBundle,
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
+
+    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": "invalid"})
+
+    assert ok is False
+    assert result == "`check_num` must be an integer."
+
+
+def test_check_embedding_rejects_non_positive_check_num(monkeypatch):
+    module = _load_dataset_module(monkeypatch)
+
+    _install_module(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=FailIfCalledBundle,
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
+
+    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": 0})
+
+    assert ok is False
+    assert result == "`check_num` must be greater than 0."
