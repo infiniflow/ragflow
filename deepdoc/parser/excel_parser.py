@@ -172,37 +172,23 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
 
-        def row_has_data(row_idx):
-            for col_idx in range(1, max_col + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                if cell.value is not None and str(cell.value).strip():
-                    return True
-            return False
+        # max_row is often inflated by styling far below real data. Scan only
+        # materialized cells so we do not call ws.cell() on every empty row.
+        highest = 0
+        for (row_idx, col_idx), cell in ws._cells.items():
+            if col_idx > max_col:
+                continue
+            if cell.value is not None and str(cell.value).strip():
+                highest = max(highest, row_idx)
 
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
-
-        return last_data_row
+        if highest:
+            logging.debug(
+                "Excel row scan: max_row=%s max_col=%s detected_highest_data_row=%s",
+                max_row,
+                max_col,
+                highest,
+            )
+        return highest
 
     @staticmethod
     def _get_rows_limited(ws):
