@@ -2039,6 +2039,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       topics: 'Topic',
       searchEntity: '搜索 Entity',
       graphEntityCount: '实体 {{returned}} / {{total}}',
+      graphNodeStats: '共 {{total}} 个节点',
+      graphNodeStatsWithMatch: '搜到 {{matched}} / 共 {{total}} 个节点',
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
