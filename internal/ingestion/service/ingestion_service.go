@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
@@ -64,10 +63,12 @@ type Ingestor struct {
 	dispatchCancel context.CancelFunc
 
 	// Configuration
-	maxConcurrency    int32
-	supportedDocTypes []string
-	version           string
-	heartbeatInterval time.Duration
+	maxConcurrency           int32
+	supportedDocTypes        []string
+	version                  string
+	heartbeatInterval        time.Duration
+	memoryReconcileInterval  time.Duration
+	memoryReconcileBatchSize int
 
 	// Runtime state
 	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
@@ -111,7 +112,8 @@ type Ingestor struct {
 	kcEmbedding      string
 	kcConcurrency    int32 // number of parallel dataset-level compile workers
 
-	compileWg sync.WaitGroup
+	compileWg         sync.WaitGroup
+	memoryReconcileWg sync.WaitGroup
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -121,8 +123,13 @@ type Ingestor struct {
 	// runMemoryTask dispatches one async memory-extraction task. Tests may
 	// override this to inject a panicking/failing runner without a live DB or
 	// real MemoryMessageService. Defaults to defaultRunMemoryTask, which calls
-	// memorySvc.HandleSaveToMemoryTask with the envelope task id.
-	runMemoryTask func(ctx context.Context, taskID string, payload map[string]any) error
+	// memorySvc.HandleSaveToMemoryTask with the envelope task id and a unique
+	// database lease owner.
+	runMemoryTask func(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error)
+
+	// reconcileMemoryTasks republishes due durable memory task wake-ups. Tests
+	// may replace it to verify lifecycle behavior without a database or broker.
+	reconcileMemoryTasks func(ctx context.Context) error
 
 	// cancelCheck is polled periodically (every 3s) during task execution.
 	// When it returns true the task's context is cancelled, which causes the
@@ -151,25 +158,28 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
-		id:                id,
-		name:              name,
-		ctx:               ctx,
-		cancel:            cancel,
-		dispatchCtx:       dispatchCtx,
-		dispatchCancel:    dispatchCancel,
-		maxConcurrency:    maxConcurrency,
-		supportedDocTypes: supportedTypes,
-		version:           "1.0.0",
-		currentTasks:      make(map[string]struct{}),
-		activeLeases:      make(map[*Heartbeat]*activeLease),
-		workerQueue:       make(chan *worker, maxConcurrency),
-		ShutdownCh:        make(chan struct{}, 1),
-		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
-		docState:          newDocStateUpdater(),
-		heartbeatInterval: defaultHeartbeatInterval,
+		id:                       id,
+		name:                     name,
+		ctx:                      ctx,
+		cancel:                   cancel,
+		dispatchCtx:              dispatchCtx,
+		dispatchCancel:           dispatchCancel,
+		maxConcurrency:           maxConcurrency,
+		supportedDocTypes:        supportedTypes,
+		version:                  "1.0.0",
+		currentTasks:             make(map[string]struct{}),
+		activeLeases:             make(map[*Heartbeat]*activeLease),
+		workerQueue:              make(chan *worker, maxConcurrency),
+		ShutdownCh:               make(chan struct{}, 1),
+		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
+		docState:                 newDocStateUpdater(),
+		heartbeatInterval:        defaultHeartbeatInterval,
+		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
+		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
+	ingestor.reconcileMemoryTasks = ingestor.defaultReconcileMemoryTasks
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
 	ingestor.checkpointExists = canvas.RedisCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
@@ -186,6 +196,11 @@ func (e *Ingestor) ID() string {
 const consumeErrorBackoff = 1 * time.Second
 
 const taskPullRequestTimeout = 1 * time.Second
+
+const (
+	defaultMemoryTaskReconcileInterval  = 10 * time.Second
+	defaultMemoryTaskReconcileBatchSize = 100
+)
 
 func (e *Ingestor) Start() error {
 	common.Info(fmt.Sprintf("Ingestor %s initialized", e.id))
@@ -213,11 +228,12 @@ func (e *Ingestor) start() error {
 		}
 	}
 
-	// Start the task worker pool and the dataset-level compile consumer as
-	// owned goroutines joined by Stop via workerWg/compileWg. Start follows
+	// Start the task workers, memory reconciler, and dataset compile consumer as
+	// owned goroutines joined by Stop. Start follows
 	// the standard lifecycle contract: it returns immediately after kicking
 	// these off rather than blocking on the consume loop itself.
 	e.startWorkerPool()
+	e.startMemoryTaskReconciler()
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW dispatcher off the caller's goroutine so Start
@@ -226,6 +242,52 @@ func (e *Ingestor) start() error {
 	go e.consumeLoop()
 
 	return nil
+}
+
+// startMemoryTaskReconciler starts the owned loop that recovers durable memory
+// tasks whose initial wake-up was lost or whose retry became due.
+func (e *Ingestor) startMemoryTaskReconciler() {
+	if e.memorySvc == nil || dao.DB == nil || e.reconcileMemoryTasks == nil {
+		return
+	}
+	e.memoryReconcileWg.Add(1)
+	go e.memoryTaskReconcileLoop()
+}
+
+// memoryTaskReconcileLoop performs one startup pass and then polls until the
+// ingestor execution context is canceled.
+func (e *Ingestor) memoryTaskReconcileLoop() {
+	defer e.memoryReconcileWg.Done()
+	reconcile := func() {
+		if err := e.reconcileMemoryTasks(e.ctx); err != nil && !errors.Is(err, context.Canceled) {
+			common.Warn(fmt.Sprintf("reconcile durable memory tasks: %v", err))
+		}
+	}
+
+	reconcile()
+	interval := e.memoryReconcileInterval
+	if interval <= 0 {
+		interval = defaultMemoryTaskReconcileInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+// defaultReconcileMemoryTasks publishes one bounded batch of due wake-ups.
+func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
+	batchSize := e.memoryReconcileBatchSize
+	if batchSize <= 0 {
+		batchSize = defaultMemoryTaskReconcileBatchSize
+	}
+	return e.memorySvc.ReconcileMemoryTasks(ctx, batchSize)
 }
 
 // consumeLoop is the worker dispatcher for tasks.RAGFLOW. It waits for an
@@ -412,18 +474,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			e.ackHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
-		var payload map[string]any
-		if len(taskMessage.Payload) == 0 || json.Unmarshal(taskMessage.Payload, &payload) != nil {
-			common.Warn(fmt.Sprintf("memory task %s has no parseable payload, ack", taskMessage.TaskID))
-			e.ackHandle(hb, handle, taskMessage.TaskID)
-			return
-		}
-		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
-		if !e.claimTask(taskMessage.TaskID) {
-			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, renew lease", taskMessage.TaskID))
-			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
-			return
-		}
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, handle)
 		e.executeMemoryTaskWithHeartbeat(e.ctx, taskCtx, hb)
 		return
 	}
@@ -589,30 +640,20 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat) {
 	taskID := taskCtx.ID()
 
-	var (
-		settleAck  bool
-		settleNack bool
-	)
+	settleAck := false
 	defer func() {
 		hb.Stop()
 		if r := recover(); r != nil {
 			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-			settleNack = true
 		}
 		if taskCtx.Handle == nil || e.leaseAbandoned(hb) {
-			e.releaseTask(taskID)
 			return
 		}
 		if settleAck {
 			if err := taskCtx.Handle.Ack(); err != nil {
 				common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 			}
-		} else if settleNack {
-			if err := taskCtx.Handle.Nack(); err != nil {
-				common.Error(fmt.Sprintf("nack memory task %s", taskID), err)
-			}
 		}
-		e.releaseTask(taskID)
 	}()
 
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
@@ -625,29 +666,24 @@ func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *
 		settleAck = true
 		return
 	}
-	if err := e.runMemoryTask(ctx, taskID, taskCtx.MemoryPayload); err != nil {
-		// defaultRunMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
-		// (durable progress=-1 written, completed progress>=1.0, or no row to
-		// retry). Everything else is transient and must be redelivered rather
-		// than dropped.
-		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
-			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
-			settleAck = true
-			return
-		}
-		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
-		settleNack = true
+	leaseOwner := fmt.Sprintf("%s:%s", e.id, utility.GenerateUUID())
+	disposition, err := e.runMemoryTask(ctx, taskID, leaseOwner)
+	if err != nil {
+		common.Error(fmt.Sprintf("memory task %s execution failed", taskID), err)
+	}
+	if disposition == servicepkg.MemoryTaskAcknowledge {
+		settleAck = true
+		common.Info(fmt.Sprintf("Memory task %s delivery acknowledged", taskID))
 		return
 	}
-	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
-	settleAck = true
+	common.Warn(fmt.Sprintf("memory task %s delivery left unsettled for durable recovery", taskID))
 }
 
 // defaultRunMemoryTask is the production memory-task runner. It is held behind
 // the runMemoryTask field so tests can substitute a panicking/failing runner
 // without a live DB or real MemoryMessageService.
-func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
-	return e.memorySvc.HandleSaveToMemoryTask(ctx, taskID, payload)
+func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error) {
+	return e.memorySvc.HandleSaveToMemoryTask(ctx, taskID, leaseOwner)
 }
 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
@@ -1178,6 +1214,7 @@ func (e *Ingestor) Stop(ctx context.Context) {
 		e.cancel()
 		e.workerWg.Wait()
 		e.compileWg.Wait()
+		e.memoryReconcileWg.Wait()
 		close(waitDone)
 	}()
 

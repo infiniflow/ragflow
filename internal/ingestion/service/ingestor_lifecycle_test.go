@@ -244,16 +244,15 @@ func TestStopDeadlineLeavesStuckMemoryHandleUnsettled(t *testing.T) {
 
 	release := make(chan struct{})
 	started := make(chan struct{})
-	ingestor.runMemoryTask = func(context.Context, string, map[string]any) error {
+	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		close(started)
 		<-release
-		return nil
+		return servicepkg.MemoryTaskAcknowledge, nil
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "memory-stop-timeout",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{}`),
 	}}
 	w := <-ingestor.workerQueue
 	w.inbox <- handle
@@ -471,6 +470,42 @@ func TestStartSchedulesCreatedTasks(t *testing.T) {
 	}
 	if task.Status != common.SCHEDULED {
 		t.Fatalf("task status = %q, want %q", task.Status, common.SCHEDULED)
+	}
+}
+
+// TestMemoryTaskReconcilerRunsAtStartupAndStopsWithIngestor verifies the
+// recovery loop is owned by the ingestor lifecycle.
+func TestMemoryTaskReconcilerRunsAtStartupAndStopsWithIngestor(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := newUnitIngestor("test-memory-reconciler", 1, nil)
+	ingestor.memorySvc = &servicepkg.MemoryMessageService{}
+	ingestor.memoryReconcileInterval = time.Hour
+	called := make(chan struct{}, 1)
+	ingestor.reconcileMemoryTasks = func(context.Context) error {
+		called <- struct{}{}
+		return nil
+	}
+	ingestor.startMemoryTaskReconciler()
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("memory task reconciler did not run its startup pass")
+	}
+
+	ingestor.cancel()
+	stopped := make(chan struct{})
+	go func() {
+		ingestor.memoryReconcileWg.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("memory task reconciler did not stop with the ingestor context")
 	}
 }
 

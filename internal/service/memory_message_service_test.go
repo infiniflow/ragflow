@@ -25,6 +25,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // TestQueueSaveToMemoryTask_NilService: a nil receiver surfaces
@@ -65,6 +68,42 @@ func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	if !strings.Contains(err.Error(), "AgentID") {
 		t.Errorf("error = %v, want AgentID-required error", err)
 	}
+}
+
+// TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors keeps confirmed missing
+// memories separate from transient database failures.
+func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
+	t.Run("missing memory", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Memory{}, &entity.User{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"missing-memory"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 1 || res.NotFound[0] != "missing-memory" || len(res.Failed) != 0 {
+			t.Fatalf("result = %+v, want missing memory in NotFound only", res)
+		}
+	})
+
+	t.Run("database failure", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Task{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 0 || len(res.Failed) != 1 || res.Failed[0].MemoryID != "memory-1" || res.Failed[0].FailMsg == "" {
+			t.Fatalf("result = %+v, want database lookup failure in Failed only", res)
+		}
+	})
 }
 
 // TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
@@ -137,37 +176,34 @@ func TestBuildRawMessage_EnvelopeShape(t *testing.T) {
 	}
 }
 
-// TestBuildTaskRow_Shape: the task row mirrors the Python Task
-// entity's memory-task shape.
-func TestBuildTaskRow_Shape(t *testing.T) {
-	row := buildTaskRow(99, "mem-1")
-	if row["task_type"] != "memory" {
-		t.Errorf("task_type = %v, want \"memory\"", row["task_type"])
+// TestBuildMemoryTaskRecordsShape verifies the UI task and durable execution
+// record carry the same identity and the worker input is persisted in the DB.
+func TestBuildMemoryTaskRecordsShape(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1", UserInput: "hi", AgentResponse: "hello"}
+	task, memoryTask := buildMemoryTaskRecords(99, "mem-1", msg)
+	if task.TaskType != "memory" {
+		t.Errorf("task_type = %v, want \"memory\"", task.TaskType)
 	}
-	if row["doc_id"] != "mem-1" {
-		t.Errorf("doc_id = %v, want \"mem-1\"", row["doc_id"])
+	if task.DocID != "mem-1" {
+		t.Errorf("doc_id = %v, want \"mem-1\"", task.DocID)
 	}
-	if row["progress"] != 0.0 {
-		t.Errorf("progress = %v, want 0.0", row["progress"])
+	if task.Progress != 0.0 {
+		t.Errorf("progress = %v, want 0.0", task.Progress)
 	}
-	if row["progress_msg"] != "" {
-		t.Errorf("progress_msg = %v, want empty string", row["progress_msg"])
+	if task.ProgressMsg == nil || *task.ProgressMsg != "" {
+		t.Errorf("progress_msg = %v, want empty string", task.ProgressMsg)
 	}
-	if row["digest"] != "99" {
-		t.Errorf("digest = %v, want \"99\"", row["digest"])
+	if task.Digest == nil || *task.Digest != "99" {
+		t.Errorf("digest = %v, want \"99\"", task.Digest)
 	}
-	if id, _ := row["id"].(string); len(id) != 32 {
-		t.Errorf("id = %q, want 32-char uuid", id)
+	if len(task.ID) != 32 {
+		t.Errorf("id = %q, want 32-char uuid", task.ID)
 	}
-}
-
-func TestTaskFromRow_InitializesProgressMessage(t *testing.T) {
-	task := taskFromRow(buildTaskRow(99, "mem-1"))
-	if task.ProgressMsg == nil {
-		t.Fatal("ProgressMsg is nil")
+	if memoryTask.TaskID != task.ID || memoryTask.MemoryID != "mem-1" || memoryTask.SourceID != 99 {
+		t.Fatalf("memory task identity = %+v, want task %s/mem-1/99", memoryTask, task.ID)
 	}
-	if *task.ProgressMsg != "" {
-		t.Fatalf("ProgressMsg = %q, want empty string", *task.ProgressMsg)
+	if memoryTask.State != "pending" || memoryTask.Input["agent_response"] != "hello" {
+		t.Fatalf("memory task execution data = %+v", memoryTask)
 	}
 }
 
