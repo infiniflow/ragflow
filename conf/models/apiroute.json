@@ -1,0 +1,194 @@
+{
+  "name": "API Route",
+  "url": {
+    "default": "https://global.api-route.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "apiroute",
+  "models": [
+    {
+      "name": "claude-3-7-sonnet-20250219",
+      "context_length": 200000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-3-5-sonnet-20241022",
+      "context_length": 200000,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-3-5-haiku-20241022",
+      "context_length": 200000,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "o1",
+      "context_length": 200000,
+      "max_output": 100000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": false
+      }
+    },
+    {
+      "name": "o3-mini",
+      "context_length": 200000,
+      "max_output": 100000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": false
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-chat",
+      "context_length": 64000,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-reasoner",
+      "context_length": 64000,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": false
+      }
+    },
+    {
+      "name": "gemini-2.0-flash",
+      "context_length": 1048576,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen-plus",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen-turbo",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8192,
+      "max_dimension": 3072,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8192,
+      "max_dimension": 1536,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

@@ -1149,6 +1149,18 @@ class Hubris(OpenAIAPICompatible):
         return f"{self._BASE_URL}/models"
 
 
+class ApiRoute(OpenAIAPICompatible):
+    """API Route model metadata."""
+
+    _FACTORY_NAME = "API Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

@@ -63,6 +63,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewXAIModel(baseURL, urlSuffix), nil
 	case "hubris":
 		return NewHubrisModel(baseURL, urlSuffix), nil
+	case "apiroute":
+		return NewApiRouteModel(baseURL, urlSuffix), nil
 	case "lm-studio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
 	case "llmman":
