@@ -412,15 +412,20 @@ def get_parser_config(chunk_method, parser_config):
         merged_config = deep_merge(merged_config, parser_config)
 
     # Flatten parent_child config into children_delimiter for the execution
-    # layer only when the caller explicitly sent a parent_child payload; pure
-    # defaults must keep the historical key set (SDK contract tests compare it).
-    if parser_config and "parent_child" in parser_config:
-        pc = merged_config.get("parent_child", {})
-        if pc.get("use_parent_child"):
-            merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
+    # layer. children_delimiter must stay unconditional: the SDK contract
+    # tests expect the default naive config to carry children_delimiter "".
+    # enable_children is a flattened convenience flag and is only emitted for
+    # payloads that explicitly carry a parent_child block, so pure defaults
+    # keep the historical key set.
+    pc = merged_config.get("parent_child", {})
+    explicit_parent_child = bool(parser_config) and "parent_child" in parser_config
+    if pc.get("use_parent_child"):
+        merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
+        if explicit_parent_child:
             merged_config["enable_children"] = True
-        elif pc:
-            merged_config["children_delimiter"] = ""
+    elif pc:
+        merged_config["children_delimiter"] = ""
+        if explicit_parent_child:
             merged_config["enable_children"] = False
 
     return merged_config
