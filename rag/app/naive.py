@@ -560,9 +560,34 @@ PARSERS = {
     "plaintext": by_plaintext,  # default
 }
 
+# ---------------------------------------------------------------------------
+# Table of contents (TOC) detection
+# ---------------------------------------------------------------------------
+# Word-generated TOC entries are pure navigation noise for retrieval: they only
+# repeat section titles and add a page number. Indexing them wastes top_k slots
+# and, because an entry is a short string that literally matches the section
+# title, it often outranks the real content block in vector search.
+#
+# Word marks TOC entries with the built-in styles ``toc 1`` / ``TOC 1`` / ...
+# When a document loses its styles (e.g. converted from PDF), an entry usually
+# still looks like "1.1<TAB>title<TAB>1" — section number, tab, page number.
+_TOC_STYLE_PREFIXES = ("toc",)
+_TOC_LINE_RE = re.compile(r"^[\d.]+[\s\u3000]*[^\t]*\t\s*\d+\s*$")
+
+
+def _is_toc_paragraph(text: str, style_name: str) -> bool:
+    """Return True when a paragraph looks like a table-of-contents entry."""
+    if not text:
+        return False
+    if style_name and style_name.strip().lower().startswith(_TOC_STYLE_PREFIXES):
+        return True
+    # Fallback: section number + tab + page number (styles missing/renamed).
+    return bool(_TOC_LINE_RE.match(text))
+
 
 class Docx(DocxParser):
     def __init__(self):
+        """Initialize the naive DOCX parser."""
         pass
 
     def __clean(self, line):
@@ -675,6 +700,11 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+        """Parse a DOCX file into ordered (text, image, table) triples.
+
+        Each element is a plain-text paragraph, an image, or an HTML table,
+        preserving document order. Table-of-contents entries are skipped.
+        """
         self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
@@ -699,6 +729,11 @@ class Docx(DocxParser):
                     style_name = p.style.name if p.style else ""
 
                     if text:
+                        # Skip table-of-contents entries: they are navigation
+                        # noise that pollutes retrieval (see _is_toc_paragraph).
+                        if _is_toc_paragraph(text, style_name):
+                            continue
+
                         if style_name == "Caption":
                             former_image = None
 
