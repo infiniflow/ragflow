@@ -1033,3 +1033,180 @@ func TestSplitRightAnchoredModelName(t *testing.T) {
 		})
 	}
 }
+
+// TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs pins
+// the validation Python's get_model_config_by_id performs before model_extra is
+// read (tenant_model_service.py:324-347): a disabled model, a model not enrolled
+// as the requested type, and a model whose provider the caller's tenant cannot
+// reach must not produce a definitive tool-support answer.
+func TestModelProviderServiceResolveModelToolSupportValidatesTenantModelRefs(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-own", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-other", TenantID: "tenant-2", ProviderName: "Anthropic"},
+		&entity.TenantModelInstance{ID: "instance-own", ProviderID: "provider-own", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModelInstance{ID: "instance-other", ProviderID: "provider-other", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-active", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-disabled", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "gpt-test-off", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "text-embedding-test", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-foreign", ProviderID: "provider-other", InstanceID: "instance-other", ModelName: "claude-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+
+	// A reference that passes validation still reads the persisted flag.
+	got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-active")
+	if err != nil || !got {
+		t.Fatalf("active chat model = (%v, %v), want (true, nil)", got, err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		modelID string
+	}{
+		{"disabled", "model-disabled"},
+		{"not enrolled as chat", "model-embedding"},
+		{"provider owned by another tenant", "model-foreign"},
+	} {
+		got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, tc.modelID)
+		if err == nil {
+			t.Errorf("%s: err = nil, want a validation error", tc.name)
+		}
+		if got {
+			t.Errorf("%s: tool support = true, want false", tc.name)
+		}
+	}
+}
+
+// TestModelProviderServiceResolveModelToolSupportPrefersTenantFlag covers the
+// composite "<model>@<instance>@<provider>" reference shape (chat.llm_id and the
+// harness ModelID accept both a UUID and a composite ref): the flag persisted on
+// the tenant_model row must beat the provider catalog in both directions,
+// mirroring Python's model_extra.get("is_tools", is_tool), and a disabled row
+// must be rejected instead of falling back to the catalog.
+func TestModelProviderServiceResolveModelToolSupportPrefersTenantFlag(t *testing.T) {
+	catalog := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if catalog == nil {
+		t.Skip("OpenAI catalog is unavailable")
+	}
+	var toolsOn, toolsOff string
+	for _, m := range catalog.Models {
+		if strings.Contains(m.Name, "@") {
+			continue // the composite ref parser would split such a name
+		}
+		if toolsOn == "" && m.Tools != nil && m.Tools.Support {
+			toolsOn = m.Name
+		}
+		if toolsOff == "" && (m.Tools == nil || !m.Tools.Support) {
+			toolsOff = m.Name
+		}
+	}
+	if toolsOn == "" || toolsOff == "" {
+		t.Skipf("OpenAI catalog lacks both a tool-capable and a tool-incapable model (on=%q off=%q)", toolsOn, toolsOff)
+	}
+	if !catalogToolSupport("OpenAI", toolsOn) || catalogToolSupport("OpenAI", toolsOff) {
+		t.Fatalf("catalog baseline changed: on=%v off=%v", catalogToolSupport("OpenAI", toolsOn), catalogToolSupport("OpenAI", toolsOff))
+	}
+
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	rows := []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-openai", ProviderID: "provider-openai", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		// Catalog says tools are supported; the tenant disabled them.
+		&entity.TenantModel{ID: "model-on-off", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOn, ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		// Catalog does not declare tools; the tenant enabled them.
+		&entity.TenantModel{ID: "model-off-on", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOff, ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		// Disabled row: must be rejected rather than resolved from the catalog.
+		&entity.TenantModel{ID: "model-on-disabled", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOn + "-disabled", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+
+	got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	if err != nil {
+		t.Fatalf("tool-capable model: err = %v", err)
+	}
+	if got {
+		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
+	}
+
+	got, err = svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	if err != nil {
+		t.Fatalf("tool-incapable model: err = %v", err)
+	}
+	if !got {
+		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
+	}
+
+	got, err = svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	if err == nil || got {
+		t.Errorf("disabled model = (%v, %v), want (false, error)", got, err)
+	}
+}
+
+// TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure pins the
+// distinction between an intentional not-found fallback and a real lookup
+// failure: a database error must surface as an error instead of falling through
+// to a successful (false, nil) answer, which callers read as "this model has no
+// tool support".
+func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	svc := NewModelProviderService()
+	ctx := t.Context()
+	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || !got {
+		t.Fatalf("baseline = (%v, %v), want (true, nil)", got, err)
+	}
+
+	// Drop the provider table: the lookup now fails with a database error
+	// ("no such table"), which is neither a not-found fallback nor a
+	// tool-support verdict.
+	if err := db.Migrator().DropTable(&entity.TenantModelProvider{}); err != nil {
+		t.Fatalf("failed to drop provider table: %v", err)
+	}
+	// Composite refs resolve the provider row directly.
+	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", got)
+	}
+	// The UUID path too.
+	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", got)
+	}
+
+	// A failing tenant_model lookup must propagate as well.
+	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to drop model table: %v", err)
+	}
+	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+		t.Errorf("model lookup failure = (%v, nil), want a propagated error", got)
+	}
+}

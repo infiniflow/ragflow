@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 
-// CSVParser renders CSV data as HTML tables, matching the spreadsheet
-// family output_format == "html" convention from ParserParam.Defaults().
+// CSVParser renders CSV data as HTML table text in structured JSON table items.
 //
 // Mirrors Python's deepdoc/parser/excel_parser.py:RAGFlowExcelParser.html():
 //   - CSV data is rendered as an HTML <table> with <caption> "Data".
@@ -40,7 +39,7 @@ import (
 const csvDefaultChunkRows = defaultTableChunkRows
 const csvSheetName = "Data"
 
-// CSVParser reads RFC-4180 CSV data and emits HTML <table> payloads.
+// CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
 	OutputFormat                   string
@@ -128,14 +127,17 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	decoded, encName := DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
+		emptyHTML := "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>"
 		return ParseResult{
-			OutputFormat: "html",
+			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
 				"encoding": encName,
+				"format":   "csv",
+				"sheets":   1,
 			},
-			HTML: "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>",
+			JSON: []map[string]any{NewTableJSONItem(emptyHTML, csvSheetName, [][]float64{{1, 1, 1, 1, 1}})},
 		}
 	}
 
@@ -157,13 +159,26 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		chunkRows = csvDefaultChunkRows
 	}
 
+	chunks := recordsToHTMLTableChunkList(records, chunkRows, csvSheetName, 1)
+	items := make([]map[string]any, 0, len(chunks))
+	for _, ch := range chunks {
+		items = append(items, NewTableJSONItem(ch.HTML, csvSheetName, [][]float64{{
+			1,
+			float64(ch.RowStart),
+			float64(ch.RowEnd),
+			float64(ch.ColStart),
+			float64(ch.ColEnd),
+		}}))
+	}
 	return ParseResult{
-		OutputFormat: "html",
+		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
 			"encoding": encName,
+			"format":   "csv",
+			"sheets":   1,
 		},
-		HTML: recordsToHTMLTableChunks(records, chunkRows, csvSheetName),
+		JSON: items,
 	}
 }

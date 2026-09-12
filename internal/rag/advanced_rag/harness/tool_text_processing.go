@@ -150,6 +150,24 @@ func SplitKeywords(keywords string) []string {
 
 var wordRe = regexp.MustCompile("[a-z0-9]+")
 
+// wordLetterRe is the scan Python's _highlight_keywords uses to find the words
+// to stem-match: `re.findall(r"[A-Za-z]+", text)` (text_processing.py:403). It is
+// deliberately NOT the shared lowercase wordRe, which on capitalized text matches
+// only fragments ("New" -> "ew", "Nominated" -> "ominated") and therefore never
+// yields the stem term Python adds for those words.
+var wordLetterRe = regexp.MustCompile("[A-Za-z]+")
+
+// containedInPhrase reports whether low occurs inside any keyword phrase,
+// mirroring Python's `any(low in p for p in phrases)` (text_processing.py:405).
+func containedInPhrase(low string, phrases map[string]struct{}) bool {
+	for p := range phrases {
+		if strings.Contains(p, low) {
+			return true
+		}
+	}
+	return false
+}
+
 // stemSuffixes mirrors Python _STEM_SUFFIXES (longest-first; first match wins).
 var stemSuffixes = [][2]string{
 	{"ations", ""}, {"ation", ""}, {"ated", ""}, {"ates", ""}, {"ate", ""},
@@ -332,13 +350,26 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 	return "..." + HighlightKeywords(b.String(), kwds) + "...", true
 }
 
-// HighlightKeywords wraps keyword occurrences in <em>, longest term first so a
-// longer keyword is not partially consumed by a shorter one.
+// HighlightKeywords stars keyword occurrences, longest term first so a longer
+// keyword is not partially consumed by a shorter one. The marker is a STAR, not
+// an XML tag: Python returns `*term*` (text_processing.py:412) and its docstring
+// relies on it — a multi-word entity must stay ONE contiguous span
+// ("*Atlanta Braves*", never "*Atlanta* *Braves*") for the downstream
+// entity cross-check. The <em> tags elsewhere in this port are the ENGINE's
+// highlight markup (rag/utils/*_conn.py, agentic_search.go), a different layer.
 func HighlightKeywords(text string, kwds []string) string {
 	if len(kwds) == 0 {
 		return text
 	}
 	terms := append([]string(nil), kwds...)
+	// Python's phrase set (text_processing.py:396): keywords trimmed, lowercased
+	// and deduplicated. It guards the stem terms added just below.
+	phrases := make(map[string]struct{}, len(kwds))
+	for _, kw := range kwds {
+		if p := strings.ToLower(strings.TrimSpace(kw)); p != "" {
+			phrases[p] = struct{}{}
+		}
+	}
 	// Stem-based highlight terms: a stemmed form that matches in the text is
 	// wrapped too, mirroring Python _highlight_keywords (which adds stemmed-word
 	// occurrences so e.g. "nominated" is highlighted for keyword "nominations").
@@ -350,39 +381,83 @@ func HighlightKeywords(text string, kwds []string) string {
 				stemSet[s] = true
 			}
 		}
-		for _, word := range wordRe.FindAllString(text, -1) {
+		for _, word := range wordLetterRe.FindAllString(text, -1) {
 			low := strings.ToLower(word)
-			if stemmable(low) && stemSet[stem(low)] {
+			// Python adds a stem-matched word only when it is NOT already inside a
+			// keyword phrase (text_processing.py:405): "nominated" is starred for
+			// "nominations", while the "Braves" of "Atlanta Braves" is left to the
+			// phrase's own span instead of being starred on its own elsewhere.
+			if stemmable(low) && stemSet[stem(low)] && !containedInPhrase(low, phrases) {
 				terms = append(terms, low)
 			}
 		}
 	}
-	sort.SliceStable(terms, func(i, j int) bool { return len(terms[i]) > len(terms[j]) })
+	// Match in RUNE space. `strings.ToLower` is not byte-length-preserving: "İ"
+	// is 2 bytes and folds to the 1-byte "i", so a byte offset taken from the
+	// original indexes the folded string at a different position. The loop then
+	// slices past the end of the folded string (panic: slice bounds out of
+	// range) or cuts a rune in half and emits invalid UTF-8. Go's case mapping is
+	// 1:1 per RUNE, so a rune index is valid in both strings. (Python is immune
+	// for a different reason: re.sub re-emits m.group(0) from the ORIGINAL text
+	// instead of re-slicing it — text_processing.py:411-412.)
+	rs := []rune(text)
+	lows := []rune(strings.ToLower(text))
+	if len(lows) != len(rs) {
+		// Unreachable while the fold stays rune-for-rune; kept so a future switch
+		// to a full case fold (which does change the rune count) degrades to
+		// plain text instead of misaligned spans.
+		return text
+	}
+	// Longest term first, compared by rune count: Python sorts on str length,
+	// i.e. code points (text_processing.py:396/411).
+	termRunes := make([][]rune, 0, len(terms))
+	for _, t := range terms {
+		// Fold the TERM the same way the haystack was folded: the match below
+		// compares against `lows`, and only the stem-derived terms appended above
+		// were already lowercase — a caller-supplied "Rocket" or "New York" kept
+		// its casing and therefore never matched, silently dropping the highlight.
+		// Python builds its phrase list with `(kw or "").strip().lower()`
+		// (text_processing.py:396) and additionally compiles with re.IGNORECASE
+		// (:411), so the trim and the case fold both belong here.
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			termRunes = append(termRunes, []rune(t))
+		}
+	}
+	sort.SliceStable(termRunes, func(i, j int) bool { return len(termRunes[i]) > len(termRunes[j]) })
 	var b strings.Builder
-	low := strings.ToLower(text)
-	i := 0
-	for i < len(text) {
-		best := -1
+	for i := 0; i < len(rs); {
 		bestLen := 0
-		for _, t := range terms {
-			if t == "" {
-				continue
-			}
-			if strings.HasPrefix(low[i:], t) && len(t) > bestLen {
-				best, bestLen = i, len(t)
+		for _, t := range termRunes {
+			if len(t) > bestLen && runesHavePrefix(lows[i:], t) {
+				bestLen = len(t)
 			}
 		}
-		if best < 0 {
-			b.WriteByte(text[i])
+		if bestLen == 0 {
+			b.WriteRune(rs[i])
 			i++
 			continue
 		}
-		b.WriteString("<em>")
-		b.WriteString(text[i : i+bestLen])
-		b.WriteString("</em>")
+		// Emit the ORIGINAL runes, so the highlight keeps the source casing
+		// (Python re-emits m.group(0)), wrapped in Python's star marker.
+		b.WriteString("*")
+		b.WriteString(string(rs[i : i+bestLen]))
+		b.WriteString("*")
 		i += bestLen
 	}
 	return b.String()
+}
+
+// runesHavePrefix reports whether hay starts with needle.
+func runesHavePrefix(hay, needle []rune) bool {
+	if len(needle) == 0 || len(needle) > len(hay) {
+		return false
+	}
+	for i, r := range needle {
+		if hay[i] != r {
+			return false
+		}
+	}
+	return true
 }
 
 // IsFactDenseSentence reports whether a sentence carries a fact-bearing signal: a

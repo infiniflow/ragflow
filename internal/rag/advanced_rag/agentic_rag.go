@@ -854,7 +854,7 @@ type RAGCache struct {
 	mu          sync.Mutex
 	entries     map[string]ragCacheEntry
 	lastVerdict string
-	// ConsecutiveUnanswerable mirrors Python RAGTools._consecutive_unanswerable
+	// consecutiveUnanswerable mirrors Python RAGTools._consecutive_unanswerable
 	// (agentic_rag.py:818): how many consecutive rag() calls ended without a
 	// satisfying verdict. After two in a row, RAGTools.rag appends a
 	// "[Research status] … STOP calling rag again" note to the answer so the
@@ -862,7 +862,36 @@ type RAGCache struct {
 	// (rebuilt per turn), so it counts consecutive insufficient rounds within a
 	// single request; it is not persisted across turns unless a caller injects a
 	// long-lived *RAGCache via RAGTools.Cache.
-	ConsecutiveUnanswerable int
+	//
+	// Private and guarded by mu: a turn's concurrent rag() calls share ONE
+	// *RAGCache (Rag builds/stores it on deps.Cache before the outer react
+	// loop), so an unsynchronized counter would race.
+	consecutiveUnanswerable int
+}
+
+// NoteUnanswerable records one research round's verdict on the shared cache.
+func (c *RAGCache) NoteUnanswerable(verdict string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if verdict == VerdictSufficient {
+		c.consecutiveUnanswerable = 0
+	} else {
+		c.consecutiveUnanswerable++
+	}
+}
+
+// ConsecutiveUnanswerable reports how many consecutive rag() rounds ended
+// without a satisfying verdict.
+func (c *RAGCache) ConsecutiveUnanswerable() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.consecutiveUnanswerable
 }
 
 type ragCacheEntry struct {
@@ -930,7 +959,7 @@ func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
 	if resp.Verdict != VerdictInsufficient || resp.SCAFeedback == "" || resp.Answer == "" {
 		return ""
 	}
-	if cache != nil && cache.ConsecutiveUnanswerable >= 2 {
+	if cache != nil && cache.ConsecutiveUnanswerable() >= 2 {
 		return " STOP calling rag again: the same gaps remain."
 	}
 	return " If these gaps are material, call rag again with a question focused on them."
@@ -1655,6 +1684,9 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 		composeFinalAnswer(ctx, deps, req, p.kb, p.resp, logger)
 		return p.resp
 	}
+	// The fold returned the LOWEST-INDEX terminal rag call's answer: keep that
+	// call's evidence so the answer's [ID:n] markers line up with the chunks.
+	session.selectEvidence(answer)
 	p.resp.Answer = answer
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
@@ -1718,6 +1750,9 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	if p.resp.Answer == "" && !mux.terminalFired {
 		p.resp.Answer = strings.TrimSpace(mux.outerText.String())
 	}
+	// Keep only the evidence of the call that owns the answer (selectEvidence
+	// no-ops when the answer came from the outer model instead of a rag call).
+	session.selectEvidence(p.resp.Answer)
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
@@ -1737,38 +1772,67 @@ type outerReactSession struct {
 	// mux is set only on the streaming path; it merges the inner run's output
 	// into the caller's sink.
 	mux *outerStreamMux
+	// mu guards the per-call result merge (publish) and the recorded per-call
+	// outcomes (calls): appendToolResults invokes this session's tool calls
+	// concurrently.
+	mu sync.Mutex
+	// calls records each rag call's answer + evidence pool in completion order so
+	// selectEvidence can match the terminal fold's winning answer back to its own
+	// pool. Guarded by mu.
+	calls []ragCallResult
 }
 
 // ToolCall routes the two outer tools to their Go implementations.
+//
+// A round's tool calls arrive CONCURRENTLY — models.appendToolResults runs one
+// goroutine per call — exactly as Python gathers them (asyncio.gather over the
+// round's tool_calls, chat_model.py:670/:2555). Each rag call therefore runs on
+// its own request/evidence/response and publishes the outcome under mu; sharing
+// the session's would let two calls mix questions, evidence and answers.
 func (s *outerReactSession) ToolCall(name string, arguments map[string]interface{}) (string, error) {
 	switch name {
 	case "rag":
+		// Work on a COPY of the request: this call must not rewrite the
+		// session's question/images, which a concurrent call is reading.
+		req := s.req
 		if q, ok := arguments["question"].(string); ok && q != "" {
-			s.req.Question = q
+			req.Question = q
 		}
 		// Python's inner _compose_answer_from_evidence is text-only: the outer
 		// model already saw the images via multimodal history, and the rephrased
 		// question carries no images. Drop the original images so the inner
 		// compose model (ComposeAnswerWith via composeFinalAnswer) does not
 		// receive them — matching Python's inner compose.
-		s.req.Images = nil
+		req.Images = nil
+
+		// Per-call evidence, response and the projections that point at them:
+		// Python gives every rag() invocation its own graph state and shares only
+		// the tools object (agentic_rag.py:877 run_agentic_rag(self, messages)).
+		kb := &harness.Kbinfos{}
+		resp := &RunResponse{Mode: s.spec, Kbinfos: kb}
+		sd := s.sd
+		sd.KB = kb
+		inner := s.deps
+		inner.KB = kb
+
 		if s.mux != nil {
 			// Streaming: s.deps already routes the inner research log and the
 			// composed answer into the caller's sink, so return "" — the
 			// terminal short-circuit stops the loop and sendTerminal stays
 			// silent, so the answer is not streamed twice.
 			s.mux.markTerminal()
-			RunAgenticRAG(s.ctx, s.deps, s.req, s.sd, s.kb, s.resp, s.logger, s.spec)
-			composeFinalAnswer(s.ctx, s.deps, s.req, s.kb, s.resp, s.logger)
+			RunAgenticRAG(s.ctx, inner, req, sd, kb, resp, s.logger, s.spec)
+			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger)
+			s.publish(resp, kb)
 			return "", nil
 		}
 		// Non-streaming: disable the sink so the answer is not emitted twice,
-		// and hand it back for the terminal short-circuit to return as final.
-		inner := s.deps
+		// and hand this call's own answer back for the terminal short-circuit.
 		inner.AnswerSink = nil
-		RunAgenticRAG(s.ctx, inner, s.req, s.sd, s.kb, s.resp, s.logger, s.spec)
-		composeFinalAnswer(s.ctx, inner, s.req, s.kb, s.resp, s.logger)
-		return s.resp.Answer, nil
+		RunAgenticRAG(s.ctx, inner, req, sd, kb, resp, s.logger, s.spec)
+		composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger)
+		s.publish(resp, kb)
+		return resp.Answer, nil
 	case "summarize_document":
 		docID, _ := arguments["doc_id"].(string)
 		if docID == "" {
@@ -1781,6 +1845,80 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		return strings.Join(blocks, "\n\n"), nil
 	}
 	return fmt.Sprintf("unknown tool %q", name), nil
+}
+
+// publish merges one rag call's outcome into the session state. The inner run
+// used to write that state directly, before each call got its own; the merge
+// reproduces what a single call contributed, and for concurrent calls it keeps
+// the FIRST non-empty answer/verdict (appendToolResults folds the first terminal
+// hit in call order) while the evidence is unioned, so the caller still sees the
+// chunks the answer was composed from.
+func (s *outerReactSession) publish(call *RunResponse, kb *harness.Kbinfos) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Remember this call's own answer + evidence so selectEvidence can restore
+	// the pool the winning answer was composed from.
+	s.calls = append(s.calls, ragCallResult{answer: call.Answer, kb: kb})
+	if s.resp.Answer == "" {
+		s.resp.Answer = call.Answer
+	}
+	if s.resp.Verdict == "" {
+		s.resp.Verdict = call.Verdict
+	}
+	if s.resp.SCAFeedback == "" {
+		s.resp.SCAFeedback = call.SCAFeedback
+	}
+	if s.resp.CollectedAnswer == "" {
+		s.resp.CollectedAnswer = call.CollectedAnswer
+	}
+	if len(s.resp.Slots) == 0 {
+		s.resp.Slots = call.Slots
+	}
+	s.resp.Partial = s.resp.Partial || call.Partial
+	s.kb.Chunks = append(s.kb.Chunks, kb.Chunks...)
+	s.kb.DocAggs = append(s.kb.DocAggs, kb.DocAggs...)
+	s.kb.Memory = append(s.kb.Memory, kb.Memory...)
+	if s.kb.PreSummary == "" {
+		s.kb.PreSummary = kb.PreSummary
+	}
+}
+
+// ragCallResult is one rag call's outcome: the answer it composed and the
+// evidence pool that produced it.
+type ragCallResult struct {
+	answer string
+	kb     *harness.Kbinfos
+}
+
+// selectEvidence leaves only the evidence of the rag call whose answer the
+// terminal fold returned. The fold picks the LOWEST-INDEX terminal call while
+// publish sees completion order, so the union alone can leave that answer's
+// [ID:n] markers pointing into another call's chunks — the answer and the
+// reference list would disagree. No-op when no recorded call matches (the
+// terminal tool was summarize_document, or the answer did not come from a rag
+// call), in which case the union stands.
+//
+// Matching is by exact answer text, so two calls that produce byte-identical
+// answers are indistinguishable and the FIRST recorded (first to finish) one
+// wins. That collision is accepted: plumbing the tool-call index through
+// ToolCallSession is not worth it for a case that cannot happen with distinct
+// questions.
+func (s *outerReactSession) selectEvidence(answer string) {
+	if answer == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.calls {
+		if r.answer != answer {
+			continue
+		}
+		s.kb.Chunks = append([]map[string]any(nil), r.kb.Chunks...)
+		s.kb.DocAggs = append([]map[string]any(nil), r.kb.DocAggs...)
+		s.kb.Memory = append([]map[string]any(nil), r.kb.Memory...)
+		s.kb.PreSummary = r.kb.PreSummary
+		return
+	}
 }
 
 // runDirect is the low/naive path: one hybrid search, no tool loop.

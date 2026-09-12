@@ -112,3 +112,35 @@ func TestChunkTextPrefersWeighted(t *testing.T) {
 		t.Errorf("chunkText = %q, want %q", got, "primary only")
 	}
 }
+
+// TestMemoryGrepLimitAppliesToShortChunks pins the returned-chunk cap: the
+// short-chunk branch continues past the shared check, so it must enforce the
+// limit itself — otherwise a memory store full of matching short chunks comes
+// back whole instead of at most limit entries.
+func TestMemoryGrepLimitAppliesToShortChunks(t *testing.T) {
+	mem := make([]map[string]any, 0, 10)
+	for i := 0; i < 10; i++ {
+		suffix := string(rune('a' + i)) // short chunk: well under shortChunkChars
+		mem = append(mem, memChunk("rifampicin note "+suffix, "d1", "c"+suffix))
+	}
+	kb := &Kbinfos{Memory: mem}
+
+	hits := MemoryGrep(kb, []string{"rifampicin"}, 2)
+	if len(hits) != 2 {
+		t.Fatalf("hits = %d, want the limit 2 (a short chunk must not bypass the cap)", len(hits))
+	}
+	if hits[0]["content"] != "rifampicin note a" {
+		t.Errorf("hit content = %v, want the whole short chunk", hits[0]["content"])
+	}
+
+	// limit <= 0 is NOT normalized to the default: Python's grep has no such
+	// guard, so the `len(hits) >= limit` check fires on the first hit.
+	if got := len(MemoryGrep(kb, []string{"rifampicin"}, 0)); got != 1 {
+		t.Errorf("limit=0 hits = %d, want 1 (Python grep does not normalize limit)", got)
+	}
+
+	// Python's default (6) is passed explicitly and caps at 6.
+	if got := len(MemoryGrep(kb, []string{"rifampicin"}, grepMaxChunks)); got != grepMaxChunks {
+		t.Errorf("default-limit hits = %d, want %d", got, grepMaxChunks)
+	}
+}

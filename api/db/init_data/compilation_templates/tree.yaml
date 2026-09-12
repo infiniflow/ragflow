@@ -19,6 +19,50 @@ config:
     max_token: 512
     clustering_threshold: 0.3
     clustering_ratio: 0.5
+    # Claim/evidence harvesting over the tree's leaf chunks, before clustering:
+    # every cluster is then summarized from its members' claims instead of raw
+    # text, and the claims are persisted as their own searchable rows. The
+    # {cluster_content} placeholder does NOT appear here — the chunk texts are
+    # rendered separately, each marked as a TARGET.
+    claim_prompt: |-
+      ## Task
+      You are a high-recall claim harvester for the TARGET chunks below. For EACH
+      TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
+      assertions AND explicitly expressed opinions, beliefs, judgments, assessments,
+      recommendations, preferences, intentions, predictions, and hypotheses. Do not
+      rank claims, summarize, merge claims, or omit a claim because it seems minor.
+
+      A claim must be:
+      - Self-contained: readable without the surrounding text, with named subjects.
+        Never write "the article", "the document", "it says", or a bare pronoun.
+        Resolve the referent to its name when attribution makes the claim clearer.
+      - Faithful: stated only if that TARGET chunk supports it. Never invent,
+        strengthen, or infer. Preserve modality, uncertainty, negation, and
+        attribution exactly.
+      - Atomic: exactly one fact. Split compound sentences.
+
+      ## Response Format
+      Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<CHUNK_ID it was taken from>"], "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
+
+      Rules:
+      - `evidence.quote` MUST be a CONTIGUOUS verbatim substring of the chunk cited
+        by `evidence.chunk_id`: same words, same order, no paraphrase, no truncation,
+        no added words. A quote that cannot be found verbatim is rejected downstream,
+        so never restate.
+      - `evidence.chunk_id` and `source_chunk_ids` MUST identify the exact chunk the
+        claim and quote came from. Never cross-attribute a quote to a different chunk.
+      - Keep each quote concise and under 240 characters.
+      - For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
+        text exactly as it appears — keep its separators and order. Do NOT turn a
+        table row like "Starring | Penn Badgley | Elizabeth Lail" into a sentence
+        like "Starring Penn Badgley Elizabeth Lail"; that is a paraphrase and will
+        be rejected.
+      - Preserve numbers, units, dates, names and qualifiers exactly.
+      - Distribute claims across all TARGET chunks; do not skip a chunk because you
+        reached the cap — the cap is per chunk, not per batch.
+      - If a TARGET chunk contains no extractable assertion, emit no claim for it.
+      - Keep claims in the same language as the source.
+      Return JSON only, no commentary.
   # Entity / relation collections are not used by the tree kind but kept
   # as empty stubs so the form schema's shared validators see a stable
   # shape regardless of kind.

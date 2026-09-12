@@ -54,11 +54,12 @@ _EMPTY_STRIKES = 2
 _NEAR_DUP_JACCARD = 0.8
 _RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
 
-# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Mirrors
-# _MAX_SNIPPET_POOL / _SCA_VIEW_CAP (=60) in agentic_rag_graph.py: once the pool
-# is saturated, further admits cannot reach the SCA view or improve the answer,
-# so the action session stops admitting (observed pools otherwise grew to ~106).
-_EVIDENCE_POOL_CAP = 60
+# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Deliberately
+# LARGER than _SCA_VIEW_CAP (=60) in agentic_rag_graph.py so storage and review stay
+# DECOUPLED: the pool accumulates while the SCA reads a ranked top-60 view. Coupling them
+# at 60 starved the raw-evidence channel in 42% of rounds (every admit rejected -> status
+# REDUNDANT -> playbook told the model to vary the query -> it re-searched for nothing).
+_EVIDENCE_POOL_CAP = 120
 # Per-process flag so the "pool FULL" log line is emitted once per fill, not once
 # per rejected chunk. The pool never shrinks mid-session, so no reset is needed.
 _EVIDENCE_POOL_STATE = {"full_logged": False}
@@ -248,10 +249,12 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries."
+            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). "
             "DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve."
-            "ARGUMENTS: query — array of 1-2 strings. Compiled-structure expansion is automatic and a no-op on datasets without compiled structure, so no extra argument is needed."
-            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours (parent/child headings, sibling pages) appended. ok = new evidence; redundant = already seen."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours appended. "
+            "Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. "
+            "ok = new evidence; redundant = already seen."
             "IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it."
         ),
         "parameters": {
@@ -329,7 +332,8 @@ _NAVIGATE_STRUCTURE_TOOL_SPEC = {
             "WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree."
             "DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document)."
             "ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind)."
-            "OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable."
+            "OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. [claim] lines carry VERBATIM quotes from the document — cite them and answer WITHOUT calling list_chunks when they directly answer the query (deep-read the claimed chunk ids only for surrounding context or numbers the quotes lack). "
+            "ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable."
             "IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session."
         ),
         "parameters": {
@@ -612,6 +616,21 @@ def _seed_evidence(tools):
     return kbinfos
 
 
+def _claim_covered_ids(kbinfos) -> set:
+    """Chunk ids already represented verbatim by a claim pseudo-chunk in the pool.
+
+    A claim carries its own verbatim quote plus the ids of the chunks it was
+    distilled from, so admitting those passages again is duplicate payload: the
+    answer material is already in the pool at a fraction of the size.
+    """
+    covered: set = set()
+    for c in kbinfos.get("chunks") or []:
+        if str(c.get("chunk_id") or "").startswith("claim_"):
+            for cid in c.get("source_chunk_ids") or []:
+                covered.add(str(cid))
+    return covered
+
+
 def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) -> bool:
     """Register one chunk into the session output AND the shared evidence pool.
 
@@ -630,10 +649,10 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     deepdoc dependency chain) out of module-import time.
     """
     # Early-stop: the shared evidence pool is hard-capped. Once it reaches the
-    # cap, admit no further chunk — the SCA view and compose can only consume the
-    # first 60 anyway (see _MAX_SNIPPET_POOL / _SCA_VIEW_CAP in agentic_rag_graph),
-    # so extra admits only bloat the pool (observed growth up to ~106) without
-    # improving the answer.
+    # cap, admit no further chunk. The cap is deliberately ABOVE _SCA_VIEW_CAP
+    # (60): the SCA reads a ranked view while the pool accumulates, so extra
+    # admits still reach the view via ranking. Coupling them at 60 starved the
+    # raw channel in 42% of rounds (admits rejected -> REDUNDANT -> re-search).
     _pool = kbinfos.get("chunks", []) if isinstance(kbinfos, dict) else (getattr(kbinfos, "chunks", []) or [])
     if len(_pool) >= _EVIDENCE_POOL_CAP:
         if not _EVIDENCE_POOL_STATE["full_logged"]:
@@ -649,6 +668,11 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
 
     cid = _chunk_id(c)
     if cid in seen:
+        return False
+    # Already in the pool as a claim's verbatim quote -> skip the full passage.
+    # Table chunks are exempt: their answer rows survive only in full text.
+    if not _is_table_chunk(c) and cid in _claim_covered_ids(kbinfos):
+        _LOG.debug("[Action Session] skip chunk %s: already covered by a claim", cid)
         return False
     seen.add(cid)
     ids.append(cid)
@@ -672,6 +696,73 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     return False
 
 
+# Claim hits REPLACE the chunk search for that query (not stack on top of it):
+# a claim's verbatim evidence is the answer material, and echoing the same
+# passages as chunk snippets burns tokens without adding information.  Flip to
+# False for the additive behaviour (claims first, chunks after).
+_CLAIM_PREFETCH_EXCLUSIVE = True
+
+
+async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tuple:
+    """Framework-automatic claim-first prefetch for every corpus search.
+
+    KB-wide KNN over claim rows; matched claims (with their verbatim evidence)
+    lead the search output AND enter the shared evidence pool as pseudo-chunks,
+    so the model sees and can cite them without having chosen
+    navigate_structure — retrieval priority must not rest on the model's tool
+    pick.  Best effort: any failure returns empty and the search proceeds
+    exactly as before.
+    """
+    import hashlib
+
+    if not query:
+        return [], []
+    try:
+        from rag.advanced_rag.harness.tools.navigation import (
+            _STRUCT_CLAIM_EVIDENCE_CHARS,
+            dataset_has_compilation,
+            recall_dataset_claims,
+        )
+
+        # No compiled rows at all -> no claim rows can exist.  Skip the recall
+        # instead of issuing legs that come back empty on every single turn.
+        if not await dataset_has_compilation(tools):
+            return [], []
+        claims = await recall_dataset_claims(tools, query)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[Action Session] claim prefetch failed", exc_info=True)
+        return [], []
+    entries: list = []
+    new_ids: list = []
+    for c in claims:
+        cid = "claim_" + hashlib.md5(f"{c['doc_id']}:{c['name']}".encode("utf-8", "ignore")).hexdigest()[:12]
+        if cid in kb_seen:
+            continue
+        content = f"[claim #{c.get('rank') or '?'}] {c['name']}"
+        if c.get("description") and c["description"] != c["name"]:
+            content += f" — {c['description']}"
+        if c.get("quote"):
+            content += f'\nEvidence (verbatim): "{str(c["quote"])[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+        doc_id = c.get("doc_id") or ""
+        entries.append({"id": cid, "content": content[:1200], "doc_id": doc_id})
+        new_ids.append(cid)
+        kb_seen.add(cid)
+        # Enter the shared pool as a pseudo-chunk so the compose stage can cite
+        # the verbatim evidence directly (search-context parity with chunks).
+        # source_chunk_ids ride along so a later deep-read of the underlying
+        # chunk can retire this pseudo-chunk (its quote would then duplicate
+        # the full text already in the pool).
+        kbinfos["chunks"].append({"chunk_id": cid, "content_with_weight": content, "doc_id": doc_id, "source_chunk_ids": c["chunk_ids"]})
+    _LOG.info(
+        "[Claim] prefetch q=%r -> recalled=%d new=%d (exclusive=%s)",
+        str(query)[:60],
+        len(claims or []),
+        len(new_ids),
+        _CLAIM_PREFETCH_EXCLUSIVE,
+    )
+    return entries, new_ids
+
+
 async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
     """Run a corpus search fn per query and admit hits to output + evidence pool.
 
@@ -688,6 +779,17 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     new_evidence = 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
+    # Claim-first, MUTUALLY EXCLUSIVE: when claims hit, their verbatim evidence
+    # IS the answer material — shipping 20 chunk snippets on top would echo the
+    # same passages a second time and burn tokens.  Claims carry their chunk
+    # pointers, so deep-reading stays one list_chunks away.  No hits → chunk
+    # search runs exactly as before.
+    claim_entries, claim_ids = await _claim_prefetch(tools, (queries or [""])[0], kbinfos, kb_seen)
+    out.extend(claim_entries)
+    ids.extend(claim_ids)
+    new_evidence += len(claim_ids)
+    if claim_entries and _CLAIM_PREFETCH_EXCLUSIVE:
+        return out, ids, new_evidence
     for fq in queries[:max_q]:
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
@@ -823,6 +925,13 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
             continue
         if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
             new_ev += 1
+    # A deep-read COVERS its claims: once the full chunk text is in the pool,
+    # the claim's 1200-char quote of the same passage is duplicated tokens in
+    # every later prompt. Retire claim pseudo-chunks whose source chunk was
+    # just read — the claim already did its job (it pointed here).
+    read_ids = set(ids)
+    if read_ids:
+        kbinfos["chunks"] = [c for c in kbinfos["chunks"] if not (str(c.get("chunk_id") or "").startswith("claim_") and read_ids.intersection(c.get("source_chunk_ids") or []))]
     return _search_outcome(out, ids, new_ev)
 
 
@@ -861,9 +970,17 @@ async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
     routing falls through at ``_NAV_MIN_DOC_SCORE``, which is query-dependent,
     not a statement about the dataset.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Dataset-level fact, not a per-query miss: with no compiled rows every
+    # navigation leg comes back empty, so short-circuit instead of paying for it.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[{"kind": "navigate_tree", "note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead."}],
+            status=EMPTY,
+            reason="no_structure",
+        )
     query = str(args.get("query") or "")
     res = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
     if res.empty_reason:
@@ -888,9 +1005,19 @@ async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     As with navigate_tree, classification only — ``_tool_node`` decides whether
     to disable.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Same dataset-level gate as navigate_tree: without compiled rows the
+    # in-document drill has nothing to walk.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[
+                {"kind": "navigate_structure", "doc_id": str(args.get("doc_id") or ""), "note": "This dataset has no compiled document structure; use search_chunks / retrieve / list_chunks instead."}
+            ],
+            status=EMPTY,
+            reason="no_structure",
+        )
     doc_id = str(args.get("doc_id") or "")
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
@@ -2097,7 +2224,20 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     if fanout_hint:
         user += "\n\nCandidate aspects already identified:\n" + "\n".join(f"- {h}" for h in fanout_hint)
     tmo = min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)
+
+    # ``_init_chat`` runs on the raw model (it bypasses CountingChatModel like
+    # ``_base_chat_mdl`` does), so the slot-table decomposition call would be
+    # invisible to the phase accounting.  Count it explicitly.
+    def _book_raw_call() -> None:
+        try:
+            from rag.advanced_rag.harness.stats import record_external_call
+
+            record_external_call(None)
+        except Exception:  # noqa: BLE001
+            pass
+
     raw = await _init_chat(tools, system, user, tmo)
+    _book_raw_call()
     data = extract_json(raw) or {}
     if not data:
         # one quick retry — transient provider stalls were observed (45s with
@@ -2109,6 +2249,7 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
         # the session deadline so the retry cannot overrun the round budget.
         retry_tmo = _init_retry_timeout(tmo, deadline_left)
         raw = await _init_chat(tools, system, user, retry_tmo)
+        _book_raw_call()
         data = extract_json(raw) or {}
     slots = []
     for i, s in enumerate(data.get("slots") or []):

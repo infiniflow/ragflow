@@ -341,7 +341,10 @@ type aliyunNativeEmbedResponse struct {
 	RequestID string `json:"request_id"`
 	Output    struct {
 		Embeddings []struct {
-			TextIndex int       `json:"text_index"`
+			// TextIndex is a pointer so an absent/null key is distinguishable
+			// from index 0: Python does embds[e["text_index"]] and raises
+			// KeyError when the key is missing (wrapped into EmbeddingError).
+			TextIndex *int      `json:"text_index"`
 			Embedding []float64 `json:"embedding"`
 		} `json:"embeddings"`
 	} `json:"output"`
@@ -355,6 +358,16 @@ type aliyunNativeEmbedResponse struct {
 // Python QWenEmbed). Inputs are sent in batches of 4 like Python; the response's
 // text_index is relative to the batch, so it is offset back to the caller's
 // slice before being returned.
+//
+// The response is reassembled exactly like Python QWenEmbed.encode: each batch's
+// chunk is sized by the NUMBER OF RETURNED EMBEDDINGS and every vector is
+// PLACED at its batch-relative text_index (never appended in response order),
+// because consumers such as NavEmbedder read the slice positionally and discard
+// EmbeddingData.Index. As in Python, a duplicate text_index overwrites the
+// earlier vector, a gap leaves an empty vector in that slot, and a text_index
+// outside the returned chunk raises — a NEGATIVE text_index counts from the end
+// of the chunk (embds[-1] is the last slot), exactly like a Python list
+// assignment.
 func (a *AliyunModel) embedNative(ctx context.Context, root, modelName string, request EmbedRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	textType := "document"
 	if request.Query {
@@ -407,15 +420,32 @@ func (a *AliyunModel) embedNative(ctx context.Context, root, modelName string, r
 		if parsed.Code != "" {
 			return nil, fmt.Errorf("aliyun native embeddings API error: %s: %s", parsed.Code, parsed.Message)
 		}
+		// Mirror Python QWenEmbed.encode:
+		//   embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
+		//   for e in resp["output"]["embeddings"]:
+		//       embds[e["text_index"]] = e["embedding"]
+		//   res.extend(embds)
+		// including Python list-assignment indexing: a negative text_index
+		// counts from the END of the chunk (embds[-1] is the last slot), and out
+		// of range in either direction raises.
+		embds := make([]EmbeddingData, len(parsed.Output.Embeddings))
 		for _, item := range parsed.Output.Embeddings {
-			if item.TextIndex < 0 || item.TextIndex >= len(batch) {
-				return nil, fmt.Errorf("aliyun native embeddings response index %d out of range for batch of %d", item.TextIndex, len(batch))
+			if item.TextIndex == nil {
+				return nil, fmt.Errorf("aliyun native embeddings response item missing text_index")
 			}
-			embeddings = append(embeddings, EmbeddingData{
+			idx := *item.TextIndex
+			if idx < 0 {
+				idx += len(embds)
+			}
+			if idx < 0 || idx >= len(embds) {
+				return nil, fmt.Errorf("aliyun native embeddings response index %d out of range for %d embeddings", *item.TextIndex, len(embds))
+			}
+			embds[idx] = EmbeddingData{
 				Embedding: item.Embedding,
-				Index:     start + item.TextIndex,
-			})
+				Index:     len(embeddings) + idx,
+			}
 		}
+		embeddings = append(embeddings, embds...)
 		recordResponseUsage(modelUsage, parsed.RequestID, &TokenUsage{TotalTokens: parsed.Usage.TotalTokens}, "embedding")
 	}
 	return embeddings, nil

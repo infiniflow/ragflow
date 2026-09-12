@@ -28,6 +28,13 @@ type ChatRequest struct {
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
+	// DisableThinking asks the driver to turn chain-of-thought OFF. Reasoning
+	// models (MiniMax-M1/M3, kimi, qwen) otherwise spend the completion budget
+	// (and minutes) on visible COT before returning the structured payload —
+	// the fastest way to slow knowledge compilation to a crawl. Providers that
+	// have no thinking control silently ignore it. Defaults to false, so only
+	// call sites that know the model reasons opt in.
+	DisableThinking bool
 	// DisableRetry tells the production ChatInvoker that the caller owns
 	// transient-error retries (GenJSON is such a caller). It is internal
 	// plumbing and is not part of the user-facing model request.

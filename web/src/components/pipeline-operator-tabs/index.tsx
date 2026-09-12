@@ -35,6 +35,9 @@ type PipelineOperatorTabsProps = {
   // Validation errors from the outer form's parser_config, keyed by
   // operatorId; each entry is mirrored onto the operator form's fields.
   operatorFormErrors?: Record<string, FieldErrors | undefined>;
+  // Dataset-side embeddings show a fixed set of parser file types; only the
+  // canvas parser allows add/remove.
+  fixedFileFormats?: boolean;
 };
 
 const PipelineOperatorTabs = ({
@@ -44,6 +47,7 @@ const PipelineOperatorTabs = ({
   onOperatorValuesChange,
   operatorValues,
   operatorFormErrors,
+  fixedFileFormats,
 }: PipelineOperatorTabsProps) => {
   const getOperatorId = useCallback((node: RAGFlowNodeType) => {
     return (
@@ -105,6 +109,7 @@ const PipelineOperatorTabs = ({
               node={node}
               onValuesChange={handleValuesChange(node)}
               externalErrors={operatorFormErrors?.[getOperatorId(node)]}
+              fixedFileFormats={fixedFileFormats}
             />
           </TabsContent>
         );

@@ -738,3 +738,200 @@ func TestAliyunEmbedNativeSendsTextTypeAndBatches(t *testing.T) {
 		t.Errorf("query text_type = %v, want query", bodies[len(bodies)-1]["parameters"])
 	}
 }
+
+// TestAliyunEmbedNativePlacesVectorsByTextIndex pins that an out-of-order
+// response is reordered onto the caller's inputs: nav_embedder/dataset-utils
+// read the result positionally and discard Index, so placing by text_index is
+// what keeps each vector bound to the right text.
+func TestAliyunEmbedNativePlacesVectorsByTextIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Deliberately reversed: text_index 3,2,1,0 with distinct vectors.
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":3,"embedding":[3]},` +
+			`{"text_index":2,"embedding":[2]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":0,"embedding":[0]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("len = %d, want 4", len(got))
+	}
+	for i, e := range got {
+		if e.Index != i || len(e.Embedding) != 1 || e.Embedding[0] != float64(i) {
+			t.Errorf("got[%d] = {index:%d vec:%v}, want {index:%d vec:[%d]}", i, e.Index, e.Embedding, i, i)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeDuplicateIndexLastWins pins Python QWenEmbed.encode's
+// "embds[e['text_index']] = e['embedding']": a repeated text_index overwrites
+// the earlier vector and the slot left unfilled stays empty — no error.
+func TestAliyunEmbedNativeDuplicateIndexLastWins(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":1,"embedding":[9]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3 (one chunk entry per returned embedding)", len(got))
+	}
+	if len(got[0].Embedding) != 1 || got[0].Embedding[0] != 0 {
+		t.Errorf("got[0] = %v, want [0]", got[0].Embedding)
+	}
+	if len(got[1].Embedding) != 1 || got[1].Embedding[0] != 9 {
+		t.Errorf("got[1] = %v, want the LAST duplicate [9]", got[1].Embedding)
+	}
+	if len(got[2].Embedding) != 0 {
+		t.Errorf("got[2] = %v, want the unfilled slot to stay empty", got[2].Embedding)
+	}
+}
+
+// TestAliyunEmbedNativeShortResponseStaysShort pins that Go mirrors Python's
+// len(resp.embeddings)-sized chunks: a response covering only part of the batch
+// is NOT rejected, it just yields a shorter result (Python's res.extend).
+func TestAliyunEmbedNativeShortResponseStaysShort(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (response count, Python res.extend)", len(got))
+	}
+	if got[0].Embedding[0] != 0 || got[1].Embedding[0] != 1 {
+		t.Errorf("got = %v, want [[0],[1]]", got)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsOutOfRangeIndex pins Python's IndexError: a
+// text_index past the returned chunk is an error.
+func TestAliyunEmbedNativeRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsMissingTextIndexKey pins Python's KeyError on
+// e["text_index"]: an item without the key is an error, not a silent index 0.
+func TestAliyunEmbedNativeRejectsMissingTextIndexKey(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "text_index") {
+		t.Fatalf("err = %v, want missing-text_index error", err)
+	}
+}
+
+// TestAliyunEmbedNativeNegativeIndexCountsFromEnd pins Python list-assignment
+// semantics: a negative text_index indexes from the END of the chunk, so
+// embds[-1] overwrites the last slot.
+func TestAliyunEmbedNativeNegativeIndexCountsFromEnd(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-1,"embedding":[7]},` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	// embds[-1] = [7] lands in the last slot: [[0],[1],[7]].
+	want := []float64{0, 1, 7}
+	for i, w := range want {
+		if len(got[i].Embedding) != 1 || got[i].Embedding[0] != w {
+			t.Errorf("got[%d] = %v, want [%v]", i, got[i].Embedding, w)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeRejectsTooNegativeIndex pins that an index below
+// -len(chunk) raises, exactly like Python's IndexError.
+func TestAliyunEmbedNativeRejectsTooNegativeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}

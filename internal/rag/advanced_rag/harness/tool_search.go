@@ -45,7 +45,10 @@ const (
 	DefaultTopN                  = 12
 	DefaultRerankCandidatesCount = 64
 	DefaultTopK                  = 1024
-	// maxEffectiveQueryChars caps the expanded query (Python: [:400]).
+	// maxEffectiveQueryChars caps the expanded query in CODE POINTS: Python
+	// slices a str with `[:400]` (search.py:129/216/254), which counts code
+	// points. A byte cap would cut a multi-byte rune in half and, for CJK, would
+	// apply a ~133-character cap instead of 400.
 	maxEffectiveQueryChars = 400
 	// maxQueryTerms caps the terms derived from a query (Python
 	// _query_to_terms: [:16]).
@@ -167,14 +170,20 @@ type DocTenantResolver interface {
 // 0.0 keyword-only (BM25). This is how Python's three search entry points
 // (hybrid_search / vector_search / bm25_search) differ.
 type RetrieveRequest struct {
-	Query                    string
-	DatasetIDs               []string
-	DocScope                 []string
-	TopN                     int
-	TopK                     int
-	RerankCandidatesCount    int
-	SimilarityThreshold      float64
-	KeywordsSimilarityWeight float64
+	Query                 string
+	DatasetIDs            []string
+	DocScope              []string
+	TopN                  int
+	TopK                  int
+	RerankCandidatesCount int
+	// SimilarityThreshold and KeywordsSimilarityWeight are pointers because ZERO
+	// is a valid explicit setting (threshold 0 = no floor; weight 0 = the vector
+	// leg gets the whole weight). nil means "not supplied", so the retriever
+	// keeps its own default instead of being handed a zero override.
+	SimilarityThreshold *float64
+	// KeywordsSimilarityWeight is named for keywords but carries the VECTOR
+	// weight, as in Python's vector_similarity_weight.
+	KeywordsSimilarityWeight *float64
 	TenantID                 string
 	// MetaDataFilter restricts retrieval to chunks whose metadata matches
 	// (Python tools.meta_data_filter). Nil means no filtering.
@@ -637,10 +646,12 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// `f"{query} {keywords}".strip()` / `query` forms, which carry no [:400].
 	var effectiveQuery string
 	if strings.TrimSpace(p.RetrievalQuery) != "" {
-		effectiveQuery = strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery))
-		if len(effectiveQuery) > maxEffectiveQueryChars {
-			effectiveQuery = effectiveQuery[:maxEffectiveQueryChars]
-		}
+		// Python's cap slices code points (`f"{query} {retrieval_query}".strip()[:400]`,
+		// search.py:129/216/254): a byte slice would both cut a multi-byte rune in
+		// half — handing the retriever invalid UTF-8 — and, for CJK, stop at
+		// ~133 characters, silently dropping two thirds of the expansion terms
+		// the fan-out leg weighs on.
+		effectiveQuery = truncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
 	} else if strings.TrimSpace(p.Keywords) != "" {
 		effectiveQuery = strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.Keywords))
 	} else {
@@ -696,14 +707,14 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		TopN:                  topN,
 		TopK:                  intOrDef(deps.TopK, DefaultTopK),
 		RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
-		SimilarityThreshold:   opts.threshold,
+		SimilarityThreshold:   &opts.threshold,
 		// The field is named for keywords but carries the VECTOR weight, as in
 		// Python's vector_similarity_weight. Whether the vector leg runs at all
 		// — and its default — is decided by the calling entry-point function
 		// (see searchOpts.weight), NOT by a shared channel flag. ExcludeCompiled
 		// mirrors Python hybrid_search's must_not={"exists":"compile_kwd"}
 		// (search.py:hybrid_search), which keeps compiled products out of plain retrieval.
-		KeywordsSimilarityWeight: opts.weight,
+		KeywordsSimilarityWeight: &opts.weight,
 		TenantID:                 deps.TenantID,
 		MetaDataFilter:           deps.MetaDataFilter,
 		RankFeature:              rankFeature,
@@ -1000,33 +1011,45 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 	var evidenceIDs []string
 	newChunks := 0
 	seen := make(map[string]bool, len(results))
-	for i, r := range results {
-		if r == "" || seen[r] {
-			continue
+	// The whole batch is ONE critical section (Kbinfos.Admit): Python's admit loop
+	// has no await (the retrieval itself is awaited above it), so two sessions can
+	// never interleave here.
+	deps.KB.Admit(func(p *PoolAdmitter) {
+		for i, r := range results {
+			if r == "" || seen[r] {
+				continue
+			}
+			// Python _admit_evidence early-stops at the pool cap, BEFORE it records
+			// the chunk as seen, so a rejected passage is retried once room frees.
+			if p.Full() {
+				continue
+			}
+			seen[r] = true
+			chunkID := fmt.Sprintf("web_%d", i)
+			c := map[string]any{
+				"chunk_id": chunkID,
+				"content":  r,
+				"doc_id":   "web",
+			}
+			// p.Add, not Merge: Merge takes this same pool lock and would deadlock
+			// inside the critical section. It also answers "new to the pool" per
+			// chunk, so the count no longer has to be inferred from a length delta
+			// that other sessions' appends inflate.
+			if p.Add(c) {
+				newChunks++
+			}
+			// Evidence references the chunk id (Python ids.append(cid)), not a pool
+			// position.
+			evidenceIDs = append(evidenceIDs, chunkID)
+			// Passage shape from _admit_evidence(include_doc_id=False): {"id","content"},
+			// non-table text cut to 1200 code points (plain slice, no ellipsis).
+			content := r
+			if !IsTableChunk(c) {
+				content = truncateRunes(content, 1200)
+			}
+			payload = append(payload, map[string]any{"id": chunkID, "content": content})
 		}
-		seen[r] = true
-		chunkID := fmt.Sprintf("web_%d", i)
-		c := map[string]any{
-			"chunk_id": chunkID,
-			"content":  r,
-			"doc_id":   "web",
-		}
-		if deps.KB != nil {
-			before := len(deps.KB.Chunks)
-			deps.KB.Merge([]map[string]any{c}, nil)
-			newChunks += len(deps.KB.Chunks) - before
-		}
-		// Evidence references the chunk id (Python ids.append(cid)), not a pool
-		// position.
-		evidenceIDs = append(evidenceIDs, chunkID)
-		// Passage shape from _admit_evidence(include_doc_id=False): {"id","content"},
-		// non-table text cut to 1200 code points (plain slice, no ellipsis).
-		content := r
-		if !IsTableChunk(c) {
-			content = truncateRunes(content, 1200)
-		}
-		payload = append(payload, map[string]any{"id": chunkID, "content": content})
-	}
+	})
 
 	if len(payload) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
@@ -1112,35 +1135,43 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	if len(admit) > listChunksMaxOut {
 		admit = admit[:listChunksMaxOut]
 	}
-	kbSeen := make(map[string]bool, len(e.deps.KB.Chunks))
-	for _, c := range e.deps.KB.Chunks {
-		kbSeen[chunkKey(c)] = true
-	}
 	seen := map[string]bool{}
 	var payload []any
 	var evidenceIDs []string
 	newChunks := 0
-	for _, c := range admit {
-		cid := ChunkIDOf(c)
-		if cid == "" || seen[cid] {
-			continue
+	// The batch is ONE critical section (Kbinfos.Admit): Python's admit stretch
+	// has no await, so two sessions can never interleave here, and the pool-side
+	// dedup must see the LIVE pool rather than a snapshot taken upfront.
+	e.deps.KB.Admit(func(p *PoolAdmitter) {
+		for _, c := range admit {
+			cid := ChunkIDOf(c)
+			if cid == "" {
+				// Python _exec_list_chunks skips a blank cid in the caller, BEFORE
+				// _admit_evidence.
+				continue
+			}
+			// Python _admit_evidence early-stops at the pool cap, BEFORE the
+			// per-call dedup.
+			if p.Full() {
+				continue
+			}
+			if seen[cid] {
+				continue
+			}
+			seen[cid] = true
+			evidenceIDs = append(evidenceIDs, cid)
+			// Shape like _admit_evidence(include_doc_id=False): {"id","content"} with
+			// non-table text cut to 1200 code points (a plain slice, no ellipsis).
+			content := ChunkTextOf(c)
+			if !IsTableChunk(c) {
+				content = truncateRunes(content, 1200)
+			}
+			payload = append(payload, map[string]any{"id": cid, "content": content})
+			if p.Add(c) {
+				newChunks++
+			}
 		}
-		seen[cid] = true
-		evidenceIDs = append(evidenceIDs, cid)
-		// Shape like _admit_evidence(include_doc_id=False): {"id","content"} with
-		// non-table text cut to 1200 code points (a plain slice, no ellipsis).
-		content := ChunkTextOf(c)
-		if !IsTableChunk(c) {
-			content = truncateRunes(content, 1200)
-		}
-		payload = append(payload, map[string]any{"id": cid, "content": content})
-		key := chunkKey(c)
-		if !kbSeen[key] {
-			kbSeen[key] = true
-			e.deps.KB.Chunks = append(e.deps.KB.Chunks, c)
-			newChunks++
-		}
-	}
+	})
 
 	if len(payload) == 0 {
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0, "new_evidence": 0}}, nil
