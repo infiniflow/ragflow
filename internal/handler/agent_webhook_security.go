@@ -202,14 +202,22 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// The peer address is read from c.RemoteIP() (the socket RemoteAddr),
+// NOT c.ClientIP(). This is a security gate, and c.ClientIP() honours
+// the client-supplied X-Forwarded-For / X-Real-IP headers whenever the
+// direct peer is a trusted proxy. The server builds its engine with
+// gin.New() and never calls SetTrustedProxies, so gin's default trusts
+// every proxy (0.0.0.0/0, ::/0): any caller could send
+// "X-Forwarded-For: <an-allowed-ip>" and pass the whitelist. Using the
+// real socket peer also matches the python reference, which compares
+// against request.remote_addr (agent_api.py:1958) with no ProxyFix.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
 		return nil
 	}
-	clientIP := c.ClientIP()
+	clientIP := c.RemoteIP()
 	for _, raw := range whitelist {
 		rule, _ := raw.(string)
 		if rule == "" {
