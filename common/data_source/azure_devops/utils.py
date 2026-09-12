@@ -5,7 +5,7 @@ import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -101,18 +101,50 @@ def build_auth_client(personal_access_token: str) -> httpx.Client:
     return httpx.Client(auth=("", personal_access_token), timeout=REQUEST_TIMEOUT_SECONDS)
 
 
-def organization_url(organization: str) -> str:
+def organization_url(organization: str | None = None, base_url: str | None = None) -> str:
     """Resolve the API root for a hosted organization or a self-hosted server.
 
-    ``organization`` may be a bare organization name (Azure DevOps Services) or a
-    full base URL such as ``https://tfs.contoso.com/DefaultCollection`` for
-    Azure DevOps Server.
+    ``organization`` may be a bare organization name (Azure DevOps Services),
+    a collection name, or a full base URL such as
+    ``https://tfs.contoso.com/DefaultCollection`` for Azure DevOps Server.
+
+    ``base_url`` is an optional custom base URL (e.g. ``https://dev.azure.com``,
+    ``https://tfs.contoso.com/tfs``, or ``http://tfs.corp.local:8080/tfs``).
     """
-    if organization.startswith("http://"):
-        raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTPS; the personal access token is sent in the Authorization header.")
-    if organization.startswith("https://"):
-        return organization.rstrip("/")
-    return f"https://dev.azure.com/{quote(organization, safe='')}"
+    clean_base = (base_url or "").strip().rstrip("/")
+    clean_org = (organization or "").strip().rstrip("/")
+
+    if clean_base:
+        if not clean_base.startswith(("http://", "https://")):
+            raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
+        parsed_base = urlparse(clean_base)
+        if parsed_base.username or parsed_base.password:
+            raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
+        if not clean_org:
+            path_segments = [seg for seg in parsed_base.path.strip("/").split("/") if seg]
+            if not path_segments:
+                raise UnexpectedValidationError("Azure DevOps organization or collection must be provided.")
+            return clean_base
+        if clean_org.startswith(("http://", "https://")):
+            parsed_org = urlparse(clean_org)
+            if parsed_org.username or parsed_org.password:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
+            return clean_org
+        if clean_base.endswith((f"/{clean_org}", f"/{quote(clean_org, safe='')}")):
+            return clean_base
+        return f"{clean_base}/{quote(clean_org, safe='')}"
+
+    if not clean_org:
+        raise UnexpectedValidationError("Azure DevOps organization or base URL must be provided.")
+
+    if clean_org.startswith(("http://", "https://")):
+        parsed_org = urlparse(clean_org)
+        if parsed_org.username or parsed_org.password:
+            raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
+        return clean_org
+    if "://" in clean_org:
+        raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTP or HTTPS.")
+    return f"https://dev.azure.com/{quote(clean_org, safe='')}"
 
 
 def raise_for_auth(response: httpx.Response, expect_json: bool = True) -> None:

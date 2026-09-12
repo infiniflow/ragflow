@@ -4,7 +4,8 @@ import copy
 import logging
 from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from typing_extensions import override
 
@@ -100,10 +101,12 @@ class AzureDevOpsConnector(
 
     Works against both Azure DevOps Services and self-hosted Azure DevOps Server:
     pass a bare organization name for the former, or the full collection URL for
-    the latter.
+    the latter, or provide a custom base URL.
 
     Args:
         organization: Organization name, or base URL of a self-hosted collection.
+        base_url: Optional custom base URL (e.g. https://dev.azure.com or
+            http://tfs.corp.local:8080/tfs).
         index_mode: Scope selector — ``organization``, ``projects`` or ``repositories``.
         projects: Comma-separated team projects, used when ``index_mode`` is ``projects``.
         repositories: Comma-separated repositories, used when ``index_mode`` is
@@ -114,14 +117,20 @@ class AzureDevOpsConnector(
 
     def __init__(
         self,
-        organization: str,
+        organization: str | None = None,
+        base_url: str | None = None,
         index_mode: str = INDEX_MODE_ORGANIZATION,
         projects: str | None = None,
         repositories: str | None = None,
         content_types: str = CONTENT_BOTH,
         batch_size: int = INDEX_BATCH_SIZE,
     ) -> None:
-        self.organization = organization
+        self.base_url = (base_url or "").strip() or None
+        self.organization = (organization or "").strip()
+        if not self.organization and self.base_url:
+            path_segments = [seg for seg in self.base_url.split("://", 1)[-1].split("/")[1:] if seg]
+            if path_segments:
+                self.organization = path_segments[-1]
         self.index_mode = index_mode or INDEX_MODE_ORGANIZATION
         self._projects = self._split(projects)
         self._repositories = self._split(repositories)
@@ -139,6 +148,7 @@ class AzureDevOpsConnector(
         credentials = config.get("credentials") or {}
         connector = cls(
             organization=config.get("organization"),
+            base_url=config.get("base_url"),
             index_mode=config.get("index_mode") or INDEX_MODE_ORGANIZATION,
             projects=config.get("projects"),
             repositories=config.get("repositories"),
@@ -156,7 +166,7 @@ class AzureDevOpsConnector(
 
     @property
     def _org_url(self) -> str:
-        return organization_url(self.organization)
+        return organization_url(self.organization, self.base_url)
 
     def _client(self) -> "httpx.Client":
         if not self.personal_access_token:
@@ -573,6 +583,20 @@ class AzureDevOpsConnector(
         An unknown selector would otherwise pass silently and the sync would
         complete without producing a single document.
         """
+        if not self.organization:
+            raise UnexpectedValidationError("Azure DevOps organization or collection must be provided.")
+        if self.base_url:
+            if not self.base_url.startswith(("http://", "https://")):
+                raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
+            parsed_base = urlparse(self.base_url)
+            if parsed_base.username or parsed_base.password:
+                raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
+        if self.organization and "://" in self.organization:
+            if not self.organization.startswith(("http://", "https://")):
+                raise UnexpectedValidationError("Azure DevOps organization URL must use HTTP or HTTPS.")
+            parsed_org = urlparse(self.organization)
+            if parsed_org.username or parsed_org.password:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
         if self.index_mode not in (INDEX_MODE_ORGANIZATION, INDEX_MODE_PROJECTS, INDEX_MODE_REPOSITORIES):
             raise UnexpectedValidationError(f"Unsupported index mode: {self.index_mode}")
         if self.content_types not in (CONTENT_CODE, CONTENT_PULL_REQUESTS, CONTENT_BOTH):
@@ -603,7 +627,8 @@ class AzureDevOpsConnector(
                 )
                 raise_for_auth(response)
                 if response.status_code == 404:
-                    raise UnexpectedValidationError(f"Azure DevOps organization not found: {self.organization}")
+                    target = self.organization or self.base_url or "organization"
+                    raise UnexpectedValidationError(f"Azure DevOps organization not found: {target}")
                 if response.status_code < 200 or response.status_code >= 300:
                     raise UnexpectedValidationError(f"Unexpected Azure DevOps error (status={response.status_code}).")
 

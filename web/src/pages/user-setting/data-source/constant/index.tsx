@@ -2415,6 +2415,7 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.AZURE_DEVOPS,
     config: {
+      base_url: '',
       organization: '',
       index_mode: 'organization',
       projects: '',

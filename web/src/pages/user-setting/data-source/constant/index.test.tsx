@@ -119,3 +119,75 @@ describe('Sitemap data source', () => {
     expect(batchSize?.validation?.min).toBe(1);
   });
 });
+
+describe('Azure DevOps data source', () => {
+  it('registers its catalog entry and defaults', () => {
+    const info = generateDataSourceInfo(translate)[DataSourceKey.AZURE_DEVOPS];
+    const defaults = DataSourceFormDefaultValues[DataSourceKey.AZURE_DEVOPS];
+
+    expect(info.name).toBe('Azure DevOps');
+    expect(info.description).toBe('setting.azureDevOpsDescription');
+    expect(defaults).toMatchObject({
+      name: '',
+      source: DataSourceKey.AZURE_DEVOPS,
+      config: {
+        base_url: '',
+        organization: '',
+        index_mode: 'organization',
+        projects: '',
+        repositories: '',
+        content_types: 'both',
+        credentials: { azure_devops_pat: '' },
+      },
+    });
+  });
+
+  it('validates organization requires collection path when empty', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const orgField = fields.find((f) => f.name === 'config.organization');
+    expect(orgField).toBeDefined();
+    const validate = orgField!.customValidate!;
+
+    // Valid when organization is explicitly provided
+    expect(validate('contoso', { config: { base_url: '' } })).toBe(true);
+    expect(
+      validate('contoso', { config: { base_url: 'https://dev.azure.com' } }),
+    ).toBe(true);
+
+    // Valid when base_url includes collection path
+    expect(
+      validate('', {
+        config: {
+          base_url: 'http://tfs.corp.local:8080/tfs/DefaultCollection',
+        },
+      }),
+    ).toBe(true);
+    expect(
+      validate('', {
+        config: { base_url: 'https://dev.azure.com/myorg' },
+      }),
+    ).toBe(true);
+
+    // Invalid when both are empty
+    expect(validate('', { config: { base_url: '' } })).toBe(
+      'setting.dataSourceValidationFieldRequired',
+    );
+
+    // Invalid when base_url is root-only
+    expect(
+      validate('', { config: { base_url: 'https://dev.azure.com' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      validate('', { config: { base_url: 'https://dev.azure.com/' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      validate('', { config: { base_url: 'http://tfs.corp.local:8080' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+  });
+});

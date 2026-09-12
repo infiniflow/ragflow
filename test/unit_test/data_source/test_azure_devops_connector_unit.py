@@ -265,6 +265,31 @@ def test_organization_url_accepts_self_hosted_collection():
 
 
 @pytest.mark.p2
+def test_organization_url_accepts_http_in_closed_network():
+    """On-premises Azure DevOps Server inside a closed network often runs over HTTP."""
+    assert azure_utils.organization_url("http://tfs.contoso.local:8080/DefaultCollection/") == "http://tfs.contoso.local:8080/DefaultCollection"
+
+
+@pytest.mark.p2
+def test_organization_url_supports_custom_base_url():
+    """Custom base URL combined with organization name."""
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="https://tfs.contoso.com/tfs") == "https://tfs.contoso.com/tfs/DefaultCollection"
+
+
+@pytest.mark.p2
+def test_organization_url_custom_base_url_already_includes_organization():
+    """When base_url already contains the collection, it must not be appended twice."""
+    assert azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs/DefaultCollection") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+
+
+@pytest.mark.p2
+def test_organization_url_custom_base_url_empty_organization():
+    """Custom base URL without organization returns the base URL."""
+    assert azure_utils.organization_url(base_url="http://tfs.corp.local:8080/tfs/DefaultCollection") == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+
+
+@pytest.mark.p2
 def test_invalid_token_returns_203_sign_in_page_not_401():
     """Azure DevOps answers a bad PAT with 203 and an HTML sign-in page.
 
@@ -385,11 +410,69 @@ def test_default_branch_strips_ref_prefix():
 
 
 @pytest.mark.p2
-def test_cleartext_collection_url_is_rejected():
-    """The PAT travels in the Authorization header, so HTTP is refused."""
+def test_invalid_scheme_url_is_rejected():
+    """Non-HTTP/HTTPS URLs are refused."""
     with pytest.raises(UnexpectedValidationError) as excinfo:
-        azure_utils.organization_url("http://tfs.contoso.com/DefaultCollection")
-    assert "HTTPS" in str(excinfo.value)
+        azure_utils.organization_url("ftp://tfs.contoso.com/DefaultCollection")
+    assert "HTTP" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(base_url="ftp://tfs.contoso.com/tfs")
+    assert "HTTP" in str(excinfo.value)
+
+
+@pytest.mark.p2
+def test_connector_supports_custom_base_url():
+    connector = AzureDevOpsConnector(
+        organization="DefaultCollection",
+        base_url="http://tfs.corp.local:8080/tfs",
+    )
+    assert connector._org_url == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert connector.base_url == "http://tfs.corp.local:8080/tfs"
+
+
+@pytest.mark.p2
+def test_connector_build_connector_with_base_url():
+    connector = AzureDevOpsConnector.build_connector(
+        {
+            "organization": "DefaultCollection",
+            "base_url": "http://tfs.corp.local:8080/tfs",
+            "credentials": {"azure_devops_pat": "token"},
+        }
+    )
+    assert connector._org_url == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert connector.personal_access_token == "token"
+
+
+@pytest.mark.p2
+def test_connector_custom_base_url_extracts_organization():
+    connector = AzureDevOpsConnector(
+        base_url="http://tfs.corp.local:8080/tfs/DefaultCollection",
+    )
+    assert connector.organization == "DefaultCollection"
+    assert connector._org_url == "http://tfs.corp.local:8080/tfs/DefaultCollection"
+
+
+@pytest.mark.p2
+def test_organization_url_rejects_root_only_base_url_without_organization():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(base_url="https://dev.azure.com")
+    assert "organization or collection" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("", base_url="http://tfs.corp.local:8080")
+    assert "organization or collection" in str(excinfo.value)
+
+
+@pytest.mark.p2
+def test_organization_url_rejects_credentials_in_urls():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(organization="DefaultCollection", base_url="http://user:pass@tfs.corp.local:8080/tfs")
+    assert "credentials" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection")
+    assert "credentials" in str(excinfo.value)
 
 
 @pytest.mark.p2
@@ -406,11 +489,18 @@ def test_html_body_is_not_an_auth_failure_for_raw_content():
         {"index_mode": "everything"},
         {"content_types": "everything"},
         {"index_mode": INDEX_MODE_REPOSITORIES},
+        {"organization": "", "base_url": ""},
+        {"organization": "", "base_url": "ftp://invalid"},
+        {"organization": "ftp://invalid", "base_url": ""},
+        {"organization": "", "base_url": "https://dev.azure.com"},
+        {"organization": "", "base_url": "http://tfs.corp.local:8080"},
+        {"organization": "DefaultCollection", "base_url": "http://user:pass@tfs.corp.local:8080/tfs"},
+        {"organization": "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection", "base_url": ""},
     ],
 )
 def test_unusable_settings_are_rejected_before_any_request(overrides):
     connector = _build_connector(**overrides)
-    with pytest.raises(UnexpectedValidationError, match="(?i)unsupported|required"):
+    with pytest.raises(UnexpectedValidationError):
         connector._validate_settings()
 
 

@@ -1280,8 +1280,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
+      azureDevOpsBaseUrlTip:
+        'Azure DevOps 实例的基础 URL（例如 https://dev.azure.com，或私有网络/本地部署的 Azure DevOps Server 例如 http://tfs.corp.local:8080/tfs）。留空默认使用 https://dev.azure.com。',
       azureDevOpsOrganizationTip:
-        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+        '组织名称（例如 contoso），或项目集合名称（例如 DefaultCollection），或自托管 Azure DevOps Server 的集合地址。',
       azureDevOpsProjectsTip:
         '以逗号分隔的团队项目名称。例如：Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1435,6 +1437,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldIsCloud: '是否为云版本',
       dataSourceFieldIndexMode: '索引模式',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps 个人访问令牌',
+      dataSourceFieldAzureDevOpsBaseUrl: '基础 URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps 组织',
       dataSourceFieldAzureDevOpsRepositories: '仓库',
       dataSourceFieldAzureDevOpsContentTypes: '内容类型',
