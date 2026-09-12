@@ -190,8 +190,6 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 }
 
 func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
-	fromTag = strings.TrimSpace(fromTag)
-	toTag = strings.TrimSpace(toTag)
 	datasetID, err := normalizeDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, err
@@ -206,7 +204,10 @@ func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromT
 		return nil, common.CodeServerError, errors.New("document engine is not initialized")
 	}
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil || kb == nil {
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, fmt.Errorf("failed to load dataset: %w", err)
+	}
+	if kb == nil || err != nil {
 		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
@@ -216,7 +217,7 @@ func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromT
 	}
 	newValue := map[string]interface{}{
 		"remove": map[string]interface{}{
-			"tag_kwd": fromTag,
+			"tag_kwd": strings.TrimSpace(fromTag),
 		},
 		"add": map[string]interface{}{
 			"tag_kwd": toTag,
