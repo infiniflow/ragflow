@@ -44,7 +44,7 @@ type mockFileCommitSvc struct {
 	getCommitTreeFn         func(ctx context.Context, commitID string) (map[string]interface{}, error)
 	getCommitFileContentFn  func(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
 	getFileVersionHistoryFn func(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
-	listPageCommitsFn       func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error)
+	listPageCommitsFn       func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error)
 }
 
 func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
@@ -132,11 +132,11 @@ func (m *mockFileCommitSvc) GetFileVersionHistory(ctx context.Context, fileID st
 	}, nil
 }
 
-func (m *mockFileCommitSvc) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+func (m *mockFileCommitSvc) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error) {
 	if m.listPageCommitsFn != nil {
 		return m.listPageCommitsFn(ctx, datasetID, pageType, slug, page, pageSize)
 	}
-	return []*entity.FileCommit{}, 0, nil
+	return []*entity.WikiPageCommit{}, 0, nil
 }
 
 func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
@@ -158,9 +158,19 @@ func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommit
 	dao.DB = db
 	// Seed the workspace folder and file the tests reference, owned by the
 	// calling user so the tenant authorization passes for them and fails for
-	// anyone else.
-	db.Create(&entity.File{ID: "folder-1", TenantID: userID, Name: "workspace", Type: "folder"})
-	db.Create(&entity.File{ID: "f1", TenantID: userID, Name: "test.txt", Type: "file"})
+	// anyone else. Panic on seed failures so a broken fixture reports its
+	// real cause instead of surfacing as a spurious CodeNotFound.
+	seed := func(f *entity.File) {
+		if err := db.Create(f).Error; err != nil {
+			panic(err)
+		}
+	}
+	seed(&entity.File{ID: "folder-1", TenantID: userID, Name: "workspace", Type: "folder"})
+	seed(&entity.File{ID: "f1", TenantID: userID, Name: "test.txt", Type: "file"})
+	// The mirrored /datasets/{dataset_id}/commits test route maps dataset_id
+	// straight onto folder_id, so seed kb-1 as a folder the user owns to pass
+	// the folder authorization main added.
+	seed(&entity.File{ID: "kb-1", TenantID: userID, Name: "kb-1", Type: "folder"})
 
 	gin.SetMode(gin.TestMode)
 	r := fileCommitRouter(h, userID)
@@ -181,6 +191,12 @@ func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
 	r.GET("/api/v1/files/:id/versions", h.GetFileVersionHistory)
+	// Mirrors the CommitFolderResolver middleware used on the production
+	// /datasets/{dataset_id}/commits route: dataset_id resolves to folder_id.
+	r.GET("/api/v1/datasets/:dataset_id/commits", func(c *gin.Context) {
+		c.Params = append(c.Params, gin.Param{Key: "folder_id", Value: c.Param("dataset_id")})
+		c.Next()
+	}, h.ListCommits)
 	return r
 }
 
@@ -306,6 +322,134 @@ func TestFileCommit_ListCommits_Success(t *testing.T) {
 	data, _ := resp["data"].(map[string]interface{})
 	if total, _ := data["total"].(float64); total != 2 {
 		t.Errorf("expected total 2, got %v", total)
+	}
+}
+
+func TestFileCommit_ListCommits_PageSlugFilter(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	var gotPageType, gotSlug string
+	mock.listPageCommitsFn = func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error) {
+		if datasetID != "kb-1" {
+			t.Errorf("expected dataset kb-1, got %s", datasetID)
+		}
+		gotPageType, gotSlug = pageType, slug
+		return []*entity.WikiPageCommit{
+			{ID: "c2", Title: "second edit", UserID: "user-1", UserNickname: "Tester"},
+			{ID: "c1", Title: "first edit", UserID: "user-1", UserNickname: "Tester"},
+		}, 2, nil
+	}
+
+	// The frontend sends the full "<page_type>/<slug>" form, exactly like the
+	// Python API contract (?slug=<page_type>/<name>).
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/datasets/kb-1/commits?slug=topic%2Ffireworks+display", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPageType != "topic" {
+		t.Errorf("expected page type topic, got %q", gotPageType)
+	}
+	if gotSlug != "fireworks display" {
+		t.Errorf("expected bare slug \"fireworks display\", got %q", gotSlug)
+	}
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Total   int `json:"total"`
+			Commits []struct {
+				ID           string `json:"id"`
+				Title        string `json:"title"`
+				UserID       string `json:"user_id"`
+				UserNickname string `json:"user_nickname"`
+			} `json:"commits"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Data.Total != 2 || len(resp.Data.Commits) != 2 {
+		t.Fatalf("expected 2 commits, got total=%d len=%d", resp.Data.Total, len(resp.Data.Commits))
+	}
+	if resp.Data.Commits[0].Title != "second edit" || resp.Data.Commits[0].UserNickname != "Tester" {
+		t.Errorf("unexpected first commit: %+v", resp.Data.Commits[0])
+	}
+}
+
+func TestFileCommit_ListCommits_PageSlugWithExplicitPageType(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	var gotPageType, gotSlug string
+	mock.listPageCommitsFn = func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error) {
+		gotPageType, gotSlug = pageType, slug
+		return []*entity.WikiPageCommit{}, 0, nil
+	}
+
+	// Explicit page_type plus a bare slug must also work.
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/datasets/kb-1/commits?page_type=topic&slug=fireworks+display", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPageType != "topic" || gotSlug != "fireworks display" {
+		t.Errorf("expected topic / fireworks display, got %q / %q", gotPageType, gotSlug)
+	}
+}
+
+func TestFileCommit_ListCommits_PageSlugNestedTopicPath(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	var gotPageType, gotSlug string
+	mock.listPageCommitsFn = func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error) {
+		gotPageType, gotSlug = pageType, slug
+		return []*entity.WikiPageCommit{}, 0, nil
+	}
+
+	// Nested page paths (PUT /artifacts/topic/People/Writers) arrive as
+	// ?slug=topic/People/Writers: only the first segment is the page type and
+	// the remainder stays part of the slug, mirroring UpdateArtifact's split
+	// when it derives the page file key on the write side.
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/datasets/kb-1/commits?slug=topic%2FPeople%2FWriters", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPageType != "topic" || gotSlug != "People/Writers" {
+		t.Errorf("expected topic / People/Writers, got %q / %q", gotPageType, gotSlug)
+	}
+
+	// With an explicit page_type the matching prefix is trimmed once and the
+	// nested remainder is preserved verbatim.
+	gotPageType, gotSlug = "", ""
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/v1/datasets/kb-1/commits?page_type=topic&slug=topic%2FPeople%2FWriters", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotPageType != "topic" || gotSlug != "People/Writers" {
+		t.Errorf("expected topic / People/Writers, got %q / %q", gotPageType, gotSlug)
+	}
+}
+
+func TestFileCommit_ListCommits_PageSlugWithoutDatasetScope(t *testing.T) {
+	r, _ := setupFileCommitTest("user-1")
+
+	// ?slug= scopes the history to a dataset's page key; on a folder route
+	// there is no dataset scope to resolve it against.
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits?slug=topic%2Fname", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if code := decodeCode(t, w); code != float64(common.CodeArgumentError) {
+		t.Errorf("expected code %d, got %v", common.CodeArgumentError, code)
 	}
 }
 

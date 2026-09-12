@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -276,5 +277,242 @@ func TestUnifiedDiff_TruncatesLongDiff(t *testing.T) {
 	d := unifiedDiff(strings.Join(oldLines, "\n"), strings.Join(newLines, "\n"))
 	if !strings.Contains(d, "... ") || !strings.Contains(d, "lines omitted") {
 		t.Fatalf("expected long diff to be truncated, got %q", d)
+	}
+}
+
+func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	if err := db.Create(&entity.User{
+		ID:              "u1",
+		Nickname:        "Tester",
+		Email:           "u1@example.com",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	svc := NewFileCommitService()
+	ctx := context.Background()
+
+	base := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/fireworks display",
+		Slug:       "fireworks display",
+		PageType:   "topic",
+		AuthorID:   "u1",
+		OldContent: "one",
+		NewContent: "two",
+	}
+	first := base
+	first.Title = "first edit"
+	first.Comments = "first note"
+	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	if err != nil {
+		t.Fatalf("first RecordPageEdit: %v", err)
+	}
+	second := base
+	second.Title = "second edit"
+	second.Comments = "second note"
+	second.OldContent = "two"
+	second.NewContent = "three"
+	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	if err != nil {
+		t.Fatalf("second RecordPageEdit: %v", err)
+	}
+
+	// Pin both commit items to one timestamp so the newest-first assertions
+	// below can only hold through the seq DESC tie-break, mirroring
+	// same-millisecond edits in production.
+	var firstItem entity.FileCommitItem
+	if err := db.Where("commit_id = ?", firstCommit.ID).First(&firstItem).Error; err != nil {
+		t.Fatalf("load first commit item: %v", err)
+	}
+	if firstItem.CreateTime == nil {
+		t.Fatal("expected commit item create_time to be set")
+	}
+	if err := db.Model(&entity.FileCommitItem{}).
+		Where("commit_id IN ?", []string{firstCommit.ID, secondCommit.ID}).
+		UpdateColumn("create_time", *firstItem.CreateTime).Error; err != nil {
+		t.Fatalf("pin equal create_time: %v", err)
+	}
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "fireworks display", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("expected 2 commits, got total=%d len=%d", total, len(rows))
+	}
+	if rows[0].ID != secondCommit.ID {
+		t.Errorf("expected newest commit %s first, got %s", secondCommit.ID, rows[0].ID)
+	}
+	if rows[1].ID != firstCommit.ID {
+		t.Errorf("expected oldest commit %s second, got %s", firstCommit.ID, rows[1].ID)
+	}
+	if rows[0].Title != "second edit" || rows[1].Title != "first edit" {
+		t.Errorf("unexpected titles: %q / %q", rows[0].Title, rows[1].Title)
+	}
+	if rows[0].Comments != "second note" {
+		t.Errorf("expected commit comments \"second note\", got %q", rows[0].Comments)
+	}
+	if rows[0].UserID != "u1" || rows[0].UserNickname != "Tester" {
+		t.Errorf("expected user u1/Tester, got %q/%q", rows[0].UserID, rows[0].UserNickname)
+	}
+	if rows[0].CreateTime == nil {
+		t.Error("expected create_time to be set")
+	}
+}
+
+func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	if err := db.Create(&entity.User{
+		ID:              "u1",
+		Nickname:        "Tester",
+		Email:           "u1@example.com",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	svc := NewFileCommitService()
+	ctx := context.Background()
+
+	// UpdateArtifact routes PUT /artifacts/topic/People/Writers with
+	// pageType="topic" and the full nested tail as the slug.
+	nested := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/People/Writers",
+		Slug:       "People/Writers",
+		PageType:   "topic",
+		AuthorID:   "u1",
+		OldContent: "one",
+		NewContent: "two",
+	}
+	first := nested
+	first.Title = "nested first"
+	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	if err != nil {
+		t.Fatalf("first RecordPageEdit: %v", err)
+	}
+	second := nested
+	second.Title = "nested second"
+	second.OldContent = "two"
+	second.NewContent = "three"
+	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	if err != nil {
+		t.Fatalf("second RecordPageEdit: %v", err)
+	}
+	if secondCommit.ParentID == nil || *secondCommit.ParentID != firstCommit.ID {
+		t.Fatalf("expected nested page edits to chain via the same file key, got parent %v", secondCommit.ParentID)
+	}
+
+	// The write side must scope the page file key exactly as the read side
+	// recomputes it after the handler's first-segment split.
+	var items []entity.FileCommitItem
+	if err := dao.DB.Where("commit_id = ?", secondCommit.ID).Find(&items).Error; err != nil {
+		t.Fatalf("load nested items: %v", err)
+	}
+	if len(items) != 1 || items[0].FileID != "kb1/topic/People/Writers" {
+		t.Fatalf("expected file_id kb1/topic/People/Writers, got %+v", items)
+	}
+
+	// A page that only shares the first nested segment has its own history.
+	sibling := nested
+	sibling.DocID = "topic/People/Editors"
+	sibling.Slug = "People/Editors"
+	sibling.Title = "sibling page"
+	siblingCommit, err := svc.RecordPageEdit(ctx, sibling)
+	if err != nil {
+		t.Fatalf("sibling RecordPageEdit: %v", err)
+	}
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "People/Writers", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("expected 2 commits, got total=%d len=%d", total, len(rows))
+	}
+	if rows[0].ID != secondCommit.ID || rows[1].ID != firstCommit.ID {
+		t.Errorf("expected newest-first %s, %s; got %s, %s", secondCommit.ID, firstCommit.ID, rows[0].ID, rows[1].ID)
+	}
+	for _, row := range rows {
+		if row.ID == siblingCommit.ID {
+			t.Errorf("sibling page history leaked into nested slug listing: %s", row.ID)
+		}
+	}
+}
+
+func TestListPageCommits_ResolvesNicknamesInSingleBatchedLookup(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	for _, u := range []entity.User{
+		{ID: "u1", Nickname: "Tester", Email: "u1@example.com", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
+		{ID: "u2", Nickname: "Reviewer", Email: "u2@example.com", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
+	} {
+		if err := db.Create(&u).Error; err != nil {
+			t.Fatalf("seed user %s: %v", u.ID, err)
+		}
+	}
+
+	var queries []string
+	if err := db.Callback().Query().After("gorm:query").Register("count_user_lookups", func(tx *gorm.DB) {
+		queries = append(queries, tx.Statement.SQL.String())
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+
+	svc := NewFileCommitService()
+	ctx := context.Background()
+	base := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/fireworks display",
+		Slug:       "fireworks display",
+		PageType:   "topic",
+		OldContent: "one",
+	}
+	for i, author := range []string{"u1", "u2", "u3"} {
+		in := base
+		in.AuthorID = author
+		in.NewContent = strconv.Itoa(i + 2)
+		if _, err := svc.RecordPageEdit(ctx, in); err != nil {
+			t.Fatalf("RecordPageEdit by %s: %v", author, err)
+		}
+	}
+
+	queries = nil
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "fireworks display", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 3 || len(rows) != 3 {
+		t.Fatalf("expected 3 commits, got total=%d len=%d", total, len(rows))
+	}
+	// Three distinct authors must be resolved by exactly one query against
+	// the user table (u3 has no user row and degrades to an empty nickname).
+	userQueries := 0
+	for _, q := range queries {
+		if strings.Contains(q, "FROM `user`") {
+			userQueries++
+		}
+	}
+	if userQueries != 1 {
+		t.Errorf("expected exactly 1 batched user lookup for 3 distinct authors, got %d (queries: %v)", userQueries, queries)
+	}
+	wantNicknames := map[string]string{"u1": "Tester", "u2": "Reviewer", "u3": ""}
+	for _, row := range rows {
+		if row.UserNickname != wantNicknames[row.UserID] {
+			t.Errorf("author %s: expected nickname %q, got %q", row.UserID, wantNicknames[row.UserID], row.UserNickname)
+		}
 	}
 }
