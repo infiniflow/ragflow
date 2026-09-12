@@ -347,3 +347,71 @@ func TestMySQLConnectorStripOrderBy(t *testing.T) {
 		}
 	}
 }
+
+// TestMySQLConnectorFileExtension verifies file_extension parsing and its
+// ".txt" default.
+func TestMySQLConnectorFileExtension(t *testing.T) {
+	cases := []struct {
+		name   string
+		config any
+		want   string
+	}{
+		{"default", nil, ".txt"},
+		{"with dot", ".html", ".html"},
+		{"no dot", "md", "md"},
+		{"blank", "   ", ".txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			connector, err := NewMySQLConnector(map[string]any{"file_extension": tc.config})
+			if err != nil {
+				t.Fatalf("NewMySQLConnector failed: %v", err)
+			}
+			if connector.fileExtension != tc.want {
+				t.Fatalf("fileExtension = %q, want %q", connector.fileExtension, tc.want)
+			}
+		})
+	}
+}
+
+// TestMySQLConnectorOpenSyncCustomFileExtension verifies a configured file
+// extension is applied to produced documents.
+func TestMySQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
+	query := "SELECT * FROM products WHERE status = 'active'"
+	connector := newFixtureMySQLConnector(t, map[string]any{
+		"host":            "127.0.0.1",
+		"port":            "3306",
+		"database":        "mydb",
+		"query":           query,
+		"content_columns": "title,description",
+		"id_column":       "id",
+		"file_extension":  ".html",
+		"credentials": map[string]any{
+			"username": "root",
+			"password": "secret",
+		},
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "title", "description"}).
+				AddRow(7, "Hello", "World"),
+		)
+	})
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(batch.Documents))
+	}
+	if doc := batch.Documents[0]; doc.Extension != ".html" {
+		t.Fatalf("extension = %q, want %q", doc.Extension, ".html")
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
+	}
+}
