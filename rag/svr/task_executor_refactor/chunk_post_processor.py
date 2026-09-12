@@ -698,11 +698,16 @@ async def rechunk_doc_by_tree(
     tree: dict,
     template_id: str,
     embedding_model,
-) -> None:
+) -> dict[str, str]:
     """Merge each leaf cluster's source chunks into a single
     replacement chunk and rewrite the tree's leaf-cluster
     ``source_chunk_ids`` in-place. Original chunks are soft-deleted
     via ``available_int=0`` and stamped with ``superseded_by_chunk_id``.
+
+    Returns the old-to-new chunk id mapping for every original chunk that was
+    folded into a replacement, so callers can re-point data attached to the old
+    ids (tree claims key their claims by source chunk id). Chunks that were not
+    remapped are absent — callers keep those ids as they are.
     """
     from datetime import datetime
 
@@ -739,7 +744,7 @@ async def rechunk_doc_by_tree(
 
     _walk(tree)
     if not cluster_id_map:
-        return
+        return {}
 
     all_source_ids = sorted({sid for _, ids in cluster_id_map.values() for sid in ids})
 
@@ -747,7 +752,7 @@ async def rechunk_doc_by_tree(
 
     index_nm = search.index_name(ctx.tenant_id)
     if not settings.docStoreConn.index_exist(index_nm, ctx.kb_id):
-        return
+        return {}
 
     vctr_nm = "q_%d_vec" % len(embedding_model.encode(["x"])[0][0])
     select_fields = [
@@ -783,9 +788,9 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
     if not field_map:
-        return
+        return {}
 
     chunks_by_id: dict[str, dict] = {str(rid): {**row, "id": str(rid)} for rid, row in field_map.items()}
 
@@ -838,7 +843,7 @@ async def rechunk_doc_by_tree(
         merged_rows.append(base)
 
     if not merged_rows:
-        return
+        return {}
 
     contents = [r["content_with_weight"] for r in merged_rows]
     try:
@@ -849,7 +854,7 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
     for row, vec in zip(merged_rows, vectors):
         try:
             row[vctr_nm] = np.asarray(vec, dtype=np.float32).tolist()
@@ -860,8 +865,13 @@ async def rechunk_doc_by_tree(
             )
             row[vctr_nm] = None
     merged_rows = [r for r in merged_rows if r.get(vctr_nm) is not None]
+    # Drop clusters whose replacement chunk will not be stored: a tree node must
+    # not point at a filtered-out id, and the returned map must not send callers
+    # to a chunk that does not exist.
+    inserted_ids = {r["id"] for r in merged_rows}
+    cluster_new_id = {nid: cid for nid, cid in cluster_new_id.items() if cid in inserted_ids}
     if not merged_rows:
-        return
+        return {}
 
     try:
         await thread_pool_exec(
@@ -876,7 +886,7 @@ async def rechunk_doc_by_tree(
             ctx.doc_id,
             template_id,
         )
-        return
+        return {}
 
     for node_id_int, new_chunk_id in cluster_new_id.items():
         node, _ = cluster_id_map[node_id_int]
@@ -906,6 +916,35 @@ async def rechunk_doc_by_tree(
                     new_chunk_id,
                 )
 
+    # Every original chunk of a merged cluster now resolves to the replacement
+    # chunk, so callers can re-point data keyed by the old ids.
+    return {cid: new_chunk_id for node_id_int, new_chunk_id in cluster_new_id.items() for cid in cluster_id_map[node_id_int][1]}
+
+
+def _remap_claims_by_chunk(claims_by_chunk, chunk_id_remap: dict[str, str]):
+    """Re-key claims onto the chunk that replaced their source chunk.
+
+    Re-chunking folds several original chunks into one replacement and soft-
+    deletes the originals, so a claim still keyed by an old id cites text that
+    can no longer be retrieved. Claims whose id was not remapped are kept as-is:
+    their chunk is untouched and still valid.
+    """
+    if not claims_by_chunk or not chunk_id_remap:
+        return claims_by_chunk
+
+    remapped: dict[str, list] = {}
+    for chunk_id, claims in claims_by_chunk.items():
+        new_id = chunk_id_remap.get(chunk_id) or chunk_id
+        bucket = remapped.setdefault(new_id, [])
+        for claim in claims or []:
+            if isinstance(claim, dict):
+                claim["source_chunk_ids"] = [chunk_id_remap.get(sid) or sid for sid in claim.get("source_chunk_ids") or []]
+                for evidence in claim.get("evidence") or []:
+                    if isinstance(evidence, dict) and evidence.get("chunk_id"):
+                        evidence["chunk_id"] = chunk_id_remap.get(evidence["chunk_id"]) or evidence["chunk_id"]
+            bucket.append(claim)
+    return remapped
+
 
 async def run_tree_templates(
     handler,
@@ -918,8 +957,12 @@ async def run_tree_templates(
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
     ``RaptorService.build_doc_tree`` and persists a single graph row
-    via ``_struct_upsert_graph_json``."""
-    from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
+    via ``_struct_upsert_tree_graph_rows`` (per-row entity/relation rows --
+    the compact graph blob no longer exists)."""
+    from rag.advanced_rag.knowlege_compile.structure import (
+        _struct_upsert_tree_claim_rows,
+        _struct_upsert_tree_graph_rows,
+    )
     from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
     ctx = handler._task_context
@@ -960,6 +1003,10 @@ async def run_tree_templates(
             "threshold": float(raptor_cfg.get("threshold") or 0.1),
             "random_seed": int(raptor_cfg.get("random_seed") or 0),
             "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
+            # Template-declared claim/evidence extraction contract (tree.yaml's
+            # raptor.claim_prompt). None = built-in defaults. Batch sizing is a
+            # pipeline concern, so it stays out of the template.
+            "claim_prompt": raptor_cfg.get("claim_prompt") or None,
         }
         progress_cb(
             msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}",
@@ -987,13 +1034,17 @@ async def run_tree_templates(
             )
             continue
 
+        chunk_id_remap: dict[str, str] = {}
         if bool((raptor_cfg or {}).get("rechunk")):
             try:
-                await rechunk_doc_by_tree(
-                    handler=handler,
-                    tree=tree,
-                    template_id=template_id,
-                    embedding_model=embedding_model,
+                chunk_id_remap = (
+                    await rechunk_doc_by_tree(
+                        handler=handler,
+                        tree=tree,
+                        template_id=template_id,
+                        embedding_model=embedding_model,
+                    )
+                    or {}
                 )
             except Exception:
                 logging.exception(
@@ -1003,15 +1054,21 @@ async def run_tree_templates(
                 )
 
         await rewrite_duplicate_tree_names(tree, pooled_chat_mdl)
+        # Claims are keyed by chunk id on the tree dict (see
+        # RaptorService.build_doc_tree); pull them off before projecting so the
+        # graph blob stays a pure structure payload.
+        claims_by_chunk = tree.pop("claims_by_chunk", None) if isinstance(tree, dict) else None
+        if chunk_id_remap:
+            claims_by_chunk = _remap_claims_by_chunk(claims_by_chunk, chunk_id_remap)
         graph = raptor_tree_to_graph(tree)
         try:
-            await _struct_upsert_graph_json(
+            await _struct_upsert_tree_graph_rows(
                 graph,
                 ctx.tenant_id,
                 ctx.kb_id,
                 doc_id,
                 doc_name,
-                compile_kwd="tree",
+                embedding_model,
                 compilation_template_id=template_id,
             )
         except Exception:
@@ -1021,6 +1078,30 @@ async def run_tree_templates(
                 doc_id,
             )
             continue
+
+        # Claims get their own searchable rows (entity_type_kwd="claim") so they
+        # can be hit directly by global KNN instead of only via beam descent.
+        # This is best-effort: a failure here must not cost us the tree. Called
+        # even when there are no claims, so a recompile that yields none (and a
+        # rechunk that remapped every claim away) clears the rows a previous run
+        # wrote instead of leaving them to answer for a document that changed.
+        try:
+            await _struct_upsert_tree_claim_rows(
+                claims_by_chunk,
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                doc_name,
+                embedding_model,
+                compile_kwd="tree",
+                compilation_template_id=template_id,
+            )
+        except Exception:
+            logging.exception(
+                "tree-template %s: claim rows upsert failed for doc %s",
+                template_id,
+                doc_id,
+            )
 
         # Persist the per-doc nav_doc right after the graph node, so parsing a
         # file yields a nav_doc with the FULL entity descriptions as

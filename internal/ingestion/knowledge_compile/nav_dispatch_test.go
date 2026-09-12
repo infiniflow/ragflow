@@ -11,7 +11,10 @@ import (
 
 // TestNavInputFromProducts_TreeAndStructure covers B2: nav is fed by BOTH tree
 // and structure products (not tree alone). Tree uses the root product's summary;
-// structure folds the graph entity descriptions into a summary via pageIndexSummary.
+// structure folds the per-document entity ROW descriptions into a summary
+// (mirroring Python runner.py rebuild_structure_graph_json +
+// _page_index_graph_summary — the graph blob product is gone from the storage
+// model).
 func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	products := []kccommon.Product{
 		// tree: root product carries the doc summary + vector.
@@ -21,10 +24,17 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 		// tree: a non-root summary node is NOT a nav input.
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
 			Content: "section body", Meta: map[string]any{"kind": "summary", "level": 0}},
-		// structure: graph product folds entity descriptions.
+		// structure: entity rows fold their descriptions into the doc summary.
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
-			Content: `{"entities":[{"name":"Engine","description":"a propulsion device"}]}`,
-			Meta:    map[string]any{"kind": "graph", "compile_kwd": "page_index"}},
+			Content: `{"name":"Engine","type":"component","description":"a propulsion device"}`,
+			Meta:    map[string]any{"kind": "entity", "compile_kwd": "page_index"}},
+		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
+			Content: `{"name":"Turbine","type":"component","description":"converts flow into rotation"}`,
+			Meta:    map[string]any{"kind": "entity", "compile_kwd": "page_index"}},
+		// structure: a relation row is NOT a nav summary line.
+		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
+			Content: `{"from":"Engine","to":"Turbine","type":"drives"}`,
+			Meta:    map[string]any{"kind": "relation", "compile_kwd": "page_index", "from": "Engine", "to": "Turbine"}},
 	}
 
 	got := navInputFromProducts("kb1", products)
@@ -52,7 +62,13 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	if !strings.Contains(structIn.Summary, "Engine: a propulsion device") {
 		t.Errorf("structure summary = %q, want folded entity descriptions", structIn.Summary)
 	}
-	// Structure graph vector is NOT the summary vector: leave Embedd empty so
+	if !strings.Contains(structIn.Summary, "Turbine: converts flow into rotation") {
+		t.Errorf("structure summary = %q, want both entity lines", structIn.Summary)
+	}
+	if strings.Contains(structIn.Summary, "drives") {
+		t.Errorf("structure summary must not include relation rows, got %q", structIn.Summary)
+	}
+	// The entity rows' vectors are NOT the summary vector: leave Embedd empty so
 	// NavService embeds the folded summary text.
 	if len(structIn.Embedd) != 0 {
 		t.Errorf("structure embedd should be empty (NavService re-embeds), got %v", structIn.Embedd)
@@ -73,14 +89,15 @@ func TestNavInputFromProducts_WikiExcluded(t *testing.T) {
 }
 
 // TestNavInputFromProducts_EmptySummaryDropped covers the guard: a doc whose
-// tree/structure summary is empty (no root / no graph) is skipped, not fed empty.
+// tree/structure summary is empty (no root / no entity descriptions) is
+// skipped, not fed empty.
 func TestNavInputFromProducts_EmptySummaryDropped(t *testing.T) {
 	products := []kccommon.Product{
 		// tree root with empty content -> skip.
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree, Meta: map[string]any{"kind": "root"}},
-		// structure graph with no entity descriptions -> skip.
+		// structure entity with no description -> skip.
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
-			Content: `{"entities":[]}`, Meta: map[string]any{"kind": "graph"}},
+			Content: `{"name":"A","description":""}`, Meta: map[string]any{"kind": "entity"}},
 	}
 	got := navInputFromProducts("kb1", products)
 	if len(got) != 0 {
@@ -95,7 +112,7 @@ func TestNavInputFromProducts_EmptySummaryDropped(t *testing.T) {
 func TestProductsForVariants_GatesDispatch(t *testing.T) {
 	products := []kccommon.Product{
 		{DocID: "d1", Variant: kccommon.VariantTree, Meta: map[string]any{"kind": "root"}, Content: "tree summary"},
-		{DocID: "d1", Variant: kccommon.VariantStructure, Meta: map[string]any{"kind": "graph"}, Content: `{"entities":[]}`},
+		{DocID: "d1", Variant: kccommon.VariantStructure, Meta: map[string]any{"kind": "entity"}, Content: `{"name":"A","description":"d"}`},
 		{DocID: "d1", Variant: kccommon.VariantWiki, Meta: map[string]any{"kind": "page"}, Content: "wiki page"},
 	}
 	// A wiki-only event must drop the tree/structure products.
@@ -114,14 +131,19 @@ func TestProductsForVariants_GatesDispatch(t *testing.T) {
 	}
 }
 
-// TestPageIndexSummary_ConcatenatesAndSkipsEmpty verifies pageIndexSummary folds
-// entity descriptions and skips empty ones.
-func TestPageIndexSummary_ConcatenatesAndSkipsEmpty(t *testing.T) {
-	got := pageIndexSummary(`{"entities":[{"name":"A","description":"one  thing"},{"name":"B","description":""}]}`)
-	if !strings.Contains(got, "A: one thing") {
-		t.Errorf("summary = %q, want entity A", got)
+// TestStructureEntityNavLine verifies the per-row fold: whitespace-normalized
+// description, "name: desc" shape, empty description -> empty line.
+func TestStructureEntityNavLine(t *testing.T) {
+	if got := structureEntityNavLine(`{"name":"A","description":"one  thing"}`); got != "A: one thing" {
+		t.Errorf("line = %q, want %q", got, "A: one thing")
 	}
-	if strings.Contains(got, "B") {
-		t.Errorf("summary should skip empty-description entity, got %q", got)
+	if got := structureEntityNavLine(`{"name":"B","description":""}`); got != "" {
+		t.Errorf("empty description should yield empty line, got %q", got)
+	}
+	if got := structureEntityNavLine(`{"description":"no name"}`); got != "no name" {
+		t.Errorf("nameless entity line = %q, want %q", got, "no name")
+	}
+	if got := structureEntityNavLine(`not json`); got != "" {
+		t.Errorf("malformed payload should yield empty line, got %q", got)
 	}
 }

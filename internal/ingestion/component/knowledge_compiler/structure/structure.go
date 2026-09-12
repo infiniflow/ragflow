@@ -9,7 +9,11 @@ package structure
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"sync"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -45,11 +49,26 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 	return nil
 }
 
-// structureBatchTokenBudget caps one extraction batch's packed chunk tokens.
-// Python derives the budget from chat_mdl.max_length minus the prompt
-// overhead; the Go ChatInvoker seam does not expose the model window, so we
-// use the same conservative constant the wiki variant uses.
-const structureBatchTokenBudget = 4096
+// structureInputBudget mirrors _build_chunk_batches' default mode:
+// input_budget = max(int(max_length * INPUT_UTILIZATION) - prompt_overhead, 1024)
+// with INPUT_UTILIZATION = 0.5 (rag/prompts/generator.py) and prompt_overhead
+// the larger of the two stage prompts. A batch is one LLM call's whole input,
+// so a budget that ignores the model window changes how many calls a document
+// takes — and with it which entities land in which batch.
+func structureInputBudget(modelContextLen, promptOverhead int) int {
+	const (
+		utilization = 0.5
+		floor       = 1024
+	)
+	if modelContextLen <= 0 {
+		return 0
+	}
+	budget := int(float64(modelContextLen)*utilization) - promptOverhead
+	if budget < floor {
+		budget = floor
+	}
+	return budget
+}
 
 // Run executes the structure variant:
 //  1. MAP — per-batch two-stage (node → edge) extraction, parallel across
@@ -81,9 +100,39 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	nodePrompt, edgePromptTmpl := HypergraphPrompts(parserConfig, param.Language)
+	gateMode := EvidenceGateMode(parserConfig)
 
 	// ---- MAP ----
-	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
+	// Prompt overhead is counted the same way Python does: the larger of the
+	// two stage prompts, subtracted from the window-derived input budget. The
+	// tokenizer is optional (offline tests wire none) — without it the
+	// overhead is 0 and PackBatches degrades to per-chunk counting.
+	promptOverhead := 0
+	if deps.Tokenizer != nil {
+		promptOverhead = deps.Tokenizer.NumTokens(nodePrompt)
+		if t := deps.Tokenizer.NumTokens(edgePromptTmpl); t > promptOverhead {
+			promptOverhead = t
+		}
+	}
+	budget := structureInputBudget(deps.ModelContextLen, promptOverhead)
+	if budget <= 0 {
+		// Model window unknown (the wiring did not set it): keep the historic
+		// conservative constant rather than guessing a large window.
+		budget = 4096
+	}
+	batches := common.PackBatches(inputs.Chunks, budget, deps.Tokenizer)
+	// Python structure.py _STRUCT_MAX_CHUNKS_PER_BATCH: optional chunk-count cap
+	// per extraction batch (0 = window-packed only — a heading has to see its
+	// whole section to own it; the 4-per-batch rule belongs to tree's claim
+	// harvesting). Overridable for benchmarking, mirrored verbatim.
+	if v, err := strconv.Atoi(os.Getenv("STRUCT_MAX_CHUNKS_PER_BATCH")); err == nil && v > 0 {
+		batches = capBatchChunkCount(batches, v)
+	}
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: %d chunk(s) -> %d batch(es)", compileType, len(inputs.Chunks), len(batches)))
+	// Extraction and embedding are two phases (upstream): the pool workers only
+	// extract; buildRows (which calls Embed.Encode) runs serially afterwards so
+	// embedding batch jobs are never nested inside a compiler-pool worker.
 	type extractedBatch struct {
 		nodes, edges []map[string]any
 		batchIDs     []string
@@ -91,9 +140,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	extracted := make([]extractedBatch, len(batches))
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
+	// The progress callback is supplied by the caller and is not required to be
+	// goroutine-safe; pool workers report out of order, so serialise it.
+	var progressMu sync.Mutex
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"%s-template: extracting batch %d/%d", compileType, i+1, len(batches)))
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
 				return nil
@@ -102,9 +156,28 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
+			// Evidence gate (mirrors Python _struct_process_batch): validate
+			// quotes while the batch's source text is still in hand. It is
+			// pure validation — no embedding — so it stays inside the worker,
+			// and the vectors buildRows builds later are computed from the
+			// surviving payload. Relations are gated only when the template
+			// asked them to carry evidence.
+			textByID := batchTextByID(batch)
+			if len(textByID) > 0 {
+				nodes, _, _ = ValidatePayloadEvidence(nodes, textByID, gateMode)
+				if len(edges) > 0 && RelationExpectsEvidence(parserConfig) {
+					edges, _, _ = ValidatePayloadEvidence(edges, textByID, gateMode)
+				}
+			}
 			// Keep embedding out of the compiler-pool worker. buildRows calls
-			// Embed.Encode, which may submit its own batch jobs to that pool.
+			// Embed.Encode, which may submit its own batch jobs to that pool;
+			// the serial loop after runBatches owns it.
 			extracted[i] = extractedBatch{nodes: nodes, edges: edges, batchIDs: batchIDs}
+			progressMu.Lock()
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"%s-template: batch %d/%d done: %d entities, %d relations",
+				compileType, i+1, len(batches), len(nodes), len(edges)))
+			progressMu.Unlock()
 			return nil
 		})
 	}
@@ -117,6 +190,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
+	rowCount := 0
 	for i, result := range extracted {
 		if len(result.batchIDs) == 0 {
 			continue
@@ -126,7 +200,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			return common.Outputs{}, err
 		}
 		perBatch[i] = rows
+		rowCount += len(rows)
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: deduplicating %d row(s)", compileType, rowCount))
 
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
@@ -145,6 +224,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 	stats := deduper.Stats()
 	prods := deduper.Rows()
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: dedup done: %d row(s), %d duplicate(s) dropped",
+		compileType, len(prods), stats.DuplicatesDropped))
 
 	// ---- KIND POST-PROCESSING ----
 	// Chain kinds (list/timeline): relations must form a strict linear chain;
@@ -171,16 +253,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		prods[i].Meta["compile_kwd"] = string(compileType)
 	}
 
-	// ---- GRAPH ----
-	// graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
-	// if err != nil {
-	// 	return common.Outputs{}, err
-	// }
-
-	// Buffer the deduplicated row products in one slice; the component merges
-	// them into the upstream chunk stream.
+	// The deduplicated entity/relation products are the whole output; the
+	// component merges them into the upstream chunk stream. (The compact graph
+	// blob was removed: knowledge_graph_kwd="graph" is no longer a storage row,
+	// which also saves one embedding call per compile.)
 	products := append([]common.Product{}, prods...)
-	// products = append(products, graphProduct)
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: produced %d row(s)", compileType, len(products)))
 
 	out := common.Outputs{
 		Products:          products,
@@ -189,38 +268,23 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	return out, nil
 }
 
-// buildGraphProduct rebuilds the compact graph JSON from the surviving
-// entity/relation rows and wraps it as a single "graph" product so the
-// downstream writer has a ready structure to persist. The row id mirrors
-// Python's _struct_graph_row_id (doc : structure_graph : compile : template).
-func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product) (common.Product, error) {
-	if deps.Embed == nil {
-		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding model is required to build the graph product")
+// capBatchChunkCount splits window-packed batches into sub-batches of at most
+// cap chunks (Python batch_size_cap greedy mode, chunk-count cutoff). Order is
+// preserved; PackBatch labels are per-batch positional so sub-batches renumber
+// from C1 exactly like freshly packed batches.
+func capBatchChunkCount(batches [][]common.Chunk, cap int) [][]common.Chunk {
+	if cap < 1 {
+		return batches
 	}
-	graph := RebuildStructureGraph(prods)
-	graphContent := payloadJSON(graph)
-	vecs, err := deps.Embed.Encode(ctx, []string{graphContent})
-	if err != nil {
-		return common.Product{}, err
+	var out [][]common.Chunk
+	for _, b := range batches {
+		for start := 0; start < len(b); start += cap {
+			end := start + cap
+			if end > len(b) {
+				end = len(b)
+			}
+			out = append(out, b[start:end])
+		}
 	}
-	if len(vecs) == 0 {
-		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding the graph summary returned no vector")
-	}
-	idParts := []string{cfg.DocID, "structure_graph", string(cfg.Type)}
-	if cfg.TemplateID != "" {
-		idParts = append(idParts, cfg.TemplateID)
-	}
-	return common.Product{
-		ID:       common.StableRowID(idParts...),
-		DocID:    cfg.DocID,
-		TenantID: cfg.TenantID,
-		Variant:  cfg.Variant,
-		Content:  graphContent,
-		Vector:   vecs[0],
-		Meta: map[string]any{
-			"kind":           "graph",
-			"compile_kwd":    string(cfg.Type),
-			"source_doc_ids": []string{cfg.DocID},
-		},
-	}, nil
+	return out
 }
