@@ -21,6 +21,88 @@ func (d *DatasetService) SearchDataset(ctx context.Context, datasetID, userID st
 	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID), userID)
 }
 
+// searchRunConfig holds the effective retrieval parameters after the
+// request defaults are applied.
+type searchRunConfig struct {
+	rerankCandidatesCount  int
+	metadataFilter         map[string]interface{}
+	similarityThreshold    float64
+	vectorSimilarityWeight float64
+	knnTopK                int
+	useKG                  bool
+	crossLanguages         []string
+	keyword                bool
+	rerankID               string
+	chatID                 string
+}
+
+// applySavedSearchConfig fills only the fields the request left unset from a
+// saved search app's search_config. It mirrors the Python API's merge
+// (req = {**search_config, **req}), where fields the caller sets explicitly
+// always win over the saved configuration.
+func (c *searchRunConfig) applySavedSearchConfig(req *service.SearchDatasetsRequest, searchConfig map[string]interface{}) {
+	// Python: search_config.setdefault("rerank_candidates_count", 100) - the
+	// saved-config default only applies when the request did not set it.
+	if req.RerankCandidatesCount == nil {
+		c.rerankCandidatesCount = 100
+		if sc, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+			c.rerankCandidatesCount = sc
+		}
+	}
+	if req.MetadataFilter == nil && req.MetadataCondition == nil {
+		if sc, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
+			c.metadataFilter = sc
+		}
+	}
+	if req.SimilarityThreshold == nil {
+		if sc, ok := searchConfig["similarity_threshold"].(float64); ok {
+			c.similarityThreshold = sc
+		}
+	}
+	if req.VectorSimilarityWeight == nil {
+		if sc, ok := searchConfig["vector_similarity_weight"].(float64); ok {
+			c.vectorSimilarityWeight = sc
+		}
+	}
+	if req.KNNTopK == nil && req.TopK == nil {
+		if sc, ok := searchConfig["top_k"].(float64); ok {
+			c.knnTopK = int(sc)
+			if c.knnTopK < 1 {
+				c.knnTopK = 1
+			} else if c.knnTopK > 2048 {
+				c.knnTopK = 2048
+			}
+		}
+	}
+	if req.UseKG == nil {
+		if sc, ok := searchConfig["use_kg"].(bool); ok {
+			c.useKG = sc
+		}
+	}
+	if req.CrossLanguages == nil {
+		if sc, ok := searchConfig["cross_languages"].([]interface{}); ok {
+			langs := make([]string, len(sc))
+			for i, l := range sc {
+				if str, ok := l.(string); ok {
+					langs[i] = str
+				}
+			}
+			c.crossLanguages = langs
+		}
+	}
+	if req.Keyword == nil {
+		if sc, ok := searchConfig["keyword"].(bool); ok {
+			c.keyword = sc
+		}
+	}
+	if req.RerankID == nil {
+		if sc, ok := searchConfig["rerank_id"].(string); ok {
+			c.rerankID = sc
+		}
+	}
+	c.chatID, _ = searchConfig["chat_id"].(string)
+}
+
 func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
@@ -160,45 +242,28 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
-			rerankCandidatesCount = 100
-			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
-				metadataFilter = scMetadataFilter
+			rc := searchRunConfig{
+				rerankCandidatesCount:  rerankCandidatesCount,
+				metadataFilter:         metadataFilter,
+				similarityThreshold:    similarityThreshold,
+				vectorSimilarityWeight: vectorSimilarityWeight,
+				knnTopK:                knnTopK,
+				useKG:                  useKG,
+				crossLanguages:         crossLanguages,
+				keyword:                keyword,
+				rerankID:               rerankID,
 			}
-			if scST, ok := searchConfig["similarity_threshold"].(float64); ok {
-				similarityThreshold = scST
-			}
-			if scVSW, ok := searchConfig["vector_similarity_weight"].(float64); ok {
-				vectorSimilarityWeight = scVSW
-			}
-			if scTopK, ok := searchConfig["top_k"].(float64); ok {
-				knnTopK = int(scTopK)
-				if knnTopK < 1 {
-					knnTopK = 1
-				} else if knnTopK > 2048 {
-					knnTopK = 2048
-				}
-			}
-			if scRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
-				rerankCandidatesCount = scRerankCandidatesCount
-			}
-			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
-				useKG = scUseKG
-			}
-			if scLangs, ok := searchConfig["cross_languages"].([]interface{}); ok {
-				crossLanguages = make([]string, len(scLangs))
-				for i, l := range scLangs {
-					if s, ok := l.(string); ok {
-						crossLanguages[i] = s
-					}
-				}
-			}
-			if scKeyword, ok := searchConfig["keyword"].(bool); ok {
-				keyword = scKeyword
-			}
-			if scRerankID, ok := searchConfig["rerank_id"].(string); ok {
-				rerankID = scRerankID
-			}
-			chatID, _ = searchConfig["chat_id"].(string)
+			rc.applySavedSearchConfig(req, searchConfig)
+			rerankCandidatesCount = rc.rerankCandidatesCount
+			metadataFilter = rc.metadataFilter
+			similarityThreshold = rc.similarityThreshold
+			vectorSimilarityWeight = rc.vectorSimilarityWeight
+			knnTopK = rc.knnTopK
+			useKG = rc.useKG
+			crossLanguages = rc.crossLanguages
+			keyword = rc.keyword
+			rerankID = rc.rerankID
+			chatID = rc.chatID
 		} else {
 			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
