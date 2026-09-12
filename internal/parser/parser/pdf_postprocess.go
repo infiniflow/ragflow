@@ -257,10 +257,11 @@ func sortSectionsByPosition(result *deepdoctype.ParseResult) {
 
 // applyRemoveTOC mirrors Python parser.py:663-681 three-way dispatch:
 //   - No outlines → pattern-based remove_toc on all sections
-//   - First outline on page 1 → outline-based remove_toc_pdf, then the entry
-//     filter: the outline pass only drops pages when an outline title names
-//     the TOC ("目录"/"contents"), so a headingless TOC must still run
-//     through filterPDFTOCEntries instead of being left in place
+//   - First outline on page 1 → outline-based remove_toc_pdf, then the
+//     fragment-page pass and the entry filter: the outline pass only drops
+//     pages when an outline title names the TOC ("目录"/"contents"), so a
+//     headingless TOC must still run through both instead of being left
+//     in place
 //   - First outline after page 1 → pattern-based on pages before the first outline
 func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	if result == nil {
@@ -274,6 +275,8 @@ func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	firstOutlinePage := outlines[0].PageNumber
 	if firstOutlinePage <= 1 {
 		removePDFTOCByOutlines(result, outlines)
+		repeated := pdfTOCRepeatedLines(result.Sections)
+		result.Sections = filterPDFTOCFragmentPagesWithRepeated(result.Sections, repeated)
 		result.Sections = filterPDFTOCEntries(result.Sections)
 		return
 	}
@@ -335,10 +338,17 @@ func removePDFTOC(result *deepdoctype.ParseResult) {
 			break
 		}
 	}
-	// The anchored pass above needs a "目录"/"contents" section; a TOC whose
-	// pages carry no such heading survives it entirely. Drop the remaining
-	// leader+page-number entry lines, mirroring remove_toc in
-	// rag/flow/parser/utils.py.
+	// The anchored pass above needs a heading section; a TOC whose pages
+	// carry no such heading survives it entirely. Build the repetition
+	// table from the raw stream first: the passes below delete in place
+	// and would otherwise strip the page fragments some keys need to
+	// reach threshold. Classify fragmented pages before entry-line
+	// filtering for the same reason: the entry filter can strip the
+	// page-number fragments the classifier counts on.
+	repeated := pdfTOCRepeatedLines(sections)
+	sections = filterPDFTOCFragmentPagesWithRepeated(sections, repeated)
+	// Drop any remaining leader+page-number entry lines, mirroring
+	// remove_toc in rag/flow/parser/utils.py.
 	sections = filterPDFTOCEntries(sections)
 	result.Sections = sections
 }
@@ -378,8 +388,257 @@ func filterPDFTOCEntries(sections []deepdoctype.Section) []deepdoctype.Section {
 	return filtered
 }
 
-// isPDFTOCEntrySection reports whether the section text is (or is dominated
-// by) table-of-contents entries.
+// pdfTOCFragmentThresholds bound page-level TOC detection: a page is a
+// fragmented TOC page only when it carries at least this many title-like
+// and page-number-like fragments and no body-length prose.
+const (
+	pdfTOCTitleFragmentsMin   = 5
+	pdfTOCPageRefFragmentsMin = 3
+	pdfTOCBodyTextRunesMin    = 40
+	pdfTOCShortTextRunesMax   = 40
+	// pdfTOCRepeatPagesMin is the cross-page repetition threshold for
+	// boilerplate within one vertical band: a long line repeating verbatim
+	// at the same height on this many pages is a running watermark or
+	// storefront promo, never body prose.
+	pdfTOCRepeatPagesMin = 3
+	// pdfTOCTopBucketPoints groups section tops into vertical bands:
+	// watermarks are page templates sitting at the same height on every
+	// page (within a few points of jitter), while body prose drifts. Ten
+	// points is wide enough for render jitter and narrow enough to
+	// separate header, body and footer bands.
+	pdfTOCTopBucketPoints = 10
+)
+
+// pdfTOCRomanMarkerPattern matches standalone roman-numeral page markers
+// ("I", "II", "D", "M"). They carry no content but are kept as page anchors,
+// matching the existing entry-filter behavior.
+var pdfTOCRomanMarkerPattern = regexp.MustCompile(`(?i)^[mdclxvi]+$`)
+
+// filterPDFTOCFragmentPages drops fragmented table-of-contents pages from the
+// stream. DeepDoc layout splits one TOC line (chapter title + subtitle +
+// leader dots + page number) into unadjacent sections — a bare chapter title,
+// a subtitle line and a bare page number — that neither the anchored title
+// pass nor the entry-line filter recognizes.
+//
+// Classification counts title-like and page-number-like fragments and
+// requires zero body-length prose outside title-layout sections. Long lines
+// repeating verbatim on every page (running watermarks, storefront promos)
+// are boilerplate, not prose, and do not veto: body prose never repeats
+// verbatim on all pages. Body chapter pages (one or two headings plus long
+// prose) never satisfy the thresholds, so a mixed page degrades to untouched
+// instead of deleting prose. Sections without positions take no part in the
+// classification and are never deleted; table and figure sections are
+// excluded on both sides.
+func filterPDFTOCFragmentPages(sections []deepdoctype.Section) []deepdoctype.Section {
+	return filterPDFTOCFragmentPagesWithRepeated(sections, pdfTOCRepeatedLines(sections))
+}
+
+// filterPDFTOCFragmentPagesWithRepeated is the injectable core of
+// filterPDFTOCFragmentPages: production builds the repetition table from
+// the raw stream before any deletion pass (see removePDFTOC); tests call
+// the wrapper above. Splitting the two keeps the table lifetime explicit.
+func filterPDFTOCFragmentPagesWithRepeated(sections []deepdoctype.Section, repeated map[string]bool) []deepdoctype.Section {
+	pages := map[int][]int{}
+	for i, s := range sections {
+		if page, ok := pdfTOCFragmentPage(s); ok {
+			pages[page] = append(pages[page], i)
+		}
+	}
+	drop := map[int]struct{}{}
+	for _, indices := range pages {
+		var titles, refs, body int
+		for _, i := range indices {
+			text := sectionText(sections[i])
+			entry := isPDFTOCEntrySection(text)
+			if entry || isPDFTOCTitleCandidate(text) {
+				titles++
+			}
+			if entry || pdfTOCBarePageRefPattern.MatchString(text) {
+				refs++
+			}
+			if entry || isPDFTOCTitleCandidate(text) || len([]rune(text)) < pdfTOCBodyTextRunesMin {
+				continue
+			}
+			if repeated[pdfTOCRepeatKey(text, firstSectionTop(sections[i]))] {
+				continue
+			}
+			if strings.TrimSpace(sections[i].LayoutType) == deepdoctype.LayoutTypeTitle {
+				continue
+			}
+			body++
+		}
+		if titles < pdfTOCTitleFragmentsMin || refs < pdfTOCPageRefFragmentsMin || body > 0 {
+			continue
+		}
+		for _, i := range indices {
+			if !pdfTOCFragmentDeletable(sections, i, repeated) {
+				continue
+			}
+			drop[i] = struct{}{}
+		}
+	}
+	if len(drop) == 0 {
+		return sections
+	}
+	filtered := make([]deepdoctype.Section, 0, len(sections)-len(drop))
+	for i, s := range sections {
+		if _, ok := drop[i]; ok {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+	return filtered
+}
+
+// pdfTOCFragmentPage reports the page a section belongs to. It returns false
+// for non-text sections (tables and figures are never TOC fragments) and for
+// sections without positions (they take no part in page-level
+// classification). Only positions carrying actual page numbers count: a
+// position entry with an empty PageNumbers slice is not a page, and
+// firstSectionPage alone would report it as the real page 0.
+func pdfTOCFragmentPage(s deepdoctype.Section) (int, bool) {
+	switch strings.TrimSpace(s.LayoutType) {
+	case "", deepdoctype.LayoutTypeText, deepdoctype.LayoutTypeTitle:
+	default:
+		return 0, false
+	}
+	for _, pos := range s.Positions {
+		if len(pos.PageNumbers) > 0 {
+			return pos.PageNumbers[0], true
+		}
+	}
+	return 0, false
+}
+
+// pdfTOCRepeatedLines reports the set of long lines repeating verbatim at
+// the same height on at least pdfTOCRepeatPagesMin pages. Only text/title
+// sections with page positions vote; title candidates and entry lines
+// always count as TOC signals first and never as boilerplate, so chapter
+// headings repeating across pages cannot be misread. Short text needs no
+// table: it never vetoes classification on its own length. The key couples
+// normalized text with a vertical band: watermarks are page templates at a
+// fixed height, so glue/space jitter across pages still lands in one
+// bucket while drifting body prose never gathers. The table is built from
+// the raw section stream before any deletion pass runs: entry filtering
+// deletes in place and would otherwise strip the page fragments some keys
+// need to reach threshold.
+func pdfTOCRepeatedLines(sections []deepdoctype.Section) map[string]bool {
+	pages := map[string]map[int]struct{}{}
+	for _, s := range sections {
+		page, ok := pdfTOCFragmentPage(s)
+		if !ok {
+			continue
+		}
+		text := sectionText(s)
+		if isPDFTOCTitleCandidate(text) || isPDFTOCEntrySection(text) || len([]rune(text)) < pdfTOCBodyTextRunesMin {
+			continue
+		}
+		key := pdfTOCRepeatKey(text, firstSectionTop(s))
+		if pages[key] == nil {
+			pages[key] = map[int]struct{}{}
+		}
+		pages[key][page] = struct{}{}
+	}
+	repeated := map[string]bool{}
+	for key, set := range pages {
+		if len(set) >= pdfTOCRepeatPagesMin {
+			repeated[key] = true
+		}
+	}
+	return repeated
+}
+
+// pdfTOCRepeatKey normalizes a line for repetition comparison: all
+// whitespace stripped, coupled with the vertical band of its top. Template
+// watermarks gluing or spacing the URL differently across pages still share
+// text and height, so they land in one bucket. No digit masking and no case
+// folding: page numbers inside boilerplate would otherwise merge distinct
+// lines, and title candidates never reach this table.
+func pdfTOCRepeatKey(text string, top float64) string {
+	stripped := strings.Join(strings.Fields(text), "")
+	return stripped + "\x00" + itoa(int(top/pdfTOCTopBucketPoints))
+}
+
+// itoa formats a non-negative bucket index without pulling in strconv for
+// one call site.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(b[i:])
+}
+
+// pdfTOCFragmentDeletable reports whether the section at idx on a classified
+// TOC page is TOC debris: a title candidate, an entry line, a bare page
+// reference, a page-number-like title, repeated boilerplate, or short text
+// (subtitles and debris) anchored by a neighboring TOC signal. Book titles
+// (non-title headings), roman-numeral page markers, long prose and non-text
+// layouts are kept.
+func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int, repeated map[string]bool) bool {
+	s := sections[idx]
+	switch strings.TrimSpace(s.LayoutType) {
+	case "", deepdoctype.LayoutTypeText:
+	case deepdoctype.LayoutTypeTitle:
+		t := sectionText(s)
+		if !isPDFTOCTitleCandidate(t) && !isPDFTOCEntrySection(t) && !pdfTOCBarePageRefPattern.MatchString(t) && !repeated[pdfTOCRepeatKey(t, firstSectionTop(s))] {
+			return false
+		}
+	default:
+		return false
+	}
+	text := sectionText(s)
+	top := firstSectionTop(s)
+	switch {
+	case isPDFTOCTitleCandidate(text), isPDFTOCEntrySection(text):
+		return true
+	case pdfTOCRomanMarkerPattern.MatchString(text), strings.Contains(text, "《"):
+		return false
+	case repeated[pdfTOCRepeatKey(text, top)]:
+		return true
+	case pdfTOCBarePageRefPattern.MatchString(text):
+		return true
+	case len([]rune(text)) < pdfTOCShortTextRunesMax && pdfTOCFragmentAnchorText(sections, idx):
+		return true
+	default:
+		return false
+	}
+}
+
+// pdfTOCFragmentAnchorText reports whether the short text at idx sits next
+// to a TOC signal (a title candidate, entry line or page reference within
+// one neighbor on each side). It gates short-text deletion so a classified
+// page keeps short lines that read as standalone content. Both sides go
+// through pdfTOCFragmentPage so positionless sections and table/figure
+// sections can neither be anchored nor anchor: firstSectionPage alone
+// returns 0 for them, which collides with the real page 0.
+func pdfTOCFragmentAnchorText(sections []deepdoctype.Section, idx int) bool {
+	page, ok := pdfTOCFragmentPage(sections[idx])
+	if !ok {
+		return false
+	}
+	for _, j := range []int{idx - 1, idx + 1} {
+		if j < 0 || j >= len(sections) {
+			continue
+		}
+		neighborPage, ok := pdfTOCFragmentPage(sections[j])
+		if !ok || neighborPage != page {
+			continue
+		}
+		t := sectionText(sections[j])
+		if isPDFTOCTitleCandidate(t) || isPDFTOCEntrySection(t) || pdfTOCBarePageRefPattern.MatchString(t) {
+			return true
+		}
+	}
+	return false
+}
+
 func isPDFTOCEntrySection(text string) bool {
 	if pdfTOCEntryPattern.MatchString(text) {
 		return true

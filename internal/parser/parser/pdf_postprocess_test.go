@@ -463,6 +463,39 @@ func TestApplyPDFPostProcess_RemoveTOCEntryLinesWithPageOneOutlines(t *testing.T
 	}
 }
 
+// TestApplyPDFPostProcess_RemoveTOCFragmentPagesWithPageOneOutlines covers
+// the outlined book-PDF shape with fragmented TOC sections: the first
+// outline sits on page 1 but no outline title names the TOC, so
+// removePDFTOCByOutlines is a no-op and the fragment-page pass must still
+// clear the bare titles and page fragments on this dispatch branch.
+func TestApplyPDFPostProcess_RemoveTOCFragmentPagesWithPageOneOutlines(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 1, "text")
+	sections = append(sections,
+		makePDFSection("Body prose that must survive.", "text", 3, 50, 550, 100, 120),
+	)
+	result := &deepdoctype.ParseResult{
+		Sections: sections,
+		Outlines: []deepdoctype.Outline{
+			{Title: "Preface", Level: 0, PageNumber: 1},
+			{Title: "Chapter 1", Level: 1, PageNumber: 3},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	want := []string{"Body prose that must survive."}
+	if !slices.Equal(sectionTexts(result.Sections), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(result.Sections), want)
+	}
+}
+
 func sectionTexts(sections []deepdoctype.Section) []string {
 	texts := make([]string, 0, len(sections))
 	for _, s := range sections {
@@ -638,5 +671,430 @@ func TestFilterPDFHeaderFooter_SubstringMatch(t *testing.T) {
 	}
 	if !kept["text"] {
 		t.Errorf("#5 header/footer: body text %q should be kept", "text")
+	}
+}
+
+// fragmentedTOCPage builds sections on one page from plain texts: every text
+// gets a distinct vertical slot on the given page so page grouping is
+// exercised without depending on real layout coordinates.
+func fragmentedTOCPage(texts []string, page int, layout string) []deepdoctype.Section {
+	sections := make([]deepdoctype.Section, 0, len(texts))
+	for i, text := range texts {
+		top := float64(100 + i*20)
+		sections = append(sections, makePDFSection(text, layout, page, 50, 550, top, top+18))
+	}
+	return sections
+}
+
+// TestFilterPDFTOCFragmentPages_ClearsFragmentedTOCPage covers the DeepDoc
+// fragmentation shape: bare chapter titles, subtitle lines and bare page
+// numbers on one headingless TOC page are all dropped, while the book title
+// heading and the roman-numeral page marker survive.
+func TestFilterPDFTOCFragmentPages_ClearsFragmentedTOCPage(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Book Title Full Translation",
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"Chapter 6",
+		"Chapter 7",
+		"1",
+		"3",
+		"4",
+		"6",
+		"7",
+		"8",
+		"10",
+		"II",
+	}, 0, "text")
+	sections[0].LayoutType = "title"
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Book Title Full Translation", "II"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsBodyChapterPage pins the body guard: a
+// real chapter page (one heading plus long prose) never classifies as a TOC
+// page even though it carries a title candidate and a footer page number.
+func TestFilterPDFTOCFragmentPages_KeepsBodyChapterPage(t *testing.T) {
+	prose := "The way that can be told of is not the eternal way; the name " +
+		"that can be named is not the eternal name. The nameless is the origin."
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1 The Way",
+		prose,
+		"5",
+	}, 8, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_MixedPageDegradesToUntouched pins that a page
+// mixing TOC fragments with body prose is left alone: the body veto must win
+// over the fragment counts so prose is never deleted.
+func TestFilterPDFTOCFragmentPages_MixedPageDegradesToUntouched(t *testing.T) {
+	prose := "Sages treat worldly affairs with non-action and teach without " +
+		"words; all things arise and none is rejected by their teaching."
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		prose,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_IgnoresPositionlessAndMedia pins the scope:
+// sections without positions never vote and are never deleted, and table /
+// figure sections are excluded on both sides even on a classified TOC page.
+func TestFilterPDFTOCFragmentPages_IgnoresPositionlessAndMedia(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{Text: "Chapter 6"},
+		deepdoctype.Section{Text: "| a | b |", LayoutType: "table", Positions: sections[0].Positions},
+		deepdoctype.Section{Text: "figure caption debris", LayoutType: "figure", Positions: sections[0].Positions},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 6", "| a | b |", "figure caption debris"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestRemovePDFTOC_FragmentedPageEndToEnd pins the wiring: removePDFTOC runs
+// the fragment-page pass before the entry-line filter (the entry filter
+// deletes in place and can strip the page-number fragments the classifier
+// counts on), so a headingless fragmented TOC page is cleared through the
+// same entry point production calls.
+func TestRemovePDFTOC_FragmentedPageEndToEnd(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"II",
+	}, 0, "text")
+	result := &deepdoctype.ParseResult{Sections: sections}
+	removePDFTOC(result)
+	if got, want := sectionTexts(result.Sections), []string{"II"}; !slices.Equal(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_ThresholdBoundary pins the exact minima: one
+// title short of the threshold leaves the page untouched, while exactly the
+// minima classify it.
+func TestFilterPDFTOCFragmentPages_ThresholdBoundary(t *testing.T) {
+	below := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	if got := filterPDFTOCFragmentPages(below); !slices.Equal(sectionTexts(got), sectionTexts(below)) {
+		t.Fatalf("below threshold: sections = %v, want untouched %v", sectionTexts(got), sectionTexts(below))
+	}
+	atMinima := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	if got := filterPDFTOCFragmentPages(atMinima); len(got) != 0 {
+		t.Fatalf("at minima: sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsUnanchoredShortText pins the anchor
+// gate: short text with no TOC signal in either neighbor survives on a
+// classified page, while anchored short text is debris.
+func TestFilterPDFTOCFragmentPages_KeepsUnanchoredShortText(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"standalone note",
+		"another standalone note",
+		"yet another standalone note",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"another standalone note", "yet another standalone note"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsBracketedTitle pins the book-title
+// guard: a 《》-wrapped heading on a classified page is content, not debris,
+// even though it is short enough to delete.
+func TestFilterPDFTOCFragmentPages_KeepsBracketedTitle(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections, makePDFSection("《Test Book》", "text", 0, 50, 550, 300, 318))
+	got := filterPDFTOCFragmentPages(sections)
+	if got, want := sectionTexts(got), []string{"《Test Book》"}; !slices.Equal(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_AnchorIgnoresPositionlessNeighbor pins the
+// page-0 cross-talk guard: a positionless title-like section and a table
+// section carrying "1" must not anchor adjacent short text, even when the
+// classified page is the real page 0.
+func TestFilterPDFTOCFragmentPages_AnchorIgnoresPositionlessNeighbor(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{Text: "Chapter 9"},
+		deepdoctype.Section{Text: "1", LayoutType: "table", Positions: sections[0].Positions},
+		deepdoctype.Section{Text: "lone line", LayoutType: "text", Positions: sections[0].Positions},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 9", "1", "lone line"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers pins the marker guard
+// on the full roman set: M/D/C markers survive on a classified page.
+func TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"M",
+		"D",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"M", "D"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_LongTextTitlesDoNotVeto pins that long
+// chapter titles in the default text layout are TOC signals, not body
+// prose: five >=40-rune text titles plus three page fragments classify.
+func TestFilterPDFTOCFragmentPages_LongTextTitlesDoNotVeto(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1 Introduction to the fundamental principles of the way",
+		"Chapter 2 The sage abides by non-action and wordless teaching",
+		"Chapter 3 On governing through non-interference and simplicity",
+		"Chapter 4 On the emptiness of the way and its endless efficacy",
+		"Chapter 5 On holding to the center and the use of emptiness",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_LegitimateURLProseIsKept pins that a URL
+// reference line is ordinary text: it neither vetoes on its own merits
+// beyond its length nor is deleted, and genuine prose still vetoes.
+func TestFilterPDFTOCFragmentPages_LegitimateURLProseIsKept(t *testing.T) {
+	prose := "The way that can be told of is not the eternal way; the name " +
+		"that can be named is not the eternal name. The nameless is the origin."
+	sections := fragmentedTOCPage([]string{
+		"Section 1 Introduction",
+		"Section 2 Method",
+		"See the project page http://example.com/project for the dataset.",
+		prose,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide pins the page-0
+// guard: a section whose Positions carry no PageNumbers takes no part in
+// classification and cannot anchor, even on the real page 0.
+func TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{
+			Text:      "Chapter 9",
+			Positions: []deepdoctype.Position{{PageNumbers: nil, Left: 50, Right: 550, Top: 300, Bottom: 318}},
+		},
+		deepdoctype.Section{
+			Text:       "lone line",
+			LayoutType: "text",
+			Positions:  sections[0].Positions,
+		},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 9", "lone line"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto pins the
+// frequency exemption: a long line repeating verbatim at the same height on
+// every page is boilerplate, not prose, so it neither vetoes classification
+// nor survives on a classified page.
+func TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo}
+		sections = append(sections, fragmentedTOCPage(parts, page, "text")...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_DriftingRepeatStillVetoes pins that same
+// text drifting vertically never gathers: body prose at different heights
+// stays body even when the text repeats.
+func TestFilterPDFTOCFragmentPages_DriftingRepeatStillVetoes(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo}
+		batch := fragmentedTOCPage(parts, page, "text")
+		batch[len(batch)-1].Positions[0].Top = float64(100 + page*100)
+		batch[len(batch)-1].Positions[0].Bottom = float64(118 + page*100)
+		sections = append(sections, batch...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_PartialRepeatStillVetoes pins the full
+// coverage verdict: the same promo missing from one page is ordinary long
+// text and still vetoes on the pages carrying it. The promo-free page has
+// no veto but carries no surviving signal either once the shared titles
+// and page fragments classify it: it is cleared as a genuine TOC page.
+func TestFilterPDFTOCFragmentPages_PartialRepeatStillVetoes(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4"}
+		if page < 2 {
+			parts = append(parts, promo)
+		}
+		sections = append(sections, fragmentedTOCPage(parts, page, "text")...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{
+		"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo,
+		"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo,
+	}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_UnrepeatedLongLineStillVetoes pins that the
+// exemption needs repetition: the same promo on a single page is ordinary
+// long text and still vetoes.
+func TestFilterPDFTOCFragmentPages_UnrepeatedLongLineStillVetoes(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		promo,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_TitleCandidatesNeverBoilerplate pins the
+// priority: chapter headings repeating across pages still count as TOC
+// signals and are never misread as boilerplate.
+func TestFilterPDFTOCFragmentPages_TitleCandidatesNeverBoilerplate(t *testing.T) {
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		sections = append(sections, fragmentedTOCPage([]string{"Chapter 1", "Preface"}, page, "text")...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
 	}
 }
