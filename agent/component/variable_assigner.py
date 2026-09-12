@@ -40,6 +40,28 @@ class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
+    def param_refs(self) -> list[str]:
+        """Return variable references resolved in VariableAssigner operations."""
+        refs = []
+        variables = getattr(self._param, "variables", []) or []
+        if isinstance(variables, list):
+            for item in variables:
+                if not isinstance(item, dict):
+                    continue
+                variable = item.get("variable")
+                if isinstance(variable, str) and "@" in variable:
+                    refs.append(self.normalize_param_ref(variable))
+
+                operator = item.get("operator")
+                parameter = item.get("parameter")
+                if isinstance(parameter, str) and "@" in parameter:
+                    matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
+                    if matches:
+                        refs.extend(matches)
+                    elif operator in ("overwrite", "append", "extend"):
+                        refs.append(self.normalize_param_ref(parameter))
+        return refs
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if not isinstance(self._param.variables, list):
