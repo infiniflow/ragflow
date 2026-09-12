@@ -38,7 +38,13 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // value parsing.
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
-const defaultTableChunkRows = 256
+// defaultTableChunkRows is the row ceiling for one spreadsheet <table>. It is
+// deliberately far beyond any real sheet: a sheet is emitted as ONE
+// self-contained <table> and is never split by row count. Any split would cut
+// inside <td> content or, worse, drop the delimiter characters it cut on —
+// the bug the typed table item exists to prevent. Keep in sync with Python's
+// TABLE_NO_SPLIT_ROWS (rag/flow/parser/parser.py).
+const defaultTableChunkRows = 1 << 30
 
 // extractXLSXImages returns the floating and in-cell images anchored to a
 // worksheet as structured parser items. Excelize exposes both kinds through

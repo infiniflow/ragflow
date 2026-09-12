@@ -68,6 +68,14 @@ from rag.flow.parser.utils import (
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
+# Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
+# deliberately far beyond any real sheet: a sheet is emitted as ONE
+# self-contained <table> and is never split by row count or token budget.
+# Any split would cut inside ``<td>`` content or, worse, drop the delimiter
+# characters it cut on — the bug this typed parser output exists to prevent.
+# The TCADP path applies the same rule and emits one item per returned table.
+TABLE_NO_SPLIT_ROWS = 1 << 30
+
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -137,7 +145,7 @@ class ParserParam(ProcessParamBase):
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "flatten_media_to_text": False,
-                "output_format": "html",
+                "output_format": "json",
                 "suffix": [
                     "xls",
                     "xlsx",
@@ -874,18 +882,21 @@ class Parser(ProcessBase):
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
+                # One self-contained <table> item per sheet, never split, so the
+                # downstream TokenChunker keeps every table whole instead of
+                # cutting it on a delimiter.
                 self.set_output(
                     "json",
                     [
                         {
-                            "text": txt,
-                            "doc_type_kwd": "text",
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
                             # 0-based sheet. TaskExecutor and dataflow_service
                             # call add_positions, which stores pn+1 (1-based).
                             "positions": [[sheet, r1, r2, c1, c2]],
                         }
-                        for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)
-                        if txt
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_NO_SPLIT_ROWS)
+                        if tb
                     ],
                 )
             elif conf.get("output_format") == "markdown":
