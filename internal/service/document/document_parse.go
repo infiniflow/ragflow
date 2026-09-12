@@ -75,7 +75,11 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		}
 	}
 
-	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	var taskSchema entity.JSONMap
+	if opts.RerunDSL != nil {
+		taskSchema = entity.NewIngestionTaskRerunSchema(opts.RerunDSL, opts.RerunLogID, opts.RerunComponentID)
+	}
+	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID}, taskSchema)
 	if err != nil {
 		return err
 	}

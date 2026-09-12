@@ -60,13 +60,6 @@ func (e *RerunDocumentProcessingError) Error() string {
 // The Go pipeline has no partial-resume entry point (execution always
 // starts at the graph entry; see pipeline.Pipeline.Run), so the rerun
 // re-executes the whole pipeline instead of resuming from component_id.
-//
-// Known divergence from the Python endpoint: the persisted edited DSL is
-// an audit record only. The Go ingestion worker sources the parse DSL
-// from the canvas (doc.PipelineID -> user_canvas.dsl; see
-// loadDSLFromCanvas) and IngestionTask carries no DSL/log reference, so
-// the edited dsl/component_id currently has no effect on the Go rerun.
-// Plumbing the log DSL through the task to the worker is a follow-up.
 func (s *DocumentService) RerunDocument(ctx context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
 	// A missing row is the caller-facing not-found; any other DB error is
 	// an internal failure and must not be collapsed into it.
@@ -114,7 +107,29 @@ func (s *DocumentService) RerunDocument(ctx context.Context, userID, logID strin
 		if err := s.pipelineLogDAO.UpdateDSL(ctx, dao.DB, logID, entity.JSONMap(persisted)); err != nil {
 			return fmt.Errorf("update pipeline log dsl: %w", err)
 		}
+		dsl = persisted
 	}
 
-	return s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{RerunWithDelete: true})
+	return s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
+		RerunWithDelete:  true,
+		RerunDSL:         rerunTaskDSL(dsl),
+		RerunLogID:       logID,
+		RerunComponentID: componentID,
+	})
+}
+
+// rerunTaskDSL copies the persisted log DSL for worker execution without
+// the partial-resume "path" marker, which is audit metadata on the log row
+// only and must not reach the execution path until the Go pipeline honors it.
+func rerunTaskDSL(dsl map[string]interface{}) entity.JSONMap {
+	if dsl == nil {
+		return nil
+	}
+	exec := make(map[string]interface{}, len(dsl))
+	for k, v := range dsl {
+		if k != "path" {
+			exec[k] = v
+		}
+	}
+	return entity.JSONMap(exec)
 }

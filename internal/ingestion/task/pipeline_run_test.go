@@ -17,7 +17,9 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -39,9 +41,45 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 
 	taskCtx := makeTaskCtx()
 	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
-	gotDSL, correctedID, err := svc.loadDSLFunc(ctx, "canvas-1")
+	canvasDSL := `{"dsl":{"graph":{"nodes":[],"edges":[]}}}`
+	svc.loadDSLFunc = func(context.Context, string) (string, string, error) {
+		return canvasDSL, "canvas-1", nil
+	}
+	gotDSL, correctedID, err := svc.resolveDSL(ctx)
 	if err != nil {
-		t.Fatalf("loadDSLFunc: %v", err)
+		t.Fatalf("resolveDSL: %v", err)
+	}
+	if correctedID != "canvas-1" {
+		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
+	}
+	if gotDSL != canvasDSL {
+		t.Fatalf("resolveDSL = %q, want canvas DSL", gotDSL)
+	}
+}
+
+func TestResolveDSL_UsesRerunSchemaInsteadOfCanvas(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.IngestionTask.Schema = entity.NewIngestionTaskRerunSchema(
+		entity.JSONMap{
+			"components": map[string]interface{}{"rerun-marker": map[string]interface{}{}},
+			"path":       []interface{}{"c1"},
+		},
+		"log-1",
+		"c1",
+	)
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
+	canvasCalled := false
+	svc.loadDSLFunc = func(context.Context, string) (string, string, error) {
+		canvasCalled = true
+		return "", "", fmt.Errorf("canvas should not be loaded")
+	}
+
+	gotDSL, correctedID, err := svc.resolveDSL(context.Background())
+	if err != nil {
+		t.Fatalf("resolveDSL: %v", err)
+	}
+	if canvasCalled {
+		t.Fatal("loadDSLFromCanvas was called despite rerun schema")
 	}
 	if correctedID != "canvas-1" {
 		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
@@ -50,8 +88,8 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 	if err = json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
 		t.Fatalf("unmarshal dsl: %v", err)
 	}
-	if _, ok := decoded["dsl"].(map[string]any); !ok {
-		t.Fatalf("decoded dsl = %v, want top-level dsl map", decoded)
+	if _, ok := decoded["components"].(map[string]any)["rerun-marker"]; !ok {
+		t.Fatalf("decoded dsl = %v, want rerun-marker component", decoded)
 	}
 }
 
