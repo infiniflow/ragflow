@@ -267,15 +267,18 @@ class OpenAIEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
+    def _extra_body(self):
+        return None
+
     def _call(self, batch):
-        # extra_body is forwarded verbatim to the provider. `drop_params` is
-        # an OpenRouter-specific convention; Together AI (and any strict
-        # OpenAI-compatible provider) rejects it with HTTP 400
-        # "Unrecognized request arguments supplied: drop_params".
         # `user` is OpenAI-standard and is only sent when LLM request context
         # is active. Local servers that reject unknown fields (LocalAI,
         # LM Studio, Xinference) use their own embed classes and omit it.
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", **openai_user_kwargs())
+        kwargs = {"input": batch, "model": self.model_name, "encoding_format": "float", **openai_user_kwargs()}
+        extra_body = self._extra_body()
+        if extra_body is not None:
+            kwargs["extra_body"] = extra_body
+        res = self.client.embeddings.create(**kwargs)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -1390,7 +1393,7 @@ class RAGconEmbed(OpenAIEmbed):
     """
     RAGcon Embedding Provider - routes through LiteLLM proxy
 
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
@@ -1400,6 +1403,12 @@ class RAGconEmbed(OpenAIEmbed):
             base_url = "https://connect.ragcon.com/v1"
 
         super().__init__(key, model_name, base_url)
+
+    def _extra_body(self):
+        host = (urlparse(self.base_url).hostname or "").lower()
+        if host in {"connect.ragcon.com", "connect.ragcon.ai"} or host.endswith((".connect.ragcon.com", ".connect.ragcon.ai")):
+            return {"drop_params": True}
+        return None
 
 
 class PerplexityEmbed(Base):

@@ -532,7 +532,7 @@ class RAGconTTS(Base):
     RAGcon TTS Provider - routes through LiteLLM proxy
 
     Text-to-speech models routed through LiteLLM.
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"

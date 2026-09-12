@@ -42,7 +42,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rag.llm.embedding_model import OpenAIEmbed, OpenRouterEmbed
+from rag.llm.embedding_model import OpenAIEmbed, OpenRouterEmbed, RAGconEmbed
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +72,13 @@ def _make_openrouter_embed():
     ``extra_body`` is exactly the base case.
     """
     embed = OpenRouterEmbed("key", "openai/text-embedding-3-small", base_url="https://openrouter.ai/api/v1")
+    embed.client = MagicMock()
+    embed.client.embeddings.create = MagicMock(side_effect=lambda input, model, **kwargs: _FakeResp([[float(i)] for i in range(len(input))]))
+    return embed
+
+
+def _make_ragcon_embed(base_url=None):
+    embed = RAGconEmbed("key", "text-embedding-3-small", base_url=base_url)
     embed.client = MagicMock()
     embed.client.embeddings.create = MagicMock(side_effect=lambda input, model, **kwargs: _FakeResp([[float(i)] for i in range(len(input))]))
     return embed
@@ -160,6 +167,32 @@ def test_openrouter_embed_call_appends_provider_when_provider_order_set():
     extra_body = kwargs.get("extra_body", {})
     assert extra_body.get("drop_params") is True
     assert extra_body.get("provider") == {"order": ["Azure", "OpenAI"], "allow_fallbacks": False}
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        None,
+        "https://connect.ragcon.com/v1",
+        "https://connect.ragcon.ai/v1",
+        "https://api.connect.ragcon.com/v1",
+        "https://api.connect.ragcon.ai/v1",
+    ],
+)
+def test_ragcon_embed_official_endpoint_sends_drop_params(endpoint):
+    embed = _make_ragcon_embed(endpoint)
+    embed._call(["hello"])
+
+    kwargs = embed.client.embeddings.create.call_args.kwargs
+    assert kwargs["extra_body"] == {"drop_params": True}
+
+
+def test_ragcon_embed_custom_endpoint_omits_extra_body():
+    embed = _make_ragcon_embed("https://example.invalid/v1")
+    embed._call(["hello"])
+
+    kwargs = embed.client.embeddings.create.call_args.kwargs
+    assert "extra_body" not in kwargs
 
 
 # ---------------------------------------------------------------------------
