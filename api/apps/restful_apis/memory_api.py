@@ -147,8 +147,11 @@ async def list_memory():
     if "storage_type" in request.args:
         filter_params["storage_type"] = request.args.get("storage_type")
     keywords = request.args.get("keywords")
-    page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
-    page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     try:
         for field_name in ("owner_ids", "ids"):
             validate_rest_api_ids(filter_params.get(field_name), field_name)
@@ -186,8 +189,11 @@ async def get_memory_messages(memory_id):
         agent_ids = agent_ids[0].split(",")
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
-    page = validate_rest_api_page(args.get("page", 1))
-    page_size = validate_rest_api_page_size(args.get("page_size", 50))
+    try:
+        page = validate_rest_api_page(args.get("page", 1))
+        page_size = validate_rest_api_page_size(args.get("page_size", 50))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     try:
         validate_rest_api_ids(agent_ids, "agent_id")
     except ValueError as e:

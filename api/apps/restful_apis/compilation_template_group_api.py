@@ -24,6 +24,7 @@ from api.db.services.compilation_template_group_service import (
 )
 from api.utils.api_utils import (
     get_data_error_result,
+    get_error_argument_result,
     get_json_result,
     get_request_json,
     server_error_response,
@@ -71,8 +72,11 @@ def _validate_group_payload(req: dict, require_all: bool = True) -> str:
 def list_groups() -> Response:
     keywords = request.args.get("keywords", "")
     scope = request.args.get("scope", "")
-    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
-    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
 
