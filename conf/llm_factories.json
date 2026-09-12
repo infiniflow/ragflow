@@ -5392,6 +5392,13 @@
             "llm": []
         },
         {
+            "name": "API Route",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "HuggingFace",
             "logo": "",
             "tags": "TEXT EMBEDDING,TEXT RE-RANK",

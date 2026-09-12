@@ -107,6 +107,7 @@ export enum LLMFactory {
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
+  ApiRoute = 'API Route',
 }
 
 // Please lowercase the file name
@@ -196,6 +197,7 @@ export const IconMap = {
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
   [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
 };
 
@@ -222,6 +224,7 @@ export const APIMapUrl = {
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
   [LLMFactory.Synthorai]: 'https://synthorai.io',
+  [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
