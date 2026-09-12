@@ -2,7 +2,8 @@
 
 This directory contains database-related utility scripts for RAGFlow.
 
-- **mysql_migration.py**: Data migration between tables with stage-based execution
+- **mysql_migration.py**: Data migration between tables with stage-based execution (MySQL / OceanBase)
+- **postgres_migration.py**: Same stages as mysql_migration.py for PostgreSQL and GaussDB
 - **db_schema_sync.py**: Database schema synchronization using peewee-migrate
 
 ---
@@ -163,6 +164,39 @@ python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,t
 
 # Use config file with command line password override
 python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --password mypassword --execute
+```
+
+## postgres_migration.py
+
+PostgreSQL / GaussDB counterpart to `mysql_migration.py`. It runs the same stages
+(`tenant_model_provider` through `tenant_model_id_migration`) with Postgres SQL
+(`TO_TIMESTAMP`, `USING …::text`, `ON CONFLICT`). `run_migrations.sh` selects
+this script when `DB_TYPE` is `postgres`, `postgresql`, `gaussdb`, or `gauss`.
+
+For GaussDB metadata, connection settings come from `GAUSSDB_METADATA_*`
+environment variables (not the `gaussdb:` DOC_ENGINE section in
+`service_conf.yaml`).
+
+Pre-startup `run_migrations.sh` is the primary path for both `model_type`
+merge and `tenant_*_id` conversion/backfill. `migrate_db()` only reruns the
+same stages (and a skip-if-already-varchar `tenant_*_id` type fallback) if
+that script did not run.
+
+`--mark-database-version-on-success` writes `mysql_migration.database.version`
+only after every requested stage returns without raising. A crash therefore
+leaves the marker unset (or below `v0.27.0`), and the next boot retries.
+`migrate_db()` skips the postgres-family fallback once the marker is already
+`>= v0.27.0`. Stages are idempotent; do not set the marker by hand after a
+partial run.
+
+Do not convert `tenant_model.model_type` to integer in `migrate_db()` first:
+`tenant_model_seeding` and `model_type_merge` skip when the column is already
+INT, which would leave unmerged duplicate rows.
+
+```bash
+python postgres_migration.py --list-stages
+python postgres_migration.py --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
+    --config /path/to/config.yaml --execute --database-version v0.27.0 --mark-database-version-on-success
 ```
 
 ## Output Interpretation
