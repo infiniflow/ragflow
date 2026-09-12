@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/rag/advanced_rag/harness"
@@ -386,7 +387,7 @@ func (m *streamingModel) StreamComplete(_ context.Context, _ []schema.Message, _
 func TestComposeAnswerStreamForwardsDeltas(t *testing.T) {
 	m := &streamingModel{pieces: []string{"Hello ", "world"}}
 	var got []string
-	res, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false,
+	res, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, false,
 		func(delta string, _ bool) error {
 			got = append(got, delta)
 			return nil
@@ -406,7 +407,7 @@ func TestComposeAnswerStreamForwardsDeltas(t *testing.T) {
 func TestComposeAnswerStreamReturnsErrorOnFailure(t *testing.T) {
 	m := &streamingModel{fail: true}
 
-	if _, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, nil); err == nil {
+	if _, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, false, nil); err == nil {
 		t.Fatal("want an error so the caller can fall back to one-shot")
 	}
 }
@@ -450,10 +451,15 @@ func TestGetCitationGuidelinesUsesDefaultWithoutOverride(t *testing.T) {
 }
 
 func TestGetCitationGuidelinesHonoursOverride(t *testing.T) {
-	// Python renders the user's template; Go takes the rendered result verbatim.
+	// Python renders the user's template and STILL appends the
+	// illustrative-IDs caveat after it (generator.py:227-228 concatenates the
+	// suffix onto whatever template rendered).
 	got := GetCitationGuidelines("Cite as [n].")
-	if got != "Cite as [n]." {
-		t.Fatalf("got %q, want the override", got)
+	if !strings.HasPrefix(got, "Cite as [n].") {
+		t.Fatalf("got %q, want the override first", got)
+	}
+	if !strings.Contains(got, "IMPORTANT: The example IDs above") {
+		t.Fatalf("got %q, want the illustrative-IDs caveat appended", got)
 	}
 }
 
@@ -587,6 +593,113 @@ func TestOuterReactSessionToolCallKeepsSharedRequestIntact(t *testing.T) {
 	}
 	if len(session.req.Images) != 1 {
 		t.Errorf("shared request images = %v, want them untouched", session.req.Images)
+	}
+}
+
+// TestRagFlightSharesConcurrentIdenticalCalls pins the single-flight contract:
+// a caller arriving while the flight is open waits on it and replays its
+// answer; a caller arriving AFTER the window closed owns a fresh execution
+// (window-only dedup) and — like production's defer — must end it. The main
+// goroutine holds the window open long enough that the waiters normally take
+// the wait path, but the assertions tolerate both arrivals. Run with -race.
+func TestRagFlightSharesConcurrentIdenticalCalls(t *testing.T) {
+	session := &outerReactSession{}
+
+	owner, wait := session.beginRagFlight("same question")
+	if owner == nil || wait != nil {
+		t.Fatalf("first caller: owner=%v wait=%v, want (flight, nil)", owner, wait)
+	}
+
+	const waiters = 3
+	var wg sync.WaitGroup
+	got := make([]string, waiters)
+	for i := 0; i < waiters; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			o, w := session.beginRagFlight("same question")
+			if o != nil {
+				// Arrived after the window closed: this caller owns a fresh
+				// execution and must end it (production's ToolCall defers
+				// endRagFlight), or later callers would block forever.
+				session.endRagFlight("same question", o)
+				return
+			}
+			<-w.done
+			got[i] = w.answer
+		}(i)
+	}
+
+	// Hold the window open so the waiters observe it (scheduling latency is
+	// microseconds; the tolerant assertions above cover the pathological case).
+	time.Sleep(50 * time.Millisecond)
+	owner.answer = "shared answer"
+	session.endRagFlight("same question", owner)
+	wg.Wait()
+
+	for i, g := range got {
+		if g != "shared answer" && g != "" {
+			t.Errorf("waiter %d replayed %q, want %q or the owner path (\"\")", i, g, "shared answer")
+		}
+	}
+
+	// After the flight ends a NEW call owns a fresh execution (window-only
+	// dedup: a later round must genuinely re-run).
+	owner2, wait2 := session.beginRagFlight("same question")
+	if owner2 == nil || wait2 != nil {
+		t.Fatalf("post-window caller: owner=%v wait=%v, want (flight, nil)", owner2, wait2)
+	}
+	session.endRagFlight("same question", owner2)
+
+	// A different question never shares a flight.
+	other, otherWait := session.beginRagFlight("different question")
+	if other == nil || otherWait != nil {
+		t.Fatalf("different question: owner=%v wait=%v, want (flight, nil)", other, otherWait)
+	}
+	session.endRagFlight("different question", other)
+}
+
+// TestOuterReactSessionToolCallWaitsOnInFlightRag pins the ToolCall-level
+// behavior: a rag call whose question already has an in-progress execution
+// blocks and replays that execution's answer WITHOUT running its own graph —
+// no second publish, no second call record (Python's asyncio.gather runs both
+// duplicates fully and the terminal fold discards the loser; this wait is the
+// approved Go-side single-flight, see ragFlight).
+func TestOuterReactSessionToolCallWaitsOnInFlightRag(t *testing.T) {
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx:    context.Background(),
+		spec:   spec,
+		kb:     &harness.Kbinfos{},
+		resp:   &RunResponse{Mode: spec},
+		logger: log.New(io.Discard, "", 0),
+		req:    harness.RunRequest{Question: "original question"},
+	}
+
+	owner, wait := session.beginRagFlight("the question")
+	if owner == nil || wait != nil {
+		t.Fatalf("pre-registered flight: owner=%v wait=%v, want (flight, nil)", owner, wait)
+	}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		owner.answer = "shared answer"
+		session.endRagFlight("the question", owner)
+	}()
+
+	start := time.Now()
+	got, err := session.ToolCall("rag", map[string]interface{}{"question": "the question"})
+	if err != nil {
+		t.Fatalf("ToolCall: %v", err)
+	}
+	if got != "shared answer" {
+		t.Errorf("ToolCall replayed %q, want %q", got, "shared answer")
+	}
+	if elapsed := time.Since(start); elapsed < 15*time.Millisecond {
+		t.Errorf("ToolCall returned after %v — it did NOT wait for the in-flight execution", elapsed)
+	}
+	// The waiter must not have published or recorded its own call result.
+	if len(session.calls) != 0 {
+		t.Errorf("calls = %d, want 0 (a waiting call must not publish)", len(session.calls))
 	}
 }
 

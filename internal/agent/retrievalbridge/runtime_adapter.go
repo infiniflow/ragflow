@@ -56,12 +56,20 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		db = dao.DB
 	}
 	toolReq := agenttool.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		MemoryIDs:                req.MemoryIDs,
-		TopN:                     req.TopN,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		TopK:                     req.TopK,
+		Query:                 req.Query,
+		DatasetIDs:            req.DatasetIDs,
+		MemoryIDs:             req.MemoryIDs,
+		TopN:                  req.TopN,
+		RerankCandidatesCount: req.RerankCandidatesCount,
+		TopK:                  req.TopK,
+		// VectorSimilarityWeight is the VECTOR weight (Python
+		// vector_similarity_weight) and is forwarded to the nlp layer
+		// UN-inverted. KeywordsSimilarityWeight (canvas semantics, keyword
+		// weight) stays on its own inversion path in nlpRequestFromRetrieval —
+		// conflating the two turned the agentic hybrid leg vector-dominant and
+		// the BM25 legs into pure-vector searches.
+		VectorSimilarityWeight:   req.VectorSimilarityWeight,
+		DisableVectorLeg:         req.DisableVectorLeg,
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		UseKG:                    req.UseKG,
 		SimilarityThreshold:      req.SimilarityThreshold,

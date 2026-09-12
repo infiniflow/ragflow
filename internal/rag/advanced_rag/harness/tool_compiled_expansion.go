@@ -18,6 +18,7 @@ package harness
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -25,6 +26,7 @@ import (
 	"strings"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/tokenizer"
 )
 
 // Dense-match parameters for compiled-row search, mirroring Python
@@ -179,6 +181,18 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		match = strings.TrimSpace(keywords)
 	}
 
+	// The hybrid hits themselves — the claim-neighbour leg keys on them (the
+	// passages hybrid_search deemed relevant), so capture them BEFORE any
+	// expansion appends its own rows (Python :60-68).
+	hitChunks := make([]hitChunk, 0, len(kb.Chunks))
+	for _, c := range kb.Chunks {
+		hitChunks = append(hitChunks, hitChunk{
+			id:    ChunkIDOf(c),
+			sim:   similarityOf(c),
+			docID: DocIDOf(c),
+		})
+	}
+
 	// Admit one expansion batch. UNCAPPED, like Python's expansion (it appends
 	// straight to kbinfos, which is what pushes the pool past _EVIDENCE_POOL_CAP),
 	// but under the pool lock and deduped against the LIVE pool — the per-call
@@ -211,10 +225,18 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 			}
 		}
 		// Tree structure graph, selected by compile_kwd (Python L91-104):
-		// template_kind empty, compile_kwd="tree".
+		// template_kind empty, compile_kwd="tree". When the per-row strategy
+		// comes back empty, fall back to the LEGACY graph-blob strategy —
+		// documents compiled before the per-row migration persist ONE
+		// knowledge_graph_kwd="graph" blob per document and no raw rows
+		// (Python L110-125 _expand_tree_blob_strategy); it disappears once
+		// those docs are recompiled.
 		chunks, err := e.expandCompiledStrategy(ctx, sc, match, seen, "tree", "", 5)
 		if err != nil {
 			return err
+		}
+		if len(chunks) == 0 {
+			chunks = e.expandTreeBlobStrategy(ctx, sc, match, seen, 5)
 		}
 		if n := admitExpansion(chunks); n > 0 {
 			_LOG.Printf("[Compiled expand] tree: +%d chunks", n)
@@ -229,6 +251,15 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 			if n := admitExpansion(chunks); n > 0 {
 				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, n)
 			}
+		}
+		// Claims adjacent to the passages hybrid_search just hit (Python
+		// L154-169 _expand_claim_neighbor_strategy). Non-redundant with the
+		// query-keyed claim prefetch: when the prefetch hits, the exclusive
+		// takeover means this expansion never runs; when it misses for the
+		// QUERY, chunk hits are a different key and their sibling claims may
+		// still match.
+		if n := admitExpansion(e.expandClaimNeighborStrategy(ctx, sc, hitChunks, seen, 6)); n > 0 {
+			_LOG.Printf("[Compiled expand] claim neighbours: +%d chunks", n)
 		}
 	}
 
@@ -612,4 +643,277 @@ func cosine(a, b []float64) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
+}
+
+// ---------------------------------------------------------------------------
+// Legacy tree-blob expansion (Python _search_tree_blobs / _score_tree_entities
+// / _expand_tree_blob_strategy, compiled_expansion.py:579-718) and the
+// claim-neighbour expansion (Python _expand_claim_neighbor_strategy, :724-829).
+// ---------------------------------------------------------------------------
+
+// hitChunk is one hybrid_search hit the claim-neighbour leg keys on
+// (Python :60-68's (chunk_id, similarity, doc_id) triples).
+type hitChunk struct {
+	id    string
+	sim   float64
+	docID string
+}
+
+// expandTreeBlobStrategy mirrors Python _expand_tree_blob_strategy: expand a
+// tree-compiled document from its pre-migration graph blob, in-process. Same
+// contract as expandCompiledStrategy — seed entities, 1-hop neighbours, and
+// the neighbours' source_chunk_ids loaded back as real chunks — except seeds,
+// relations, and addressing all come from the blob's JSON, so the walk costs
+// zero extra store round-trips. Entity payloads are compiled summaries: only
+// the loaded chunks reach the model.
+func (e *compiledExpander) expandTreeBlobStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, maxChunks int) []map[string]any {
+	// Python _search_tree_blobs: compile_kwd=["tree"] + knowledge_graph_kwd=
+	// ["graph"], payload-only, capped at 16 rows.
+	filters := map[string][]string{"compile_kwd": {"tree"}, "knowledge_graph_kwd": {"graph"}}
+	rows := e.searchCompiledRows(ctx, sc, "", 16, filters)
+	if len(rows) == 0 {
+		return nil
+	}
+
+	byDoc := map[string][]string{}
+	var order []string
+	add := func(docID, cid string) {
+		for _, existing := range byDoc[docID] {
+			if existing == cid {
+				return
+			}
+		}
+		byDoc[docID] = append(byDoc[docID], cid)
+		kept := false
+		for _, d := range order {
+			if d == docID {
+				kept = true
+				break
+			}
+		}
+		if !kept {
+			order = append(order, docID)
+		}
+	}
+	for _, row := range rows {
+		docID := compiledDocID(row)
+		if docID == "" {
+			continue
+		}
+		graph, ok := decodeJSONObject(asString(row["content_with_weight"]))
+		if !ok {
+			continue
+		}
+		// Seeds: query-matched entities, then 1-hop neighbours through the
+		// blob's own relations (parent/child edges) — no store round-trips.
+		scored := scoreTreeEntities(graph, match)
+		if len(scored) == 0 {
+			continue
+		}
+		if len(scored) > 5 {
+			scored = scored[:5]
+		}
+		seedNames := map[string]bool{}
+		for _, ent := range scored {
+			if name := strings.TrimSpace(asString(ent["name"])); name != "" {
+				seedNames[name] = true
+			}
+		}
+		neighbours := map[string]bool{}
+		for _, rel := range objectList(graph["relations"]) {
+			from := strings.TrimSpace(compiledRelationEndpoint(rel, "from"))
+			to := strings.TrimSpace(compiledRelationEndpoint(rel, "to"))
+			if from != "" && seedNames[from] && to != "" {
+				neighbours[to] = true
+			}
+			if to != "" && seedNames[to] && from != "" {
+				neighbours[from] = true
+			}
+		}
+		// Address chunks: every entity at or adjacent to a seed contributes
+		// its source_chunk_ids (the same contract the raw-row strategy applies
+		// to neighbour entities).
+		wanted := func(name string) bool { return seedNames[name] || neighbours[name] }
+		for _, ent := range objectList(graph["entities"]) {
+			if !wanted(strings.TrimSpace(asString(ent["name"]))) {
+				continue
+			}
+			for _, cid := range compiledSourceChunkIDs(ent) {
+				if cid != "" && !seen[cid] {
+					add(docID, cid)
+				}
+			}
+		}
+	}
+	loaded, err := e.loadByDoc(ctx, sc, order, byDoc, seen, maxChunks)
+	if err != nil {
+		// Python's blob strategy lets the store error escape into
+		// _expand_with_compiled's caller; Expand already reports it the same
+		// way for the other strategies.
+		_LOG.Printf("[Compiled expand] tree blob chunk load failed: %v", err)
+		return nil
+	}
+	return loaded
+}
+
+// scoreTreeEntities mirrors Python _score_tree_entities: rank blob entities by
+// query-term overlap over name + description. Lexical on purpose — the raw-row
+// strategy seeds the same way (BM25 over content_ltks), and the blob's vectors
+// are one shared row vector with nothing per-entity to cosine against.
+func scoreTreeEntities(graph map[string]any, query string) []map[string]any {
+	terms := treeEntityTerms(query)
+	if len(terms) == 0 {
+		return nil
+	}
+	type scored struct {
+		ent   map[string]any
+		score int
+	}
+	var out []scored
+	for _, ent := range objectList(graph["entities"]) {
+		text := strings.ToLower(asString(ent["name"]) + " " + asString(ent["description"]))
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		score := 0
+		for _, t := range terms {
+			if strings.Contains(text, t) {
+				score++
+			}
+		}
+		if score > 0 {
+			out = append(out, scored{ent: ent, score: score})
+		}
+	}
+	// Stable sort: ties keep the blob's own entity order (Python's list.sort
+	// is stable, :632).
+	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	ents := make([]map[string]any, 0, len(out))
+	for _, s := range out {
+		ents = append(ents, s.ent)
+	}
+	return ents
+}
+
+// treeEntityTerms mirrors Python `_tokenize(query).split()` — the coarse
+// RAGFlow tokenizer (knowlege_compile/dataset_nav.py:518) — lowercased for the
+// containment match.
+func treeEntityTerms(query string) []string {
+	toks, err := tokenizer.Tokenize(query)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range strings.Fields(strings.ToLower(toks)) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// expandClaimNeighborStrategy mirrors Python _expand_claim_neighbor_strategy:
+// inject claims adjacent to the passages hybrid_search just hit. A claim whose
+// source_chunk_ids intersect a hit chunk is a verified atomic statement about a
+// passage the retriever already deemed relevant — even when the QUERY never
+// matched it. Emitted as pseudo-chunks (name + verbatim quote, "[claim] "
+// prefix, ASCII " -- " description separator, no per-quote cap beyond the
+// overall 1200) with the hit chunk's similarity, so they blend into the
+// ranking. Deliberately NOT 1-hop expanded and deliberately keyed on the HIT
+// chunks, not the query (Python :742-746).
+func (e *compiledExpander) expandClaimNeighborStrategy(ctx context.Context, sc compiledScope, hits []hitChunk, seen map[string]bool, maxChunks int) []map[string]any {
+	live := make([]hitChunk, 0, len(hits))
+	for _, h := range hits {
+		if h.id != "" && !strings.HasPrefix(h.id, "claim_") {
+			live = append(live, h)
+		}
+	}
+	if len(live) == 0 {
+		return nil
+	}
+	hitIDs := make(map[string]bool, len(live))
+	hitDocs := []string{}
+	docSeen := map[string]bool{}
+	for _, h := range live {
+		hitIDs[h.id] = true
+		if h.docID != "" && !docSeen[h.docID] {
+			docSeen[h.docID] = true
+			hitDocs = append(hitDocs, h.docID)
+		}
+	}
+	sort.Strings(hitDocs)
+
+	// Python :763-780: claim rows of the hit documents, payload-only, 256 rows.
+	filters := map[string][]string{"entity_type_kwd": {"claim"}, "scope_kwd": {"doc"}}
+	if len(hitDocs) > 0 {
+		filters["doc_id"] = hitDocs
+	}
+	rows := e.searchCompiledRows(ctx, sc, "", 256, filters)
+
+	out := make([]map[string]any, 0, maxChunks)
+	for _, row := range rows {
+		payload, ok := decodeJSONObject(asString(row["content_with_weight"]))
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(asString(payload["name"]))
+		if name == "" {
+			continue
+		}
+		srcIDs := compiledSourceChunkIDs(row)
+		if len(srcIDs) == 0 {
+			srcIDs = compiledSourceChunkIDs(payload)
+		}
+		overlap := map[string]bool{}
+		for _, cid := range srcIDs {
+			if hitIDs[cid] {
+				overlap[cid] = true
+			}
+		}
+		if len(overlap) == 0 {
+			continue
+		}
+		rowDoc := compiledDocID(row)
+		cid := "claim_" + fmt.Sprintf("%x", md5.Sum([]byte(rowDoc+":"+name)))[:12]
+		if seen[cid] {
+			continue
+		}
+		description := strings.TrimSpace(asString(payload["description"]))
+		quote := ""
+		for _, ev := range objectList(payload["evidence"]) {
+			if q := strings.TrimSpace(asString(ev["quote"])); q != "" {
+				quote = q
+				break
+			}
+		}
+		content := "[claim] " + name
+		if description != "" && description != name {
+			content += " -- " + description
+		}
+		if quote != "" {
+			content += "\nEvidence (verbatim): \"" + quote + "\""
+		}
+		// Inherit the best-matching hit's similarity so the pseudo-chunk lands
+		// beside the passage that spawned it in the final ranking.
+		similarity := 0.0
+		for _, h := range live {
+			if overlap[h.id] && h.sim > similarity {
+				similarity = h.sim
+			}
+		}
+		seen[cid] = true
+		out = append(out, map[string]any{
+			"chunk_id":            cid,
+			"content_with_weight": truncateRunes(content, 1200),
+			"doc_id":              rowDoc,
+			"source_chunk_ids":    srcIDs,
+			"similarity":          similarity,
+		})
+		if len(out) >= maxChunks {
+			break
+		}
+	}
+	return out
 }

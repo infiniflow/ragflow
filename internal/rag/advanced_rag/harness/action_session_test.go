@@ -1188,3 +1188,50 @@ func TestActionRunPromptHasPlaybook(t *testing.T) {
 		}
 	}
 }
+
+// TestParseTerminalEmptyAnswerNotFound pins Python _parse_terminal:1282:
+// `answer = str(data.get("answer", "")).strip() or None` — an empty or
+// whitespace <answer> payload is NOT a found answer. Python's _run_action_node
+// then only ends the session when the <answer> carried a new_state patch; with
+// neither an answer nor a patch it NUDGES and the session continues, so a bare
+// <answer> block can never end a session with collected_answer="".
+func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
+	parent := NewState([]Variable{{ID: 0, Type: "answer"}}, 0, nil)
+
+	// Whitespace answer, no patch: no found answer, no branches — the session
+	// keeps running (runActionNode falls through to the nudge).
+	states, found, tt, _ := ParseTerminal("<answer>{\"answer\": \"   \"}</answer>", parent)
+	if found != nil {
+		t.Errorf("whitespace answer: FoundAnswer = %q, want nil", *found)
+	}
+	if len(states) != 0 {
+		t.Errorf("whitespace answer: %d branch(es), want 0", len(states))
+	}
+	if tt == nil || *tt != "answer" {
+		t.Errorf("whitespace answer: terminal type = %v, want answer", tt)
+	}
+
+	// Missing answer field, no patch: same.
+	states, found, _, _ = ParseTerminal("<answer>{}</answer>", parent)
+	if found != nil || len(states) != 0 {
+		t.Errorf("missing answer: FoundAnswer=%v branches=%d, want nil/0", found, len(states))
+	}
+
+	// A real answer still parses.
+	_, found, _, _ = ParseTerminal("<answer>{\"answer\": \"  74  \"}</answer>", parent)
+	if found == nil || *found != "74" {
+		t.Errorf("real answer: FoundAnswer = %v, want 74 (stripped)", found)
+	}
+
+	// Empty answer WITH a new_state patch: the patch is returned (Python
+	// :1283-1288 final_state), terminal type stays "answer", found stays nil.
+	states, found, _, _ = ParseTerminal(
+		"<answer>{\"answer\": \"\", \"new_state\": [{\"id\": 0, \"candidate\": \"74\", \"candidate_strength\": 0.9}]}</answer>",
+		parent)
+	if found != nil {
+		t.Errorf("empty answer with patch: FoundAnswer = %q, want nil", *found)
+	}
+	if len(states) != 1 || states[0].State[0].Candidate == nil || *states[0].State[0].Candidate != "74" {
+		t.Errorf("empty answer with patch: branches = %+v, want one state with candidate 74", states)
+	}
+}

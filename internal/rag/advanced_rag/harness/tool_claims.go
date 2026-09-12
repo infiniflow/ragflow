@@ -43,6 +43,12 @@ const (
 	// queries across turns and each miss costs one KNN round-trip per KB.
 	claimPrefetchCacheTTL = 300.0
 	claimPrefetchCacheCap = 64
+	// EvidenceQuoteChars caps the verbatim quote in the GRAPH fan-out's
+	// channel-0 pseudo chunks (Python agentic_rag_graph.py:723 `[:400]`). The
+	// action-session prefetch uses the longer ClaimEvidenceChars (1200,
+	// _STRUCT_CLAIM_EVIDENCE_CHARS) — the two conventions are deliberately
+	// different on the Python side and must not be conflated.
+	EvidenceQuoteChars = 400
 )
 
 // claimRowTypes lists the entity_type_kwd values the agentic claim search
@@ -337,28 +343,33 @@ func rrfFuseClaims(legs ...[]*ClaimHit) []*ClaimHit {
 	return out
 }
 
-// ClaimPseudoChunks renders recalled claims as pool-shaped pseudo chunks
-// (Python _claim_prefetch's kbinfos["chunks"] entries): the verbatim evidence
-// rides along and source_chunk_ids let a later deep-read retire the
-// pseudo-chunk.
+// ClaimPseudoChunks renders recalled claims as the pool-shaped pseudo chunks
+// the GRAPH fan-out's channel 0 admits (Python agentic_rag_graph.py
+// _collect_evidence :712-733): the row leads with the literal "[evidence]"
+// prefix, the quote is a LITERAL quoted span capped at EvidenceQuoteChars
+// (400), and the whole content is capped at 1200. source_chunk_ids ride along
+// so the directional top-up and _prefill_slots_from_evidence can find the
+// underlying chunks.
+//
+// This is NOT the action-session prefetch's format — Python's _claim_prefetch
+// renders "[claim #rank]" with a 1200-char quote (action_session.py:741-747),
+// which ClaimPrefetch builds inline. The two formats are Python-exact and
+// deliberately distinct.
 func ClaimPseudoChunks(claims []*ClaimHit) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(claims))
 	for _, c := range claims {
 		cid := claimHitID(c)
-		content := fmt.Sprintf("[claim #%d] %s", c.Rank, c.Name)
+		content := "[evidence] " + c.Name
 		if c.Description != "" && c.Description != c.Name {
 			content += " — " + c.Description
 		}
 		if c.Quote != "" {
-			quote := c.Quote
-			if len(quote) > ClaimEvidenceChars {
-				quote = quote[:ClaimEvidenceChars]
-			}
-			content += fmt.Sprintf("\nEvidence (verbatim): %q", quote)
+			// Python [:_STRUCT_CLAIM_EVIDENCE_CHARS] counts CODE POINTS.
+			quote := truncateRunes(c.Quote, EvidenceQuoteChars)
+			content += "\nEvidence (verbatim): \"" + quote + "\""
 		}
-		if len(content) > 1200 {
-			content = content[:1200]
-		}
+		// Python content[:1200] (:728) counts CODE POINTS, not bytes.
+		content = truncateRunes(content, 1200)
 		out = append(out, map[string]interface{}{
 			"chunk_id":            cid,
 			"content_with_weight": content,
@@ -402,15 +413,12 @@ func ClaimPrefetch(ctx context.Context, deps SearchDeps, query string, seen map[
 			content += " — " + c.Description
 		}
 		if c.Quote != "" {
-			quote := c.Quote
-			if len(quote) > ClaimEvidenceChars {
-				quote = quote[:ClaimEvidenceChars]
-			}
+			// Python [:_STRUCT_CLAIM_EVIDENCE_CHARS] counts CODE POINTS.
+			quote := truncateRunes(c.Quote, ClaimEvidenceChars)
 			content += fmt.Sprintf("\nEvidence (verbatim): %q", quote)
 		}
-		if len(content) > 1200 {
-			content = content[:1200]
-		}
+		// Python content[:1200] (:747) counts CODE POINTS, not bytes.
+		content = truncateRunes(content, 1200)
 		docID := c.DocID
 		payload = append(payload, map[string]any{"id": cid, "content": content, "doc_id": docID})
 		ids = append(ids, cid)
@@ -677,14 +685,12 @@ func publishClaimHits(deps SearchDeps, hits []DocClaimHit, docID string) int {
 				content += " — " + desc
 			}
 			if quote := docClaimQuote(h); quote != "" {
-				if len(quote) > ClaimEvidenceChars {
-					quote = quote[:ClaimEvidenceChars]
-				}
+				// Python [:_STRUCT_CLAIM_EVIDENCE_CHARS] counts CODE POINTS.
+				quote := truncateRunes(docClaimQuote(h), ClaimEvidenceChars)
 				content += "\nEvidence (verbatim): \"" + quote + "\""
 			}
-			if len(content) > 1200 {
-				content = content[:1200]
-			}
+			// Python content[:1200] (navigation.py:1585-1600) counts CODE POINTS.
+			content = truncateRunes(content, 1200)
 			src := []string{}
 			if h.ChunkID != "" {
 				src = []string{h.ChunkID}

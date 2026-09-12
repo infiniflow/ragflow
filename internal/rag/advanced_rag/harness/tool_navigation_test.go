@@ -1028,9 +1028,10 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 		if !reflect.DeepEqual(got.chunkPaths, want) {
 			t.Errorf("chunkPaths = %v, want %v", got.chunkPaths, want)
 		}
-		// Snippets are capped at structMaxChunks in kept order, so "r1" (Root sorts
-		// last) sits outside a stable, repeatable window.
-		if !strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
+		// Snippets are capped at structMaxChunks (=4, Python _STRUCT_MAX_CHUNKS)
+		// in kept order, so "g1" (Gamma) and "r1" (Root sorts last) sit outside
+		// the stable, repeatable window.
+		if !strings.Contains(got.outline, "[chunk a1]") || strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
 			t.Errorf("outline's snippet window is not the first %d chunks in kept order:\n%s",
 				structMaxChunks, got.outline)
 		}

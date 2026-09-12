@@ -59,12 +59,20 @@ type RetrievalChunk struct {
 
 // RetrievalRequest is the input to RetrievalService.Search.
 type RetrievalRequest struct {
-	Query                    string
-	DatasetIDs               []string
-	MemoryIDs                []string
-	TopN                     int
-	RerankCandidatesCount    int
-	TopK                     int
+	Query                 string
+	DatasetIDs            []string
+	MemoryIDs             []string
+	TopN                  int
+	RerankCandidatesCount int
+	TopK                  int
+	// VectorSimilarityWeight is the VECTOR leg's weight (Python
+	// vector_similarity_weight), forwarded verbatim by the agentic harness. The
+	// canvas path keeps using KeywordsSimilarityWeight (the keyword weight the
+	// adapter inverts); see retrievalbridge/runtime_adapter.go.
+	VectorSimilarityWeight *float64
+	// DisableVectorLeg mirrors Python passing embd_mdl=None: the backend runs
+	// the keyword-only branch with NO dense leg (not even a weight-0 one).
+	DisableVectorLeg         bool
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      *float64
