@@ -67,6 +67,35 @@ The Google Drive data source is used to synchronize files or folders in Google D
 
 ![Google Drive](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Google_Drive.jpg)
 
+## Feishu Wiki
+
+The Feishu Wiki data source is available with the Python backend. It recursively scans a configured Wiki subtree and imports matching downloadable `file` nodes. Native Feishu Docs, Sheets, Slides, and Bitable records are not imported directly, although the connector traverses non-file nodes to discover downloadable files below them.
+
+The Feishu custom app needs read-only Wiki and Drive permissions. Add the app to the target Wiki with permission to list nodes and download files.
+
+The connector supports this file subset: `csv`, `doc`, `docx`, `eml`, `gif`, `html`, `jpeg`, `jpg`, `json`, `md`, `mdx`, `pdf`, `png`, `ppt`, `pptx`, `tif`, `txt`, `xls`, and `xlsx`.
+
+Configure the following fields:
+
+- **Name**: A descriptive name for the connection in RAGFlow.
+- **Feishu app ID** and **Feishu app secret**: Credentials for the Feishu custom app. The secret is masked in the form.
+- **Wiki space ID**: The ID of the target Wiki space.
+- **Wiki root node token**: The node whose descendants are scanned recursively.
+- **Allowed file extensions**: An optional allow-list from the supported subset above. Leave it empty to allow the complete subset.
+- **Required filename keywords**: An optional list. A filename must contain at least one configured keyword.
+- **Excluded filename keywords**: An optional list. A matching filename is excluded.
+- **Maximum file size (bytes)**: The largest file body the connector will accept. The default is `52428800` bytes (50 MiB). Both the declared content length and the streamed byte count are enforced.
+- **Batch size**: The number of files sent to the ingestion pipeline per batch. The default is `2`; valid values are `1` through `10`.
+- **Refresh interval**: The interval between periodic scans.
+
+Extension and filename filters are applied before a file body is downloaded. Every periodic sync scans node metadata in the subtree, but downloads only matching files whose edit time falls within the completed sync window. An empty completed scan advances that window, so the same time interval is not treated as pending again.
+
+File downloads retry HTTP 429 responses up to three times. The connector honors the relative delay in seconds from Feishu's `x-ogw-ratelimit-reset` response header, with a minimum wait of one second. If the header is missing or invalid, retries wait one, two, then four seconds. A requested delay above 60 seconds stops the download instead of retrying before the server's reset. See [Feishu's rate-limit guide](https://open.feishu.cn/document/server-docs/api-call-guide/frequency-control).
+
+Unsuccessful downloads raise a connector validation error with the HTTP status and, when available, Feishu's error code, message, and request log ID. Error-body parsing is limited to 8 KiB; diagnostic fields are length-limited and credentials are redacted. Successful file bodies, including JSON files, are imported unchanged. After retries are exhausted, the sync fails without advancing its successful window.
+
+Normal periodic sync does not propagate source deletions: deleting a file in Feishu does not immediately delete the imported RAGFlow document. A manual rebuild follows the existing delete-then-import behavior, so previously imported files that are no longer present or no longer match the filters can be removed during the rebuild.
+
 ## OneDrive
 
 The OneDrive data source is used to synchronize files in OneDrive or OneDrive for Business to a RAGFlow knowledge base. After configuration, personal or department cloud files can be queried in a unified way.
