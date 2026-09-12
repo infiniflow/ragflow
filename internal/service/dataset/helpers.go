@@ -176,7 +176,222 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 		return errors.New("parser_config must be valid JSON")
 	}
 	if len(data) > 65535 {
-		return fmt.Errorf("parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+	}
+	return nil
+}
+
+func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+	if _, exists := parserConfig["ext"]; exists {
+		return errors.New("parser_config.ext is not supported; send parser configuration fields directly")
+	}
+	intBounds := map[string][2]float64{"auto_keywords": {0, 32}, "auto_questions": {0, 10}, "chunk_token_num": {1, 2048}, "topn_tags": {1, 10}}
+	for key, bounds := range intBounds {
+		if value, ok := parserConfig[key]; ok {
+			n, ok := value.(float64)
+			if !ok || n != float64(int64(n)) {
+				return errors.New("Input should be a valid integer")
+			}
+			if n < bounds[0] {
+				return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
+			}
+			if n > bounds[1] {
+				return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
+			}
+		}
+	}
+	if value, ok := parserConfig["task_page_size"]; ok && value != nil {
+		n, ok := value.(float64)
+		if !ok || n != float64(int64(n)) {
+			return errors.New("Input should be a valid integer")
+		}
+		if n < 1 {
+			return errors.New("Input should be greater than or equal to 1")
+		}
+	}
+	if value, ok := parserConfig["delimiter"]; ok {
+		if s, ok := value.(string); !ok || len(s) == 0 {
+			return errors.New("String should have at least 1 character")
+		}
+	}
+	for _, key := range []string{"html4excel"} {
+		if value, ok := parserConfig[key]; ok {
+			if _, ok := value.(bool); !ok {
+				return errors.New("Input should be a valid boolean")
+			}
+		}
+	}
+	if value, ok := parserConfig["tag_kb_ids"]; ok {
+		list, ok := value.([]interface{})
+		if !ok {
+			return errors.New("Input should be a valid list")
+		}
+		for _, item := range list {
+			if _, ok := item.(string); !ok {
+				return errors.New("Input should be a valid string")
+			}
+		}
+	}
+	if value, ok := parserConfig["pages"]; ok {
+		list, ok := value.([]interface{})
+		if !ok {
+			return errors.New("Input should be a valid list")
+		}
+		for _, item := range list {
+			row, ok := item.([]interface{})
+			if !ok || len(row) != 2 {
+				return errors.New("Input should be a valid list")
+			}
+			for _, bound := range row {
+				n, ok := bound.(float64)
+				if !ok || n != float64(int64(n)) {
+					return errors.New("Input should be a valid integer")
+				}
+			}
+		}
+	}
+	if value, ok := parserConfig["filename_embd_weight"]; ok {
+		n, ok := value.(float64)
+		if !ok {
+			return errors.New("Input should be a valid number")
+		}
+		if n < 0 {
+			return errors.New("Input should be greater than or equal to 0")
+		}
+		if n > 1 {
+			return errors.New("Input should be less than or equal to 1")
+		}
+	}
+	for _, key := range []string{"raptor", "graphrag", "parent_child"} {
+		if value, ok := parserConfig[key]; ok {
+			obj, ok := value.(map[string]interface{})
+			if !ok {
+				return errors.New("Input should be a valid dictionary")
+			}
+			if key == "graphrag" {
+				if v, exists := obj["use_graphrag"]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
+					}
+				}
+				if v, exists := obj["entity_types"]; exists {
+					list, ok := v.([]interface{})
+					if !ok {
+						return errors.New("Input should be a valid list")
+					}
+					for _, item := range list {
+						if _, ok := item.(string); !ok {
+							return errors.New("Input should be a valid string")
+						}
+					}
+				}
+				if v, exists := obj["method"]; exists {
+					method, ok := v.(string)
+					if !ok || (method != "light" && method != "general" && method != "ner") {
+						return errors.New("Input should be 'light', 'general' or 'ner'")
+					}
+				}
+				for _, name := range []string{"community", "resolution"} {
+					if v, exists := obj[name]; exists {
+						if _, ok := v.(bool); !ok {
+							return errors.New("Input should be a valid boolean")
+						}
+					}
+				}
+				for name, bounds := range map[string][2]float64{"batch_chunk_token_size": {512, 8196}, "retry_attempts": {1, 10}, "build_subgraph_timeout_per_chunk_seconds": {1, 86400}, "build_subgraph_min_timeout_seconds": {1, 86400}, "merge_timeout_seconds": {0, 86400}, "resolution_timeout_seconds": {0, 86400}, "community_timeout_seconds": {0, 86400}, "lock_acquire_timeout_seconds": {0, 86400}} {
+					if v, exists := obj[name]; exists {
+						n, ok := v.(float64)
+						if !ok || n != float64(int64(n)) {
+							return errors.New("Input should be a valid integer")
+						}
+						if n < bounds[0] || n > bounds[1] {
+							return fmt.Errorf("Input should be between %v and %v", int(bounds[0]), int(bounds[1]))
+						}
+					}
+				}
+				for name, bounds := range map[string][2]float64{"retry_backoff_seconds": {0, 600}, "retry_backoff_max_seconds": {0, 3600}} {
+					if v, exists := obj[name]; exists {
+						n, ok := v.(float64)
+						if !ok {
+							return errors.New("Input should be a valid number")
+						}
+						if n < bounds[0] || n > bounds[1] {
+							return fmt.Errorf("Input should be between %v and %v", bounds[0], bounds[1])
+						}
+					}
+				}
+			}
+			if key == "raptor" {
+				if v, exists := obj["use_raptor"]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
+					}
+				}
+				if v, exists := obj["prompt"]; exists {
+					if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
+						return errors.New("String should have at least 1 character")
+					}
+				}
+				for name, bounds := range map[string][2]float64{"max_token": {512, 2048}, "max_cluster": {1, 1024}, "random_seed": {0, 9223372036854775807}} {
+					if v, exists := obj[name]; exists {
+						n, ok := v.(float64)
+						if !ok || n != float64(int64(n)) {
+							return errors.New("Input should be a valid integer")
+						}
+						if n < bounds[0] {
+							return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
+						}
+						if n > bounds[1] {
+							return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
+						}
+					}
+				}
+				if v, exists := obj["clustering_threshold"]; exists {
+					n, ok := v.(float64)
+					if !ok {
+						return errors.New("Input should be a valid number")
+					}
+					if n < 0 {
+						return errors.New("Input should be greater than or equal to 0")
+					}
+					if n > 1 {
+						return errors.New("Input should be less than or equal to 1")
+					}
+				}
+				if v, exists := obj["clustering_ratio"]; exists {
+					n, ok := v.(float64)
+					if !ok {
+						return errors.New("Input should be a valid number")
+					}
+					if n < 0 || n > 1 {
+						return errors.New("Input should be between 0 and 1")
+					}
+				}
+				if v, exists := obj["scope"]; exists {
+					s, ok := v.(string)
+					if !ok || (s != "file" && s != "dataset") {
+						return errors.New("Input should be 'file' or 'dataset'")
+					}
+				}
+				if v, exists := obj["auto_disable_for_structured_data"]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
+					}
+				}
+			}
+			if key == "parent_child" {
+				if v, exists := obj["use_parent_child"]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
+					}
+				}
+				if v, exists := obj["children_delimiter"]; exists {
+					if s, ok := v.(string); !ok || s == "" {
+						return errors.New("String should have at least 1 character")
+					}
+				}
+			}
+		}
 	}
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 
@@ -90,6 +91,17 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 		language = &normalized
 	}
+	if req.Avatar != nil {
+		if len(*req.Avatar) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		if err := validateDatasetAvatar(*req.Avatar); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	if req.Description != nil && len(*req.Description) > 65535 {
+		return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
 		if ok, err := canvasAccessibleForUser(ctx, tenantID, strings.TrimSpace(*pipelineID)); err != nil {
@@ -104,6 +116,50 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		common.Warn("failed to resolve component params defaults for dataset",
 			zap.String("parserID", parserID), zap.Error(cpErr))
 		parserConfig = entity.JSONMap{}
+	}
+	if req.ParserConfig != nil {
+		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+		// Built-in dataset creation accepts the historical flat parser_config
+		// shape. RAPTOR/GraphRAG are indexing options, not persisted parser
+		// defaults, and Python intentionally drops them here.
+		flatParserID := parserID
+		if flatParserID == "general" {
+			flatParserID = "naive"
+		}
+		flat := common.GetParserConfig(flatParserID, req.ParserConfig)
+		delete(flat, "raptor")
+		delete(flat, "graphrag")
+		flat["llm_id"] = tenant.LLMID
+		flat["parent_child"] = map[string]interface{}{"use_parent_child": false, "children_delimiter": "\n"}
+		flat["children_delimiter"] = ""
+		parserConfig = entity.JSONMap(flat)
+	}
+	if req.AutoMetadataConfig != nil {
+		if parserConfig == nil {
+			parserConfig = entity.JSONMap{}
+		}
+		metadata := map[string]interface{}{"enabled": true}
+		for _, key := range []string{"metadata", "built_in_metadata", "fields", "enabled"} {
+			if value, ok := req.AutoMetadataConfig[key]; ok {
+				if key == "fields" {
+					metadata["metadata"] = value
+				} else {
+					metadata[key] = value
+				}
+			}
+		}
+		parserConfig["metadata"] = metadata
+		if err := validateDatasetParserConfigSize(parserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
 	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
@@ -141,6 +197,8 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
 		Name:         name,
+		Avatar:       req.Avatar,
+		Description:  req.Description,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
