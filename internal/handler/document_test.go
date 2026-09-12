@@ -1152,7 +1152,7 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=DONE&types=doc&desc=false", "")
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1169,8 +1169,8 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	if len(fake.filterOpts.Suffixes) != 1 || fake.filterOpts.Suffixes[0] != "pdf" {
 		t.Fatalf("expected suffix pdf, got %#v", fake.filterOpts.Suffixes)
 	}
-	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != string(entity.TaskStatusDone) {
-		t.Fatalf("expected run DONE to map to %q, got %#v", string(entity.TaskStatusDone), fake.filterOpts.RunStatuses)
+	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != common.COMPLETED {
+		t.Fatalf("expected run COMPLETED to map to %q, got %#v", common.COMPLETED, fake.filterOpts.RunStatuses)
 	}
 	if len(fake.filterOpts.Types) != 1 || fake.filterOpts.Types[0] != "doc" {
 		t.Fatalf("expected type doc, got %#v", fake.filterOpts.Types)
@@ -1186,6 +1186,43 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["total"] != float64(2) {
 		t.Fatalf("expected total 2, got %v", data["total"])
+	}
+}
+
+func TestListDocumentsRejectsInvalidRunFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	for _, invalid := range []string{"1", "DONE", "CANCEL", "FAIL", "SCHEDULE"} {
+		c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
+		c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+		h.ListDocuments(c)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 wrapper, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("invalid json response: %v", err)
+		}
+		if int(resp["code"].(float64)) != int(common.CodeDataError) {
+			t.Fatalf("expected code %d for %s, got %v", common.CodeDataError, invalid, resp["code"])
+		}
+		msg, _ := resp["message"].(string)
+		if !strings.Contains(msg, "Invalid filter run status conditions: "+invalid) {
+			t.Fatalf("expected error message for %s to contain 'Invalid filter run status conditions: %s', got %q", invalid, invalid, msg)
+		}
 	}
 }
 
@@ -1238,7 +1275,7 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 	}
 }
 
-func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
+func TestListDocumentsHandlerReturnsUnstartWhenNoIngestionTask(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB
 	dao.DB = db
@@ -1281,8 +1318,11 @@ func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
 	if len(response.Data.Docs) != 1 {
 		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
 	}
-	if _, exists := response.Data.Docs[0]["ingestion_status"]; exists {
-		t.Fatalf("ingestion_status should be omitted when no ingestion task exists")
+	if got := response.Data.Docs[0]["ingestion_status"]; got != "UNSTART" {
+		t.Fatalf("ingestion_status = %v, want UNSTART", got)
+	}
+	if _, exists := response.Data.Docs[0]["run"]; exists {
+		t.Fatalf("run field should not exist in response")
 	}
 }
 
@@ -1438,7 +1478,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 		listIDs: []string{"doc-1", "doc-2", "doc-3"},
 		metadataByKBs: map[string]interface{}{
 			"author": map[string][]string{
-				"Alice": []string{"doc-2", "doc-4"},
+				"Alice": {"doc-2", "doc-4"},
 			},
 		},
 	}

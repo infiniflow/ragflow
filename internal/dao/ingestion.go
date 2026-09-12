@@ -216,6 +216,29 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
+// GetLatestByDocumentIDs returns a map of documentID -> latest IngestionTask.
+func (dao *IngestionTaskDAO) GetLatestByDocumentIDs(ctx context.Context, db *gorm.DB, documentIDs []string) (map[string]*entity.IngestionTask, error) {
+	if len(documentIDs) == 0 {
+		return map[string]*entity.IngestionTask{}, nil
+	}
+	var tasks []*entity.IngestionTask
+	err := db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Order("COALESCE(create_time, 0) DESC").
+		Order("id DESC").
+		Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*entity.IngestionTask, len(documentIDs))
+	for _, task := range tasks {
+		if _, exists := result[task.DocumentID]; !exists {
+			result[task.DocumentID] = task
+		}
+	}
+	return result, nil
+}
+
 // CountActiveByDatasetID returns the number of ingestion tasks for the
 // dataset whose latest task is non-terminal (CREATED/SCHEDULED/RUNNING/STOPPING).
 // It uses the same create_time/ID ordering as document-list state so historical
@@ -236,7 +259,7 @@ func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gor
 						AND newer_ingestion_task.id > ingestion_task.id
 					)
 				  )
-			)`, datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
+			)`, datasetID, common.ActiveTaskStatuses).
 		Count(&count).Error
 	return count, err
 }

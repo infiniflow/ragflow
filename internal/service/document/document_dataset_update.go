@@ -235,21 +235,38 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		metaFields, _ = s.GetDocumentMetadataByID(ctx, updatedDoc.ID)
 	}
 
-	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
+	resp, err := s.toUpdateDatasetDocumentResponse(ctx, updatedDoc, metaFields)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return resp, common.CodeSuccess, nil
 }
 
 // validateDocumentModifiable rejects configuration edits while the document is
-// actively parsing or scheduled. Editing a document that is mid-parse races
-// with the running worker and can leave the document stuck and undeletable.
-func (s *DocumentService) validateDocumentModifiable(doc *entity.Document) (common.ErrorCode, error) {
-	if doc.Run != nil {
-		run := entity.TaskStatus(*doc.Run)
-		if !entity.DocumentModifiableStatuses[run] {
-			return common.CodeDataError, fmt.Errorf(
-				"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", run)
-		}
+// actively parsing or scheduled.
+func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
+	if s.ingestionTaskDAO == nil {
+		return common.CodeServerError, errors.New("ingestion task DAO not initialized")
 	}
-	return common.CodeSuccess, nil
+	if doc == nil || doc.ID == "" {
+		return common.CodeDataError, errors.New("document is nil or has empty ID")
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+	}
+	if task == nil {
+		return common.CodeSuccess, nil
+	}
+	switch {
+	case common.IsActiveTaskStatus(task.Status):
+		return common.CodeDataError, fmt.Errorf(
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+	case common.IsTerminalTaskStatus(task.Status):
+		return common.CodeSuccess, nil
+	default:
+		return common.CodeDataError, fmt.Errorf("document has unrecognized task status %q", task.Status)
+	}
 }
 
 func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
@@ -262,7 +279,7 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	// chunk_method, pipeline_id, enabled, meta_fields) is blocked so the
 	// in-flight parser never reads a config that changed underneath it.
 	if len(present) > 0 {
-		if code, err := s.validateDocumentModifiable(doc); err != nil {
+		if code, err := s.validateDocumentModifiable(ctx, doc); err != nil {
 			return code, err
 		}
 	}
@@ -456,9 +473,19 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	})
 }
 
-func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, metaFields map[string]interface{}) *UpdateDatasetDocumentResponse {
+func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
 	if metaFields == nil {
 		metaFields = map[string]interface{}{}
+	}
+	ingestionStatus := "UNSTART"
+	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+		}
+		if task != nil && task.Status != "" {
+			ingestionStatus = task.Status
+		}
 	}
 	return &UpdateDatasetDocumentResponse{
 		ID:              doc.ID,
@@ -482,31 +509,13 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, 
 		ContentHash:     doc.ContentHash,
 		MetaFields:      metaFields,
 		Suffix:          doc.Suffix,
-		Run:             mapDocumentRunStatus(doc.Run),
+		IngestionStatus: ingestionStatus,
 		Status:          doc.Status,
 		CreateTime:      doc.CreateTime,
 		CreateDate:      doc.CreateDate,
 		UpdateTime:      doc.UpdateTime,
 		UpdateDate:      doc.UpdateDate,
-	}
-}
-
-func mapDocumentRunStatus(run *string) string {
-	if run == nil {
-		return "UNSTART"
-	}
-	switch *run {
-	case string(entity.TaskStatusRunning):
-		return "RUNNING"
-	case string(entity.TaskStatusCancel):
-		return "CANCEL"
-	case string(entity.TaskStatusDone):
-		return "DONE"
-	case string(entity.TaskStatusFail):
-		return "FAIL"
-	default:
-		return "UNSTART"
-	}
+	}, nil
 }
 
 // validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.

@@ -658,9 +658,9 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 		Types:    queryValues(c, "types"),
 	}
 
-	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status"))
-	if len(queryValues(c, "run", "run_status")) > 0 && len(opts.RunStatuses) == 0 {
-		return opts, fmt.Sprintf("Invalid filter run status conditions: %s", strings.Join(invalidRunStatuses(queryValues(c, "run", "run_status")), ", "))
+	opts.RunStatuses = normalizeRunStatusFilter(queryValues(c, "run", "run_status", "ingestion_status"))
+	if len(queryValues(c, "run", "run_status", "ingestion_status")) > 0 && len(opts.RunStatuses) == 0 {
+		return opts, fmt.Sprintf("Invalid filter run status conditions: %s", strings.Join(invalidRunStatuses(queryValues(c, "run", "run_status", "ingestion_status")), ", "))
 	}
 
 	opts.Name = c.Query("name")
@@ -880,31 +880,25 @@ func queryValues(c *gin.Context, names ...string) []string {
 	return out
 }
 
+var runStatusMap = map[string]string{
+	"UNSTART":   "UNSTART",
+	"CREATED":   common.CREATED,
+	"SCHEDULED": common.SCHEDULED,
+	"RUNNING":   common.RUNNING,
+	"STOPPING":  common.STOPPING,
+	"STOPPED":   common.STOPPED,
+	"COMPLETED": common.COMPLETED,
+	"FAILED":    common.FAILED,
+}
+
 func normalizeRunStatusFilter(statuses []string) []string {
 	if len(statuses) == 0 {
 		return nil
 	}
-	statusTextToNumeric := map[string]string{
-		"UNSTART": string(entity.TaskStatusUnstart),
-		"RUNNING": string(entity.TaskStatusRunning),
-		"CANCEL":  string(entity.TaskStatusCancel),
-		"DONE":    string(entity.TaskStatusDone),
-		"FAIL":    string(entity.TaskStatusFail),
-	}
-	validStatuses := map[string]bool{
-		string(entity.TaskStatusUnstart): true,
-		string(entity.TaskStatusRunning): true,
-		string(entity.TaskStatusCancel):  true,
-		string(entity.TaskStatusDone):    true,
-		string(entity.TaskStatusFail):    true,
-	}
 	out := make([]string, 0, len(statuses))
 	for _, status := range statuses {
-		normalized := statusTextToNumeric[strings.ToUpper(status)]
-		if normalized == "" {
-			normalized = status
-		}
-		if !validStatuses[normalized] {
+		normalized, ok := runStatusMap[strings.ToUpper(strings.TrimSpace(status))]
+		if !ok {
 			return nil
 		}
 		out = append(out, normalized)
@@ -915,10 +909,9 @@ func normalizeRunStatusFilter(statuses []string) []string {
 // invalidRunStatuses returns the raw filter values that do not map to a valid
 // run status, mirroring Python's "Invalid filter run status conditions: ...".
 func invalidRunStatuses(statuses []string) []string {
-	valid := map[string]bool{"UNSTART": true, "RUNNING": true, "CANCEL": true, "DONE": true, "FAIL": true}
 	invalid := make([]string, 0)
 	for _, status := range statuses {
-		if !valid[strings.ToUpper(status)] {
+		if _, ok := runStatusMap[strings.ToUpper(strings.TrimSpace(status))]; !ok {
 			invalid = append(invalid, status)
 		}
 	}
@@ -1085,15 +1078,19 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
 // public response shape (chunk_num→chunk_count, token_num→token_count,
-// kb_id→dataset_id) and reports run as a label.
+// kb_id→dataset_id) and sets ingestion_status to UNSTART.
 // Mirrors Python map_doc_keys_with_run_status / map_doc_keys.
 func mapDocKeysWithRunStatus(raw map[string]interface{}) map[string]interface{} {
+	ingestionStatus := "UNSTART"
+	if s, ok := raw["ingestion_status"].(string); ok && s != "" {
+		ingestionStatus = s
+	}
 	out := map[string]interface{}{
-		"chunk_count": raw["chunk_num"],
-		"token_count": raw["token_num"],
-		"dataset_id":  raw["kb_id"],
-		"parser_id":   raw["parser_id"],
-		"run":         "UNSTART",
+		"chunk_count":      raw["chunk_num"],
+		"token_count":      raw["token_num"],
+		"dataset_id":       raw["kb_id"],
+		"parser_id":        raw["parser_id"],
+		"ingestion_status": ingestionStatus,
 	}
 	for _, k := range []string{"id", "name", "type", "size", "suffix", "source_type", "created_by", "parser_config", "location", "pipeline_id", "content_hash"} {
 		if v, ok := raw[k]; ok {
@@ -1139,11 +1136,15 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
 	processDuration := doc.ProcessDuration
-	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+	if doc.IngestionStatus != nil && *doc.IngestionStatus == common.RUNNING && doc.ProcessBeginAt != nil {
 		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
 		if processDuration < 0 {
 			processDuration = 0
 		}
+	}
+	ingestionStatus := "UNSTART"
+	if doc.IngestionStatus != nil && *doc.IngestionStatus != "" {
+		ingestionStatus = *doc.IngestionStatus
 	}
 	item := map[string]interface{}{
 		"id":               doc.ID,
@@ -1161,7 +1162,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
 		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
-		"run":              mapRunStatus(doc.Run),
+		"ingestion_status": ingestionStatus,
 		"status":           stringValue(doc.Status),
 		"parser_id":        doc.ParserID,
 		"chunk_method":     doc.ParserID,
@@ -1174,9 +1175,6 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"create_date":      "",
 		"update_time":      int64(0),
 		"update_date":      "",
-	}
-	if doc.IngestionStatus != nil {
-		item["ingestion_status"] = *doc.IngestionStatus
 	}
 
 	if doc.CreateTime != nil {
@@ -1206,27 +1204,6 @@ func decodeJSONMap(raw string) map[string]interface{} {
 	}
 
 	return data
-}
-
-func mapRunStatus(run *string) string {
-	if run == nil {
-		return "UNSTART"
-	}
-
-	switch strings.TrimSpace(*run) {
-	case "0":
-		return "UNSTART"
-	case "1":
-		return "RUNNING"
-	case "2":
-		return "CANCEL"
-	case "3":
-		return "DONE"
-	case "4":
-		return "FAIL"
-	default:
-		return strings.TrimSpace(*run)
-	}
 }
 
 func formatTimePtr(value *time.Time) string {

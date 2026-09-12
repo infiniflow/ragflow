@@ -75,7 +75,6 @@ func NewDocumentService() *DocumentService {
 // UpdateDocumentRequest update document request
 type UpdateDocumentRequest struct {
 	Name        *string  `json:"name"`
-	Run         *string  `json:"run"`
 	TokenNum    *int64   `json:"token_num"`
 	ChunkNum    *int64   `json:"chunk_num"`
 	Progress    *float64 `json:"progress"`
@@ -101,7 +100,7 @@ type DocumentResponse struct {
 	ProcessBeginAt  *time.Time `json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `json:"process_duration"`
 	Suffix          string     `json:"suffix"`
-	Run             *string    `json:"run,omitempty"`
+	IngestionStatus string     `json:"ingestion_status"`
 	Status          *string    `json:"status,omitempty"`
 	CreatedAt       string     `json:"created_at"`
 	UpdatedAt       string     `json:"updated_at"`
@@ -161,7 +160,7 @@ type UpdateDatasetDocumentResponse struct {
 	ContentHash     *string                `json:"content_hash,omitempty"`
 	MetaFields      map[string]interface{} `json:"meta_fields,omitempty"`
 	Suffix          string                 `json:"suffix"`
-	Run             string                 `json:"run"`
+	IngestionStatus string                 `json:"ingestion_status"`
 	Status          *string                `json:"status,omitempty"`
 	CreateTime      *int64                 `json:"create_time,omitempty"`
 	CreateDate      *time.Time             `json:"create_date,omitempty"`

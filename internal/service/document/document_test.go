@@ -1203,25 +1203,6 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 	}
 }
 
-// insertTestDocWithRun inserts a document with the given Run status for StopParseDocuments tests.
-func insertTestDocWithRun(t *testing.T, id, kbID, run string, tokenNum, chunkNum int64) {
-	t.Helper()
-	doc := &entity.Document{
-		ID:           id,
-		KbID:         kbID,
-		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
-		TokenNum:     tokenNum,
-		ChunkNum:     chunkNum,
-		Suffix:       ".txt",
-		Status:       sptr("1"),
-		Run:          &run,
-	}
-	if err := dao.DB.Create(doc).Error; err != nil {
-		t.Fatalf("insert test doc: %v", err)
-	}
-}
-
 // insertTestTaskWithProgress inserts a task with the given progress value.
 func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64) {
 	t.Helper()
@@ -1309,7 +1290,7 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	db := setupConcurrentServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
 		t.Fatalf("set document location: %v", err)
 	}
@@ -1380,7 +1361,7 @@ func TestStopParseDocuments_Success(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -1398,13 +1379,13 @@ func TestStopParseDocuments_Success(t *testing.T) {
 		t.Fatalf("expected success_count=1, got %d", sc)
 	}
 
-	// Verify document run status updated to CANCEL
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc == nil || doc.Run == nil {
-		t.Fatal("doc not found or run is nil")
+	// Verify ingestion task status updated to STOPPED
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
 	}
-	if *doc.Run != string(entity.TaskStatusCancel) {
-		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusCancel), *doc.Run)
+	if task.Status != common.STOPPED {
+		t.Fatalf("expected task status=%s, got %s", common.STOPPED, task.Status)
 	}
 }
 
@@ -1413,9 +1394,9 @@ func TestStopParseDocuments_CancelStatus(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc is already in CANCEL state — should still be accepted
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	// Task is already in STOPPED state — should still be accepted
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1435,8 +1416,8 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc with Run="0" (UNSTART) and no unfinished tasks → cannot cancel
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	// Doc with no task → cannot cancel
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1463,8 +1444,8 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	// Doc with Run="0" → cancelDocParse calls RequestStop on the ingestion task.
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	// Doc with active ingestion task → cancelDocParse calls RequestStop on the ingestion task.
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -1486,7 +1467,7 @@ func TestStopParseDocuments_WrongDataset(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestKB(t, "kb-2", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-2", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-2", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -1529,7 +1510,7 @@ func TestStopParseDocuments_Deduplicate(t *testing.T) {
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -2075,7 +2056,6 @@ func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
 		wantErr string
 	}{
 		{name: "progress", request: UpdateDocumentRequest{Progress: float64Ptr(0)}, wantErr: "can't change `progress`"},
-		{name: "run", request: UpdateDocumentRequest{Run: sptr("0")}, wantErr: "can't change `run`"},
 		{name: "progress message", request: UpdateDocumentRequest{ProgressMsg: sptr("reset")}, wantErr: "can't change `progress_msg`"},
 		{name: "chunk count", request: UpdateDocumentRequest{ChunkNum: int64Ptr(0)}, wantErr: "can't change `chunk_num`"},
 		{name: "token count", request: UpdateDocumentRequest{TokenNum: int64Ptr(0)}, wantErr: "can't change `token_num`"},
@@ -2086,11 +2066,9 @@ func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-			run := "3"
 			progressMsg := "parsing"
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 				"progress":     0.5,
-				"run":          run,
 				"progress_msg": progressMsg,
 			}).Error; err != nil {
 				t.Fatalf("prepare document: %v", err)
@@ -2117,11 +2095,9 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 10, 5)
 	insertTestFile(t, "file-1", "folder-1", "old.pdf", sptr("old.pdf"))
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
-	run := "3"
 	progressMsg := "complete"
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 		"progress":     1.0,
-		"run":          run,
 		"progress_msg": progressMsg,
 	}).Error; err != nil {
 		t.Fatalf("prepare document: %v", err)
@@ -2133,7 +2109,6 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	tokenNum := int64(10)
 	req := &UpdateDocumentRequest{
 		Name:        &newName,
-		Run:         &run,
 		TokenNum:    &tokenNum,
 		ChunkNum:    &chunkNum,
 		Progress:    &progress,
@@ -2158,7 +2133,7 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	if file.Name != newName {
 		t.Fatalf("file name = %q, want %q", file.Name, newName)
 	}
-	if doc.Progress != progress || doc.Run == nil || *doc.Run != run || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
+	if doc.Progress != progress || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
 		t.Fatalf("immutable fields changed: %#v", doc)
 	}
 }
@@ -2243,8 +2218,8 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
-	if resp.ParserID != chunkMethod || resp.Run != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
-		t.Fatalf("response = %+v, want method=%s run=UNSTART counts=0", resp, chunkMethod)
+	if resp.ParserID != chunkMethod || resp.IngestionStatus != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
+		t.Fatalf("response = %+v, want method=%s ingestion_status=UNSTART counts=0", resp, chunkMethod)
 	}
 
 	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -2295,7 +2270,7 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	ctx := t.Context()
@@ -2354,7 +2329,7 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	ctx := t.Context()
 	staleDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -2390,7 +2365,7 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 			ctx := t.Context()
 			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -2415,7 +2390,7 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
 	const callbackName = "test:start-ingestion-task-before-conditional-delete"
@@ -2472,7 +2447,7 @@ func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 			ctx := t.Context()
 			doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -3107,7 +3082,6 @@ func insertNamedTestDoc(t *testing.T, id, kbID, name string, tokenNum, chunkNum 
 		CreatedBy:    "tenant-1",
 		Suffix:       filepath.Ext(name),
 		Status:       sptr("1"),
-		Run:          sptr(string(entity.TaskStatusDone)),
 	}
 	if err := dao.DB.Create(doc).Error; err != nil {
 		t.Fatalf("insert named test doc: %v", err)
@@ -3366,7 +3340,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	ctx := t.Context()
@@ -3428,7 +3402,7 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 }
 
 // TestIngest_CancelUnstartedDocument mirrors the Python /documents/ingest
-// behavior: canceling a document whose parse never started (run=UNSTART, no
+// behavior: canceling a document whose parse never started (no
 // ingestion task) must be rejected with code 102 and the Python message, not
 // an internal "no ingestion task found" error.
 func TestIngest_CancelUnstartedDocument(t *testing.T) {
@@ -3436,7 +3410,7 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3456,14 +3430,14 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 }
 
 // TestIngest_CancelCompletedDocument: canceling an already finished parse
-// (run=DONE, ingestion task COMPLETED) is rejected with the same Python
+// (ingestion task COMPLETED) is rejected with the same Python
 // message as the un-started case.
 func TestIngest_CancelCompletedDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	svc := testDocumentService(t)
@@ -3483,7 +3457,7 @@ func TestIngest_CancelCompletedDocument(t *testing.T) {
 	}
 }
 
-// TestIngest_CancelUnstartedWithInFlightTask: run=UNSTART but an ingestion
+// TestIngest_CancelUnstartedWithInFlightTask: an ingestion
 // task was just enqueued (CREATED) — cancel is allowed, matching the Python
 // has_unfinished_task branch.
 func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
@@ -3491,7 +3465,7 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
@@ -3507,21 +3481,24 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
 	}
 
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc == nil || doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
-		t.Fatalf("expected doc run=CANCEL, got %v", doc.Run)
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("expected task status=%s, got %s", common.STOPPED, task.Status)
 	}
 }
 
-// TestIngest_CancelAgainWithoutTask: re-canceling a document already in
-// CANCEL state is accepted even when its ingestion task is gone — Python
-// treats run=CANCEL as cancelable and cancel_all_task_of is a no-op.
-func TestIngest_CancelAgainWithoutTask(t *testing.T) {
+// TestIngest_CancelAgainWhenAlreadyStopped: re-canceling a document whose task is
+// already STOPPED is accepted as a no-op.
+func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3530,10 +3507,51 @@ func TestIngest_CancelAgainWithoutTask(t *testing.T) {
 		Run:    string(entity.TaskStatusCancel),
 	})
 	if err != nil {
-		t.Fatalf("Ingest(re-cancel) without task: %v", err)
+		t.Fatalf("Ingest(re-cancel) on stopped task: %v", err)
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+}
+
+// TestIngest_DeleteOnlyCleansTasks verifies that when run is neither running nor
+// cancel, passing delete=true deletes prior tasks and resets progress to 0 without starting a parse.
+func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    "0",
+		Delete: true,
+	})
+	if err != nil {
+		t.Fatalf("Ingest(delete-only): %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("query task: %v", err)
+	}
+	if task != nil {
+		t.Fatal("expected task to be deleted in delete-only mode")
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("query doc: %v", err)
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("expected doc progress 0, got %v", doc.Progress)
 	}
 }
 
@@ -3548,7 +3566,7 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "1", "halfway"); err != nil {
+	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "halfway"); err != nil {
 		t.Fatalf("UpdateRunProgress failed: %v", err)
 	}
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -3557,9 +3575,6 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	}
 	if doc.Progress != 0.5 {
 		t.Fatalf("progress = %v, want 0.5", doc.Progress)
-	}
-	if doc.Run == nil || *doc.Run != "1" {
-		t.Fatalf("run = %v, want 1", doc.Run)
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
