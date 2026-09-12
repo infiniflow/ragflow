@@ -290,7 +290,34 @@ class DialogService(CommonService):
         return list(objs)
 
 
+def _prompt_tokens(system_prompt: str, messages: list[dict]) -> int:
+    """Estimate prompt tokens for a system prompt plus a message list.
+
+    Message content may be a plain string or a list of content blocks (after
+    ``convert_last_user_msg_to_multimodal``); only the text blocks are counted,
+    image payloads are ignored.
+    """
+    return num_tokens_from_string(system_prompt) + sum(num_tokens_from_string(_normalize_text_from_content(m.get("content"))) for m in messages)
+
+
+def _usage_dict(prompt_tokens: int, completion_tokens: int, start_ts: float) -> dict:
+    """Build the ``usage`` block attached to a final chat answer.
+
+    Token counts are tokenizer estimates (``num_tokens_from_string``), not
+    provider-reported values; ``duration_ms`` is wall-clock since ``start_ts``.
+    """
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "duration_ms": round((timer() - start_ts) * 1000, 1),
+    }
+
+
 async def async_chat_solo(dialog, messages, stream=True, session_id=None):
+    # Same timing boundary as async_chat: model resolution and prompt setup
+    # count towards the persisted duration.
+    start_ts = timer()
     if dialog.llm_id:
         if dialog.tenant_llm_id:
             try:
@@ -331,17 +358,30 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
+    prompt_tk = _prompt_tokens(system_prompt, msg)
     if stream:
         if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting, images=image_files)
+        last_state = None
         async for kind, value, state in _stream_with_think_delta(stream_iter):
+            last_state = state
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        full_answer = last_state.full_text if last_state else ""
+        yield {
+            "answer": "",
+            "reference": {},
+            "audio_binary": None,
+            "prompt": "",
+            "created_at": time.time(),
+            "final": True,
+            "usage": _usage_dict(prompt_tk, num_tokens_from_string(full_answer), start_ts),
+        }
     else:
         if model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting)
@@ -349,7 +389,14 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
             answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        yield {
+            "answer": answer,
+            "reference": {},
+            "audio_binary": tts(tts_mdl, answer),
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": _usage_dict(prompt_tk, num_tokens_from_string(answer), start_ts),
+        }
 
 
 def get_models(dialog, trace_context=None, langfuse_session_id=None):
@@ -813,7 +860,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         # stripping in clean_tts_text).
         escaped_answer = html.escape(empty_res)
         yield {"answer": escaped_answer, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
-        yield {"answer": escaped_answer, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
+        yield {
+            "answer": escaped_answer,
+            "reference": kbinfos,
+            "prompt": "\n\n### Query:\n%s" % " ".join(questions),
+            "audio_binary": tts(tts_mdl, empty_res),
+            "final": True,
+            "usage": _usage_dict(0, 0, chat_start_ts),
+        }
         return
 
     # Only overwrite kwargs["knowledge"] when retrieval produced something;
@@ -939,7 +993,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             )
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": re.sub(r"\n", "  \n", prompt),
+            "created_at": time.time(),
+            "usage": {
+                "prompt_tokens": used_token_count,
+                "completion_tokens": tk_num,
+                "total_tokens": used_token_count + tk_num,
+                "duration_ms": round(total_time_cost, 1),
+            },
+        }
 
     if langfuse_tracer:
         try:
@@ -2005,6 +2070,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
+    agent_start_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
 
     # Agentic RAG depends on the outer model being able to call the bound
@@ -2134,7 +2200,28 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 
-        return {"answer": think + answer, "reference": refs, "prompt": "", "created_at": time.time()}
+        # Usage of the whole agentic turn, counted once: the outer model
+        # (reasoning + tool call) reports its own usage through the provider,
+        # and every inner ``rag`` graph call is recorded per phase by RAGTools'
+        # CountingChatModel. The final answer is the inner graph's terminal
+        # output, so it is only estimated from text when nothing was recorded.
+        llm_stats = getattr(rag_tools, "llm_stats", None)
+        inner_prompt_tk = sum(llm_stats.prompt_tokens.values()) if llm_stats else 0
+        inner_completion_tk = sum(llm_stats.completion_tokens.values()) if llm_stats else 0
+        outer_usage = getattr(getattr(chat_mdl, "mdl", None), "last_usage", None) or {}
+        if outer_usage.get("total_tokens"):
+            outer_prompt_tk = int(outer_usage.get("prompt_tokens") or 0)
+            outer_completion_tk = int(outer_usage.get("completion_tokens") or 0)
+        else:
+            outer_prompt_tk = _prompt_tokens(rag_tools.sys_prompt(), agent_messages)
+            outer_completion_tk = 0 if inner_completion_tk else num_tokens_from_string(think + answer)
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": _usage_dict(outer_prompt_tk + inner_prompt_tk, outer_completion_tk + inner_completion_tk, agent_start_ts),
+        }
 
     # The agentic-search graph composes the final cited answer itself, so we
     # stream its tokens straight to the client instead of relaying a tool

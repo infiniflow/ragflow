@@ -120,9 +120,31 @@ class API4ConversationService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def append_message(cls, id, conversation):
-        cls.update_by_id(id, conversation)
-        return cls.model.update(round=cls.model.round + 1).where(cls.model.id == id).execute()
+    def append_message(cls, id, conversation, tokens: int = 0, duration: float = 0.0):
+        """Persist a conversation snapshot and bump its usage counters in one UPDATE.
+
+        The counters (``round``, ``tokens``, ``duration``) are incremented
+        server-side rather than taken from the snapshot, so a stale value read
+        by a concurrent request can never overwrite another request's increment,
+        and the message list can never be persisted without its counters.
+        A single statement is used on purpose: wrapping ``update_by_id`` in
+        ``DB.atomic()`` is not possible because it is itself decorated with
+        ``@DB.connection_context()``, whose exit closes the connection while
+        the transaction is still open.
+        """
+        data = {k: v for k, v in conversation.items() if k not in ("id", "round", "tokens", "duration")}
+        data["update_time"] = current_timestamp()
+        data["update_date"] = datetime_format(datetime.now())
+        return (
+            cls.model.update(
+                **data,
+                round=cls.model.round + 1,
+                tokens=cls.model.tokens + tokens,
+                duration=cls.model.duration + duration,
+            )
+            .where(cls.model.id == id)
+            .execute()
+        )
 
     @classmethod
     @DB.connection_context()
