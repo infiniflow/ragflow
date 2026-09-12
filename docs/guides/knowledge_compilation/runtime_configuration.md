@@ -28,7 +28,6 @@ the valid range and logged.
 | `WIKI_REFINE_WORKERS` | `4` | Number of page-refinement workers. Actual LLM concurrency is still limited by the shared pool. |
 | `WIKI_MAP_WORKERS` | `20` | Default worker count used by direct Wiki MAP calls. |
 | `WIKI_MAP_TIMEOUT` | `600` seconds | Timeout for one Wiki MAP extraction call. |
-| `WIKI_REDUCE_TIMEOUT` | `60` seconds | Timeout for one Wiki REDUCE disambiguation call. |
 | `WIKI_PLAN_TIMEOUT` | `600` seconds | Timeout for Wiki PLAN calls, including page planning and MAYBE resolution. |
 | `WIKI_REFINE_TIMEOUT` | `300` seconds | Timeout for one Wiki page-writing call. |
 | `WIKI_MERGE_TIMEOUT` | `600` seconds | Timeout for merging an existing Wiki page with newly generated content. |

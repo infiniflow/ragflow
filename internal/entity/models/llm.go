@@ -46,9 +46,10 @@ import (
 // a new instance, never mutating in place — see eino's
 // components/model/interface.go:84-99 for the rationale).
 type EinoChatModel struct {
-	inner   *ChatModel
-	chatCfg *ChatConfig
-	tools   []*schema.ToolInfo
+	inner      *ChatModel
+	chatCfg    *ChatConfig
+	tools      []*schema.ToolInfo
+	toolChoice *string
 }
 
 // NewEinoChatModel wraps an existing RAGFlow *ChatModel so it can be passed
@@ -272,7 +273,34 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 			break
 		}
 	}
+	// An explicit WithToolChoice overrides both defaults above; the setter
+	// documents that the choice reaches the driver through this config. A
+	// keyword choice leaves ToolChoiceValue as an untyped nil: the driver only
+	// falls back to the plain string when the field is nil (base_model.go:565),
+	// and a typed-nil map would be sent as `"tool_choice": null`.
+	if m.toolChoice != nil && *m.toolChoice != "" {
+		cfg.ToolChoice = m.toolChoice
+		cfg.ToolChoiceValue = nil
+		if body := toolChoiceBody(*m.toolChoice); body != nil {
+			cfg.ToolChoiceValue = body
+		}
+	}
 	return cfg, nil
+}
+
+// toolChoiceBody returns the OpenAI tool_choice OBJECT form for a choice naming
+// a specific tool, and nil for the keyword forms ("auto"/"none"/"required"),
+// which travel as the plain ToolChoice string (base_model.go:561-568 prefers
+// this value whenever it is set).
+func toolChoiceBody(choice string) map[string]any {
+	switch choice {
+	case "auto", "none", "required":
+		return nil
+	}
+	return map[string]any{
+		"type":     "function",
+		"function": map[string]any{"name": choice},
+	}
 }
 
 func openAIToolsFromEino(infos []*schema.ToolInfo) ([]map[string]any, error) {
@@ -457,6 +485,21 @@ func (m *EinoChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingCh
 	cp := *m
 	cp.tools = append([]*schema.ToolInfo(nil), tools...)
 	return &cp, nil
+}
+
+// WithToolChoice returns a NEW EinoChatModel instance constrained to the given
+// tool_choice string ("auto", "none", "required", or a specific tool name).
+// Empty string leaves the default ("auto"). Mirrors eino's WithToolChoice but
+// operates on the RAGFlow wrapper so the choice reaches the driver's request
+// body via chatConfigForGenerate.
+func (m *EinoChatModel) WithToolChoice(choice string) *EinoChatModel {
+	cp := *m
+	if choice == "" {
+		cp.toolChoice = nil
+		return &cp
+	}
+	cp.toolChoice = &choice
+	return &cp
 }
 
 // Tools returns the tools currently bound to the wrapper (used by

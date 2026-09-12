@@ -179,10 +179,16 @@ func (n *NvidiaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, err
 	}
 
+	// Python NvidiaEmbed.encode sends input_type="passage" for documents and
+	// encode_queries sends "query"; the NIM API embeds each side differently.
+	inputType := "passage"
+	if request.Query {
+		inputType = "query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
 		"input":           request.Texts,
-		"input_type":      "query",
+		"input_type":      inputType,
 		"encoding_format": "float",
 		"truncate":        "END",
 	}

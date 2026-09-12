@@ -129,9 +129,8 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 
 	// OutputFormat, VLMModelID, ImageContextSize, and LayoutRecognize
 	// are consumed by maybeDispatchImage at the component layer.
-	// Image family only allows json (schema/parser.go, Python parser.py),
-	// so default empty to json. Strict: explicit text is kept as-is
-	// and will be rejected by the dispatch whitelist.
+	// Parser output is normalized to JSON at the component boundary, so an
+	// absent backend format defaults to JSON here as well.
 	outFmt := p.OutputFormat
 	if outFmt == "" {
 		outFmt = "json"

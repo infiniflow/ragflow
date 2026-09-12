@@ -27,7 +27,7 @@ import numpy as np
 import requests
 
 from common.log_utils import log_exception
-from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response, usage_from_response
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 
@@ -35,6 +35,23 @@ MAX_RERANK_TOKEN = 8196
 RERANK_TOKEN_LIMIT_MODE = os.getenv("RERANK_TOKEN_LIMIT_MODE", "truncate").strip().lower()
 if RERANK_TOKEN_LIMIT_MODE not in {"truncate", "passthrough", "raise_error"}:
     raise ValueError(f"Invalid RERANK_TOKEN_LIMIT_MODE {RERANK_TOKEN_LIMIT_MODE!r}; expected 'truncate', 'passthrough', or 'raise_error'")
+
+
+def _describe_rerank_usage(res) -> str:
+    """Describe where a rerank response keeps its token usage, for diagnostics.
+
+    Providers disagree on the usage layout (``usage.total_tokens``,
+    ``usage.prompt_tokens``, ``meta.tokens``, ``meta.billed_units``, ...), and an
+    unmapped shape silently degrades ``token_count`` to 0. Only structural
+    fields are rendered here so the query and documents are never logged.
+    """
+    if not isinstance(res, dict):
+        return f"response_type={type(res).__name__} (expected dict)"
+    usage = res.get("usage")
+    meta = res.get("meta")
+    usage_keys = sorted(usage) if isinstance(usage, dict) else usage
+    meta_keys = sorted(meta) if isinstance(meta, dict) else meta
+    return f"top_level_keys={sorted(res)}, usage={usage_keys}, meta={meta_keys}"
 
 
 class Base(ABC):
@@ -57,6 +74,7 @@ class Base(ABC):
         and must not normalize themselves.
         """
         if not query or not texts:
+            logging.debug("Rerank %s short-circuits on empty input: query=%s texts=%d, returning 0 tokens", self.__class__.__name__, bool(query), len(texts) if texts else 0)
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
         if RERANK_TOKEN_LIMIT_MODE != "passthrough":
             query_tokens = num_tokens_from_string(query)
@@ -131,7 +149,30 @@ class JinaRerank(Base):
                 rank[d["index"]] = d["relevance_score"]
         except Exception as _e:
             log_exception(_e, res)
-        return rank, total_token_count_from_response(res)
+        usage = usage_from_response(res)
+        token_count = usage["total_tokens"]
+        if token_count:
+            logging.debug(
+                "Rerank %s token usage from response: total_tokens=%d prompt_tokens=%d completion_tokens=%d",
+                self.__class__.__name__,
+                token_count,
+                usage["prompt_tokens"],
+                usage["completion_tokens"],
+            )
+        else:
+            # Moark/GiteeAI report usage in camelCase and can still send zeros, so
+            # count the query and documents locally instead of reporting a
+            # zero-token rerank.
+            token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(text) for text in texts)
+            logging.debug(
+                "Rerank %s response carried no usable token usage; fell back to local count=%d (model=%s endpoint=%s); response shape: %s",
+                self.__class__.__name__,
+                token_count,
+                self.model_name,
+                self.base_url,
+                _describe_rerank_usage(res),
+            )
+        return rank, token_count
 
 
 class GreenPTRerank(JinaRerank):

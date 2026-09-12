@@ -115,3 +115,50 @@ func TestRerankByModelWithoutQuestionTks(t *testing.T) {
 		t.Errorf("got %q, want %q", doc, want)
 	}
 }
+
+// TestRerankByModelPrefersNaturalText pins the reranker input contract: the
+// cross-encoder is scored on content_with_weight (natural text, markup
+// preserved, passed through untouched), never on the tokenized fields.
+func TestRerankByModelPrefersNaturalText(t *testing.T) {
+	chunk := fullChunk()
+	chunk["content_with_weight"] = "<p>La sécurité des données : voir l'annexe A.</p>"
+
+	doc := rerankOneChunk(t, chunk)
+
+	if want := chunk["content_with_weight"].(string); doc != want {
+		t.Errorf("got %q, want %q", doc, want)
+	}
+}
+
+// TestRerankByModelNaturalTextKeepsAccentedSpacing guards against
+// RemoveRedundantSpaces being applied to natural text: it treats every
+// non-ASCII letter as punctuation and would collapse "sécurité des" into
+// "sécuritédes".
+func TestRerankByModelNaturalTextKeepsAccentedSpacing(t *testing.T) {
+	chunk := fullChunk()
+	chunk["content_with_weight"] = "sécurité des données"
+
+	doc := rerankOneChunk(t, chunk)
+
+	if doc != "sécurité des données" {
+		t.Errorf("natural text was altered: got %q", doc)
+	}
+	if got := RemoveRedundantSpaces("sécurité des données"); got == "sécurité des données" {
+		t.Errorf("test premise broken: RemoveRedundantSpaces no longer mangles accented text (%q)", got)
+	}
+}
+
+// TestRerankByModelFallsBackToTokensWithoutNaturalText covers chunks with
+// no content_with_weight (or an empty one): the tokenized fields are joined
+// and cleaned exactly as before.
+func TestRerankByModelFallsBackToTokensWithoutNaturalText(t *testing.T) {
+	for name, chunk := range map[string]map[string]interface{}{
+		"absent": fullChunk(),
+		"empty":  func() map[string]interface{} { c := fullChunk(); c["content_with_weight"] = ""; return c }(),
+	} {
+		doc := rerankOneChunk(t, chunk)
+		if want := "alpha beta gamma delta epsilon zeta"; doc != want {
+			t.Errorf("%s: got %q, want %q", name, doc, want)
+		}
+	}
+}
