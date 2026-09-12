@@ -65,3 +65,14 @@ def summarize(values: List[float]) -> dict:
         "p90": _percentile(sorted_vals, 90),
         "p95": _percentile(sorted_vals, 95),
     }
+
+
+def request_rates(success: int, failure: int, total_duration_s: float | None) -> dict:
+    """Separate attempted throughput from successfully completed work."""
+    total = success + failure
+    timed = total_duration_s is not None and total_duration_s > 0
+    return {
+        "qps": total / total_duration_s if timed else None,
+        "success_qps": success / total_duration_s if timed else None,
+        "failure_rate": failure / total if total else None,
+    }
