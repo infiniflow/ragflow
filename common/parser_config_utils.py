@@ -14,7 +14,15 @@
 #  limitations under the License.
 #
 
+import re
 from typing import Any
+
+_MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.I)
+
+
+def is_tenant_model_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(_MODEL_ID_RE.match(value.strip()))
+
 
 # Parser-specific option keys. ``_has_mineru_options`` uses these to detect
 # whether the operator clearly intended the MinerU parser (issue #17114).
@@ -29,9 +37,10 @@ MINERU_OPTION_KEYS: tuple[str, ...] = (
 def has_mineru_options(parser_config: Any) -> bool:
     """Return True if parser_config carries any MinerU-specific option.
 
-    Used by the PDF dispatch in :mod:`rag.app.naive` to recover from a
-    misconfigured ``layout_recognize`` value (a stale TenantModel id rather
-    than the ``"MinerU"`` keyword) — see issue #17114.
+    Used by the PDF dispatch in :mod:`rag.app.naive` together with
+    :func:`is_tenant_model_id` to recover only from a *stale* TenantModel id
+    (issue #17114). Vision-LLM composite names with leftover mineru_* form
+    defaults must not trigger that recovery.
     """
     if not isinstance(parser_config, dict):
         return False

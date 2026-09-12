@@ -49,7 +49,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, is_tenant_model_id, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
@@ -214,25 +214,29 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     name = layout_recognizer.strip().lower()
     parser = PARSERS.get(name, by_plaintext)
 
-    # Closes #17114: when the document's layout_recognize is a model id
-    # (e.g. a TenantModel UUID) that does not match any known parser name,
-    # the previous dispatch fell through to by_plaintext, which tried to
-    # resolve the id as an IMAGE2TEXT vision model and failed with
-    # ``Provider <empty> not found for model <id>``. If mineru-specific
-    # options are set in parser_config, the operator clearly intended the
-    # MinerU parser, so route there instead and surface a clear log line
-    # rather than masking the misconfiguration silently.
-    # Guard: only fall back when the parser name is NOT a known keyword
-    # (e.g. "DeepDOC", "Plain Text"). A configuration like
-    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
-    # must keep honoring PlainText, not be silently rerouted to MinerU.
-    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
+    # Closes #17114: a *stale* TenantModel UUID (model deleted) that does not
+    # match any known parser name used to fall through to by_plaintext, which
+    # tried to resolve the id as an IMAGE2TEXT vision model and crashed.
+    # If mineru_* options are set, recover by routing to by_mineru.
+    #
+    # Only apply this for unresolved tenant_model ids. Frontend defaults often
+    # persist mineru_* even when the operator selected a vision LLM
+    # (e.g. ``qwen3.6-plus@tongyi@Tongyi-Qianwen``); those composite names must
+    # keep going to by_plaintext, not be silently rerouted to MinerU.
+    # Same for known keywords: ``{"layout_recognize": "Plain Text", "mineru_lang": ...}``.
+    if (
+        name not in PARSERS
+        and parser is by_plaintext
+        and has_mineru_options(parser_config)
+        and is_tenant_model_id(str(layout_recognizer).strip())
+    ):
         logging.warning(
-            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
+            "[naive] layout_recognize=%r is an unresolved tenant model id; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
         name = "mineru"
+
 
     return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
 
