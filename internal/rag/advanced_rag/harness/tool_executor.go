@@ -258,15 +258,6 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		DocScope: e.deps.DocScope,
 		TenantID: e.deps.TenantID,
 		KbIDs:    e.deps.KbIDs,
-		// LLM tree-walk seams (Python dataset_navigation_by_tree) stay wired for
-		// other callers, but the tool path itself never falls back to the walk:
-		// Python's nav-tree route deliberately has NO fallback
-		// (navigation.py:902-912) — a routing miss is a query-level verdict, and
-		// the orchestrator owns any retrieval fallback.
-		Model:       e.deps.Model,
-		Source:      nav.NewNavServiceBrowser(),
-		Backend:     e.deps.Backend,
-		HasEmbedder: e.deps.HasEmbedder,
 	})
 
 	switch res.EmptyReason {
@@ -397,11 +388,6 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 			DocScope: e.deps.DocScope,
 			TenantID: e.deps.TenantID,
 			KbIDs:    e.deps.KbIDs,
-			// LLM tree-walk seams (see the navigateTree call site note).
-			Model:       e.deps.Model,
-			Source:      nav.NewNavServiceBrowser(),
-			Backend:     e.deps.Backend,
-			HasEmbedder: e.deps.HasEmbedder,
 		})
 		if res.EmptyReason == ReasonInfra {
 			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason}, nil

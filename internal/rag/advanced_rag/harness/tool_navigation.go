@@ -406,19 +406,6 @@ type NavTreeInput struct {
 	// TenantID and KbIDs bound the datasets to route over.
 	TenantID string
 	KbIDs    []string
-
-	// LLM tree-walk seams (Python dataset_navigation_by_tree, ported in
-	// tool_navtree_llm.go). Python routes through the compiled tree two ways —
-	// the flat hybrid sweep of _navigate_tree_impl AND the LLM walk of
-	// dataset_navigation_by_tree with the content-recall fallback. When Model
-	// AND Source are present, a sweep miss (no compiled tree, or the sweep
-	// routed to nothing) falls through to the walk before the empty verdict is
-	// returned; Backend additionally enables the walk's content-recall tiers.
-	// Any nil seam keeps the historical sweep-only behaviour.
-	Model       SessionModel
-	Source      NavTreeBrowser
-	Backend     Retriever
-	HasEmbedder bool
 }
 
 // NavigateTree mirrors Python _navigate_tree_impl: locate the document(s) most
