@@ -59,11 +59,18 @@ type RetrievalRequest struct {
 	RerankCandidatesCount    int
 	TopK                     int
 	KeywordsSimilarityWeight *float64
-	UseKG                    bool
-	SimilarityThreshold      *float64
-	RerankID                 string
-	CrossLanguages           []string
-	TOCEnhance               bool
+	// VectorSimilarityWeight is the VECTOR leg's weight forwarded DIRECTLY (no
+	// 1-w inversion) by the agentic harness bridge. When set it wins over the
+	// canvas KeywordsSimilarityWeight inversion in nlpRequestFromRetrieval.
+	VectorSimilarityWeight *float64
+	// DisableVectorLeg mirrors Python embd_mdl=None: the nlp layer runs the
+	// keyword-only branch with NO dense leg at all.
+	DisableVectorLeg    bool
+	UseKG               bool
+	SimilarityThreshold *float64
+	RerankID            string
+	CrossLanguages      []string
+	TOCEnhance          bool
 	// RankFeature mirrors Python RAGTools.retrieve's rank_feature argument:
 	// question-type tags (from label_question) the retriever uses to boost
 	// matching chunks. The Go engine consumes it as a tag → weight map, so it

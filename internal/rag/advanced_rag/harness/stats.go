@@ -85,14 +85,6 @@ const (
 	PhaseFinalize      = "finalize"
 )
 
-var phaseRank = func() map[string]int {
-	m := make(map[string]int, len(phaseOrder))
-	for i, n := range phaseOrder {
-		m[n] = i
-	}
-	return m
-}()
-
 // phaseRoundKey identifies a phase within one orchestrator round.
 type phaseRoundKey struct {
 	phase string

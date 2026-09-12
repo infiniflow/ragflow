@@ -19,6 +19,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -194,6 +195,39 @@ func (p *PoolAdmitter) Index(c map[string]any) int {
 	return indexOfChunk(p.k.Chunks, chunkKey(c))
 }
 
+// ClaimCoveredIDs returns the chunk ids already represented VERBATIM by a claim
+// pseudo-chunk in the LIVE pool (Python _claim_covered_ids,
+// action_session.py:619-631): a claim carries its own verbatim quote plus the
+// ids of the chunks it was distilled from, so admitting those passages again
+// is duplicate payload — the answer material is already in the pool at a
+// fraction of the size. Call it ONCE per Admit batch and test each chunk's id
+// against the result (Python computes the set once per _admit_evidence call).
+func (p *PoolAdmitter) ClaimCoveredIDs() map[string]bool {
+	if p.k == nil {
+		return nil
+	}
+	covered := map[string]bool{}
+	for _, c := range p.k.Chunks {
+		if id, ok := c["chunk_id"].(string); !ok || !strings.HasPrefix(id, "claim_") {
+			continue
+		}
+		for _, cid := range toStringList(c["source_chunk_ids"]) {
+			if cid != "" {
+				covered[cid] = true
+			}
+		}
+	}
+	return covered
+}
+
+// CoveredByClaim mirrors the _admit_evidence skip (action_session.py:672-676):
+// a non-table chunk whose id a pooled claim already quotes verbatim must NOT
+// enter the pool again. Table chunks are exempt: their answer rows survive
+// only in full text.
+func (p *PoolAdmitter) CoveredByClaim(cid string, covered map[string]bool, isTable bool) bool {
+	return !isTable && cid != "" && covered[cid]
+}
+
 // Merge appends the given chunks/aggs, deduplicating by chunkKey, and returns the
 // GLOBAL index (position in k.Chunks) of every contributed chunk — deduped ones
 // included.
@@ -216,6 +250,50 @@ func (k *Kbinfos) Merge(chunks, aggs []map[string]any) []int {
 	})
 	k.MergeDocAggs(aggs)
 	return added
+}
+
+// RetireClaimsCoveredBy removes claim pseudo-chunks whose source_chunk_ids
+// intersect the given read ids (Python _exec_list_chunks:928-934): a deep read
+// COVERS its claims — once the full chunk text is in the pool, the claim's
+// 1200-char quote of the same passage is duplicated tokens in every later
+// prompt. The claim already did its job (it pointed here). Returns how many
+// entries were retired. The claim_ prefix and the "source_chunk_ids listed
+// under the read ids" test mirror Python verbatim.
+func (k *Kbinfos) RetireClaimsCoveredBy(readIDs []string) int {
+	if k == nil || len(readIDs) == 0 {
+		return 0
+	}
+	read := make(map[string]bool, len(readIDs))
+	for _, id := range readIDs {
+		if id != "" {
+			read[id] = true
+		}
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	removed := 0
+	out := make([]map[string]any, 0, len(k.Chunks))
+	for _, c := range k.Chunks {
+		id, ok := c["chunk_id"].(string)
+		if ok && strings.HasPrefix(id, "claim_") {
+			retired := false
+			for _, src := range toStringList(c["source_chunk_ids"]) {
+				if read[src] {
+					retired = true
+					break
+				}
+			}
+			if retired {
+				removed++
+				continue
+			}
+		}
+		out = append(out, c)
+	}
+	if removed > 0 {
+		k.Chunks = out
+	}
+	return removed
 }
 
 // MergeDocAggs appends doc aggregations, deduplicating by doc_id: the first agg

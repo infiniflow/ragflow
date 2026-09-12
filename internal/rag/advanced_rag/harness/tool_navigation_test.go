@@ -915,7 +915,7 @@ func drillLoader(ids []string) []chunkWithText {
 
 func TestRenderTocDrilloutLLMSelect(t *testing.T) {
 	nodes, rels := renderDrillNodes()
-	out := renderTocDrilldown("some query", nil, nodes, rels, drillLoader, nil, []string{"Leaf"})
+	out := renderTocDrilldown("some query", nil, nodes, rels, drillLoader, nil, []string{"Leaf"}, nil)
 	if out.selector != "llm_toc" {
 		t.Errorf("selector = %q, want llm_toc", out.selector)
 	}
@@ -931,7 +931,7 @@ func TestRenderTocDrilloutLLMSelect(t *testing.T) {
 func TestRenderTocDrilloutChunkRetrieval(t *testing.T) {
 	nodes, rels := renderDrillNodes()
 	hits := []chunkHit{{id: "r1", score: 0.9}, {id: "l1", score: 0.7}}
-	out := renderTocDrilldown("q", nil, nodes, rels, drillLoader, hits, nil)
+	out := renderTocDrilldown("q", nil, nodes, rels, drillLoader, hits, nil, nil)
 	if out.selector != "chunk_retrieval" {
 		t.Errorf("selector = %q, want chunk_retrieval", out.selector)
 	}
@@ -948,7 +948,7 @@ func TestRenderTocDrilloutBeamFallback(t *testing.T) {
 	nodes, rels := renderDrillNodes()
 	// No selection and no hits, but a query: beam picks by keyword relevance. The
 	// blank query yields no terms, so it must still return a (flat) outline, not panic.
-	out := renderTocDrilldown("leaf", nil, nodes, rels, drillLoader, nil, nil)
+	out := renderTocDrilldown("leaf", nil, nodes, rels, drillLoader, nil, nil, nil)
 	if out.outline == "" {
 		t.Fatal("beam path produced an empty outline")
 	}
@@ -1014,7 +1014,7 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 	t.Run("llm_toc", func(t *testing.T) {
 		// The model's picks arrive in ITS order; it must not leak into the output.
 		got := stableDrillout(t, func() structureDrillout {
-			return renderTocDrilldown("q", nil, nodes, rels, drillLoader, nil, []string{"Gamma", "Alpha", "Beta"})
+			return renderTocDrilldown("q", nil, nodes, rels, drillLoader, nil, []string{"Gamma", "Alpha", "Beta"}, nil)
 		})
 		assertKeptNodeOrder(t, got.outline)
 		// chunkPaths follows the same order: "shared" is covered by both Gamma and
@@ -1028,9 +1028,10 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 		if !reflect.DeepEqual(got.chunkPaths, want) {
 			t.Errorf("chunkPaths = %v, want %v", got.chunkPaths, want)
 		}
-		// Snippets are capped at structMaxChunks in kept order, so "r1" (Root sorts
-		// last) sits outside a stable, repeatable window.
-		if !strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
+		// Snippets are capped at structMaxChunks (=4, Python _STRUCT_MAX_CHUNKS)
+		// in kept order, so "g1" (Gamma) and "r1" (Root sorts last) sit outside
+		// the stable, repeatable window.
+		if !strings.Contains(got.outline, "[chunk a1]") || strings.Contains(got.outline, "[chunk g1]") || strings.Contains(got.outline, "[chunk r1]") {
 			t.Errorf("outline's snippet window is not the first %d chunks in kept order:\n%s",
 				structMaxChunks, got.outline)
 		}
@@ -1039,14 +1040,14 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 	t.Run("chunk_retrieval", func(t *testing.T) {
 		got := stableDrillout(t, func() structureDrillout {
 			return renderTocDrilldown("q", nil, nodes, rels, drillLoader,
-				[]chunkHit{{id: "g1", score: 0.9}, {id: "a1", score: 0.7}}, nil)
+				[]chunkHit{{id: "g1", score: 0.9}, {id: "a1", score: 0.7}}, nil, nil)
 		})
 		assertKeptNodeOrder(t, got.outline)
 	})
 
 	t.Run("beam", func(t *testing.T) {
 		got := stableDrillout(t, func() structureDrillout {
-			return renderTocDrilldown("alpha beta gamma root", nil, nodes, rels, drillLoader, nil, nil)
+			return renderTocDrilldown("alpha beta gamma root", nil, nodes, rels, drillLoader, nil, nil, nil)
 		})
 		assertKeptNodeOrder(t, got.outline)
 	})

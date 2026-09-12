@@ -73,24 +73,24 @@ func TestRuntimeRetrieverPreservesUnsetControls(t *testing.T) {
 	if _, err := r.Retrieve(context.Background(), RetrieveRequest{Query: "q", DatasetIDs: []string{"kb-1"}}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	if got.SimilarityThreshold != nil || got.KeywordsSimilarityWeight != nil {
+	if got.SimilarityThreshold != nil || got.VectorSimilarityWeight != nil {
 		t.Errorf("omitted controls = %v / %v, want nil so the service keeps its defaults",
-			got.SimilarityThreshold, got.KeywordsSimilarityWeight)
+			got.SimilarityThreshold, got.VectorSimilarityWeight)
 	}
 
 	threshold, weight := 0.35, 0.3
 	if _, err := r.Retrieve(context.Background(), RetrieveRequest{
-		Query:                    "q",
-		SimilarityThreshold:      &threshold,
-		KeywordsSimilarityWeight: &weight,
+		Query:                  "q",
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &weight,
 	}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != threshold {
 		t.Errorf("SimilarityThreshold = %v, want %v", got.SimilarityThreshold, threshold)
 	}
-	if got.KeywordsSimilarityWeight == nil || *got.KeywordsSimilarityWeight != weight {
-		t.Errorf("KeywordsSimilarityWeight = %v, want %v", got.KeywordsSimilarityWeight, weight)
+	if got.VectorSimilarityWeight == nil || *got.VectorSimilarityWeight != weight {
+		t.Errorf("VectorSimilarityWeight = %v, want %v", got.VectorSimilarityWeight, weight)
 	}
 }
 
@@ -108,9 +108,9 @@ func TestChunkAggRetrieveLeavesControlsUnset(t *testing.T) {
 		t.Fatalf("chunks = %d, want the retrieved chunk", len(chunks))
 	}
 	req := r.lastReq(t)
-	if req.SimilarityThreshold != nil || req.KeywordsSimilarityWeight != nil {
+	if req.SimilarityThreshold != nil || req.VectorSimilarityWeight != nil {
 		t.Errorf("controls = %v / %v, want nil (zero is a valid value, not an unset marker)",
-			req.SimilarityThreshold, req.KeywordsSimilarityWeight)
+			req.SimilarityThreshold, req.VectorSimilarityWeight)
 	}
 }
 
@@ -461,7 +461,9 @@ func TestEvidencePoolCapStopsAdmitting(t *testing.T) {
 func TestWebSearchAdmitsToPool(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"web answer one", "web answer two", "web answer three"}}
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"": []any{"q1", "q2"}})
+	// Python action_session.execute_tool reads the query list from
+	// args["query"] (_arg_query_list, :938-944, :1159).
+	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
@@ -491,7 +493,8 @@ func TestWebSearchAdmitsToPool(t *testing.T) {
 func TestWebSearchDedupsAcrossQueries(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"dup passage", "unique one", "dup passage"}}
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"": []any{"q1", "q2"}})
+	// Same args["query"] contract as above (Python _arg_query_list).
+	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
