@@ -37,6 +37,7 @@ import (
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
 	datasetsService       *dataset.DatasetService
+	listTagsService       listTagsService
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
@@ -54,6 +55,7 @@ type searchDatasetService interface {
 func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
+		listTagsService: datasetsService,
 		metadataService: metadataService,
 	}
 	if datasetsService != nil {
@@ -743,6 +745,10 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+type listTagsService interface {
+	ListTags(context.Context, string, string) ([][2]interface{}, common.ErrorCode, error)
+}
+
 // ListTags handles GET /api/v1/datasets/:dataset_id/tags.
 // @Summary List dataset tags
 // @Description List tags for a dataset
@@ -762,13 +768,18 @@ func (h *DatasetsHandler) ListTags(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	result, code, err := h.datasetsService.ListTags(ctx, datasetID, user.ID)
+	result, code, err := h.listTagsService.ListTags(ctx, datasetID, user.ID)
 	if err != nil {
+		if code == common.CodeServerError {
+			common.Warn(fmt.Sprintf("list dataset tags failed: %v", err))
+			common.ErrorWithCode(c, common.CodeDataError, "Internal server error")
+			return
+		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result})
 }
 
 type renameTagRequest struct {

@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -11,7 +12,37 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
+
+func TestDatasetServiceListTagsDatasetLookupError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	kbID := "123e4567e89b12d3a456426614174000"
+	insertListTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 1)
+	wantErr := errors.New("dataset lookup failed")
+	queries := 0
+	if err := db.Callback().Query().Before("gorm:query").Register("list_tags_lookup_failure", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*entity.Knowledgebase); ok {
+			queries++
+			// Authorization reads the dataset first; fail the subsequent lookup.
+			if queries == 2 {
+				tx.AddError(wantErr)
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	docEngine := &listTagsMockEngine{chunkStoreExists: true}
+	_, code, err := (&DatasetService{kbDAO: dao.NewKnowledgebaseDAO(), docEngine: docEngine}).ListTags(t.Context(), kbID, "user-1")
+	if queries != 2 || code != common.CodeServerError || !errors.Is(err, wantErr) {
+		t.Fatalf("queries=%d code=%d err=%v", queries, code, err)
+	}
+	if len(docEngine.requests) != 0 {
+		t.Fatal("dataset lookup failure queried the document engine")
+	}
+}
 
 type listTagsMockEngine struct {
 	engine.DocEngine
@@ -149,11 +180,9 @@ func TestDatasetServiceListTagsSuccess(t *testing.T) {
 	if len(result) != 2 {
 		t.Fatalf("len(result)=%d want=2 result=%v", len(result), result)
 	}
-	if result[0]["key"] != "finance" || result[0]["count"] != 2 {
-		t.Fatalf("first row=%v want finance/2", result[0])
-	}
-	if result[1]["key"] != "urgent" || result[1]["count"] != 1 {
-		t.Fatalf("second row=%v want urgent/1", result[1])
+	encoded, err := json.Marshal(result)
+	if err != nil || string(encoded) != `[["finance",2],["urgent",1]]` {
+		t.Fatalf("JSON=%s err=%v; want Python tag/count pairs", encoded, err)
 	}
 	if len(docEngine.requests) != 1 {
 		t.Fatalf("search requests=%d want=1", len(docEngine.requests))
@@ -188,6 +217,10 @@ func TestDatasetServiceListTagsReturnsEmptyWhenChunkStoreMissing(t *testing.T) {
 	}
 	if len(result) != 0 {
 		t.Fatalf("len(result)=%d want=0 result=%v", len(result), result)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil || string(encoded) != `[]` {
+		t.Fatalf("JSON=%s err=%v; want empty array", encoded, err)
 	}
 	if len(docEngine.requests) != 0 {
 		t.Fatalf("search requests=%d want=0", len(docEngine.requests))
@@ -241,5 +274,26 @@ func TestDatasetServiceListTagsReturnsChunkStoreError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to inspect chunk store: boom") {
 		t.Fatalf("err=%q want contains %q", err.Error(), "failed to inspect chunk store: boom")
+	}
+}
+
+func TestDatasetServiceListTagsSearchFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		engine *listTagsMockEngine
+	}{
+		{"search error", &listTagsMockEngine{chunkStoreExists: true, searchErr: errors.New("backend unavailable")}},
+		{"nil result", &listTagsMockEngine{chunkStoreExists: true, searchResults: map[string]*types.SearchResult{"ragflow_user-1": nil}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			kbID := "123e4567e89b12d3a456426614174000"
+			insertListTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 1)
+			result, code, err := testDatasetServiceForListTags(t, tc.engine).ListTags(t.Context(), kbID, "user-1")
+			if err == nil || code != common.CodeServerError || result != nil {
+				t.Fatalf("result=%v code=%d err=%v; want server error without partial data", result, code, err)
+			}
+		})
 	}
 }
