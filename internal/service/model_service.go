@@ -1596,6 +1596,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 
 	var modelTypeFilterBin entity.ModelType
 	if modelTypeFilter != "" {
@@ -1844,6 +1845,18 @@ func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, ten
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
 }
 
+// ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	if apiserver, ok := config[common.EnvMonkeyOCRAPIServer].(string); !ok || strings.TrimSpace(apiserver) == "" {
+		return nil
+	}
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+}
+
 // Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
@@ -1885,6 +1898,20 @@ var (
 	monkeyOCRv2DefaultConfig = map[string]interface{}{
 		common.EnvMonkeyOCRv2ServerURL: "",
 		common.EnvMonkeyOCRv2Timeout:   600,
+	}
+	monkeyOCREnvKeys = []string{
+		common.EnvMonkeyOCRAPIServer,
+		common.EnvMonkeyOCROutputDir,
+		common.EnvMonkeyOCRServerURL,
+		common.EnvMonkeyOCRBackend,
+		common.EnvMonkeyOCRDeleteOutput,
+	}
+	monkeyOCRDefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRAPIServer:    "",
+		common.EnvMonkeyOCROutputDir:    "",
+		common.EnvMonkeyOCRServerURL:    "",
+		common.EnvMonkeyOCRBackend:      "vlm-engine",
+		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )
 

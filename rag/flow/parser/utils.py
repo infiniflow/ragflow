@@ -108,7 +108,11 @@ def remove_toc_pdf(items, outlines):
             break
 
     if content_start_page:
-        return [item for item in items if not (toc_start_page <= item["page_number"] < content_start_page)]
+        return [
+            item
+            for item in items
+            if item.get("page_number") is None or not (toc_start_page <= item["page_number"] < content_start_page)
+        ]
     return items
 
 
