@@ -76,7 +76,7 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	svc.taskPublisher = publisher
 
 	ctx := t.Context()
-	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}, nil)
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"}, nil)
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestIngestionTaskServiceAcceptsConsumerWinningPublishRace(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"}, nil)
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -646,6 +646,48 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 				t.Fatalf("reloaded status = %q, want %q", reloaded.Status, common.SCHEDULED)
 			}
 		})
+	}
+}
+
+func TestIngestionTaskServiceCreateAndEnqueueClearsRerunSchemaOnNormalRetry(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	rerunSchema := entity.NewIngestionTaskRerunSchema(
+		entity.JSONMap{"components": map[string]interface{}{"c1": map[string]interface{}{}}},
+		"log-1",
+		"c1",
+	)
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Updates(map[string]interface{}{
+		"status": common.FAILED,
+		"schema": rerunSchema,
+	}).Error; err != nil {
+		t.Fatalf("seed failed task with rerun schema: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+		Schema:     nil,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue failed: %v", err)
+	}
+	reloaded, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID)
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if reloaded.Schema != nil {
+		t.Fatalf("schema = %v, want nil after normal retry", reloaded.Schema)
+	}
+	if _, ok := reloaded.RerunInfo(); ok {
+		t.Fatal("RerunInfo should be absent after normal retry")
 	}
 }
 

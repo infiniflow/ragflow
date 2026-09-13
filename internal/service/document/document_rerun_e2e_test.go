@@ -19,7 +19,7 @@ import (
 // JetStream stream and consumes the task message back. The unit tier's
 // recording publisher only proves the publish call happened; this tier
 // proves the enqueue actually lands on tasks.RAGFLOW with a task id that
-// resolves to a SCHEDULED ingestion task for the document.
+// resolves to a CREATED ingestion task for the document.
 func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	db := testutil.SetupTestDB(t,
 		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.Task{},
@@ -110,5 +110,15 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
 		t.Fatalf("ingestion task = %+v", task)
+	}
+	rerun, ok := task.RerunInfo()
+	if !ok {
+		t.Fatal("ingestion task missing rerun schema")
+	}
+	if rerun.LogID != "log-1" || rerun.ComponentID != "c1" {
+		t.Fatalf("rerun info = %+v", rerun)
+	}
+	if _, ok := rerun.DSL["path"]; ok {
+		t.Fatalf("task rerun dsl should not include path (audit-only on log row): %v", rerun.DSL)
 	}
 }

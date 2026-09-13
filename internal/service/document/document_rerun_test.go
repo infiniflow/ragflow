@@ -142,6 +142,19 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
 		t.Fatalf("ingestion task = %+v", task)
 	}
+	rerun, ok := task.RerunInfo()
+	if !ok {
+		t.Fatal("ingestion task missing rerun schema")
+	}
+	if rerun.LogID != "log-1" || rerun.ComponentID != "c1" {
+		t.Fatalf("rerun info = %+v", rerun)
+	}
+	if _, ok := rerun.DSL["components"]; !ok {
+		t.Fatalf("task rerun dsl = %v", rerun.DSL)
+	}
+	if _, ok := rerun.DSL["path"]; ok {
+		t.Fatalf("task rerun dsl should not include path (audit-only on log row): %v", rerun.DSL)
+	}
 
 	// Prior counters are cleared for the rerun.
 	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
