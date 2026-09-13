@@ -24,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -34,6 +35,7 @@ type TenantHandler struct {
 	tenantService  *service.TenantService
 	userService    *service.UserService
 	datasetService *dataset.DatasetService
+	kbDAO          *dao.KnowledgebaseDAO
 }
 
 // NewTenantHandler create tenant handler
@@ -42,6 +44,7 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 		tenantService:  tenantService,
 		userService:    userService,
 		datasetService: datasetService,
+		kbDAO:          dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -335,7 +338,7 @@ type InsertChunksFromFileRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/dev_insert_chunks_from_file [post]
 func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -381,11 +384,28 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 		return
 	}
 
-	// Support both index_name (ES) and table_name (Infinity) in JSON
-	indexName := debugFormat.IndexName
-	if indexName == "" {
-		indexName = debugFormat.TableName
+	if debugFormat.KnowledgebaseID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "knowledgebase_id is required")
+		return
 	}
+
+	ctx := c.Request.Context()
+	// Authorize like CreateChunkStore does: this route writes chunks into a
+	// dataset's store, so the caller must have access to the dataset.
+	if !h.datasetService.Accessible(ctx, debugFormat.KnowledgebaseID, user.ID) {
+		common.ResponseWithHttpCodeData(c, http.StatusNotFound, 404, nil, "Dataset not found")
+		return
+	}
+	kb, err := h.kbDAO.GetByID(ctx, dao.DB, debugFormat.KnowledgebaseID)
+	if err != nil || kb == nil {
+		common.ResponseWithHttpCodeData(c, http.StatusNotFound, 404, nil, "Dataset not found")
+		return
+	}
+
+	// Never trust the index/table name from the payload: derive it from the
+	// dataset's tenant so chunks can only land in an index the caller may
+	// write (service.IndexName is the naming every chunk writer uses).
+	indexName := service.IndexName(kb.TenantID)
 
 	// Get the document engine and insert
 	docEngine := engine.Get()
