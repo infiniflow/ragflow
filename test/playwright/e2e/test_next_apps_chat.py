@@ -516,6 +516,11 @@ def mm_step_08_enter_multimodel_view(ctx: FlowContext, step, snap):
     with step("enter multi-model view"):
         expect(page.get_by_test_id("chat-detail")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         expect(page.get_by_test_id("chat-textarea")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        # The header is collapsed by default, so the model controls are only
+        # mounted after expanding it.
+        header_toggle = page.get_by_test_id("chat-detail-header-toggle")
+        if header_toggle.get_attribute("aria-expanded") != "true":
+            header_toggle.click()
         page.get_by_test_id("chat-detail-multimodel-toggle").click()
         mm_root = page.get_by_test_id("chat-detail-multimodel-root")
         expect(mm_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)

@@ -35,6 +35,7 @@ const {
   chatsTts,
   chatsMindmap,
   chatsRelatedQuestions,
+  chatTitle,
   documentInfoUpload,
   fetchExternalChatInfo,
 } = api;
@@ -106,6 +107,10 @@ const methods = {
   },
   chatsRelatedQuestions: {
     url: chatsRelatedQuestions,
+    method: 'post',
+  },
+  chatTitle: {
+    url: chatTitle,
     method: 'post',
   },
   documentInfoUpload: {

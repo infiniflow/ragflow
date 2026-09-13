@@ -317,6 +317,7 @@ export default {
     `${restAPIv1}/searches/${searchId}/completions`,
   chatsMindmap: `${restAPIv1}/chat/mindmap`,
   chatsRelatedQuestions: `${restAPIv1}/chat/recommendation`,
+  chatTitle: `${restAPIv1}/chat/title`,
 
   // next chat
   fetchExternalChatInfo: (id: string) => `${restAPIv1}/chatbots/${id}/info`,
