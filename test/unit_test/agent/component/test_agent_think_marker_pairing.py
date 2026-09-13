@@ -43,8 +43,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 # ─── Module loader ────────────────────────────────────────────────────
 
 
@@ -158,7 +156,14 @@ def _make_agent(monkeypatch, canvas):
     agent._id = "Agent:Test"
     agent._param = _Param()
     agent.check_if_canceled = lambda message="": False
-    agent.chat_mdl = None  # only passed through to the stubbed full_question
+
+    class _ChatMdl:
+        # Only `max_length` is read: by the citation round's kb_prompt when the
+        # pre-fix expression is restored, keeping that failure mode on the
+        # marker assertions instead of an AttributeError.
+        max_length = 8192
+
+    agent.chat_mdl = _ChatMdl()
     agent.get_exception_default_value = lambda: ""
     agent.set_output = lambda k, v: canvas.outputs.setdefault(k, v)
     agent._collect_tool_artifact_markdown = lambda **k: ""
