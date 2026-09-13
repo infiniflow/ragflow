@@ -1327,7 +1327,7 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
-    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability
+    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability, make_mother_chunk_id
 
     apply_source_chunks_document_availability(chunks)
 
@@ -1337,13 +1337,13 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         mom = ck.get("mom") or ck.get("mom_with_weight") or ""
         if not mom:
             continue
-        id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
-        ck["mom_id"] = id
-        if id in mother_ids:
+        mom_id = make_mother_chunk_id(mom, ck.get("doc_id"))
+        ck["mom_id"] = mom_id
+        if mom_id in mother_ids:
             continue
-        mother_ids.add(id)
+        mother_ids.add(mom_id)
         mom_ck = copy.deepcopy(ck)
-        mom_ck["id"] = id
+        mom_ck["id"] = mom_id
         mom_ck["content_with_weight"] = mom
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
