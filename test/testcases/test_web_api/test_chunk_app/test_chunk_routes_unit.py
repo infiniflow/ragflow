@@ -82,6 +82,9 @@ class _DummyParserType:
 
 
 class _DummyRetriever:
+    def __init__(self):
+        self.retrieval_calls = []
+
     async def search(self, query, _index_name, _kb_ids, *args, highlight=None, **kwargs):
         class _SRes:
             total = 1
@@ -103,6 +106,16 @@ class _DummyRetriever:
 
         _ = (query, highlight)
         return _SRes()
+
+    async def retrieval(self, *args, **kwargs):
+        self.retrieval_calls.append({"args": args, "kwargs": kwargs})
+        return {"total": 1, "chunks": [{"chunk_id": "chunk-1", "content_with_weight": "chunk", "doc_id": "doc-1"}], "doc_aggs": {}}
+
+    def retrieval_by_children(self, chunks, _tenant_ids):
+        return chunks
+
+    async def retrieval_by_toc(self, *_args, **_kwargs):
+        return []
 
 
 class _DummyDocStore:
@@ -204,6 +217,7 @@ def _load_chunk_module(monkeypatch):
 
     settings_mod = ModuleType("common.settings")
     settings_mod.retriever = _DummyRetriever()
+    settings_mod.kg_retriever = SimpleNamespace(retrieval=lambda *_a, **_k: _AwaitableValue({"content_with_weight": ""}))
     settings_mod.docStoreConn = _DummyDocStore()
     settings_mod.STORAGE_IMPL = _DummyStorage()
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
@@ -220,18 +234,31 @@ def _load_chunk_module(monkeypatch):
         TTS = SimpleNamespace(value="tts")
         OCR = SimpleNamespace(value="ocr")
 
+    class _TaskStatus:
+        UNSTART = SimpleNamespace(value="0", name="UNSTART")
+        RUNNING = SimpleNamespace(value="1", name="RUNNING")
+        CANCEL = SimpleNamespace(value="2", name="CANCEL")
+        DONE = SimpleNamespace(value="3", name="DONE")
+        FAIL = SimpleNamespace(value="4", name="FAIL")
+        SCHEDULE = SimpleNamespace(value="5", name="SCHEDULE")
+
+        def __iter__(self):
+            return iter(
+                [
+                    self.UNSTART,
+                    self.RUNNING,
+                    self.CANCEL,
+                    self.DONE,
+                    self.FAIL,
+                    self.SCHEDULE,
+                ]
+            )
+
     constants_mod.RetCode = _DummyRetCode
     constants_mod.LLMType = _DummyLLMType
     constants_mod.ParserType = _DummyParserType
     constants_mod.PAGERANK_FLD = "pagerank_flt"
-    constants_mod.TaskStatus = SimpleNamespace(
-        UNSTART=SimpleNamespace(value="0"),
-        RUNNING=SimpleNamespace(value="1"),
-        CANCEL=SimpleNamespace(value="2"),
-        DONE=SimpleNamespace(value="3"),
-        FAIL=SimpleNamespace(value="4"),
-        SCHEDULE=SimpleNamespace(value="5"),
-    )
+    constants_mod.TaskStatus = _TaskStatus()
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     string_utils_mod = ModuleType("common.string_utils")
@@ -241,8 +268,9 @@ def _load_chunk_module(monkeypatch):
 
     metadata_utils_mod = ModuleType("common.metadata_utils")
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
-    metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
-    metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.convert_conditions = lambda cond: list((cond or {}).get("conditions") or [])
+    metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
+    metadata_utils_mod.filter_doc_ids_by_metadata = lambda *_args, **_kwargs: []
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
@@ -255,12 +283,16 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     pagination_utils_mod = ModuleType("api.utils.pagination_utils")
-    pagination_utils_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: (1, 30)
+    pagination_utils_mod.DEFAULT_PAGE = 1
+    pagination_utils_mod.DEFAULT_PAGE_SIZE = 30
+    pagination_utils_mod.validate_rest_api_page = lambda value, *_args, **_kwargs: int(value) if value is not None else 1
+    pagination_utils_mod.validate_rest_api_page_size = lambda value, *_args, **_kwargs: int(value) if value is not None else 30
+    pagination_utils_mod.validate_rest_api_ids = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
     reference_metadata_utils_mod.enrich_chunks_with_document_metadata = lambda chunks, *_args, **_kwargs: chunks
-    reference_metadata_utils_mod.resolve_reference_metadata_preferences = lambda *_args, **_kwargs: {}
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = lambda *_args, **_kwargs: (False, None)
     monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
@@ -494,9 +526,24 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_by_id(_kb_id):
-            return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
+            return True, SimpleNamespace(
+                pagerank=0.6,
+                tenant_id="tenant-1",
+                embd_id="embed-1",
+                tenant_embd_id="tm-embd-2",
+                tenant_llm_id="tm-llm-1",
+            )
+
+        @staticmethod
+        def get_by_ids(ids):
+            return [SimpleNamespace(id=kb_id, tenant_id="tenant-1", embd_id="embed-1", pagerank=0.6) for kb_id in ids]
+
+        @staticmethod
+        def list_documents_by_ids(_kb_ids):
+            return ["doc-1", "doc-2"]
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
@@ -848,3 +895,73 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+
+
+@pytest.mark.p2
+def test_restful_retrieval_empty_metadata_conditions_does_not_force_sentinel(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.settings.retriever.retrieval_calls.clear()
+
+    filter_calls = []
+
+    def _filter_doc_ids_by_metadata(*args, **kwargs):
+        filter_calls.append((args, kwargs))
+        return []
+
+    monkeypatch.setattr(module, "filter_doc_ids_by_metadata", _filter_doc_ids_by_metadata)
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "dataset_ids": ["kb-1"],
+                "question": "hello",
+                "metadata_condition": {"logic": "and", "conditions": []},
+            }
+        ),
+    )
+    res = _run(_route_core(module.retrieval_test)("tenant-1"))
+    assert res["code"] == 0, res
+    assert filter_calls == [], "empty conditions must skip metadata filtering"
+    assert module.settings.retriever.retrieval_calls, res
+    assert module.settings.retriever.retrieval_calls[-1]["kwargs"]["doc_ids"] is None, res
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "dataset_ids": ["kb-1"],
+                "question": "hello",
+                "document_ids": ["doc-1"],
+                "metadata_condition": {"logic": "and", "conditions": []},
+            }
+        ),
+    )
+    res = _run(_route_core(module.retrieval_test)("tenant-1"))
+    assert res["code"] == 0, res
+    assert module.settings.retriever.retrieval_calls[-1]["kwargs"]["doc_ids"] == ["doc-1"], res
+
+
+@pytest.mark.p2
+def test_restful_chunk_available_flags_reject_non_integers(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.updated.clear()
+
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"available": "abc"}))
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "`available` should be an integer", res
+    assert module.settings.docStoreConn.updated == [], res
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"chunk_ids": ["chunk-1"], "available_int": "abc"}),
+    )
+    res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "`available_int` should be an integer", res
+    assert module.settings.docStoreConn.updated == [], res
