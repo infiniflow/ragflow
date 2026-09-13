@@ -27,6 +27,8 @@ import {
   currentReg,
   parseCitationIndex,
   preprocessLaTeX,
+  promoteCaretExponentsToLaTeX,
+  replaceAgenticLogsToSection,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -85,9 +87,15 @@ const FloatingChatWidgetMarkdown = ({
   const contentWithCursor = useMemo(() => {
     const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
+    // Reasoning, retrieval and Agentic RAG progress output are separated from
+    // the answer into collapsed panels, so the body only shows the result.
+    const logSummary = t('chat.agenticLog');
     return pipe(
-      replaceThinkToSection,
-      replaceRetrievingToSection,
+      (value: string) =>
+        replaceThinkToSection(value, t('chat.thought'), logSummary),
+      (value: string) => replaceRetrievingToSection(value, t('chat.retrieving')),
+      (value: string) => replaceAgenticLogsToSection(value, logSummary),
+      promoteCaretExponentsToLaTeX,
       preprocessLaTeX,
     )(nextText);
   }, [content, t]);

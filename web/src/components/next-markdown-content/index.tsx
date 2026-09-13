@@ -41,6 +41,8 @@ import {
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
+  promoteCaretExponentsToLaTeX,
+  replaceAgenticLogsToSection,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -209,10 +211,15 @@ function MarkdownContent({
     const thinkSummary = loading
       ? `${t('chat.thinking')}...`
       : t('chat.thought');
+    // Reasoning, retrieval and Agentic RAG progress output are separated from
+    // the answer into collapsed panels, so the body only shows the result.
+    const logSummary = t('chat.agenticLog');
     return unescapeAngleBrackets(
       pipe(
-        (value: string) => replaceThinkToSection(value, thinkSummary),
-        replaceRetrievingToSection,
+        (value: string) => replaceThinkToSection(value, thinkSummary, logSummary),
+        (value: string) => replaceRetrievingToSection(value, t('chat.retrieving')),
+        (value: string) => replaceAgenticLogsToSection(value, logSummary),
+        promoteCaretExponentsToLaTeX,
         preprocessLaTeX,
       )(nextText),
     );
