@@ -47,6 +47,7 @@ import {
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  trimExtractionResidue,
   unescapeAngleBrackets,
 } from '@/utils/chat';
 import classNames from 'classnames';
@@ -166,6 +167,7 @@ const MarkdownContent = ({
         (value: string) => replaceThinkToSection(value, thinkSummary, logSummary),
         (value: string) => replaceRetrievingToSection(value, t('chat.retrieving')),
         (value: string) => replaceAgenticLogsToSection(value, logSummary),
+        trimExtractionResidue,
         promoteCaretExponentsToLaTeX,
         preprocessLaTeX,
       )(nextText),

@@ -152,8 +152,9 @@ details.agentic-log {
 }
 
 /* Diagnostic lines: keep them monospaced and wrap long queries instead of
-   letting them stretch the message bubble. */
-details.agentic-log > div {
+   letting them stretch the message bubble. The panel body is real markdown, so
+   the target is every child after the summary. */
+details.agentic-log > :not(summary) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.75rem;
   white-space: pre-wrap;

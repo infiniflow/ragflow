@@ -33,6 +33,7 @@ import {
   replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
+  trimExtractionResidue,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
@@ -95,6 +96,7 @@ const FloatingChatWidgetMarkdown = ({
         replaceThinkToSection(value, t('chat.thought'), logSummary),
       (value: string) => replaceRetrievingToSection(value, t('chat.retrieving')),
       (value: string) => replaceAgenticLogsToSection(value, logSummary),
+      trimExtractionResidue,
       promoteCaretExponentsToLaTeX,
       preprocessLaTeX,
     )(nextText);
