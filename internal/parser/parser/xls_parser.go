@@ -84,7 +84,15 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 			p.OutputFormat,
 		)
 	case "", "excelize":
-		// Continue with the local Excelize parser.
+		// Genuine BIFF8/OLE .xls input routes to the office_oxide
+		// legacy-format path (which converts .xls to OOXML internally).
+		// OOXML input keeps the Excelize path. The container is sniffed
+		// from the leading magic bytes — Excelize only supports the
+		// OOXML family (xl/v2.11 README), so an OLE payload routed
+		// through it would fail with a zip-format error.
+		if officeContainer(data) == "ole" {
+			return xlsOpenFromBIFF(data, filename)
+		}
 	default:
 		return ParseResult{
 			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
