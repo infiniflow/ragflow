@@ -1,10 +1,12 @@
 import {
   countAgenticLogLines,
   isAgenticLogLine,
+  isAgenticPreambleLine,
   preprocessLaTeX,
   promoteCaretExponentsToLaTeX,
   replaceAgenticLogsToSection,
   replaceThinkToSection,
+  trimExtractionResidue,
 } from '../chat';
 
 describe('preprocessLaTeX', () => {
@@ -76,7 +78,7 @@ describe('replaceThinkToSection', () => {
 
   it('keeps a non-empty think section as a details block', () => {
     expect(replaceThinkToSection('<think>some reasoning</think>answer')).toBe(
-      '<details class="think"><summary>Thinking...</summary>some reasoning</details>answer',
+      '<details class="think"><summary>Thinking...</summary>\n\nsome reasoning\n\n</details>answer',
     );
   });
 
@@ -84,7 +86,7 @@ describe('replaceThinkToSection', () => {
     expect(
       replaceThinkToSection('<think>reasoning</think>', 'Deep thought'),
     ).toBe(
-      '<details class="think"><summary>Deep thought</summary>reasoning</details>',
+      '<details class="think"><summary>Deep thought</summary>\n\nreasoning\n\n</details>',
     );
   });
 
@@ -113,7 +115,7 @@ describe('replaceThinkToSection', () => {
     );
 
     expect(result).toBe(
-      '<details class="think"><summary>Thought</summary>Step one.\nStep two.</details>Answer',
+      '<details class="think"><summary>Thought</summary>\n\nStep one.\nStep two.\n\n</details>Answer',
     );
   });
 
@@ -126,8 +128,8 @@ describe('replaceThinkToSection', () => {
 
     expect(result).toContain('<details class="agentic-log">');
     expect(result).toContain('<summary>Log · 2</summary>');
-    expect(result).toContain('<div>[Hybrid search] Searching the knowledge base for "x"</div>');
-    expect(result).toContain('<div>[Keywords] cable</div>');
+    expect(result).toContain('`[Hybrid search]` Searching the knowledge base for "x"');
+    expect(result).toContain('`[Keywords]` cable');
     expect(result.endsWith('Answer')).toBe(true);
   });
 
@@ -139,8 +141,8 @@ describe('replaceThinkToSection', () => {
     );
 
     expect(result).toContain('<summary>Log · 2</summary>');
-    expect(result).toContain('<div>[Agentic RAG] Starting research — mode=hybrid</div>');
-    expect(result).toContain('<div>[Keywords] entity x1: copper</div>');
+    expect(result).toContain('`[Agentic RAG]` Starting research — mode=hybrid');
+    expect(result).toContain('`[Keywords]` entity x1: copper');
     expect(result).not.toContain('<br>');
     expect(result.endsWith('Answer')).toBe(true);
   });
@@ -154,6 +156,21 @@ describe('replaceThinkToSection', () => {
 
     expect(result).toContain('<details class="agentic-log">');
     expect(result).toContain('<summary>Log · 1</summary>');
+  });
+
+  it('renders the panel body as markdown by leaving blank lines around it', () => {
+    const result = replaceThinkToSection(
+      '<think>[Keywords] **copper** alloy</think>Answer',
+      'Thought',
+      'Log · {{num}}',
+    );
+
+    // Markdown nested in a raw HTML block is only parsed once the block is
+    // interrupted, hence the blank line after the summary and before </details>.
+    expect(result).toContain('</summary>\n\n');
+    expect(result).toContain('\n\n</details>');
+    // The emphasis is left intact for react-markdown to parse.
+    expect(result).toContain('**copper** alloy');
   });
 });
 
@@ -182,10 +199,62 @@ describe('agentic RAG log extraction', () => {
 
     expect(result).toContain('<details class="agentic-log">');
     expect(result).toContain('<summary>Log · 2</summary>');
-    expect(result).toContain('<div>[Keywords] 1.5mm^2</div>');
+    expect(result).toContain('`[Keywords]` 1.5mm^2');
     expect(result).toContain('Here is the answer.');
     // The raw log lines must not survive outside the collapsed panel.
     expect(result).not.toContain('\n[Agentic RAG]');
+  });
+
+  it('extracts untagged tool chatter along with the tagged stages', () => {
+    const result = replaceAgenticLogsToSection(
+      'Running the rag tool...\n[Keywords] cable\nRunning tool...\nThe answer.',
+      'Log · {{num}}',
+    );
+
+    expect(result).toContain('<summary>Log · 3</summary>');
+    expect(result).toContain('Running the rag tool...');
+    expect(result).toContain('Running tool...');
+    expect(result).toContain('The answer.');
+    expect(result.startsWith('<details')).toBe(true);
+  });
+
+  it('recognises the extra stage tags the pipeline forwards', () => {
+    expect(isAgenticLogLine('[Memory] recall 2 hits')).toBe(true);
+    expect(isAgenticLogLine('[Composing the answer] drafting')).toBe(true);
+    expect(isAgenticPreambleLine('Running the rag tool...')).toBe(true);
+    expect(isAgenticPreambleLine('Running tools')).toBe(true);
+    // A real sentence that merely starts with those words is not chatter.
+    expect(isAgenticPreambleLine('Running tools requires Python 3.13')).toBe(
+      false,
+    );
+  });
+
+  it('never extracts a line that carries a figure, image or citation', () => {
+    const content = [
+      '[Hybrid search] found the assembly drawing ![cable section](/img/a.png)',
+      '[Keywords] see Fig. 1 for the conductor layout',
+      '[Direct search] citation [ID:3] must stay visible',
+      '[Memory] plain log line',
+    ].join('\n');
+
+    const result = replaceAgenticLogsToSection(content, 'Log · {{num}}');
+
+    // Only the plain log line is collapsed; everything user-facing stays put.
+    expect(result).toContain('<summary>Log · 1</summary>');
+    expect(result).toContain('![cable section](/img/a.png)');
+    expect(result).toContain('see Fig. 1 for the conductor layout');
+    expect(result).toContain('[ID:3] must stay visible');
+  });
+
+  it('cleans the residue extraction leaves around the answer', () => {
+    const result = replaceAgenticLogsToSection(
+      '<br><br>[Keywords] cable\n<p></p>\nThe answer.',
+      'Log · {{num}}',
+    );
+
+    expect(result.startsWith('<details')).toBe(true);
+    expect(result).toContain('The answer.');
+    expect(result).not.toMatch(/^<br/);
   });
 
   it('leaves fenced code blocks untouched', () => {
@@ -200,7 +269,7 @@ describe('agentic RAG log extraction', () => {
     );
 
     expect(result).toContain('<summary>Log · 2</summary>');
-    expect(result).toContain('<div>[Keywords] copper</div>');
+    expect(result).toContain('`[Keywords]` copper');
     expect(result).toContain('The conductor is 1.5mm^2.');
   });
 
@@ -242,5 +311,17 @@ describe('promoteCaretExponentsToLaTeX', () => {
 
   it('leaves text without a caret untouched', () => {
     expect(promoteCaretExponentsToLaTeX('plain text')).toBe('plain text');
+  });
+});
+
+describe('trimExtractionResidue', () => {
+  it('strips the line breaks and empty paragraphs left around the answer', () => {
+    expect(trimExtractionResidue('<br><br>\n<p></p>\n<details>x</details>\n\n')).toBe(
+      '<details>x</details>',
+    );
+  });
+
+  it('leaves real content alone', () => {
+    expect(trimExtractionResidue('1.5mm^2 conductor')).toBe('1.5mm^2 conductor');
   });
 });
