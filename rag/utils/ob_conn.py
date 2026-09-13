@@ -1202,7 +1202,7 @@ class OBConnection(OBConnectionBase):
         for k, v in new_value.items():
             if k == "remove":
                 if isinstance(v, str):
-                    validate_column_name(v, _VALID_FILTER_COLUMNS)
+                    validate_column_name(v, _VALID_FILTER_COLUMNS, vector_column_pattern)
                     set_values.append(f"{v} = NULL")
                 else:
                     if not isinstance(v, dict):
@@ -1232,7 +1232,7 @@ class OBConnection(OBConnectionBase):
                     if title:
                         set_values.append(f"docnm_kwd = {get_value_str(title)}")
             else:
-                validate_column_name(k, _VALID_FILTER_COLUMNS)
+                validate_column_name(k, _VALID_FILTER_COLUMNS, vector_column_pattern)
                 set_values.append(f"{k} = {get_value_str(v)}")
 
         if not set_values:

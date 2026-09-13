@@ -318,3 +318,16 @@ class TestUpdateColumnValidation:
         result = connection.update({"id": "c1"}, {"remove": "docnm_kwd"}, "test_table", "kb1")
         assert result is True
         connection.client.perform_raw_text_sql.assert_called_once()
+
+    def test_vector_column_update_succeeds(self):
+        """Regression test: dynamic q_<n>_vec columns must not be rejected by the static allowlist."""
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"q_1024_vec": [0.1, 0.2, 0.3]}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()
+
+    def test_vector_column_remove_succeeds(self):
+        connection = self._connection()
+        result = connection.update({"id": "c1"}, {"remove": "q_1024_vec"}, "test_table", "kb1")
+        assert result is True
+        connection.client.perform_raw_text_sql.assert_called_once()
