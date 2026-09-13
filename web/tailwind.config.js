@@ -131,6 +131,7 @@ module.exports = {
         },
         'cable-divider': 'var(--cable-divider)',
         'cable-muted': 'var(--cable-muted)',
+        'cable-hairline': 'var(--cable-hairline)',
         'cable-nav': {
           DEFAULT: 'var(--cable-nav-text)',
           hover: 'var(--cable-nav-text-hover)',

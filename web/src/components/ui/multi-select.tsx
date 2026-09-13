@@ -114,8 +114,10 @@ function MultiCommandItem({
  * Variants for the multi-select component to handle different styles.
  * Uses class-variance-authority (cva) to define different styles based on "variant" prop.
  */
+// Hover feedback is elevation only: a translate/scale on hover gets clipped by
+// the overflow-hidden containers these selects are rendered in.
 const multiSelectVariants = cva(
-  'm-1 transition ease-in-out delay-150 hover:-translate-y-1 hover:scale-110 duration-300',
+  'm-1 transition-[box-shadow,border-color] duration-200 ease-out hover:shadow-md',
   {
     variants: {
       variant: {

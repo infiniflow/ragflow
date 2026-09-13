@@ -12,8 +12,10 @@ import { ChevronRight } from 'lucide-react';
 const applicationCardClass = cn(
   'group h-full w-full rounded-xl px-4 py-3',
   'border border-cable-border bg-cable-surface shadow-cable-surface',
-  'transition-[transform,box-shadow,border-color] duration-200 ease-out',
-  'hover:-translate-y-0.5 hover:border-cable-border-hover hover:shadow-cable-surface-hover',
+  // Elevation plus border highlight only: a translate would be clipped by the
+  // overflow-auto grid these tiles are rendered in.
+  'transition-[box-shadow,border-color] duration-200 ease-out',
+  'hover:border-cable-border-hover hover:shadow-cable-surface-hover',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cable-accent',
 );
 

@@ -68,8 +68,11 @@ export function HomeCard({
       className={cn(
         'group flex h-full w-full items-start gap-3 rounded-xl px-4 py-4',
         'border border-cable-border bg-cable-surface shadow-cable-surface',
-        'transition-[transform,box-shadow,border-color] duration-200 ease-out',
-        'hover:-translate-y-0.5 hover:border-cable-border-hover hover:shadow-cable-surface-hover',
+        // No translate on hover: these cards render inside `overflow-auto` grids,
+        // which clip a lifted card (and its shadow) on the first row. Elevation
+        // plus the border highlight give the same feedback without moving layout.
+        'transition-[box-shadow,border-color] duration-200 ease-out',
+        'hover:border-cable-border-hover hover:shadow-cable-surface-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cable-accent',
       )}
     >

@@ -133,6 +133,10 @@
     --cable-icon-foreground: #2563eb;
     --cable-divider: rgba(148, 163, 184, 0.35);
     --cable-muted: #64748b;
+    /* Translucent hairline for chat bubbles and markdown tables: a hard 1px
+       border reads as a heavy outline, a low-alpha one keeps the surface soft in
+       both themes. */
+    --cable-hairline: rgba(15, 23, 42, 0.08);
     --cable-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
     --cable-shadow-hover: 0 10px 15px -3px rgba(15, 23, 42, 0.1),
       0 4px 6px -4px rgba(15, 23, 42, 0.1);
@@ -257,6 +261,7 @@
     --cable-icon-foreground: #60a5fa;
     --cable-divider: rgba(148, 163, 184, 0.2);
     --cable-muted: #94a3b8;
+    --cable-hairline: rgba(255, 255, 255, 0.08);
     --cable-shadow: none;
     --cable-shadow-hover: none;
 
