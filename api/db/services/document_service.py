@@ -1094,6 +1094,24 @@ class DocumentService(CommonService):
             try:
                 tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
                 if not tsks:
+                    begin_at = d.get("process_begin_at")
+                    if (d.get("run") == TaskStatus.RUNNING.value and begin_at
+                            and (datetime.now() - begin_at).total_seconds() > 600):  # noqa: DTZ005
+                        # Re-query tasks to close the race between the first query and the update.
+                        if not TaskService.query(doc_id=d["id"]):
+                            rows = cls.model.update({
+                                "run": TaskStatus.FAIL.value,
+                                "progress": -1,
+                                "progress_msg": "Task lost — executor may have crashed. Please re-parse the document.",
+                            }).where(
+                                (cls.model.id == d["id"]) &
+                                (cls.model.run == TaskStatus.RUNNING.value)
+                            ).execute()
+                            if rows:
+                                logging.warning(
+                                    "Document %s stuck in RUNNING with no tasks after timeout; marked FAIL.",
+                                    d["id"],
+                                )
                     continue
                 msg = []
                 prg = 0
