@@ -13,14 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from typing import List
-
 from common.constants import ModelTypeBinary
-
-
-def get_model_type_human(model_type: int) -> List[str]:
-    return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
-
 
 _LEGACY_MODEL_TYPE_ALIASES = {
     "speech2text": "asr",
@@ -28,7 +21,25 @@ _LEGACY_MODEL_TYPE_ALIASES = {
 }
 
 
-def normalize_model_types(model_type_name_list: List[str] | str) -> List[str]:
+def get_model_type_human(model_type: int | str | None) -> list[str]:
+    """Convert binary model_type (or integer string / legacy type string) to list of human-readable model type names."""
+    if model_type is None:
+        return []
+    if isinstance(model_type, str):
+        try:
+            model_type = int(model_type)
+        except ValueError:
+            canonical = _LEGACY_MODEL_TYPE_ALIASES.get(model_type.lower(), model_type.lower())
+            type_value_map = {mt.name.lower(): mt.value for mt in ModelTypeBinary}
+            if canonical in type_value_map:
+                return [canonical]
+            return []
+    if not isinstance(model_type, int):
+        return []
+    return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
+
+
+def normalize_model_types(model_type_name_list: list[str] | str) -> list[str]:
     """Return model type names using the canonical API/runtime identifiers."""
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]
@@ -43,7 +54,7 @@ def normalize_model_types(model_type_name_list: List[str] | str) -> List[str]:
     return normalized
 
 
-def calculate_model_type(model_type_name_list: List[str] | str) -> int:
+def calculate_model_type(model_type_name_list: list[str] | str) -> int:
     model_type = 0
     type_value_map = {mt.name.lower(): mt.value for mt in ModelTypeBinary}
     for mt in normalize_model_types(model_type_name_list):
