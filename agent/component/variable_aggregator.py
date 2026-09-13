@@ -63,7 +63,10 @@ class VariableAggregator(ComponentBase):
             # record candidate selectors within this group
             self.set_input_value(f"{gname}.variables", list(group.get("variables", [])))
             for selector in group.get("variables", []):
-                val = self._canvas.get_variable_value(selector["value"])
+                # Accept dict selectors ({"value": "cpn@var"}) and plain-string
+                # selectors ("cpn@var"), matching param_refs and the Go runtime.
+                key = selector.get("value") if isinstance(selector, dict) else selector
+                val = self._canvas.get_variable_value(key)
                 if val:
                     self.set_output(gname, val)
                     break
