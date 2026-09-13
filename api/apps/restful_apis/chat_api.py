@@ -56,6 +56,7 @@ from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.text_utils import normalize_conversation_title
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
 
@@ -1235,6 +1236,37 @@ async def recommendation():
         gen_conf,
     )
     return get_json_result(data=[re.sub(r"^[0-9]\. ", "", a) for a in ans.split("\n") if re.match(r"^[0-9]\. ", a)])
+
+
+@manager.route("/chat/title", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question")
+async def conversation_title():
+    """Summarize a conversation's first question into a short header title.
+
+    One LLM call with no retrieval, and nothing is written: the client owns the
+    session row, so a title the user renamed by hand can never be overwritten
+    here. Returns an empty title when the model produces nothing usable.
+    """
+    req = await get_request_json()
+    question = (req.get("question") or "").strip()
+    if not question:
+        return get_json_result(data={"title": ""})
+
+    model_ref = (req.get("llm_id") or "").strip()
+    if model_ref:
+        chat_model_config = resolve_model_config(current_user.id, LLMType.CHAT, model_ref)
+    else:
+        chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
+    chat_mdl = LLMBundle(current_user.id, chat_model_config)
+
+    answer = await chat_mdl.async_chat(
+        load_prompt("conversation_title"),
+        [{"role": "user", "content": question}],
+        {"temperature": 0.2, "top_p": 0.3, "max_tokens": 64},
+    )
+
+    return get_json_result(data={"title": normalize_conversation_title(answer)})
 
 
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
