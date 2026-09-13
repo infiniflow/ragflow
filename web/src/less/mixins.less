@@ -1,6 +1,8 @@
 .tableCell() {
   padding: 6px 13px;
-  border: 1px solid #d1d9e0;
+  /* Token-based hairline: markdown tables live inside message bubbles, so a
+     hardcoded light grey border used to stand out badly in dark mode. */
+  border: 1px solid var(--cable-hairline);
 }
 
 .chunkText() {
@@ -38,7 +40,7 @@
   }
 
   tr:nth-child(even) {
-    background-color: #f2f2f22a;
+    background-color: var(--cable-surface-muted);
   }
 
   // RTL Support for tables
@@ -84,7 +86,7 @@
 .linkText() {
   border-radius: 6px;
   padding: 6px 10px;
-  background-color: #eff8ff;
+  background-color: var(--cable-icon-surface);
   border: 1px;
 }
 

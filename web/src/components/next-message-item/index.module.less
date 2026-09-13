@@ -34,7 +34,11 @@
 
   .messageTextBase() {
     padding: 6px 10px;
+    /* Soft translucent hairline + micro elevation instead of a hard border: the
+       bubble keeps its shape in both themes without a heavy outline. */
+    border: 1px solid var(--cable-hairline);
     border-radius: 8px;
+    box-shadow: var(--cable-shadow);
     & > p {
       margin: 0;
     }
@@ -42,6 +46,7 @@
   .messageText {
     .chunkText();
     .messageTextBase();
+    background-color: var(--cable-surface);
     word-break: break-word;
 
     // RTL Support
@@ -52,6 +57,7 @@
   .messageTextDark {
     .chunkText();
     .messageTextBase();
+    background-color: var(--cable-surface);
     word-break: break-word;
 
     // RTL Support
@@ -63,6 +69,7 @@
   .messageUserText {
     .chunkText();
     .messageTextBase();
+    background-color: var(--cable-brand-soft);
     word-break: break-word;
     text-align: justify;
 

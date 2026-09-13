@@ -157,7 +157,6 @@ function MessageItem({
           [theme === 'dark' ? styles.messageTextDark : styles.messageText]:
             isAssistant,
           [styles.messageUserText]: !isAssistant,
-          'bg-bg-card': !isAssistant,
         })}
         dir={getDirAttribute(messageContent.replace(citationMarkerReg, ''))}
       >

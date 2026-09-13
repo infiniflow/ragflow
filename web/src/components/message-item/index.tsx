@@ -163,7 +163,6 @@ const MessageItem = ({
                       ? styles.messageTextDark
                       : styles.messageText
                     : styles.messageUserText,
-                  { '!bg-bg-card': !isAssistant },
                 )}
               >
                 {sendLoading && isLast && isEmpty(messageContent) ? (
