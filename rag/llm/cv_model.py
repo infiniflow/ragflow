@@ -1148,7 +1148,7 @@ class AnthropicCV(Base):
 
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
-        prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
+        prompt = self.vision_llm_prompt(b64, prompt)
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
         return response["content"][0]["text"].strip(), total_token_count_from_response(response)
