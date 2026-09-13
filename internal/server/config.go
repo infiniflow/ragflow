@@ -141,6 +141,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse SMTP config error: %w", err)
 	}
 
+	err = globalConfig.ParseCableConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse cable config error: %w", err)
+	}
+
 	err = globalConfig.GetEnvironments()
 	if err != nil {
 		return fmt.Errorf("get environments error: %w", err)

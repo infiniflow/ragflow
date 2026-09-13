@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/server"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -111,6 +112,18 @@ func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTe
 }
 
 func findTemplateDirs() []string {
+	// Cable-domain deployments serve only their own templates. The official files
+	// stay on disk untouched; they are simply not seeded, which also lets the
+	// stale-row delete in SeedCanvasTemplates drop rows seeded before the switch
+	// was enabled.
+	if isCableOnly() {
+		if d := findCableTemplatesDir(); d != "" {
+			return []string{d}
+		}
+		common.Warn("show_cable_only is enabled but agent/templates/cable_templates was not found; no templates will be seeded")
+		return nil
+	}
+
 	var dirs []string
 	if d := findAgentTemplatesDir(); d != "" {
 		dirs = append(dirs, d)
@@ -119,6 +132,72 @@ func findTemplateDirs() []string {
 		dirs = append(dirs, d)
 	}
 	return dirs
+}
+
+// isCableOnly reports the conf/service_conf.yaml switch. A nil config (tests that
+// never boot the server) means "off", i.e. the upstream catalogue.
+func isCableOnly() bool {
+	cfg := server.GetConfig()
+	return cfg != nil && cfg.CableOnly()
+}
+
+// CableTemplateIDs returns the ids of the cable templates on disk. The read path
+// uses it to hide official rows seeded before the switch was turned on, mirroring
+// Python's api/db/cable_templates.py:filter_scoped_templates.
+func CableTemplateIDs() map[string]struct{} {
+	ids := make(map[string]struct{})
+
+	dir := findCableTemplatesDir()
+	if dir == "" {
+		return ids
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		common.Warn("Failed to read cable template directory", zap.String("dir", dir), zap.Error(err))
+		return ids
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			common.Warn("Failed to read cable template", zap.String("file", entry.Name()), zap.Error(err))
+			continue
+		}
+		var payload struct {
+			ID any `json:"id"`
+		}
+		if err = json.Unmarshal(raw, &payload); err != nil {
+			common.Warn("Failed to parse cable template", zap.String("file", entry.Name()), zap.Error(err))
+			continue
+		}
+		if payload.ID == nil {
+			continue
+		}
+		if id := fmt.Sprint(payload.ID); id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+
+	return ids
+}
+
+func findCableTemplatesDir() string {
+	candidates := []string{
+		filepath.Join("agent", "templates", "cable_templates"),
+		filepath.Join("..", "agent", "templates", "cable_templates"),
+		filepath.Join("..", "..", "agent", "templates", "cable_templates"),
+		filepath.Join("..", "..", "..", "agent", "templates", "cable_templates"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func findIngestionTemplatesDir() string {

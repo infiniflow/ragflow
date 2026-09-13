@@ -36,6 +36,9 @@ type Config struct {
 	log  LogConfig
 	smtp common.SMTPConfig
 
+	// Cable-domain fork switch (top-level `show_cable_only` in service_conf.yaml).
+	cableOnly bool
+
 	// From environments
 	environments Environments
 
