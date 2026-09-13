@@ -38,6 +38,9 @@ show_help() {
     echo "OPTIONS:"
     echo "  -p project_name  - Docker Compose project name (default: '$DEFAULT_PROJECT_NAME')"
     echo "                     Use this when you started RAGFlow with 'docker compose -p <name>'"
+    echo "  --force           - (restore only) auto-clear a non-empty target volume"
+    echo "                     instead of aborting. Use for automation / CI when"
+    echo "                     you've already verified the volume is expendable."
     echo ""
     echo "PARAMETERS:"
     echo "  backup_folder    - Name of backup folder (default: '$DEFAULT_BACKUP_FOLDER')"
@@ -248,20 +251,71 @@ perform_restore() {
         fi
     done
 
-    if [ ${#existing_volumes[@]} -gt 0 ]; then
+    if [ ${#existing_volumes[@]} -gt 0 ] && [ "$RESTORE_FORCE" != "true" ]; then
         echo "⚠️  WARNING: The following Docker volumes already exist:"
         for volume in "${existing_volumes[@]}"; do
             echo "  - $volume"
         done
         echo ""
-        echo "🔴 IMPORTANT: Restoring will OVERWRITE existing data!"
-        echo "💡 Recommendation: Create a backup of your current data first:"
+        echo "🔴 IMPORTANT: Restoring will PERMANENTLY REPLACE the contents of these"
+        echo "   volumes. Any files in the volumes that are NOT present in the backup"
+        echo "   archive will be DELETED before extraction begins — this is necessary to"
+        echo "   reproduce a faithful copy of the backup and avoid silent merges of old"
+        echo "   and new state across restore cycles. This operation is irreversible."
+        echo ""
+        echo "� Recommendation: Snapshot the current volumes first (e.g. with"
+        echo "   'docker volume create --name <snapshot>' + a tar backup, or stop and"
+        echo "   copy the volume via a helper container):"
         echo "   $0 -p $PROJECT_NAME backup current_backup_$(date +%Y%m%d_%H%M%S)"
         echo ""
+        echo "Pass --force to skip this prompt and auto-clear the target."
+        echo ""
 
-        if ! confirm_action "Do you want to continue with the restore operation?"; then
+        if ! confirm_action "Continue with the restore? (type 'y' to permanently overwrite these volumes)"; then
             echo "❌ Restore operation cancelled by user"
             exit 0
+        fi
+    fi
+
+    # Preflight: POSIX-compatible volume inspection (Alpine BusyBox
+    # `sh` does not support `shopt`, so we use plain shell globs). Must
+    # happen BEFORE creating or clearing any volume so a single dirty
+    # volume aborts the whole restore cleanly, instead of partially
+    # clearing some and reporting success. Per #18393 review.
+    local dirty_volumes=()
+    if [ "$RESTORE_FORCE" != "true" ]; then
+        for volume in "${VOLUMES[@]}"; do
+            if ! volume_exists "$volume"; then
+                continue
+            fi
+            local has_state=0
+            for pattern in '/target/*' '/target/.[!.]*' '/target/..?*'; do
+                if docker run --rm -v "$volume":/target alpine \
+                    sh -c "for f in $pattern; do [ -e \"\$f\" ] && exit 0; done; exit 1"; then
+                    has_state=1
+                    break
+                fi
+            done
+            if [ "$has_state" -eq 1 ]; then
+                dirty_volumes+=("$volume")
+            fi
+        done
+        if [ ${#dirty_volumes[@]} -gt 0 ]; then
+            echo ""
+            echo "🔴 The following target volumes are NOT empty — refusing to restore:"
+            for volume in "${dirty_volumes[@]}"; do
+                echo "   - $volume"
+                docker run --rm -v "$volume":/target alpine \
+                    sh -c "for f in /target/* /target/.[!.]* /target/..?*; do [ -e \"\$f\" ] && printf '       %s\\n' \"\$f\"; done" | head -n 20
+            done
+            echo ""
+            echo "To restore, choose one of:"
+            echo "  a) Clean up the target volumes yourself, then re-run:"
+            echo "       docker compose down && docker volume rm <volume> && docker volume create <volume>"
+            echo "  b) Re-run with --force to accept the destructive auto-clear (legacy behavior)."
+            echo ""
+            echo "❌ Restore aborted before any volume was touched."
+            exit 1
         fi
     fi
 
@@ -284,11 +338,28 @@ perform_restore() {
         fi
 
         # Restore data
+        # The previous behaviour extracted the archive on top of any
+        # existing files in the volume. That silently merged old and new
+        # state (deleted-in-new files would still be served from the
+        # volume, file format upgrades never took effect, etc.). Clean the
+        # target path inside the helper container before extracting, so
+        # stateful volumes land as a faithful copy of the backup.
+        #
+        # The cleanup glob is split into three patterns so we cover every
+        # POSIX-basename shape the volume might contain:
+        #   /target/*       — non-hidden entries
+        #   /target/.[!.]*  — single-dot hidden entries (".env", ".cache")
+        #   /target/..?*    — multi-dot hidden entries (".example", "..tmp",
+        #                     "...state"). POSIX "[!.]" only excludes the
+        #                     second character being ".", which leaves
+        #                     names like ".example" and "...state"
+        #                     unremoved under the two-character pattern.
+        # Regression for #18354.
         echo "  📥 Restoring data from $backup_file..."
         docker run --rm \
             -v "$volume":/target \
             -v "$(pwd)/$backup_folder":/backup \
-            alpine tar xzf "/backup/$backup_file" -C /target
+            alpine sh -c "rm -rf /target/* /target/.[!.]* /target/..?* && tar xzf \"/backup/$backup_file\" -C /target"
 
         echo "✅ Successfully restored $volume"
         echo ""
@@ -303,8 +374,18 @@ main() {
     # Check if Docker is available
     check_docker
 
-    # Parse -p flag
+    # Parse -p / --force flags (force preserves the prior auto-clear
+    # behavior). Flags are accepted in any position relative to the
+    # operation/folder args so callers don't have to remember the order:
+    #   $0 restore --force
+    #   $0 --force restore my_backup
+    #   $0 -p ragflow restore my_backup --force
+    # all behave the same. We use a two-pass scan: first extract every
+    # recognised flag, then the remaining positional args are
+    # operation + backup_folder.
     PROJECT_NAME="$DEFAULT_PROJECT_NAME"
+    RESTORE_FORCE="false"
+    local _positional=()
     while [ $# -gt 0 ]; do
         case "$1" in
             -p)
@@ -315,11 +396,23 @@ main() {
                 PROJECT_NAME="$2"
                 shift 2
                 ;;
+            --force)
+                RESTORE_FORCE="true"
+                shift
+                ;;
             *)
-                break
+                _positional+=("$1")
+                shift
                 ;;
         esac
     done
+    # Restore positional args for the existing operation/folder parser
+    # below so it sees the same $@ it would have seen without the flag
+    # scan.
+    set -- "${_positional[@]}"
+
+    # Reset the positional index because set -- rebuilds $@ starting at 1
+    # (the loop above already used _positional, no index needed here).
 
     # Build volume names based on project name
     build_volume_names
