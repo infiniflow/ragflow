@@ -100,7 +100,8 @@ export const preprocessLaTeX = (content: string) => {
 /**
  * Stage banners the Agentic RAG pipeline forwards into the answer stream
  * (`rag/advanced_rag/think_log.py` forwards every INFO record starting with
- * `[`). Matched by prefix only, so new stages need no frontend change.
+ * `[`). Matched by prefix only, so new stages need no frontend change beyond
+ * adding the tag here.
  */
 export const AGENTIC_LOG_PREFIXES = [
   '[Agentic RAG]',
@@ -108,7 +109,26 @@ export const AGENTIC_LOG_PREFIXES = [
   '[Keywords',
   '[Direct search',
   '[Hybrid search',
+  '[Memory',
+  '[Composing the answer]',
 ] as const;
+
+/**
+ * Progress chatter the tool loop prints around a call without a stage tag
+ * ("Running the rag tool...", "Running tool..."). Anchored to the whole line so
+ * a real sentence that merely starts with those words is never swallowed.
+ */
+const AGENTIC_PREAMBLE_RE =
+  /^running\s+(?:the\s+)?(?:[\w-]+\s+)?tools?(?:\s*[.…]{1,3})?$/i;
+
+/**
+ * Anything that renders a citation, figure or image in the answer. A line like
+ * this is never treated as a log even when it carries a stage tag: silently
+ * hiding an image, a `Fig. N` reference or an `[ID:n]` citation would damage the
+ * answer, whereas leaving a log line in the body is only cosmetic.
+ */
+const ANSWER_MEDIA_RE =
+  /!\[|<img|<figure|<image|\[\s*ID:\s*\d+\s*\]|\bFig(?:ure)?\.?\s*\d/i;
 
 // Fenced code blocks must never be rewritten: a shell snippet or a log sample
 // can legitimately start a line with one of the prefixes above.
@@ -134,11 +154,27 @@ const splitLogLines = (text: string = ''): string[] =>
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
-/** True when a single line is an Agentic RAG progress log line. */
+/** True when a line is untagged tool-progress chatter. */
+export function isAgenticPreambleLine(line: string = ''): boolean {
+  return AGENTIC_PREAMBLE_RE.test(line.trim());
+}
+
+/**
+ * True when a line belongs in the collapsed progress panel. Answer-bearing
+ * lines (figures, images, citations) are excluded first so extraction can never
+ * remove content the user is meant to read.
+ */
 export function isAgenticLogLine(line: string = ''): boolean {
   const trimmed = line.trim().replace(/^[-*+]\s+/, '');
 
-  return AGENTIC_LOG_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+  if (ANSWER_MEDIA_RE.test(trimmed)) {
+    return false;
+  }
+
+  return (
+    AGENTIC_LOG_PREFIXES.some((prefix) => trimmed.startsWith(prefix)) ||
+    isAgenticPreambleLine(trimmed)
+  );
 }
 
 /** True when the first line of a block is an Agentic RAG log line. */
@@ -156,6 +192,11 @@ export function countAgenticLogLines(text: string = ''): number {
 const fillLogCount = (summary: string, count: number) =>
   summary.replace(/\{\{\s*num\s*\}\}/g, String(count));
 
+// The leading stage tag is rendered as inline code: it keeps the tag visually
+// distinct (and stops markdown from reading `[Tag]` as a link reference).
+const stripTagToCode = (line: string) =>
+  line.replace(/^(\[[^\]]{1,60}\])(\S?.*)$/, '`$1`$2');
+
 const buildAgenticLogBlock = (summary: string, logs: string[]) =>
   [
     `<details class="agentic-log"><summary>${fillLogCount(
@@ -163,10 +204,24 @@ const buildAgenticLogBlock = (summary: string, logs: string[]) =>
       logs.length,
     )}</summary>`,
     '',
-    ...logs.map((line) => `<div>${line}</div>`),
+    // The blank lines are load-bearing: markdown nested in a raw HTML block is
+    // only parsed once the block is interrupted, so the log lines below stay
+    // real markdown (bold, code fences, links) instead of one unformatted blob.
+    ...logs.map(stripTagToCode),
     '',
     '</details>',
   ].join('\n');
+
+/**
+ * Removes the whitespace and empty markup that extraction leaves at the edges of
+ * the answer, so the body starts on real content instead of stray line breaks.
+ */
+export function trimExtractionResidue(text: string = '') {
+  const LEADING = /^(?:\s|&nbsp;|<br\s*\/?>|<p>\s*<\/p>|<p><\/p>)+/i;
+  const TRAILING = /(?:\s|&nbsp;|<br\s*\/?>|<p>\s*<\/p>|<p><\/p>)+$/i;
+
+  return text.replace(LEADING, '').replace(TRAILING, '');
+}
 
 export function replaceThinkToSection(
   text: string = '',
@@ -189,7 +244,9 @@ export function replaceThinkToSection(
     if (logSummary && isAgenticLogText(body)) {
       return buildAgenticLogBlock(logSummary, splitLogLines(body));
     }
-    return `<details class="think"><summary>${summary}</summary>${thinkContent}</details>`;
+    // Same blank-line rule as the log panel: without it the reasoning body is
+    // treated as raw HTML and its markdown is never rendered.
+    return `<details class="think"><summary>${summary}</summary>\n\n${body}\n\n</details>`;
   });
 
   return result;
@@ -213,7 +270,7 @@ export function replaceRetrievingToSection(
   const result = text.replace(
     pattern,
     (_match, retrievingContent: string) =>
-      `<details class="retrieving"><summary>${summary}</summary>${retrievingContent}</details>`,
+      `<details class="retrieving"><summary>${summary}</summary>\n\n${retrievingContent.trim()}\n\n</details>`,
   );
 
   return result;
@@ -268,8 +325,11 @@ export function replaceAgenticLogsToSection(
       inserted = true;
       kept.push(LOG_BLOCK_SENTINEL);
     }
-    // A pure log line leaves nothing behind; a mixed line keeps its text.
-    const rest = remaining.join('<br>').trim();
+    // A pure log line leaves nothing behind; a mixed line keeps its text, with
+    // the break tags that surrounded the removed segments trimmed away.
+    const rest = remaining
+      .join('<br>')
+      .replace(/^(?:<br\s*\/?>|\s)+|(?:<br\s*\/?>|\s)+$/gi, '');
     if (rest.length > 0) {
       kept.push(rest);
     }
@@ -279,10 +339,12 @@ export function replaceAgenticLogsToSection(
     return text;
   }
 
-  return kept
-    .join('\n')
-    .replace(LOG_BLOCK_SENTINEL, buildAgenticLogBlock(summary, logs))
-    .replace(/\n{3,}/g, '\n\n');
+  return trimExtractionResidue(
+    kept
+      .join('\n')
+      .replace(LOG_BLOCK_SENTINEL, buildAgenticLogBlock(summary, logs))
+      .replace(/\n{3,}/g, '\n\n'),
+  );
 }
 
 /**
