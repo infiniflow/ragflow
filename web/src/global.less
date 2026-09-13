@@ -85,6 +85,81 @@ body,
   background: var(--cable-accent);
 }
 
+/* Collapsible reasoning / progress panels produced by the markdown pipeline
+   (`utils/chat.ts` turns `<think>` bodies and the Agentic RAG `[Stage] …` lines
+   into `<details>`). Defined once, globally, because rehype-raw renders them as
+   plain HTML on every markdown surface; colours come from the cable tokens so
+   light and dark modes are both covered without per-surface overrides. */
+details.think,
+details.retrieving,
+details.agentic-log {
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--cable-surface-border);
+  border-radius: 0.625rem;
+  background-color: var(--cable-surface-muted);
+  color: var(--cable-muted);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  overflow: hidden;
+
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 500;
+    color: var(--cable-muted);
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: '›';
+      display: inline-block;
+      color: var(--cable-accent);
+      transition: transform 0.15s ease;
+    }
+
+    &:hover {
+      color: var(--cable-brand);
+    }
+  }
+
+  &[open] > summary {
+    color: var(--cable-brand);
+    border-bottom: 1px solid var(--cable-divider);
+
+    &::before {
+      transform: rotate(90deg);
+    }
+  }
+
+  > :not(summary) {
+    padding-inline: 0.75rem;
+
+    &:first-of-type {
+      margin-top: 0.5rem;
+    }
+
+    &:last-child {
+      margin-bottom: 0.5rem;
+    }
+  }
+}
+
+/* Diagnostic lines: keep them monospaced and wrap long queries instead of
+   letting them stretch the message bubble. */
+details.agentic-log > div {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .Highlight--scrolledTo .Highlight__part {
   background: rgb(var(--accent-primary) / 0.5) !important;
 }
