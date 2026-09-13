@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   useFetchSessionList,
   useFetchSessionManually,
@@ -10,12 +10,14 @@ import { RootLayoutContainer } from '@/layouts/root-layout';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { LucideArrowBigLeft, LucideArrowUpRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
 import { SingleChatBox } from './chat-box/single-chat-box';
+import { ConversationHeader } from './conversation-header';
 import { Sessions } from './sessions';
 import { useAddChatBox } from './use-add-box';
 import { useSwitchDebugMode } from './use-switch-debug-mode';
@@ -35,8 +37,18 @@ export default function Chat() {
     useAddChatBox(isDebugMode);
 
   const { conversationId, isNew } = useGetChatSearchParams();
+  const { id: chatId } = useParams();
 
   const { data: dialogList } = useFetchSessionList();
+
+  // Lifted out of `Sessions` so the header can mirror it: while the conversation
+  // list is open the header drops its title (the list already highlights the
+  // active conversation), and it reappears once the list is collapsed.
+  const [sessionsVisible, setSessionsVisible] = useState(true);
+
+  const handleExpandSessions = useCallback(() => {
+    setSessionsVisible(true);
+  }, []);
 
   const currentConversationName = useMemo(() => {
     return (
@@ -107,29 +119,41 @@ export default function Chat() {
         <article className="flex flex-1 min-h-0 pb-9">
           <Sessions
             handleConversationCardClick={handleConversationCardClick}
+            visible={sessionsVisible}
+            onVisibleChange={setSessionsVisible}
           ></Sessions>
 
           <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
             <CardContent className="flex p-0 h-full">
               <Card className="flex flex-col flex-1 bg-transparent min-w-0 overflow-hidden">
-                <CardHeader
-                  className={cn('p-5', {
-                    'border-b-0.5 border-border-button': hasSingleChatBox,
-                  })}
-                >
-                  <CardTitle className="flex justify-between items-center text-base gap-2">
-                    <div className="truncate">{currentConversationName}</div>
-
-                    <Button
-                      variant="ghost"
-                      onClick={switchDebugMode}
-                      data-testid="chat-detail-multimodel-toggle"
+                {/* Rendered only while the conversation list is collapsed: an
+                    expanded list already names the active conversation, and an
+                    empty header bar would still cost its own height. */}
+                {!sessionsVisible && (
+                  <CardHeader
+                    className={cn('px-5 py-3', {
+                      'border-b-0.5 border-cable-border': hasSingleChatBox,
+                    })}
+                  >
+                    <ConversationHeader
+                      chatId={chatId}
+                      sessionId={conversationId}
+                      title={currentConversationName}
+                      summarizable={isNew !== 'true' && !isEmpty(conversationId)}
+                      onExpandSessions={handleExpandSessions}
                     >
-                      <LucideArrowUpRight />
-                      {t('chat.multipleModels')}
-                    </Button>
-                  </CardTitle>
-                </CardHeader>
+                      <Button
+                        variant="ghost"
+                        className="h-8 shrink-0 gap-1.5 rounded-lg px-2 text-cable-brand hover:bg-cable-brand-soft"
+                        onClick={switchDebugMode}
+                        data-testid="chat-detail-multimodel-toggle"
+                      >
+                        <LucideArrowUpRight className="size-4" />
+                        {t('chat.multipleModels')}
+                      </Button>
+                    </ConversationHeader>
+                  </CardHeader>
+                )}
                 <CardContent className="flex-1 p-0 min-h-0">
                   <SingleChatBox conversation={currentConversation} />
                 </CardContent>
