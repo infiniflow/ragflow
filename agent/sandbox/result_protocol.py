@@ -23,7 +23,7 @@ RESULT_MARKER_PREFIX = "__RAGFLOW_RESULT__:"
 
 
 def build_python_wrapper(code: str, args_json: str) -> str:
-    return f'''{code}
+    return f"""{code}
 
 if __name__ == "__main__":
     import base64
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     result = main(**{args_json})
     payload = json.dumps({{"present": True, "value": result, "type": "json"}}, ensure_ascii=False, separators=(",", ":"))
     print("{RESULT_MARKER_PREFIX}" + base64.b64encode(payload.encode("utf-8")).decode("ascii"))
-'''
+"""
 
 
 def build_javascript_wrapper(code: str, args_json: str) -> str:

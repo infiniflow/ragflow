@@ -500,9 +500,9 @@ def test_site_delegates_to_canonical_helper(rel_path, function_name):
     """
     source = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
     # The helper import is the unambiguous marker of delegation.
-    assert "from rag.nlp.delim import" in source or ("import rag.nlp.delim" in source), (
-        f"{rel_path} does not import rag.nlp.delim — the {function_name} site has been un-delegated from the canonical helper (#17383)"
-    )
+    assert "from rag.nlp.delim import" in source or (
+        "import rag.nlp.delim" in source
+    ), f"{rel_path} does not import rag.nlp.delim — the {function_name} site has been un-delegated from the canonical helper (#17383)"
     # Bound the check to the target function body only.
     body = _function_source(source, function_name)
     assert 're.finditer(r"`[^`]+`"' not in body and 're.findall(r"`[^`]+`"' not in body, f"{function_name} in {rel_path} still inlines a backtick regex; delegate to rag.nlp.delim instead (#17383)"

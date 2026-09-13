@@ -140,9 +140,9 @@ class TestOSConnectionMetaSurface:
 
     def test_create_doc_meta_idx_exists(self):
         cls = _resolve_os_connection_class()
-        assert callable(getattr(cls, "create_doc_meta_idx", None)), (
-            "OSConnection.create_doc_meta_idx is required so the metadata PATCH path does not raise AttributeError on OpenSearch backends (issue #14570)."
-        )
+        assert callable(
+            getattr(cls, "create_doc_meta_idx", None)
+        ), "OSConnection.create_doc_meta_idx is required so the metadata PATCH path does not raise AttributeError on OpenSearch backends (issue #14570)."
 
     def test_refresh_idx_exists(self):
         cls = _resolve_os_connection_class()

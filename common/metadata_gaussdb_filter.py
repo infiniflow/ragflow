@@ -83,16 +83,7 @@ _INTERNAL_RANGE_SQL = {
     "lte": "<=",
 }
 
-_DATETIME_PREFIX_RE = re.compile(
-    r"^(?P<year>\d{4})-(?P<month>\d{2})"
-    r"(?:-(?P<day>\d{2})"
-    r"(?:(?:T| )(?P<hour>\d{2})"
-    r"(?::(?P<minute>\d{2})"
-    r"(?::(?P<second>\d{2}))?"
-    r")?"
-    r")?"
-    r")?$"
-)
+_DATETIME_PREFIX_RE = re.compile(r"^(?P<year>\d{4})-(?P<month>\d{2})" r"(?:-(?P<day>\d{2})" r"(?:(?:T| )(?P<hour>\d{2})" r"(?::(?P<minute>\d{2})" r"(?::(?P<second>\d{2}))?" r")?" r")?" r")?$")
 _NUMBER_RE = re.compile(r"^-?[0-9]+(\.[0-9]+)?$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 

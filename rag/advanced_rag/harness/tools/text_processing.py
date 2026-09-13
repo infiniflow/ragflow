@@ -103,9 +103,7 @@ _HTML_BLOCK_TAGS = {
 # Markdown table: a header row with a pipe, a separator row of dashes/colons/
 # pipes, then zero+ body rows with a pipe.
 _MD_TABLE = re.compile(
-    r"^[ \t]*\|?[^\n]*\|[^\n]*\r?\n"
-    r"[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(?:\|[ \t]*:?-{1,}:?[ \t]*)+\|?[ \t]*\r?\n"
-    r"(?:[ \t]*\|?[^\n]*\|[^\n]*\r?\n?)*",
+    r"^[ \t]*\|?[^\n]*\|[^\n]*\r?\n" r"[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(?:\|[ \t]*:?-{1,}:?[ \t]*)+\|?[ \t]*\r?\n" r"(?:[ \t]*\|?[^\n]*\|[^\n]*\r?\n?)*",
     re.MULTILINE,
 )
 

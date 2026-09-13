@@ -655,7 +655,6 @@ def queue_dataflow(
     rerun: bool = False,
     user_id: str | None = None,
 ) -> tuple[bool, str]:
-
     task = dict(
         id=task_id,
         doc_id=doc_id,

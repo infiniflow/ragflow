@@ -55,9 +55,9 @@ def test_text_detector_accepts_limit_side_len_parameter():
 
     kwonly = {a.arg for a in args.kwonlyargs}
     positional = {a.arg for a in args.args}
-    assert "limit_side_len" in positional or "limit_side_len" in kwonly, (
-        f"TextDetector.__init__ must accept a 'limit_side_len' parameter; positional args={sorted(positional)}, kwonly={sorted(kwonly)}"
-    )
+    assert (
+        "limit_side_len" in positional or "limit_side_len" in kwonly
+    ), f"TextDetector.__init__ must accept a 'limit_side_len' parameter; positional args={sorted(positional)}, kwonly={sorted(kwonly)}"
 
 
 def test_text_detector_default_limit_side_len_is_2048():
@@ -197,9 +197,9 @@ def test_text_detector_passes_caller_value_into_preprocess_list():
     assert "pre_process_list" in captured, "create_operators was never called"
     first = captured["pre_process_list"][0]
     assert "DetResizeForTest" in first, f"first pre-process entry must be DetResizeForTest, got {first}"
-    assert first["DetResizeForTest"].get("limit_side_len") == 3000, (
-        f"the caller-passed limit_side_len=3000 must reach pre_process_list[0]['DetResizeForTest']['limit_side_len']; got {first['DetResizeForTest']}"
-    )
+    assert (
+        first["DetResizeForTest"].get("limit_side_len") == 3000
+    ), f"the caller-passed limit_side_len=3000 must reach pre_process_list[0]['DetResizeForTest']['limit_side_len']; got {first['DetResizeForTest']}"
 
 
 if __name__ == "__main__":

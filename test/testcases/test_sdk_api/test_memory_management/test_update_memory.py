@@ -34,7 +34,6 @@ class TestAuthorization:
         ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
-
         with pytest.raises(Exception) as exception_info:
             client = RAGFlow(invalid_auth, HOST_ADDRESS)
             memory = Memory(client, {"id": "memory_id"})

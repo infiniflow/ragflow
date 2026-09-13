@@ -305,7 +305,6 @@ class RAGFlowCLI(Cmd):
 
 
 def main():
-
     cli = RAGFlowCLI()
 
     args = cli.parse_connection_args(sys.argv)

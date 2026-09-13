@@ -644,25 +644,26 @@ async def run_graphrag_for_kb(
     }
 
 
-
 import re as _re
 
 _GRAPH_FIELD_SEP = "<SEP>"
 
 _NEGATIVE_JUDGMENT_PATTERN = _re.compile(
-    "|".join([
-        r"no clear relationship",
-        r"no direct relationship",
-        r"no explicit relation(ship)?",
-        r"does not provide (a )?(clear |specific )?relationship",
-        r"does not (directly )?(link|mention)",
-        r"not (clearly )?(mentioned|specified|provided) (in|within) the text",
-        r"unrelated entities",
-        r"there is no (direct |clear )?relationship",
-        r"no relationship (is )?(mentioned|found|indicated)",
-        r"different contexts,? with no",
-        r"not directly (linked|related|connected)",
-    ]),
+    "|".join(
+        [
+            r"no clear relationship",
+            r"no direct relationship",
+            r"no explicit relation(ship)?",
+            r"does not provide (a )?(clear |specific )?relationship",
+            r"does not (directly )?(link|mention)",
+            r"not (clearly )?(mentioned|specified|provided) (in|within) the text",
+            r"unrelated entities",
+            r"there is no (direct |clear )?relationship",
+            r"no relationship (is )?(mentioned|found|indicated)",
+            r"different contexts,? with no",
+            r"not directly (linked|related|connected)",
+        ]
+    ),
     _re.IGNORECASE,
 )
 
@@ -697,7 +698,9 @@ def _relationship_looks_valid(rel: dict) -> bool:
     if _NEGATIVE_JUDGMENT_PATTERN.search(desc):
         logging.debug(
             "GraphRAG: dropping relation %r -> %r reason=negative_judgment description=%r",
-            src_id, tgt_id, desc[:160],
+            src_id,
+            tgt_id,
+            desc[:160],
         )
         return False
 
@@ -721,9 +724,11 @@ def _relationship_looks_valid(rel: dict) -> bool:
     is_valid = len(mismatches) < len(subjects)
     if not is_valid:
         logging.debug(
-            "GraphRAG: dropping relation %r -> %r reason=subject_mismatch "
-            "detected_subjects=%r matched_neither_endpoint description=%r",
-            src_id, tgt_id, subjects, desc[:160],
+            "GraphRAG: dropping relation %r -> %r reason=subject_mismatch " "detected_subjects=%r matched_neither_endpoint description=%r",
+            src_id,
+            tgt_id,
+            subjects,
+            desc[:160],
         )
     return is_valid
 

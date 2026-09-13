@@ -266,7 +266,6 @@ class AsanaAPI:
         project_ids: list[str] | None,
         team_id: str | None,
     ):
-
         ws_users = self.users_api.get_users(opts={"workspace": workspace_id, "opt_fields": "gid,name,email"})
 
         workspace_users = {u["gid"]: u.get("email") for u in ws_users if u.get("email")}

@@ -104,9 +104,9 @@ def test_all_backend_defaults_reference_the_constant():
     for relpath, expected in EXPECTED_DELIMITER_DEFAULTS.items():
         tree = ast.parse((REPO_ROOT / relpath).read_text(encoding="utf-8"))
         defaults = list(_delimiter_defaults(tree))
-        assert len(defaults) == expected, (
-            f"{relpath}: expected exactly {expected} delimiter defaults, found {len(defaults)}; update EXPECTED_DELIMITER_DEFAULTS in the same change so a removed or new default stays loud"
-        )
+        assert (
+            len(defaults) == expected
+        ), f"{relpath}: expected exactly {expected} delimiter defaults, found {len(defaults)}; update EXPECTED_DELIMITER_DEFAULTS in the same change so a removed or new default stays loud"
         for kind, default in defaults:
             assert isinstance(default, ast.Name) and default.id == "DEFAULT_DELIMITER", f"{relpath}: '{kind}' delimiter default is {ast.dump(default)}, expected the DEFAULT_DELIMITER constant"
 

@@ -96,7 +96,6 @@ def _convert_issue_to_document(issue: Any) -> Document:
 
 
 def _convert_code_to_document(project: Project, file: Any, url: str, projectName: str, projectOwner: str) -> Document:
-
     # Dynamically get the default branch from the project object
     default_branch = project.default_branch
 

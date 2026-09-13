@@ -167,7 +167,6 @@ class Pad:
         self.size_div = size_div
 
     def __call__(self, data):
-
         img = data["image"]
         img_h, img_w = img.shape[0], img.shape[1]
         if self.size:

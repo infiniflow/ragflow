@@ -33,7 +33,6 @@ except Exception:
 
 class Dealer:
     def __init__(self, redis=None):
-
         self.lookup_num = 100000000
         self.load_tm = time.time() - 1000000
         self.dictionary = None

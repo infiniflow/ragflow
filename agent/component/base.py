@@ -46,11 +46,7 @@ def _build_template_ref_pattern(reference_pattern: str) -> str:
     Group 1 remains the reference for existing callers. The named ``outer``
     group records whether the match used the wrapped form.
     """
-    return (
-        rf"(?=(?:\{{ *)?\{{({reference_pattern})\}})"
-        rf"(?:(?P<outer>\{{) *)?\{{(?:{reference_pattern})\}}"
-        r"(?(outer) *\}|(?! *\}))"
-    )
+    return rf"(?=(?:\{{ *)?\{{({reference_pattern})\}})" rf"(?:(?P<outer>\{{) *)?\{{(?:{reference_pattern})\}}" r"(?(outer) *\}|(?! *\}))"
 
 
 class ComponentParamBase(ABC):

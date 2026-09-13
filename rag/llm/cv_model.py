@@ -1348,7 +1348,6 @@ class RAGconCV(GptV4):
     _FACTORY_NAME = "RAGcon"
 
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
-
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 

@@ -515,9 +515,9 @@ def step_04_set_dataset_settings(
         for key in ("name", "language", "parser_config"):
             assert key in payload, f"Expected key {key!r} in /api/v1/datasets update payload"
         parser_config = payload.get("parser_config") or {}
-        assert parser_config.get("image_table_context_window") == parser_config.get("image_context_size") == parser_config.get("table_context_size"), (
-            "Expected image/table context window transform keys to be aligned"
-        )
+        assert (
+            parser_config.get("image_table_context_window") == parser_config.get("image_context_size") == parser_config.get("table_context_size")
+        ), "Expected image/table context window transform keys to be aligned"
         expect(page.locator("[data-sonner-toast]").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
     with step("return to dataset detail for upload"):
