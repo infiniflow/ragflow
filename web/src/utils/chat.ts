@@ -18,7 +18,10 @@ import {
   ChatVariableEnabledField,
   EmptyConversationId,
 } from '@/constants/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
+// Type-only: both names are used in annotations only, and a value import here
+// makes the Babel module transform fail on this file ("imported binding used in
+// a type annotation"), which breaks every suite that imports it.
+import type { IMessage, Message } from '@/interfaces/database/chat';
 import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
@@ -94,19 +97,100 @@ export const preprocessLaTeX = (content: string) => {
   return inlineProcessedContent;
 };
 
+/**
+ * Stage banners the Agentic RAG pipeline forwards into the answer stream
+ * (`rag/advanced_rag/think_log.py` forwards every INFO record starting with
+ * `[`). Matched by prefix only, so new stages need no frontend change.
+ */
+export const AGENTIC_LOG_PREFIXES = [
+  '[Agentic RAG]',
+  '[Formalize',
+  '[Keywords',
+  '[Direct search',
+  '[Hybrid search',
+] as const;
+
+// Fenced code blocks must never be rewritten: a shell snippet or a log sample
+// can legitimately start a line with one of the prefixes above.
+const CODE_FENCE_RE = /^\s*(```|~~~)/;
+// Inline code spans and existing TeX must be left untouched by the caret pass.
+const CODE_OR_MATH_SEGMENT_RE = /(`[^`]*`|\$\$[\s\S]*?\$\$|\$[^$\n]*\$)/g;
+// `1.5mm^2`, `10^-6`, `m^{3}`: a unit/number exponent typed as plain text.
+const BARE_CARET_EXPONENT_RE =
+  /([0-9A-Za-z)\]])\^(\{[^}\s]{1,12}\}|[+-]?[0-9]{1,3}|[A-Za-z])/g;
+// One think line arrives as Go's `…<br>` (trailing break) or Python's
+// `<br>…\n` (leading break), so a log line can only be recognised after
+// splitting the physical line on the break tags as well.
+const BREAK_TAG_RE = /<br\s*\/?>/gi;
+// Placeholder marking where the collapsed log panel belongs; substituted once
+// the final line count is known.
+const LOG_BLOCK_SENTINEL = '@@agentic-log-block@@';
+
+/** Splits text into physical lines, then each line on `<br>` boundaries. */
+const splitLogLines = (text: string = ''): string[] =>
+  text
+    .split(/\r?\n/)
+    .flatMap((line) => line.split(BREAK_TAG_RE))
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+/** True when a single line is an Agentic RAG progress log line. */
+export function isAgenticLogLine(line: string = ''): boolean {
+  const trimmed = line.trim().replace(/^[-*+]\s+/, '');
+
+  return AGENTIC_LOG_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+}
+
+/** True when the first line of a block is an Agentic RAG log line. */
+export function isAgenticLogText(text: string = ''): boolean {
+  const firstLine = splitLogLines(text)[0];
+
+  return firstLine !== undefined && isAgenticLogLine(firstLine);
+}
+
+/** Number of Agentic RAG log lines in a block of text. */
+export function countAgenticLogLines(text: string = ''): number {
+  return splitLogLines(text).filter((line) => isAgenticLogLine(line)).length;
+}
+
+const fillLogCount = (summary: string, count: number) =>
+  summary.replace(/\{\{\s*num\s*\}\}/g, String(count));
+
+const buildAgenticLogBlock = (summary: string, logs: string[]) =>
+  [
+    `<details class="agentic-log"><summary>${fillLogCount(
+      summary,
+      logs.length,
+    )}</summary>`,
+    '',
+    ...logs.map((line) => `<div>${line}</div>`),
+    '',
+    '</details>',
+  ].join('\n');
+
 export function replaceThinkToSection(
   text: string = '',
   summary: string = 'Thinking...',
+  logSummary?: string,
 ) {
-  const pattern = /<think>([\s\S]*?)<\/think>/g;
+  // The closing tag is optional on purpose: while an answer streams the block
+  // is still open, and leaving it unhandled would print the raw reasoning and
+  // pipeline logs into the answer until the closer arrives.
+  const pattern = /<think>([\s\S]*?)(?:<\/think>|$)/g;
 
-  // An empty think section (the model replied without reasoning) must not
-  // render as a bare "Thinking..." strip above the answer.
-  const result = text.replace(pattern, (_match, thinkContent: string) =>
-    thinkContent.trim().length === 0
-      ? ''
-      : `<details class="think"><summary>${summary}</summary>${thinkContent}</details>`,
-  );
+  const result = text.replace(pattern, (_match, thinkContent: string) => {
+    const body = thinkContent.trim();
+    if (body.length === 0) {
+      return '';
+    }
+    // Agentic RAG progress logs reach the UI wrapped in <think> markers. They
+    // are diagnostics, not reasoning, so they get their own summary and the
+    // monospaced log list instead of the generic "Thought" panel.
+    if (logSummary && isAgenticLogText(body)) {
+      return buildAgenticLogBlock(logSummary, splitLogLines(body));
+    }
+    return `<details class="think"><summary>${summary}</summary>${thinkContent}</details>`;
+  });
 
   return result;
 }
@@ -120,15 +204,132 @@ export function removeThinkSection(text: string = '') {
     .trim();
 }
 
-export function replaceRetrievingToSection(text: string = '') {
+export function replaceRetrievingToSection(
+  text: string = '',
+  summary: string = 'Retrieving...',
+) {
   const pattern = /<retrieving>([\s\S]*?)<\/retrieving>/g;
 
   const result = text.replace(
     pattern,
-    '<details class="retrieving"><summary>Retrieving...</summary>$1</details>',
+    (_match, retrievingContent: string) =>
+      `<details class="retrieving"><summary>${summary}</summary>${retrievingContent}</details>`,
   );
 
   return result;
+}
+
+/**
+ * Collapses bare Agentic RAG progress lines into one collapsed `<details>`
+ * block, placed where the first line appeared, so the answer body only keeps
+ * the parts the user should read. Lines inside fenced code blocks are kept, and
+ * a line that mixes a log with real content keeps the content.
+ */
+export function replaceAgenticLogsToSection(
+  text: string = '',
+  summary: string = 'Agentic RAG log',
+) {
+  if (!text || !text.includes('[')) {
+    return text;
+  }
+
+  const kept: string[] = [];
+  const logs: string[] = [];
+  let inserted = false;
+  let inFence = false;
+
+  text.split(/\r?\n/).forEach((line) => {
+    if (CODE_FENCE_RE.test(line)) {
+      inFence = !inFence;
+      kept.push(line);
+      return;
+    }
+    if (inFence) {
+      kept.push(line);
+      return;
+    }
+
+    const remaining: string[] = [];
+    let sawLog = false;
+    for (const segment of line.split(BREAK_TAG_RE)) {
+      if (isAgenticLogLine(segment)) {
+        sawLog = true;
+        logs.push(segment.trim());
+        continue;
+      }
+      remaining.push(segment);
+    }
+
+    if (!sawLog) {
+      kept.push(line);
+      return;
+    }
+    if (!inserted) {
+      inserted = true;
+      kept.push(LOG_BLOCK_SENTINEL);
+    }
+    // A pure log line leaves nothing behind; a mixed line keeps its text.
+    const rest = remaining.join('<br>').trim();
+    if (rest.length > 0) {
+      kept.push(rest);
+    }
+  });
+
+  if (logs.length === 0) {
+    return text;
+  }
+
+  return kept
+    .join('\n')
+    .replace(LOG_BLOCK_SENTINEL, buildAgenticLogBlock(summary, logs))
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * Promotes caret exponents typed as plain text (`1.5mm^2`, `10^-6`) into inline
+ * TeX so KaTeX renders real superscripts. Fenced code, inline code spans and
+ * existing `$…$` math are left alone, which keeps this safe for both user
+ * questions and model answers.
+ */
+export function promoteCaretExponentsToLaTeX(text: string = '') {
+  if (!text || !text.includes('^')) {
+    return text;
+  }
+
+  let inFence = false;
+
+  return text
+    .split('\n')
+    .map((line) => {
+      if (CODE_FENCE_RE.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) {
+        return line;
+      }
+      return line
+        .split(CODE_OR_MATH_SEGMENT_RE)
+        .map((segment, index) =>
+          // Odd indices are the captured code spans / math segments.
+          index % 2 === 1
+            ? segment
+            : segment.replace(
+                BARE_CARET_EXPONENT_RE,
+                (_match, base: string, exponent: string) => {
+                  // `m^{3}` already carries its own braces; `mm^2` does not.
+                  const value =
+                    exponent.startsWith('{') && exponent.endsWith('}')
+                      ? exponent.slice(1, -1)
+                      : exponent;
+
+                  return `${base}$^{${value}}$`;
+                },
+              ),
+        )
+        .join('');
+    })
+    .join('\n');
 }
 
 // Placeholder markers used internally to protect standalone < and > from
