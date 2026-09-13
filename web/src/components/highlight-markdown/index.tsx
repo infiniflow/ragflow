@@ -28,10 +28,18 @@ import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plu
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
-import { preprocessLaTeX } from '@/utils/chat';
+import {
+  preprocessLaTeX,
+  promoteCaretExponentsToLaTeX,
+  replaceAgenticLogsToSection,
+  replaceRetrievingToSection,
+  replaceThinkToSection,
+  trimExtractionResidue,
+} from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { omit } from 'lodash';
+import { useTranslation } from 'react-i18next';
 import { useIsDarkTheme } from '../theme-provider';
 import { SafeImg } from '@/components/safe-img';
 import styles from './index.module.less';
@@ -43,11 +51,32 @@ const HighLightMarkdown = ({
   children: string | null | undefined;
 }) => {
   const isDarkTheme = useIsDarkTheme();
+  const { t } = useTranslation();
   // IMPORTANT: preprocessLaTeX() decodes &lt;/&gt;/&amp; back to raw HTML before
   // rehypeRaw parses the markdown. Sanitizing children *before* preprocessLaTeX
   // would let entity-encoded payloads bypass DOMPurify and inject HTML.
   // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
-  const processed = children ? preprocessLaTeX(children) : children;
+  // The reasoning/Agentic-RAG extraction runs first so this surface collapses the
+  // same panels as the chat renderers.
+  const processed = children
+    ? preprocessLaTeX(
+        promoteCaretExponentsToLaTeX(
+          trimExtractionResidue(
+            replaceAgenticLogsToSection(
+              replaceRetrievingToSection(
+                replaceThinkToSection(
+                  children,
+                  t('chat.thought'),
+                  t('chat.agenticLog'),
+                ),
+                t('chat.retrieving'),
+              ),
+              t('chat.agenticLog'),
+            ),
+          ),
+        ),
+      )
+    : children;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;

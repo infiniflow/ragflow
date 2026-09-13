@@ -41,6 +41,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { DocumentDownloadButton } from '../document-download-button';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../next-markdown-content';
@@ -99,6 +100,7 @@ function MessageItem({
   nickname,
 }: IProps) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
   const [showThinking, setShowThinking] = useState(false);
@@ -237,7 +239,7 @@ function MessageItem({
                         className={startedNodeList(item) ? 'animate-spin' : ''}
                       />
                     </div>
-                    Thinking
+                    {t('chat.thinking')}
                     {showThinking ? <ChevronUp /> : <ChevronDown />}
                   </div>
                 </Button>
