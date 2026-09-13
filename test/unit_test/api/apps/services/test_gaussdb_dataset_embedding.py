@@ -15,6 +15,8 @@
 #
 import importlib.util
 import sys
+
+import pytest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
@@ -232,7 +234,8 @@ def test_tc_wrt_207_check_embedding_compares_gaussdb_valid_vectors_once(monkeypa
     assert result["results"][0]["vector_dim"] == 4
 
 
-def test_check_embedding_rejects_non_integer_check_num(monkeypatch):
+@pytest.mark.parametrize("check_num", ["invalid", 1.5, True])
+def test_check_embedding_rejects_non_integer_check_num(monkeypatch, check_num):
     module = _load_dataset_module(monkeypatch)
 
     _install_module(
@@ -242,13 +245,14 @@ def test_check_embedding_rejects_non_integer_check_num(monkeypatch):
         resolve_llm_setting=lambda *_args, **_kwargs: {},
     )
 
-    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": "invalid"})
+    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": check_num})
 
     assert ok is False
     assert result == "`check_num` must be an integer."
 
 
-def test_check_embedding_rejects_non_positive_check_num(monkeypatch):
+@pytest.mark.parametrize("check_num", [0, -1])
+def test_check_embedding_rejects_non_positive_check_num(monkeypatch, check_num):
     module = _load_dataset_module(monkeypatch)
 
     _install_module(
@@ -258,7 +262,7 @@ def test_check_embedding_rejects_non_positive_check_num(monkeypatch):
         resolve_llm_setting=lambda *_args, **_kwargs: {},
     )
 
-    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": 0})
+    ok, result = module.check_embedding("kb1", "tenant1", {"embd_id": "new-embd", "check_num": check_num})
 
     assert ok is False
     assert result == "`check_num` must be greater than 0."
