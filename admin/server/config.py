@@ -207,6 +207,8 @@ class InfinityConfig(RetrievalConfig):
 class ElasticsearchConfig(RetrievalConfig):
     username: str
     password: str
+    # Empty when Elasticsearch is configured with basic auth instead of an API key.
+    api_key: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
@@ -215,6 +217,7 @@ class ElasticsearchConfig(RetrievalConfig):
         extra_dict = result["extra"].copy()
         extra_dict["username"] = self.username
         extra_dict["password"] = self.password
+        extra_dict["api_key"] = self.api_key
         result["extra"] = extra_dict
         return result
 
@@ -325,6 +328,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 port: int = parsed.port
                 username: str = v.get("username")
                 password: str = v.get("password")
+                api_key: str = v.get("api_key") or ""
                 config = ElasticsearchConfig(
                     id=id_count,
                     name=name,
@@ -334,6 +338,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                     retrieval_type="elasticsearch",
                     username=username,
                     password=password,
+                    api_key=api_key,
                     detail_func_name="get_es_cluster_stats",
                 )
                 configurations.append(config)
