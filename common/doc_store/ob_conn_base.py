@@ -37,7 +37,7 @@ index_name_template = "ix_%s_%s"
 fulltext_index_name_template = "fts_idx_%s"
 fulltext_search_template = "MATCH (%s) AGAINST ('%s' IN NATURAL LANGUAGE MODE)"
 vector_search_template = "cosine_distance(%s, '%s')"
-vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec")
+vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec$")
 
 # Document metadata table columns
 doc_meta_columns = [

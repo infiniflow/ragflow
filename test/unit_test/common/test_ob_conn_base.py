@@ -22,7 +22,7 @@ import re
 
 import pytest
 
-from common.doc_store.ob_conn_base import OBConnectionBase, validate_column_name
+from common.doc_store.ob_conn_base import OBConnectionBase, validate_column_name, vector_column_pattern
 
 
 class TestValidateColumnName:
@@ -54,6 +54,21 @@ class TestValidateColumnName:
         pattern = re.compile(r".*")
         with pytest.raises(ValueError):
             validate_column_name("id; DROP TABLE users;--", {"kb_id"}, pattern)
+
+
+class TestVectorColumnPattern:
+    """vector_column_pattern must anchor at both ends when used as an allowlist pattern."""
+
+    def test_matches_exact_vector_column(self):
+        assert vector_column_pattern.match("q_1024_vec")
+
+    def test_rejects_suffixed_lookalike(self):
+        with pytest.raises(ValueError):
+            validate_column_name("q_1024_vec_x", {"kb_id"}, vector_column_pattern)
+
+    def test_rejects_appended_lookalike(self):
+        with pytest.raises(ValueError):
+            validate_column_name("q_1024_vecabc", {"kb_id"}, vector_column_pattern)
 
 
 def _unimplemented(self, *args, **kwargs):
