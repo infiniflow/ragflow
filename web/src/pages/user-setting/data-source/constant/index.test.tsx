@@ -120,19 +120,19 @@ describe('Sitemap data source', () => {
   });
 });
 
-describe('MySQL data source', () => {
+describe.each([
+  ['MySQL', DataSourceKey.MYSQL],
+  ['PostgreSQL', DataSourceKey.POSTGRESQL],
+])('%s data source', (_label, key) => {
   it('exposes a bounded batch size for large table syncs', () => {
-    const fields = getDataSourceFieldsWithExtras(
-      translate,
-      DataSourceKey.MYSQL,
-    ) as Array<{
+    const fields = getDataSourceFieldsWithExtras(translate, key) as Array<{
       name: string;
       validation?: { min?: number };
     }>;
     const batchSize = fields.find((f) => f.name === 'config.batch_size');
 
     expect(batchSize?.validation?.min).toBe(1);
-    expect(DataSourceFormDefaultValues[DataSourceKey.MYSQL].config).toMatchObject({
+    expect(DataSourceFormDefaultValues[key].config).toMatchObject({
       batch_size: 2,
     });
   });

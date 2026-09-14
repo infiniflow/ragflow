@@ -542,11 +542,13 @@ class SyncLogsService(CommonService):
         cls.model.update(update_payload).where(cls.model.id == id).execute()
 
     @classmethod
-    def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
+    def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True, should_cancel=None):
         from api.db.services.file_service import FileService
 
         if not docs:
             return None
+        if FileService._is_sync_cancelled(should_cancel):
+            return [], []
 
         class FileObj(BaseModel):
             id: str
@@ -568,7 +570,7 @@ class SyncLogsService(CommonService):
             for d in docs
         ]
         doc_ids = []
-        err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
+        err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src, should_cancel=should_cancel)
         errs.extend(err)
 
         # Create a mapping from filename to metadata for later use
@@ -580,6 +582,8 @@ class SyncLogsService(CommonService):
 
         kb_table_num_map = {}
         for doc, _ in doc_blob_pairs:
+            if FileService._is_sync_cancelled(should_cancel):
+                break
             doc_ids.append(doc["id"])
 
             # Set metadata if available for this document

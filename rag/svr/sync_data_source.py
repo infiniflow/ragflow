@@ -288,8 +288,9 @@ class SyncBase:
                 docs.append(d)
 
             cancel_event = threading.Event()
+            parent_task = asyncio.current_task()
             try:
-                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update, cancel_event)
+                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update, cancel_event, parent_task)
                 if err:
                     had_parse_errors = True
                 changed_doc_ids = set(dids)
@@ -373,19 +374,33 @@ class SyncBase:
     async def _generate(self, task: dict):
         raise NotImplementedError
 
-    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime, cancel_event: threading.Event | None = None):
+    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime, cancel_event: threading.Event | None = None, parent_task: asyncio.Task | None = None):
         """Write one connector batch (MinIO + document rows) off the event loop.
 
         Knowledgebase lookup and parse stay on the same worker thread so Peewee
         objects are not shared across threads. ``cancel_event`` is set when the
-        awaiting coroutine is cancelled; the worker then skips progress/cursor
-        updates. In-flight uploads cannot be force-stopped.
+        awaiting coroutine is cancelled; the worker also observes
+        ``parent_task.cancelled()`` so in-flight batches can stop between files.
+        Uploads that already started cannot be force-stopped.
         """
-        if cancel_event is not None and cancel_event.is_set():
+
+        def should_cancel() -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                return True
+            return parent_task is not None and parent_task.cancelled()
+
+        if should_cancel():
             return [], []
         _e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
-        if cancel_event is not None and cancel_event.is_set():
+        err, dids = SyncLogsService.duplicate_and_parse(
+            kb,
+            docs,
+            task["tenant_id"],
+            f"{self.SOURCE_NAME}/{task['connector_id']}",
+            task["auto_parse"],
+            should_cancel=should_cancel,
+        )
+        if should_cancel():
             return err, dids
         if err and self.RAISE_ON_BATCH_ERROR:
             raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")

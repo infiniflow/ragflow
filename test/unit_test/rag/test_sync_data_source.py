@@ -329,6 +329,36 @@ def test_ingest_document_batch_skips_progress_when_cancelled_during_parse(monkey
     assert dids == ["doc-1"]
 
 
+def test_ingest_document_batch_forwards_cancel_callback(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+
+    def _duplicate(*_args, **kwargs):
+        captured["should_cancel"] = kwargs.get("should_cancel")
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _duplicate)
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "increase_docs", lambda *_args, **_kwargs: None)
+    cancel_event = threading.Event()
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        cancel_event,
+    )
+    assert err == []
+    assert dids == ["doc-1"]
+    assert captured["should_cancel"] is not None
+    assert captured["should_cancel"]() is False
+    cancel_event.set()
+    assert captured["should_cancel"]() is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.p2
 async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
