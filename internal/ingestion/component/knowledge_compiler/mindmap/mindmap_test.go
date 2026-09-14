@@ -16,6 +16,9 @@ func TestRenderPrompt(t *testing.T) {
 	if strings.Contains(got, "{input_text}") {
 		t.Fatalf("placeholder survived: %q", got)
 	}
+	if !strings.Contains(got, `"source_chunk_ids"`) {
+		t.Fatalf("source chunk provenance requirement missing: %q", got)
+	}
 	// The verbatim prompt body must be present.
 	if !strings.Contains(got, "Generate a title for user's 'TEXT'。") {
 		t.Fatalf("prompt body drifted")
@@ -47,7 +50,7 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 		{ID: "A", Children: []*utility.Node{{ID: "A1"}, {ID: "A2"}}},
 		{ID: "B"},
 	}}
-	products := treeToProducts("t1", "d1", root)
+	products := treeToProducts("t1", "d1", root, []string{"c1", "c2"})
 	// 5 entities (root, A, A1, A2, B) + 4 relations (root→A, A→A1, A→A2, root→B).
 	if len(products) != 9 {
 		t.Fatalf("products = %d, want 9 (5 entities + 4 relations)", len(products))
@@ -102,10 +105,29 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 }
 
 func TestTreeToProducts_EmptyAndNil(t *testing.T) {
-	if got := treeToProducts("t1", "d1", nil); len(got) != 0 {
+	if got := treeToProducts("t1", "d1", nil, nil); len(got) != 0 {
 		t.Errorf("nil root produced %d products", len(got))
 	}
-	if got := treeToProducts("t1", "d1", &utility.Node{ID: ""}); len(got) != 0 {
+	if got := treeToProducts("t1", "d1", &utility.Node{ID: ""}, nil); len(got) != 0 {
 		t.Errorf("empty root id produced %d products", len(got))
+	}
+}
+
+func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
+	content := `{"id":"root","source_chunk_ids":["c1","outside"],"children":[{"id":"child","source_chunk_ids":["c2"],"children":[]}]}`
+	root, ok := parseJSONTree(content, []string{"c1", "c2"})
+	if !ok || root == nil {
+		t.Fatal("JSON mindmap response was not parsed")
+	}
+	if len(root.SourceChunkIDs) != 1 || root.SourceChunkIDs[0] != "c1" {
+		t.Fatalf("root source chunk ids = %v, want [c1]", root.SourceChunkIDs)
+	}
+	if len(root.Children) != 1 || len(root.Children[0].SourceChunkIDs) != 1 || root.Children[0].SourceChunkIDs[0] != "c2" {
+		t.Fatalf("child source chunk ids = %+v, want [c2]", root.Children)
+	}
+
+	products := treeToProducts("t1", "d1", root, nil)
+	if ids, ok := products[0].Meta["source_chunk_ids"].([]string); !ok || len(ids) != 1 || ids[0] != "c1" {
+		t.Fatalf("entity meta source chunk ids = %#v, want [c1]", products[0].Meta["source_chunk_ids"])
 	}
 }

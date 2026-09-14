@@ -63,25 +63,28 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, fmt.Errorf("mindmap: chat model required")
 	}
 
-	sections := chunkTexts(inputs.Chunks)
-
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
-	batches := packSections(sections, deps.Tokenizer)
-	results := make([]utility.OMap, len(batches))
+	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
+	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
-	for i, text := range batches {
-		i, text := i, text
+	for i, batch := range batches {
+		i, batch := i, batch
 		jobs = append(jobs, func() error {
 			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 				LLMID:        llmID,
-				SystemPrompt: renderPrompt(text),
+				SystemPrompt: renderPrompt(batch.text),
 				UserPrompt:   userMessage,
 			})
 			if err != nil {
 				return err
 			}
 			// Distinct slice index per batch → no cross-goroutine contention.
-			results[i] = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
+			if tree, ok := parseJSONTree(resp.Content, batch.ids); ok {
+				results[i].tree = tree
+			} else {
+				// Keep the old Markdown protocol as a compatibility fallback.
+				results[i].outline = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
+			}
 			return nil
 		})
 	}
@@ -94,16 +97,31 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
 	// shape the final tree. Python returns a bare root when nothing parsed.
-	var merged utility.OMap
-	if len(results) > 0 {
-		merged = results[0]
-		for _, r := range results[1:] {
-			merged = utility.MergeDicts(merged, r)
+	var root *utility.Node
+	allJSON := len(results) > 0
+	for _, result := range results {
+		if result.tree == nil {
+			allJSON = false
+			break
 		}
+		root = mergeMindmapTrees(root, result.tree)
 	}
-	root := utility.ShapeTree(merged)
+	if !allJSON {
+		var merged utility.OMap
+		for _, result := range results {
+			if len(result.outline) == 0 {
+				continue
+			}
+			if len(merged) == 0 {
+				merged = result.outline
+			} else {
+				merged = utility.MergeDicts(merged, result.outline)
+			}
+		}
+		root = utility.ShapeTree(merged)
+	}
 
-	products := treeToProducts(tenantID, docID, root)
+	products := treeToProducts(tenantID, docID, root, mindmapSourceChunkIDs(inputs.Chunks))
 
 	// Batched embedding of each node's content for downstream vector search.
 	if len(products) > 0 && deps.Embed != nil {
@@ -147,25 +165,32 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // The entity/relation discriminator is carried in Meta["kind"] so the consumer's
 // mergeStructureDataset buckets entities by (name,type) and relations by
 // (from,type,to), matching graph/timeline.
-func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product {
+func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceChunkIDs []string) []common.Product {
 	var out []common.Product
 	if root == nil || root.ID == "" {
 		return out
 	}
 	seen := map[string]bool{}
 	// Entity: root node.
+	rootSourceChunkIDs := nodeSourceChunkIDs(root, fallbackSourceChunkIDs)
+	rootPayload := map[string]any{"name": root.ID, "type": "mindmap"}
+	rootMeta := map[string]any{
+		"kind":        "entity",
+		"name":        root.ID,
+		"entity_type": "mindmap",
+		"compile_kwd": "mindmap",
+	}
+	if len(rootSourceChunkIDs) > 0 {
+		rootPayload["source_chunk_ids"] = rootSourceChunkIDs
+		rootMeta["source_chunk_ids"] = rootSourceChunkIDs
+	}
 	out = append(out, common.Product{
 		ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "entity", root.ID),
 		DocID:    docID,
 		TenantID: tenantID,
 		Variant:  common.VariantMindmap,
-		Content:  payloadJSON(map[string]any{"name": root.ID, "type": "mindmap"}),
-		Meta: map[string]any{
-			"kind":        "entity",
-			"name":        root.ID,
-			"entity_type": "mindmap",
-			"compile_kwd": "mindmap",
-		},
+		Content:  payloadJSON(rootPayload),
+		Meta:     rootMeta,
 	})
 	seen[root.ID] = true
 
@@ -185,18 +210,25 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 			// the same node twice).
 			if !seen[child.ID] {
 				seen[child.ID] = true
+				childSourceChunkIDs := nodeSourceChunkIDs(child, fallbackSourceChunkIDs)
+				childPayload := map[string]any{"name": child.ID, "type": "mindmap"}
+				childMeta := map[string]any{
+					"kind":        "entity",
+					"name":        child.ID,
+					"entity_type": "mindmap",
+					"compile_kwd": "mindmap",
+				}
+				if len(childSourceChunkIDs) > 0 {
+					childPayload["source_chunk_ids"] = childSourceChunkIDs
+					childMeta["source_chunk_ids"] = childSourceChunkIDs
+				}
 				out = append(out, common.Product{
 					ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "entity", child.ID),
 					DocID:    docID,
 					TenantID: tenantID,
 					Variant:  common.VariantMindmap,
-					Content:  payloadJSON(map[string]any{"name": child.ID, "type": "mindmap"}),
-					Meta: map[string]any{
-						"kind":        "entity",
-						"name":        child.ID,
-						"entity_type": "mindmap",
-						"compile_kwd": "mindmap",
-					},
+					Content:  payloadJSON(childPayload),
+					Meta:     childMeta,
 				})
 			}
 			// Relation: parent → child edge (type = "related", Python default).
@@ -222,6 +254,143 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 		}
 	}
 	return out
+}
+
+func nodeSourceChunkIDs(node *utility.Node, fallback []string) []string {
+	if node != nil && len(node.SourceChunkIDs) > 0 {
+		return append([]string(nil), node.SourceChunkIDs...)
+	}
+	return append([]string(nil), fallback...)
+}
+
+func mindmapSourceChunkIDs(chunks []common.Chunk) []string {
+	seen := make(map[string]struct{}, len(chunks))
+	ids := make([]string, 0, len(chunks))
+	for i, chunk := range chunks {
+		if strings.TrimSpace(firstNonEmpty(chunk.Text, chunk.Content)) == "" {
+			continue
+		}
+		id := strings.TrimSpace(chunk.ID)
+		if id == "" {
+			id = fmt.Sprintf("chunk-%d", i+1)
+		}
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+type mindmapBatchResult struct {
+	tree    *utility.Node
+	outline utility.OMap
+}
+
+type jsonMindmapNode struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	SourceChunkIDs []string          `json:"source_chunk_ids"`
+	Children       []jsonMindmapNode `json:"children"`
+}
+
+func parseJSONTree(content string, batchIDs []string) (*utility.Node, bool) {
+	var raw jsonMindmapNode
+	if err := json.Unmarshal([]byte(utility.StripFences(content)), &raw); err != nil {
+		return nil, false
+	}
+	if strings.TrimSpace(raw.ID) == "" {
+		raw.ID = raw.Name
+	}
+	if strings.TrimSpace(raw.ID) == "" {
+		return nil, false
+	}
+	return convertJSONMindmapNode(raw, batchIDs), true
+}
+
+func convertJSONMindmapNode(raw jsonMindmapNode, batchIDs []string) *utility.Node {
+	if strings.TrimSpace(raw.ID) == "" {
+		raw.ID = raw.Name
+	}
+	node := &utility.Node{
+		ID:             strings.TrimSpace(raw.ID),
+		SourceChunkIDs: filterMindmapChunkIDs(raw.SourceChunkIDs, batchIDs),
+	}
+	for _, child := range raw.Children {
+		converted := convertJSONMindmapNode(child, batchIDs)
+		if converted.ID != "" {
+			node.Children = append(node.Children, converted)
+		}
+	}
+	return node
+}
+
+func filterMindmapChunkIDs(ids, batchIDs []string) []string {
+	allowed := make(map[string]struct{}, len(batchIDs))
+	for _, id := range batchIDs {
+		allowed[id] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(ids))
+	selected := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := allowed[id]; !ok {
+			continue
+		}
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			selected = append(selected, id)
+		}
+	}
+	if len(selected) == 0 {
+		return append([]string(nil), batchIDs...)
+	}
+	return selected
+}
+
+func mergeMindmapTrees(left, right *utility.Node) *utility.Node {
+	if left == nil {
+		return right
+	}
+	if right == nil {
+		return left
+	}
+	if left.ID != right.ID {
+		return &utility.Node{ID: "root", Children: []*utility.Node{left, right}}
+	}
+	left.SourceChunkIDs = mergeMindmapIDs(left.SourceChunkIDs, right.SourceChunkIDs)
+	byID := make(map[string]*utility.Node, len(left.Children))
+	for _, child := range left.Children {
+		byID[child.ID] = child
+	}
+	for _, child := range right.Children {
+		if existing := byID[child.ID]; existing != nil {
+			mergeMindmapTrees(existing, child)
+		} else {
+			left.Children = append(left.Children, child)
+			byID[child.ID] = child
+		}
+	}
+	return left
+}
+
+func mergeMindmapIDs(left, right []string) []string {
+	seen := make(map[string]struct{}, len(left)+len(right))
+	merged := make([]string, 0, len(left)+len(right))
+	for _, ids := range [][]string{left, right} {
+		for _, id := range ids {
+			if id != "" {
+				if _, ok := seen[id]; !ok {
+					seen[id] = struct{}{}
+					merged = append(merged, id)
+				}
+			}
+		}
+	}
+	return merged
 }
 
 // payloadJSON serializes the graph payload stored in content_with_weight.
