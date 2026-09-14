@@ -189,9 +189,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
 		}
-		if err = migrateConversationHistory(ctx, DB); err != nil {
-			return fmt.Errorf("failed to migrate conversation history: %w", err)
-		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
