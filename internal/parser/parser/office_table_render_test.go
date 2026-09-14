@@ -47,6 +47,19 @@ func TestXLSXParserEmitsSpreadsheetRows(t *testing.T) {
 	}
 }
 
+func TestSortSpreadsheetItemsKeepsHeaderBeforeRowsWhenHeaderIsLater(t *testing.T) {
+	items := []map[string]any{
+		{"ck_type": "table_row", "row_start": 1, "col_start": 1},
+		{"ck_type": "table_row", "row_start": 2, "col_start": 1},
+		{"ck_type": "table_header", "row_start": 5, "col_start": 1},
+	}
+
+	sortSpreadsheetItems(items)
+	if items[0]["ck_type"] != "table_header" {
+		t.Fatalf("sorted items = %#v, want table_header first", items)
+	}
+}
+
 func TestXLSXParserHTML4ExcelRemainsAtomic(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Question")

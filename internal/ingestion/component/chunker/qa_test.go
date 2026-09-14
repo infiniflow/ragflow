@@ -171,6 +171,30 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	}
 }
 
+func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "questions.csv",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"doc_type_kwd": "text",
+			"ck_type":      "table_row",
+			"cells":        []string{"question", "answer", "unexpected"},
+		}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 0 {
+		t.Fatalf("chunks = %#v, want malformed CSV row rejected", chunks)
+	}
+}
+
 // Non-CSV names keep the old "first two non-empty cells" rule on the HTML
 // table path. Since #18800 an .xlsx file reaches the chunker as "json", not
 // "html", so this covers the shared HTML branch and not the XLSX pipeline.

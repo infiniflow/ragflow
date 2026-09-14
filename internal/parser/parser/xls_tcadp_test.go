@@ -220,8 +220,8 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if len(res.JSON) == 0 {
-		t.Fatal("JSON items is empty; want structured table items")
+	if len(res.JSON) < 2 {
+		t.Fatalf("JSON items = %d, want at least header and one data row", len(res.JSON))
 	}
 	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
 		t.Fatalf("JSON items = %#v; want header and row", res.JSON)

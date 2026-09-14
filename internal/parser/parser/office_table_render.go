@@ -213,6 +213,11 @@ func spreadsheetRowText(headers, cells []string, sheet string) string {
 
 func sortSpreadsheetItems(items []map[string]any) {
 	sort.SliceStable(items, func(i, j int) bool {
+		headerI := items[i]["ck_type"] == "table_header"
+		headerJ := items[j]["ck_type"] == "table_header"
+		if headerI != headerJ {
+			return headerI
+		}
 		ri, ci := spreadsheetItemCoordinate(items[i])
 		rj, cj := spreadsheetItemCoordinate(items[j])
 		if ri != rj {

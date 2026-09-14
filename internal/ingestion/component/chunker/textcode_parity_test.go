@@ -91,7 +91,7 @@ func TestTextParserGeneralChunkerParity(t *testing.T) {
 
 			component, err := NewGeneralChunker(map[string]any{
 				"chunk_token_size": float64(textCodeTokenSize),
-				"delimiters":       []string{textCodeDelimiter},
+				"delimiters":       textCodeDelimiter,
 			})
 			if err != nil {
 				t.Fatalf("NewGeneralChunker: %v", err)

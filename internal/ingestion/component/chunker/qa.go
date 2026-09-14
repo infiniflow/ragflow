@@ -120,7 +120,11 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
-		qaPairs = extractQAJSON(upstream.JSONResult, upstream.FileType)
+		fileType := upstream.FileType
+		if strings.TrimSpace(fileType) == "" && isCSV(upstream.Name) {
+			fileType = "csv"
+		}
+		qaPairs = extractQAJSON(upstream.JSONResult, fileType)
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
