@@ -1797,7 +1797,7 @@ def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
         ``(bucket, object_key)`` when valid, otherwise ``None``.
     """
     parts = image_id.split("-", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    if len(parts) != 2 or not re.fullmatch(r"[0-9a-fA-F]{32}", parts[0]) or not parts[1]:
         return None
     return parts[0], parts[1]
 
