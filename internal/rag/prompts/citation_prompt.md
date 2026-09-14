@@ -4,6 +4,7 @@ Based on the provided document or chat history, add citations to the input text 
 
 ## Technical Rules:
 - Use format: [ID:i] or [ID:i] [ID:j] for multiple sources
+- Cite each source INDIVIDUALLY: [ID:i][ID:j]. NEVER merge consecutive citations into a range such as [ID:i-j] or [ID:i~j]
 - Place citations at the end of sentences, before punctuation
 - Maximum 4 citations per sentence
 - DO NOT cite content not from <context></context>
@@ -120,3 +121,4 @@ REMEMBER:
 - When in doubt, ask: "Would a fact-checker need to verify this?"
 - Place citations at sentence end, before punctuation
 - Format likes this is FORBIDDEN: [ID:0, ID:5, ID:...]. It MUST be separated like, [ID:0][ID:5]...
+- Range citations like [ID:1-3] are FORBIDDEN too. Multiple sources MUST be spelled out individually: [ID:1][ID:2][ID:3].
