@@ -325,15 +325,30 @@ func monkeyOCRv2APIConfigValue(apiConfig *modelModule.APIConfig, keys ...string)
 }
 
 func mineruServerURL(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
-	if raw, ok := setup["mineru_server_url"]; ok {
-		if value := strings.TrimSpace(fmt.Sprint(raw)); value != "" {
+	if value, ok := setup["mineru_server_url"].(string); ok {
+		if value = strings.TrimSpace(value); value != "" {
 			return value
 		}
 	}
-	if value := monkeyOCRv2APIConfigValue(apiConfig, "mineru_server_url"); value != "" {
+	if value := monkeyOCRv2APIConfigValue(apiConfig, "mineru_server_url", common.EnvMineruServerURL); value != "" {
 		return value
 	}
 	return os.Getenv(common.EnvMineruServerURL)
+}
+
+func mineruBackend(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
+	if value, ok := setup["mineru_backend"].(string); ok {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	if value := monkeyOCRv2APIConfigValue(apiConfig, "mineru_backend", common.EnvMineruBackend); value != "" {
+		return value
+	}
+	if value := os.Getenv(common.EnvMineruBackend); value != "" {
+		return value
+	}
+	return "pipeline"
 }
 
 func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
@@ -519,7 +534,7 @@ func dispatchMinerUPDF(
 	parseMethod := getStringOr(setup, "parse_method", "auto")
 	lang := getStringOr(setup, "mineru_lang", "English")
 	mineruLang := mineruLangCode(lang)
-	backend := getStringOr(setup, "mineru_backend", "pipeline")
+	backend := mineruBackend(setup, apiConfig)
 	serverURL := mineruServerURL(setup, apiConfig)
 
 	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend, serverURL)
