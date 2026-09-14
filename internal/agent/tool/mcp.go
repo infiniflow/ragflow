@@ -18,9 +18,7 @@
 //
 // Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
 // an eino BaseTool so it can be invoked from inside the Agent's
-// ReAct loop. The MCP tool list is fetched via utility/mcpclient
-// (which currently only implements tools/list discovery; tools/call
-// invocation is the next step on the MCP client).
+// ReAct loop. Discovery and invocation use the utility MCP client.
 package tool
 
 import (
@@ -51,6 +49,8 @@ import (
 // sentinel so existing call sites don't break.
 type MCPToolAdapter struct {
 	mcpTool    mcpclient.Tool
+	serverType string
+	variables  map[string]string
 	serverURL  string
 	headers    map[string]string
 	timeout    time.Duration
@@ -89,6 +89,11 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 		timeout:    timeout,
 		httpClient: client,
 	}
+}
+
+// NewMCPToolAdapterWithOptions preserves the server transport and header variables.
+func NewMCPToolAdapterWithOptions(t mcpclient.Tool, opts mcpclient.CallOptions) *MCPToolAdapter {
+	return &MCPToolAdapter{mcpTool: t, serverURL: opts.URL, serverType: opts.ServerType, headers: opts.Headers, variables: opts.Variables, timeout: opts.Timeout, httpClient: opts.HTTPClient}
 }
 
 // Name returns the underlying MCP tool name.
@@ -138,7 +143,8 @@ func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	res, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
 		URL:        m.serverURL,
-		ServerType: mcpclient.TransportStreamableHTTP,
+		ServerType: m.serverType,
+		Variables:  m.variables,
 		Headers:    m.headers,
 		ToolName:   m.mcpTool.Name,
 		Arguments:  argsJSON,

@@ -88,6 +88,8 @@ type AgentParam struct {
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
+	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
+	ToolTimeout              time.Duration
 	MaxRounds                int
 	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
 	OptimizeMultiTurn        bool
@@ -664,6 +666,11 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 	if err != nil {
 		return nil, err
 	}
+	mcpTools, err := buildAgentMCPTools(ctx, dao.DB, p.MCP, p.ToolTimeout)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
@@ -1478,6 +1485,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.MaxTokens = &f
 	}
+	if enabled, ok := boolFrom(inputs, "maxTokensEnabled"); ok && !enabled {
+		p.MaxTokens = nil
+	}
 	if v, ok := floatFrom(inputs, "temperature"); ok {
 		f := v
 		p.Temperature = &f
@@ -1499,6 +1509,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
+	}
+	if v, ok := inputs["mcp"]; ok {
+		p.MCP = v
+	}
+	if v, ok := intFrom(inputs, "tool_timeout"); ok {
+		p.ToolTimeout = time.Duration(v) * time.Second
 	}
 	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
