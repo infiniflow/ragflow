@@ -1613,7 +1613,7 @@ class ModelTypeMergeStage(MigrationStage):
             return 0, []
 
         # Create temporary table with model_type as INTEGER
-        if not self.dry_run or self.create_table_only:
+        if not self.dry_run:
             self.create_target_table()
 
         if self.create_table_only:
