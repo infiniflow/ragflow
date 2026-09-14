@@ -1,19 +1,3 @@
-/*
- *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
-
 import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +17,7 @@ export function useDefaultParserValues() {
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
+      toc_extraction: false,
       image_table_context_window: 0,
       mineru_parse_method: 'auto',
       mineru_formula_enable: true,
@@ -57,6 +42,7 @@ export function useDefaultParserValues() {
       metadata: [],
       built_in_metadata: [],
       enable_metadata: false,
+      compilation_template_group_id: [],
     };
 
     return defaultParserValues as IParserConfig;
@@ -65,23 +51,14 @@ export function useDefaultParserValues() {
   return defaultParserValues;
 }
 
+export { fillParserConfigDefaults } from './fill-parser-config-defaults';
+
 export function useFillDefaultValueOnMount() {
   const defaultParserValues = useDefaultParserValues();
 
   const fillDefaultValue = useCallback(
-    (parserConfig: IParserConfig) => {
-      return Object.entries(defaultParserValues).reduce<Record<string, any>>(
-        (pre, [key, value]) => {
-          if (key in parserConfig) {
-            pre[key] = parserConfig[key as keyof IParserConfig];
-          } else {
-            pre[key] = value;
-          }
-          return pre;
-        },
-        {},
-      );
-    },
+    (parserConfig: IParserConfig) =>
+      fillParserConfigDefaults(parserConfig, defaultParserValues),
     [defaultParserValues],
   );
 
