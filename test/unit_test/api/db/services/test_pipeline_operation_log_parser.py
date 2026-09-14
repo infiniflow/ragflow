@@ -333,8 +333,4 @@ def test_setup_key_map_matches_parser_param_setups():
     # reject — that would be a silent regression.
     allowed = {suffix for conf in runtime_setups.values() for suffix in conf.get("suffix", [])}
     stale = set(_PARSER_SETUP_KEY_BY_SUFFIX.keys()) - allowed
-    assert not stale, (
-        f"_PARSER_SETUP_KEY_BY_SUFFIX has stale entries (not in "
-        f"ParserParam.setups): {sorted(stale)}. Remove them so we never "
-        f"log a parse_method for a suffix the runtime would reject."
-    )
+    assert not stale, f"_PARSER_SETUP_KEY_BY_SUFFIX has stale entries (not in ParserParam.setups): {sorted(stale)}. Remove them so we never log a parse_method for a suffix the runtime would reject."

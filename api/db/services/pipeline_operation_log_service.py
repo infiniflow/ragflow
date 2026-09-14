@@ -112,6 +112,7 @@ def _parser_for_document_from_dsl(dsl_mapping: dict | None, document_suffix: str
                 return method
     return None
 
+
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
@@ -284,9 +285,7 @@ class PipelineOperationLogService(CommonService):
                     # may carry the KB default like "DeepDOC" — see
                     # #18306).
                     logging.warning(
-                        "[PipelineOperationLog] Pipeline DSL is missing or "
-                        "malformed for document_id=%s suffix=%s; falling back to "
-                        "document.parser_id=%s.",
+                        "[PipelineOperationLog] Pipeline DSL is missing or malformed for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
                         document_id,
                         document.suffix,
                         parser_id,
@@ -300,8 +299,7 @@ class PipelineOperationLogService(CommonService):
                     # happen to configure a Parser component (issue #18306
                     # review follow-up).
                     logging.debug(
-                        "[PipelineOperationLog] Could not resolve pipeline parser from DSL "
-                        "for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        "[PipelineOperationLog] Could not resolve pipeline parser from DSL for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
                         document_id,
                         document.suffix,
                         parser_id,
