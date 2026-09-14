@@ -407,25 +407,26 @@ async def retrieval_test(tenant_id, dataset_id=None):
             kb_ids=kb_ids,
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
         )
-    elif metadata_condition and convert_conditions(metadata_condition):
-        # An empty conditions list is no filter at all: the Go search service
-        # returns the base doc ids unchanged in that case, and scoping the
-        # search to a nonexistent doc here would silently return zero chunks.
-        filtered_doc_ids = filter_doc_ids_by_metadata(
-            kb_ids,
-            convert_conditions(metadata_condition),
-            metadata_condition.get("logic", "and"),
-            lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-        )
-        if doc_ids:
-            filtered_doc_id_set = set(filtered_doc_ids)
-            doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
+    elif metadata_condition:
+        converted_conditions = convert_conditions(metadata_condition)
+        if not converted_conditions:
+            logging.debug("Metadata condition is empty; skipping metadata filtering.")
+            if not doc_ids:
+                doc_ids = None
         else:
-            doc_ids = filtered_doc_ids
-        if not doc_ids and metadata_condition.get("conditions"):
-            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-        if metadata_condition and not doc_ids:
-            doc_ids = ["-999"]
+            filtered_doc_ids = filter_doc_ids_by_metadata(
+                kb_ids,
+                converted_conditions,
+                metadata_condition.get("logic", "and"),
+                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
+            if doc_ids:
+                filtered_doc_id_set = set(filtered_doc_ids)
+                doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
+            else:
+                doc_ids = filtered_doc_ids
+            if not doc_ids and metadata_condition.get("conditions"):
+                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
     elif not doc_ids:
         doc_ids = None
     try:

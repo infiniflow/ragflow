@@ -102,7 +102,10 @@ def _load_module(monkeypatch, request_payload):
         resolve_model_config=lambda *a, **k: {},
     )
     _pkg("api.db.services", repo_root / "api" / "db" / "services")
-    _stub("api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace(get_flatted_meta_by_kbs=staticmethod(lambda _kb_ids: {}), filter_doc_ids_by_meta_pushdown=staticmethod(lambda *a, **k: None)))
+    _stub(
+        "api.db.services.doc_metadata_service",
+        DocMetadataService=SimpleNamespace(get_flatted_meta_by_kbs=staticmethod(lambda _kb_ids: {}), filter_doc_ids_by_meta_pushdown=staticmethod(lambda *a, **k: None)),
+    )
     _stub("api.db.services.document_counter_service", release_reparse_counters=lambda *a, **k: None)
     _stub("api.db.services.document_service", DocumentService=SimpleNamespace())
 
@@ -127,7 +130,7 @@ def _load_module(monkeypatch, request_payload):
         return {"code": code, "data": data, "message": message}
 
     utils_mod = ModuleType("api.utils.api_utils")
-    utils_mod.add_tenant_id_to_kwargs = lambda func: (lambda *a, **kw: func("tenant-1", *a, **kw))
+    utils_mod.add_tenant_id_to_kwargs = lambda func: lambda *a, **kw: func("tenant-1", *a, **kw)
     utils_mod.check_duplicate_ids = lambda ids, _name: (ids, None)
     utils_mod.construct_json_result = get_result
     utils_mod.get_error_data_result = lambda message="", code=102: {"code": code, "message": message}
