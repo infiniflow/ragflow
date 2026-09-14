@@ -1884,13 +1884,35 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     return mind_map.output
 
 
+def _bound_dataset_names(dialog) -> str:
+    """Comma-joined names of the dialog's bound datasets ("" when none).
+
+    Used as the ``{knowledge}`` default when rendering the reasoning-path
+    system prompt: the agentic graph supplies the retrieved evidence itself,
+    but the prompt must still NAME the bound datasets. Defaulting the
+    placeholder to an empty string left templates like
+    "derived solely from this dataset: ``{knowledge}``" rendering as `` ` ``
+    — the outer model read that as "the dataset is empty" and answered the
+    canned "not found in the dataset!" line without ever calling the ``rag``
+    tool (first-turn short-circuit, observed 2026-09-14).
+    """
+    if not getattr(dialog, "kb_ids", None):
+        return ""
+    try:
+        kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids) or []
+    except Exception:  # noqa: BLE001 — names are cosmetic; never block the render
+        return ""
+    return ", ".join(kb.name for kb in kbs if getattr(kb, "name", ""))
+
+
 def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
     """Render the dialog-level system prompt for the reasoning agent path.
 
     Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
     so that configured system prompts are honored when reasoning is enabled.
-    The ``{knowledge}`` placeholder is defaulted to an empty string because the
-    agentic graph supplies retrieved evidence through its own evidence block.
+    The ``{knowledge}`` placeholder is defaulted to the bound dataset names
+    because the agentic graph supplies retrieved evidence through its own
+    evidence block.
     """
     system = prompt_config.get("system", "")
     if not system:
@@ -1902,7 +1924,6 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
         param_keys.append("knowledge")
-        kwargs.setdefault("knowledge", "")
 
     for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
@@ -1913,7 +1934,8 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
             system = system.replace("{%s}" % p["key"], " ")
 
     fmt_kwargs = dict(kwargs)
-    fmt_kwargs.setdefault("knowledge", "")
+    if "knowledge" not in fmt_kwargs and "{knowledge}" in system:
+        fmt_kwargs["knowledge"] = _bound_dataset_names(dialog)
     return system.format(**fmt_kwargs)
 
 

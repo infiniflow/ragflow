@@ -222,16 +222,69 @@ def test_rag_agent_preserves_multimodal_content_parts(monkeypatch):
 
 
 @pytest.mark.p2
-def test_render_reasoning_system_prompt_substitutes_date_and_knowledge():
-    """The reasoning path should honor the dialog system prompt like async_chat does."""
+def test_render_reasoning_system_prompt_substitutes_date_and_knowledge(monkeypatch):
+    """The reasoning path should honor the dialog system prompt like async_chat does.
+
+    Regression lock for the first-turn empty dataset binding: {knowledge} must
+    default to the bound dataset NAMES, never an empty string — the web UI's
+    backtick-wrapped template rendered as `` `` otherwise, which the outer
+    model read as "the dataset is empty" and answered the canned
+    "not found in the dataset!" line without calling the rag tool.
+    """
     dialog = SimpleNamespace(kb_ids=["kb-1"])
     prompt_config = {"system": "Role: pirate. Date: {date}. Context: '{knowledge}'."}
     kwargs = {}
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda ids: [SimpleNamespace(name="Pirate KB")],
+    )
 
     rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
 
     assert rendered.startswith("Role: pirate. Date: 2")
-    assert "Context: ''." in rendered
+    assert "Context: 'Pirate KB'." in rendered
+    assert "''" not in rendered
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_caller_supplied_knowledge_wins(monkeypatch):
+    """A caller-supplied knowledge value must not be overwritten by the default."""
+    dialog = SimpleNamespace(kb_ids=["kb-1"])
+    prompt_config = {"system": "Context: '{knowledge}'."}
+    kwargs = {"knowledge": "caller evidence"}
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda ids: [SimpleNamespace(name="Pirate KB")],
+    )
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
+
+    assert rendered == "Context: 'caller evidence'."
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_empty_knowledge_is_backward_compatible(monkeypatch):
+    """A dialog without datasets (or unnamed ones) still renders the template.
+
+    get_by_ids failures are swallowed: names are cosmetic and must never block
+    the prompt render.
+    """
+    dialog = SimpleNamespace(kb_ids=["kb-1"])
+    prompt_config = {"system": "Context: '{knowledge}'."}
+
+    def _boom(ids):
+        raise RuntimeError("no db in unit test")
+
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", _boom)
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, {})
+
+    assert rendered == "Context: ''."
+
+    no_kb = dialog_service._render_reasoning_system_prompt(SimpleNamespace(kb_ids=[]), prompt_config, {})
+    assert no_kb == "Context: ''."
 
 
 @pytest.mark.p2
