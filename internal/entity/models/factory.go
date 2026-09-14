@@ -173,6 +173,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewSynthoraiModel(baseURL, urlSuffix), nil
 	case "anonrouter":
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
+	case "apiroute":
+		return NewApiRouteModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

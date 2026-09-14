@@ -53,7 +53,9 @@ type DocumentStructureGraphTemplate struct {
 
 // DocumentStructureGraphResponse mirrors Python's {"templates": [...]}.
 type DocumentStructureGraphResponse struct {
-	Templates []DocumentStructureGraphTemplate `json:"templates"`
+	TotalEntities    int                              `json:"total_entities"`
+	ReturnedEntities int                              `json:"returned_entities"`
+	Templates        []DocumentStructureGraphTemplate `json:"templates"`
 }
 
 // graphRowSearch runs one raw-row search over the tenant's document index.
@@ -757,6 +759,15 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	}
 
 	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
+	entityCountFilter := map[string]interface{}{
+		"doc_id":              []string{in.DocumentID},
+		"knowledge_graph_kwd": []string{"entity"},
+	}
+	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp.TotalEntities = int(entityTotal)
 
 	// keywords mode: name matching/KNN → matched entities' subgraph.
 	if in.Keywords != "" {
@@ -774,6 +785,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			Entities:     entities,
 			Relations:    relations,
 		})
+		resp.ReturnedEntities = len(entities)
 		return resp, nil
 	}
 
@@ -862,6 +874,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	for _, bid := range orderedIDs {
 		if g, ok := grouped[bid]; ok && (len(g.Entities) > 0 || len(g.Relations) > 0) {
 			resp.Templates = append(resp.Templates, g)
+			resp.ReturnedEntities += len(g.Entities)
 		}
 	}
 	return resp, nil

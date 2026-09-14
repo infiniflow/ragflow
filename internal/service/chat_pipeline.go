@@ -743,7 +743,12 @@ func (s *ChatPipelineService) AsyncChat(
 				// dialog, prompt_config, kwargs) to RAGTools
 				// (dialog_service.py:2084): the dialog system prompt rendered
 				// with the caller kwargs, a UTC date, and {knowledge} defaulted
-				// to "" — the agentic graph supplies evidence itself.
+				// to the BOUND DATASET NAMES — the agentic graph supplies the
+				// evidence itself, but an empty binding made the outer model
+				// read the prompt as "the dataset is empty" and answer the
+				// canned "not found in the dataset!" line without calling the
+				// terminal `rag` tool (first-turn short-circuit, observed
+				// 2026-09-14: answer_chars=59, zero graph LLM calls).
 				harnessSystemPrompt := ""
 				if sp, ok := chat.PromptConfig["system"].(string); ok && sp != "" {
 					kws := make(map[string]interface{}, len(kwargs)+2)
@@ -752,7 +757,7 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					kws["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 					if _, ok := kws["knowledge"]; !ok {
-						kws["knowledge"] = ""
+						kws["knowledge"] = harnessBoundDatasetNames(kbs)
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
@@ -760,7 +765,7 @@ func (s *ChatPipelineService) AsyncChat(
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt, history)
+				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt, history)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -775,7 +780,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos)
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites)
 						final.Final = true
 						out <- final
 						return
@@ -3083,7 +3088,7 @@ func (s *ChatPipelineService) decorateAnswer(
 // here. We only resolve the existing markers, repair bad formats, filter
 // doc_aggs to the cited docs, and build the reference from the harness citation
 // pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}) AsyncChatResult {
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string) AsyncChatResult {
 	think := ""
 	ans := answer
 	if strings.Contains(answer, "</think>") {
@@ -3094,6 +3099,18 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	}
 
 	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
+
+	// Slot-table markers ("[ID:Slot 0]") are internal references the compose
+	// model leaks from the Research Summary's slot draft — they index the slot
+	// table, not any chunk the user can open. Rewrite them into citations of
+	// the chunk that filled the slot (or drop them) BEFORE the marker scan, so
+	// they resolve like any other citation.
+	ans = RepairSlotCitations(ans, slotCitations, chunksRaw)
+
+	// Range-merged citations ("[ID:1-3]") are the model compressing
+	// consecutive individual citations on its own; expand them back so every
+	// marker resolves to exactly one chunk (out-of-range ranges are dropped).
+	ans = ExpandRangeCitations(ans, len(chunksRaw))
 
 	// Collect existing [ID:N] markers from the harness answer. Python runs
 	// normalize_arabic_digits then CITATION_MARKER_PATTERN (dialog_service.py:
@@ -3201,7 +3218,8 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 // Mirrors Python's citation_prompt() in rag/prompts/generator.py.
 func citationPrompt() string {
 	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"(where N is the chunk number) after each sentence where the information from that chunk is used."
+		"(where N is the chunk number) after each sentence where the information from that chunk is used. " +
+		"Cite each source individually ([ID:1][ID:2]); never merge consecutive citations into a range such as [ID:1-3]."
 }
 
 // -----------------------------------------------------------------------
@@ -4661,6 +4679,25 @@ func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
 	return chunk[k2]
 }
 
+// harnessBoundDatasetNames renders the {knowledge} default for the agentic
+// (reasoning) system prompt: the comma-joined names of the chat's bound
+// datasets. Python parity: dialog_service._render_reasoning_system_prompt /
+// _bound_dataset_names. The agentic graph supplies the retrieved evidence
+// itself, but the prompt must still NAME the bound datasets — defaulting the
+// placeholder to "" left the web UI's default template rendering as
+// "derived solely from this dataset: “", which the outer model read as an
+// empty dataset and answered the canned "not found in the dataset!" line
+// without ever calling the terminal `rag` tool.
+func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
+	names := make([]string, 0, len(kbs))
+	for _, kb := range kbs {
+		if kb != nil && kb.Name != "" {
+			names = append(names, kb.Name)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
 // HarnessRequest carries the minimal inputs the chat pipeline hands to the
 // agentic-RAG harness for evidence collection.
 type HarnessRequest struct {
@@ -4719,6 +4756,10 @@ type HarnessResult struct {
 	// it directly as the reply instead of re-generating via a second model pass —
 	// mirroring Python's terminal `rag` tool.
 	Answer string
+	// SlotCitations maps a slot-table id ("0", ...) to the evidence chunk ids
+	// that filled it (RunResponse.SlotCitations). The citation decoration uses
+	// it to rewrite leaked "[ID:Slot N]" markers into locatable chunk citations.
+	SlotCitations map[string][]string
 }
 
 // harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
@@ -4773,7 +4814,7 @@ func toolLoopLine(sink func(delta string, isThink bool), line string) {
 
 func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, string, error) {
 	if harnessRetriever == nil {
-		return nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
+		return nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
 	kbIDs := kbIDStrings(kbs)
 	// Only non-naive modes run the agentic loop these lines describe, and only
@@ -4799,7 +4840,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		SystemPrompt:    dialogSystemPrompt,
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if narrate {
 		// Python distinguishes the terminal tool from an observation: an answer
@@ -4822,7 +4863,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 	if res.PreSummary != "" {
 		kbinfos["pre_summary"] = res.PreSummary
 	}
-	return kbinfos, res.Answer, nil
+	return kbinfos, res.SlotCitations, res.Answer, nil
 }
 
 // toAnySlice widens a []map[string]any to []interface{} so the doc_aggs field

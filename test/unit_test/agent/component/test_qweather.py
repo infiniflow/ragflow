@@ -14,7 +14,10 @@
 #  limitations under the License.
 #
 
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
+import requests
 
 from agent.tools import qweather as qweather_mod
 from agent.tools.qweather import QWeather, QWeatherParam
@@ -113,3 +116,29 @@ def test_invoke_location_lookup_error_returns_message(monkeypatch):
     assert res.startswith("**Error**")
     assert "does not exist" in res
     assert out["formalized_content"] == res
+
+
+def test_invoke_keeps_location_intact_on_the_wire(monkeypatch):
+    # Regression: the geo lookup concatenated the raw location into the URL, so a
+    # place name containing "&" split into a second parameter and QWeather looked
+    # up a truncated name.
+    calls = []
+    payloads = iter(
+        [
+            {"code": "200", "location": [{"id": "101010100"}]},
+            {"code": "200", "now": {"temp": "25", "text": "Sunny"}},
+        ]
+    )
+
+    def fake_get(*args, **kwargs):
+        calls.append(kwargs)
+        return _FakeResp(next(payloads))
+
+    monkeypatch.setattr(qweather_mod.requests, "get", fake_get)
+    tool, _ = _make_tool(type="weather", time_period="now")
+    tool._invoke(query="Washington, D.C. & Arlington")
+
+    wire = requests.Request("GET", calls[0]["url"], params=calls[0].get("params")).prepare().url
+    query = parse_qs(urlsplit(wire).query)
+    assert query["location"] == ["Washington, D.C. & Arlington"]
+    assert query["key"] == ["test-key"]
