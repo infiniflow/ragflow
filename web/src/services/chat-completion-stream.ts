@@ -14,7 +14,6 @@ import { ResponseType } from '@/interfaces/database/base';
 import { IMessage, Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { pickByBackend } from '@/utils/backend-variant';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 
 export type ChatCompletionStreamParams = {
@@ -70,9 +69,7 @@ export function requestChatCompletionStream(
       chat_id: chatId,
       session_id: sessionId,
       messages,
-      // The Go backend owns session history server-side and appends the new
-      // question; the Python backend is overwritten with the client-sent list.
-      pass_all_history_messages: pickByBackend({ go: false, python: true }),
+      pass_all_history_messages: true,
       reasoning: Number(enableThinking),
       internet: enableInternet,
       ...(temperature === undefined ? {} : { temperature }),
