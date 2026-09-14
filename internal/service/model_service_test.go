@@ -500,6 +500,97 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
+func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for _, modelRef := range []string{
+		"unknown@ZHIPU-AI",
+		"unknown@default@OpenAI",
+	} {
+		t.Run(modelRef, func(t *testing.T) {
+			_, _, _, _, err := NewModelProviderService().ResolveModelConfig(
+				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			)
+			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+			}
+			if !strings.Contains(err.Error(), "lookup failed: record not found") {
+				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+			}
+		})
+	}
+}
+
+// TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
+// resolution paths accept empty configuration and unrelated typed fields.
+func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	svc := NewModelProviderService()
+	resolvers := []struct {
+		name    string
+		resolve func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	}{
+		{
+			name: "model ID",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.GetModelConfigByID(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			},
+		},
+		{
+			name: "provider instance",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			},
+		},
+	}
+	configs := []struct {
+		name        string
+		raw         string
+		wantRegion  string
+		wantBaseURL string
+	}{
+		{name: "empty", raw: ""},
+		{
+			name:        "unrelated typed fields",
+			raw:         `{"region":"us-east-1","base_url":"https://models.example.com","enabled":true,"retries":3,"options":{"mode":"custom"}}`,
+			wantRegion:  "us-east-1",
+			wantBaseURL: "https://models.example.com",
+		},
+	}
+	for _, config := range configs {
+		t.Run(config.name, func(t *testing.T) {
+			if err := db.Model(&entity.TenantModelInstance{}).
+				Where("id = ?", "instance-1").
+				Update("extra", config.raw).Error; err != nil {
+				t.Fatalf("update instance extra: %v", err)
+			}
+
+			for _, resolver := range resolvers {
+				t.Run(resolver.name, func(t *testing.T) {
+					driver, _, apiConfig, _, err := resolver.resolve()
+					if err != nil {
+						t.Fatalf("resolve model config: %v", err)
+					}
+					if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != config.wantRegion || apiConfig.BaseURL == nil || *apiConfig.BaseURL != config.wantBaseURL {
+						t.Fatalf("resolved driver/config = %v/%+v, want region %q and base URL %q", driver, apiConfig, config.wantRegion, config.wantBaseURL)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestMaxTokensFromModelInfo(t *testing.T) {
 	maxTokens := 4096
 	maxOutput := 1024

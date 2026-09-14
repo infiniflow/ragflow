@@ -113,7 +113,8 @@ var DefaultCiteRules = CitationPrompt("")
 // appends after rendering CITATION_PROMPT_TEMPLATE: the examples in the
 // template carry illustrative IDs, and without this the model can emit them
 // instead of the real chunk IDs it was given.
-const citationIDSuffix = "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
+const citationIDSuffix = "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks." +
+	" Cite each source INDIVIDUALLY as [ID:i][ID:j]; NEVER merge consecutive citations into a range such as [ID:i-j]."
 
 // CitationPrompt mirrors Python rag/prompts/generator.citation_prompt: return
 // the citation-rules text the final answer must follow. The user-defined
