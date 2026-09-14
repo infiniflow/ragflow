@@ -144,12 +144,12 @@ export function CreateAgentForm({
 
   const datasetHint = retrievalBindings?.datasetCount
     ? t('flow.retrievalTemplateDatasetHint', {
-        count: retrievalBindings.datasetCount,
+        num: retrievalBindings.datasetCount,
       })
     : undefined;
   const memoryHint = retrievalBindings?.memoryCount
     ? t('flow.retrievalTemplateMemoryHint', {
-        count: retrievalBindings.memoryCount,
+        num: retrievalBindings.memoryCount,
       })
     : undefined;
 

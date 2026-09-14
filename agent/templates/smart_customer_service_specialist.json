@@ -145,7 +145,7 @@
                         "presence_penalty": 0.4,
                         "prompts": [
                             {
-                                "content": "User\u2018s query is {sys.query}\n\nSchema is {Retrieval:EagerTipsFeel@formalized_content}\n\n",
+                                "content": "User‘s query is {sys.query}\n\nSchema is {Retrieval:EagerTipsFeel@formalized_content}\n\n",
                                 "role": "user"
                             }
                         ],
@@ -174,9 +174,9 @@
                     "params": {
                         "category_description": {
                             "Book Installation": {
-                                "description": "Handles the user\u2019s request to schedule, reschedule, or confirm an appointment for professional installation services at the customer\u2019s location.",
+                                "description": "Handles the user’s request to schedule, reschedule, or confirm an appointment for professional installation services at the customer’s location.",
                                 "examples": [
-                                    "\u201cI\u2019d like to schedule installation for my product.\u201d\n\n\u201cCan I reschedule my installation appointment for next week?\u201d\n"
+                                    "“I’d like to schedule installation for my product.”\n\n“Can I reschedule my installation appointment for next week?”\n"
                                 ],
                                 "to": [
                                     "Agent:DeepCoatsDress"
@@ -185,7 +185,7 @@
                             "Product Feature Comparison": {
                                 "description": "Helps the user compare the features, technical specifications, and characteristics of different products to assist them in making an informed purchase decision.",
                                 "examples": [
-                                    "\u201cCan you compare the features of Model X and Model Y?\u201d\n\n\u201cWhat\u2019s the difference between Option A and Option B?\u201d\n\n\u201cWhich model, X100 or X200, has better performance and more features?\u201d"
+                                    "“Can you compare the features of Model X and Model Y?”\n\n“What’s the difference between Option A and Option B?”\n\n“Which model, X100 or X200, has better performance and more features?”"
                                 ],
                                 "to": [
                                     "Retrieval:EightyDaysHappen"
@@ -194,7 +194,7 @@
                             "Product Usage Guide": {
                                 "description": "Provides the user with detailed instructions, guides, or troubleshooting tips for using, maintaining, or optimizing the performance of their purchased product.",
                                 "examples": [
-                                    "\u201cHow do I set up this product?\u201d\n\n\u201cHow do I clean and maintain this product?\u201d\n\n\u201cCan you guide me on how to use the advanced features?\u201d"
+                                    "“How do I set up this product?”\n\n“How do I clean and maintain this product?”\n\n“Can you guide me on how to use the advanced features?”"
                                 ],
                                 "to": [
                                     "Retrieval:EagerTipsFeel"
@@ -238,9 +238,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "dataset_ids": [
-                            "a5aaec4a819b11f095f1047c16ec874f"
-                        ],
+                        "dataset_ids": [],
                         "retrieval_from": "dataset",
                         "keywords_similarity_weight": 0.7,
                         "outputs": {
@@ -252,9 +250,9 @@
                         "query": "{sys.query}",
                         "rerank_id": "",
                         "similarity_threshold": 0.2,
-                        "top_k": 1024,
                         "top_n": 8,
-                        "use_kg": false
+                        "use_kg": false,
+                        "rerank_candidates_count": 64
                     }
                 },
                 "upstream": [
@@ -270,9 +268,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "dataset_ids": [
-                            "65cb5150819b11f08347047c16ec874f"
-                        ],
+                        "dataset_ids": [],
                         "retrieval_from": "dataset",
                         "keywords_similarity_weight": 0.7,
                         "meta_data_filter": {},
@@ -524,7 +520,7 @@
                                     "description": "Helps the user compare the features, technical specifications, and characteristics of different products to assist them in making an informed purchase decision.",
                                     "examples": [
                                         {
-                                            "value": "\u201cCan you compare the features of Model X and Model Y?\u201d\n\n\u201cWhat\u2019s the difference between Option A and Option B?\u201d\n\n\u201cWhich model, X100 or X200, has better performance and more features?\u201d"
+                                            "value": "“Can you compare the features of Model X and Model Y?”\n\n“What’s the difference between Option A and Option B?”\n\n“Which model, X100 or X200, has better performance and more features?”"
                                         }
                                     ],
                                     "name": "Product Feature Comparison",
@@ -534,17 +530,17 @@
                                     "description": "Provides the user with detailed instructions, guides, or troubleshooting tips for using, maintaining, or optimizing the performance of their purchased product.",
                                     "examples": [
                                         {
-                                            "value": "\u201cHow do I set up this product?\u201d\n\n\u201cHow do I clean and maintain this product?\u201d\n\n\u201cCan you guide me on how to use the advanced features?\u201d"
+                                            "value": "“How do I set up this product?”\n\n“How do I clean and maintain this product?”\n\n“Can you guide me on how to use the advanced features?”"
                                         }
                                     ],
                                     "name": "Product Usage Guide",
                                     "uuid": "442ea422-de6a-4c78-afcd-ac4a41daa4ca"
                                 },
                                 {
-                                    "description": "Handles the user\u2019s request to schedule, reschedule, or confirm an appointment for professional installation services at the customer\u2019s location.",
+                                    "description": "Handles the user’s request to schedule, reschedule, or confirm an appointment for professional installation services at the customer’s location.",
                                     "examples": [
                                         {
-                                            "value": "\u201cI\u2019d like to schedule installation for my product.\u201d\n\n\u201cCan I reschedule my installation appointment for next week?\u201d\n"
+                                            "value": "“I’d like to schedule installation for my product.”\n\n“Can I reschedule my installation appointment for next week?”\n"
                                         }
                                     ],
                                     "name": "Book Installation",
@@ -592,9 +588,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "dataset_ids": [
-                                "65cb5150819b11f08347047c16ec874f"
-                            ],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "meta_data_filter": {},
@@ -693,9 +687,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "dataset_ids": [
-                                "a5aaec4a819b11f095f1047c16ec874f"
-                            ],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
@@ -757,7 +749,7 @@
                             "presence_penalty": 0.4,
                             "prompts": [
                                 {
-                                    "content": "User\u2018s query is {sys.query}\n\nSchema is {Retrieval:EagerTipsFeel@formalized_content}\n\n",
+                                    "content": "User‘s query is {sys.query}\n\nSchema is {Retrieval:EagerTipsFeel@formalized_content}\n\n",
                                     "role": "user"
                                 }
                             ],
@@ -905,7 +897,7 @@
                             "text": "The **Categorize** node can direct users to different handling workflows.\n"
                         },
                         "label": "Note",
-                        "name": "Note\uff1aEvent Classification"
+                        "name": "Note：Event Classification"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,
@@ -929,7 +921,7 @@
                             "text": "Use this node to set up the product information knowledge base."
                         },
                         "label": "Note",
-                        "name": "Note\uff1aFeature Comparison Knowledge Base"
+                        "name": "Note：Feature Comparison Knowledge Base"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,
@@ -956,7 +948,7 @@
                             "text": "Use this node to set up the user guide knowledge base."
                         },
                         "label": "Note",
-                        "name": "Note\uff1aUsage Guide Knowledge Base"
+                        "name": "Note：Usage Guide Knowledge Base"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,
@@ -983,7 +975,7 @@
                             "text": "This Agent looks up and summarizes the differences between different product models."
                         },
                         "label": "Note",
-                        "name": "Note\uff1aFeature Comparison Agent"
+                        "name": "Note：Feature Comparison Agent"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,
@@ -1010,7 +1002,7 @@
                             "text": "This Agent queries the user guide knowledge base to get usage help."
                         },
                         "label": "Note",
-                        "name": "Note\uff1aUsage Guide Agent"
+                        "name": "Note：Usage Guide Agent"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,
@@ -1034,10 +1026,10 @@
                 {
                     "data": {
                         "form": {
-                            "text": "This Agent collects the user\u2019s installation details through a multi-turn conversation."
+                            "text": "This Agent collects the user’s installation details through a multi-turn conversation."
                         },
                         "label": "Note",
-                        "name": "Note\uff1a Installation Booking Agent"
+                        "name": "Note： Installation Booking Agent"
                     },
                     "dragHandle": ".note-drag-handle",
                     "dragging": false,

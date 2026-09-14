@@ -18,10 +18,9 @@
 //
 //   - FileTypeOTHER + missing setups → text-page mode.
 //   - FileTypeMarkdown → JSON payload family on the matching output
-//     key, with the pages slice preserved.
-//   - FileTypePDF + setups["pdf"].output_format set to a value not
-//     in allowed_output_format["pdf"] → component errors with the
-//     format-mismatch message (matches the Python check() behavior).
+//     key.
+//   - Historical output_format values, including PDF Markdown, are accepted
+//     and normalized to the single JSON payload.
 
 package component
 
@@ -33,6 +32,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,9 +47,11 @@ import (
 	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -75,14 +77,178 @@ func (c *captureSetupConfigurer) ConfigureFromSetup(setup map[string]any) {
 	c.setup = setup
 }
 
-// TestDispatch_OutputFormatValidation_Allowed is the happy-path
-// pin: a Markdown file with output_format=json passes the
-// allowed_output_format check and runs the structured dispatch.
-func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
+func requireJSONText(t *testing.T, out map[string]any, want string) {
+	t.Helper()
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	items, ok := out["json"].([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
+	}
+	for _, item := range items {
+		if text, _ := item["text"].(string); strings.Contains(text, want) {
+			return
+		}
+	}
+	t.Fatalf("json payload does not contain %q: %#v", want, items)
+}
+
+func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		dispatched parser.ParseResult
+		wantText   string
+	}{
+		{
+			name: "markdown",
+			dispatched: parser.ParseResult{
+				OutputFormat: "markdown",
+				Markdown:     "# Title\n\nBody",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "html",
+			dispatched: parser.ParseResult{
+				OutputFormat: "html",
+				HTML:         "<h1>Title</h1><p>Body</p>",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "text",
+			dispatched: parser.ParseResult{
+				OutputFormat: "text",
+				Text:         "plain body",
+			},
+			wantText: "plain body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, nil, "")
+
+			requireJSONText(t, out, tt.wantText)
+			if tt.name == "markdown" {
+				items, ok := out["json"].([]map[string]any)
+				if !ok {
+					t.Fatalf("json = %T, want []map[string]any", out["json"])
+				}
+				if len(items) != 2 {
+					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
+				}
+				if got := items[0]["ck_type"]; got != "heading" {
+					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
+				}
+				if got := items[0]["text"]; got != "Title" {
+					t.Errorf("markdown item[0].text = %v, want Title", got)
+				}
+				if got := items[1]["text"]; got != "Body" {
+					t.Errorf("markdown item[1].text = %v, want Body", got)
+				}
+			}
+			for _, key := range []string{"markdown", "html", "text"} {
+				if _, ok := out[key]; ok {
+					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])
+				}
+			}
+		})
+	}
+}
+
+func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
+	out := buildParserOutputs(t.Context(), parser.ParseResult{
+		OutputFormat: "json",
+		JSON:         []map[string]any{},
+		Markdown:     "# Recovered title",
+	}, "sample.md", nil, "")
+
+	requireJSONText(t, out, "Recovered title")
+}
+
+func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
+	originalResolver := net.DefaultResolver
+	dnsLookup := make(chan struct{}, 1)
+	net.DefaultResolver = &net.Resolver{
+		PreferGo:     true,
+		StrictErrors: true,
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			select {
+			case dnsLookup <- struct{}{}:
+			default:
+			}
+			return nil, fmt.Errorf("unexpected DNS lookup")
+		},
+	}
+	t.Cleanup(func() { net.DefaultResolver = originalResolver })
+
+	items := parseMarkdownToJSONItems(t.Context(), "ocr.md", "![remote](https://images.example.invalid/figure.png)")
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one Markdown image block", items)
+	}
+	select {
+	case <-dnsLookup:
+		t.Fatal("Markdown-to-JSON normalization performed a remote image DNS lookup")
+	default:
+	}
+}
+
+func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	logParserOutput(parser.ParseResult{
+		OutputFormat: "markdown",
+		Markdown:     "# Title\n\nBody",
+	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
+
+	entries := logs.FilterMessage("parser stage output").All()
+	if len(entries) != 1 {
+		t.Fatalf("parser output log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if _, ok := fields["output_format"]; ok {
+		t.Errorf("output_format must be omitted because it is always json: %v", fields)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["json_items"]; got != int64(2) {
+		t.Errorf("json_items = %v, want 2", got)
+	}
+}
+
+func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	warnParserNormalizationFallback("broken.md", "markdown", fmt.Errorf("parse failed"))
+
+	entries := logs.FilterMessage("parser normalization fell back to text").All()
+	if len(entries) != 1 {
+		t.Fatalf("normalization fallback log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if got := fields["filename"]; got != "broken.md" {
+		t.Errorf("filename = %v, want broken.md", got)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["error"]; got != "parse failed" {
+		t.Errorf("error = %v, want parse failed", got)
+	}
+}
+
+func TestDispatch_JSONOutput(t *testing.T) {
 	setups := defaultSetups()
-	// Defaults already include Markdown → {text, json}.
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n\nbody\n"),
@@ -102,67 +268,42 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if len(jsonItems) == 0 {
 		t.Errorf("json payload empty; want at least 1 item")
 	}
-	// Pages must still exist for chunker-side consumers.
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Errorf("pages slice missing or empty: %T", out["pages"])
-	}
-	if ok && len(pages) > 0 {
-		if got, _ := pages[0]["text"].(string); !strings.Contains(got, "Title") {
-			t.Errorf("pages[0].text = %q, want content containing Title", got)
-		}
-	}
 	// File metadata is carried through dispatch.
 	if fm, ok := out["file"].(map[string]any); !ok || fm["name"] != "doc.md" {
 		t.Errorf("file metadata missing or wrong: %+v", out["file"])
 	}
 }
 
-// TestDispatch_OutputFormatValidation_Rejection pins the
-// whitelist enforcement: a request for output_format=html on the
-// Markdown family is rejected because Markdown's allowed list is
-// {text, json}. The component must surface this as a hard error
-// before any fallback so a misconfigured template cannot silently
-// degrade.
-func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
+func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	setups := defaultSetups()
-	// Override the Markdown setup to ask for an unsupported format.
-	// The key is "markdown" (the python-side family identifier),
-	// NOT "md" — utility.FileTypeMarkdown happens to be the string
-	// "md" but the setup key is the family name. resolveOutputFormat
-	// looks up setups[string(fileType)], so the fileType passed in
-	// here must match the setup key.
-	setups["markdown"] = schema.ParserSetup{"output_format": "html"}
-	// inputs["file_type"] must also be "markdown" so fileTypeFromInputs
-	// returns a FileType whose string form matches the setup key.
-	c := &ParserComponent{Param: param, Setups: setups}
+	setups["email"]["output_format"] = "text"
+	c := &ParserComponent{setups: setups}
 
-	_, err := c.Invoke(t.Context(), nil, map[string]any{
-		"binary":    []byte("# Title\n"),
-		"file_type": "md",
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("From: sender@example.com\r\nTo: receiver@example.com\r\nSubject: Hello\r\n\r\nBody\r\n"),
+		"name":      "mail.eml",
+		"file_type": "eml",
 	})
-	if err == nil {
-		t.Fatal("Invoke: want error for unsupported output_format, got nil")
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(err.Error(), "output_format") {
-		t.Errorf("error %q must mention output_format", err.Error())
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	if !strings.Contains(err.Error(), "markdown") && !strings.Contains(err.Error(), "md") {
-		t.Errorf("error %q must mention the family", err.Error())
+	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
 
 // TestDispatch_TextPageMode_NoFileType pins the no-dispatch
 // path. When the upstream inputs supply neither file_type nor
 // file.name, the component degrades to text-page mode and
-// emits output_format=text. This is the documented behavior for
+// emits structured JSON items. This is the documented behavior for
 // canvas-bound invocations that wire the binary directly without
 // a family hint.
 func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("plain content\n"),
@@ -171,12 +312,15 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (text-page mode)", got, want)
+	if got, want := out["output_format"], "json"; got != want {
+		t.Errorf("output_format = %v, want %v (raw-text mode)", got, want)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Fatalf("pages slice missing or empty: %T", out["pages"])
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) == 0 {
+		t.Fatalf("json items missing or empty: %T", out["json"])
+	}
+	if _, ok := out["text"]; ok {
+		t.Fatalf("output contains obsolete text payload: %#v", out["text"])
 	}
 }
 
@@ -185,9 +329,8 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 // resolution/execution failures must surface as errors instead of
 // silently degrading to text-page mode.
 func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
@@ -205,8 +348,8 @@ func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 // rules documented on parser_dispatch.go:fileTypeFromInputs:
 //
 //  1. inputs["file_type"]  (explicit family hint)
-//  2. inputs["file"].name  (filename in the file descriptor)
-//  3. inputs["name"]       (last-resort filename)
+//  2. inputs["name"]       (the resolved source filename)
+//  3. inputs["file"].name  (filename in the file descriptor)
 //  4. FileTypeOTHER        (text-page mode)
 func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	cases := []struct {
@@ -222,6 +365,7 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 		{"explicit slides (family name)", map[string]any{"file_type": "slides"}, "pptx"},
 		{"explicit spreadsheet (family name)", map[string]any{"file_type": "spreadsheet"}, "xlsx"},
 		{"explicit markdown (family form)", map[string]any{"file_type": "markdown"}, "md"},
+		{"name wins over conflicting file.name", map[string]any{"name": "report.txt", "file": map[string]any{"name": "report.pdf"}}, "txt"},
 		{"file.name docx", map[string]any{"file": map[string]any{"name": "report.docx"}}, "docx"},
 		{"name fallback md", map[string]any{"name": "notes.md"}, "md"},
 		{"unrelated inputs", map[string]any{"binary": []byte("x"), "doc_id": "abc"}, "other"},
@@ -238,132 +382,7 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	}
 }
 
-// TestResolveOutputFormat_DefaultsAndWhitelist pins the two-layer
-// behavior of resolveOutputFormat: it returns the setup's
-// output_format when present (or the per-family default when absent,
-// e.g. markdown→json, spreadsheet→html), and rejects values not in
-// the allowed_output_format list. Explicit image:text is rejected.
-func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
-	allowed := map[string][]string{
-		"pdf":         {"json", "markdown"},
-		"markdown":    {"text", "json"},
-		"image":       {"json"},
-		"spreadsheet": {"json", "markdown", "html"},
-		"email":       {"text", "json"},
-		"audio":       {"text", "json"},
-	}
-	cases := []struct {
-		name    string
-		setups  map[string]schema.ParserSetup
-		family  string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:   "no setup → empty (text-page mode)",
-			setups: nil,
-			family: "pdf",
-			want:   "",
-		},
-		{
-			name:   "setup with output_format=json → json",
-			setups: map[string]schema.ParserSetup{"pdf": {"output_format": "json"}},
-			family: "pdf",
-			want:   "json",
-		},
-		{
-			name:   "setup with output_format=markdown → markdown",
-			setups: map[string]schema.ParserSetup{"pdf": {"output_format": "markdown"}},
-			family: "pdf",
-			want:   "markdown",
-		},
-		{
-			name:   "setup without output_format → per-family default (markdown→json)",
-			setups: map[string]schema.ParserSetup{"markdown": {}},
-			family: "markdown",
-			want:   "json",
-		},
-		{
-			name:   "setup without output_format → per-family default (spreadsheet→html)",
-			setups: map[string]schema.ParserSetup{"spreadsheet": {}},
-			family: "spreadsheet",
-			want:   "html",
-		},
-		{
-			name:   "setup without output_format → per-family default (image→json)",
-			setups: map[string]schema.ParserSetup{"image": {}},
-			family: "image",
-			want:   "json",
-		},
-		{
-			name:   "setup without output_format → per-family default (email→text)",
-			setups: map[string]schema.ParserSetup{"email": {}},
-			family: "email",
-			want:   "text",
-		},
-		{
-			name:    "image explicit text (legacy) → strict reject",
-			setups:  map[string]schema.ParserSetup{"image": {"output_format": "text"}},
-			family:  "image",
-			wantErr: true,
-		},
-		{
-			name:    "image explicit TEXT uppercase → strict reject",
-			setups:  map[string]schema.ParserSetup{"image": {"output_format": "TEXT"}},
-			family:  "image",
-			wantErr: true,
-		},
-		{
-			name:    "pdf asking for html (not allowed) → reject",
-			setups:  map[string]schema.ParserSetup{"pdf": {"output_format": "html"}},
-			family:  "pdf",
-			wantErr: true,
-		},
-		{
-			name:   "setup without output_format → per-family default (audio→json)",
-			setups: map[string]schema.ParserSetup{"audio": {}},
-			family: "audio",
-			want:   "json",
-		},
-		{
-			name:   "setup without output_format → per-family default (pdf→json)",
-			setups: map[string]schema.ParserSetup{"pdf": {}},
-			family: "pdf",
-			want:   "json",
-		},
-		{
-			name:   "family with no whitelist → accept setup value",
-			setups: map[string]schema.ParserSetup{"video": {"output_format": "json"}},
-			family: "video",
-			want:   "json",
-		},
-		{
-			name:   "family with no whitelist empty → default text",
-			setups: map[string]schema.ParserSetup{"video": {}},
-			family: "video",
-			want:   "text",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveOutputFormat(tc.family, tc.setups, allowed)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("want error, got nil (value=%q)", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
+func TestDefaultSetups_DOCX_OutputFormatJSON(t *testing.T) {
 	setups := defaultSetups()
 	docx, ok := setups["docx"]
 	if !ok {
@@ -377,130 +396,7 @@ func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
 		t.Errorf("docx.output_format = %q, want %q", got, "json")
 	}
 }
-
-// TestDefaultOutputFormatForFamily_Sync verifies the dispatch default
-// stays in sync with the allowed whitelist and, except for the two
-// intentional overrides (email:text, audio:json), with defaultSetups.
-func TestDefaultOutputFormatForFamily_Sync(t *testing.T) {
-	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
-	overrides := map[string]string{"email": "text", "audio": "json"}
-	for family, def := range map[string]string{
-		"pdf":         "json",
-		"spreadsheet": "html",
-		"doc":         "json",
-		"docx":        "json",
-		"slides":      "json",
-		"image":       "json",
-		"markdown":    "json",
-		"text&code":   "json",
-		"html":        "json",
-		"epub":        "json",
-		"json":        "json",
-		"email":       "text",
-		"audio":       "json",
-		"video":       "text",
-	} {
-		got, ok := defaultOutputFormatForFamily(family)
-		if !ok {
-			t.Errorf("defaultOutputFormatForFamily(%q) missing", family)
-			continue
-		}
-		if got != def {
-			t.Errorf("defaultOutputFormatForFamily(%q)=%q, want %q", family, got, def)
-		}
-		if list, hasWL := allowed[family]; hasWL && len(list) > 0 {
-			found := false
-			for _, c := range list {
-				if strings.EqualFold(c, got) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("default %q for %q not in allowed %v", got, family, list)
-			}
-		}
-		if ov, isOverride := overrides[family]; isOverride {
-			if got != ov {
-				t.Errorf("override %q got %q want %q", family, got, ov)
-			}
-			continue
-		}
-		if ds, ok := defaultSetups()[family]; ok {
-			if want, ok := ds["output_format"].(string); ok && want != got {
-				t.Errorf("family %q dispatch default %q != defaultSetups %q (should be synced or listed as override)", family, got, want)
-			}
-		}
-	}
-	if _, ok := defaultOutputFormatForFamily("unknown"); ok {
-		t.Errorf("unknown family should return !ok")
-	}
-}
-
-// TestResolveOutputFormat_AudioOutputFormats pins the audio-family
-// whitelist against the builtin audio template. The template
-// (ingestion_pipeline_audio.json) and the Python default audio setup
-// (rag/flow/parser/parser.py) both use output_format="text" — an audio
-// transcription is inherently plain text. "text" must therefore pass
-// the whitelist, "json" must stay accepted, and a format outside the
-// whitelist must still be rejected.
-func TestResolveOutputFormat_AudioOutputFormats(t *testing.T) {
-	allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
-	audioAllowed, ok := allowed["audio"]
-	if !ok {
-		t.Fatal("allowed_output_format: audio key missing")
-	}
-	has := func(want string) bool {
-		for _, v := range audioAllowed {
-			if strings.EqualFold(v, want) {
-				return true
-			}
-		}
-		return false
-	}
-	if !has("text") {
-		t.Errorf("allowed_output_format[audio] = %v, want it to include %q (builtin audio template and Python default use it)", audioAllowed, "text")
-	}
-	if !has("json") {
-		t.Errorf("allowed_output_format[audio] = %v, want it to include %q", audioAllowed, "json")
-	}
-
-	cases := []struct {
-		name    string
-		format  string
-		wantErr bool
-	}{
-		{name: "text accepted", format: "text"},
-		{name: "json accepted", format: "json"},
-		{name: "html rejected", format: "html", wantErr: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			setups := map[string]schema.ParserSetup{"audio": {"output_format": tc.format}}
-			got, err := resolveOutputFormat("audio", setups, allowed)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("want error for audio output_format=%q, got %q", tc.format, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("audio output_format=%q: unexpected error: %v", tc.format, err)
-			}
-			if got != tc.format {
-				t.Errorf("got %q, want %q", got, tc.format)
-			}
-		})
-	}
-}
-
-// TestDefaultSetups_Audio_OutputFormatText pins the audio default to
-// "text", matching the Python default setup
-// (rag/flow/parser/parser.py audio block) and the builtin audio
-// template. The default feeds both the whitelist gate and the ASR
-// dispatch, so it must not drift to a format the audio pipeline does
-// not produce.
-func TestDefaultSetups_Audio_OutputFormatText(t *testing.T) {
+func TestDefaultSetups_Audio_OutputFormatJSON(t *testing.T) {
 	setups := defaultSetups()
 	audio, ok := setups["audio"]
 	if !ok {
@@ -510,8 +406,8 @@ func TestDefaultSetups_Audio_OutputFormatText(t *testing.T) {
 	if !ok {
 		t.Fatal("defaultSetups: audio.output_format missing or not a string")
 	}
-	if got != "text" {
-		t.Errorf("audio.output_format = %q, want %q", got, "text")
+	if got != "json" {
+		t.Errorf("audio.output_format = %q, want %q", got, "json")
 	}
 }
 
@@ -527,7 +423,7 @@ func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	}
 }
 
-func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
+func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
@@ -536,10 +432,9 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
@@ -549,15 +444,11 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || md == "" {
-		t.Fatalf("markdown payload missing or empty: %T", out["markdown"])
-	}
-	if _, ok = out["json"]; ok {
-		t.Fatalf("json payload must be absent for markdown output: %+v", out["json"])
+	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
 
@@ -568,11 +459,10 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "plain_text"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
@@ -592,10 +482,9 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 }
 
 func TestDispatch_PDFUnsupportedParseMethod_HardErrors(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -662,11 +551,10 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		return &models.ChatResponse{Answer: &answer}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -728,11 +616,10 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 		return &models.ChatResponse{Answer: &answer}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -778,11 +665,10 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -793,12 +679,57 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	requireJSONText(t, out, "Title")
+}
+
+func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody paragraph\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["output_format"], "json"; got != want {
 		t.Fatalf("output_format = %v, want %v", got, want)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Title") {
-		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
+	items, ok := out["json"].([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("json payload = %#v, want non-empty structured items", out["json"])
 	}
 }
 
@@ -854,9 +785,7 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if out["output_format"] != "markdown" || out["markdown"] != "MonkeyOCRv2 title" {
-		t.Fatalf("output=%#v", out)
-	}
+	requireJSONText(t, out, "MonkeyOCRv2 title")
 }
 
 // mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
@@ -940,11 +869,10 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -955,13 +883,10 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Paddle Title")
 }
 
 // TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload pins the cloud
@@ -1008,11 +933,10 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1023,10 +947,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Unwrapped Title") {
-		t.Fatalf("markdown payload = %#v, want Unwrapped Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Unwrapped Title")
 }
 
 func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
@@ -1037,11 +958,10 @@ func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 		return nil, "", nil, 0, fmt.Errorf("no active PaddleOCR OCR model")
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "paddleocr"
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1101,11 +1021,10 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["layout_recognizer"] = modelID
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1116,13 +1035,10 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Cloud Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Cloud Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
 // TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod pins the routing of a
@@ -1169,11 +1085,10 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 		return &paddleocrTestDriver{}, "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
 	setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1184,13 +1099,10 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Cloud Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Cloud Paddle Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
 // paddleocrTestDriver is a minimal ModelDriver mock whose Name() returns "paddleocr".
@@ -1345,13 +1257,12 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "Docling"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["docling_server_url"] = server.URL
 	setups["pdf"]["docling_api_key"] = "doc-secret"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1361,19 +1272,16 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Docling Title") {
-		t.Fatalf("markdown payload = %#v, want Docling Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Docling Title")
 	if got, want := requestCount, 3; got != want {
 		t.Fatalf("requestCount = %d, want %d", got, want)
 	}
 }
 
-func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFOpenDataLoaderLegacyMarkdownEmitsJSON(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
@@ -1385,12 +1293,11 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "OpenDataLoader"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["opendataloader_apiserver"] = server.URL
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1400,13 +1307,10 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "ODL Title") {
-		t.Fatalf("markdown payload = %#v, want ODL Title", out["markdown"])
-	}
+	requireJSONText(t, out, "ODL Title")
 }
 
-func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFSoMarkLegacyMarkdownEmitsJSON(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1420,12 +1324,11 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "SoMark"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["somark_base_url"] = server.URL
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1435,13 +1338,10 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "SoMark Title") {
-		t.Fatalf("markdown payload = %#v, want SoMark Title", out["markdown"])
-	}
+	requireJSONText(t, out, "SoMark Title")
 }
 
-func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFTCADPLegacyMarkdownEmitsJSON(t *testing.T) {
 	withSSRFBypass(t)
 	zipPayload := tcadpZipFixtureForComponent(t)
 	var server *httptest.Server
@@ -1457,12 +1357,11 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "TCADP parser"
 	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["tcadp_apiserver"] = server.URL
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
@@ -1472,10 +1371,7 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Hello TCADP") {
-		t.Fatalf("markdown payload = %#v, want Hello TCADP", out["markdown"])
-	}
+	requireJSONText(t, out, "Hello TCADP")
 }
 
 func tcadpZipFixtureForComponent(t *testing.T) []byte {
@@ -1495,7 +1391,7 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 
 // TestPythonFamilyName_FileTypeConstants pins the contract that every
 // utility.FileType semantic constant resolves to the setups key used by
-// defaultSetups / AllowedOutputFormat. Before the fix, FileTypeVISUAL mapped
+// defaultSetups. Before the fix, FileTypeVISUAL mapped
 // to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
 // no case at all (returning ""), so output_format validation and
 // configureParserFromSetups were silently skipped for image/audio files.
@@ -1527,15 +1423,10 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 		if got != c.want {
 			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
 		}
-		// Every mapped family must have a matching setups key and
-		// allowed_output_format entry, otherwise output_format validation
-		// is silently skipped.
+		// Every mapped family must have a matching setup so its parser receives
+		// the canonical output format and family-specific configuration.
 		if _, ok := defaultSetups()[got]; !ok {
 			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
-		}
-		allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
-		if _, ok := allowed[got]; !ok {
-			t.Errorf("pythonFamilyName(%q) → %q has no allowed_output_format entry", c.ft, got)
 		}
 	}
 }

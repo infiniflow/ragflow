@@ -91,15 +91,13 @@ LANGUAGE_TO_MINERU_MAP = {
 
 
 class MinerUBackend(StrEnum):
-    """MinerU processing backend options."""
+    """MinerU processing backend options (current public API names)."""
 
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
-    VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
-    VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
-    VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
-    VLM_VLLM_ASYNC_ENGINE = "vlm-vllm-async-engine"  # Asynchronous vLLM engine, new in MinerU API
-    VLM_LMDEPLOY_ENGINE = "vlm-lmdeploy-engine"  # LMDeploy engine
-    VLM_HTTP_CLIENT = "vlm-http-client"  # HTTP client for remote vLLM server (CPU only)
+    PIPELINE = "pipeline"
+    VLM_ENGINE = "vlm-engine"
+    HYBRID_ENGINE = "hybrid-engine"
+    VLM_HTTP_CLIENT = "vlm-http-client"
+    HYBRID_HTTP_CLIENT = "hybrid-http-client"
 
 
 class MinerULanguage(StrEnum):
@@ -239,7 +237,7 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = [b.value for b in MinerUBackend]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -262,17 +260,17 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(reason)
             return False, reason
 
-        if backend == "vlm-http-client":
+        if backend in (MinerUBackend.VLM_HTTP_CLIENT, MinerUBackend.HYBRID_HTTP_CLIENT):
             resolved_server = server_url or self.mineru_server_url
             if not resolved_server:
-                reason = "[MinerU] MINERU_SERVER_URL required for vlm-http-client backend."
+                reason = f"[MinerU] MINERU_SERVER_URL required for {backend} backend."
                 self.logger.warning(reason)
                 return False, reason
             try:
                 server_ok = self._is_http_endpoint_valid(resolved_server)
-                self.logger.info(f"[MinerU] vlm-http-client server check reachable={server_ok} url={resolved_server}")
+                self.logger.info(f"[MinerU] {backend} server check reachable={server_ok} url={resolved_server}")
             except Exception as exc:
-                self.logger.warning(f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}")
+                self.logger.warning(f"[MinerU] {backend} server probe failed: {resolved_server}: {exc}")
 
         return True, reason
 
@@ -299,12 +297,11 @@ class MinerUParser(RAGFlowPdfParser):
 
         data = {
             "output_dir": "./output",
-            "lang_list": options.lang,
-            "backend": options.backend,
-            "parse_method": options.method,
+            "lang_list": options.lang.value if isinstance(options.lang, MinerULanguage) else options.lang,
+            "backend": options.backend.value if isinstance(options.backend, MinerUBackend) else options.backend,
+            "parse_method": options.method.value if isinstance(options.method, MinerUParseMethod) else options.method,
             "formula_enable": options.formula_enable,
             "table_enable": options.table_enable,
-            "server_url": None,
             "return_md": True,
             "return_middle_json": True,
             "return_model_output": True,
@@ -326,7 +323,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         headers = {"Accept": "application/json"}
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
+            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={data['backend']} server_url={data.get('server_url')}")
             if callback:
                 callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
             with open(pdf_file_path, "rb") as pdf_file:
@@ -339,7 +336,9 @@ class MinerUParser(RAGFlowPdfParser):
                     timeout=1800,
                     stream=True,
                 ) as response:
-                    response.raise_for_status()
+                    if not response.ok:
+                        body = (response.text or "")[:2000]
+                        raise RuntimeError(f"[MinerU] api failed status={response.status_code} body={body}")
                     content_type = response.headers.get("Content-Type", "")
                     if not content_type.startswith("application/zip"):
                         raise RuntimeError(f"[MinerU] not zip returned from api: {content_type}")
@@ -356,7 +355,14 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.info("[MinerU] Api completed successfully.")
             return Path(output_path)
         except requests.RequestException as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+            detail = ""
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                try:
+                    detail = f" body={(resp.text or '')[:2000]}"
+                except Exception:
+                    pass
+            raise RuntimeError(f"[MinerU] api failed with exception {e}{detail}") from e
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from

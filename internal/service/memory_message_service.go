@@ -362,7 +362,7 @@ func queueMemoryTask(ctx context.Context, taskID, memoryID, tenantID string, raw
 	}
 	// Publish the memory-extraction task to NATS (tasks.RAGFLOW) so it is
 	// consumed by the Ingestor's shared consumer + worker pool, dispatched by
-	// TaskType=="memory" in processMessage. This keeps Go out of the Python
+	// TaskType=="memory" in handleAndExecute. This keeps Go out of the Python
 	// te.*.common Redis stream entirely, removing the cross-consumer
 	// contention that previously stole Python dataflow tasks.
 	mq := engine.GetMessageQueueEngine()

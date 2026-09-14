@@ -276,6 +276,7 @@ class _FakeRDBMSConnector:
         id_column=None,
         timestamp_column=None,
         batch_size=2,
+        file_extension=None,
     ):
         self.db_type = db_type
         self.host = host
@@ -287,6 +288,7 @@ class _FakeRDBMSConnector:
         self.id_column = id_column
         self.timestamp_column = timestamp_column
         self.batch_size = batch_size
+        self.file_extension = file_extension if file_extension else ".txt"
         self.load_from_state_called = False
         self.retrieve_all_slim_docs_perm_sync_called = False
         self.prepare_sync_state_called = False

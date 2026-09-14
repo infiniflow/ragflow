@@ -81,6 +81,27 @@ def _clamp(value, lo: float = 0.0, hi: float = 1.0) -> float:
         return 1.0
 
 
+_TRUE_STRINGS = frozenset({"true", "1", "yes", "y", "on"})
+
+
+def _coerce_bool(value) -> bool:
+    """Read an LLM-reported boolean, tolerating string drift.
+
+    ``bool()`` alone treats the literal strings ``"false"`` and ``"0"`` as True
+    (they are non-empty), which silently INVERTS a verdict — marking insufficient
+    context sufficient, or an ungrounded claim grounded. Read the recognised
+    spellings by meaning instead; empty/unrecognised values fail CLOSED (False),
+    matching this module's convention that an unusable verdict is INSUFFICIENT.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_STRINGS
+    if isinstance(value, (int, float)):
+        return value != 0
+    return False
+
+
 def _coerce_dict(result) -> dict | None:
     """Coerce a ``gen_json`` response into a dict, tolerating model format drift.
 
@@ -175,10 +196,8 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
         if not rpt:
             continue
         block = f"Claim {cid} (draft):\n{rpt}"
-        used += len(block) + 2
         # Evidence anchor: first line of each cited snippet (guards the draft).
-        # Table chunks contribute their FULL text (see _bounded_excerpt), so
-        # account the actual joined length, not the 300-char estimate.
+        # Table chunks contribute their FULL text (see _bounded_excerpt).
         if eids:
             anchors: list[str] = []
             for eid in eids:
@@ -194,10 +213,18 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
                 if len(anchors) >= 3:
                     break
             if anchors:
-                anchor_text = " | ".join(anchors)
-                block += "\n  Evidence: " + anchor_text
-                used += len(anchor_text) + 4
+                block += "\n  Evidence: " + " | ".join(anchors)
+        # Apply the budget to the COMPLETE block before appending it, trimming it to
+        # what remains: accounting the block only AFTER appending let a single
+        # oversized claim blow straight past _SCA_CLAIMS_CONTEXT_MAX (the cap the
+        # comment claims bounds the whole rendered context).
+        remaining = _SCA_CLAIMS_CONTEXT_MAX - used
+        if remaining <= 0:
+            break
+        if len(block) > remaining:
+            block = block[:remaining]
         blocks.append(block)
+        used += len(block) + 2  # the block plus the "\n\n" join separator
         if used >= _SCA_CLAIMS_CONTEXT_MAX:
             break
     return "\n\n".join(blocks) if blocks else "(no claim drafts)"
@@ -306,7 +333,7 @@ async def sufficient_context_agent(
             elif m:
                 missing_info.append({"what": str(m).strip(), "search_hint": ""})
         claims_out[cid] = {
-            "grounded": bool(item.get("grounded")),
+            "grounded": _coerce_bool(item.get("grounded")),
             "ungrounded": [a for a in ungrounded if a],
             "missing_information": missing_info,
         }
@@ -325,14 +352,14 @@ async def sufficient_context_agent(
             continue
         sq_out: dict = {
             "sub_query": sq_text,
-            "satisfied": bool(sq.get("satisfied")),
+            "satisfied": _coerce_bool(sq.get("satisfied")),
         }
         if not sq_out["satisfied"]:
             sq_out["missing_fact"] = str(sq.get("missing_fact") or "").strip()
             sq_out["search_hint"] = str(sq.get("search_hint") or "").strip()
         sub_queries.append(sq_out)
 
-    is_sufficient = bool(result.get("is_sufficient"))
+    is_sufficient = _coerce_bool(result.get("is_sufficient"))
     # Failsafe: when the SCA judges the context insufficient but returned an EMPTY
     # claims array (a known degradation on very long prompts), we must still give
     # the orchestrator something to re-search. Otherwise it abandons with
@@ -396,7 +423,7 @@ def to_boost(sca: dict, verdict, fallback_followups: list | None = None) -> dict
     if missing:
         feedback = "missing: " + "; ".join(missing[:_FEEDBACK_MAX])
     return {
-        "is_sufficient": bool(sca.get("is_sufficient")),
+        "is_sufficient": _coerce_bool(sca.get("is_sufficient")),
         "confidence": _clamp(sca.get("confidence")),
         "missing": missing,
         "contradictions": contradictions,

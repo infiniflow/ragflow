@@ -543,6 +543,7 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
 		DialogID: "chat-1",
+		UserID:   strPtr("user-1"),
 		Message: json.RawMessage(`[
 			{"role":"assistant","content":"Welcome!"},
 			{"role":"user","content":"first","id":"msg-1"},
@@ -598,6 +599,7 @@ func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
 		DialogID: "chat-1",
+		UserID:   strPtr("user-1"),
 		Message: json.RawMessage(`[
 			{"role":"assistant","content":"Welcome!"},
 			{"role":"user","content":"question","id":"msg-1"},
@@ -656,6 +658,7 @@ func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testin
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
 		DialogID: "chat-1",
+		UserID:   strPtr("user-1"),
 		Message: json.RawMessage(`[
 			{"role":"assistant","content":"Welcome!"},
 			{"role":"user","content":"question","id":"msg-1"},
@@ -892,6 +895,7 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:        "session-1",
 		DialogID:  "dialog-1",
+		UserID:    strPtr("user-1"),
 		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 		Reference: json.RawMessage(`[]`),
 	}
@@ -951,6 +955,7 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:        "session-1",
 		DialogID:  "dialog-1",
+		UserID:    strPtr("user-1"),
 		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 		Reference: json.RawMessage(`[]`),
 	}
@@ -1069,6 +1074,7 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:        "session-1",
 		DialogID:  "dialog-1",
+		UserID:    strPtr("user-1"),
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
 	}
@@ -1711,5 +1717,157 @@ func TestAccumulateNonStreamAnswer_AccumulatesDeltasUntilFinal(t *testing.T) {
 	}
 	if ref, _ := ans["reference"].(map[string]interface{}); ref != nil {
 		t.Fatalf("reference=%v, want nil", ref)
+	}
+}
+
+// ===================================================================
+// Shared-session readonly rule (team-shared chats): only the chat owner
+// (the dialog tenant) or the session's creator may mutate a session.
+// ===================================================================
+
+func newSharedChatReadonlyService() (*ChatSessionService, *fakeSessionStore) {
+	store := newFakeSessionStore()
+	// The chat is owned by tenant-owner and team-shared: "user-1" joined
+	// that tenant, so reads pass ensureOwnedChat.
+	store.dialogExists["tenant-owner|chat-1"] = true
+	// The session was created by the chat owner, not by user-1.
+	owner := "tenant-owner"
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Name:     &owner,
+		UserID:   &owner,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
+	}
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       &fakePipeline{},
+	}
+	return svc, store
+}
+
+func TestUpdateSession_SharedSessionReadonlyForTeammate(t *testing.T) {
+	svc, store := newSharedChatReadonlyService()
+
+	_, code, err := svc.UpdateSession(t.Context(), "user-1", "chat-1", "session-1", map[string]interface{}{"name": "renamed"})
+	if err == nil || err.Error() != "shared session is readonly" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+	if len(store.updateCalled) != 0 {
+		t.Fatalf("update calls=%d, want 0", len(store.updateCalled))
+	}
+}
+
+func TestUpdateSession_SessionCreatorCanRenameInSharedChat(t *testing.T) {
+	svc, store := newSharedChatReadonlyService()
+	// Re-attribute the session to the requester: a team member may still
+	// rename sessions they created themselves on the shared chat.
+	store.sessions["session-1"].UserID = strPtr("user-1")
+
+	resp, code, err := svc.UpdateSession(t.Context(), "user-1", "chat-1", "session-1", map[string]interface{}{"name": "renamed"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if resp.Name == nil || *resp.Name != "renamed" {
+		t.Fatalf("name=%v", resp.Name)
+	}
+}
+
+func TestUpdateSession_ChatOwnerCanRenameAnySession(t *testing.T) {
+	svc, store := newSharedChatReadonlyService()
+	// The dialog tenant itself may manage every session of its chat.
+	store.dialogExists["tenant-owner|chat-1"] = true
+
+	_, code, err := svc.UpdateSession(t.Context(), "tenant-owner", "chat-1", "session-1", map[string]interface{}{"name": "renamed"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestDeleteSessions_SharedSessionReadonlyForTeammate(t *testing.T) {
+	svc, store := newSharedChatReadonlyService()
+
+	resp, msg, code, err := svc.DeleteSessions(t.Context(), "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"session-1"}})
+	if err == nil || !strings.Contains(err.Error(), "readonly") {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code=%v", code)
+	}
+	// The all-failed branch carries the detail in the error, not the message.
+	_ = msg
+	if _, stillThere := store.sessions["session-1"]; !stillThere {
+		t.Fatalf("shared session should not be deleted by a team member")
+	}
+	if resp != nil {
+		t.Fatalf("resp=%v, want nil", resp)
+	}
+}
+
+func TestDeleteSessionMessage_SharedSessionReadonlyForTeammate(t *testing.T) {
+	svc, _ := newSharedChatReadonlyService()
+
+	_, code, err := svc.DeleteSessionMessage(t.Context(), "user-1", "chat-1", "session-1", "msg-1")
+	if err == nil || err.Error() != "shared session is readonly" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestUpdateMessageFeedback_SharedSessionReadonlyForTeammate(t *testing.T) {
+	svc, _ := newSharedChatReadonlyService()
+
+	_, code, err := svc.UpdateMessageFeedback(t.Context(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{"thumbup": true})
+	if err == nil || err.Error() != "shared session is readonly" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestChatCompletions_SharedSessionReadonlyForTeammate(t *testing.T) {
+	svc, store := newSharedChatReadonlyService()
+	store.dialogs["chat-1"] = &entity.Chat{
+		ID:           "chat-1",
+		TenantID:     "tenant-owner",
+		LLMID:        "chat@factory",
+		LLMSetting:   entity.JSONMap{},
+		PromptConfig: entity.JSONMap{"parameters": []interface{}{}},
+	}
+
+	pipeline := &fakePipeline{resultChan: makeResultChan(AsyncChatResult{Answer: "ok", Final: true})}
+	svc.pipeline = pipeline
+
+	_, err := svc.ChatCompletions(
+		t.Context(),
+		"user-1",
+		"chat-1",
+		"session-1",
+		[]map[string]interface{}{{"role": "user", "content": "hi"}},
+		"", nil, "", nil, nil,
+		false, true, false, false, nil,
+	)
+	if err == nil {
+		t.Fatalf("expected readonly rejection")
+	}
+	coded := common.NewCodedError(0, "")
+	if !errors.As(err, &coded) || coded.Code != common.CodeAuthenticationError {
+		t.Fatalf("err=%v", err)
+	}
+	if len(store.updateCalled) != 0 {
+		t.Fatalf("update calls=%d, want 0", len(store.updateCalled))
 	}
 }

@@ -111,6 +111,21 @@ def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dic
         # -preview variants (e.g. qwen3.8-max-preview) only accept
         # enable_thinking=True on their API endpoint.
         conf["enable_thinking"] = True if "-preview" in model_name else False
+    elif any(k in model_name for k in ("minimax-m", "minimax_m", "minimax m", "abab", "minimax-m3", "minimax-m1")):
+        # MiniMax-M3/M1 controls thinking via `thinking: {"type": "disabled"}`
+        # in the request body. `thinking` is NOT a standard OpenAI-compatible
+        # param and LiteLLM's drop_params=True silently drops unknown top-level
+        # kwargs, so it MUST ride in extra_body (merged verbatim into the body).
+        # Without this, MiniMax reasoning models keep chain-of-thought enabled,
+        # which makes extraction slow and can hang a batch on a long COT. The
+        # rest of this file routes through the generic `else` below only when
+        # the model name gives no hint, so the broad `minimax` guard above is
+        # enough to cover every MiniMax model this repo is configured against.
+        extra_body = conf.get("extra_body")
+        extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+        extra_body["thinking"] = {"type": "disabled"}
+        conf["extra_body"] = extra_body
+        conf.pop("reasoning_effort", None)
     else:
         # LiteLLM maps this common control for providers that support it and
         # drops it for providers that do not. Keep model-specific overrides
@@ -198,30 +213,6 @@ def union_ordered(*lists: Optional[Iterable]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Token-budget calculation for split_chunks
-# ---------------------------------------------------------------------------
-
-
-def make_input_budget(
-    chat_mdl,
-    *prompts: str,
-    floor: int = 1024,
-    utilization: float = INPUT_UTILIZATION,
-) -> int:
-    """``chat_mdl.max_length * utilization - num_tokens(sum of prompts)``,
-    floored at ``floor``.
-
-    Mirrors the budget idiom used by ``compile_structure_from_text`` and
-    ``wiki_map_from_chunks``: caller passes the constant prompt scaffolding
-    (system prompt + user template) — ``split_chunks`` then sizes batches
-    to leave that much room.
-    """
-    overhead = num_tokens_from_string("".join(p or "" for p in prompts))
-    budget = int(chat_mdl.max_length * utilization) - overhead
-    return max(budget, floor)
-
-
-# ---------------------------------------------------------------------------
 # Defensive LLMBundle validation
 # ---------------------------------------------------------------------------
 
@@ -254,111 +245,6 @@ def ensure_llm_bundle(mdl, method: str, *, label: str = "model"):
         type(mdl).__name__,
     )
     return None
-
-
-# ---------------------------------------------------------------------------
-# ES I/O wrappers
-# ---------------------------------------------------------------------------
-
-
-async def doc_storage_search(
-    select_fields: list[str],
-    condition: dict,
-    *,
-    tenant_id: str,
-    kb_ids: list[str],
-    match_expressions: list | None = None,
-    offset: int = 0,
-    limit: int = 1000,
-    label: str = "doc_storage_search",
-) -> dict:
-    """Thin wrapper around ``docStoreConn.search`` + ``get_fields``.
-
-    Returns ``{row_id: row_dict}``. Returns ``{}`` on failure (with a
-    logged exception). ``label`` is included in the failure log so each
-    call site is identifiable.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            select_fields,
-            [],
-            condition,
-            match_expressions or [],
-            OrderByExpr(),
-            offset,
-            limit,
-            index,
-            kb_ids,
-        )
-        return settings.docStoreConn.get_fields(res, select_fields) or {}
-    except Exception:
-        logging.exception("%s failed (condition=%r)", label, condition)
-        return {}
-
-
-async def doc_storage_insert(
-    rows: list[dict],
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_insert",
-) -> None:
-    """Bulk insert wrapped in ``thread_pool_exec``. Logs on failure."""
-    if not rows:
-        return
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
-    except Exception:
-        logging.exception("%s failed (%d row(s))", label, len(rows))
-
-
-async def doc_storage_delete(
-    condition: dict,
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_delete",
-) -> None:
-    """Bulk delete wrapped in ``thread_pool_exec``. Best-effort; logs on
-    failure (some callers rely on id-based upsert as a fallback)."""
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    try:
-        await thread_pool_exec(settings.docStoreConn.delete, condition, index, kb_id)
-    except Exception:
-        logging.debug("%s failed (condition=%r); caller may rely on id-upsert", label, condition)
-
-
-async def doc_storage_upsert_one(
-    filter_condition: dict,
-    row: dict,
-    tenant_id: str,
-    kb_id: str,
-    *,
-    label: str = "doc_storage_upsert_one",
-) -> None:
-    """Delete-by-filter then insert. Used when an in-place update would
-    require knowing the existing row's id and we'd rather drop+re-create.
-
-    Best-effort delete (failures are debug-logged) followed by the insert.
-    Set ``row["id"]`` to a stable value derived from the filter
-    (:func:`stable_row_id`) so id-based dedup at the connector catches any
-    race that bypasses the delete.
-    """
-    await doc_storage_delete(filter_condition, tenant_id, kb_id, label=f"{label}.delete")
-    await doc_storage_insert([row], tenant_id, kb_id, label=f"{label}.insert")
 
 
 # ---------------------------------------------------------------------------
@@ -1022,12 +908,7 @@ __all__ = [
     "encode",
     "tokenize_for_search",
     "union_ordered",
-    "make_input_budget",
     "ensure_llm_bundle",
-    "doc_storage_search",
-    "doc_storage_insert",
-    "doc_storage_delete",
-    "doc_storage_upsert_one",
     "find_vec_field",
     # New engines
     "normalize_key",

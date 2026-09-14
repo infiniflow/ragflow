@@ -3,7 +3,9 @@
 package document
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -86,9 +88,11 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	}
 
 	// The enqueue actually landed on tasks.RAGFLOW.
-	handles, err := mq.GetMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := mq.PullMessages(pullCtx, 1)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message on tasks.RAGFLOW, got %d", len(handles))

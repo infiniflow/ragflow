@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -323,6 +324,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		s.taskCtx.Doc.ParserConfig,
 	)
 
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
+
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
@@ -424,20 +437,26 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-// markCompiledProductsHidden sets available_int=0 on the per-document compiled
-// knowledge products so they are hidden from the retriever until the dataset-level
-// post-processing consumer merges them into available_int=1 products (§11). A
-// chunk is a compiled product iff it carries the compile_kwd discriminator the
-// KnowledgeCompiler component stamps; ordinary source chunks (no compile_kwd)
-// keep the index default available_int=1 and remain immediately searchable.
-// Merged dataset-level products are written by the consumer, never here, so they are
-// never double-marked.
+// markCompiledProductsHidden stages wiki per-document page rows as
+// available_int=0. Only the wiki variant is hidden: its per-document page rows
+// are intermediate state for the consumer's merged pages (available_int=1) and
+// every wiki read path selects merged rows only.
+//
+// Tree / structure (page_index) / mindmap rows are the FINAL per-document
+// products — Python writes them visible at compile time
+// (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
+// claim recall / hybrid retrieval filter on available_int=1, so they stay
+// searchable here too. Merged dataset-level products are written by the
+// consumer, never here, so they are never double-marked.
 func markCompiledProductsHidden(chunks []map[string]any) {
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; !ok {
+		kwd := asCompiledKwd(ck)
+		if kwd == "" {
 			continue
 		}
-		ck["available_int"] = 0
+		if v, err := knowledge_compile.KwdToVariant(kwd); err == nil && v == kccommon.VariantWiki {
+			ck["available_int"] = 0
+		}
 	}
 }
 
@@ -523,18 +542,19 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	return nil
 }
 
-// applyDocumentAvailability stamps ordinary source chunks with available_int=0
-// when Document.status is "0" (disabled). Disabling before any chunks exist only
-// updates MySQL; without this, later parsing would still write searchable
-// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+// applyDocumentAvailability stamps every chunk — ordinary source chunks and
+// compiled products alike — with available_int=0 when Document.status is "0"
+// (disabled). Disabling before any chunks exist only updates MySQL; without
+// this, later parsing would still write searchable available_int=1 rows.
+// Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
+// so the stamp is a no-op for them; tree / structure rows become hidden
+// together with their document, matching Python's doc_id-scoped availability
+// toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
 		return
 	}
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; ok {
-			continue
-		}
 		ck["available_int"] = 0
 	}
 }

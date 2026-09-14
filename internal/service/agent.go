@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
 	"reflect"
@@ -2021,9 +2022,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
-		state.Sys["query"] = userInput
-		state.AppendCurrentUser(userInput)
-		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
+		query := agentRunQuery(userInput)
+		state.Sys["query"] = query
+		state.AppendCurrentUser(query)
+		state.AppendSysHistory("user: " + renderUserHistoryValue(query))
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
@@ -2127,11 +2129,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// previously-paused branch would be silently dropped (the
 		// "second input doesn't resume" symptom reported for
 		// categorize / iteration / code / wait_input etc.).
-		wfInput := userInput
+		wfInput := agentWorkflowInput(userInput)
 		if isResume && resumeID != "" {
-			wfInput = ""
+			wfInput = map[string]any{"query": ""}
 		}
-		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, map[string]any{"query": wfInput}, invokeOpts...)
+		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, wfInput, invokeOpts...)
 		err = invokeErr
 		if errors.Is(err, context.Canceled) || errors.Is(ctx2.Err(), context.Canceled) {
 			// A user stop or client disconnect must not be turned into a
@@ -2447,7 +2449,7 @@ func (s *AgentService) persistAgentRunSession(
 	}
 	messages := parseAgentSessionMessages(session.Message)
 	now := time.Now().Unix()
-	if text := stringifyAgentUserInput(userInput); text != "" {
+	if text := stringifyAgentUserInput(agentRunQuery(userInput)); text != "" {
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
 	if appendAssistantMessage {
@@ -2500,6 +2502,11 @@ func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) en
 			}
 		}
 	}
+	for key, value := range globalValues {
+		if strings.HasPrefix(key, "begin@") {
+			globals[key] = value
+		}
+	}
 	for _, key := range []string{"query", "user_id", "conversation_turns", "files", "history", "date"} {
 		if value, exists := sysValues[key]; exists {
 			globals["sys."+key] = value
@@ -2540,6 +2547,20 @@ func stringifyAgentUserInput(userInput any) string {
 		}
 		return fmt.Sprint(v)
 	}
+}
+
+func agentRunQuery(userInput any) any {
+	if values, ok := userInput.(map[string]any); ok {
+		return values["query"]
+	}
+	return userInput
+}
+
+func agentWorkflowInput(userInput any) map[string]any {
+	if values, ok := userInput.(map[string]any); ok {
+		return maps.Clone(values)
+	}
+	return map[string]any{"query": userInput}
 }
 
 func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
