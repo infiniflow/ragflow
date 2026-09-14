@@ -353,8 +353,11 @@ async def ask_about_embedded(tenant_id=None):
 @validate_request("kb_id", "question")
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
-    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
-    size = validate_rest_api_page_size(req.get("page_size", req.get("size", DEFAULT_PAGE_SIZE)))
+    try:
+        page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+        size = validate_rest_api_page_size(req.get("page_size", req.get("size", DEFAULT_PAGE_SIZE)))
+    except ValueError as e:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     question = req["question"]
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
