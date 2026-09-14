@@ -256,9 +256,14 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
+        pause_before_next_batch = False
         async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
+
+            if pause_before_next_batch:
+                await asyncio.sleep(SYNC_BATCH_PAUSE_SECONDS)
+            pause_before_next_batch = True
 
             saw_documents = True
             max_update = max(doc.doc_updated_at for doc in document_batch)
@@ -282,8 +287,9 @@ class SyncBase:
                     d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
+            cancel_event = threading.Event()
             try:
-                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update)
+                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update, cancel_event)
                 if err:
                     had_parse_errors = True
                 changed_doc_ids = set(dids)
@@ -293,6 +299,9 @@ class SyncBase:
                 updated_docs += updated_in_batch
                 existing_doc_ids.update(changed_doc_ids)
 
+            except asyncio.CancelledError:
+                cancel_event.set()
+                raise
             except Exception as batch_ex:
                 msg = str(batch_ex)
                 code = getattr(batch_ex, "args", [None])[0]
@@ -305,9 +314,6 @@ class SyncBase:
                 if self.RAISE_ON_BATCH_ERROR:
                     raise
                 failed_docs += len(docs)
-            finally:
-                # 0 still yields the event loop so file/API requests can use MySQL between batches.
-                await asyncio.sleep(SYNC_BATCH_PAUSE_SECONDS)
 
         if not saw_documents:
             next_update = self._get_empty_sync_cursor(task, next_update)
@@ -367,14 +373,20 @@ class SyncBase:
     async def _generate(self, task: dict):
         raise NotImplementedError
 
-    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime):
+    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime, cancel_event: threading.Event | None = None):
         """Write one connector batch (MinIO + document rows) off the event loop.
 
         Knowledgebase lookup and parse stay on the same worker thread so Peewee
-        objects are not shared across threads.
+        objects are not shared across threads. ``cancel_event`` is set when the
+        awaiting coroutine is cancelled; the worker then skips progress/cursor
+        updates. In-flight uploads cannot be force-stopped.
         """
+        if cancel_event is not None and cancel_event.is_set():
+            return [], []
         _e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
         err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+        if cancel_event is not None and cancel_event.is_set():
+            return err, dids
         if err and self.RAISE_ON_BATCH_ERROR:
             raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
         SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
@@ -2210,8 +2222,7 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
 
         self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+        await asyncio.to_thread(self._prepare_rdbms_connector, task)
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
@@ -2231,12 +2242,15 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             _begin_info = f"from {poll_start}"
 
         self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        # Validation/prepare may have opened a DB connection on this thread.
-        # Close it so the producer thread creates its own connection.
+        return iter_in_worker_thread(document_generator)
+
+    def _prepare_rdbms_connector(self, task: dict) -> None:
+        """Validate and snapshot cursor state off the event loop, then drop the setup connection."""
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
         close_connection = getattr(self.connector, "_close_connection", None)
         if close_connection is not None:
             close_connection()
-        return iter_in_worker_thread(document_generator)
 
 
 class MySQL(_RDBMSBase):

@@ -118,6 +118,7 @@ async def create_folder(tenant_id: str, name: str, pf_id: str | None = None, fil
 
 
 def _create_folder_sync(tenant_id: str, name: str, pf_id: str | None, file_type: str | None):
+    """Insert a folder or virtual file; intended to run off the Quart event loop."""
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
