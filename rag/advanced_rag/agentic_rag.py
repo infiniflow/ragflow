@@ -667,6 +667,7 @@ class RAGTools:
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
             rerank_candidates_count=rerank_candidates_count,
+            allow_dense_fallback=False,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}

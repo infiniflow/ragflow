@@ -294,11 +294,32 @@ async def test_dense_fallback_uses_pristine_expression(dealer_cls):
 
 @pytest.mark.asyncio
 async def test_no_lexical_expression_stays_single_dense_search(dealer_cls):
-    calls = await run_retry_search(dealer_cls, [0], queryer=types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, [])))
+    calls = await run_retry_search(dealer_cls, [0, 0], queryer=types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, [])))
 
-    assert len(calls) == 1
-    assert len(calls[0][0][3]) == 1
-    assert isinstance(calls[0][0][3][0], MatchDenseExpr)
+    assert len(calls) == 2
+    assert len(calls[-1][0][3]) == 1
+    assert isinstance(calls[-1][0][3][0], MatchDenseExpr)
+    assert calls[-1][0][3][0].extra_options["similarity"] == 0.17
+
+
+@pytest.mark.asyncio
+async def test_dense_only_fallback_can_be_disabled(dealer_cls):
+    dealer = make_dealer(dealer_cls)
+    dealer.qryr = types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, []))
+    dealer.dataStore = RetryStore([0])
+
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
+
+    dealer.get_vector = fake_get_vector
+    await dealer.search(
+        {"question": "query", "page": 1, "size": 5, "kb_ids": ["kb1"], "allow_dense_fallback": False},
+        "ragflow_tenant",
+        ["kb1"],
+        emb_mdl=object(),
+    )
+
+    assert len(dealer.dataStore.calls) == 1
 
 
 @pytest.mark.asyncio
