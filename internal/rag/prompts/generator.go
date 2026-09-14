@@ -116,14 +116,14 @@ var DefaultCiteRules = CitationPrompt("")
 const citationIDSuffix = "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
 
 // CitationPrompt mirrors Python rag/prompts/generator.citation_prompt: return
-// the citation-rules text the final answer must follow. With an empty
-// userDefined it returns the embedded citation_prompt.md plus the illustrative
-// IDs caveat; a non-empty userDefined (the rendered user_defined_prompts)
-// replaces it verbatim, exactly as Python returns
-// citation_prompt(self.user_defined_prompts).
+// the citation-rules text the final answer must follow. The user-defined
+// override (citation_guidelines) REPLACES the template but Python still
+// appends the illustrative-IDs caveat to it (generator.py:227-228 — the
+// suffix is concatenated after whatever template rendered), so the same
+// caveat is appended here in both cases.
 func CitationPrompt(userDefined string) string {
 	if strings.TrimSpace(userDefined) != "" {
-		return userDefined
+		return userDefined + citationIDSuffix
 	}
 	data, err := templatesFS.ReadFile("citation_prompt.md")
 	if err != nil {

@@ -20,12 +20,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"sort"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/service/nav"
+)
+
+// Content-recall fallback tunables, mirroring Python _content_recall_docs
+// (navigation.py:387-394, :539, :547-549).
+const (
+	// datasetNavRecallTopN is _NAV_RECALL_TOP_N: chunk candidates fetched
+	// before doc aggregation.
+	datasetNavRecallTopN = 40
+	// datasetNavRecallMinScore is the literal similarity_threshold Python
+	// passes (:548).
+	datasetNavRecallMinScore = 0.2
+	// datasetNavRecallVectorWeight is the hybrid vector blend Python hardcodes
+	// when an embedder exists (:539): `vector_weight = 0.3 if embd_mdl else 0`.
+	datasetNavRecallVectorWeight = 0.3
 )
 
 // datasetNavigationToolName mirrors Python's dataset_navigation_by_tree router
@@ -194,10 +211,60 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 		}
 	}
 
-	// Fallback: if semantic routing found nothing (e.g. no embedder), walk the
-	// root clusters so the tool still returns a useful (if coarse) doc set. The
-	// scope still applies — collect() filters these leaves, standing in for
-	// Python's _content_recall_docs(tools, query, doc_scope).
+	// Fallback 1 — content recall (Python _content_recall_docs,
+	// navigation.py:514-565, the miss-tier of dataset_navigation_by_tree): when
+	// no compiled tree routed — the nav rows do not exist or matched nothing —
+	// recall documents by chunk CONTENT. A plain hybrid retrieval runs over the
+	// datasets' chunk index and the hits aggregate to docs most-hit-first: a
+	// question matching detail that only lives in a document BODY never appears
+	// in the tree, so the retrieval that reads real chunk text is what catches
+	// it. The caller's doc scope is forwarded as DocScope (Python forwards it
+	// as doc_ids to the retrieval), and collect()'s inScope still applies.
+	if len(docs) == 0 {
+		threshold := datasetNavRecallMinScore
+		w := datasetNavRecallVectorWeight
+		chunks, err := GetRetrievalService().Search(ctx, dao.DB, RetrievalRequest{
+			Query:                  query,
+			DatasetIDs:             datasetIDs,
+			TopN:                   datasetNavRecallTopN,
+			SimilarityThreshold:    &threshold,
+			VectorSimilarityWeight: &w,
+			TenantID:               tenantID,
+			DocScope:               docScope,
+			RetrievalFrom:          "dataset",
+		})
+		if err != nil {
+			log.Printf("[Dataset navigation] content-recall retrieval failed: %v", err)
+		} else {
+			// Python :557-563 — the retrieval's doc_aggs read in order; the ES
+			// aggregation orders by hit count descending, so the same order is
+			// derived from the flat chunk hits here.
+			order := []string{}
+			counts := map[string]int{}
+			for _, c := range chunks {
+				did := strings.TrimSpace(c.DocumentID)
+				if did == "" {
+					continue
+				}
+				if _, ok := counts[did]; !ok {
+					order = append(order, did)
+				}
+				counts[did]++
+			}
+			sort.SliceStable(order, func(i, j int) bool { return counts[order[i]] > counts[order[j]] })
+			log.Printf("[Dataset navigation] Content recall found %d candidate doc(s).", len(order))
+			for _, did := range order {
+				collect(did)
+			}
+		}
+	}
+
+	// Fallback 2 — Go-only last resort: if even content recall found nothing
+	// (e.g. no retrieval service wired), walk the root clusters so the tool
+	// still returns a useful (if coarse) doc set. Python has no such tier — its
+	// walk ends at content recall — and this one applies no relevance signal
+	// beyond cluster order, so it must stay BEHIND the recall tier. The scope
+	// still applies — collect() filters these leaves.
 	if len(docs) == 0 {
 		for _, datasetID := range datasetIDs {
 			clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 100)

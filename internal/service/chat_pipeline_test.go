@@ -1569,7 +1569,7 @@ func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks))
+	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "")
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
@@ -1611,7 +1611,7 @@ func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	joined := strings.Join(got, "")
@@ -1631,7 +1631,7 @@ func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
+	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {

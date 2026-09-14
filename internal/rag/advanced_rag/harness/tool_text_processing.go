@@ -168,12 +168,6 @@ func containedInPhrase(low string, phrases map[string]struct{}) bool {
 	return false
 }
 
-// stemSuffixes mirrors Python _STEM_SUFFIXES (longest-first; first match wins).
-var stemSuffixes = [][2]string{
-	{"ations", ""}, {"ation", ""}, {"ated", ""}, {"ates", ""}, {"ate", ""},
-	{"ings", ""}, {"ing", ""}, {"ies", "i"}, {"ied", "i"}, {"ed", ""}, {"es", ""}, {"s", ""},
-}
-
 func isAlphaOnly(s string) bool {
 	for _, r := range s {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
@@ -186,41 +180,13 @@ func isAlphaOnly(s string) bool {
 // stemmable mirrors Python _stemmable: len>=4 and purely ASCII letters.
 func stemmable(token string) bool { return len(token) >= 4 && isAlphaOnly(token) }
 
-func isVowelRune(r rune) bool {
-	switch r {
-	case 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U':
-		return true
-	}
-	return false
-}
-
-// fallbackStem mirrors Python _fallback_stem.
-func fallbackStem(word string) string {
-	w := word
-	for _, suf := range stemSuffixes {
-		s, rep := suf[0], suf[1]
-		if strings.HasSuffix(w, s) && len(w)-len(s) >= 3 {
-			w = w[:len(w)-len(s)] + rep
-			break
-		}
-	}
-	if len(w) > 3 && strings.HasSuffix(w, "y") {
-		w = w[:len(w)-1] + "i"
-	}
-	if len(w) > 3 && strings.HasSuffix(w, "e") {
-		w = w[:len(w)-1]
-	}
-	if len(w) > 3 {
-		rb := []rune(w)
-		if rb[len(rb)-1] == rb[len(rb)-2] && !isVowelRune(rb[len(rb)-1]) {
-			w = string(rb[:len(rb)-1])
-		}
-	}
-	return w
-}
-
-// stem is Python _stem: nltk PorterStemmer when available, else fallbackStem.
-func stem(word string) string { return fallbackStem(word) }
+// stem is Python _stem: nltk's PorterStemmer (text_processing.py:218-222
+// uses it whenever nltk is importable, which production guarantees via
+// rag/nlp/synonym.py). porterStem is a faithful port of that exact
+// implementation (NLTK_EXTENSIONS mode), so Go matches Python's stems
+// word-for-word. The old suffix-stripping fallback is gone: it diverged from
+// nltk on exactly the words that matter for keyword narrowing.
+func stem(word string) string { return porterStem(word) }
 
 // keywordForms mirrors Python _keyword_forms: verbatim keeps forms containing
 // any non-stemmable token (matched by substring); stemmed holds all-ASCII-letter

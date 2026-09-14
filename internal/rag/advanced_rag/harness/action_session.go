@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/RealAlexandreAI/json-repair"
 	"github.com/cloudwego/eino/compose"
@@ -960,10 +961,12 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "search_chunks",
-			Description: `WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries.` +
+			Description: `WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). ` +
 				`DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve.` +
-				`ARGUMENTS: query — array of 1-2 strings. Compiled-structure expansion is automatic and a no-op on datasets without compiled structure, so no extra argument is needed.` +
-				`OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours (parent/child headings, sibling pages) appended. ok = new evidence; redundant = already seen.` +
+				`ARGUMENTS: query — array of 1-2 strings.` +
+				`OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours appended. ` +
+				`Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. ` +
+				`ok = new evidence; redundant = already seen.` +
 				`IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it.`,
 			Parameters: arrayParam("", 1, 2),
 		},
@@ -1017,7 +1020,8 @@ var (
 			Description: `WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree.` +
 				`DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document).` +
 				`ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind).` +
-				`OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable.` +
+				`OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. [claim] lines carry VERBATIM quotes from the document — cite them and answer WITHOUT calling list_chunks when they directly answer the query (deep-read the claimed chunk ids only for surrounding context or numbers the quotes lack). ` +
+				`ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable.` +
 				`IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session.`,
 			Parameters: map[string]any{
 				"type": "object",
@@ -1288,10 +1292,10 @@ func ReasonStatus(reason string) string {
 //
 // ONE structural difference, isolated to one seam: Python calls the provider's native
 // tool-calling API (`tools=[...]`, `tool_choice="auto"`) and parses
-// `message.tool_calls`; the Go chat seam (internal/agent/chat) has no tools field, so
-// invocation goes through the SessionModel interface, whose default implementation asks
-// the model to emit the call as a JSON block and parses it back. Downstream session
-// logic is identical either way.
+// `message.tool_calls`; the Go chat seam exposes the same capability
+// (chat.Request.Tools / Response.ToolCalls), and the SessionModel implementation
+// (InvokerSessionModel) forwards the harness ToolSpec surface through it. There is
+// no prompt-based fallback: downstream session logic is identical either way.
 
 const (
 	// initTimeoutS bounds the slot-table decomposition call.
@@ -1348,6 +1352,34 @@ func searchTokens(q string) map[string]struct{} {
 	return out
 }
 
+// argQueryString mirrors Python `str(args.get("query") or "").strip()`
+// (action_session.py:1430): a string passes through, a nil/empty value yields
+// "", and any other value — typically the []any query list retrieve accepts —
+// is stringified so it still participates in near-dup detection and the
+// seen_queries ledger.
+func argQueryString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		if t == "" {
+			return ""
+		}
+		return strings.TrimSpace(t)
+	case []any:
+		if len(t) == 0 {
+			return ""
+		}
+		parts := make([]string, 0, len(t))
+		for _, e := range t {
+			parts = append(parts, fmt.Sprintf("%v", e))
+		}
+		return strings.TrimSpace("[" + strings.Join(parts, ", ") + "]")
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", t))
+	}
+}
+
 // IsNearDup mirrors Python _is_near_dup: true when q shares >=
 // nearDupJaccard of its tokens with any query in seen.
 func IsNearDup(q string, seen []string) bool {
@@ -1382,6 +1414,11 @@ func IsNearDup(q string, seen []string) bool {
 // ---------------------------------------------------------------------------
 // The model seam
 // ---------------------------------------------------------------------------
+
+// The production carrier always supports per-call temperatures: the pinned
+// Python temperatures (keywords 0.1 / structure_qa 0.2 / compute 0.0) must
+// never silently fall back to a model default.
+var _ TemperatureModel = (*InvokerSessionModel)(nil)
 
 // CompleteWithTemperature implements TemperatureModel.
 func (m *InvokerSessionModel) CompleteWithTemperature(ctx context.Context, messages []schema.Message, tools []ToolSpec, temp float64) (*ModelReply, error) {
@@ -1823,8 +1860,12 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 		// Near-duplicate retrieval suppression: if the model re-issues the same
 		// intent as an earlier search (paraphrase), do NOT re-run the index —
 		// return a nudge so it patches / reframes instead of burning turns.
-		q, _ := c.Args["query"].(string)
-		q = strings.TrimSpace(q)
+		// Python :1430 — q = str(args.get("query") or "").strip(): the query may
+		// be a LIST (retrieve takes up to 3), and its string form still counts
+		// for near-dup detection and the seen_queries ledger. A type assertion
+		// here degrades every array query to "" — seen_queries stays empty, and
+		// the skipped-dup convergence can never trigger.
+		q := argQueryString(c.Args["query"])
 		if retrievalTools[c.Name] && q != "" && IsNearDup(q, seenQueries) {
 			skipped++
 			_LOG.Printf("[Action Session] skipping near-duplicate retrieval %q (already searched)", trunc(q, 80))
@@ -1892,14 +1933,17 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 
 		payload := marshalPassages(chunks)
 		// If the session is already heavy, cut this payload proportionally.
-		if used+len(payload) > budgetChars {
+		// Python :1509-1514 counts len() of a str — CODE POINTS, not bytes — so
+		// the budget and the cut must be rune-based too; a byte cap would hit
+		// CJK payloads ~3x early and shrink the evidence the model sees.
+		if used+utf8.RuneCountInString(payload) > budgetChars {
 			keep := budgetChars - used
 			if keep < 800 {
 				keep = 800
 			}
-			payload = payload[:min(len(payload), keep)]
+			payload = truncateRunes(payload, keep)
 		}
-		used += len(payload)
+		used += utf8.RuneCountInString(payload)
 		s.Messages = appendMessages(s.Messages, *schema.ToolMessage(payload, c.ID))
 
 		// Ladder continuation (Python action_session.py:_tool_node): when the
@@ -1940,7 +1984,8 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 					pendingRule = ex.PendingRule
 					for _, m := range ex.Messages {
 						if m.Role == schema.Tool {
-							used += len(m.Content)
+							// Python :1556 counts len() of a str — code points.
+							used += utf8.RuneCountInString(m.Content)
 						}
 						s.Messages = appendMessages(s.Messages, m)
 					}
@@ -2313,9 +2358,19 @@ func ParseTerminal(content string, parent State) ([]State, *string, *string, map
 		if data == nil {
 			data = map[string]any{}
 		}
+		// Python _parse_terminal:1282 — `answer = str(data.get("answer",
+		// "")).strip() or None`: an empty/whitespace answer is NOT a found
+		// answer. Returning a non-nil empty string here terminated the session
+		// with FoundAnswer="" — the slot research pass then reported
+		// collected_answer=false for a session that never answered, and the
+		// model never got the chance to re-emit a proper patch/answer.
 		ans := ""
 		if raw, ok := data["answer"]; ok && raw != nil {
-			ans = fmt.Sprint(raw)
+			ans = strings.TrimSpace(fmt.Sprint(raw))
+		}
+		var found *string
+		if ans != "" {
+			found = &ans
 		}
 		patches := toPatchList(data["new_state"])
 		var branches []State
@@ -2323,7 +2378,7 @@ func ParseTerminal(content string, parent State) ([]State, *string, *string, map
 			branches = append(branches, *ns)
 		}
 		tt := "answer"
-		return branches, &ans, &tt, data
+		return branches, found, &tt, data
 	}
 	return nil, nil, nil, nil
 }
@@ -2550,14 +2605,16 @@ var NavRules = []NavRule{
 		Mode: ModeAuto,
 		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
 		// Tree missed => no routed hints to merge against; the only useful step
-		// is an unscoped search.
+		// is an unscoped search. Python :1895 — {OK, MISS, EMPTY, POOR, ERROR};
+		// REDUNDANT is deliberately absent: a redundant locate changed nothing,
+		// and widening it to global would re-run the same corpus search that
+		// produced the duplicates.
 		Next: map[string]string{
-			StatusOK:        "drill",
-			StatusMiss:      "global",
-			StatusEmpty:     "global",
-			StatusPoor:      "global",
-			StatusError:     "global",
-			StatusRedundant: "global",
+			StatusOK:    "drill",
+			StatusMiss:  "global",
+			StatusEmpty: "global",
+			StatusPoor:  "global",
+			StatusError: "global",
 		},
 	},
 	{
@@ -2568,12 +2625,12 @@ var NavRules = []NavRule{
 		Args: func(nav *NavContext) map[string]any { return map[string]any{"query": nav.Direction} },
 		// drill returns OK with the merged, re-ranked evidence; only an empty
 		// whole-corpus result (MISS) or an infra failure falls through to global.
+		// Python :1905 — {OK, MISS, EMPTY, ERROR}; no POOR and no REDUNDANT.
 		Next: map[string]string{
-			StatusOK:        "",
-			StatusMiss:      "global",
-			StatusEmpty:     "global",
-			StatusError:     "global",
-			StatusRedundant: "global",
+			StatusOK:    "",
+			StatusMiss:  "global",
+			StatusEmpty: "global",
+			StatusError: "global",
 		},
 	},
 	{
@@ -2868,8 +2925,11 @@ func (e *NavExchange) consumeExchange(ruleID, tool string, args map[string]any, 
 		rawArgs = []byte("{}")
 	}
 	payload := marshalPassages(oc.Payload)
-	if maxChars > 0 && len(payload) > maxChars {
-		payload = payload[:max(maxChars, 800)]
+	// Python :1948 slices a str — CODE POINTS, not bytes — so the cap must be
+	// rune-based too; a byte cut would hit CJK payloads ~3x early AND could
+	// split a UTF-8 sequence, corrupting the JSON tool response.
+	if maxChars > 0 && utf8.RuneCountInString(payload) > maxChars {
+		payload = truncateRunes(payload, max(maxChars, 800))
 	}
 	e.Messages = append(e.Messages,
 		*schema.AssistantMessage("", []schema.ToolCall{{
@@ -3174,10 +3234,12 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 	system := loadPrompt(deps.Prompts, "action_initialize_state")
 	user := "Question: " + question
 	if len(fanoutHint) > 0 {
-		user += "\n\nCandidate aspects already identified:\n"
+		lines := make([]string, 0, len(fanoutHint))
 		for _, h := range fanoutHint {
-			user += "- " + h + "\n"
+			lines = append(lines, "- "+h)
 		}
+		// Python :2225 — "\n".join(...), so the block has NO trailing newline.
+		user += "\n\nCandidate aspects already identified:\n" + strings.Join(lines, "\n")
 	}
 	// Python :2106 — `min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)`:
 	// 0 means "unset" (falls back to the full budget) while a NEGATIVE deadline —
@@ -3393,10 +3455,10 @@ type ContextLengthModel interface {
 
 // SessionModel is ONE model turn with THIS mode's tool surface.
 //
-// Python calls this via _llm_once_with_tools → _acompletion. The Go chat seam
-// has no native tools field, so the default implementation (see
-// InvokerSessionModel) asks for the call as a JSON block. Swap in a native
-// implementation when the chat seam grows a tools field.
+// Python calls this via _llm_once_with_tools → _acompletion. The production
+// implementation (InvokerSessionModel) binds the tool schemas natively through
+// the chat seam (chat.Request.Tools + ToolChoiceAuto) and reads the calls back
+// from Response.ToolCalls — the same protocol Python uses.
 type SessionModel interface {
 	Complete(ctx context.Context, messages []schema.Message, tools []ToolSpec) (*ModelReply, error)
 }
@@ -3526,11 +3588,10 @@ func extractRelevantEvidence(kb *Kbinfos, direction string, maxChunks int) strin
 		if content == "" {
 			continue
 		}
-		// Mirror Python: hard-cut at 300 (no ellipsis) and flatten newlines so
-		// the digest stays single-line per chunk and matches Python output.
-		if len(content) > 300 {
-			content = content[:300]
-		}
+		// Mirror Python: hard-cut at 300 CODE POINTS (:2082 `[:300]`, no
+		// ellipsis) and flatten newlines so the digest stays single-line per
+		// chunk and matches Python output.
+		content = truncateRunes(content, 300)
 		content = strings.ReplaceAll(content, "\n", " ")
 		// Mirror Python f"[{cid}] {text}" so the model can cite the chunk id.
 		b.WriteString("[")

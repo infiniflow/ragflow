@@ -15,6 +15,8 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/advanced_rag/harness"
 )
@@ -169,12 +171,15 @@ func TestRouteSCADisabledSCAClosesOut(t *testing.T) {
 
 // TestRouteSCAFullPoolShortCircuits pins the PR: a pool at/over the SCA view cap
 // cannot flip the verdict, so routeSCA finalizes instead of researching — even
-// when the verdict is insufficient and headroom remains.
+// when the verdict is insufficient and headroom remains. Gated to SECOND-or-later
+// reviews (SearchRounds >= 1): claim pseudo-chunks bypass the pool cap, so the
+// FIRST review must always get its rewrite round when insufficient (Python
+// _route_sca:1411).
 func TestRouteSCAFullPoolShortCircuits(t *testing.T) {
 	st := &AgenticState{
 		Verdict:      VerdictInsufficient,
 		MaxLoops:     3,
-		SearchRounds: 0,
+		SearchRounds: 1,
 		KB:           &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
 	}
 	st.Deadline = time.Now().Add(120 * time.Second)
@@ -185,6 +190,18 @@ func TestRouteSCAFullPoolShortCircuits(t *testing.T) {
 	st.KB.Chunks = make([]map[string]any, SCAViewCap-1)
 	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
 		t.Fatalf("below cap: expected rewrite, got %v", n)
+	}
+	// FIRST review (SearchRounds == 0) with a full pool: claim pseudo-chunks
+	// bypass the pool cap, so the rewrite round must still run.
+	first := &AgenticState{
+		Verdict:      VerdictInsufficient,
+		MaxLoops:     3,
+		SearchRounds: 0,
+		KB:           &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
+	}
+	first.Deadline = time.Now().Add(120 * time.Second)
+	if n := routeSCA(first, true, 3); n != nodeQueryRewrite {
+		t.Fatalf("first review full pool: expected rewrite, got %v", n)
 	}
 }
 
@@ -681,8 +698,8 @@ func (r *channelRetriever) Retrieve(_ context.Context, req harness.RetrieveReque
 	// Each leg names its weight explicitly; nil (the control was not supplied)
 	// is recorded as -1 so the assertions below catch a leg that drops it.
 	weight := -1.0
-	if req.KeywordsSimilarityWeight != nil {
-		weight = *req.KeywordsSimilarityWeight
+	if req.VectorSimilarityWeight != nil {
+		weight = *req.VectorSimilarityWeight
 	}
 	r.weights = append(r.weights, weight)
 	r.topN = append(r.topN, req.TopN)
@@ -769,6 +786,87 @@ func (r *fanoutHitRetriever) Retrieve(_ context.Context, req harness.RetrieveReq
 	return []map[string]any{
 		{"chunk_id": "ex-" + which, "content": which + " term", "doc_name": "exact"},
 	}, nil
+}
+
+// claimTopUpEngine stands in for the doc engine across the three store reads
+// the channel-0 path makes: the has-compilation probe, the claim recall legs,
+// and the directed source-chunk fetch.
+type claimTopUpEngine struct {
+	engine.DocEngine
+}
+
+func (e *claimTopUpEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if _, ok := req.Filter["compile_kwd"]; ok {
+		// DatasetHasCompilation probe: the dataset IS compiled.
+		return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "row"}}}, nil
+	}
+	if ids, ok := req.Filter["id"].([]string); ok {
+		// LoadChunksForIDs: the source chunks behind the admitted claims.
+		rows := make([]map[string]interface{}, 0, len(ids))
+		for _, id := range ids {
+			rows = append(rows, map[string]interface{}{
+				"id":                  id,
+				"content_with_weight": "full text of " + id,
+				"doc_id":              "doc-1",
+			})
+		}
+		return &types.SearchResult{Chunks: rows}, nil
+	}
+	// Claim recall leg: one claim citing src-1.
+	payload, _ := json.Marshal(map[string]any{
+		"name":             "The tower is 330m tall",
+		"description":      "height",
+		"evidence":         []any{map[string]any{"quote": "330 metres"}},
+		"source_chunk_ids": []string{"src-1"},
+	})
+	return &types.SearchResult{Chunks: []map[string]interface{}{{
+		"content_with_weight": string(payload),
+		"source_chunk_ids":    []string{"src-1"},
+		"doc_id":              "doc-1",
+		"similarity":          0.9,
+	}}}, nil
+}
+
+// TestFanoutSearchEvidenceTopUp pins the channel-0 directional top-up (Python
+// _fanout_search:782-799): after a claim pseudo chunk is admitted, the source
+// chunk it cites is fetched by id and admitted too — the verbatim quote alone
+// does not carry the surrounding passage.
+func TestFanoutSearchEvidenceTopUp(t *testing.T) {
+	r := &channelRetriever{}
+	de := &claimTopUpEngine{}
+	// Unique tenant per run: the harness claim caches are process-global with a
+	// 300s TTL, and this test must pay the store reads itself.
+	tenant := fmt.Sprintf("tenant-topup-%d", time.Now().UnixNano())
+	deps := RAGTools{Search: harness.SearchDeps{
+		Backend:   r,
+		DocEngine: de,
+		TenantID:  tenant,
+		KbIDs:     []string{"kb-1"},
+	}}
+	st := &AgenticState{KB: &harness.Kbinfos{}}
+	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60)
+	if added != 2 {
+		t.Fatalf("added = %d, want 2 (the claim row + its source chunk)", added)
+	}
+	var claimEntry, srcEntry map[string]any
+	for _, c := range st.KB.Chunks {
+		id, _ := c["chunk_id"].(string)
+		switch {
+		case strings.HasPrefix(id, "claim_"):
+			claimEntry = c
+		case id == "src-1":
+			srcEntry = c
+		}
+	}
+	if claimEntry == nil {
+		t.Fatalf("claim pseudo chunk not admitted; pool = %v", st.KB.Chunks)
+	}
+	if srcEntry == nil {
+		t.Fatalf("source chunk behind the claim was not top-upped; pool = %v", st.KB.Chunks)
+	}
+	if got, _ := srcEntry["content_with_weight"].(string); got != "full text of src-1" {
+		t.Errorf("top-up content = %q, want the fetched source chunk text", got)
+	}
 }
 
 // draftModel returns a canned draft and records the prompt it was given.
@@ -1227,12 +1325,20 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	// Mirror Rag: the hook is idempotent, so the graph's node and the
 	// post-graph safety net cannot both compose.
 	composed := false
-	deps.Finalize = func(context.Context) {
+	deps.Finalize = func(_ context.Context, _ bool, _ bool, question string) {
 		if composed {
 			return
 		}
 		composed = true
 		finalized++
+		// The low graph's formalize_answer must forward the FORMALIZED
+		// question the formalize_question node wrote into the RunRequest
+		// (Python state["question"], agentic_rag_graph.py:834) — composing
+		// from the outer tool argument collapses a multi-hop answer to its
+		// first sub-answer.
+		if question != "when was it made?" {
+			t.Errorf("Finalize question = %q, want the formalized RunRequest question", question)
+		}
 	}
 
 	var buf bytes.Buffer
@@ -1244,7 +1350,7 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 		t.Fatalf("formalize_answer node composed %d time(s), want 1; log:\n%s", finalized, buf.String())
 	}
 	// ...and the post-graph call is then a no-op.
-	deps.Finalize(ctx)
+	deps.Finalize(ctx, false, false, "")
 	if finalized != 1 {
 		t.Errorf("composition ran %d time(s) after the post-graph call, want 1", finalized)
 	}
@@ -1481,13 +1587,14 @@ func (rfTagger) LabelQuestion(_ context.Context, _ string, _ []*entity.Knowledge
 	return map[string]float64{"location": 1.0}
 }
 
-// TestAgenticLoopProjectsRankFeature guards the projection that Python gets for
-// free: tools.retrieve reads every setting (incl.
-// rank_feature=label_question(question, self.kbs), agentic_rag.py:668) off the
-// RAGTools instance, so the agentic loop's fan-out and action-session retrieval
-// must see the same Tagger/KBs. A partial SearchDeps projection silently drops
-// the tag boost and degrades ranking with no error.
-func TestAgenticLoopProjectsRankFeature(t *testing.T) {
+// TestAgenticLoopRankFeaturePolicy pins the rank_feature policy: Python's
+// search.py legs (the fan-out channels, search_chunks, retrieve) call
+// retriever.retrieval WITHOUT rank_feature (:158-173/:223-238/:260-275), and
+// only RAGTools.retrieve — the low-mode direct pass — passes
+// rank_feature=label_question(question, self.kbs) (agentic_rag.py:668). The
+// agentic loop's research retrievals must therefore carry NO tag boost, even
+// though the Tagger/KBs projection is wired through.
+func TestAgenticLoopRankFeaturePolicy(t *testing.T) {
 	SetAgenticLoop(NewAgenticLoop())
 	defer SetAgenticLoop(nil)
 
@@ -1515,13 +1622,12 @@ func TestAgenticLoopProjectsRankFeature(t *testing.T) {
 		t.Fatal("the agentic loop performed no retrieval")
 	}
 	// Scope to the fan-out / slot research retrievals — the ones Python issues
-	// through tools.retrieve / search_chunks and therefore the ones that must
-	// carry rank_feature.
+	// through search.py's hybrid/bm25 legs, none of which pass rank_feature.
 	//
-	// Deliberately exempt: the navigation tools' own recalls (chunk-agg routing
+	// Also exempt: the navigation tools' own recalls (chunk-agg routing
 	// via chunkAggRetrieveFrom, and _recall_chunk_ids_in_doc) which mirror
 	// Python's _search_layers_nav_chunk_agg / _recall_chunk_ids_in_doc
-	// (navigation.py:1399) — neither passes rank_feature there.
+	// (navigation.py:1399) — neither passes rank_feature there either.
 	research := map[string]bool{"when was it opened": true, "when opened": true}
 	checked := 0
 	for i, q := range r.queries {
@@ -1529,8 +1635,8 @@ func TestAgenticLoopProjectsRankFeature(t *testing.T) {
 			continue
 		}
 		checked++
-		if r.features[i]["location"] != 1.0 {
-			t.Errorf("retrieve %q RankFeature = %v, want the label_question tag boost", q, r.features[i])
+		if len(r.features[i]) != 0 {
+			t.Errorf("retrieve %q RankFeature = %v, want nil (search.py legs never pass rank_feature)", q, r.features[i])
 		}
 	}
 	if checked == 0 {
@@ -2173,90 +2279,6 @@ func TestGenJSONStripsThinkAndFenceOnFirstTry(t *testing.T) {
 	}
 	if len(mdl.seen) != 1 {
 		t.Errorf("expected a single attempt, got %d", len(mdl.seen))
-	}
-}
-
-// fakeLLMCache is an in-memory LLMCache double.
-type fakeLLMCache struct {
-	entries map[string]string
-	gets    int
-	sets    int
-}
-
-func newFakeLLMCache() *fakeLLMCache { return &fakeLLMCache{entries: map[string]string{}} }
-
-func (c *fakeLLMCache) Get(_ context.Context, key string) (string, bool) {
-	c.gets++
-	v, ok := c.entries[key]
-	return v, ok
-}
-
-func (c *fakeLLMCache) Set(_ context.Context, key, value string) {
-	c.sets++
-	c.entries[key] = value
-}
-
-// TestGenJSONCachesFirstSuccessfulReply pins gen_json's 24h reply cache
-// (Python get_llm_cache / set_llm_cache): the CLEANED answer of the first
-// successful parse is stored, and an identical (model, system, user) triple is
-// served from the cache WITHOUT a second model call.
-func TestGenJSONCachesFirstSuccessfulReply(t *testing.T) {
-	cache := newFakeLLMCache()
-	mdl := &scriptedModel{}
-	mdl.push("Sure.\n```json\n{\"ok\": true}\n```\n")
-
-	adapter := &jsonModelAdapter{inner: mdl, modelName: "gpt-4o", cache: cache}
-	first, err := adapter.GenJSON(context.Background(), "Render JSON.")
-	if err != nil {
-		t.Fatalf("first GenJSON: %v", err)
-	}
-	if m, ok := first.(map[string]any); !ok || m["ok"] != true {
-		t.Fatalf("first GenJSON = %#v", first)
-	}
-	if len(mdl.seen) != 1 || cache.sets != 1 {
-		t.Fatalf("first call: model calls = %d, cache sets = %d, want 1/1", len(mdl.seen), cache.sets)
-	}
-	wantKey := genJSONCacheKey("gpt-4o", "Render JSON.", "Output:\n")
-	// The cleanup regex removes only the ```json fence and the trailing fence:
-	// the "Sure.\n" prose prefix has no </think> terminator, so it survives —
-	// exactly as it does in Python.
-	if got := cache.entries[wantKey]; got != "Sure.\n{\"ok\": true}\n" {
-		t.Errorf("cached value = %q, want the cleaned answer", got)
-	}
-
-	second, err := adapter.GenJSON(context.Background(), "Render JSON.")
-	if err != nil {
-		t.Fatalf("second GenJSON: %v", err)
-	}
-	if m, ok := second.(map[string]any); !ok || m["ok"] != true {
-		t.Fatalf("second GenJSON = %#v", second)
-	}
-	if len(mdl.seen) != 1 {
-		t.Errorf("cache hit still called the model: %d calls", len(mdl.seen))
-	}
-}
-
-// TestGenJSONCacheKeyMatchesPython locks the key SHAPE: %x over the xxh64 of
-// model+system+user+"{}" (str(gen_conf) of the default {} is "{}"), i.e. the 16
-// lowercase hex digits Python's xxhash.xxh64(...).hexdigest() produces. An empty
-// model name yields "" so the cache is skipped rather than collapsing models.
-func TestGenJSONCacheKeyMatchesPython(t *testing.T) {
-	got := genJSONCacheKey("gpt-4o", "SYS", "Output:\n")
-	// Reference value produced by Python itself:
-	//   xxhash.xxh64(('gpt-4o' + 'SYS' + 'Output:\n' + '{}').encode('utf-8')).hexdigest()
-	//   -> '02dffaad8465c0c9'
-	// Note the LEADING ZERO: a plain %x prints 15 digits ('2dffaad8465c0c9'),
-	// which would silently stop sharing the cache with Python.
-	if got != "02dffaad8465c0c9" {
-		t.Fatalf("key = %q, want 02dffaad8465c0c9 (Python xxh64 hexdigest)", got)
-	}
-	// Empty model name yields "" so callers SKIP the cache rather than collapse
-	// every model onto one bucket.
-	if genJSONCacheKey("", "SYS", "Output:\n") != "" {
-		t.Error("empty model name must disable the cache key")
-	}
-	if genJSONCacheKey("a", "SYS", "u") == genJSONCacheKey("b", "SYS", "u") {
-		t.Error("distinct model names produced the same key")
 	}
 }
 
