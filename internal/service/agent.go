@@ -668,10 +668,8 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	// Fetch agents. In merge/mixed modes we disable SQL pagination (page=0) and
 	// paginate in Go after interleaving with groups, matching Python.
 	listPage, listSize := page, pageSize
-	agentCategoryFilter := canvasCategory
 	if mergeMode || (wantsGroups && len(agentCategories) > 0) {
 		listPage, listSize = 0, 0
-		agentCategoryFilter = strings.Join(agentCategories, ",")
 	}
 	canvases, total, err := s.canvasDAO.ListByTenantIDs(
 		ctx,
@@ -683,7 +681,7 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		orderBy,
 		desc,
 		keywords,
-		agentCategoryFilter,
+		agentCategories,
 		canvasType,
 		tags,
 	)
