@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -23,6 +24,20 @@ func TestGenJSONDisablesInvokerRetry(t *testing.T) {
 	}
 	if !chat.req.DisableRetry {
 		t.Fatal("GenJSON must disable retries in the underlying ChatInvoker")
+	}
+}
+
+func TestRepairJSONTextRepairsMalformedResponse(t *testing.T) {
+	got, err := RepairJSONText("Here is the result: {id: 'root', children: [{id: 'child',},]}")
+	if err != nil {
+		t.Fatalf("RepairJSONText: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("repaired JSON is invalid: %v", err)
+	}
+	if parsed["id"] != "root" {
+		t.Errorf("repaired id = %v, want root", parsed["id"])
 	}
 }
 

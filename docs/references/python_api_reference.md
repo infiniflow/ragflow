@@ -215,7 +215,7 @@ The chunking method of the dataset to create. Available options:
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:
-  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
+  `{"chunk_token_num":512,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
 - `chunk_method`=`"qa"`:
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manual"`:
@@ -512,7 +512,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
@@ -682,7 +682,7 @@ A `Document` object contains the following attributes:
 - `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
@@ -820,9 +820,9 @@ print("Async bulk parsing initiated.")
 DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
 ```
 
-*Asynchronously* parses documents in the current dataset.
+Starts parsing documents in the current dataset and synchronously waits for the results.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully.
+This method calls `async_parse_documents()` and blocks while polling until all requested documents reach a terminal state or report complete progress. It then returns the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), it requests cancellation for the requested documents and continues polling for their final statuses. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
 
 #### Parameters
 
@@ -840,7 +840,7 @@ A list of tuples with detailed parsing results:
   ...
 ]
 ```
-- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).
+- `status`: The final parsing state (e.g., `DONE`, `FAIL`, `CANCEL`). If a document has not reached a terminal state but reports `progress >= 1.0`, its status is returned as `DONE`.
 - `chunk_count`: The number of content chunks created from the document.
 - `token_count`: The total number of tokens processed.
 
@@ -858,8 +858,6 @@ try:
     finished = dataset.parse_documents(ids)
     for doc_id, status, chunk_count, token_count in finished:
         print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
-except KeyboardInterrupt:
-    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
 except Exception as e:
     print(f"Parsing failed: {e}")
 ```

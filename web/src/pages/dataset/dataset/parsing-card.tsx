@@ -3,6 +3,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from './constant';
+import { getDocumentRunningStatus } from './utils';
 
 interface IProps {
   record: IDocumentInfo;
@@ -21,7 +22,9 @@ function Dot({ run }: { run: RunningStatus }) {
 
 export const PopoverContent = ({ record }: IProps) => {
   const { t } = useTranslation();
-  const label = t(`knowledgeDetails.runningStatus${record.run}`);
+  // Go derives state from ingestion_status; Python reads the legacy run.
+  const run = getDocumentRunningStatus(record);
+  const label = t(`knowledgeDetails.runningStatus${run}`);
 
   const replaceText = (text: string) => {
     // Remove duplicate \n
@@ -63,7 +66,7 @@ export const PopoverContent = ({ record }: IProps) => {
   return (
     <section>
       <div className="flex gap-2 items-center pb-2">
-        <Dot run={record.run}></Dot> {label}
+        <Dot run={run}></Dot> {label}
       </div>
       <div className="flex flex-col max-h-[50vh] overflow-auto">
         {items.map((x, idx) => {
@@ -82,13 +85,14 @@ export const PopoverContent = ({ record }: IProps) => {
 };
 
 export function ParsingCard({ record, handleShowLog }: IProps) {
+  const run = getDocumentRunningStatus(record);
   return (
     <Button
       variant="ghost"
       size="icon-xs"
       onClick={() => handleShowLog?.(record)}
     >
-      <Dot run={record.run}></Dot>
+      <Dot run={run}></Dot>
     </Button>
   );
 }

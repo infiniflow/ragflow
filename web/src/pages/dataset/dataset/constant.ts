@@ -18,6 +18,16 @@ export const RunningStatusMap = {
     color: 'rgba(var(--state-success))',
   },
   [RunningStatus.FAIL]: { label: 'FAIL', color: 'rgba(var(--state-error))' },
+  // Legacy scheduled state; rendered like the Go queued state.
+  [RunningStatus.SCHEDULE]: {
+    label: 'SCHEDULE',
+    color: 'rgba(var(--state-warning))',
+  },
+  // Go ingestion only: task enqueued but not started (CREATED/SCHEDULED).
+  [RunningStatus.QUEUED]: {
+    label: 'QUEUED',
+    color: 'rgba(var(--state-warning))',
+  },
 };
 
 export * from '@/constants/knowledge';

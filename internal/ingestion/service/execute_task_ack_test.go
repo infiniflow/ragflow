@@ -156,7 +156,7 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 
 // TestExecuteTask_AcksMessageOnContextCancel: a task with a cancelled context
 // (e.g. Redis cancel flag or Ingestor shutdown) is now terminal — the cancel
-// is durably recorded (progress=-1, run=CANCEL) and the message is Acked to
+// is durably recorded (progress=-1, STOPPED) and the message is Acked to
 // prevent indefinite redeliveries of an already-cancelled task.
 func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 	db := testutil.SetupTestDB(t)
