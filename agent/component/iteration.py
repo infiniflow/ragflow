@@ -46,6 +46,10 @@ class IterationParam(ComponentParamBase):
 class Iteration(ComponentBase, ABC):
     component_name = "Iteration"
 
+    def param_refs(self) -> list[str]:
+        # items_ref is resolved through Canvas.get_variable_value at run time.
+        return [self._param.items_ref]
+
     def get_start(self):
         for cid in self._canvas.components.keys():
             if self._canvas.get_component(cid)["obj"].component_name.lower() != "iterationitem":

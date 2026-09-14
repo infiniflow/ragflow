@@ -40,6 +40,18 @@ class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
+    def param_refs(self) -> list[str]:
+        # Both the target variable and the parameter are resolved through
+        # Canvas.get_variable_value at run time; the batch scheduler needs them
+        # to avoid reading or overwriting a value before its producer ran.
+        refs = []
+        if isinstance(self._param.variables, list):
+            for item in self._param.variables:
+                if isinstance(item, dict):
+                    refs.append(item.get("variable"))
+                    refs.append(item.get("parameter"))
+        return refs
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if not isinstance(self._param.variables, list):
