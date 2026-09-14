@@ -274,6 +274,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
+			"html4excel":            false,
 			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},

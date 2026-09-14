@@ -25,7 +25,7 @@ type XLSParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	ChunkRows                      int
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -38,7 +38,6 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 	}
 	return &XLSParser{
 		libType:                        libType,
-		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -58,7 +57,9 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	p.ChunkRows = decodeChunkRows(setup)
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
+	}
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -91,12 +92,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-
-	items, warnings, sheetsCount, err := parseXLSXBytes(data, chunkRows)
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}

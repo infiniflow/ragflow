@@ -1,22 +1,144 @@
 package parser
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 )
 
-func xlsxTableHTML(res ParseResult) string {
+func TestXLSXParserEmitsSpreadsheetRows(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "ID")
+		mustSetCell(t, f, "Sheet1", "B1", "Status")
+		mustSetCell(t, f, "Sheet1", "A2", "A-100")
+		mustSetCell(t, f, "Sheet1", "B2", "paid")
+		mustSetCell(t, f, "Sheet1", "A3", "A-101")
+		mustSetCell(t, f, "Sheet1", "B3", "pending")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "orders.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("items = %d, want header plus two rows", len(res.JSON))
+	}
+	header := res.JSON[0]
+	if header["ck_type"] != "table_header" {
+		t.Fatalf("header ck_type = %v, want table_header", header["ck_type"])
+	}
+	if got, want := header["cells"], []string{"ID", "Status"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("header cells = %#v, want %#v", got, want)
+	}
+	row := res.JSON[1]
+	if row["ck_type"] != "table_row" || row["doc_type_kwd"] != "text" {
+		t.Fatalf("row types = ck_type:%v doc_type:%v", row["ck_type"], row["doc_type_kwd"])
+	}
+	if got, want := row["cells"], []string{"A-100", "paid"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("row cells = %#v, want %#v", got, want)
+	}
+	if row["sheet"] != "Sheet1" || row["sheet_index"] != 1 {
+		t.Fatalf("row sheet metadata = %#v", row)
+	}
+	if row["row_start"] != 2 || row["row_end"] != 2 || row["col_start"] != 1 || row["col_end"] != 2 {
+		t.Fatalf("row coordinates = %#v", row)
+	}
+}
+
+func TestXLSXParserHTML4ExcelRemainsAtomic(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Question")
+		mustSetCell(t, f, "Sheet1", "B1", "Answer")
+		mustSetCell(t, f, "Sheet1", "A2", "Q1")
+		mustSetCell(t, f, "Sheet1", "B2", "A1")
+	})
+	p, _ := NewXLSXParser("")
+	p.ConfigureFromSetup(map[string]any{"html4excel": true})
+	res := p.ParseWithResult(t.Context(), "qa.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
+	}
+	if res.JSON[0]["ck_type"] != "table" || !strings.Contains(res.JSON[0]["text"].(string), "<table>") {
+		t.Fatalf("html4excel item = %#v", res.JSON[0])
+	}
+}
+
+func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
+	const dataRows = 257
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Value")
+		for row := 2; row <= dataRows+1; row++ {
+			mustSetCell(t, f, "Sheet1", cellAxis(row, 1), row)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "rows.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != dataRows+1 {
+		t.Fatalf("items = %d, want one header plus %d data rows", len(res.JSON), dataRows)
+	}
+	last := res.JSON[len(res.JSON)-1]
+	if last["ck_type"] != "table_row" || last["row_start"] != dataRows+1 {
+		t.Fatalf("last row = %#v, want source row %d", last, dataRows+1)
+	}
+}
+
+func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "First")
+		mustSetCell(t, f, "Sheet1", "A2", "one")
+		_, err := f.NewSheet("Orders")
+		if err != nil {
+			t.Fatalf("new sheet: %v", err)
+		}
+		mustSetCell(t, f, "Orders", "A1", "Second")
+		mustSetCell(t, f, "Orders", "A2", "two")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "multi.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 4 {
+		t.Fatalf("items = %d, want two headers and two rows", len(res.JSON))
+	}
+	seen := map[string]map[string]any{}
+	for _, item := range res.JSON {
+		if item["ck_type"] == "table_header" {
+			seen[item["sheet"].(string)] = item
+		}
+	}
+	if first := seen["Sheet1"]; first == nil || first["table_id"] != "sheet-1" || first["sheet_index"] != 1 {
+		t.Fatalf("Sheet1 identity = %#v", first)
+	}
+	if second := seen["Orders"]; second == nil || second["table_id"] != "sheet-2" || second["sheet_index"] != 2 {
+		t.Fatalf("Orders identity = %#v", second)
+	}
+}
+
+func spreadsheetText(res ParseResult) string {
 	var out strings.Builder
 	for _, item := range res.JSON {
-		if item["doc_type_kwd"] != "table" {
-			continue
-		}
 		text, _ := item["text"].(string)
 		out.WriteString(text)
 	}
 	return out.String()
+}
+
+func spreadsheetHeaderItem(res ParseResult) map[string]any {
+	for _, item := range res.JSON {
+		if item["ck_type"] == "table_header" {
+			return item
+		}
+	}
+	return nil
 }
 
 func TestXLSXImageMIMEType(t *testing.T) {
@@ -103,108 +225,8 @@ func mustAddTable(t *testing.T, f *excelize.File, sheet string, table *excelize.
 	}
 }
 
-// TestRecordsToHTMLTableChunkList_Alignment asserts the chunked output uses the
-// shared schema: <caption>, first row as <th>, data as <td>, repeated header
-// per 256-row chunk, and NO <thead>/<tbody> wrapper.
-func TestRecordsToHTMLTableChunkList_Alignment(t *testing.T) {
-	records := [][]string{{"Name", "Age"}, {"Alice", "30"}, {"Bob", "25"}}
-	chunks := recordsToHTMLTableChunkList(records, 256, "Sheet1", 1)
-	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk, got %d", len(chunks))
-	}
-	out := chunks[0].HTML
-
-	if !strings.Contains(out, `<caption>Sheet1</caption>`) {
-		t.Fatalf("want <caption>Sheet1</caption>, got:\n%s", out)
-	}
-	if !strings.Contains(out, "<tr><th>Name</th><th>Age</th></tr>") {
-		t.Fatalf("want header row as <th>, got:\n%s", out)
-	}
-	if !strings.Contains(out, "<tr><td>Alice</td><td>30</td></tr>") {
-		t.Fatalf("want data row as <td>, got:\n%s", out)
-	}
-	if strings.Contains(out, "<thead>") || strings.Contains(out, "<tbody>") {
-		t.Fatalf("must not emit <thead>/<tbody> to stay byte-compatible with Python/CSV, got:\n%s", out)
-	}
-}
-
-// TestRecordsToHTMLTableChunkList_DefaultCeilingDoesNotSplit pins the default row
-// ceiling: a sheet is emitted as ONE self-contained <table>. Splitting it would
-// cut inside <td> content or drop the delimiter characters it cut on, and the
-// value must stay in sync with Python's TABLE_NO_SPLIT_ROWS.
-func TestRecordsToHTMLTableChunkList_DefaultCeilingDoesNotSplit(t *testing.T) {
-	const dataRows = 5000
-	records := make([][]string, 0, dataRows+1)
-	records = append(records, []string{"C1", "C2"})
-	for i := 0; i < dataRows; i++ {
-		records = append(records, []string{"x", "y"})
-	}
-
-	chunks := recordsToHTMLTableChunkList(records, defaultTableChunkRows, "S", 1)
-	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk with the default ceiling, got %d", len(chunks))
-	}
-	// The single chunk spans every data row.
-	if chunks[0].RowStart != 2 || chunks[0].RowEnd != dataRows+1 {
-		t.Fatalf("want rows 2..%d, got %d..%d", dataRows+1, chunks[0].RowStart, chunks[0].RowEnd)
-	}
-}
-
-// TestRecordsToHTMLTableChunkList_Chunking asserts 256-row chunking with a repeated
-// header (ceil(n_data / chunk_rows) chunks).
-func TestRecordsToHTMLTableChunkList_Chunking(t *testing.T) {
-	const dataRows = 300
-	records := make([][]string, 0, dataRows+1)
-	records = append(records, []string{"C1", "C2"})
-	for i := 0; i < dataRows; i++ {
-		records = append(records, []string{"x", "y"})
-	}
-	chunks := recordsToHTMLTableChunkList(records, 256, "S", 1)
-	// 300 data rows → ceil(300/256) = 2 chunks, each repeating the header.
-	if len(chunks) != 2 {
-		t.Fatalf("want 2 chunks, got %d", len(chunks))
-	}
-	for i, ch := range chunks {
-		if !strings.Contains(ch.HTML, "<tr><th>C1</th><th>C2</th></tr>") {
-			t.Fatalf("want header repeated in chunk %d, got %s", i, ch.HTML)
-		}
-	}
-}
-
-func TestRecordsToHTMLTableChunkList_RowRange(t *testing.T) {
-	records := make([][]string, 0, 25)
-	records = append(records, []string{"H"})
-	for i := 0; i < 24; i++ {
-		records = append(records, []string{"x"})
-	}
-	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
-	if len(chunks) != 2 {
-		t.Fatalf("want 2 chunks, got %d", len(chunks))
-	}
-	if chunks[0].RowStart != 2 || chunks[0].RowEnd != 13 {
-		t.Fatalf("chunk0 rows = %d-%d, want 2-13", chunks[0].RowStart, chunks[0].RowEnd)
-	}
-	if chunks[1].RowStart != 14 || chunks[1].RowEnd != 25 {
-		t.Fatalf("chunk1 rows = %d-%d, want 14-25", chunks[1].RowStart, chunks[1].RowEnd)
-	}
-}
-
-func TestRecordsToHTMLTableChunkList_ColEndUsesWidestRow(t *testing.T) {
-	records := [][]string{
-		{"H"},
-		{"a", "b", "c"},
-	}
-	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
-	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk, got %d", len(chunks))
-	}
-	if chunks[0].ColEnd != 3 {
-		t.Fatalf("ColEnd = %d, want 3", chunks[0].ColEnd)
-	}
-}
-
-// TestXLSXParser_HeaderAndCaption asserts the XLSX parser emits a <caption> and
-// renders the first row as <th>, and that the header text appears only in <th>.
+// TestXLSXParser_HeaderAndCaption asserts the XLSX parser emits a typed header
+// row and data row with the header labels preserved separately from values.
 func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Product")
@@ -219,22 +241,22 @@ func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	html := xlsxTableHTML(res)
-	if !strings.Contains(html, `<caption>Sheet1</caption>`) {
-		t.Fatalf("want <caption>Sheet1</caption>, got:\n%s", html)
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "Product; Price") {
+		t.Fatalf("want header text, got:\n%s", text)
 	}
-	if !strings.Contains(html, "<tr><th>Product</th><th>Price</th></tr>") {
-		t.Fatalf("want header as <th>, got:\n%s", html)
+	if !strings.Contains(text, "Product：Widget; Price：9.99") {
+		t.Fatalf("want row text, got:\n%s", text)
 	}
-	// "Product" must only appear inside a <th>, never inside a <td>.
-	if strings.Contains(html, "<td>Product</td>") {
-		t.Fatalf("header value leaked into <td>:\n%s", html)
+	// The header label must not be duplicated as a value in the row text.
+	if strings.Contains(text, "Product：Product") {
+		t.Fatalf("header value leaked into row text:\n%s", text)
 	}
 }
 
 // TestXLSXParser_MergedHeaderInheritance asserts a horizontally merged header
 // cell's slave columns inherit the master text, so a wide merged title does not
-// render as a row of blank <th> cells.
+// render as a row of blank header cells.
 func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		// Row 1 is the header; A1:C1 merged into one wide label "Sales Report".
@@ -255,10 +277,9 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	html := xlsxTableHTML(res)
-	// The merged master text must have propagated into all three <th> slots.
-	if !strings.Contains(html, "<tr><th>Sales Report</th><th>Sales Report</th><th>Sales Report</th></tr>") {
-		t.Fatalf("merged master text not inherited into header <th>, got:\n%s", html)
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "Sales Report; Sales Report; Sales Report") {
+		t.Fatalf("merged master text not inherited into header cells, got:\n%s", text)
 	}
 }
 
@@ -279,11 +300,15 @@ func TestDetectHeaderRow_ListObject(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<tr><th>Name</th><th>Age</th></tr>") {
-		t.Fatalf("want ListObject header row detected, got:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Name; Age") {
+		t.Fatalf("want ListObject header row detected, got:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(xlsxTableHTML(res), "<th>Title</th>") {
-		t.Fatalf("title row must not be the header:\n%s", xlsxTableHTML(res))
+	header := spreadsheetHeaderItem(res)
+	if header == nil {
+		t.Fatal("missing table_header item")
+	}
+	if got := header["text"]; got != "Name; Age" {
+		t.Fatalf("header text = %v, want Name; Age", got)
 	}
 }
 
@@ -306,16 +331,16 @@ func TestDetectHeaderRow_Lightweight(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<tr><th>Item</th><th>Count</th></tr>") {
-		t.Fatalf("want row-2 header detected, got:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Item; Count") {
+		t.Fatalf("want row-2 header detected, got:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(xlsxTableHTML(res), "<th>100</th>") {
-		t.Fatalf("numeric row 1 must not be the header:\n%s", xlsxTableHTML(res))
+	if strings.Contains(spreadsheetText(res), "100; 200") {
+		t.Fatalf("numeric row 1 must not be the header:\n%s", spreadsheetText(res))
 	}
 }
 
 // TestXLSXParser_CommonCaseNoRegression asserts the dominant case (header on
-// row 1, no merges, no ListObject) renders row 1 as <th> unchanged.
+// row 1, no merges, no ListObject) keeps the header row unchanged.
 func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "col_a")
@@ -328,8 +353,8 @@ func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<tr><th>col_a</th><th>col_b</th></tr>") {
-		t.Fatalf("common-case header must render as <th>:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "col_a; col_b") {
+		t.Fatalf("common-case header must be preserved:\n%s", spreadsheetText(res))
 	}
 }
 
@@ -356,11 +381,11 @@ func TestDetectHeaderRow_BoldSubtotalNotHeader(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<tr><th>2023</th><th>2024</th></tr>") {
-		t.Fatalf("numeric row 1 must remain the header:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "2023; 2024") {
+		t.Fatalf("numeric row 1 must remain the header:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(xlsxTableHTML(res), "<th>Total</th>") {
-		t.Fatalf("bold subtotal row must not be promoted to header:\n%s", xlsxTableHTML(res))
+	if strings.Contains(spreadsheetText(res), "Total; Summary") {
+		t.Fatalf("bold subtotal row must not be promoted to header:\n%s", spreadsheetText(res))
 	}
 }
 
@@ -389,11 +414,15 @@ func TestDetectHeaderRow_StyledHeaderPastFarMerge(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<th>Name</th><th>Desc</th>") {
-		t.Fatalf("narrow bold header past far merge must be detected:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Name; Desc") {
+		t.Fatalf("narrow bold header past far merge must be detected:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(xlsxTableHTML(res), "<th>Sales Report</th>") {
-		t.Fatalf("wide merged title must not be the header:\n%s", xlsxTableHTML(res))
+	header := spreadsheetHeaderItem(res)
+	if header == nil {
+		t.Fatal("missing table_header item")
+	}
+	if got := header["text"]; got != "Name; Desc" {
+		t.Fatalf("header text = %v, want Name; Desc", got)
 	}
 }
 
@@ -419,11 +448,15 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "<tr><th>Product</th><th>Units</th></tr>") {
-		t.Fatalf("styled text header over numeric data must be detected:\n%s", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Product; Units") {
+		t.Fatalf("styled text header over numeric data must be detected:\n%s", spreadsheetText(res))
 	}
-	if strings.Contains(xlsxTableHTML(res), "<th>Report Title</th>") {
-		t.Fatalf("title stub must not be the header:\n%s", xlsxTableHTML(res))
+	header := spreadsheetHeaderItem(res)
+	if header == nil {
+		t.Fatal("missing table_header item")
+	}
+	if got := header["text"]; got != "Product; Units" {
+		t.Fatalf("header text = %v, want Product; Units", got)
 	}
 }
 
@@ -484,115 +517,8 @@ func TestMergeExtentCol(t *testing.T) {
 	}
 }
 
-// TestDecodeChunkRows exercises the chunk_rows setup knob across all the types
-// JSON/yaml decoding can produce, plus the defaulting paths.
-func TestDecodeChunkRows(t *testing.T) {
-	if got := decodeChunkRows(nil); got != defaultTableChunkRows {
-		t.Fatalf("nil setup: want default %d, got %d", defaultTableChunkRows, got)
-	}
-	if got := decodeChunkRows(map[string]any{}); got != defaultTableChunkRows {
-		t.Fatalf("empty setup: want default, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": 100.0}); got != 100 {
-		t.Fatalf("float64 100: want 100, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": 0.0}); got != defaultTableChunkRows {
-		t.Fatalf("float64 0: want default, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": -5.0}); got != defaultTableChunkRows {
-		t.Fatalf("float64 -5: want default, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": 256}); got != 256 {
-		t.Fatalf("int 256: want 256, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": int64(512)}); got != 512 {
-		t.Fatalf("int64 512: want 512, got %d", got)
-	}
-	if got := decodeChunkRows(map[string]any{"chunk_rows": "256"}); got != defaultTableChunkRows {
-		t.Fatalf("string (unsupported type): want default, got %d", got)
-	}
-}
-
-// TestRenderSheetTables_FarMergeDoesNotBloatDataRows guards the memory blow-up
-// from review: a far merge on a non-header row must not widen the header or any
-// data row to the merge's full span. The header stays its natural width and no
-// data row carries empty <td> cells.
-func TestRenderSheetTables_FarMergeDoesNotBloatDataRows(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		// Row 1: a wide merged title A1:Z1 (NOT the header).
-		mustSetCell(t, f, "Sheet1", "A1", "Report Title")
-		mustMergeCell(t, f, "Sheet1", "A1", "Z1")
-		// Row 2: the real header, made bold so detection anchors it.
-		hdrIdx := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
-		mustSetCell(t, f, "Sheet1", "A2", "Name")
-		mustSetCell(t, f, "Sheet1", "B2", "Price")
-		mustSetCellStyle(t, f, "Sheet1", "A2", "B2", hdrIdx)
-		// Rows 3-4: data.
-		mustSetCell(t, f, "Sheet1", "A3", "Alice")
-		mustSetCell(t, f, "Sheet1", "B3", "9.99")
-		mustSetCell(t, f, "Sheet1", "A4", "Bob")
-		mustSetCell(t, f, "Sheet1", "B4", "19.99")
-	})
-	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	html := xlsxTableHTML(res)
-	if !strings.Contains(html, "<tr><th>Name</th><th>Price</th></tr>") {
-		t.Fatalf("want row-2 header detected, got:\n%s", html)
-	}
-	if strings.Contains(html, "<th>Title</th>") {
-		t.Fatalf("wide merged title must not be the header:\n%s", html)
-	}
-	// The far merge is on row 1, not the header, so nothing is widened to 26
-	// columns: the header keeps 2 columns (no empty <th>) and data rows carry
-	// no empty <td>.
-	if strings.Contains(html, "<th></th>") {
-		t.Fatalf("header was bloated by the far merge:\n%s", html)
-	}
-	if strings.Count(html, "<td></td>") != 0 {
-		t.Fatalf("data rows were bloated by the far merge:\n%s", html)
-	}
-}
-
-// TestRenderSheetTables_MultiSheet asserts each sheet becomes its own <table>
-// chunk, each carrying its own <caption>.
-func TestRenderSheetTables_MultiSheet(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		mustSetCell(t, f, "Sheet1", "A1", "Name")
-		mustSetCell(t, f, "Sheet1", "B1", "Age")
-		mustSetCell(t, f, "Sheet1", "A2", "Alice")
-		mustSetCell(t, f, "Sheet1", "B2", "30")
-		if _, err := f.NewSheet("HR"); err != nil {
-			t.Fatalf("NewSheet: %v", err)
-		}
-		mustSetCell(t, f, "HR", "A1", "Dept")
-		mustSetCell(t, f, "HR", "B1", "Head")
-		mustSetCell(t, f, "HR", "A2", "Eng")
-		mustSetCell(t, f, "HR", "B2", "Bob")
-	})
-	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	html := xlsxTableHTML(res)
-	if !strings.Contains(html, "<caption>Sheet1</caption>") {
-		t.Fatalf("want Sheet1 caption, got:\n%s", html)
-	}
-	if !strings.Contains(html, "<caption>HR</caption>") {
-		t.Fatalf("want HR caption, got:\n%s", html)
-	}
-	// Two small sheets → two <table> chunks.
-	if n := strings.Count(html, "<table>"); n != 2 {
-		t.Fatalf("want 2 <table> chunks, got %d:\n%s", n, html)
-	}
-}
-
-// TestRenderSheetTables_EmptySheet asserts an empty/unreadable sheet yields an
-// empty string rather than an empty <table> wrapper.
-func TestRenderSheetTables_EmptySheet(t *testing.T) {
+// TestXLSXParser_EmptySheet asserts an empty sheet yields no parser items.
+func TestXLSXParser_EmptySheet(t *testing.T) {
 	// excelize.NewFile yields a single empty "Sheet1".
 	data := newTestXLSX(t, func(f *excelize.File) {})
 	p, _ := NewXLSXParser("")

@@ -23,9 +23,9 @@ import (
 	"strings"
 )
 
-// ChunkerFromUpstream is the shared upstream payload consumed by all four
-// chunker variants (TokenChunker, TitleChunker, GroupTitleChunker,
-// HierarchyTitleChunker).
+// ChunkerFromUpstream is the shared upstream payload consumed by the chunker
+// variants (GeneralChunker, TokenChunker, TitleChunker, GroupTitleChunker,
+// HierarchyTitleChunker, and QAChunker).
 //
 // It mirrors the wire shape defined across two equivalent Pydantic
 // schemas in the Python codebase:

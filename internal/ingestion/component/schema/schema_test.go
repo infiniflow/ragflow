@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -232,6 +233,48 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	}
 	if len(decoded.Chunks) != 1 {
 		t.Errorf("Chunks round-trip mismatch: got %d", len(decoded.Chunks))
+	}
+}
+
+func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
+	sheetIndex, rowStart, rowEnd, colStart, colEnd := 2, 42, 42, 1, 3
+	original := ChunkDoc{
+		Text:       "ID：A-100; Status：paid",
+		DocType:    "text",
+		CKType:     "table_row",
+		TableID:    "sheet-2",
+		Sheet:      "Orders",
+		SheetIndex: &sheetIndex,
+		Headers:    []string{"ID", "Status", "Note"},
+		Cells:      []string{"A-100", "paid", ""},
+		RowStart:   &rowStart,
+		RowEnd:     &rowEnd,
+		ColStart:   &colStart,
+		ColEnd:     &colEnd,
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded ChunkDoc
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.TableID != original.TableID || decoded.Sheet != original.Sheet {
+		t.Fatalf("spreadsheet identity mismatch: got table=%q sheet=%q", decoded.TableID, decoded.Sheet)
+	}
+	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
+		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
+	}
+	if decoded.RowStart == nil || *decoded.RowStart != rowStart || decoded.RowEnd == nil || *decoded.RowEnd != rowEnd {
+		t.Fatalf("row range mismatch: start=%v end=%v", decoded.RowStart, decoded.RowEnd)
+	}
+	if decoded.ColStart == nil || *decoded.ColStart != colStart || decoded.ColEnd == nil || *decoded.ColEnd != colEnd {
+		t.Fatalf("column range mismatch: start=%v end=%v", decoded.ColStart, decoded.ColEnd)
+	}
+	if !reflect.DeepEqual(decoded.Headers, original.Headers) || !reflect.DeepEqual(decoded.Cells, original.Cells) {
+		t.Fatalf("cells mismatch: headers=%v cells=%v", decoded.Headers, decoded.Cells)
 	}
 }
 

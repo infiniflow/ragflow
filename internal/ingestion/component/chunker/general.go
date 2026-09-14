@@ -150,7 +150,44 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 }
 
 func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
-	return c.chunkGeneral(ctx, upstream)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("GeneralChunker: %w", err)
+	}
+	units := upstream.JSONResult
+	if upstream.OutputFormat == schema.PayloadFormatChunks {
+		units = upstream.Chunks
+	}
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+	chunks := make([]schema.ChunkDoc, 0, len(units))
+	pendingRows := make([]schema.ChunkDoc, 0)
+	flushRows := func() {
+		if len(pendingRows) == 0 {
+			return
+		}
+		chunks = append(chunks, mergeSpreadsheetRows(pendingRows, c.param.ChunkTokenSize)...)
+		pendingRows = pendingRows[:0]
+	}
+	for _, unit := range units {
+		if unit.CKType == "table_header" {
+			flushRows()
+			continue
+		}
+		if unit.CKType == "table_row" {
+			pendingRows = append(pendingRows, unit)
+			continue
+		}
+		flushRows()
+		chunks = append(chunks, cloneChunkDoc(unit))
+	}
+	flushRows()
+	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	chunks = finalizeGeneralChunks(chunks, childrenPattern)
+	if len(chunks) == 0 {
+		return emptyOutputs(), nil
+	}
+	return chunkOutputs(chunks), nil
 }
 
 func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
@@ -215,6 +252,64 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 	}
 
 	return applyGeneralOverlap(merged, overlapPct)
+}
+
+func mergeSpreadsheetRows(rows []schema.ChunkDoc, target int) []schema.ChunkDoc {
+	merged := make([]schema.ChunkDoc, 0, len(rows))
+	current := -1
+	for _, row := range rows {
+		if row.CKType != "table_row" || itemDocType(row) != "text" {
+			merged = append(merged, cloneChunkDoc(row))
+			current = -1
+			continue
+		}
+		count := generalUnitTokens(row)
+		if current < 0 || count > target || !sameSpreadsheetTable(merged[current], row) || intValue(merged[current].TKNums)+count > target {
+			row.TKNums = intPtr(count)
+			merged = append(merged, cloneChunkDoc(row))
+			current = len(merged) - 1
+			continue
+		}
+		mergeGeneralChunk(&merged[current], row, "\n")
+		mergeSpreadsheetRowRange(&merged[current], row)
+	}
+	return merged
+}
+
+func sameSpreadsheetTable(first, second schema.ChunkDoc) bool {
+	if first.TableID != "" || second.TableID != "" {
+		return first.TableID == second.TableID
+	}
+	if first.SheetIndex != nil || second.SheetIndex != nil {
+		return first.SheetIndex != nil && second.SheetIndex != nil && *first.SheetIndex == *second.SheetIndex
+	}
+	return first.Sheet == second.Sheet
+}
+
+func mergeSpreadsheetRowRange(dst *schema.ChunkDoc, src schema.ChunkDoc) {
+	dst.RowStart = minSpreadsheetInt(dst.RowStart, src.RowStart, false)
+	dst.RowEnd = minSpreadsheetInt(dst.RowEnd, src.RowEnd, true)
+	dst.ColStart = minSpreadsheetInt(dst.ColStart, src.ColStart, false)
+	dst.ColEnd = minSpreadsheetInt(dst.ColEnd, src.ColEnd, true)
+}
+
+func minSpreadsheetInt(first, second *int, maximum bool) *int {
+	if first == nil {
+		if second == nil {
+			return nil
+		}
+		value := *second
+		return &value
+	}
+	if second == nil {
+		value := *first
+		return &value
+	}
+	value := *first
+	if (maximum && *second > value) || (!maximum && *second < value) {
+		value = *second
+	}
+	return &value
 }
 
 func generalUnitTokens(unit schema.ChunkDoc) int {

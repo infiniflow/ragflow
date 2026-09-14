@@ -394,3 +394,32 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 		}
 	}
 }
+
+func TestQAChunkerSpreadsheetRowIRUsesCells(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
+			{"text": "ID：A-100; Status：paid", "doc_type_kwd": "text", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want header and row pairs", out["chunks"])
+	}
+	if got, _ := chunks[0]["text"].(string); got != "Question: ID\tAnswer: Status" {
+		t.Fatalf("header QA = %q", got)
+	}
+	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
+		t.Fatalf("row QA = %q", got)
+	}
+}

@@ -45,7 +45,7 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 		t.Fatal(res.Err)
 	}
 
-	inputs := map[string]any{"name": "qa.xlsx", "output_format": res.OutputFormat}
+	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": res.OutputFormat}
 	switch res.OutputFormat {
 	case "json":
 		inputs["json"] = res.JSON
@@ -65,9 +65,8 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	return chunks
 }
 
-// TestXLSXQARegression is the end-to-end smoke test: every row of the sheet
-// becomes one chunk. The chunker has no header concept, so the first row is
-// a Q&A pair like any other.
+// TestXLSXQARegression is the end-to-end smoke test: the typed header and each
+// data row become one QA chunk, matching the previous table-row behavior.
 func TestXLSXQARegression(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
 		{"question", "answer"},
@@ -80,10 +79,10 @@ func TestXLSXQARegression(t *testing.T) {
 	}
 }
 
-// A spreadsheet cell keeps the newline its author typed (Alt+Enter) and the
-// parser renders it into the <tr>/<td> HTML verbatim, so a QA pair whose
-// question or answer spans lines must survive extraction intact. These rows
-// used to disappear from the chunk list without a trace.
+// A spreadsheet cell keeps the newline its author typed (Alt+Enter), so a QA
+// pair whose question or answer spans lines must survive cells-first
+// extraction intact. These rows used to disappear from the chunk list without
+// a trace.
 func TestXLSXQAMultilineCells(t *testing.T) {
 	const multilineQ = "请问全国碳排放权交易市场纳入配额管理的重点排放单\n位名录，是否会公布？"
 	const multilineA = "需要公布。根据《碳排放权交易管理办法（试行）》。"

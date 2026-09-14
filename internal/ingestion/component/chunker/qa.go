@@ -17,10 +17,11 @@
 // QAChunker extracts question-answer pairs from parsed content.
 //
 // Input formats and extraction strategies:
-//   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
-//   - Markdown (md)    → heading-based Q&A
-//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
-//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
+//   - Text (txt, csv) → delimiter-based Q&A (comma or tab)
+//   - Markdown (md)   → heading-based Q&A
+//   - HTML table      → table-based Q&A (first two columns)
+//   - JSON            → typed spreadsheet cells first; otherwise text sections
+//     or the HTML-table fallback for parsers that emit table markup.
 //
 // Every Q&A pair becomes a single chunk whose text is
 // "Question: {q}\tAnswer: {a}" (ingestion renames text to
@@ -119,7 +120,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
-		qaPairs = extractQAJSON(upstream.JSONResult)
+		qaPairs = extractQAJSON(upstream.JSONResult, upstream.FileType)
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
@@ -530,22 +531,24 @@ func detectDelimiter(lines []string) string {
 // JSON / structured QA extraction
 // ---------------------------------------------------------------------------
 
-func extractQAJSON(items []schema.ChunkDoc) []qaPair {
+func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
 	for _, item := range items {
-		txt, _ := itemText(item)
-		if txt == "" {
-			continue
-		}
-		// XLSX (#18800) emits OutputFormat json with HTML tables in item
-		// text and doc_type_kwd=table. Route those through extractQATable
-		// so spreadsheet QA keeps working; plain text items stay on the
-		// delimiter path used by pdf/docx.
 		var tmp []qaPair
-		if itemDocType(item) == "table" {
-			tmp = extractQATable(txt, false)
+		if item.CKType == "table_header" || item.CKType == "table_row" {
+			tmp = extractQARowCells(item.Cells, strings.EqualFold(fileType, "csv"), item.RowStart)
 		} else {
-			tmp = extractQAText(txt)
+			txt, _ := itemText(item)
+			if txt == "" {
+				continue
+			}
+			// Non-spreadsheet table items may still carry HTML markup. Keep
+			// the HTML fallback for parsers that do not expose typed cells.
+			if itemDocType(item) == "table" {
+				tmp = extractQATable(txt, false)
+			} else {
+				tmp = extractQAText(txt)
+			}
 		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
@@ -557,6 +560,26 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		}
 	}
 	return pairs
+}
+
+func extractQARowCells(cells []string, strict bool, rowStart *int) []qaPair {
+	if strict && len(cells) != 2 {
+		return nil
+	}
+	texts := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		if cell = strings.TrimSpace(cell); cell != "" {
+			texts = append(texts, cell)
+		}
+	}
+	if len(texts) < 2 {
+		return nil
+	}
+	rowNum := -1
+	if rowStart != nil && *rowStart > 0 {
+		rowNum = *rowStart - 1
+	}
+	return []qaPair{{Question: texts[0], Answer: texts[1], RowNum: rowNum}}
 }
 
 func init() {

@@ -3,7 +3,6 @@ package parser
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -223,8 +222,8 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON items is empty; want structured table items")
 	}
-	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
-		t.Fatalf("JSON item text = %v; want rendered table", res.JSON[0]["text"])
+	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
+		t.Fatalf("JSON items = %#v; want header and row", res.JSON)
 	}
 }
 
