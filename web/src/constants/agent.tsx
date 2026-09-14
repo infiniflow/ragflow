@@ -130,6 +130,7 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
+  GeneralChunker = 'GeneralChunker',
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',

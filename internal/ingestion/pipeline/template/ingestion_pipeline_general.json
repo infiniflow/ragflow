@@ -26,7 +26,7 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "TokenChunker:SixApplesFall"
+                    "GeneralChunker:SixApplesFall"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -152,20 +152,20 @@
                     "File"
                 ]
             },
-            "TokenChunker:SixApplesFall": {
+            "GeneralChunker:SixApplesFall": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "TokenChunker",
+                    "component_name": "GeneralChunker",
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
                             "?",
+                            ";",
                             "。",
                             "；",
                             "！",
@@ -206,7 +206,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TokenChunker:SixApplesFall"
+                    "GeneralChunker:SixApplesFall"
                 ],
                 "downstream": [
                     "Tokenizer:LegalReadersDecide"
@@ -250,15 +250,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:SixApplesFallend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-GeneralChunker:SixApplesFallend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:SixApplesFall",
+                    "target": "GeneralChunker:SixApplesFall",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:SixApplesFallstart-Extractor:AutoExtractDefaultend",
-                    "source": "TokenChunker:SixApplesFall",
+                    "id": "xy-edge__GeneralChunker:SixApplesFallstart-Extractor:AutoExtractDefaultend",
+                    "source": "GeneralChunker:SixApplesFall",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -396,7 +396,6 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"
@@ -406,6 +405,9 @@
                                 },
                                 {
                                     "value": "?"
+                                },
+                                {
+                                    "value": ";"
                                 },
                                 {
                                     "value": "。"
@@ -429,10 +431,10 @@
                             },
                             "overlapped_percent": 0
                         },
-                        "label": "TokenChunker",
-                        "name": "Token Chunker"
+                        "label": "GeneralChunker",
+                        "name": "General Chunker"
                     },
-                    "id": "TokenChunker:SixApplesFall",
+                    "id": "GeneralChunker:SixApplesFall",
                     "measured": {
                         "height": 74,
                         "width": 200

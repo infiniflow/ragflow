@@ -68,6 +68,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
 	}
 
+	if err := migrateGeneralChunkerParserConfigs(ctx, db); err != nil {
+		return fmt.Errorf("failed to migrate general chunker parser configs: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }

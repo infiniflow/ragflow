@@ -367,6 +367,14 @@ export function transformTokenChunkerParams(
   };
 }
 
+export function transformGeneralChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
+  const result = transformTokenChunkerParams(params);
+  delete result.delimiter_mode;
+  return result;
+}
+
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -638,6 +646,10 @@ export const buildDslComponentsByGraph = (
 
         case Operator.TokenChunker:
           params = transformTokenChunkerParams(params);
+          break;
+
+        case Operator.GeneralChunker:
+          params = transformGeneralChunkerParams(params);
           break;
 
         case Operator.TitleChunker:
