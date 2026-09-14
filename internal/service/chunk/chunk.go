@@ -1656,11 +1656,17 @@ func parseChunkImageUpdateMode(mode *string) (string, error) {
 }
 
 func validateChunkImageBytes(imageBinary []byte) error {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(imageBinary))
+	if _, _, err := image.DecodeConfig(bytes.NewReader(imageBinary)); err != nil {
+		return fmt.Errorf("invalid image data")
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(imageBinary))
 	if err != nil {
 		return fmt.Errorf("invalid image data")
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxChunkImageDimension || cfg.Height > maxChunkImageDimension {
+	bounds := decoded.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 || width > maxChunkImageDimension || height > maxChunkImageDimension {
 		return fmt.Errorf("invalid image dimensions")
 	}
 	return nil

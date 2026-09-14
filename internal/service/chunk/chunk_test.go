@@ -793,6 +793,14 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	}
 }
 
+func TestValidateChunkImageBytesRejectsTruncatedImage(t *testing.T) {
+	valid := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	truncated := valid[:len(valid)-2]
+	if err := validateChunkImageBytes(truncated); err == nil {
+		t.Fatal("expected truncated image to be rejected")
+	}
+}
+
 func TestParseChunkImageUpdateModeRejectsEmptyString(t *testing.T) {
 	empty := "   "
 	if _, err := parseChunkImageUpdateMode(&empty); err == nil {
