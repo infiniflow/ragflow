@@ -290,7 +290,9 @@ async def import_multiple() -> Response:
                 if not isinstance(config["authorization_token"], str):
                     results.append({"server": server_name, "success": False, "message": "authorization_token must be a string."})
                     continue
-                headers.setdefault("authorization_token", config["authorization_token"])
+                # Explicit headers are the complete request configuration, even when empty.
+                if "headers" not in config:
+                    headers["authorization_token"] = config["authorization_token"]
             variables = {k: v for k, v in config.items() if k not in {"type", "url", "headers"}}
             variables.setdefault("authorization_token", "")
 

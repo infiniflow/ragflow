@@ -199,7 +199,7 @@ func fetchMCPTools(ctx context.Context, url, serverType string, headers, variabl
 	tools, err := utility.FetchTools(ctx, utility.FetchOptions{
 		URL:        url,
 		ServerType: serverType,
-		Headers:    jsonMapStringValues(headers),
+		Headers:    jsonMapHeaderValues(headers),
 		Variables:  jsonMapStringValues(variables),
 		Timeout:    timeout,
 	})
@@ -212,11 +212,99 @@ func fetchMCPTools(ctx context.Context, url, serverType string, headers, variabl
 func jsonMapStringValues(values entity.JSONMap) map[string]string {
 	out := map[string]string{}
 	for key, value := range values {
+		if text, ok := jsonValueString(value); ok {
+			out[key] = text
+		}
+	}
+	return out
+}
+
+func jsonMapHeaderValues(values entity.JSONMap) map[string]string {
+	out := map[string]string{}
+	for key, value := range values {
 		if text, ok := value.(string); ok {
 			out[key] = text
 		}
 	}
 	return out
+}
+
+// jsonValueString renders the scalar JSON values that can occur in an MCP
+// variable map. Python's string.Template.safe_substitute stringifies these
+// values before replacing a placeholder; the original values remain in the
+// JSON map for persistence. Compound values are left unavailable because
+// there is no stable header representation for them.
+func jsonValueString(value interface{}) (string, bool) {
+	switch value := value.(type) {
+	case string:
+		return value, true
+	case json.Number:
+		return value.String(), true
+	case bool:
+		if value {
+			return "True", true
+		}
+		return "False", true
+	case nil:
+		return "None", true
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64), true
+	case float32:
+		return strconv.FormatFloat(float64(value), 'f', -1, 32), true
+	case int:
+		return strconv.Itoa(value), true
+	case int8:
+		return strconv.FormatInt(int64(value), 10), true
+	case int16:
+		return strconv.FormatInt(int64(value), 10), true
+	case int32:
+		return strconv.FormatInt(int64(value), 10), true
+	case int64:
+		return strconv.FormatInt(value, 10), true
+	case uint:
+		return strconv.FormatUint(uint64(value), 10), true
+	case uint8:
+		return strconv.FormatUint(uint64(value), 10), true
+	case uint16:
+		return strconv.FormatUint(uint64(value), 10), true
+	case uint32:
+		return strconv.FormatUint(uint64(value), 10), true
+	case uint64:
+		return strconv.FormatUint(value, 10), true
+	default:
+		return "", false
+	}
+}
+
+// importedMCPHeaders validates and copies the header object from an imported
+// config. Keeping a separate copy means adding the legacy token fallback
+// cannot mutate the caller's decoded configuration, and a present empty map
+// remains distinguishable from an omitted headers field.
+func importedMCPHeaders(raw interface{}) (map[string]string, map[string]interface{}, bool) {
+	headers := map[string]string{}
+	values := map[string]interface{}{}
+
+	copyHeader := func(key string, value interface{}) bool {
+		text, ok := value.(string)
+		if !ok {
+			return false
+		}
+		headers[key] = text
+		values[key] = value
+		return true
+	}
+
+	switch raw := raw.(type) {
+	case map[string]interface{}:
+		for key, value := range raw {
+			if !copyHeader(key, value) {
+				return nil, nil, false
+			}
+		}
+	default:
+		return nil, nil, false
+	}
+	return headers, values, true
 }
 
 func (s *MCPService) GetMCPServer(ctx context.Context, tenantID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
@@ -556,18 +644,13 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 		}
 
 		variables := map[string]interface{}{}
-		stringVars := map[string]string{}
 		for k, v := range config {
 			if k == "type" || k == "url" || k == "headers" {
 				continue
 			}
 			variables[k] = v
-			if sv, ok := v.(string); ok {
-				stringVars[k] = sv
-			}
 		}
 		delete(variables, "tools")
-		delete(stringVars, "tools")
 
 		// Headers can be provided either as a top-level "headers" map
 		// (preferred — matches the Python import shape) or as a flat
@@ -577,25 +660,32 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 		// trip.
 		headers := map[string]string{}
 		headerVals := map[string]interface{}{}
-		if rawHeaders, ok := config["headers"].(map[string]interface{}); ok {
-			for k, v := range rawHeaders {
-				if sv, ok := v.(string); ok {
-					headers[k] = sv
-				}
-				headerVals[k] = v
+		rawHeaders, headersProvided := config["headers"]
+		if headersProvided {
+			var ok bool
+			headers, headerVals, ok = importedMCPHeaders(rawHeaders)
+			if !ok {
+				results = append(results, ImportResult{Server: baseName, Success: false, Message: "MCP headers must be a string-to-string object."})
+				continue
+			}
+		}
+		if token, exists := config["authorization_token"]; exists {
+			if _, ok := token.(string); !ok {
+				results = append(results, ImportResult{Server: baseName, Success: false, Message: "authorization_token must be a string."})
+				continue
 			}
 		}
 		if token, ok := config["authorization_token"].(string); ok && strings.TrimSpace(token) != "" {
-			variables["authorization_token"] = token
-			stringVars["authorization_token"] = token
-
-			if _, exists := headers["Authorization"]; !exists {
+			// An explicit header map is the complete request configuration,
+			// including {}. Retain the token as a variable for explicit
+			// placeholders, but only add the legacy fallback header when the
+			// import omitted headers altogether.
+			if !headersProvided {
 				headers["Authorization"] = "Bearer ${authorization_token}"
-			}
-			if _, exists := headerVals["Authorization"]; !exists {
 				headerVals["Authorization"] = "Bearer ${authorization_token}"
 			}
 		}
+		stringVars := jsonMapStringValues(entity.JSONMap(variables))
 
 		mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 		tools, fetchErr := utility.FetchTools(mcpCtx, utility.FetchOptions{
@@ -693,12 +783,7 @@ func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServ
 			headers[k] = sv
 		}
 	}
-	vars := map[string]string{}
-	for k, v := range req.Variables {
-		if sv, ok := v.(string); ok {
-			vars[k] = sv
-		}
-	}
+	vars := jsonMapStringValues(entity.JSONMap(req.Variables))
 
 	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
