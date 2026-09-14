@@ -68,16 +68,18 @@ class RAGFlowAzureSpnBlob:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob = f"{bucket}/{fnm}"
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 f = self.conn.create_file(f"{blob}")
                 f.append_data(binary, offset=0, length=len(binary))
                 return f.flush_data(len(binary))
             except Exception:
                 logging.exception(f"Fail put {blob}")
-                self.__open__()
-                time.sleep(1)
-                return None
+                if attempt == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
         return None
 
     def rm(self, bucket, fnm, tenant_id=None):
@@ -89,15 +91,18 @@ class RAGFlowAzureSpnBlob:
 
     def get(self, bucket, fnm, tenant_id=None):
         blob = f"{bucket}/{fnm}"
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 client = self.conn.get_file_client(f"{blob}")
                 r = client.download_file()
                 return r.read()
             except Exception:
                 logging.exception(f"fail get {blob}")
-                self.__open__()
-                time.sleep(1)
+                if attempt == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
         return None
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
@@ -116,6 +121,9 @@ class RAGFlowAzureSpnBlob:
                 return self.conn.get_presigned_url("GET", bucket, f_path, expires)
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                if _ == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**_)
         return None

@@ -114,7 +114,7 @@ class RAGFlowOSS:
     @use_default_bucket
     def put(self, bucket, fnm, binary, tenant_id=None):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 if not self.bucket_exists(bucket):
                     self.conn.create_bucket(Bucket=bucket)
@@ -124,8 +124,11 @@ class RAGFlowOSS:
                 return r
             except Exception:
                 logging.exception(f"Fail put {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                if attempt == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
 
     @use_prefix_path
     @use_default_bucket
@@ -138,15 +141,18 @@ class RAGFlowOSS:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, tenant_id=None):
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 r = self.conn.get_object(Bucket=bucket, Key=fnm)
                 object_data = r["Body"].read()
                 return object_data
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                if attempt == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
         return None
 
     @use_prefix_path
@@ -171,6 +177,9 @@ class RAGFlowOSS:
                 return r
             except Exception:
                 logging.exception(f"fail get url {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                if _ == 2:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**_)
         return None
