@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/tokenizer"
 	"regexp"
 
 	"strconv"
@@ -194,6 +195,37 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, valueS
 
 	// Build user message
 	userMessage := "Generate filters:"
+
+	// The metadata block is the whole value space of the dataset, so its size is
+	// set by the data rather than by anything here: one high-cardinality key can
+	// push the system prompt past the model's context on its own, and that got
+	// more likely -- not less -- once the value space stopped being cut short by
+	// the doc store's result window. Left unchecked the result is a failed model
+	// request rather than a degraded filter.
+	//
+	// Trimming to fit would be worse than refusing. The conditions returned here
+	// are applied as a hard document scope, so a filter chosen from a value list
+	// that lost entries excludes matching documents, and the model cannot report
+	// that it only saw part of the metadata -- the answer looks exactly as
+	// confident either way. So when the prompt does not fit, return no conditions
+	// and skip the model call that could only produce an answer we must not use.
+	// Empty conditions leave the search unscoped, which ApplyMetaDataFilter reads
+	// as "no scope": a filter that fails to narrow is recoverable, one that
+	// narrows to the wrong documents is not.
+	//
+	// A ContextLength of 0 means it could not be resolved; tokenizer.Fit reads
+	// that as 8192, exactly as Python's message_fit_in normalizes a non-positive
+	// max_length.
+	fitted, _, _ := tokenizer.Fit([]tokenizer.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userMessage},
+	}, chatModel.ContextLength)
+	if len(fitted) != 2 || fitted[0].Content != systemPrompt {
+		common.Warn("GenMetaFilter: the metadata value space does not fit the model context; returning no conditions so the search stays unscoped rather than filtered on a partial value list",
+			zap.Int("context_length", chatModel.ContextLength),
+			zap.Int("keys", len(valueSpace)))
+		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
+	}
 
 	// Build messages: system prompt + user message
 	messages := []modelModule.Message{

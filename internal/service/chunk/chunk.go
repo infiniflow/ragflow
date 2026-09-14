@@ -253,6 +253,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
 					chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					// The context window, not the max_output the target carries
+					// alongside it: the metadata filter's prompt budget is
+					// measured against the model's total context.
+					chatModelForFilter.ContextLength = target.ContextLength
 					common.Info("Fetched chat model (from search_config) for metadata filter",
 						zap.String("chatID", chatID),
 						zap.String("tenantID", tenantIDs[0]))
@@ -272,6 +276,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 					} else {
 						chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+						chatModelForFilter.ContextLength = target.ContextLength
 						common.Info("Fetched chat model (tenant default) for metadata filter",
 							zap.String("tenantID", tenantIDs[0]),
 							zap.String("modelName", modelName))
