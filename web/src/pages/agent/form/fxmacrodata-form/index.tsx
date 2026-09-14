@@ -53,6 +53,30 @@ function structuredText(value: unknown) {
       : JSON.stringify(value);
 }
 
+/** Arguments to seed when an operation is selected: its schema defaults. */
+export function defaultArguments(operationName: string) {
+  const definition = operations.find((item) => item.name === operationName) as
+    | OperationDefinition
+    | undefined;
+  const defaults = Object.fromEntries(
+    Object.entries(definition?.input_schema.properties ?? {})
+      .filter(
+        ([, schema]) => schema.default !== undefined && schema.default !== null,
+      )
+      .map(([name, schema]) => [name, schema.default]),
+  );
+  // The public calendar answers without a key for USD, so it starts there.
+  return operationName === 'release_calendar'
+    ? { currency: 'usd', ...defaults }
+    : defaults;
+}
+
+/** Commit a finite number; keep partial input such as a leading "-" as text. */
+export function numericFieldValue(raw: string): number | string {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : raw;
+}
+
 function StructuredInput({
   value,
   onChange,
@@ -65,7 +89,21 @@ function StructuredInput({
 }) {
   const [text, setText] = useState(() => structuredText(value));
   useEffect(() => {
-    setText(structuredText(value));
+    setText((current) => {
+      const next = structuredText(value);
+      if (current === next) return current;
+      if (value === undefined) return current.trim() ? next : current;
+      // A value this field just emitted is already represented by the typed
+      // text. Resyncing would reformat it and move the cursor to the end.
+      try {
+        if (JSON.stringify(JSON.parse(current)) === JSON.stringify(value)) {
+          return current;
+        }
+      } catch {
+        // Unparseable text only survives when the value is that same text.
+      }
+      return next;
+    });
   }, [value]);
   return (
     <Input
@@ -132,11 +170,9 @@ export function FXMacroDataWidgets({
                 }))}
                 onChange={(value) => {
                   field.onChange(value);
-                  form.setValue(
-                    'arguments',
-                    value === 'release_calendar' ? { currency: 'usd' } : {},
-                    { shouldDirty: true },
-                  );
+                  form.setValue('arguments', defaultArguments(value), {
+                    shouldDirty: true,
+                  });
                 }}
               />
             </FormControl>
@@ -196,6 +232,8 @@ export function FXMacroDataWidgets({
           const nullable =
             schema.type === 'null' ||
             schema.anyOf?.some((option) => option.type === 'null');
+          const numeric =
+            effective.type === 'integer' || effective.type === 'number';
           return (
             <FormField
               key={`${selected}:${name}`}
@@ -261,13 +299,13 @@ export function FXMacroDataWidgets({
                       />
                     ) : (
                       <Input
-                        value={field.value ?? ''}
-                        type={
-                          effective.type === 'integer' ||
-                          effective.type === 'number'
-                            ? 'number'
-                            : 'text'
+                        value={
+                          typeof field.value === 'number' &&
+                          !Number.isFinite(field.value)
+                            ? ''
+                            : (field.value ?? '')
                         }
+                        type={numeric ? 'number' : 'text'}
                         placeholder={schema.description}
                         onChange={(event) => {
                           const value = event.target.value;
@@ -275,12 +313,9 @@ export function FXMacroDataWidgets({
                             form.unregister(`arguments.${name}`);
                             return;
                           }
-                          if (
-                            effective.type === 'integer' ||
-                            effective.type === 'number'
-                          )
-                            field.onChange(Number(value));
-                          else field.onChange(value);
+                          field.onChange(
+                            numeric ? numericFieldValue(value) : value,
+                          );
                         }}
                       />
                     )}

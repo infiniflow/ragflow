@@ -1,27 +1,22 @@
 """Credential-safe diagnostics for this client's own HTTP requests."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
 import logging
-import re
-from urllib.parse import quote, quote_plus
 
 from requests.adapters import HTTPAdapter
 from urllib3.connection import HTTPSConnection
 from urllib3.connectionpool import HTTPSConnectionPool
 
+from .redaction import credential_variants, redact_credentials
+
 _active_key: ContextVar[str | None] = ContextVar("fxmacrodata_transport_key", default=None)
 
 
 def redact_text(value: str, api_key: str) -> str:
-    if api_key:
-        variants = {api_key, quote(api_key, safe=""), quote_plus(api_key, safe="")}
-        variants.update(re.sub(r"%[0-9A-F]{2}", lambda match: match[0].lower(), variant) for variant in tuple(variants))
-        for encoded in sorted(variants, key=len, reverse=True):
-            value = value.replace(encoded, "[redacted]")
-    value = re.sub(r"(?i)((?:proxy[_-]?)?authorization[\"']?\s*[:=]\s*[\"']?)(?:Bearer|Basic)\s+[^\s\"'&<>]+", r"\1[redacted]", value)
-    return re.sub(r"(?i)((?:api[_-]?key|access[_-]?token|authorization|password|client[_-]?secret|token)[\"']?\s*[:=]\s*[\"']?)[^\s\"'&<>]+", r"\1[redacted]", value)
+    return redact_credentials(value, credential_variants(api_key))
 
 
 class _CredentialFilter(logging.Filter):

@@ -4,7 +4,11 @@ import '@testing-library/jest-dom/jest-globals';
 import { useForm } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { FXMacroDataWidgets } from './index';
+import {
+  FXMacroDataWidgets,
+  defaultArguments,
+  numericFieldValue,
+} from './index';
 import operations from './operations.json';
 import { getToolOperatorName } from '../../log-sheet/tool-name';
 
@@ -28,14 +32,18 @@ test.each([
 function Harness({
   operation = 'release_calendar',
   agentTool = false,
+  arguments: initialArguments,
 }: {
   operation?: string;
   agentTool?: boolean;
+  arguments?: Record<string, unknown>;
 }) {
   const form = useForm({
     defaultValues: {
       operation,
-      arguments: operation === 'release_calendar' ? { currency: 'usd' } : {},
+      arguments:
+        initialArguments ??
+        (operation === 'release_calendar' ? { currency: 'usd' } : {}),
       use_credentials: false,
       timeout: 30,
     },
@@ -143,4 +151,44 @@ test('invalid replacement JSON replaces persisted arguments and correction recov
   expect(
     screen.queryByText('Enter valid JSON for this structured field.'),
   ).toBeNull();
+});
+
+test('structured input keeps the typed text after a successful parse', () => {
+  render(<Harness operation="mcp_plot_visual_artifact" />);
+  const values = () =>
+    JSON.parse(screen.getByTestId('values').textContent || '{}').arguments;
+  const input = screen.getByLabelText('series');
+  const typed = '[ {"source": "announcements"} ]';
+  fireEvent.change(input, { target: { value: typed } });
+  expect(values().series).toEqual([{ source: 'announcements' }]);
+  expect(input).toHaveValue(typed);
+});
+
+test('numeric arguments accept negative numbers and keep partial input editable', () => {
+  expect(numericFieldValue('-5')).toBe(-5);
+  expect(numericFieldValue('2.5')).toBe(2.5);
+  expect(numericFieldValue('-')).toBe('-');
+  expect(numericFieldValue('1e')).toBe('1e');
+  render(<Harness operation="indicator_history" />);
+  const values = () =>
+    JSON.parse(screen.getByTestId('values').textContent || '{}').arguments;
+  fireEvent.change(screen.getByLabelText('Page'), {
+    target: { value: '-5' },
+  });
+  expect(values().page).toBe(-5);
+  expect(screen.getByLabelText('Page')).toHaveValue(-5);
+});
+
+test('a non-finite stored number renders as an empty field', () => {
+  render(
+    <Harness operation="indicator_history" arguments={{ page: Number.NaN }} />,
+  );
+  expect(screen.getByLabelText('Page')).toHaveValue(null);
+});
+
+test('selecting an operation seeds its schema defaults', () => {
+  expect(defaultArguments('release_calendar')).toEqual({ currency: 'usd' });
+  expect(defaultArguments('forex')).toEqual({ limit: 20, offset: 0 });
+  expect(defaultArguments('mcp_release_calendar')).toEqual({});
+  expect(defaultArguments('missing_operation')).toEqual({});
 });

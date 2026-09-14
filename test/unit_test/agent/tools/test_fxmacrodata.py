@@ -1,8 +1,10 @@
 """Native Canvas/ToolBase integration with synthetic HTTP transport fixtures."""
+
 import asyncio
 from copy import deepcopy
 import json
 import logging
+import time
 
 import pytest
 
@@ -11,8 +13,11 @@ import agent.canvas as canvas_module
 from agent.component.base import ComponentParamBase
 from agent.tools.base import LLMToolPluginCallSession, ToolBase
 from agent.tools import fxmacrodata as provider
-from agent.tools.fxmacrodata_client import list_operations
+from agent.tools.fxmacrodata_client import FXMacroDataError, list_operations
+from agent.tools.fxmacrodata_client.client import MAX_RESPONSE_BYTES, STREAM_CHUNK_BYTES
+from agent.tools.fxmacrodata_client.transport import redact_text
 from agent.tools.fxmacrodata import FXMacroDataClient
+from agent.tools.fxmacrodata_response_safety import sanitize_response
 
 
 class Response:
@@ -234,10 +239,12 @@ def test_native_error_blocks_endpoint_or_credential_arguments(make_canvas, monke
 def test_reused_native_tool_clears_previous_data_and_error(make_canvas, monkeypatch, async_mode):
     session = transport(monkeypatch, {"data": [{"fixture": "first-success"}]})
     _, tool = make_canvas()
+
     def invoke():
         if async_mode:
             return asyncio.run(tool.invoke_async(**tool.get_input()))
         return tool.invoke(**tool.get_input())
+
     invoke()
     assert tool.output("json")
     session.status = 503
@@ -304,9 +311,10 @@ def test_invalid_structured_form_argument_blocks_http_and_correction_recovers(ma
 def test_configured_credential_escapes_in_plain_prose_are_redacted(make_canvas, monkeypatch, encoding):
     secret = 'synthetic-ragflow-"key"\\é😀'
     raw = secret.encode("utf-16-be")
-    escaped = json.dumps(secret, ensure_ascii=True)[1:-1] if encoding == "json" else "".join(
-        "\\u" + (raw[index:index + 2].hex().upper() if encoding == "unicode_upper" else raw[index:index + 2].hex())
-        for index in range(0, len(raw), 2)
+    escaped = (
+        json.dumps(secret, ensure_ascii=True)[1:-1]
+        if encoding == "json"
+        else "".join("\\u" + (raw[index : index + 2].hex().upper() if encoding == "unicode_upper" else raw[index : index + 2].hex()) for index in range(0, len(raw), 2))
     )
     monkeypatch.setenv("FXMACRODATA_API_KEY", secret)
     transport(monkeypatch, {"data": [{"note": "Echo " + escaped + ".", "available": False}]})
@@ -316,3 +324,67 @@ def test_configured_credential_escapes_in_plain_prose_are_redacted(make_canvas, 
     assert tool.output("json")[0] == {"note": "Echo [redacted].", "available": False}
     assert escaped not in result + str(canvas)
     assert tool.output("response")["data"][0]["note"] == "Echo [redacted]."
+
+
+class ChunkedResponse:
+    """A streaming body delivered in caller-defined pieces."""
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.chunk_sizes = []
+
+    def iter_content(self, chunk_size):
+        self.chunk_sizes.append(chunk_size)
+        yield from self.chunks
+
+    def close(self):
+        pass
+
+
+def test_event_stream_reads_chunks_and_splits_lines_across_chunk_boundaries():
+    client = FXMacroDataClient(session=Session({}))
+    response = ChunkedResponse([b"data: one\r", b"\ndata: two\n\r\n", b"data: th", b"ree\n\n", b"tail"])
+    lines = list(client._bounded_lines(response, time.monotonic() + 5))
+    assert lines == [b"data: one", b"data: two", b"", b"data: three", b""]
+    assert response.chunk_sizes == [STREAM_CHUNK_BYTES] and STREAM_CHUNK_BYTES > 1
+
+
+def test_event_stream_budget_bounds_an_undelimited_frame():
+    client = FXMacroDataClient(session=Session({}))
+    response = ChunkedResponse([b"x" * STREAM_CHUNK_BYTES] * (MAX_RESPONSE_BYTES // STREAM_CHUNK_BYTES + 1))
+    with pytest.raises(FXMacroDataError, match="bounded response budget"):
+        list(client._bounded_lines(response, time.monotonic() + 5))
+
+
+def test_mcp_result_split_across_stream_chunks_is_still_matched(make_canvas, monkeypatch):
+    session = transport(monkeypatch, {"content": [{"type": "text", "text": "chunked"}], "isError": False})
+    original = session.request
+
+    def request(method, url, **kwargs):
+        response = original(method, url, **kwargs)
+        if kwargs.get("headers", {}).get("Accept") == "text/event-stream" or (kwargs.get("json") or {}).get("method") == "tools/call":
+            response.headers["Content-Type"] = "text/event-stream"
+            body = b"data: " + response.content + b"\r\n\r\n"
+            response.iter_content = lambda chunk_size: iter([body[i : i + 7] for i in range(0, len(body), 7)])
+        return response
+
+    monkeypatch.setattr(session, "request", request)
+    _, tool = make_canvas("mcp_ping", {})
+    tool.invoke(**tool.get_input())
+    assert not tool.output("_ERROR")
+    assert tool.output("response")["content"][0]["text"] == "chunked"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Authorization: Bearer synthetic-bearer-token",
+        "api_key=synthetic-query-key&x=1",
+        "note synthetic key/one end",
+        "query synthetic%20key%2fone or synthetic+key%2Fone",
+    ],
+)
+def test_transport_and_response_redaction_share_one_rule_set(text):
+    key = "synthetic key/one"
+    assert redact_text(text, key) == sanitize_response(text, key)
+    assert "synthetic" not in redact_text(text, key)

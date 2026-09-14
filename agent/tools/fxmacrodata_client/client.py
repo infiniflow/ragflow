@@ -1,4 +1,5 @@
 """Bounded REST and MCP access to the public FXMacroData service."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -25,6 +26,8 @@ API_ORIGIN = "https://api.fxmacrodata.com"
 MCP_URL = "https://mcp.fxmacrodata.com/mcp"
 WEBSITE = "https://fxmacrodata.com"
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+STREAM_CHUNK_BYTES = 8192
+_LINE_END = re.compile(rb"\r|\n")
 MCP_PROTOCOL_VERSION = "2025-03-26"
 
 
@@ -89,6 +92,7 @@ def _records(payload: Any) -> list[dict[str, Any]]:
 @dataclass(frozen=True)
 class Result:
     """Original response plus an additive tabular view; no source fields renamed."""
+
     operation: str
     payload: Any
     source_url: str = WEBSITE
@@ -146,8 +150,7 @@ class FXMacroDataClient:
             if headers and headers.get("Mcp-Session-Id"):
                 response = None
                 try:
-                    response = self._request("DELETE", MCP_URL, params=self._auth_params(),
-                                             headers=headers, timeout=min(self.timeout, 2))
+                    response = self._request("DELETE", MCP_URL, params=self._auth_params(), headers=headers, timeout=min(self.timeout, 2))
                 except Exception:
                     # Closing a session is best effort and must not mask a tool
                     # result or expose an underlying request/credential error.
@@ -186,7 +189,9 @@ class FXMacroDataClient:
             detail = f"FXMacroData request failed (HTTP {response.status_code})."
         raise FXMacroDataError(detail)
 
-    def _request(self, method: str, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, body: dict[str, Any] | None = None, timeout: float | None = None) -> requests.Response:
+    def _request(
+        self, method: str, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None, body: dict[str, Any] | None = None, timeout: float | None = None
+    ) -> requests.Response:
         try:
             with protected_diagnostics(self._api_key):
                 return self._session.request(method, url, params=params, headers=headers, json=body, timeout=timeout or self.timeout, allow_redirects=False, stream=True)
@@ -198,8 +203,10 @@ class FXMacroDataClient:
         pending = bytearray()
         skip_lf = False
         # iter_lines only yields after a delimiter, so a long undelimited frame
-        # could evade both byte and elapsed-time checks. Bound raw bytes first.
-        for chunk in response.iter_content(chunk_size=1):
+        # could evade both byte and elapsed-time checks. Bound raw bytes first:
+        # ``pending`` only ever holds bytes already counted against the budget,
+        # so an undelimited frame can never grow past MAX_RESPONSE_BYTES.
+        for chunk in response.iter_content(chunk_size=STREAM_CHUNK_BYTES):
             if not isinstance(chunk, bytes):
                 raise FXMacroDataError("FXMacroData returned an invalid event stream.")
             seen_bytes += len(chunk)
@@ -209,16 +216,23 @@ class FXMacroDataClient:
                 if stop_at_deadline:
                     return
                 raise FXMacroDataError("FXMacroData response exceeded the bounded response budget.")
-            for value in chunk:
-                if skip_lf and value == 10:
-                    skip_lf = False
-                    continue
-                skip_lf = value == 13
-                if value in (10, 13):
-                    yield bytes(pending)
-                    pending.clear()
-                else:
-                    pending.append(value)
+            if skip_lf and chunk[:1] == b"\n":
+                chunk = chunk[1:]
+            skip_lf = False
+            pending += chunk
+            start = 0
+            while (match := _LINE_END.search(pending, start)) is not None:
+                end = match.start()
+                yield bytes(pending[start:end])
+                start = end + 1
+                if pending[end] == 13:
+                    if start < len(pending):
+                        if pending[start] == 10:
+                            start += 1
+                    else:
+                        # A CR at the chunk edge may be the first half of CRLF.
+                        skip_lf = True
+            del pending[:start]
 
     @staticmethod
     @contextmanager
@@ -262,8 +276,7 @@ class FXMacroDataClient:
                 with self._response_deadline(response, deadline):
                     for event in self._parse_sse(self._bounded_lines(response, deadline)):
                         data = event["data"]
-                        if (isinstance(data, dict) and data.get("jsonrpc") == "2.0"
-                                and data.get("id") == response_id and ("result" in data or "error" in data)):
+                        if isinstance(data, dict) and data.get("jsonrpc") == "2.0" and data.get("id") == response_id and ("result" in data or "error" in data):
                             # Streamable HTTP may remain open after delivering this
                             # response. Do not wait for EOF or a later keepalive.
                             return data
@@ -393,16 +406,16 @@ class FXMacroDataClient:
                 response.close()
             return None, response_headers
         value = self._read_json(response, response_id=body["id"])
-        if (not isinstance(value, dict) or value.get("jsonrpc") != "2.0"
-                or type(value.get("id")) is not int or value.get("id") != body["id"]
-                or "error" in value or "result" not in value):
+        if not isinstance(value, dict) or value.get("jsonrpc") != "2.0" or type(value.get("id")) is not int or value.get("id") != body["id"] or "error" in value or "result" not in value:
             raise FXMacroDataError("FXMacroData MCP could not complete this request.")
         return value["result"], response_headers
 
     def _initialize_mcp(self) -> dict[str, str]:
         if self._mcp_headers is None:
             headers = {"Accept": "application/json, text/event-stream"}
-            result, returned = self._rpc("initialize", {"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {}, "clientInfo": {"name": "fxmacrodata-public-client", "version": "0.1.0"}}, headers=headers)
+            result, returned = self._rpc(
+                "initialize", {"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {}, "clientInfo": {"name": "fxmacrodata-public-client", "version": "0.1.0"}}, headers=headers
+            )
             if not isinstance(result, dict) or result.get("protocolVersion") != MCP_PROTOCOL_VERSION:
                 raise FXMacroDataError("FXMacroData MCP returned an unsupported initialization response.")
             headers["MCP-Protocol-Version"] = MCP_PROTOCOL_VERSION
@@ -431,8 +444,7 @@ class FXMacroDataClient:
             if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
                 raise FXMacroDataError("FXMacroData MCP returned an invalid tool catalogue.")
             for tool in result["tools"]:
-                if (not isinstance(tool, dict) or not isinstance(tool.get("name"), str)
-                        or not isinstance(tool.get("inputSchema"), dict)):
+                if not isinstance(tool, dict) or not isinstance(tool.get("name"), str) or not isinstance(tool.get("inputSchema"), dict):
                     raise FXMacroDataError("FXMacroData MCP returned an invalid tool descriptor.")
                 try:
                     jsonschema.Draft202012Validator.check_schema(tool["inputSchema"])
