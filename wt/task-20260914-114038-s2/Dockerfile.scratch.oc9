@@ -1,0 +1,61 @@
+FROM opencloudos/opencloudos:9.0
+USER root
+
+WORKDIR /ragflow
+
+RUN dnf update -y && dnf install -y wget curl gcc-c++ openmpi-devel
+
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
+    bash ~/miniconda.sh -b -p /root/miniconda3 && \
+    rm ~/miniconda.sh && ln -s /root/miniconda3/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    echo ". /root/miniconda3/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate base" >> ~/.bashrc
+
+ENV PATH /root/miniconda3/bin:$PATH
+
+RUN conda create -y --name py11 python=3.11
+
+ENV CONDA_DEFAULT_ENV py11
+ENV CONDA_PREFIX /root/miniconda3/envs/py11
+ENV PATH $CONDA_PREFIX/bin:$PATH
+
+# RUN curl -sL https://rpm.nodesource.com/setup_14.x | bash -
+RUN dnf install -y nodejs
+
+RUN dnf install -y nginx
+
+ADD ./web ./web
+ADD ./api ./api
+ADD ./docs ./docs
+ADD ./conf ./conf
+ADD ./deepdoc ./deepdoc
+ADD ./rag ./rag
+ADD ./requirements.txt ./requirements.txt
+ADD ./agent ./agent
+ADD ./graphrag ./graphrag
+ADD ./plugin ./plugin
+
+RUN dnf install -y openmpi openmpi-devel python3-openmpi
+ENV C_INCLUDE_PATH /usr/include/openmpi-x86_64:$C_INCLUDE_PATH
+ENV LD_LIBRARY_PATH /usr/lib64/openmpi/lib:$LD_LIBRARY_PATH
+RUN rm /root/miniconda3/envs/py11/compiler_compat/ld
+RUN cd ./web && npm i && npm run build
+RUN conda run -n py11 pip install $(grep -ivE "mpi4py" ./requirements.txt) # without mpi4py==3.1.5
+RUN conda run -n py11 pip install redis
+
+RUN dnf update -y && \
+    dnf install -y glib2 mesa-libGL && \
+    dnf clean all
+
+RUN conda run -n py11 pip install ollama
+RUN conda run -n py11 python -m nltk.downloader punkt
+RUN conda run -n py11 python -m nltk.downloader wordnet
+
+ENV PYTHONPATH=/ragflow/
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+ADD docker/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]

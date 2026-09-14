@@ -1,0 +1,415 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+// src/pages/next-searches/hooks.ts
+
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useHandleSearchChange } from '@/hooks/logic-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import searchService from '@/services/search-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useParams, useSearchParams } from 'react-router';
+interface CreateSearchProps {
+  name: string;
+  description?: string;
+}
+
+interface CreateSearchResponse {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const useCreateSearch = () => {
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isError,
+    mutateAsync: createSearchMutation,
+  } = useMutation<CreateSearchResponse, Error, CreateSearchProps>({
+    mutationKey: ['createSearch'],
+    mutationFn: async (props) => {
+      const { data: response } = await searchService.createSearch(props);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to create search');
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      message.success(t('message.created'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const createSearch = useCallback(
+    (props: CreateSearchProps) => {
+      return createSearchMutation(props);
+    },
+    [createSearchMutation],
+  );
+
+  return { data, isError, createSearch };
+};
+
+export interface SearchListParams {
+  keywords?: string;
+  parser_id?: string;
+  page?: number;
+  page_size?: number;
+  orderby?: string;
+  desc?: boolean;
+  owner_ids?: string;
+}
+export interface ISearchAppProps {
+  avatar: any;
+  create_time: number;
+  created_by: string;
+  description: string;
+  id: string;
+  name: string;
+  nickname: string;
+  status: string;
+  tenant_avatar: any;
+  tenant_id: string;
+  update_time: number;
+}
+interface SearchListResponse {
+  code: number;
+  data: {
+    search_apps: Array<ISearchAppProps>;
+    total: number;
+  };
+  message: string;
+}
+
+export const useFetchSearchList = () => {
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
+  const { data, isLoading, isError, refetch } = useQuery<
+    SearchListResponse,
+    Error
+  >({
+    queryKey: [
+      'searchList',
+      {
+        debouncedSearchString,
+        filterValue,
+        ...pagination,
+      },
+    ],
+    queryFn: async () => {
+      const { data: response } = await searchService.getSearchList(
+        {
+          params: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+            owner_ids: filterValue.owner,
+          },
+          paramsSerializer: { indexes: null },
+        },
+        true,
+      );
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch search list');
+      }
+      return response;
+    },
+  });
+
+  return {
+    data,
+    isLoading,
+    isError,
+    pagination,
+    searchString,
+    setSearchString,
+    handleInputChange,
+    setPagination,
+    refetch,
+    filterValue,
+    setFilterValue,
+    handleFilterSubmit,
+  };
+};
+
+interface DeleteSearchProps {
+  search_id: string;
+}
+
+interface DeleteSearchResponse {
+  code: number;
+  data: boolean;
+  message: string;
+}
+
+export interface IllmSettingProps {
+  llm_id: string;
+  parameter: string;
+  temperature?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  temperature_enabled?: boolean;
+  top_p_enabled?: boolean;
+  frequency_penalty_enabled?: boolean;
+  presence_penalty_enabled?: boolean;
+}
+interface IllmSettingEnableProps {
+  temperatureEnabled?: boolean;
+  topPEnabled?: boolean;
+  presencePenaltyEnabled?: boolean;
+  frequencyPenaltyEnabled?: boolean;
+}
+export interface ISearchAppDetailProps {
+  avatar: any;
+  created_by: string;
+  description: string;
+  id: string;
+  name: string;
+  search_config: {
+    cross_languages: string[];
+    doc_ids: string[];
+    chat_id: string;
+    highlight: boolean;
+    kb_ids: string[];
+    keyword: boolean;
+    query_mindmap: boolean;
+    related_search: boolean;
+    rerank_id: string;
+    use_rerank?: boolean;
+    similarity_threshold: number;
+    summary: boolean;
+    llm_setting: IllmSettingProps & IllmSettingEnableProps;
+    top_k: number;
+    rerank_candidates_count: number;
+    use_kg: boolean;
+    vector_similarity_weight: number;
+    web_search: boolean;
+    chat_settingcross_languages: string[];
+    meta_data_filter?: {
+      method: string;
+      manual: { key: string; op: string; value: string }[];
+    };
+    reference_metadata?: {
+      include?: boolean;
+      fields?: string[];
+    };
+  };
+  tenant_id: string;
+  update_time: number;
+}
+
+interface SearchDetailResponse {
+  code: number;
+  data: ISearchAppDetailProps;
+  message: string;
+}
+
+export const useFetchSearchDetail = (tenantId?: string) => {
+  const { id } = useParams();
+
+  const [searchParams] = useSearchParams();
+  const shared_id = searchParams.get('shared_id');
+  const searchId = id || shared_id;
+
+  const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
+    queryKey: ['searchDetail', searchId],
+    enabled: !shared_id || !!tenantId,
+    queryFn: async () => {
+      let res;
+      if (shared_id) {
+        res = await searchService.getSearchDetailShare(
+          { params: { search_id: searchId, tenant_id: tenantId } },
+          true,
+        );
+      } else {
+        res = await searchService.getSearchDetail({ search_id: searchId });
+      }
+      const response = res.data;
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch search detail');
+      }
+      return response;
+    },
+  });
+
+  return { data: data?.data, isLoading, isError };
+};
+
+export const useDeleteSearch = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isError,
+    mutateAsync: deleteSearchMutation,
+  } = useMutation<DeleteSearchResponse, Error, DeleteSearchProps>({
+    mutationKey: ['deleteSearch'],
+    mutationFn: async (props) => {
+      const { data: response } = await searchService.deleteSearch(props);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to delete search');
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['searchList'] });
+      markListItemsDeleted(ListDeletionKey.SearchList);
+      return response;
+    },
+    onSuccess: () => {
+      message.success(t('message.deleted'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const deleteSearch = useCallback(
+    (props: DeleteSearchProps) => {
+      return deleteSearchMutation(props);
+    },
+    [deleteSearchMutation],
+  );
+
+  return { data, isError, deleteSearch };
+};
+
+export type IUpdateSearchProps = Omit<ISearchAppDetailProps, 'id'> & {
+  search_id: string;
+};
+
+export const useUpdateSearch = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isError,
+    mutateAsync: updateSearchMutation,
+  } = useMutation<any, Error, IUpdateSearchProps>({
+    mutationKey: ['updateSearch'],
+    mutationFn: async (formData) => {
+      const { data: response } =
+        await searchService.updateSearchSetting(formData);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to update search');
+      }
+      return response.data;
+    },
+    onSuccess: (data, variables) => {
+      message.success(t('message.updated'));
+      queryClient.invalidateQueries({
+        queryKey: ['searchDetail', variables.search_id],
+      });
+    },
+  });
+
+  const updateSearch = useCallback(
+    (formData: IUpdateSearchProps) => {
+      return updateSearchMutation(formData);
+    },
+    [updateSearchMutation],
+  );
+
+  return { data, isError, updateSearch };
+};
+
+export const useRenameSearch = () => {
+  const [search, setSearch] = useState<ISearchAppProps>({} as ISearchAppProps);
+  const { navigateToSearch } = useNavigatePage();
+  const {
+    visible: openCreateModal,
+    hideModal: hideChatRenameModal,
+    showModal: showChatRenameModal,
+  } = useSetModalState();
+  const { updateSearch } = useUpdateSearch();
+  const { createSearch } = useCreateSearch();
+  const [loading, setLoading] = useState(false);
+
+  const handleShowChatRenameModal = useCallback(
+    (record?: ISearchAppProps) => {
+      if (record) {
+        setSearch(record);
+      }
+      showChatRenameModal();
+    },
+    [showChatRenameModal],
+  );
+
+  const handleHideModal = useCallback(() => {
+    hideChatRenameModal();
+    setSearch({} as ISearchAppProps);
+  }, [hideChatRenameModal]);
+
+  const onSearchRenameOk = useCallback(
+    async (name: string, callBack?: () => void) => {
+      let res;
+      setLoading(true);
+      if (search?.id) {
+        try {
+          const response = await searchService.getSearchDetail({
+            search_id: search?.id,
+          });
+          const detail = response.data?.data;
+
+          // oxlint-disable-next-line typescript/no-unused-vars
+          const { id, created_by, update_time, ...searchDataTemp } = detail;
+          res = await updateSearch({
+            ...searchDataTemp,
+            name: name,
+            search_id: search?.id,
+          } as unknown as IUpdateSearchProps);
+        } catch (e) {
+          console.error('error', e);
+        }
+      } else {
+        res = await createSearch({ name: name });
+      }
+      if (res && !search?.id) {
+        navigateToSearch(res?.search_id)();
+      }
+      callBack?.();
+      setLoading(false);
+      handleHideModal();
+    },
+    [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
+  );
+  return {
+    searchRenameLoading: loading,
+    initialSearchName: search?.name,
+    onSearchRenameOk,
+    openCreateModal,
+    hideSearchRenameModal: handleHideModal,
+    showSearchRenameModal: handleShowChatRenameModal,
+  };
+};

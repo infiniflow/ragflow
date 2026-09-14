@@ -1,0 +1,445 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package component
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/xuri/excelize/v2"
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
+)
+
+func TestReportParserWarningsAsProgressMessages(t *testing.T) {
+	var got []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) {
+		got = append(got, component+": "+message)
+	})
+
+	reportParserWarnings(ctx, []string{"sheet \"Summary\": unsupported image extension \"emf\""})
+
+	if len(got) != 1 || got[0] != "Parser: WARNING: sheet \"Summary\": unsupported image extension \"emf\"" {
+		t.Fatalf("progress warnings = %v", got)
+	}
+}
+
+// TestParserComponent_Registered asserts the factory lookup
+// succeeds for the canonical "Parser" name. This is the contract
+// the pipeline runner relies on (see plan §4 Phase 0, "category-
+// aware registry"). A regression here would mean the component
+// failed to register in init().
+func TestParserComponent_Registered(t *testing.T) {
+	factory, category, meta, ok := runtime.DefaultRegistry.Lookup("Parser")
+	if !ok {
+		t.Fatalf("Parser not registered in DefaultRegistry")
+	}
+	if category != runtime.CategoryIngestion {
+		t.Errorf("Parser category = %q, want %q", category, runtime.CategoryIngestion)
+	}
+	if factory == nil {
+		t.Fatalf("Parser factory is nil")
+	}
+	if len(meta.Inputs) == 0 {
+		t.Errorf("Parser Metadata.Inputs is empty")
+	}
+	if len(meta.Outputs) == 0 {
+		t.Errorf("Parser Metadata.Outputs is empty")
+	}
+}
+
+// TestParserComponent_InputsOutputs_NonEmpty covers the static
+// input/output descriptors — the API layer enumerates these to
+// build the component catalog, so an empty descriptor would
+// hide the component from the UI.
+func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
+	c := &ParserComponent{}
+	in := c.Inputs()
+	out := c.Outputs()
+	if len(in) == 0 {
+		t.Errorf("Inputs() returned empty map")
+	}
+	if len(out) == 0 {
+		t.Errorf("Outputs() returned empty map")
+	}
+	// The component catalog must expose every caller-provided input that
+	// Invoke reads before dispatching.
+	for _, key := range []string{"binary", "name", "file", "file_type", "lang", "doc_id", "bucket", "path"} {
+		if _, ok := in[key]; !ok {
+			t.Errorf("Inputs() missing runtime input key %q", key)
+		}
+	}
+	if _, ok := out["output_format"]; !ok {
+		t.Errorf("Outputs() missing key %q", "output_format")
+	}
+	if _, ok := out["json"]; !ok {
+		t.Errorf("Outputs() missing key %q", "json")
+	}
+	for _, key := range []string{"name", "lang", "file", "doc_id", "bucket", "path"} {
+		if _, ok := out[key]; !ok {
+			t.Errorf("Outputs() missing runtime output key %q", key)
+		}
+	}
+	if _, ok := out["_ERROR"]; ok {
+		t.Error("Outputs() must not advertise _ERROR; Parser failures return Go errors")
+	}
+}
+
+func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
+	component, err := NewParserComponent(map[string]any{
+		"pdf":         map[string]any{"output_format": "markdown"},
+		"spreadsheet": map[string]any{"output_format": "html"},
+		"email":       map[string]any{"output_format": "text"},
+		"allowed_output_format": map[string]any{
+			"pdf": []any{"json", "markdown"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+
+	parserComponent := component.(*ParserComponent)
+	for _, family := range []string{"pdf", "spreadsheet", "email"} {
+		if got := parserComponent.setups[family]["output_format"]; got != "json" {
+			t.Errorf("%s output_format = %v, want json", family, got)
+		}
+	}
+	if _, ok := parserComponent.setups["allowed_output_format"]; ok {
+		t.Error("allowed_output_format must not be treated as a parser setup")
+	}
+}
+
+// TestParserComponent_Invoke_TextInput covers the happy path:
+// UTF-8 text input, no form-feeds, default page_size. The
+// component must emit exactly one page carrying the full text
+// under "text". Timing stamps (_created_time / _elapsed_time) are
+// owned by the canvas framework, not by this component, so they are
+// not asserted here.
+func TestParserComponent_Invoke_TextInput(t *testing.T) {
+	c := &ParserComponent{}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary": "hello world",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["output_format"], "json"; got != want {
+		t.Errorf("output_format = %v, want %v", got, want)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("json: got %T (len %d), want 1 item", out["json"], len(jsonItems))
+	}
+	if got := jsonItems[0]["text"]; got != "hello world" {
+		t.Errorf("json[0][text] = %q, want %q", got, "hello world")
+	}
+	if got := jsonItems[0]["doc_type_kwd"]; got != "text" {
+		t.Errorf("json[0][doc_type_kwd] = %q, want %q", got, "text")
+	}
+}
+
+func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
+	f := excelize.NewFile()
+	data, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	c := &ParserComponent{setups: defaultSetups()}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    data.Bytes(),
+		"file_type": "xlsx",
+		"name":      "empty.xlsx",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	items, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json = %T, want []map[string]any", out["json"])
+	}
+	if len(items) != 0 {
+		t.Fatalf("empty XLSX JSON = %v, want no raw-binary items", items)
+	}
+}
+
+// TestParserComponent_Invoke_PageRangeFilter asserts that
+// form-feed boundaries are honored: "A\fB\fC" yields three
+// items, in input order, with text intact.
+func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
+	c := &ParserComponent{}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary": "pageA\fpageB\fpageC",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json: got %T, want []map[string]any", out["json"])
+	}
+	if len(jsonItems) != 3 {
+		t.Fatalf("json len = %d, want 3", len(jsonItems))
+	}
+	want := []string{"pageA", "pageB", "pageC"}
+	for i, it := range jsonItems {
+		if got := it["text"]; got != want[i] {
+			t.Errorf("json[%d][text] = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+// TestParserComponent_Invoke_DeterministicMerge verifies stable output order.
+//
+// We invoke the component 5 times with identical input and
+// assert byte-for-byte equality of the JSON-encoded output.
+// The test is expected to pass under `go test -count=10 -race`
+// — that flag is run separately in the verification block.
+//
+// Text-page mode preserves input order, which downstream chunkers rely on for
+// stable chunk IDs.
+func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
+	c := &ParserComponent{}
+	// 8 form-feed-separated pages.
+	input := "p1\fp2\fp3\fp4\fp5\fp6\fp7\fp8"
+
+	// First call: produce the canonical bytes.
+	first, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary": input,
+	})
+	if err != nil {
+		t.Fatalf("Invoke (first): %v", err)
+	}
+	canonical, err := json.Marshal(first["json"])
+	if err != nil {
+		t.Fatalf("Marshal canonical: %v", err)
+	}
+
+	// Subsequent calls: must produce the same bytes.
+	for i := 0; i < 5; i++ {
+		got, err := c.Invoke(t.Context(), nil, map[string]any{
+			"binary": input,
+		})
+		if err != nil {
+			t.Fatalf("Invoke (run %d): %v", i, err)
+		}
+		encoded, err := json.Marshal(got["json"])
+		if err != nil {
+			t.Fatalf("Marshal run %d: %v", i, err)
+		}
+		if string(encoded) != string(canonical) {
+			t.Errorf("run %d output differs from canonical:\n got=%s\nwant=%s",
+				i, encoded, canonical)
+		}
+	}
+}
+
+// TestParserComponent_New_Defaults constructs a Parser from a nil param map
+// and verifies every parser family uses the canonical JSON output format.
+func TestParserComponent_New_Defaults(t *testing.T) {
+	c, err := NewParserComponent(nil)
+	if err != nil {
+		t.Fatalf("NewParserComponent(nil): %v", err)
+	}
+	pc, ok := c.(*ParserComponent)
+	if !ok {
+		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
+	}
+	for family, setup := range pc.setups {
+		if got := setup["output_format"]; got != "json" {
+			t.Errorf("%s output_format = %v, want json", family, got)
+		}
+	}
+}
+
+// TestParserComponent_New_Overrides verifies that a non-nil
+// param map with a file-type entry is layered on top of the
+// defaults.
+func TestParserComponent_New_Overrides(t *testing.T) {
+	c, err := NewParserComponent(map[string]any{
+		"text&code": map[string]any{
+			"chunk_token_size": 256,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	pc, ok := c.(*ParserComponent)
+	if !ok {
+		t.Fatalf("NewParserComponent returned %T", c)
+	}
+	setup, ok := pc.setups["text&code"]
+	if !ok {
+		t.Fatalf("Setups[text&code] missing after override")
+	}
+	if got, _ := setup["chunk_token_size"].(int); got != 256 {
+		t.Errorf("Setups[text&code][chunk_token_size] = %v, want 256", setup["chunk_token_size"])
+	}
+	// Defaults must still be present for other file types.
+	if _, ok := pc.setups["pdf"]; !ok {
+		t.Errorf("Setups[pdf] missing; override should not erase defaults")
+	}
+}
+
+func TestParserComponent_NewOwnsNestedSetup(t *testing.T) {
+	vlm := map[string]any{"llm_id": "original"}
+	c, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"vlm": vlm},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	pc, ok := c.(*ParserComponent)
+	if !ok {
+		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
+	}
+
+	vlm["llm_id"] = "mutated"
+	gotVLM, ok := pc.setups["pdf"]["vlm"].(map[string]any)
+	if !ok {
+		t.Fatalf("pdf.vlm = %T, want map[string]any", pc.setups["pdf"]["vlm"])
+	}
+	if got := gotVLM["llm_id"]; got != "original" {
+		t.Errorf("pdf.vlm.llm_id = %v after caller mutation, want original", got)
+	}
+}
+
+// TestParserComponent_Invoke_DocIDCarried asserts the optional
+// doc_id input flows through to the "name" output.
+func TestParserComponent_Invoke_DocIDCarried(t *testing.T) {
+	c := &ParserComponent{}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary": "x",
+		"doc_id": "doc-123",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["name"].(string); got != "doc-123" {
+		t.Errorf("name = %q, want %q", got, "doc-123")
+	}
+}
+
+func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
+	ms := withMemoryStorage(t)
+	db := withFileComponentTestDB(t)
+	location := "docs/from-parser.txt"
+	ctx := t.Context()
+	if err := ms.Put(ctx, "kb-parser", location, []byte("alpha\fbeta")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+	docName := "parser.txt"
+	if err := db.Create(&entity.Document{
+		ID:           "doc-parser",
+		KbID:         "kb-parser",
+		ParserID:     "na",
+		ParserConfig: entity.JSONMap{},
+		Type:         "txt",
+		CreatedBy:    "u1",
+		Name:         &docName,
+		Location:     &location,
+		Suffix:       ".txt",
+	}).Error; err != nil {
+		t.Fatalf("seed doc: %v", err)
+	}
+
+	c := &ParserComponent{}
+	out, err := c.Invoke(ctx, db, map[string]any{"doc_id": "doc-parser"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 2 {
+		t.Fatalf("json = %T/%v, want 2 items", out["json"], out["json"])
+	}
+	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
+		t.Fatalf("json = %+v, want [alpha beta]", jsonItems)
+	}
+	if got, _ := out["name"].(string); got != "doc-parser" {
+		t.Fatalf("name = %q, want %q", got, "doc-parser")
+	}
+}
+
+func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
+	ms := withMemoryStorage(t)
+	ctx := t.Context()
+	if err := ms.Put(ctx, "bucket-1", "docs/explicit.txt", []byte("bucket content")); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	c := &ParserComponent{}
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"bucket": "bucket-1",
+		"path":   "docs/explicit.txt",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("json = %T/%v, want 1 item", out["json"], out["json"])
+	}
+	if got := jsonItems[0]["text"]; got != "bucket content" {
+		t.Fatalf("json[0][text] = %q, want %q", got, "bucket content")
+	}
+}
+
+// TestParserComponent_Invoke_RejectsInvalidUTF8 covers the
+// safety check: a "binary" string that is not valid UTF-8 is
+// rejected (per the file header — base64-encoded input would
+// look like this if a caller mistakenly handed a base64 string
+// without decoding it).
+func TestParserComponent_Invoke_RejectsInvalidUTF8(t *testing.T) {
+	c := &ParserComponent{}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		// 0xFF alone is not valid UTF-8 start byte.
+		"binary": string([]byte{0xFF, 0xFE, 0xFD}),
+	})
+	if err == nil {
+		t.Fatalf("Invoke: expected an error for invalid UTF-8, got nil")
+	}
+	if !strings.Contains(err.Error(), "UTF-8") {
+		t.Errorf("error = %v, want it to mention UTF-8", err)
+	}
+}
+
+// TestParserComponent_Invoke_AcceptsBytes covers the in-process
+// caller's normal form ([]byte) — the alternative to a UTF-8
+// string.
+func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
+	c := &ParserComponent{}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary": []byte("alpha\fbeta"),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json: got %T", out["json"])
+	}
+	if len(jsonItems) != 2 {
+		t.Fatalf("json len = %d, want 2", len(jsonItems))
+	}
+	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
+		t.Errorf("json = %+v, want [alpha beta]", jsonItems)
+	}
+}
