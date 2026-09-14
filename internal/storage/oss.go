@@ -190,7 +190,7 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 		return nil
 	}
 
-	return fmt.Errorf("failed to put object after retries")
+	return err
 }
 
 // Get retrieves an object from OSS
@@ -235,7 +235,7 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, err
 }
 
 // Remove removes an object from OSS

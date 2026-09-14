@@ -220,7 +220,7 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, err
 }
 
 // Remove removes an object from MinIO
