@@ -94,6 +94,7 @@ export const initialRetrievalValues = {
   ...initialKeywordsSimilarityWeightValue,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
+  document_ids: '',
   outputs: {
     formalized_content: {
       type: 'string',

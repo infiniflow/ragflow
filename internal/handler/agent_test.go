@@ -999,6 +999,26 @@ func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	}
 }
 
+func TestAgentChatCompletions_PreservesNamedInputsAlongsideQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"Hello","inputs":{"name":{"name":"name","value":"Alice","type":"line"}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok || got["name"] != "Alice" || got["query"] != "Hello" {
+		t.Fatalf("userInput = %#v, want name=Alice query=Hello", captured)
+	}
+}
+
 func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

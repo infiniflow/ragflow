@@ -47,7 +47,9 @@ type EmailParser struct {
 }
 
 func NewEmailParser() *EmailParser {
-	return &EmailParser{}
+	return &EmailParser{
+		outputFormat: "json",
+	}
 }
 
 func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
@@ -110,12 +112,16 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 		content = msg
 	} else {
-		content = parseEML(bytes.NewReader(data), p.fields)
+		var err error
+		content, err = parseEMLWithError(bytes.NewReader(data), p.fields)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("email: .eml: %w", err)}
+		}
 	}
 
 	outputFormat := p.outputFormat
 	if outputFormat == "" {
-		outputFormat = "text"
+		outputFormat = "json"
 	}
 
 	// Re-chunk attachments so their content becomes retrievable within the
@@ -125,27 +131,13 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// never breaks the whole email.
 	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
 
-	// attachments has been consumed by rechunkEmailAttachments (which
-	// re-parses each attachment by extension to make its content
-	// retrievable). It is otherwise dead weight: jsonItemsToPages copies
-	// every key into a schema.Page, but buildPagesFromBytes keeps only
-	// text+doc_type_kwd, so carrying the full attachment payloads through to
-	// the chunker would only bloat the intermediate pages before being
-	// discarded. Drop it from the result content.
+	// Attachments have been consumed by rechunkEmailAttachments, which
+	// re-parses each one by extension into a searchable item. Keeping their
+	// raw payloads in the parent item would only bloat the parser result.
 	delete(content, "attachments")
 
-	if outputFormat == "json" {
-		content["doc_type_kwd"] = "text"
-		items := []map[string]any{content}
-		items = append(items, extraItems...)
-		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename},
-			JSON:         items,
-		}
-	}
-
-	// Text output: flatten fields into a single string.
+	// Text representation: flatten fields into a single string for explicit
+	// text output and callers that need a display representation.
 	var sb strings.Builder
 	for k, v := range content {
 		// The metadata map (every non-basic header: Received chains,
@@ -193,11 +185,46 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		sb.WriteString(attachmentText)
 		sb.WriteString("\n")
 	}
-	return ParseResult{
-		OutputFormat: "text",
-		File:         map[string]any{"name": filename},
-		Text:         sb.String(),
+	text := sb.String()
+
+	if outputFormat == "text" {
+		return ParseResult{
+			OutputFormat: "text",
+			File:         map[string]any{"name": filename},
+			Text:         text,
+		}
 	}
+
+	content["doc_type_kwd"] = "text"
+	items := []map[string]any{content}
+	if headerText := searchableEmailHeaders(content); headerText != "" {
+		items = append(items, NewTextJSONItem(headerText))
+	}
+	items = append(items, extraItems...)
+	return ParseResult{
+		OutputFormat: "json",
+		File:         map[string]any{"name": filename},
+		JSON:         items,
+		Text:         text,
+	}
+}
+
+// searchableEmailHeaders returns the user-facing headers as a separate JSON
+// text item. The main email item keeps its structured fields and body; the
+// chunker indexes only item text, so headers need their own text item.
+func searchableEmailHeaders(content map[string]any) string {
+	var sb strings.Builder
+	for _, key := range []string{"from", "to", "cc", "bcc", "date", "subject"} {
+		value, ok := content[key].(string)
+		if !ok || value == "" {
+			continue
+		}
+		sb.WriteString(key)
+		sb.WriteString(":")
+		sb.WriteString(value)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // -- field set helpers --
@@ -236,14 +263,13 @@ func decodeHeaderWord(val string) string {
 
 // -- .eml parsing (RFC 5322 with multipart support) --
 
-func parseEML(r io.Reader, fields []string) map[string]any {
+func parseEMLWithError(r io.Reader, fields []string) (map[string]any, error) {
 	target := targetFieldsSet(fields)
 	content := map[string]any{}
 
 	msg, err := mail.ReadMessage(r)
 	if err != nil {
-		content["error"] = fmt.Sprintf("email: parse error: %v", err)
-		return content
+		return nil, err
 	}
 
 	// Headers. net/mail does not decode RFC 2047 encoded-words, so decode
@@ -284,7 +310,8 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 	// fields while attachments are still extracted when "attachments" is.
 	if target["body"] || needAttachments {
 		contentType := msg.Header.Get("Content-Type")
-		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, needAttachments)
+		cte := msg.Header.Get("Content-Transfer-Encoding")
+		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, cte, needAttachments)
 		// Always emit text/text_html when "body" is requested, to match the
 		// Python flow parser contract (rag/flow/parser/parser.py:_email),
 		// which sets both unconditionally (empty string for a missing part)
@@ -298,7 +325,7 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 		}
 	}
 
-	return content
+	return content, nil
 }
 
 // readMailBody reads the body of an email message, handling
@@ -306,7 +333,7 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 // types. Returns (textBody, htmlBody, attachments).
 // When collectAttachments is true, non-text parts with Content-Disposition
 // starting with "attachment" are collected.
-func readMailBody(body io.Reader, contentType string, collectAttachments bool) (string, string, []map[string]any) {
+func readMailBody(body io.Reader, contentType, cte string, collectAttachments bool) (string, string, []map[string]any) {
 	var attachments []map[string]any
 
 	mediaType, params, err := mime.ParseMediaType(contentType)
@@ -316,6 +343,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 
 	if !strings.HasPrefix(mediaType, "multipart/") {
 		raw, _ := io.ReadAll(body)
+		raw = decodeCTE(raw, cte)
 		decoded := decodeMailPayload(raw, params["charset"])
 		if mediaType == "text/html" {
 			return "", decoded, attachments
@@ -326,7 +354,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 	boundary := params["boundary"]
 	if boundary == "" {
 		raw, _ := io.ReadAll(body)
-		return decodeMailPayload(raw, ""), "", attachments
+		return decodeMailPayload(decodeCTE(raw, cte), ""), "", attachments
 	}
 
 	mr := multipart.NewReader(body, boundary)
@@ -343,7 +371,9 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 		partMedia, partParams, _ := mime.ParseMediaType(partCT)
 
 		if strings.HasPrefix(partMedia, "multipart/") {
-			t, h, nestedAttachments := readMailBody(part, partCT, collectAttachments)
+			// RFC 2045 6.4 forbids base64 and quoted-printable on a multipart
+			// entity, so a nested container is never CTE-decoded.
+			t, h, nestedAttachments := readMailBody(part, partCT, "", collectAttachments)
 			if t != "" {
 				textParts = append(textParts, t)
 			}
