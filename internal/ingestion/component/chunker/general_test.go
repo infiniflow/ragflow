@@ -391,3 +391,100 @@ func TestGeneralChunkerDOCXCustomDelimiterDisablesTextMerge(t *testing.T) {
 		t.Fatalf("texts = %q, want custom-delimiter units", texts)
 	}
 }
+
+func TestGeneralChunkerPDFEmitsMediaBeforeMergedBody(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 10})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want media and body", chunks)
+	}
+	if chunks[0]["doc_type_kwd"] != "table" || chunks[0]["text"] != "<table><tr><td>A</td></tr></table>" {
+		t.Errorf("media chunk = %+v", chunks[0])
+	}
+	if chunks[1]["text"] != "before\nafter" {
+		t.Errorf("body chunk = %q, want merged body", chunks[1]["text"])
+	}
+}
+
+func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 1,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	position := func(top float64) []any {
+		return []any{[]any{1.0, 0.0, 10.0, top, top + 5}}
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "after", "doc_type_kwd": "text", "positions": position(30)},
+			{"text": "<table>A</table>", "doc_type_kwd": "table", "positions": position(20)},
+			{"text": "before", "doc_type_kwd": "text", "positions": position(10)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want media and body", chunks)
+	}
+	if chunks[0]["context_above"] != "before" || chunks[0]["context_below"] != "after" {
+		t.Errorf("table context = above:%q below:%q", chunks[0]["context_above"], chunks[0]["context_below"])
+	}
+	if chunks[1]["text"] != "before\nafter" {
+		t.Errorf("position-ordered body = %q", chunks[1]["text"])
+	}
+}
+
+func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 10})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"file": map[string]any{
+			"outline": []map[string]any{{"title": "Chapter 1", "level": 0}},
+		},
+		"json": []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", chunks)
+	}
+	outline, ok := chunks[0]["__outline__"].([]any)
+	if !ok || len(outline) != 1 {
+		t.Fatalf("outline = %#v, want one entry", chunks[0]["__outline__"])
+	}
+	entry, _ := outline[0].(map[string]any)
+	if entry["title"] != "Chapter 1" || entry["depth"] != float64(0) {
+		t.Errorf("outline entry = %#v", entry)
+	}
+}

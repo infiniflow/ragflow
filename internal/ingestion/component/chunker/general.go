@@ -25,7 +25,9 @@ import (
 	"image"
 	"image/draw"
 	"image/png"
+	"log/slog"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gorm.io/gorm"
@@ -142,8 +144,155 @@ func generalStrategyForFileType(fileType string) generalStrategy {
 	}
 }
 
-func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, _ *gorm.DB, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
-	return c.chunkGeneral(ctx, upstream)
+func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("GeneralChunker: %w", err)
+	}
+	units := upstream.JSONResult
+	if upstream.OutputFormat == schema.PayloadFormatChunks {
+		units = upstream.Chunks
+	}
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+
+	primaryPattern := compileDelimPattern(c.param.Delimiters)
+	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	units = splitGeneralUnits(units, primaryPattern)
+	units = sortPDFUnits(units)
+	if hasPDFPositions(units) && hasUnpositionedPDFMedia(units) {
+		slog.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
+	}
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+
+	media := make([]schema.ChunkDoc, 0)
+	body := make([]schema.ChunkDoc, 0, len(units))
+	for _, unit := range units {
+		if itemDocType(unit) == "text" {
+			body = append(body, unit)
+		} else {
+			media = append(media, unit)
+		}
+	}
+	body = mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
+	chunks := append(media, body...)
+
+	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
+	if err != nil {
+		slog.Warn("GeneralChunker: could not open PDF for on-demand cropping", "err", err)
+	}
+	if engine != nil {
+		defer engine.Close()
+		chunks = cropImageChunks(ctx, engine, chunks)
+	}
+	chunks = finalizeGeneralChunks(chunks, childrenPattern)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("GeneralChunker: %w", err)
+	}
+	if len(chunks) == 0 {
+		return emptyOutputs(), nil
+	}
+	attachPDFOutline(chunks, upstream.File)
+	return chunkOutputs(chunks), nil
+}
+
+// sortPDFUnits orders positioned units by physical reading order and leaves
+// coordinate-free units after them in their original stable order. When no
+// positions are present at all, parser order is preserved unchanged.
+func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
+	type positionedUnit struct {
+		unit       schema.ChunkDoc
+		row        []float64
+		positioned bool
+	}
+	ordered := make([]positionedUnit, 0, len(units))
+	hasPosition := false
+	for _, unit := range units {
+		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
+		if ok {
+			hasPosition = true
+		}
+		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok})
+	}
+	if !hasPosition {
+		result := make([]schema.ChunkDoc, 0, len(ordered))
+		for _, item := range ordered {
+			result = append(result, item.unit)
+		}
+		return result
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].positioned != ordered[j].positioned {
+			return ordered[i].positioned
+		}
+		if !ordered[i].positioned {
+			return false
+		}
+		return pdfPosRowLess(ordered[i].row, ordered[j].row)
+	})
+	result := make([]schema.ChunkDoc, 0, len(ordered))
+	for _, item := range ordered {
+		result = append(result, item.unit)
+	}
+	return result
+}
+
+func hasPDFPositions(units []schema.ChunkDoc) bool {
+	for _, unit := range units {
+		if _, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions}); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func hasUnpositionedPDFMedia(units []schema.ChunkDoc) bool {
+	for _, unit := range units {
+		if itemDocType(unit) == "text" {
+			continue
+		}
+		if _, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions}); !ok {
+			return true
+		}
+	}
+	return false
+}
+
+func attachPDFOutline(chunks []schema.ChunkDoc, file *schema.ChunkerFileMeta) {
+	if len(chunks) == 0 || file == nil || len(file.Extra) == 0 {
+		return
+	}
+	raw, ok := file.Extra["outline"]
+	if !ok || len(raw) == 0 {
+		return
+	}
+	var input []map[string]any
+	if err := json.Unmarshal(raw, &input); err != nil || len(input) == 0 {
+		return
+	}
+	outline := make([]map[string]any, 0, len(input))
+	for _, entry := range input {
+		title, _ := entry["title"].(string)
+		if title == "" {
+			continue
+		}
+		depth := entry["level"]
+		if depth == nil {
+			depth = entry["depth"]
+		}
+		outline = append(outline, map[string]any{"title": title, "depth": depth})
+	}
+	if len(outline) == 0 {
+		return
+	}
+	encoded, err := json.Marshal(outline)
+	if err != nil {
+		return
+	}
+	if chunks[0].Extra == nil {
+		chunks[0].Extra = make(map[string]json.RawMessage)
+	}
+	chunks[0].Extra["__outline__"] = encoded
 }
 
 func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
@@ -160,7 +309,7 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
-	units = attachMediaContext([][]schema.ChunkDoc{units}, c.param.TableContextSize, c.param.ImageContextSize)[0]
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
@@ -199,6 +348,104 @@ func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, j
 		merged[previousText].CKType = "text"
 	}
 	return merged
+}
+
+// attachGeneralMediaContext follows Python's sentence-aware media context
+// extraction. The shared TokenChunker helper intentionally returns the
+// smallest token-fitting rune suffix/prefix; DOCX/PDF general strategies use
+// complete sentence units instead.
+func attachGeneralMediaContext(units []schema.ChunkDoc, tableTokens, imageTokens int) {
+	for i := range units {
+		if units[i].CKType != "table" && units[i].CKType != "image" {
+			continue
+		}
+		budget := imageTokens
+		if units[i].CKType == "table" {
+			budget = tableTokens
+		}
+		if budget <= 0 {
+			continue
+		}
+		units[i].ContextAbove = collectGeneralMediaContext(units, i, budget, true)
+		units[i].ContextBelow = collectGeneralMediaContext(units, i, budget, false)
+	}
+}
+
+func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, above bool) string {
+	var parts []string
+	remaining := budget
+	step := -1
+	if !above {
+		step = 1
+	}
+	for cursor := index + step; cursor >= 0 && cursor < len(units) && remaining > 0; cursor += step {
+		if units[cursor].CKType != "text" {
+			continue
+		}
+		text := units[cursor].Text
+		tokens := generalUnitTokens(units[cursor])
+		if tokens >= remaining {
+			piece := takeGeneralContextSentence(text, remaining, above)
+			if above {
+				parts = append([]string{piece}, parts...)
+			} else {
+				parts = append(parts, piece)
+			}
+			break
+		}
+		if above {
+			parts = append([]string{text}, parts...)
+		} else {
+			parts = append(parts, text)
+		}
+		remaining -= tokens
+	}
+	return strings.Join(parts, "")
+}
+
+func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
+	sentences := splitGeneralContextSentences(text)
+	if len(sentences) == 0 {
+		return text
+	}
+	var selected []string
+	if fromEnd {
+		for i := len(sentences) - 1; i >= 0; i-- {
+			selected = append([]string{sentences[i]}, selected...)
+			if tokenizeStr(strings.Join(selected, "")) >= budget {
+				break
+			}
+		}
+	} else {
+		for _, sentence := range sentences {
+			selected = append(selected, sentence)
+			if tokenizeStr(strings.Join(selected, "")) >= budget {
+				break
+			}
+		}
+	}
+	return strings.Join(selected, "")
+}
+
+func splitGeneralContextSentences(text string) []string {
+	pattern := regexp.MustCompile(`([。!?？；！\n]|\. )`)
+	indices := pattern.FindAllStringIndex(text, -1)
+	if len(indices) == 0 {
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+	parts := make([]string, 0, len(indices)+1)
+	start := 0
+	for _, index := range indices {
+		parts = append(parts, text[start:index[1]])
+		start = index[1]
+	}
+	if start < len(text) {
+		parts = append(parts, text[start:])
+	}
+	return parts
 }
 
 func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
