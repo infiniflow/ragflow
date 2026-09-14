@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -232,6 +233,9 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		return res.HTML, nil
 	case "json":
 		if len(res.JSON) > 0 {
+			if rendered, ok := renderSpreadsheetJSON(res.JSON); ok {
+				return rendered, nil
+			}
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
@@ -257,6 +261,127 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		return "", nil
 	default:
 		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
+	}
+}
+
+func renderSpreadsheetJSON(items []map[string]any) (string, bool) {
+	parts := make([]string, 0, len(items))
+	rendered := false
+	for i := 0; i < len(items); {
+		if !isSpreadsheetRowItem(items[i]) {
+			if text, ok := items[i]["text"].(string); ok {
+				parts = append(parts, text)
+			} else {
+				raw, err := json.Marshal(items[i])
+				if err != nil {
+					return "", false
+				}
+				parts = append(parts, string(raw))
+			}
+			i++
+			continue
+		}
+
+		start := i
+		key := spreadsheetTableKey(items[i])
+		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
+			i++
+		}
+		parts = append(parts, renderSpreadsheetTable(items[start:i]))
+		rendered = true
+	}
+	if !rendered {
+		return "", false
+	}
+	return strings.Join(parts, "\n"), true
+}
+
+func isSpreadsheetRowItem(item map[string]any) bool {
+	kind, _ := item["ck_type"].(string)
+	return kind == "table_header" || kind == "table_row"
+}
+
+func spreadsheetTableKey(item map[string]any) string {
+	if tableID, _ := item["table_id"].(string); strings.TrimSpace(tableID) != "" {
+		return "table:" + tableID
+	}
+	if sheet, _ := item["sheet"].(string); strings.TrimSpace(sheet) != "" {
+		return "sheet:" + sheet
+	}
+	return ""
+}
+
+func renderSpreadsheetTable(items []map[string]any) string {
+	if len(items) == 0 {
+		return ""
+	}
+	header := spreadsheetStringSlice(items[0]["cells"])
+	if len(header) == 0 {
+		header = spreadsheetStringSlice(items[0]["headers"])
+	}
+	if len(header) == 0 {
+		header = spreadsheetStringSlice(items[0]["text"])
+	}
+
+	sheet, _ := items[0]["sheet"].(string)
+	var builder strings.Builder
+	builder.WriteString("<table>")
+	if strings.TrimSpace(sheet) != "" {
+		builder.WriteString("<caption>")
+		builder.WriteString(html.EscapeString(strings.TrimSpace(sheet)))
+		builder.WriteString("</caption>")
+	}
+	if len(header) > 0 {
+		builder.WriteString("<tr>")
+		for _, cell := range header {
+			builder.WriteString("<th>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</th>")
+		}
+		builder.WriteString("</tr>")
+	}
+	for _, item := range items {
+		kind, _ := item["ck_type"].(string)
+		if kind == "table_header" {
+			continue
+		}
+		cells := spreadsheetStringSlice(item["cells"])
+		if len(cells) == 0 {
+			cells = spreadsheetStringSlice(item["text"])
+		}
+		builder.WriteString("<tr>")
+		for _, cell := range cells {
+			builder.WriteString("<td>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</td>")
+		}
+		builder.WriteString("</tr>")
+	}
+	builder.WriteString("</table>")
+	return builder.String()
+}
+
+func spreadsheetStringSlice(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		out := make([]string, len(values))
+		for i, value := range values {
+			out[i] = strings.TrimSpace(value)
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			out = append(out, strings.TrimSpace(fmt.Sprint(value)))
+		}
+		return out
+	case string:
+		if strings.TrimSpace(values) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(values)}
+	default:
+		return nil
 	}
 }
 
