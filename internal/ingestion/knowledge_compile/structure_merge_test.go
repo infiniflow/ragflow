@@ -181,6 +181,39 @@ func TestMergeStructureDataset_DescriptionIsPlainText(t *testing.T) {
 	}
 }
 
+func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	products := []kccommon.Product{
+		{Variant: kccommon.VariantMindmap, DocID: "d1",
+			Content: `{"name":"Root","type":"mindmap"}`,
+			Meta:    map[string]any{"kind": "entity", "name": "Root", "entity_type": "mindmap"}},
+		{Variant: kccommon.VariantMindmap, DocID: "d1",
+			Content: `{"from":"Root","to":"Child","type":"related"}`,
+			Meta:    map[string]any{"kind": "relation", "from": "Root", "to": "Child", "relation_type": "related"}},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 2 {
+		t.Fatalf("want entity and relation buckets, got %d", len(fw.buckets))
+	}
+	for _, b := range fw.buckets {
+		switch b.Type {
+		case "mindmap":
+			if b.Description != "Root" {
+				t.Errorf("entity fallback description = %q, want %q", b.Description, "Root")
+			}
+		case "relation":
+			if b.Description != "Root related Child" {
+				t.Errorf("relation fallback description = %q, want %q", b.Description, "Root related Child")
+			}
+		default:
+			t.Errorf("unexpected bucket: %+v", b)
+		}
+	}
+}
+
 // TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
 // option-A alignment: the dataset row's compile_kwd is the doc row's inferred
 // compile type (autotype, e.g. "hypergraph"/"mindmap"), NOT the template kind.
