@@ -25,6 +25,7 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
 } from '@/hooks/use-knowledge-request';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -48,6 +49,7 @@ interface DatasetStructureViewProps {
 
 export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const queryClient = useQueryClient();
   const knowledgeBaseId = useKnowledgeBaseId();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
@@ -170,33 +172,35 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <div className="flex justify-between gap-4 px-4 pt-4">
-        <div className="flex items-center gap-2">
-          <ConfirmDeleteDialog
-            title={t('knowledgeCompilation.deleteStructureConfirm', {
-              name: t(ViewModeLabelKeyMap[kind]),
-            })}
-            onOk={handleDeleteStructure}
-          >
-            <Button variant="outline" size="sm" disabled={deleting}>
-              <Trash2 />
-            </Button>
-          </ConfirmDeleteDialog>
-          <CompilationUpdateButton
-            traceData={structureRunData}
-            generateType={generateType}
-            hasChanges={hasChanges}
-            newlyUploaded={newlyUploaded}
-            removed={removed}
-            retryPageCount={retryPageCount}
-            loading={alterationLoading || runLoading}
-            tooltip={t('knowledgeCompilation.updateStructureTooltip', {
-              newlyUploaded,
-              removed,
-              name: t(ViewModeLabelKeyMap[kind]),
-            })}
-            onClick={handleUpdateClick}
-          />
-        </div>
+        {!isGo && (
+          <div className="flex items-center gap-2">
+            <ConfirmDeleteDialog
+              title={t('knowledgeCompilation.deleteStructureConfirm', {
+                name: t(ViewModeLabelKeyMap[kind]),
+              })}
+              onOk={handleDeleteStructure}
+            >
+              <Button variant="outline" size="sm" disabled={deleting}>
+                <Trash2 />
+              </Button>
+            </ConfirmDeleteDialog>
+            <CompilationUpdateButton
+              traceData={structureRunData}
+              generateType={generateType}
+              hasChanges={hasChanges}
+              newlyUploaded={newlyUploaded}
+              removed={removed}
+              retryPageCount={retryPageCount}
+              loading={alterationLoading || runLoading}
+              tooltip={t('knowledgeCompilation.updateStructureTooltip', {
+                newlyUploaded,
+                removed,
+                name: t(ViewModeLabelKeyMap[kind]),
+              })}
+              onClick={handleUpdateClick}
+            />
+          </div>
+        )}
         {kind === ViewMode.Graph && (
           <SelectWithSearch
             options={entityOptions}
