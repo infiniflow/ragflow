@@ -1468,7 +1468,8 @@ def test_app_media_mode_counts_unreadable_resource(monkeypatch, tmp_path):
 
 
 def test_app_media_mode_counts_dropped_no_text_for_unreadable_textless_image(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
     """App-media IMAGE block whose caption/footnote/vlm_description are
     all empty AND whose binary can't be read must route to
@@ -1528,9 +1529,7 @@ def test_images_detected_counts_chart_blocks(monkeypatch):
     parser._transfer_to_sections(outputs, parse_method="raw")
 
     coverage = parser.last_image_coverage
-    assert coverage["images_detected"] == 1, (
-        f"CHART blocks must count toward images_detected; got {coverage!r}"
-    )
+    assert coverage["images_detected"] == 1, f"CHART blocks must count toward images_detected; got {coverage!r}"
 
 
 def test_transfer_to_tables_counts_chart_chunked_and_described(monkeypatch, tmp_path):
@@ -1583,10 +1582,7 @@ def test_transfer_to_sections_counts_chart_described_in_raw_mode(monkeypatch):
 
     parser._transfer_to_sections(outputs, parse_method="raw")
     coverage = parser.last_image_coverage
-    assert coverage["images_described"] == 1, (
-        f"CHART with vlm_description must count toward images_described "
-        f"in raw mode; got {coverage!r}"
-    )
+    assert coverage["images_described"] == 1, f"CHART with vlm_description must count toward images_described in raw mode; got {coverage!r}"
 
 
 def test_raw_mode_counts_chart_block_as_chunked(monkeypatch):
@@ -1611,10 +1607,7 @@ def test_raw_mode_counts_chart_block_as_chunked(monkeypatch):
 
     coverage = parser.last_image_coverage
     assert coverage["images_detected"] == 1
-    assert coverage["images_chunked"] == 1, (
-        f"CHART emitted as a raw-mode text section must count as chunked; "
-        f"got {coverage!r}"
-    )
+    assert coverage["images_chunked"] == 1, f"CHART emitted as a raw-mode text section must count as chunked; got {coverage!r}"
     assert coverage["images_dropped_no_text"] == 0
 
 
