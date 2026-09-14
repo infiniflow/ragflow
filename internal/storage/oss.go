@@ -148,6 +148,7 @@ func (o *OSSStorage) Health(ctx context.Context) bool {
 // Put uploads an object to OSS
 func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		// Ensure bucket exists
@@ -156,13 +157,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
+				lastErr = err
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket))
 				o.reconnect(ctx)
-				if err = sleepOrAbort(ctx, time.Second); err != nil {
-					return err
+				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+					return sleepErr
 				}
 				continue
 			}
@@ -176,13 +178,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 			Body:   reader,
 		})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return sleepErr
 			}
 			continue
 		}
@@ -190,12 +193,13 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 		return nil
 	}
 
-	return fmt.Errorf("failed to put object after retries")
+	return lastErr
 }
 
 // Get retrieves an object from OSS
 func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{
@@ -203,13 +207,14 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -221,13 +226,14 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			return err
 		}()
 		if readErr != nil {
+			lastErr = readErr
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -235,7 +241,7 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, lastErr
 }
 
 // Remove removes an object from OSS

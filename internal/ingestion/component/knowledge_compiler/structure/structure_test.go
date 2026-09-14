@@ -414,12 +414,16 @@ func TestPayloadDescriptionSortedAndFlattened(t *testing.T) {
 	payload := map[string]any{
 		"name":             "Beta",
 		"type":             "letter",
+		"mention_count":    1,
 		"source_chunk_ids": []any{"c1", "c2"},
 	}
 	got := payloadDescription(payload)
-	// Keys are sorted for determinism: name < source_chunk_ids < type.
-	if got != "Beta c1 c2 letter" {
-		t.Fatalf("payloadDescription = %q, want %q", got, "Beta c1 c2 letter")
+	// Keys are sorted for determinism, and the bookkeeping keys are excluded:
+	// source_chunk_ids are opaque hex that would tokenize into garbage terms
+	// and mention_count is a number every row shares (mirrors Python's
+	// _STRUCT_INDEX_EXCLUDED_KEYS).
+	if got != "Beta letter" {
+		t.Fatalf("payloadDescription = %q, want %q", got, "Beta letter")
 	}
 }
 
@@ -442,7 +446,7 @@ func TestStructureRunGraphKind(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	var entities, relations, graphs int
+	var entities, relations int
 	var betaProduct *common.Product
 	for i, p := range out.Products {
 		switch p.Meta["kind"] {
@@ -460,11 +464,11 @@ func TestStructureRunGraphKind(t *testing.T) {
 		case "relation":
 			relations++
 		case "graph":
-			graphs++
+			t.Errorf("unexpected graph blob product: no compact graph row is written anymore")
 		}
 	}
-	if entities != 3 || relations != 2 || graphs != 1 {
-		t.Fatalf("products = %d entities + %d relations + %d graph, want 3+2+1", entities, relations, graphs)
+	if entities != 3 || relations != 2 {
+		t.Fatalf("products = %d entities + %d relations, want 3+2 (no graph blob)", entities, relations)
 	}
 	if out.DuplicatesDropped != 1 {
 		t.Fatalf("DuplicatesDropped = %d, want 1 (the cross-chunk Beta)", out.DuplicatesDropped)
@@ -479,17 +483,6 @@ func TestStructureRunGraphKind(t *testing.T) {
 	// The merged entity keeps the LLM-merged payload content (parseable JSON).
 	if parsePayload(betaProduct.Content) == nil {
 		t.Fatalf("entity content is not payload JSON: %q", betaProduct.Content)
-	}
-
-	// Graph summary mirrors Python's {entities, relations} shape.
-	g := parsePayload(graphContentOf(out))
-	if g == nil {
-		t.Fatal("graph product missing/unparseable")
-	}
-	gEnts, _ := g["entities"].([]any)
-	gRels, _ := g["relations"].([]any)
-	if len(gEnts) != 3 || len(gRels) != 2 {
-		t.Fatalf("graph = %d entities + %d relations, want 3+2", len(gEnts), len(gRels))
 	}
 }
 
@@ -778,15 +771,4 @@ func TestCosineDecider(t *testing.T) {
 	if got != DecisionKeepBoth {
 		t.Fatalf("expected keep at 0.5, got %v", got)
 	}
-}
-
-// ---- helpers ----
-
-func graphContentOf(out common.Outputs) string {
-	for _, p := range out.Products {
-		if p.Meta["kind"] == "graph" {
-			return p.Content
-		}
-	}
-	return ""
 }

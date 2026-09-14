@@ -243,6 +243,7 @@ export default function DatasetSetting() {
                           | Record<string, FieldErrors | undefined>
                           | undefined
                       }
+                      fixedFileFormats
                     />
                   )}
 

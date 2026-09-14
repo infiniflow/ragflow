@@ -1155,7 +1155,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "run": "UNSTART",
             "size": 17966,
@@ -1237,7 +1237,7 @@ curl --request PATCH \
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
-    - `"layout_recognize"`: Defaults to `true`.
+    - `"layout_recognize"`: Defaults to `"DeepDOC"`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
@@ -1479,7 +1479,7 @@ Success:
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n",
-                    "layout_recognize": true,
+                    "layout_recognize": "DeepDOC",
                     "task_page_size": 12
                 },
                 "chunk_method": "naive",
@@ -1940,7 +1940,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
             "process_duration": 0.54213,

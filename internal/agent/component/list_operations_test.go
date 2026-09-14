@@ -439,7 +439,7 @@ func TestListOperations_CoerceNBool(t *testing.T) {
 
 // TestListOperations_FilterEqBool pins Change #5: normValue must render
 // Go's bool as Python's str(bool) ("True"/"False") so filter `=` matches
-// the Python DSL contract.
+// the Python DSL
 func TestListOperations_FilterEqBool(t *testing.T) {
 	c, err := NewListOperationsComponent(map[string]any{
 		"query":      "cpn_0@xs",

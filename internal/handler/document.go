@@ -50,7 +50,7 @@ var IMG_BASE64_PREFIX = "data:image/png;base64,"
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
 	GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error)
-	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error
+	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error)
 	DeleteDocument(ctx context.Context, id string) error
 	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -70,7 +70,7 @@ type documentServiceIface interface {
 	DeleteDocumentAllMetadata(ctx context.Context, docID string) error
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
-	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
+	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
@@ -255,6 +255,12 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
 	docID := c.Param("id")
 
 	if docID == "" {
@@ -263,9 +269,23 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
+	preview, err := h.documentService.GetDocumentPreview(ctx, user.ID, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "document not found")
+		switch {
+		case errors.Is(err, document.ErrPreviewDocumentNotFound):
+			common.ErrorWithCode(c, common.CodeDataError, "document not found")
+		case errors.Is(err, document.ErrPreviewFileEmpty):
+			common.ErrorWithCode(c, common.CodeDataError, "This file is empty.")
+		default:
+			// Surface the failure as a distinct server error (storage
+			// unreachable, missing object, bad address) instead of masking
+			// it as a missing document, while keeping the raw detail --
+			// which names the object-store bucket/key -- in the server
+			// log only.
+			common.Error("GetDocumentPreview failed", err,
+				zap.String("doc_id", docID), zap.String("user_id", user.ID))
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to load document preview")
+		}
 		return
 	}
 
@@ -324,10 +344,12 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
+		if errorCode == common.CodeServerError {
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, errorCode, nil, err.Error())
+		} else {
+			common.ErrorWithCode(c, errorCode, err.Error())
+		}
 		return
 	}
 
@@ -1091,6 +1113,12 @@ func isValidHTTPURL(raw string) bool {
 }
 
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
 	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
 
@@ -1103,6 +1131,18 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	// Authorize the caller before serving file bytes. The sibling routes on
+	// this dataset (PATCH/DELETE documents, chunks, metadata) all gate on
+	// datasetService.Accessible, and the Python reference
+	// (document_api.py download) checks KnowledgebaseService.accessible and
+	// DocumentService.accessible; without this, any logged-in user could
+	// download any tenant's document by supplying its dataset and document
+	// ids. Answer exactly like the missing-document case so existence is
+	// not leaked either.
+	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "document not found")
+		return
+	}
 	res, err := h.documentService.DownloadDocument(ctx, datasetID, docID)
 
 	if err != nil {
