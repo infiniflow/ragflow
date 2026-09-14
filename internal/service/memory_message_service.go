@@ -47,8 +47,8 @@
 //  1. For each memory id: look up the Memory (via MemoryService).
 //  2. Generate a raw_message_id from Redis auto-increment (namespace "memory").
 //  3. Build the raw_message envelope (mirrors Python:344-386).
-//  4. Call embed_and_save on the memory + [raw_message].
-//  5. Insert the UI Task and durable MemoryTask rows atomically.
+//  4. Insert the UI Task and durable MemoryTask rows atomically.
+//  5. Call embed_and_save on the memory + [raw_message].
 //  6. Publish a task-id wake-up for the async extractor.
 //  7. Return not-found + failed lists.
 package service
@@ -166,15 +166,6 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// schema changes.
 		rawMessageID := generateRawMessageID(ctx)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
-
-		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
-			res.Failed = append(res.Failed, MemoryFailure{
-				MemoryID: memoryID,
-				FailMsg:  err.Error(),
-			})
-			continue
-		}
-
 		task, memoryTask := buildMemoryTaskRecords(rawMessageID, memoryID, msg)
 		if err := s.insertMemoryTask(ctx, task, memoryTask); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
@@ -183,6 +174,22 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			})
 			continue
 		}
+
+		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
+			failure := fmt.Errorf("store raw memory message: %w", err)
+			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, dao.DB, task.ID, failure.Error())
+			if failErr != nil {
+				failure = errors.Join(failure, fmt.Errorf("mark memory task failed: %w", failErr))
+			} else if !failed {
+				failure = errors.Join(failure, errors.New("memory task was claimed before raw message storage completed"))
+			}
+			res.Failed = append(res.Failed, MemoryFailure{
+				MemoryID: memoryID,
+				FailMsg:  failure.Error(),
+			})
+			continue
+		}
+
 		if err = publishMemoryTaskWakeup(s.taskPublisher, task.ID); err != nil {
 			common.Warn(fmt.Sprintf("memory: initial task wake-up failed; reconciler will retry: %v", err))
 		}

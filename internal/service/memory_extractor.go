@@ -61,6 +61,7 @@ const (
 	memoryTaskRetryInitialDelay   = 5 * time.Second
 	memoryTaskRetryMaxDelay       = 5 * time.Minute
 	memoryTaskFailureWriteTimeout = 5 * time.Second
+	memoryTaskMaxAttempts         = 10
 )
 
 var (
@@ -130,7 +131,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 	task, acquired, err := s.memoryTaskDAO.Claim(ctx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s is not found", taskID)
+			return s.failTaskMissingDurableState(ctx, taskID)
 		}
 		return MemoryTaskLeaveUnsettled, fmt.Errorf("memory: claim task %s: %w", taskID, err)
 	}
@@ -139,7 +140,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 		case entity.MemoryTaskStateCompleted, entity.MemoryTaskStateFailed:
 			return MemoryTaskAcknowledge, nil
 		case entity.MemoryTaskStatePending, entity.MemoryTaskStateExtracted, entity.MemoryTaskStateStored:
-			return MemoryTaskAcknowledge, nil
+			return MemoryTaskLeaveUnsettled, nil
 		default:
 			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s has unknown state %q", taskID, task.State)
 		}
@@ -170,7 +171,14 @@ func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *e
 	if s.resumeTask != nil {
 		resumeTask = s.resumeTask
 	}
-	err := resumeTask(runCtx, task, leaseOwner)
+	err := func() (err error) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("memory: task %s panicked: %v", task.TaskID, recovered)
+			}
+		}()
+		return resumeTask(runCtx, task, leaseOwner)
+	}()
 	if err == nil {
 		return MemoryTaskAcknowledge, nil
 	}
@@ -197,21 +205,56 @@ func (s *MemoryMessageService) persistMemoryTaskFailure(ctx context.Context, tas
 		action  string
 	)
 	now := memoryNow()
-	if errors.Is(runErr, errPermanentMemoryTask) {
+	reportedErr := runErr
+	if !errors.Is(runErr, errPermanentMemoryTask) && task.AttemptCount >= memoryTaskMaxAttempts {
+		reportedErr = fmt.Errorf("memory: task failed after %d attempts: %w", task.AttemptCount, runErr)
+	}
+	if errors.Is(runErr, errPermanentMemoryTask) || task.AttemptCount >= memoryTaskMaxAttempts {
 		action = "mark failed"
-		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, runErr.Error(), now)
+		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, reportedErr.Error(), now)
 	} else {
 		action = "schedule retry"
 		nextRetryAt := now.Add(memoryTaskRetryDelay(task.AttemptCount))
-		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, now, nextRetryAt, runErr.Error())
+		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, now, nextRetryAt, reportedErr.Error())
 	}
 	if err != nil {
-		return MemoryTaskLeaveUnsettled, errors.Join(runErr, fmt.Errorf("memory: %s for task %s: %w", action, task.TaskID, err))
+		return MemoryTaskLeaveUnsettled, errors.Join(reportedErr, fmt.Errorf("memory: %s for task %s: %w", action, task.TaskID, err))
 	}
 	if !updated {
-		return MemoryTaskLeaveUnsettled, errors.Join(runErr, fmt.Errorf("memory: %s for task %s: lease is no longer owned by this worker", action, task.TaskID))
+		return MemoryTaskLeaveUnsettled, errors.Join(reportedErr, fmt.Errorf("memory: %s for task %s: lease is no longer owned by this worker", action, task.TaskID))
 	}
-	return MemoryTaskAcknowledge, runErr
+	return MemoryTaskAcknowledge, reportedErr
+}
+
+// failTaskMissingDurableState makes an unfinished task visible as failed
+// instead of silently acknowledging a delivery that cannot resume.
+func (s *MemoryMessageService) failTaskMissingDurableState(ctx context.Context, taskID string) (MemoryTaskDisposition, error) {
+	if s.taskDAO == nil {
+		s.taskDAO = dao.NewTaskDAO()
+	}
+	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s is not found", taskID)
+		}
+		return MemoryTaskLeaveUnsettled, fmt.Errorf("memory: load task %s after durable state lookup: %w", taskID, err)
+	}
+	if task.TaskType != common.TaskTypeMemory || task.Progress < 0 || task.Progress >= 1 {
+		return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s has no active durable execution state", taskID)
+	}
+
+	failure := fmt.Errorf("memory: task %s cannot resume because it is missing durable execution state after the server upgrade; save the message again", taskID)
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memoryTaskFailureWriteTimeout)
+	defer cancel()
+	updated, updateErr := s.taskDAO.MarkActiveMemoryTaskFailed(persistCtx, dao.DB, taskID, failure.Error())
+	if updateErr != nil {
+		return MemoryTaskLeaveUnsettled, errors.Join(failure, fmt.Errorf("memory: mark task failed: %w", updateErr))
+	}
+	if !updated {
+		return MemoryTaskAcknowledge, fmt.Errorf("%w: task is no longer active", failure)
+	}
+	common.Warn(failure.Error())
+	return MemoryTaskAcknowledge, failure
 }
 
 // memoryTaskRetryDelay applies bounded exponential backoff using the attempt
@@ -309,6 +352,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 			}
 			task.Extraction = encoded
 			task.State = entity.MemoryTaskStateExtracted
+			_ = s.updateTaskProgress(ctx, task.TaskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extraction)))
 
 		case entity.MemoryTaskStateExtracted:
 			if err := loadInput(); err != nil {
@@ -371,7 +415,6 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 		return nil, err
 	}
 	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow())
-	_ = s.updateTaskProgress(ctx, task.TaskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(materialized)))
 	return materialized, nil
 }
 
@@ -446,7 +489,6 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if resp == nil || resp.Answer == nil {
 		return nil, errors.New("empty response from chat model")
 	}
-	_ = s.updateTaskProgress(ctx, taskID, 0.35, "Get extracted result from LLM.")
 
 	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
 }

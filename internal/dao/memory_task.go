@@ -214,6 +214,47 @@ func (d *MemoryTaskDAO) MarkFailed(ctx context.Context, db *gorm.DB, taskID, own
 	return updated, nil
 }
 
+// MarkUnclaimedFailed records a terminal failure before a newly created task
+// has been published or claimed, and updates its UI projection atomically.
+func (d *MemoryTaskDAO) MarkUnclaimedFailed(ctx context.Context, db *gorm.DB, taskID, progressMsg string) (bool, error) {
+	if db == nil {
+		return false, errors.New("memory task: nil database")
+	}
+	if taskID == "" {
+		return false, errors.New("memory task: task id is required")
+	}
+
+	var updated bool
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.WithContext(ctx).Model(&entity.MemoryTask{}).
+			Where("task_id = ? AND state = ? AND lease_owner = '' AND lease_expires_at IS NULL", taskID, entity.MemoryTaskStatePending).
+			Updates(map[string]any{
+				"state":         entity.MemoryTaskStateFailed,
+				"next_retry_at": nil,
+				"last_error":    progressMsg,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+
+		if err := tx.WithContext(ctx).Model(&entity.Task{}).Where("id = ?", taskID).Updates(map[string]any{
+			"progress":     -1,
+			"progress_msg": progressMsg,
+		}).Error; err != nil {
+			return err
+		}
+		updated = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return updated, nil
+}
+
 // Complete atomically advances a leased stored task to completed and updates
 // the generic task progress projection when it still exists.
 func (d *MemoryTaskDAO) Complete(ctx context.Context, db *gorm.DB, taskID, owner, progressMsg string, now time.Time) (bool, error) {

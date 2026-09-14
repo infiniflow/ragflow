@@ -106,6 +106,58 @@ func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
 	})
 }
 
+// TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails verifies
+// task state exists before raw storage and records a visible terminal outcome
+// when that storage cannot start.
+func TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.User{}, &entity.Memory{}, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.Memory{
+		ID:               "memory-1",
+		Name:             "memory",
+		TenantID:         "tenant-1",
+		MemoryType:       1,
+		StorageType:      "table",
+		Permissions:      "me",
+		ForgettingPolicy: "FIFO",
+	}).Error; err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+	memorySvc := NewMemoryService()
+	memorySvc.docEngine = nil
+	svc := NewMemoryMessageService(memorySvc)
+	publisher := &recordingTaskPublisher{}
+	svc.taskPublisher = publisher
+
+	res, err := svc.QueueSaveToMemoryTask(t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"})
+	if err != nil {
+		t.Fatalf("QueueSaveToMemoryTask: %v", err)
+	}
+	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].FailMsg, "message store is not initialized") {
+		t.Fatalf("result = %+v, want raw-storage failure", res)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want none after raw-storage failure", len(publisher.messages))
+	}
+
+	var memoryTask entity.MemoryTask
+	if err = db.First(&memoryTask).Error; err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if memoryTask.State != entity.MemoryTaskStateFailed || !strings.Contains(memoryTask.LastError, "message store is not initialized") {
+		t.Fatalf("memory task state/error = %q/%q, want failed raw-storage error", memoryTask.State, memoryTask.LastError)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", memoryTask.TaskID).Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != -1 || task.ProgressMsg == nil || !strings.Contains(*task.ProgressMsg, "message store is not initialized") {
+		t.Fatalf("generic task progress/message = %v/%v, want visible raw-storage failure", task.Progress, task.ProgressMsg)
+	}
+}
+
 // TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
 // server-local wall-clock string, not UTC — otherwise memories asked at
 // 10:05 local show up as 02:05. The clock is pinned to a fixed instant in a

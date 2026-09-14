@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -97,5 +98,24 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	// Verify idempotency
 	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
 		t.Fatalf("second autoMigrateRuntimeModels failed: %v", err)
+	}
+}
+
+func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql database: %v", err)
+	}
+	if err = sqlDB.Close(); err != nil {
+		t.Fatalf("close sql database: %v", err)
+	}
+
+	err = autoMigrateRuntimeModels(t.Context(), db)
+	if err == nil || !strings.Contains(err.Error(), "runtime table ingestion_task") {
+		t.Fatalf("autoMigrateRuntimeModels error = %v, want failing table name", err)
 	}
 }

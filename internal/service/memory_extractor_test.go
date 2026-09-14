@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
@@ -421,6 +422,145 @@ func TestHandleSaveToMemoryTaskResumesExtractedWithoutLLM(t *testing.T) {
 	}
 }
 
+// TestHandleSaveToMemoryTaskLeavesActiveLeaseUnsettled verifies an early
+// redelivery is preserved while another worker still owns the durable lease.
+func TestHandleSaveToMemoryTaskLeavesActiveLeaseUnsettled(t *testing.T) {
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	db := testutil.SetupTestDB(t, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:   "task-live-lease",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input:    entity.JSONMap{},
+		State:    entity.MemoryTaskStatePending,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+	svc := NewMemoryMessageService(nil)
+	if _, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-live-lease", "worker-1", now, memoryTaskLeaseTTL); err != nil || !acquired {
+		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
+	}
+
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-live-lease", "worker-2")
+	if err != nil || disposition != MemoryTaskLeaveUnsettled {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want unsettled live-lease delivery", disposition, err)
+	}
+}
+
+// TestHandleSaveToMemoryTaskFailsTaskMissingDurableState verifies a known
+// unfinished memory task is made visibly terminal instead of silently lost.
+func TestHandleSaveToMemoryTaskFailsTaskMissingDurableState(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	progressMsg := "queued"
+	if err := db.Create(&entity.Task{
+		ID:          "task-missing-state",
+		DocID:       "memory-1",
+		TaskType:    common.TaskTypeMemory,
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("create generic task: %v", err)
+	}
+
+	svc := NewMemoryMessageService(nil)
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-missing-state", "worker-1")
+	if err == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(err.Error(), "missing durable execution state") {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged explicit failure", disposition, err)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", "task-missing-state").Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != -1 || task.ProgressMsg == nil || !strings.Contains(*task.ProgressMsg, "save the message again") {
+		t.Fatalf("generic task progress/message = %v/%v, want visible upgrade failure", task.Progress, task.ProgressMsg)
+	}
+}
+
+// TestHandleSaveToMemoryTaskAcknowledgesUnknownID verifies a delivery without
+// either durable or generic task state remains distinguishable from known work
+// that must be projected as failed.
+func TestHandleSaveToMemoryTaskAcknowledgesUnknownID(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := NewMemoryMessageService(nil)
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "unknown-task", "worker-1")
+	if err == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(err.Error(), "is not found") {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged unknown task", disposition, err)
+	}
+}
+
+// TestHandleSaveToMemoryTaskDoesNotReportUnpersistedExtraction verifies a
+// failed extraction checkpoint leaves the best-effort UI projection behind it.
+func TestHandleSaveToMemoryTaskDoesNotReportUnpersistedExtraction(t *testing.T) {
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	db := testutil.SetupTestDB(t, &entity.User{}, &entity.Memory{}, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.Memory{
+		ID:               "memory-raw",
+		Name:             "raw memory",
+		TenantID:         "tenant-1",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		Permissions:      "me",
+		ForgettingPolicy: "FIFO",
+	}).Error; err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+	progressMsg := "queued"
+	if err := db.Create(&entity.Task{
+		ID:          "task-checkpoint-failure",
+		DocID:       "memory-raw",
+		TaskType:    common.TaskTypeMemory,
+		ProgressMsg: &progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("create generic task: %v", err)
+	}
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:   "task-checkpoint-failure",
+		MemoryID: "memory-raw",
+		SourceID: 42,
+		Input:    entity.JSONMap{"agent_id": "agent-1"},
+		State:    entity.MemoryTaskStatePending,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TRIGGER fail_memory_extraction_checkpoint
+		BEFORE UPDATE ON memory_task
+		WHEN NEW.state = 'extracted'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced extraction checkpoint failure');
+		END
+	`).Error; err != nil {
+		t.Fatalf("create checkpoint trigger: %v", err)
+	}
+
+	svc := NewMemoryMessageService(NewMemoryService())
+	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-checkpoint-failure", "worker-1")
+	if err == nil || disposition != MemoryTaskAcknowledge {
+		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged scheduled retry", disposition, err)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", "task-checkpoint-failure").Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != 0 || task.ProgressMsg == nil || *task.ProgressMsg != "queued" {
+		t.Fatalf("generic task progress/message = %v/%v, want unchanged before checkpoint", task.Progress, task.ProgressMsg)
+	}
+}
+
 // TestPersistMemoryTaskFailureSchedulesRetry verifies a transient execution
 // failure is durably scheduled before the current delivery is acknowledged.
 func TestPersistMemoryTaskFailureSchedulesRetry(t *testing.T) {
@@ -468,6 +608,61 @@ func TestPersistMemoryTaskFailureSchedulesRetry(t *testing.T) {
 	}
 }
 
+// TestPersistMemoryTaskFailureStopsAtMaxAttempts verifies a retryable error
+// becomes terminal once the claimed-attempt limit is reached.
+func TestPersistMemoryTaskFailureStopsAtMaxAttempts(t *testing.T) {
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	progressMsg := "queued"
+	if err := db.Create(&entity.Task{
+		ID:          "task-max-attempts",
+		DocID:       "memory-1",
+		TaskType:    common.TaskTypeMemory,
+		ProgressMsg: &progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("create generic task: %v", err)
+	}
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:       "task-max-attempts",
+		MemoryID:     "memory-1",
+		SourceID:     42,
+		Input:        entity.JSONMap{},
+		State:        entity.MemoryTaskStatePending,
+		AttemptCount: memoryTaskMaxAttempts - 1,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	svc := NewMemoryMessageService(nil)
+	claimed, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-max-attempts", "worker-1", now, memoryTaskLeaseTTL)
+	if err != nil || !acquired {
+		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
+	}
+	disposition, err := svc.persistMemoryTaskFailure(t.Context(), claimed, "worker-1", errors.New("empty response from chat model"))
+	if err == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(err.Error(), "failed after 10 attempts") {
+		t.Fatalf("persistMemoryTaskFailure disposition=%v err=%v, want acknowledged terminal failure", disposition, err)
+	}
+
+	stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, claimed.TaskID)
+	if err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStateFailed || stored.AttemptCount != memoryTaskMaxAttempts || stored.NextRetryAt != nil {
+		t.Fatalf("memory task state/attempt/retry = %q/%d/%v, want failed/%d/nil", stored.State, stored.AttemptCount, stored.NextRetryAt, memoryTaskMaxAttempts)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", claimed.TaskID).Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != -1 || task.ProgressMsg == nil || !strings.Contains(*task.ProgressMsg, "failed after 10 attempts") {
+		t.Fatalf("generic task progress/message = %v/%v, want terminal retry-limit error", task.Progress, task.ProgressMsg)
+	}
+}
+
 // TestPersistMemoryTaskFailureLeavesDeliveryUnsettledWhenRetryWriteFails
 // verifies the broker message is preserved when no durable retry decision can
 // be recorded.
@@ -509,9 +704,9 @@ func TestPersistMemoryTaskFailureLeavesDeliveryUnsettledWhenRetryWriteFails(t *t
 	}
 }
 
-// TestRunClaimedMemoryTaskStopsLeaseRenewalOnPanic verifies the cleanup defer
-// cancels and joins the renewal loop before a state-machine panic propagates.
-func TestRunClaimedMemoryTaskStopsLeaseRenewalOnPanic(t *testing.T) {
+// TestRunClaimedMemoryTaskPersistsPanic verifies a state-machine panic is
+// converted into the normal durable retry path after lease renewal stops.
+func TestRunClaimedMemoryTaskPersistsPanic(t *testing.T) {
 	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
 	pinMemoryNow(t, now)
 	pinMemoryTaskLeaseTimings(t, 10*time.Millisecond, 10*time.Millisecond)
@@ -537,22 +732,21 @@ func TestRunClaimedMemoryTaskStopsLeaseRenewalOnPanic(t *testing.T) {
 	svc.resumeTask = func(context.Context, *entity.MemoryTask, string) error {
 		panic("simulated state-machine panic")
 	}
-	func() {
-		defer func() {
-			if recovered := recover(); recovered == nil {
-				t.Fatal("runClaimedMemoryTask panic = nil, want propagated panic")
-			}
-		}()
-		_, _ = svc.runClaimedMemoryTask(t.Context(), task, "worker-1")
-	}()
+	disposition, runErr := svc.runClaimedMemoryTask(t.Context(), task, "worker-1")
+	if runErr == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(runErr.Error(), "panicked: simulated state-machine panic") {
+		t.Fatalf("runClaimedMemoryTask disposition=%v err=%v, want acknowledged persisted panic", disposition, runErr)
+	}
 
 	time.Sleep(3 * memoryTaskLeaseRenewInterval)
 	stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, task.TaskID)
 	if err != nil {
 		t.Fatalf("load memory task: %v", err)
 	}
-	if stored.LeaseExpiresAt == nil || !stored.LeaseExpiresAt.Equal(expiresAt) {
-		t.Fatalf("lease expiry = %v, want unchanged %v", stored.LeaseExpiresAt, expiresAt)
+	if stored.State != entity.MemoryTaskStatePending || stored.NextRetryAt == nil || stored.LeaseOwner != "" || stored.LeaseExpiresAt != nil {
+		t.Fatalf("memory task after panic = %+v, want pending scheduled retry with released lease", stored)
+	}
+	if !strings.Contains(stored.LastError, "panicked: simulated state-machine panic") {
+		t.Fatalf("last error = %q, want persisted panic", stored.LastError)
 	}
 }
 

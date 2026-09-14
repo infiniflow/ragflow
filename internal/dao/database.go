@@ -306,7 +306,11 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
-			return fmt.Errorf("failed to auto-migrate runtime model %T: %w", m, err)
+			tableName := fmt.Sprintf("%T", m)
+			if named, ok := m.(interface{ TableName() string }); ok {
+				tableName = named.TableName()
+			}
+			return fmt.Errorf("failed to auto-migrate runtime table %s: %w", tableName, err)
 		}
 	}
 	return nil
