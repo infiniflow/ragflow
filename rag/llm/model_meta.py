@@ -1168,7 +1168,6 @@ class AnonRouter(OpenAIAPICompatible):
         return f"{self._BASE_URL}/models"
 
 
-
 class ApiRoute(OpenAIAPICompatible):
     """API-Route model metadata.
 

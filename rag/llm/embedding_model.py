@@ -934,7 +934,6 @@ class HubrisEmbed(OpenAIEmbed):
         super().__init__(key, model_name, self._BASE_URL)
 
 
-
 class ApiRouteEmbed(OpenAIEmbed):
     """API-Route embeddings.
 

@@ -2104,7 +2104,6 @@ class AnonRouterChat(Base):
         super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 
-
 class ApiRouteChat(Base):
     """API-Route OpenAI-compatible chat adapter.
 
