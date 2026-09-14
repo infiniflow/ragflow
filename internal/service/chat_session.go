@@ -676,17 +676,18 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		if msgID != stringValue(msg["id"]) {
 			continue
 		}
-		if i+1 >= len(messages) || stringValue(messages[i+1]["id"]) != msgID {
+		if stringValue(msg["role"]) != "user" {
 			return nil, common.CodeServerError, errors.New("message pair assertion failed")
 		}
-		messages = append(messages[:i], messages[i+2:]...)
-		refIndex := (i - 1) / 2
-		if refIndex < 0 {
-			refIndex = 0
+		end := i + 1
+		if end < len(messages) && stringValue(messages[end]["role"]) == "assistant" && stringValue(messages[end]["id"]) == msgID {
+			refIndex := sessionMessageReferenceIndex(messages, end)
+			if refIndex >= 0 && refIndex < len(references) {
+				references = append(references[:refIndex], references[refIndex+1:]...)
+			}
+			end++
 		}
-		if refIndex < len(references) {
-			references = append(references[:refIndex], references[refIndex+1:]...)
-		}
+		messages = append(messages[:i], messages[end:]...)
 		break
 	}
 
@@ -802,7 +803,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 
 	if messageIndex != -1 && applyChunkFeedback {
-		refIndex := (messageIndex - 1) / 2
+		refIndex := sessionMessageReferenceIndex(messages, messageIndex)
 		if refIndex >= 0 && refIndex < len(references) {
 			if reference, ok := references[refIndex].(map[string]interface{}); ok && len(reference) > 0 {
 				feedbackReference = reference
@@ -843,6 +844,28 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
+}
+
+// sessionMessageReferenceIndex counts assistant responses after the first user
+// message, excluding the prologue and unanswered questions.
+func sessionMessageReferenceIndex(messages []map[string]interface{}, messageIndex int) int {
+	refIndex := -1
+	hasUser := false
+	for i, msg := range messages {
+		role := stringValue(msg["role"])
+		if role == "user" {
+			hasUser = true
+		} else if role == "assistant" && hasUser {
+			refIndex++
+		}
+		if i == messageIndex {
+			if role == "assistant" && hasUser {
+				return refIndex
+			}
+			return -1
+		}
+	}
+	return -1
 }
 
 const (
