@@ -38,7 +38,8 @@ type fakeEngine struct {
 	// sweeps compile_kwd buckets and the scope_kwd="dataset" bucket separately).
 	deleteConds []map[string]interface{}
 	// deleteCount is the number returned by DeleteChunks.
-	deleteCount int64
+	deleteCount    int64
+	insertedChunks []map[string]interface{}
 }
 
 func (f *fakeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -57,7 +58,8 @@ func (f *fakeEngine) DeleteChunks(_ context.Context, condition map[string]interf
 func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string) error {
 	return nil
 }
-func (f *fakeEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (f *fakeEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _, _ string) ([]string, error) {
+	f.insertedChunks = append(f.insertedChunks, chunks...)
 	return nil, nil
 }
 func (f *fakeEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
