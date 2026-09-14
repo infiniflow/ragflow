@@ -7,6 +7,7 @@ import {
   initialParserValues,
 } from '@/pages/agent/constant/pipeline';
 import { isStaticParseMethod } from '@/pages/agent/form/parser-form/utils';
+import { pickByBackend } from '@/utils/backend-variant';
 import { getExtension } from '@/utils/document-util';
 import {
   getOperatorType,
@@ -15,40 +16,149 @@ import {
 import { cloneDeep } from 'lodash';
 import { IngestionTaskStatus, RunningStatus } from './constant';
 
-export const isParserRunning = (text: RunningStatus) => {
+/** Ingestion statuses that represent an active or canceling parse task on Go. */
+const activeIngestionStatuses = new Set<IngestionTaskStatus>([
+  IngestionTaskStatus.CREATED,
+  IngestionTaskStatus.SCHEDULED,
+  IngestionTaskStatus.RUNNING,
+  IngestionTaskStatus.STOPPING,
+]);
+
+export const isParserRunning = (text?: RunningStatus) => {
   const isRunning = text === RunningStatus.RUNNING;
   return isRunning;
 };
 
-export const isDocumentQueued = (
+/**
+ * Maps a Go `ingestion_status` value onto the legacy `RunningStatus`
+ * vocabulary consumed by the document list UI (icons, dots, labels).
+ *
+ * - CREATED/SCHEDULED -> QUEUED (task enqueued, worker has not started)
+ * - RUNNING/STOPPING  -> RUNNING (parse in flight; STOPPING keeps the
+ *   in-progress presentation with the cancel button disabled)
+ * - COMPLETED         -> DONE
+ * - FAILED            -> FAIL
+ * - STOPPED           -> CANCEL
+ * - UNSTART/undefined -> UNSTART
+ *
+ * @param status - Raw `ingestion_status` from a Go document response.
+ * @returns The display/action status used by existing UI components.
+ *
+ * @example
+ * ingestionStatusToRunningStatus(IngestionTaskStatus.COMPLETED);
+ * // => RunningStatus.DONE
+ */
+export const ingestionStatusToRunningStatus = (
+  status?: IngestionTaskStatus,
+): RunningStatus => {
+  switch (status) {
+    case IngestionTaskStatus.CREATED:
+    case IngestionTaskStatus.SCHEDULED:
+      return RunningStatus.QUEUED;
+    case IngestionTaskStatus.RUNNING:
+    case IngestionTaskStatus.STOPPING:
+      return RunningStatus.RUNNING;
+    case IngestionTaskStatus.COMPLETED:
+      return RunningStatus.DONE;
+    case IngestionTaskStatus.FAILED:
+      return RunningStatus.FAIL;
+    case IngestionTaskStatus.STOPPED:
+      return RunningStatus.CANCEL;
+    case IngestionTaskStatus.UNSTART:
+    default:
+      return RunningStatus.UNSTART;
+  }
+};
+
+/**
+ * Returns the effective display/action status of a document.
+ *
+ * Go derives every status from the real-time `ingestion_status` field
+ * (the `run` field is no longer returned). Python keeps reading the
+ * legacy `run` field, which is always present on Python responses.
+ *
+ * @param document - Document (or subset) carrying the raw status fields.
+ * @returns The `RunningStatus` to drive icons, dots and labels.
+ *
+ * @example
+ * // Go backend
+ * getDocumentRunningStatus({ ingestion_status: IngestionTaskStatus.SCHEDULED });
+ * // => RunningStatus.QUEUED
+ *
+ * @example
+ * // Python backend
+ * getDocumentRunningStatus({ run: RunningStatus.RUNNING });
+ * // => RunningStatus.RUNNING
+ */
+export const getDocumentRunningStatus = (
+  document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
+): RunningStatus =>
+  pickByBackend({
+    go: ingestionStatusToRunningStatus(document.ingestion_status),
+    python: document.run ?? RunningStatus.UNSTART,
+  });
+
+/**
+ * Whether a cancel request is currently in flight for the document.
+ * Only the Go backend reports STOPPING; Python always returns false.
+ *
+ * @param document - Document (or subset) carrying `ingestion_status`.
+ * @returns `true` while the cancel button must stay disabled.
+ *
+ * @example
+ * isDocumentStopping({ ingestion_status: IngestionTaskStatus.STOPPING });
+ * // => true
+ */
+export const isDocumentStopping = (
+  document: Pick<IDocumentInfo, 'ingestion_status'>,
+) => document.ingestion_status === IngestionTaskStatus.STOPPING;
+
+// Go: ingestion_status is the only source of truth after the run field
+// was removed. Active statuses cover the queued -> running -> stopping
+// lifecycle; everything else (including UNSTART and missing status) is
+// terminal/idle so polling stops and row actions become available.
+const isGoDocumentProcessing = (
   document: Pick<IDocumentInfo, 'ingestion_status'>,
 ) =>
-  document.ingestion_status === IngestionTaskStatus.CREATED ||
-  document.ingestion_status === IngestionTaskStatus.SCHEDULED;
+  !!document.ingestion_status &&
+  activeIngestionStatuses.has(document.ingestion_status);
 
-// Go ingestion status can advance before the legacy document run field. The
-// Python endpoint omits ingestion_status, so run remains the compatibility path.
-// A terminal legacy run status is authoritative: the Go backend may leave
-// ingestion_status at STOPPING after a cancel completes, and the document must
-// then be treated as not running so its parsing style and restart action work.
+// Python: ingestion_status is never present on Python responses (the
+// Python backend only serializes the legacy run field), so run is the
+// only signal — exactly the pre-Go polling contract
+// (docs.some(doc => doc.run === RUNNING)).
+const isPythonDocumentProcessing = (
+  document: Pick<IDocumentInfo, 'run'>,
+) => isParserRunning(document.run);
+
+/**
+ * Whether a document is currently being parsed (queued, running or
+ * canceling). Drives the 5s list polling, disabled row actions and the
+ * bulk-delete protection.
+ *
+ * The check is backend-specific: on Go it relies solely on
+ * `ingestion_status`, on Python it follows the legacy `run`-based logic.
+ *
+ * @param document - Document (or subset) carrying the raw status fields.
+ * @returns `true` while any parse-related task is in progress.
+ *
+ * @example
+ * // Go backend
+ * isDocumentProcessing({ ingestion_status: IngestionTaskStatus.RUNNING });
+ * // => true
+ *
+ * @example
+ * // Python backend
+ * isDocumentProcessing({ run: RunningStatus.DONE });
+ * // => false
+ */
 export const isDocumentProcessing = (
   document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
-) => {
-  if (isParserRunning(document.run)) return true;
-  if (
-    document.run === RunningStatus.CANCEL ||
-    document.run === RunningStatus.DONE ||
-    document.run === RunningStatus.FAIL
-  ) {
-    return false;
-  }
-  return (
-    document.ingestion_status === IngestionTaskStatus.CREATED ||
-    document.ingestion_status === IngestionTaskStatus.SCHEDULED ||
-    document.ingestion_status === IngestionTaskStatus.RUNNING ||
-    document.ingestion_status === IngestionTaskStatus.STOPPING
-  );
-};
+) =>
+  pickByBackend({
+    go: isGoDocumentProcessing(document),
+    python: isPythonDocumentProcessing(document),
+  });
 
 // --- Parser model prerequisite checks -------------------------------------
 // Audio/video/image files can only be parsed when the matching model is

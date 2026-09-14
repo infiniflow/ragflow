@@ -45,6 +45,8 @@ export enum RunningStatusOld {
 }
 
 export enum IngestionTaskStatus {
+  // Go backend only: no ingestion task exists yet (e.g. freshly uploaded).
+  UNSTART = 'UNSTART',
   CREATED = 'CREATED',
   SCHEDULED = 'SCHEDULED',
   RUNNING = 'RUNNING',
