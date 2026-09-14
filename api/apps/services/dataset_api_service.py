@@ -1344,7 +1344,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     raw_check_num = req.get("check_num", 5)
-    if isinstance(raw_check_num, bool) or not isinstance(raw_check_num, int):
+    if type(raw_check_num) is not int:
         return False, "`check_num` must be an integer."
     n = raw_check_num
     if n <= 0:
