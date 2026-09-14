@@ -139,3 +139,9 @@ def test_distinct_names_keep_count_winner(monkeypatch):
 def test_distinct_name_ties_preserve_declaration_order(monkeypatch, categories, answer, expected):
     mod = _load_categorize_module(monkeypatch)
     assert mod.Categorize._select_category(answer, categories) == expected
+
+
+def test_overlapping_multi_category_tie_uses_longest_name(monkeypatch):
+    mod = _load_categorize_module(monkeypatch)
+    categories = ["A", "B", "AX", "XBC"]
+    assert mod.Categorize._select_category("XBC AX", categories) == "XBC"
