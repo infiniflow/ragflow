@@ -804,9 +804,10 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 
 func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.T) {
 	withSSRFBypass(t)
-	var gotBackend, gotServerURL string
+	var gotBackend, gotServerURL, gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			gotAuth = r.Header.Get("Authorization")
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
 				t.Errorf("ParseMultipartForm: %v", err)
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -855,6 +856,9 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 	}
 	if got, want := gotServerURL, "http://vllm-host:30000"; got != want {
 		t.Fatalf("server_url = %q, want %q", got, want)
+	}
+	if gotAuth != "" {
+		t.Fatalf("Authorization = %q, want empty for provider JSON api_key", gotAuth)
 	}
 	if md, _ := out["markdown"].(string); !strings.Contains(md, "http-client") {
 		t.Fatalf("markdown payload = %#v", out["markdown"])

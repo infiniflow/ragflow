@@ -13,68 +13,34 @@ import (
 const minerUPollTimeout = 30 * time.Second
 const minerUPollInterval = 200 * time.Millisecond
 
-var validMinerUBackends = map[string]struct{}{
-	"pipeline":           {},
-	"vlm-engine":         {},
-	"hybrid-engine":      {},
-	"vlm-http-client":    {},
-	"hybrid-http-client": {},
-}
-
-func minerUBackendRequiresServerURL(backend string) bool {
-	return backend == "vlm-http-client" || backend == "hybrid-http-client"
-}
-
-func resolveMinerUBackend(parser *PDFParser) string {
-	backend := strings.TrimSpace(parser.MinerUBackend)
-	if backend == "" {
-		backend = strings.TrimSpace(common.GetEnv(common.EnvMineruBackend))
-	}
-	if backend == "" {
-		backend = "pipeline"
-	}
-	return backend
-}
-
-func resolveMinerUServerURL(parser *PDFParser) string {
-	serverURL := strings.TrimSpace(parser.MinerUServerURL)
-	if serverURL == "" {
-		serverURL = strings.TrimSpace(common.GetEnv(common.EnvMineruServerURL))
-	}
-	return strings.TrimRight(serverURL, "/")
-}
-
-func validateMinerUConfig(backend, serverURL string) error {
-	if _, ok := validMinerUBackends[backend]; !ok {
-		return fmt.Errorf(
-			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client)",
-			backend,
-		)
-	}
-	if minerUBackendRequiresServerURL(backend) && serverURL == "" {
-		return fmt.Errorf("parser: MinerU requires mineru_server_url or MINERU_SERVER_URL for backend %q", backend)
-	}
-	return nil
-}
-
 func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
+	providerCfg := models.MinerUProviderConfigFromAPIKey(parser.MinerUAPIKey)
+
 	apiServer := strings.TrimSpace(parser.MinerUAPIServer)
+	if apiServer == "" {
+		apiServer = providerCfg.APIServer
+	}
 	if apiServer == "" {
 		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruAPIServer))
 	}
 	if apiServer == "" {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU requires mineru_apiserver or MINERU_APISERVER")}
 	}
-	apiKey := parser.MinerUAPIKey
-	if strings.TrimSpace(apiKey) == "" {
+
+	apiKey := providerCfg.AccessToken
+	if apiKey == "" && !providerCfg.IsProviderJSON {
+		apiKey = strings.TrimSpace(parser.MinerUAPIKey)
+	}
+	if apiKey == "" {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvMineruAPIKey))
 	}
-	backend := resolveMinerUBackend(parser)
-	serverURL := resolveMinerUServerURL(parser)
-	if err := validateMinerUConfig(backend, serverURL); err != nil {
+
+	backend := models.ResolveMinerUBackend(parser.MinerUBackend, parser.MinerUAPIKey)
+	serverURL := models.ResolveMinerUServerURL(parser.MinerUServerURL, parser.MinerUAPIKey)
+	if err := models.ValidateMinerUConfig(backend, serverURL); err != nil {
 		return ParseResult{Err: err}
 	}
 	timeout := parser.MinerUPollTimeout
@@ -93,7 +59,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		apiConfig.ApiKey = &apiKey
 	}
 
-	parseFileConfig := &models.ParseFileConfig{ServerURL: serverURL}
+	parseFileConfig := &models.ParseFileConfig{Backend: backend, ServerURL: serverURL}
 	task, err := driver.ParseFile(ctx, &backend, data, nil, apiConfig, parseFileConfig, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}

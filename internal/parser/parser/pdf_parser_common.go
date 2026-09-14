@@ -108,7 +108,7 @@ func NewPDFParser() *PDFParser {
 		LibType:                        "pdf_oxide",
 		ParseMethod:                    "deepdoc",
 		OutputFormat:                   "json",
-		MinerUBackend:                  "pipeline",
+		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
