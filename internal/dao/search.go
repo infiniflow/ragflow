@@ -24,6 +24,32 @@ import (
 	"gorm.io/gorm"
 )
 
+// searchOrderableColumns whitelists the columns that may appear in an ORDER BY
+// clause so an attacker cannot inject arbitrary SQL through the `orderby` query
+// parameter. It holds the scalar search columns the list rows expose plus the
+// base timestamp columns.
+var searchOrderableColumns = map[string]struct{}{
+	"id":          {},
+	"tenant_id":   {},
+	"name":        {},
+	"created_by":  {},
+	"status":      {},
+	"create_time": {},
+	"create_date": {},
+	"update_time": {},
+	"update_date": {},
+}
+
+func searchOrderClause(orderby string, desc bool) string {
+	if _, ok := searchOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	if desc {
+		return orderby + " DESC"
+	}
+	return orderby + " ASC"
+}
+
 // SearchDAO search data access object
 type SearchDAO struct{}
 
@@ -72,12 +98,12 @@ func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantID
 		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderby + " " + orderDirection)
+	// Apply ordering. Route orderby through searchOrderClause so a
+	// user-supplied query param can never reach Order() verbatim: the helper
+	// validates against searchOrderableColumns (a closed allowlist) and falls
+	// back to "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: searchOrderClause
+	query = query.Order(searchOrderClause(orderby, desc))
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
@@ -121,12 +147,12 @@ func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs 
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
 	query = query.Where("search.tenant_id IN ?", ownerIDs)
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderby + " " + orderDirection)
+	// Apply ordering. Route orderby through searchOrderClause so a
+	// user-supplied query param can never reach Order() verbatim: the helper
+	// validates against searchOrderableColumns (a closed allowlist) and falls
+	// back to "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: searchOrderClause
+	query = query.Order(searchOrderClause(orderby, desc))
 
 	// Get all matching records
 	if err := query.Scan(&searches).Error; err != nil {

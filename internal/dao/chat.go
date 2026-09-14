@@ -27,6 +27,43 @@ import (
 	"ragflow/internal/entity"
 )
 
+// chatOrderableColumns whitelists the columns that may appear in an ORDER BY
+// clause so an attacker cannot inject arbitrary SQL through the `orderby` query
+// parameter. It holds the scalar dialog columns the list rows expose plus the
+// base timestamp columns.
+var chatOrderableColumns = map[string]struct{}{
+	"id":                       {},
+	"tenant_id":                {},
+	"name":                     {},
+	"language":                 {},
+	"llm_id":                   {},
+	"tenant_llm_id":            {},
+	"prompt_type":              {},
+	"similarity_threshold":     {},
+	"vector_similarity_weight": {},
+	"top_n":                    {},
+	"rerank_candidates_count":  {},
+	"top_k":                    {},
+	"do_refer":                 {},
+	"rerank_id":                {},
+	"tenant_rerank_id":         {},
+	"status":                   {},
+	"create_time":              {},
+	"create_date":              {},
+	"update_time":              {},
+	"update_date":              {},
+}
+
+func chatOrderClause(orderby string, desc bool) string {
+	if _, ok := chatOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	if desc {
+		return orderby + " DESC"
+	}
+	return orderby + " ASC"
+}
+
 // ChatDAO chat data access object
 type ChatDAO struct{}
 
@@ -79,12 +116,12 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 		query = query.Where("LOWER(dialog.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderby + " " + orderDirection)
+	// Apply ordering. Route orderby through chatOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against chatOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: chatOrderClause
+	query = query.Order(chatOrderClause(orderby, desc))
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
@@ -128,12 +165,12 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
 	query = query.Where("dialog.tenant_id IN ?", ownerIDs)
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderby + " " + orderDirection)
+	// Apply ordering. Route orderby through chatOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against chatOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: chatOrderClause
+	query = query.Order(chatOrderClause(orderby, desc))
 
 	// Get all matching records
 	if err := query.Scan(&chats).Error; err != nil {

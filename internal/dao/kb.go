@@ -42,6 +42,50 @@ func GetTenantIDByKBID(ctx context.Context, db *gorm.DB, kbID string) (string, e
 	return kb.TenantID, nil
 }
 
+// knowledgebaseOrderableColumns whitelists the columns that may appear in an
+// ORDER BY clause so an attacker cannot inject arbitrary SQL through the
+// `orderby` query parameter. It holds the scalar knowledgebase columns the list
+// rows expose plus the base timestamp columns.
+var knowledgebaseOrderableColumns = map[string]struct{}{
+	"id":             {},
+	"tenant_id":      {},
+	"name":           {},
+	"language":       {},
+	"permission":     {},
+	"doc_num":        {},
+	"token_num":      {},
+	"chunk_num":      {},
+	"parser_id":      {},
+	"pagerank":       {},
+	"embd_id":        {},
+	"tenant_embd_id": {},
+	"create_time":    {},
+	"create_date":    {},
+	"update_time":    {},
+	"update_date":    {},
+}
+
+func knowledgebaseOrderClause(orderby string, desc bool) string {
+	if _, ok := knowledgebaseOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	if desc {
+		return orderby + " DESC"
+	}
+	return orderby + " ASC"
+}
+
+func knowledgebaseQualifiedOrderClause(orderby string, desc bool) string {
+	if _, ok := knowledgebaseOrderableColumns[orderby]; !ok {
+		orderby = "create_time"
+	}
+	order := "knowledgebase." + orderby
+	if desc {
+		return order + " DESC"
+	}
+	return order + " ASC"
+}
+
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
 
@@ -254,11 +298,12 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 		query = query.Where("knowledgebase.parser_id = ?", parserID)
 	}
 
-	if desc {
-		query = query.Order("knowledgebase." + orderby + " DESC")
-	} else {
-		query = query.Order("knowledgebase." + orderby + " ASC")
-	}
+	// Route orderby through knowledgebaseQualifiedOrderClause so a
+	// user-supplied query param can never reach Order() verbatim: the helper
+	// validates against knowledgebaseOrderableColumns (a closed allowlist) and
+	// falls back to "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: knowledgebaseQualifiedOrderClause
+	query = query.Order(knowledgebaseQualifiedOrderClause(orderby, desc))
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -581,11 +626,12 @@ func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs
 		query = query.Where("name = ?", name)
 	}
 
-	if desc {
-		query = query.Order(orderby + " DESC")
-	} else {
-		query = query.Order(orderby + " ASC")
-	}
+	// Route orderby through knowledgebaseOrderClause so a user-supplied query
+	// param can never reach Order() verbatim: the helper validates against
+	// knowledgebaseOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: knowledgebaseOrderClause
+	query = query.Order(knowledgebaseOrderClause(orderby, desc))
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
