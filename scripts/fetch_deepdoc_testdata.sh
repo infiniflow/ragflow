@@ -50,6 +50,18 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TARGET="$ROOT/internal/deepdoc/$PKG/testdata"
 
+# Serialize all invocations for a given <pkg>. `go test ./internal/deepdoc/native/...`
+# runs the `native` and `croptest` test binaries concurrently, and croptest imports
+# native — so native's fetch_testdata init() runs in BOTH processes at once, racing on
+# the same TARGET. Two concurrent `ln -s` calls on a symlink-to-directory make the second
+# one descend INTO it and create <TARGET>/testdata ("Permission denied"), the exact CI
+# failure this guards against. A per-package flock makes the rm+ln critical section
+# atomic across processes; the first writer wins, the rest wait and then see the result.
+LOCKDIR="${XDG_CACHE_HOME:-$HOME/.cache}/ragflow-testdata-locks"
+mkdir -p "$LOCKDIR"
+exec 9>"$LOCKDIR/$PKG.lock"
+flock 9
+
 # Determine whether we need a writable copy (regeneration) or a symlink.
 NEED_WRITE=0
 for v in "${!GEN_@}"; do
@@ -71,19 +83,32 @@ if [ -n "${RAGFLOW_TESTDATA_DIR:-}" ]; then
       echo "fetch_deepdoc_testdata: $PKG testdata already present inline at $TARGET"
       exit 0
     fi
-    # rm -rf, not rm -f: TARGET may be a leftover EMPTY directory (a failed
-    # GEN_* copy, a half-restored cache). rm -f cannot remove it, and ln -s
-    # would then nest the link inside it (<TARGET>/testdata) while this script
-    # still reports success. Both guards above have already returned for a
-    # non-empty real dir, so nothing real is deleted here.
-    rm -rf -- "$TARGET"
+    # Remove any stale TARGET before linking. TARGET may be a wrong symlink, an
+    # empty directory, or a leftover real directory from a prior GEN_* copy or a
+    # dereferenced symlink on a persistent runner. `ln -sfn` below also unlinks
+    # TARGET first, but removing it here keeps intent explicit. A partial
+    # removal failure is non-fatal: ln -sfn still replaces TARGET, and the copy
+    # fallback below covers the rare case where even that is blocked.
+    #
+    # Use `ln -sfn`, never `ln -s`: when TARGET already exists as a directory,
+    # plain `ln -s` descends INTO it and creates <TARGET>/testdata (the exact
+    # "Permission denied" failure this job hit), because the existing dir is not
+    # writable. `-f` unlinks TARGET first; `-n`/`--no-dereference` stops ln from
+    # treating TARGET as a container.
+    rm -rf -- "$TARGET" 2>/dev/null || true
     if [ "$NEED_WRITE" -eq 1 ]; then
       echo "fetch_deepdoc_testdata: copying writable pre-seeded testdata for regeneration ($PKG)"
-      rm -rf "$TARGET"
+      rm -rf -- "$TARGET" 2>/dev/null || true
       cp -r "$PRESET" "$TARGET"
+    elif ln -sfn "$PRESET" "$TARGET" 2>/dev/null; then
+      echo "fetch_deepdoc_testdata: linked $TARGET -> $PRESET (pre-seeded)"
     else
-      echo "fetch_deepdoc_testdata: linking $TARGET -> $PRESET (pre-seeded)"
-      ln -s "$PRESET" "$TARGET"
+      # Symlink creation failed (e.g. the parent directory is not writable on a
+      # shared runner). The pre-seeded fixtures are authoritative and readable,
+      # so copy them in place instead of reddening CI over a filesystem quirk.
+      echo "fetch_deepdoc_testdata: symlink failed; copying pre-seeded testdata for $PKG" >&2
+      mkdir -p "$TARGET"
+      cp -r "$PRESET"/. "$TARGET"/.
     fi
     echo "fetch_deepdoc_testdata: done ($PKG, pre-seeded)"
     exit 0
@@ -161,6 +186,6 @@ if [ "$NEED_WRITE" -eq 1 ]; then
   cp -r "$SRC" "$TARGET"
 else
   echo "fetch_deepdoc_testdata: linking $TARGET -> $SRC"
-  ln -s "$SRC" "$TARGET"
+  ln -sfn "$SRC" "$TARGET"
 fi
 echo "fetch_deepdoc_testdata: done ($PKG @ $REF)"
