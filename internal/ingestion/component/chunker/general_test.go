@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestGeneralChunkerRegistered(t *testing.T) {
@@ -491,6 +492,23 @@ func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	}
 	if chunks[1]["context_above"] != "before" || chunks[1]["context_below"] != "after" {
 		t.Errorf("table context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
+	}
+}
+
+func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "before one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "before two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "", DocType: "table", CKType: "table"},
+		{Text: "after one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+	}
+
+	if got, want := collectGeneralMediaContext(units, 2, 10, true), "before one\nbefore two"; got != want {
+		t.Fatalf("above context = %q, want %q", got, want)
+	}
+	if got, want := collectGeneralMediaContext(units, 2, 10, false), "after one\nafter two"; got != want {
+		t.Fatalf("below context = %q, want %q", got, want)
 	}
 }
 

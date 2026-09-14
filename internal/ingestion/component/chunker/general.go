@@ -476,7 +476,7 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		}
 		remaining -= tokens
 	}
-	return strings.Join(parts, "")
+	return strings.Join(parts, "\n")
 }
 
 func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {

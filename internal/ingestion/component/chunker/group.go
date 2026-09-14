@@ -438,40 +438,57 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		if dt == "" {
 			dt = "text"
 		}
-		var imgID *string
-		if it.ImgID != "" {
-			img := it.ImgID
-			imgID = &img
+		appendRecord := func(recordText string) {
+			var imgID *string
+			if it.ImgID != "" {
+				img := it.ImgID
+				imgID = &img
+			}
+			meta := make(map[string]any)
+			if it.ContentLtks != "" {
+				meta["content_ltks"] = it.ContentLtks
+			}
+			if it.ContentSmLtks != "" {
+				meta["content_sm_ltks"] = it.ContentSmLtks
+			}
+			if it.ContentWithWeight != "" {
+				meta["content_with_weight"] = it.ContentWithWeight
+			}
+			if it.TitleTks != "" {
+				meta["title_tks"] = it.TitleTks
+			}
+			if it.TitleSmTks != "" {
+				meta["title_sm_tks"] = it.TitleSmTks
+			}
+			for k, v := range it.Extra {
+				meta[k] = json.RawMessage(v)
+			}
+			out = append(out, lineRecord{
+				text:         recordText,
+				docType:      dt,
+				imgID:        imgID,
+				layout:       it.Layout,
+				ckType:       it.CKType,
+				pdfPositions: it.PDFPositions,
+				positions:    it.Positions,
+				parentMeta:   meta,
+			})
 		}
-		meta := make(map[string]any)
-		if it.ContentLtks != "" {
-			meta["content_ltks"] = it.ContentLtks
+		// TextParser intentionally emits one coordinate-free text item for the
+		// whole document. Title-family chunkers still need one record per line
+		// so heading regexes can see headings after the first line. Structured
+		// media/table items and positioned text remain atomic.
+		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
+		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
+		if plainText && unpositioned && strings.Contains(text, "\n") {
+			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {
+				if trim(line) != "" {
+					appendRecord(line)
+				}
+			}
+			continue
 		}
-		if it.ContentSmLtks != "" {
-			meta["content_sm_ltks"] = it.ContentSmLtks
-		}
-		if it.ContentWithWeight != "" {
-			meta["content_with_weight"] = it.ContentWithWeight
-		}
-		if it.TitleTks != "" {
-			meta["title_tks"] = it.TitleTks
-		}
-		if it.TitleSmTks != "" {
-			meta["title_sm_tks"] = it.TitleSmTks
-		}
-		for k, v := range it.Extra {
-			meta[k] = json.RawMessage(v)
-		}
-		out = append(out, lineRecord{
-			text:         text,
-			docType:      dt,
-			imgID:        imgID,
-			layout:       it.Layout,
-			ckType:       it.CKType,
-			pdfPositions: it.PDFPositions,
-			positions:    it.Positions,
-			parentMeta:   meta,
-		})
+		appendRecord(text)
 	}
 	return out
 }
