@@ -121,6 +121,7 @@ var ChunkerInputs = map[string]string{
 	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
 	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
+	"file_type":     "Canonical parser routing extension used by GeneralChunker.",
 	"_created_time": "Optional upstream timestamp (RFC3339Nano, s).",
 	"_elapsed_time": "Optional upstream elapsed time (s).",
 }

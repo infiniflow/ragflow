@@ -59,6 +59,8 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 		return NewTableChunker(params)
 	case ComponentNamePageChunker:
 		return NewPageChunker(params)
+	case ComponentNameGeneralChunker:
+		return NewGeneralChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
