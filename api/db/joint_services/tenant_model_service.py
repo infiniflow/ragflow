@@ -62,6 +62,19 @@ def _lookup_factory_llm_info(provider_name: str, pure_model_name: str, extra_fie
     return llm_list[0] if llm_list else None
 
 
+def _resolve_is_tools(model_extra: dict | None, api_key_is_tools: bool | None, llm_info: dict | None) -> bool:
+    # Prefer the UI "Tool call" flag on the tenant model, then a JSON-wrapped
+    # instance api_key, then llm_factories.json. Custom models with a plain
+    # api_key and empty extra otherwise leave is_tools unset, so agentic chat
+    # skips bind_tools even when the factory catalog says the model supports it.
+    extra = model_extra or {}
+    if "is_tools" in extra:
+        return bool(extra["is_tools"])
+    if api_key_is_tools is not None:
+        return bool(api_key_is_tools)
+    return bool((llm_info or {}).get("is_tools", False))
+
+
 def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
     if not raw_api_key:
         return raw_api_key, None, None
@@ -305,7 +318,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_type_val,
-            "is_tools": model_extra.get("is_tools", is_tool),
+            "is_tools": _resolve_is_tools(model_extra, is_tool, llm_info),
             "max_tokens": max_tokens,
         }
         if provider_name.lower() == "somark":
@@ -353,6 +366,7 @@ def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id
     api_key, is_tool, api_key_payload = _decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
     model_extra = json.loads(model_obj.extra) if model_obj.extra else {}
+    llm_info = _lookup_factory_llm_info(provider_obj.provider_name, model_obj.model_name, extra_fields)
 
     model_config = {
         "llm_factory": provider_obj.provider_name,
@@ -360,7 +374,7 @@ def get_model_config_by_id(tenant_id: str, model_type: str | enum.Enum, model_id
         "llm_name": model_obj.model_name,
         "api_base": extra_fields.get("base_url", ""),
         "model_type": model_type_val,
-        "is_tools": model_extra.get("is_tools", is_tool),
+        "is_tools": _resolve_is_tools(model_extra, is_tool, llm_info),
         "max_tokens": model_extra.get("max_tokens") or 8192,
     }
     if provider_obj.provider_name.lower() == "somark":
