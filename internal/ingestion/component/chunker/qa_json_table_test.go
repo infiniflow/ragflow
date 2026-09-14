@@ -100,11 +100,12 @@ func TestQAChunker_XLSXTablePairs(t *testing.T) {
 		t.Fatalf("chunk count = %d, want %d", len(chunks), len(want))
 	}
 	for i, expected := range want {
-		got, _ := chunks[i]["content_with_weight"].(string)
+		got, _ := chunks[i]["text"].(string)
 		if got != expected {
 			t.Errorf("chunk %d = %q, want %q", i, got, expected)
 		}
-		// Each pair keeps its source row, the same as the text path does.
+		// Each row becomes its own chunk with its own pair index, so the
+		// index write cannot collapse them into one.
 		raw, ok := chunks[i]["top_int"].([]any)
 		if !ok || len(raw) != 1 {
 			t.Fatalf("chunk %d top_int has shape %#v", i, chunks[i]["top_int"])
@@ -140,7 +141,7 @@ func TestQAChunker_JSONTabTextStaysOnTheTextPath(t *testing.T) {
 		t.Fatalf("chunk count = %d, want 1", len(chunks))
 	}
 	want := "Question: What is Go?\tAnswer: Go is a programming language."
-	if got, _ := chunks[0]["content_with_weight"].(string); got != want {
+	if got, _ := chunks[0]["text"].(string); got != want {
 		t.Errorf("chunk = %q, want %q", got, want)
 	}
 }
