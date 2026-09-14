@@ -516,6 +516,11 @@ type UpdateChunkRequest struct {
 	Positions    []interface{} `json:"positions,omitempty"`
 	TagKwd       []string      `json:"tag_kwd,omitempty"`
 	TagFeas      interface{}   `json:"tag_feas,omitempty"`
+	ImageBase64  *string       `json:"image_base64,omitempty"`
+	// ImageUpdateMode is append, replace, or remove when chunk image fields are sent.
+	ImageUpdateMode *string `json:"image_update_mode,omitempty"`
+	// TouchChunkImageFields is set when the client sends image_base64 and/or image_update_mode.
+	TouchChunkImageFields bool `json:"-"`
 }
 
 // UpdateChunk updates a chunk fields

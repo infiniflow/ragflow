@@ -612,11 +612,8 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+		storeChunkImageFunc: func(context.Context, string, string, []byte, string) error {
 			storeCalls++
-			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
-				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
-			}
 			return nil
 		},
 	}
@@ -735,12 +732,122 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, chunkImageUpdateModeAppend); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
 	}
+}
+
+func TestStoreChunkImageReplaceOverwritesExisting(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 3, 4))
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: oldImage,
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, chunkImageUpdateModeReplace); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
+	}
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if !bytes.Equal(mockStorage.lastPutBinary, newImage) {
+		t.Fatalf("replace did not write new image bytes")
+	}
+}
+
+func TestRemoveChunkImageDeletesExistingObject(t *testing.T) {
+	mockStorage := &chunkImageStorage{exists: true, oldBinary: []byte("image")}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.removeChunkImage(ctx, "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", mockStorage.removeCalls)
+	}
+}
+
+func TestUpdateChunkRemoveImageClearsFieldsAfterIndexUpdate(t *testing.T) {
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-1",
+			"content_with_weight": "body",
+			"img_id":              "kb-1-chunk-1",
+			"doc_type_kwd":        "image",
+		},
+	}
+	removeCalls := 0
+	svc := newUpdateChunkTestService(t, engine, func(ctx context.Context, bucket, chunkID string) error {
+		removeCalls++
+		if bucket != "kb-1" || chunkID != "chunk-1" {
+			t.Fatalf("unexpected remove target bucket=%q chunk=%q", bucket, chunkID)
+		}
+		return nil
+	})
+
+	mode := chunkImageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:             "kb-1",
+		DocumentID:            "doc-1",
+		ChunkID:               "chunk-1",
+		TouchChunkImageFields: true,
+		ImageUpdateMode:       &mode,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	update := engine.updateCalls[0].newValue
+	if update["img_id"] != "" {
+		t.Fatalf("img_id = %#v, want empty", update["img_id"])
+	}
+	if update["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", update["doc_type_kwd"])
+	}
+	if removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", removeCalls)
+	}
+}
+
+func newUpdateChunkTestService(t *testing.T, engine *updateChunkTestEngine, removeFn func(context.Context, string, string) error) *ChunkService {
+	t.Helper()
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	if removeFn != nil {
+		svc.removeChunkImageFunc = removeFn
+	}
+	return svc
 }
 
 func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
@@ -1215,21 +1322,25 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 }
 
 type chunkImageStorage struct {
-	exists    bool
-	oldBinary []byte
-	putCalls  int
+	exists         bool
+	oldBinary      []byte
+	putCalls       int
+	removeCalls    int
+	lastPutBinary  []byte
 }
 
 func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
 func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
 func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
+	s.lastPutBinary = append([]byte(nil), binary...)
 	return nil
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	s.removeCalls++
 	return nil
 }
 func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
@@ -1438,6 +1549,26 @@ type updateChunksCall struct {
 	newValue  map[string]interface{}
 	indexName string
 	datasetID string
+}
+
+type updateChunkTestEngine struct {
+	parseTestDocEngine
+	existingChunk interface{}
+	updateCalls   []updateChunksCall
+}
+
+func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.existingChunk, nil
+}
+
+func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	e.updateCalls = append(e.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
+	return nil
 }
 
 type switchChunksEngineMock struct {
