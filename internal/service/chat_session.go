@@ -1375,7 +1375,11 @@ func (s *ChatSessionService) ChatCompletions(
 	common.Info("ChatCompletions started")
 
 	// --- 1. Normalize messages ---
-	requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files)
+	storeHistoryMessages, err := ResolveStoreHistoryMessages(kwargs)
+	if err != nil {
+		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
+	}
+	requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files, storeHistoryMessages)
 	if err != nil {
 		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
 	}
@@ -1410,7 +1414,7 @@ func (s *ChatSessionService) ChatCompletions(
 			if dialog.TenantID != userID && (session.UserID == nil || *session.UserID != userID) {
 				return fail(common.NewCodedError(common.CodeAuthenticationError, errSharedSessionReadonly.Error()))
 			}
-		} else {
+		} else if storeHistoryMessages {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
 			if err != nil {
 				return fail(err)
@@ -1418,11 +1422,18 @@ func (s *ChatSessionService) ChatCompletions(
 			sessionID = session.ID
 		}
 
-		session = s.appendSessionMessage(session, requestMsg, receivedAt)
-		requestMsg = s.filterSystemAndLeadingAssistant(session)
+		if storeHistoryMessages {
+			session = s.appendSessionMessage(session, requestMsg, receivedAt)
+			requestMsg = s.filterSystemAndLeadingAssistant(session)
+		} else {
+			session = nil
+		}
 	} else {
 		dialog = s.buildDefaultCompletionDialog(userID)
 		if !stream {
+			if genConfig == nil {
+				genConfig = map[string]interface{}{}
+			}
 			genConfig["stream"] = false
 		}
 	}
@@ -1431,6 +1442,8 @@ func (s *ChatSessionService) ChatCompletions(
 	var reference []interface{}
 	if session != nil {
 		reference = s.initializeReference(session)
+	} else if !storeHistoryMessages {
+		reference = s.initializeReference(&entity.ChatSession{})
 	}
 
 	// --- 5. LLM override ---
@@ -1488,9 +1501,9 @@ func (s *ChatSessionService) ChatCompletions(
 			if result.Final {
 				failed := strings.Contains(result.Answer, "**ERROR**")
 				if session != nil && !failed {
-					content := fullAnswer.String()
+					content := result.Answer
 					if content == "" {
-						content = result.Answer
+						content = fullAnswer.String()
 					}
 					s.appendAssistantToSession(session, content, messageID)
 					if ctx.Err() == nil {
@@ -1672,11 +1685,14 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	return ans
 }
 
-// normalizeCompletionMessages picks explicit question text or the latest client user message.
+// normalizeCompletionMessages uses the full payload only for non-storing model tests.
 func (s *ChatSessionService) normalizeCompletionMessages(
-	messages []map[string]interface{}, question string, files []interface{},
+	messages []map[string]interface{}, question string, files []interface{}, storeHistoryMessages bool,
 ) (requestMsg []map[string]interface{}, messageID string, err error) {
-	if question != "" || len(messages) == 0 {
+	if !storeHistoryMessages && len(messages) == 0 {
+		return nil, "", errors.New("`messages` is required when `store_history_messages` is false")
+	}
+	if storeHistoryMessages && (question != "" || len(messages) == 0) {
 		if question == "" {
 			return nil, "", errors.New("required argument are missing: messages")
 		}
@@ -1689,16 +1705,24 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	if lastMessage["role"] != "user" {
 		return nil, "", errors.New("the last content of this conversation is not from user")
 	}
-	message := make(map[string]interface{}, len(lastMessage))
-	for key, value := range lastMessage {
-		message[key] = value
+	if storeHistoryMessages {
+		messages = messages[len(messages)-1:]
 	}
+	requestMsg = make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		message := make(map[string]interface{}, len(msg))
+		for key, value := range msg {
+			message[key] = value
+		}
+		requestMsg = append(requestMsg, message)
+	}
+	message := requestMsg[len(requestMsg)-1]
 	messageID, _ = message["id"].(string)
 	if messageID == "" {
 		messageID = utility.GenerateToken()
 		message["id"] = messageID
 	}
-	return []map[string]interface{}{message}, messageID, nil
+	return requestMsg, messageID, nil
 }
 
 // checkDialogOwnership checks if the user owns the dialog.

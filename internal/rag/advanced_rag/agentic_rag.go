@@ -1185,6 +1185,12 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// schema import.
 	if len(deps.Messages) == 0 {
 		deps.Messages = multimodalUserMessage(req.Question, req.TextAttachments, req.Images)
+	} else if req.TextAttachments != "" || len(req.Images) > 0 {
+		last := len(deps.Messages) - 1
+		if deps.Messages[last].Role == schema.User {
+			deps.Messages = append([]schema.Message(nil), deps.Messages...)
+			deps.Messages[last] = multimodalUserMessage(deps.Messages[last].Content, req.TextAttachments, req.Images)[0]
+		}
 	}
 	// Text attachments also feed the direct (non-outer) path, which appends them
 	// to the question (Python text_attachments_content handling); attachments

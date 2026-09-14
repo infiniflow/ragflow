@@ -219,10 +219,12 @@ type fakePipeline struct {
 	resultChan <-chan AsyncChatResult
 	err        error
 	userID     string
+	messages   []map[string]interface{}
 }
 
 func (f *fakePipeline) AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
 	f.userID = userID
+	f.messages = messages
 	return f.resultChan, f.err
 }
 
@@ -945,6 +947,63 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 	if got[2]["created_at"].(float64) < got[1]["created_at"].(float64) {
 		t.Fatalf("answer timestamp precedes question: %#v", got)
 	}
+
+	t.Run("non-storing model tests", func(t *testing.T) {
+		stored := store.sessions["session-1"]
+		storedMessages, storedReference := string(stored.Message), string(stored.Reference)
+		payload := []map[string]interface{}{
+			{"role": "system", "content": "client system prompt"},
+			{"role": "user", "content": "earlier question"},
+			{"role": "assistant", "content": "earlier answer"},
+			{"id": "test-question", "role": "user", "content": "latest question"},
+		}
+		var wg sync.WaitGroup
+		for _, sessionID := range []string{"", "session-1"} {
+			for _, stream := range []bool{false, true} {
+				for _, legacy := range []bool{false, true} {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						ref := map[string]interface{}{"chunks": []interface{}{"test chunk"}}
+						pipeline := &fakePipeline{resultChan: makeResultChan(
+							AsyncChatResult{Answer: "test answer", Reference: ref},
+							AsyncChatResult{Answer: "test answer", Reference: ref, Final: true},
+						)}
+						svc := &ChatSessionService{chatSessionDAO: store, userTenantDAO: &fakeTenantStore{}, pipeline: pipeline}
+						streamChan := make(chan string, 8)
+						result, err := svc.ChatCompletions(t.Context(), "user-1", "dialog-1", sessionID, payload, "must not replace payload", nil, "", nil, map[string]interface{}{"store_history_messages": false}, legacy, stream, streamChan)
+						if err != nil {
+							t.Errorf("completion failed: %v", err)
+							return
+						}
+						if !reflect.DeepEqual(pipeline.messages, payload) {
+							t.Errorf("full payload not passed: %#v", pipeline.messages)
+						}
+						if !stream && (result["answer"] != "test answer" || !reflect.DeepEqual(result["reference"], ref)) {
+							t.Errorf("unexpected result: %#v", result)
+						}
+						if stream {
+							foundReference := false
+							for len(streamChan) > 0 {
+								foundReference = strings.Contains(<-streamChan, "test chunk") || foundReference
+							}
+							if !foundReference {
+								t.Error("stream lost reference")
+							}
+						}
+					}()
+				}
+			}
+		}
+		wg.Wait()
+		stored = store.sessions["session-1"]
+		if len(store.updateCalled) != 2 || len(store.createCalled) != 0 || string(stored.Message) != storedMessages || string(stored.Reference) != storedReference {
+			t.Fatal("model tests changed stored history or created a session")
+		}
+		if _, err := svc.ChatCompletions(t.Context(), "user-1", "dialog-1", "", nil, "question without messages", nil, "", nil, map[string]interface{}{"store_history_messages": false}, false, false, nil); err == nil {
+			t.Fatal("non-storing completion must require messages")
+		}
+	})
 }
 
 func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {

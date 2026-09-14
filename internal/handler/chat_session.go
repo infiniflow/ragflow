@@ -135,12 +135,15 @@ type ChatCompletionsRequest struct {
 	FrequencyPenalty *float64                 `json:"frequency_penalty,omitempty"`
 	PresencePenalty  *float64                 `json:"presence_penalty,omitempty"`
 	MaxTokens        *int                     `json:"max_tokens,omitempty"`
+
+	StoreHistoryMessages *bool `json:"store_history_messages,omitempty"`
 }
 
 // ChatCompletions chat completion
 // @Summary Chat Completion
 // @Description Send messages to the chat model and get a response.
 // @Description Default is streaming (text/event-stream); set stream:false for JSON.
+// @Description Set store_history_messages:false to use the full messages payload without storing history. No other explicit value is supported.
 // @Tags chat_session
 // @Accept json
 // @Produce json, text/event-stream
@@ -158,6 +161,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if _, err := service.ResolveStoreHistoryMessages(rawBody); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
