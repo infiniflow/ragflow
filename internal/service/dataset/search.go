@@ -211,12 +211,18 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
+			// filterModelRef is the reference the context window is resolved
+			// from. The int the model resolvers return alongside the driver is
+			// max_output, the generation cap -- not the context window -- so it
+			// cannot serve as the prompt budget.
+			filterModelRef := ""
 			if chatID != "" {
 				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
 					chatModelForFilter = modelModule.NewChatModel(driver, &modelName, apiConfig)
+					filterModelRef = chatID
 				}
 			}
 
@@ -226,6 +232,17 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
 				} else {
 					chatModelForFilter = modelModule.NewChatModel(driver, &modelName, apiConfig)
+					if ref, refErr := modelProviderSvc.GetTenantDefaultModelRef(ctx, tenantIDs[0], entity.ModelTypeChat); refErr == nil {
+						filterModelRef = ref
+					}
+				}
+			}
+
+			if chatModelForFilter != nil && filterModelRef != "" {
+				if contextLength, err := modelProviderSvc.ResolveModelContextLength(ctx, tenantIDs[0], filterModelRef); err != nil {
+					common.Warn("Failed to resolve the chat model context window for meta_data_filter", zap.String("modelRef", filterModelRef), zap.Error(err))
+				} else {
+					chatModelForFilter.ContextLength = contextLength
 				}
 			}
 		}

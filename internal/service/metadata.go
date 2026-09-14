@@ -158,6 +158,55 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	}, nil
 }
 
+// metaValueSpaceProvider is implemented by doc engines that can build the
+// metadata value space from an aggregation instead of a document scan. Kept out
+// of engine.DocEngine because only the Elasticsearch backend has it: the others
+// keep the flattened scan, unchanged.
+type metaValueSpaceProvider interface {
+	MetaValueSpace(ctx context.Context, tenantID string, kbIDs []string) (map[string][]string, error)
+}
+
+// GetMetaValueSpaceByKBs returns every distinct metadata value per key.
+//
+// Deliberately not GetFlattedMetaByKBs: that reads the doc-meta index with a
+// fixed size cap, so it stops at the doc store's result window and hands the
+// filter generator the metadata of an arbitrary prefix -- which it is then asked
+// to pick a value from that may not be in it. An aggregation sees every document
+// regardless of the window, and its cost scales with the metadata's cardinality
+// rather than the document count.
+//
+// Returns types.ErrMetaValueSpaceIncomplete when the doc store answers with
+// partial results. That is deliberately not softened into the flattened scan:
+// the scan is result-window limited, so substituting it would answer an
+// incomplete read with a differently incomplete one.
+//
+// Backends without an aggregation path fall back to flattening
+// GetFlattedMetaByKBs, so behaviour there is unchanged.
+func (s *MetadataService) GetMetaValueSpaceByKBs(ctx context.Context, kbIDs []string) (common.MetaValueSpace, error) {
+	if len(kbIDs) == 0 {
+		return common.MetaValueSpace{}, nil
+	}
+
+	provider, ok := s.docEngine.(metaValueSpaceProvider)
+	if !ok {
+		metas, err := s.GetFlattedMetaByKBs(ctx, kbIDs)
+		if err != nil {
+			return nil, err
+		}
+		return metas.ValueSpace(), nil
+	}
+
+	tenantID, err := s.GetTenantIDByKBIDs(ctx, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+	space, err := provider.MetaValueSpace(ctx, tenantID, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+	return common.MetaValueSpace(space), nil
+}
+
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
 func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {

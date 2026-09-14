@@ -369,6 +369,15 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
+	// ContextLength is the model's context window in tokens -- Python's
+	// chat_mdl.max_length, the budget prompt fitting is measured against. It is
+	// the context window, NOT the generation cap: the max_tokens that model
+	// resolution returns alongside the driver is max_output and must not be used
+	// here. Resolve it with ModelProviderService.ResolveModelContextLength.
+	//
+	// 0 means "not resolved"; tokenizer.Fit normalizes that to 8192, exactly as
+	// Python's message_fit_in normalizes a non-positive max_length.
+	ContextLength int
 	// LastUsage holds the token usage (prompt/completion/total) of the most
 	// recent chat call. Consumed by callers for accurate Langfuse reporting
 	// and per-run token aggregation. Reset before each call.

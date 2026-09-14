@@ -118,6 +118,19 @@ type modelResolver interface {
 		tenantID string,
 		modelType entity.ModelType,
 	) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	// GetTenantDefaultModelRef and ResolveModelContextLength together supply the
+	// chat model's context window. The int the three resolvers above return is
+	// max_output, the generation cap, which must not be used as a prompt budget.
+	GetTenantDefaultModelRef(
+		ctx context.Context,
+		tenantID string,
+		modelType entity.ModelType,
+	) (string, error)
+	ResolveModelContextLength(
+		ctx context.Context,
+		tenantID string,
+		modelRef string,
+	) (int, error)
 }
 
 // retrievalEnhancer exposes the service-layer query and result enhancements
@@ -529,7 +542,17 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve default chat model: %w", err)
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	// The metadata filter renders the dataset's whole value space into its
+	// prompt, so it needs the model's context window to decide whether that
+	// prompt can be sent at all. A window that cannot be resolved stays 0, which
+	// message fitting reads as the 8192 default.
+	if ref, refErr := a.modelResolver.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeChat); refErr == nil && ref != "" {
+		if contextLength, lenErr := a.modelResolver.ResolveModelContextLength(ctx, tenantID, ref); lenErr == nil {
+			chatModel.ContextLength = contextLength
+		}
+	}
+	return chatModel, nil
 }
 
 func (a *NLPRetrievalAdapter) resolveRerankModel(
