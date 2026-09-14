@@ -15,12 +15,14 @@
  */
 
 import trim from 'lodash/trim';
+import { ClaimBadge } from '@/components/structure-graph/claim-badge';
 import { type TreeDataItem } from '@/components/ui/tree-view';
 import {
   type IArtifactGraph,
   type IArtifactGraphEntity,
 } from '@/interfaces/database/dataset';
 import {
+  type IClaimEvidence,
   type IStructureGraphEntity,
   type IStructureGraphRelation,
   type IStructureGraphTemplate,
@@ -30,6 +32,9 @@ import { type TreeData } from '@antv/g6/lib/types';
 declare module '@/components/ui/tree-view' {
   interface TreeDataItem {
     source_chunk_ids?: string[];
+    /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
+    description?: string;
+    evidence?: IClaimEvidence[];
   }
 }
 
@@ -87,6 +92,16 @@ function buildTreeDataItems(
         name: entity.name,
         entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
+        // Leaf clusters only: the tree shows this as a count badge and the
+        // claims themselves are fetched on click. The shared TreeView's
+        // badge slot is a ReactNode, so the claim domain owns the rendering.
+        badge: <ClaimBadge value={entity.claim_count} />,
+        // page_index fact/conclusion: gate-verified quotes rendered in the
+        // node's detail panel. Without badge/evidence/description the tree and
+        // page_index nodes reached the click handler empty, so the detail panel
+        // could never open for them.
+        evidence: entity.evidence,
+        description: getEntityDescription(entity),
       },
     ]),
   );
@@ -136,6 +151,12 @@ function buildUniqueTreeDataItems(
         name: entity.name,
         entityType: entity.type,
         source_chunk_ids: entity.source_chunk_ids,
+        // Leaf clusters only: the tree UI shows this as a count badge and
+        // fetches the claims themselves on expand.
+        badge: entity.claim_count,
+        // page_index fact/conclusion: gate-verified quotes shown in the
+        // node's detail panel.
+        evidence: entity.evidence,
       },
     ]),
   );
@@ -175,15 +196,29 @@ function buildUniqueTreeDataItems(
     .filter((item): item is TreeDataItem => item !== undefined);
 }
 
+// Entity types that are never part of the navigation tree. A claim is an
+// atomic, evidence-bearing proposition: it answers "what does this section
+// say", which is the middle column's job, not the outline's. Leaving claims in
+// the tree buried the heading hierarchy under hundreds of flat leaves.
+// ``fact``/``conclusion`` are the pre-rename spellings of the same object, kept
+// so templates compiled before the rename render the same way.
+const PAGE_INDEX_NON_TREE_TYPES = new Set(['claim', 'fact', 'conclusion']);
+
 export function adaptPageIndexToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
-  return buildTreeDataItems(
-    template.entities,
-    template.relations,
-    ['include'],
-    true,
+  // Filtered before building: relations pointing at a removed entity are
+  // dropped by the builder, so headings whose only children were claims simply
+  // become leaves instead of dangling.
+  const entities = (template.entities ?? []).filter(
+    (entity) =>
+      !PAGE_INDEX_NON_TREE_TYPES.has(
+        String((entity as { type?: string })?.type ?? '')
+          .trim()
+          .toLowerCase(),
+      ),
   );
+  return buildTreeDataItems(entities, template.relations, ['include'], true);
 }
 
 export function adaptTreeToTreeData(

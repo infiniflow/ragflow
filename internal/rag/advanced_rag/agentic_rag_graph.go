@@ -52,16 +52,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/chat"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/rag/advanced_rag/harness"
 	"ragflow/internal/rag/advanced_rag/harness/orchestrator"
 	"ragflow/internal/rag/prompts"
+	"ragflow/internal/tokenizer"
 )
 
 // ---------------------------------------------------------------------------
@@ -379,13 +378,30 @@ func SelectSCAView(chunks []map[string]any, focusTerms []string) ([]map[string]a
 		ranked = append(ranked, scored{i, c, rel*0.45 + min(covRatio, 1.0)*0.45 + fresh})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
+	// Evidence rows first (Python :146-154): an atomic proposition carrying a
+	// verbatim quote is what the reviewer should read before wading through raw
+	// passages. Both groups keep their relevance order; only the grouping is
+	// lifted before the view cap is applied, so claim evidence can no longer be
+	// pushed out of the view by later, loosely-related raw chunks.
+	var evidence, rest []map[string]any
+	for _, r := range ranked {
+		if strings.HasPrefix(harness.ChunkIDOf(r.chunk), evidenceChunkPrefix) {
+			evidence = append(evidence, r.chunk)
+		} else {
+			rest = append(rest, r.chunk)
+		}
+	}
 	limit := min(len(ranked), SCAViewCap)
 	view := make([]map[string]any, 0, limit)
+	view = append(view, evidence...)
+	view = append(view, rest...)
+	view = view[:min(len(view), limit)]
 	ids := make([]string, 0, limit)
-	for _, r := range ranked[:limit] {
-		view = append(view, r.chunk)
-		ids = append(ids, harness.ChunkIDOf(r.chunk))
+	for _, c := range view {
+		ids = append(ids, harness.ChunkIDOf(c))
 	}
+	// identity is a hash of the SORTED id set, so this reordering cannot break
+	// the unproductive-round detector (Python :155-158).
 	sort.Strings(ids)
 	return view, joinHash(ids)
 }
@@ -672,6 +688,13 @@ func SplitThinkStream(ctx context.Context, deltas <-chan string) <-chan ThinkChu
 	}()
 	return out
 }
+
+// Slot-expansion bounds for the query_rewrite DECOMPOSE (Python
+// _MAX_SLOT_DEPTH = 3 / _MAX_SLOTS_TOTAL = 8).
+const (
+	maxSlotDepth  = 3
+	maxSlotsTotal = 8
+)
 
 // SCAGapsToRewrite mirrors Python _sca_gaps_to_rewrite.
 //
@@ -968,6 +991,10 @@ const (
 	fanoutHybridTopN = 30
 	// fanoutSemanticQuota caps narrow-BYPASS hits admitted per fan-out.
 	fanoutSemanticQuota = 4
+	// evidenceTopUp caps how many of the chunks cited by the channel-0 claim
+	// rows to pull in verbatim (Python _EVIDENCE_TOP_UP). A directed fetch by
+	// id, not another recall.
+	evidenceTopUp = 8
 	// Narrowing budget for the exact leg (Python narrow_by_terms kwargs).
 	fanoutNarrowMaxOutPerChunk = 1200
 	fanoutNarrowMaxOutTotal    = 16000
@@ -1056,22 +1083,107 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	}
 
 	added := 0
+	rawAdded := 0
 	admit := func(batch []map[string]any) bool {
 		for _, c := range batch {
 			if added >= room {
 				return true
 			}
 			id := harness.ChunkIDOf(c)
+			isEvidence := strings.HasPrefix(id, "claim_")
 			if id != "" {
 				if seen[id] {
 					continue
 				}
 				seen[id] = true
 			}
+			// Raw passages get their own budget (Python _RAW_SNIPPET_QUOTA);
+			// anything left above it stays free for evidence rows, which are
+			// far denser answer material. Evidence rows (claim_ prefix) bypass
+			// the quota and never count against it.
+			if !isEvidence && rawAdded >= rawSnippetQuota {
+				continue
+			}
 			st.KB.Chunks = append(st.KB.Chunks, c)
 			added++
+			if !isEvidence {
+				rawAdded++
+			}
 		}
 		return added >= room
+	}
+	// Channel 0 (Python _collect_evidence): claim/evidence rows lead the pool —
+	// they are the compact, verbatim-bearing proxy for the chunks they source.
+	// Gated on the dataset having compiled rows at all; capped at
+	// evidencePoolQuota rows across the whole prefetch; best effort.
+	channel0 := [][]map[string]any{}
+	channel0Rows := 0
+	for _, q := range qs {
+		select {
+		case <-ctx.Done():
+			return 0
+		default:
+		}
+		if !harness.DatasetHasCompilation(ctx, sd) {
+			break
+		}
+		// Python :703 — top_n=max(2, top_n) per query, so a single-fanout
+		// question still recalls at least two claim rows.
+		recallN := capPerQuery
+		if recallN < 2 {
+			recallN = 2
+		}
+		hits := harness.RecallDatasetClaims(ctx, sd, q, recallN)
+		if len(hits) == 0 {
+			continue
+		}
+		pseudo := harness.ClaimPseudoChunks(hits)
+		kept := make([]map[string]any, 0, len(pseudo))
+		for _, pc := range pseudo {
+			if channel0Rows >= evidencePoolQuota {
+				break
+			}
+			kept = append(kept, pc)
+			channel0Rows++
+		}
+		if len(kept) == 0 {
+			break
+		}
+		channel0 = append(channel0, kept)
+		if admit(kept) {
+			return added
+		}
+	}
+	// Evidence top-up (Python _fanout_search:782-799): an evidence row carries a
+	// verbatim quote but not its surrounding passage, so pull exactly the chunks
+	// it cites instead of running another global recall. Deduped against the
+	// pool (a chunk the claim already quotes verbatim adds nothing new) and
+	// capped at evidenceTopUp ids. Best effort.
+	if len(channel0) > 0 {
+		var wanted []string
+		inWanted := map[string]bool{}
+		for _, pseudo := range channel0 {
+			for _, c := range pseudo {
+				ids, _ := c["source_chunk_ids"].([]string)
+				for _, cid := range ids {
+					cid = strings.TrimSpace(cid)
+					if cid == "" || seen[cid] || inWanted[cid] {
+						continue
+					}
+					inWanted[cid] = true
+					wanted = append(wanted, cid)
+				}
+			}
+		}
+		if len(wanted) > evidenceTopUp {
+			wanted = wanted[:evidenceTopUp]
+		}
+		if len(wanted) > 0 {
+			fetched := harness.LoadChunksForIDs(ctx, sd, wanted)
+			if len(fetched) > 0 && admit(fetched) {
+				return added
+			}
+		}
 	}
 	// Channel A across every fan-out first, then channel B.
 	for _, p := range pairs {
@@ -1189,7 +1301,14 @@ func BuildLowGraph(ctx context.Context, deps RAGTools, req harness.RunRequest, s
 	// composition node, so the answer is produced inside the graph.
 	addNode("formalize_answer", func(c context.Context, r *harness.RunRequest) (*harness.RunRequest, error) {
 		if deps.Finalize != nil {
-			deps.Finalize(c)
+			// Python low-graph state at this node: partial_answer=False
+			// (build_low_graph formalize_question) and empty_result=True
+			// (orchestrator/direct.py direct_search) — the values
+			// _compose_answer_from_evidence reads from the state. The question
+			// is the one formalize_question wrote into this same RunRequest
+			// (Python state["question"], agentic_rag_graph.py:834): the low
+			// graph's compose must use the formalized question too.
+			deps.Finalize(c, false, true, r.Question)
 		}
 		return r, nil
 	})
@@ -1396,7 +1515,7 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 
 	res := orchestrator.SufficientContextAgent(callCtx, orchestrator.SCADeps{
 		KB:      st.KB,
-		Model:   &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength, modelName: deps.ModelName, cache: redisGenJSONCache{}},
+		Model:   &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
 		Prompts: deps.SCAPrompts,
 	}, st.Question, claims)
 
@@ -1476,7 +1595,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	defer cancel()
 
 	rewritten := orchestrator.RewriteGapToQuery(callCtx, orchestrator.RewriteDeps{
-		Model:           &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength, modelName: deps.ModelName, cache: redisGenJSONCache{}},
+		Model:           &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
 		Prompts:         deps.RewritePrompts,
 		ResearchContext: researchContext,
 	}, st.Question, gaps)
@@ -1522,6 +1641,53 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 		return
 	}
 
+	// DECOMPOSE (Python query_rewrite:1349-1375): promote SCA gaps to new
+	// slots so the next research pass gets a typed unknown with its own
+	// action session — that is how the plan actually expands. No extra LLM
+	// call: the SCA already told us what is missing (missing_fact + hint).
+	//
+	// ORDER (Python :1306-1375): promotion runs AFTER the rewrite LLM call, the
+	// empty-query early return (:1326-1328) and the saturation early-exit
+	// (:1337-1339) — both of which DISCARD the promotion by returning before it.
+	// Promoting before the rewrite (the earlier Go port's order) mutated the slot
+	// table even on rounds that were then dropped, desyncing the table from the
+	// queries actually pursued.
+	if st.SlotTable.Depth < maxSlotDepth {
+		slots := st.SlotTable.State
+		known := map[string]bool{}
+		nextID := 0
+		for _, v := range slots {
+			for _, c := range v.QuestionClues {
+				known[strings.ToLower(strings.TrimSpace(c))] = true
+			}
+			if v.ID >= nextID {
+				nextID = v.ID + 1
+			}
+		}
+		promoted := 0
+		for _, g := range gaps {
+			if len(slots) >= maxSlotsTotal {
+				break
+			}
+			key := strings.ToLower(strings.TrimSpace(g.What))
+			if key == "" || known[key] {
+				continue
+			}
+			clues := []string{truncateRunes(g.What, 200)}
+			if strings.TrimSpace(g.SearchHint) != "" {
+				clues = append(clues, truncateRunes(g.SearchHint, 200))
+			}
+			slots = append(slots, harness.Variable{ID: nextID, Type: "entity", QuestionClues: clues})
+			known[key] = true
+			nextID++
+			promoted++
+		}
+		if promoted > 0 {
+			st.SlotTable.State = slots
+			logger.Printf("[QueryRewriter] decompose: %d gap(s) promoted to slots (depth=%d)", promoted, st.SlotTable.Depth)
+		}
+	}
+
 	logger.Printf("[QueryRewriter] insufficient round %d → %d targeted query(s): %v",
 		st.SearchRounds+1, len(queries), queries)
 	st.NoProgress = false
@@ -1546,8 +1712,19 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	logger.Printf("[Finalize] partial=%v empty=%v chunks=%d", st.PartialAnswer, st.EmptyResult, len(st.KB.Chunks))
 	// formalize_answer — the node itself composes and streams the answer
 	// (_compose_answer_from_evidence); it does not just flag the state.
+	// Python composes with THIS node's state values: partial_answer was set
+	// right above (agentic_rag_graph.py:1397-1400) and empty_result is still
+	// the True formalize_question wrote (agentic_rag_graph.py:1042 — never
+	// reset anywhere in the graph), so the compose prompt carries the
+	// no-evidence hedge on every round and, when INSUFFICIENT, the partial
+	// preamble. Forwarding the state beats the caller's response flags,
+	// which are only copied after the graph returns.
 	if deps.Finalize != nil {
-		deps.Finalize(ctx)
+		// question = state["question"] (Python :834): the FORMALIZED question
+		// the formalize_question node wrote — composing from the outer tool
+		// argument instead collapses the final answer to the first completed
+		// sub-answer of a multi-hop question.
+		deps.Finalize(ctx, st.PartialAnswer, true, st.Question)
 	}
 }
 
@@ -1681,71 +1858,25 @@ func viewChunkIDs(view []map[string]any) []string {
 // genJSONMaxRetry mirrors Python gen_json's default max_retry=2: the first
 // call, plus one corrective round that feeds the malformed answer and the parse
 // error back to the model.
+//
+// Deliberately NO reply cache: Python's gen_json carries Redis cache code, but
+// its set/get keys never match — get_llm_cache hashes (llm_name, system,
+// user_prompt, gen_conf) (generator.py:569) while set_llm_cache hashes
+// (llm_name, system, ans, user_prompt, gen_conf) (generator.py:582, the value
+// `ans` is hashed INTO the key) — so the lookup always misses and every call
+// reaches the model. The observable contract is "same prompt still calls the
+// LLM", which also rules out replaying a verdict computed against evidence a
+// later round has already superseded.
 const genJSONMaxRetry = 2
-
-// LLMCache is the gen_json reply-cache seam (Python
-// rag.graphrag.utils.get_llm_cache / set_llm_cache). A nil seam disables
-// caching, which is also what a Redis-less deployment gets.
-type LLMCache interface {
-	Get(ctx context.Context, key string) (string, bool)
-	Set(ctx context.Context, key, value string)
-}
-
-// genJSONCacheTTL mirrors Python set_llm_cache's `24 * 3600` second expiry.
-const genJSONCacheTTL = 24 * time.Hour
-
-// genJSONCacheKey mirrors gen_json's cache key byte for byte:
-//
-//	xxhash.xxh64(str(llm_name) + str(system_prompt) + str(user_prompt) + str(gen_conf)).hexdigest()
-//
-// `str(gen_conf)` of the default {} is "{}" — the two agentic callers (SCA
-// review, gap→query rewrite) pass no gen_conf, so the literal is exact. Go's
-// zero-padded %016x over xxhash.Sum64String prints the same 16 lowercase hex
-// digits Python's hexdigest() does (plain %x drops leading zeros), so a Go and
-// a Python process sharing one Redis share one cache. An empty modelName yields
-// "" and the caller must then SKIP the cache: keying on an empty name would
-// collapse every model onto one bucket.
-func genJSONCacheKey(modelName, systemPrompt, userPrompt string) string {
-	if modelName == "" {
-		return ""
-	}
-	return fmt.Sprintf("%016x", xxhash.Sum64String(modelName+systemPrompt+userPrompt+"{}"))
-}
-
-// redisGenJSONCache is the production LLMCache: the process-wide Redis client.
-// With no Redis configured redis.Get() is nil and every call degrades to a miss
-// — the same "no cache" behaviour Python has when REDIS_CONN is absent.
-type redisGenJSONCache struct{}
-
-func (redisGenJSONCache) Get(ctx context.Context, key string) (string, bool) {
-	client := redis.Get()
-	if client == nil || key == "" {
-		return "", false
-	}
-	v, err := client.Get(ctx, key)
-	if err != nil || v == "" {
-		return "", false
-	}
-	return v, true
-}
-
-func (redisGenJSONCache) Set(ctx context.Context, key, value string) {
-	client := redis.Get()
-	if client == nil || key == "" || value == "" {
-		return
-	}
-	client.Set(ctx, key, value, genJSONCacheTTL)
-}
 
 // jsonModelAdapter adapts harness.SessionModel to orchestrator.JSONModel.
 //
-// Mirrors Python's gen_json(prompt, "Output:\n", chat_mdl): a 24h reply cache is
-// consulted first, the rendered prompt is the system turn and "Output:\n" the
-// user turn (fitted ONCE to the model's context window), then the first JSON
-// value is parsed out of the reply. Malformed JSON is retried (up to
-// genJSONMaxRetry calls) with the model's own bad answer and the parse error
-// appended to the user turn, so a single formatting hiccup does not abort the
-// SCA review or the query rewrite.
+// Mirrors Python's gen_json(prompt, "Output:\n", chat_mdl): the rendered prompt
+// is the system turn and "Output:\n" the user turn (fitted ONCE to the model's
+// context window), then the first JSON value is parsed out of the reply.
+// Malformed JSON is retried (up to genJSONMaxRetry calls) with the model's own
+// bad answer and the parse error appended to the user turn, so a single
+// formatting hiccup does not abort the SCA review or the query rewrite.
 type jsonModelAdapter struct {
 	inner harness.SessionModel
 	// maxLength is the chat model's context window (Python
@@ -1753,11 +1884,6 @@ type jsonModelAdapter struct {
 	// prompt is trimmed instead of rejected by the provider. <=0 falls back to
 	// chat.EffectiveContextLength's 8192 default.
 	maxLength int
-	// modelName is the resolved chat model identity (Python chat_mdl.llm_name).
-	// Empty disables the reply cache (see genJSONCacheKey).
-	modelName string
-	// cache is the gen_json reply cache; nil disables caching.
-	cache LLMCache
 }
 
 // parseGenJSONReply parses a cleaned model reply with gen_json's tolerance: a
@@ -1800,22 +1926,10 @@ func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, err
 	if a.inner == nil {
 		return nil, fmt.Errorf("agentic: no model configured")
 	}
-	// Python gen_json consults the 24h reply cache FIRST, keyed on the ORIGINAL
-	// system/user prompts (not the fitted ones), and returns without any model
-	// call on a hit:
-	//   cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
-	//   if cached: return json_repair.loads(cached)
+	// No reply cache: see the genJSONMaxRetry note — Python's own cache never
+	// hits (its set/get keys never match), so every call reaches the model.
 	const userPrompt = "Output:\n"
-	cacheKey := ""
-	if a.cache != nil {
-		cacheKey = genJSONCacheKey(a.modelName, prompt, userPrompt)
-		if cached, hit := a.cache.Get(ctx, cacheKey); hit {
-			if v, ok := parseGenJSONReply(cached); ok {
-				return v, nil
-			}
-		}
-	}
-	// Python gen_json then fits ONCE, before the retry loop:
+	// Python gen_json fits ONCE, before the retry loop:
 	//   _, msg = message_fit_in(form_message(system_prompt, user_prompt), max_length)
 	// and sends msg[0] as the system turn and msg[1:] as history, appending the
 	// corrective text to the LAST user turn WITHOUT re-fitting. A zero/negative
@@ -1857,11 +1971,6 @@ func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, err
 		// raw reply with its fences / think block.
 		lastAns = cleaned
 		if v, ok := parseGenJSONReply(cleaned); ok {
-			// Python caches the CLEANED answer on the first successful parse
-			// (set_llm_cache(..., ans, ...)), and only there.
-			if a.cache != nil && cacheKey != "" {
-				a.cache.Set(ctx, cacheKey, cleaned)
-			}
 			return v, nil
 		}
 		// Deliberately log length, not content: the reply may embed retrieved
@@ -1969,7 +2078,14 @@ func renderResearchContext(st *AgenticState) string {
 			if i >= PoolHeadLines {
 				break
 			}
-			first := harness.ChunkTextOf(c)
+			// Python reads `c.get("content") or c.get("content_with_weight")`
+			// here (query_rewrite node) — content FIRST, unlike _chunk_text's
+			// content_with_weight-first order used elsewhere. The pool-head
+			// lines are rewriter prompt content, so keep Python's order.
+			first := anyString(c["content"])
+			if first == "" {
+				first = anyString(c["content_with_weight"])
+			}
 			if idx := strings.IndexByte(first, '\n'); idx >= 0 {
 				first = first[:idx]
 			}
@@ -1995,8 +2111,13 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 	}
 	// Evidence pool saturated at the SCA view cap: any further chunk lands
 	// beyond what the SCA can read, so another search round cannot flip the
-	// sufficiency verdict. Short-circuit straight to finalize.
-	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap {
+	// sufficiency verdict. Gated to SECOND-or-later reviews on THIS branch:
+	// claim pseudo-chunks bypass the pool cap (direct append in the claim
+	// prefetch), so a rewrite round can still add evidence — the FIRST SCA
+	// review must always get its rewrite round when insufficient, or hard
+	// multi-hop questions lose their only refinement pass and the retry moves
+	// to the outer agent as a whole new graph run (Python _route_sca:1411).
+	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap && st.SearchRounds >= 1 {
 		_LOG.Printf("[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.", len(st.KB.Chunks), SCAViewCap)
 		return nodeFormalizeAnswer
 	}
@@ -2223,6 +2344,387 @@ func buildSlotTableFrom(ctx context.Context, deps harness.SessionDeps, question 
 	return init.Root, init.FirstQueries, nil
 }
 
+// ── Evidence-guided batched answer generation (APT-RAG) ─────────────────────
+// Mirrors Python rag/advanced_rag/agentic_rag_graph.py:1563-1749.
+
+// evidenceChunkPrefix mirrors Python _EVIDENCE_CHUNK_PREFIX（agentic_rag_graph.py:537）:
+// only the claim pseudo-chunks are atomic evidence rows.
+const evidenceChunkPrefix = "claim_"
+
+// Evidence-guided batching constants（Python _EVIDENCE_BATCH_*，:1574-1577）.
+//
+// The threshold is deliberately conservative: APT-RAG ships sim_threshold=0.0
+// (any overlap), which merges weakly related slots and, worse, lets a single
+// parse failure blank every answer in the batch at once. Both conditions must
+// hold. The absolute floor stops two tiny evidence sets from merging on a
+// single coincidental hit; the ratio gate stays LOW enough to actually fire —
+// measured FRAMES overlap was 0.03-0.2 mean, so the old 0.5 never triggered at
+// all. (APT-RAG ships 0.0; that is too loose for us because one parse failure
+// would blank every answer in the batch.)
+const (
+	EvidenceBatchMinSim    = 0.15
+	EvidenceBatchMinShared = 2
+	EvidenceBatchMaxSlots  = 4
+	EvidenceBatchMaxChars  = 12000
+)
+
+// EvidenceBatchPrompt mirrors Python _EVIDENCE_BATCH_PROMPT（:1579-1585）,
+// verbatim.
+const EvidenceBatchPrompt = "Answer each listed sub-question using ONLY the shared evidence below.\n" +
+	"These sub-questions share this evidence, so read it once and answer all of them.\n" +
+	"Return JSON only, mapping each sub-question id to its answer: " +
+	`{"<id>": "<answer>", ...}. Use an empty string when the evidence does not ` +
+	"answer that sub-question. Never invent facts."
+
+// intersectionSize counts the shared members of two evidence-id sets.
+func intersectionSize(a, b map[string]bool) int {
+	n := 0
+	for id := range a {
+		if b[id] {
+			n++
+		}
+	}
+	return n
+}
+
+// BatchFillSlots mirrors Python _batch_fill_slots（:1588-1694）: answer several
+// unresolved slots in ONE call when their evidence overlaps.
+//
+// Pure efficiency: neither the slot structure nor the evidence semantics
+// change — only the number of generation calls made over the same passages.
+//
+// Python wraps the call site in try/except（:1890-1895）and each model call in
+// its own try/except（:1672-1683）; the Go port is best-effort inside: a
+// missing model, a failed call, or an unparsable reply skips that cluster and
+// the remaining clusters still run.
+func BatchFillSlots(ctx context.Context, deps harness.SessionDeps, slotTable *harness.State, slotEvidence map[string]SlotEvidence) int {
+	// Python :1596 — unresolved slots only; :1637 — slot_by_id over them.
+	unresolvedN := 0
+	slotByID := map[int]*harness.Variable{}
+	evIDs := map[int][]string{} // ordered evidence ids (Python ev[v.id] set)
+	evSet := map[int]map[string]bool{}
+	for i := range slotTable.State {
+		v := &slotTable.State[i]
+		if v.Filled() {
+			continue
+		}
+		unresolvedN++
+		slotByID[v.ID] = v
+		// Python :1599 — evidence ids recorded for this slot by its session,
+		// keyed by str(slot id), blanks dropped.
+		ids := map[string]bool{}
+		var ordered []string
+		for _, id := range slotEvidence[fmt.Sprint(v.ID)].EvidenceIDs {
+			if id == "" || ids[id] {
+				continue
+			}
+			ids[id] = true
+			ordered = append(ordered, id)
+		}
+		if len(ordered) > 0 {
+			evIDs[v.ID] = ordered
+			evSet[v.ID] = ids
+		}
+	}
+	if len(evSet) < 2 {
+		// Diagnostics (Python :1602-1611): batching needs TWO slots that are
+		// both unresolved AND carrying evidence. Log why it did not happen,
+		// otherwise a never-firing path is indistinguishable from a working one.
+		_LOG.Printf("[SlotResearch] batching skipped: unresolved=%d with_evidence=%d", unresolvedN, len(evSet))
+		return 0
+	}
+
+	ids := make([]int, 0, len(evSet))
+	for id := range evSet {
+		ids = append(ids, id)
+	}
+	// Python iterates the `ev` SET, whose order is arbitrary; sort first so the
+	// stable ordering below is deterministic across runs.
+	sort.Ints(ids)
+
+	// sim mirrors Python _sim（:1615-1617）: Jaccard over evidence-id sets.
+	sim := func(a, b int) float64 {
+		inter := intersectionSize(evSet[a], evSet[b])
+		union := len(evSet[a]) + len(evSet[b]) - inter
+		if union == 0 {
+			return 0.0
+		}
+		return float64(inter) / float64(union)
+	}
+
+	// Largest-incompatible-first (APT-RAG, Python :1619-1621): place the least
+	// compatible slot first, so it is not left without a cluster at the end.
+	// Counts are precomputed — Python's sort key is fixed before sorting.
+	incompatible := make(map[int]int, len(ids))
+	for _, i := range ids {
+		n := 0
+		for _, j := range ids {
+			if j != i && sim(i, j) < EvidenceBatchMinSim {
+				n++
+			}
+		}
+		incompatible[i] = n
+	}
+	order := append([]int(nil), ids...)
+	sort.SliceStable(order, func(x, y int) bool { return incompatible[order[x]] > incompatible[order[y]] })
+
+	// Greedy clustering（Python :1622-1629）: a slot joins the first cluster
+	// that is under the size cap AND shares ≥MIN_SHARED ids AND ≥MIN_SIM with
+	// EVERY member; otherwise it starts its own cluster.
+	clusters := [][]int{}
+	for _, i := range order {
+		placed := false
+		for ci := range clusters {
+			cl := clusters[ci]
+			if len(cl) >= EvidenceBatchMaxSlots {
+				continue
+			}
+			compatible := true
+			for _, j := range cl {
+				if intersectionSize(evSet[i], evSet[j]) < EvidenceBatchMinShared || sim(i, j) < EvidenceBatchMinSim {
+					compatible = false
+					break
+				}
+			}
+			if compatible {
+				clusters[ci] = append(cl, i)
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			clusters = append(clusters, []int{i})
+		}
+	}
+
+	// by_chunk_id（Python :1631-1636）over the whole pool.
+	byChunkID := map[string]map[string]any{}
+	if deps.KB != nil {
+		for _, c := range deps.KB.Chunks {
+			if cid := harness.ChunkIDOf(c); cid != "" {
+				byChunkID[cid] = c
+			}
+		}
+	}
+
+	filled := 0
+	for _, cl := range clusters {
+		if len(cl) < 2 {
+			continue
+		}
+		// Python :1643-1645 builds union_ids as a set (arbitrary order); the
+		// port keeps first-seen order across the cluster for determinism.
+		unionIDs := []string{}
+		seenID := map[string]bool{}
+		for _, i := range cl {
+			for _, id := range evIDs[i] {
+				if !seenID[id] {
+					seenID[id] = true
+					unionIDs = append(unionIDs, id)
+				}
+			}
+		}
+		body, total := []string{}, 0
+		for _, cid := range unionIDs {
+			c := byChunkID[cid]
+			if c == nil {
+				continue
+			}
+			// Python :1651 — content_with_weight first, content fallback.
+			text := anyString(c["content_with_weight"])
+			if text == "" {
+				text = anyString(c["content"])
+			}
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			// Python len() counts code points, so the MAX_CHARS cap is
+			// character-based, not byte-based.
+			n := utf8.RuneCountInString(text)
+			if total+n > EvidenceBatchMaxChars {
+				break
+			}
+			body = append(body, text)
+			total += n
+		}
+		if len(body) == 0 {
+			continue
+		}
+
+		lines := []string{}
+		for _, sid := range cl {
+			v := slotByID[sid]
+			if v == nil {
+				continue
+			}
+			// Python :1666-1667 — join ALL clues, then cut the JOINED text
+			// to 300 code points.
+			clues := truncateRunes(strings.Join(v.QuestionClues, "; "), 300)
+			lines = append(lines, fmt.Sprintf("- %d: %s", sid, clues))
+		}
+		if len(lines) < 2 {
+			continue
+		}
+
+		// Python :1671.
+		user := "Sub-questions:\n" + strings.Join(lines, "\n") + "\n\nShared evidence:\n" + strings.Join(body, "\n---\n")
+		// Python :1673-1675 — no model: stop batching entirely.
+		if deps.Model == nil {
+			return filled
+		}
+		// Python :1676-1680 — async_chat(system_prompt, [user], answer_conf);
+		// the Go SessionModel takes the system message inline.
+		reply, err := deps.Model.Complete(ctx, []schema.Message{
+			*schema.SystemMessage(EvidenceBatchPrompt),
+			*schema.UserMessage(user),
+		}, nil)
+		if err != nil {
+			// Python :1681-1683 — one failed call must not cost the other
+			// clusters.
+			_LOG.Printf("[SlotResearch] batched answer call failed: %v", err)
+			continue
+		}
+
+		// Python :1685-1687 — _extract_json_object; a non-object reply
+		// skips the cluster.
+		data, ok := extractJSONObject(reply.Content).(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, sid := range cl {
+			v := slotByID[sid]
+			if v == nil {
+				continue
+			}
+			// Python :1690-1693 — the reply maps str(slot id) to its answer;
+			// never overwrite an already-filled slot, and a blank answer
+			// counts as "evidence does not answer this".
+			val, isStr := data[fmt.Sprint(sid)].(string)
+			if !isStr {
+				continue
+			}
+			val = strings.TrimSpace(val)
+			if val == "" || v.Filled() {
+				continue
+			}
+			cand := truncateRunes(val, 400)
+			v.Candidate = &cand
+			filled++
+		}
+	}
+	return filled
+}
+
+// Word-level coverage a pooled evidence row must reach before it is allowed to
+// answer a slot on its own. Deliberately strict: a wrong prefill costs
+// accuracy, while a missed prefill only costs one session (which still runs).
+// （Python _EVIDENCE_PREFILL_COVERAGE，:1697-1700）
+const EvidencePrefillCoverage = 0.6
+
+// PrefillSlotsFromEvidence mirrors Python _prefill_slots_from_evidence（:1703-1749）:
+// answer slots that an already-pooled evidence row directly answers.
+//
+// An evidence row is an atomic proposition carrying a verbatim quote, so when
+// it already covers a slot's question there is nothing for an action session
+// to research — skipping it removes a WHOLE session (the dominant cost), not
+// just tokens inside one. Saves calls, uses real evidence, and a wrong guess
+// is still caught later by the SCA.
+func PrefillSlotsFromEvidence(slotTable *harness.State, kb *harness.Kbinfos) int {
+	// Python :1714-1715 — evidence rows are the claim pseudo-chunks.
+	evRows := []map[string]any{}
+	if kb != nil {
+		for _, c := range kb.Chunks {
+			if strings.HasPrefix(harness.ChunkIDOf(c), evidenceChunkPrefix) {
+				evRows = append(evRows, c)
+			}
+		}
+	}
+	if len(evRows) == 0 {
+		return 0
+	}
+
+	filled := 0
+	for i := range slotTable.State {
+		v := &slotTable.State[i]
+		if v.Filled() {
+			continue
+		}
+		clues := []string{}
+		for _, c := range v.QuestionClues {
+			if strings.TrimSpace(c) != "" {
+				clues = append(clues, c)
+			}
+		}
+		if len(clues) == 0 {
+			continue
+		}
+		// Python :1724-1726 — lowercase terms of ≥3 code points over all clues.
+		terms := map[string]bool{}
+		for _, c := range clues {
+			for _, t := range harness.QueryToTerms(c) {
+				if utf8.RuneCountInString(t) >= 3 {
+					terms[strings.ToLower(t)] = true
+				}
+			}
+		}
+		if len(terms) == 0 {
+			continue
+		}
+
+		best, bestCov := -1, 0.0
+		for j, e := range evRows {
+			// Python :1732-1734 — content_with_weight ONLY (not content).
+			text := strings.ToLower(anyString(e["content_with_weight"]))
+			if text == "" {
+				continue
+			}
+			cov := 0
+			for t := range terms {
+				if strings.Contains(text, t) {
+					cov++
+				}
+			}
+			covF := float64(cov) / float64(len(terms))
+			// Python :1736-1737 — strictly greater, so ties keep the FIRST row.
+			if covF > bestCov {
+				best, bestCov = j, covF
+			}
+		}
+		if best < 0 || bestCov < EvidencePrefillCoverage {
+			continue
+		}
+
+		// Python :1741-1743 — the row renders as
+		// "[evidence] <name> — <desc>\nEvidence (verbatim): ...".
+		//
+		// Format provenance (Python's TWO deliberate claim formats): the
+		// fan-out channel-0 rows this prefill consumes are rendered by
+		// harness.ClaimPseudoChunks with the "[evidence] " prefix (Python
+		// _collect_evidence, agentic_rag_graph.py:718). The OTHER producers —
+		// action-session _claim_prefetch (action_session.py:741-747) and the
+		// navigate_structure publish (_publish_claim_hits, navigation.py:1585)
+		// — use "[claim #N] <name>", and Python's prefill never sees "[evidence]"
+		// on those either; the replace below simply leaves their marker intact,
+		// exactly as Python does. Go matches both producers one-to-one.
+		head := anyString(evRows[best]["content_with_weight"])
+		if idx := strings.IndexByte(head, '\n'); idx >= 0 {
+			head = head[:idx]
+		}
+		name := strings.TrimSpace(strings.Trim(strings.ReplaceAll(head, "[evidence]", ""), " —-"))
+		if name == "" {
+			continue
+		}
+		// Python :1746-1748 — candidate = name[:400], strength = coverage.
+		cand := truncateRunes(name, 400)
+		v.Candidate = &cand
+		strength := bestCov
+		v.CandidateStrength = &strength
+		filled++
+	}
+	return filled
+}
+
 // RunSlotResearchPass mirrors Python _run_slot_research_pass: drive ONE
 // research round with slot-aware action sessions.
 //
@@ -2244,6 +2746,20 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 	if len(unresolved) == 0 {
 		_LOG.Printf("[SlotResearch] all slots filled; no session to run.")
 		return nil
+	}
+
+	// Evidence-row prefill（Python :1782-1790）: slots the pooled evidence
+	// already answers cost no action session at all — this is where whole
+	// calls get removed. Python guards the call with try/except; the port is
+	// pure (no model, no I/O) and cannot raise.
+	kb := deps.KB
+	if kb == nil {
+		// Python :1779 — `tools.kbinfos or state.kbinfos`.
+		kb = st.KB
+	}
+	if prefillN := PrefillSlotsFromEvidence(&slotTable, kb); prefillN > 0 {
+		_LOG.Printf("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefillN)
+		unresolved = slotTable.Unresolved()
 	}
 
 	// Shared across sessions so duplicate retrievals are served from cache.
@@ -2338,6 +2854,14 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 			bounds[sid] = len(ev.EvidenceIDs)
 		}
 		_LOG.Printf("[SlotResearch] slot evidence bound: %v", bounds)
+	}
+
+	// Evidence-guided batching（Python :1888-1895）: slots that retrieved the
+	// same passages get answered together instead of one generation call each.
+	// Python guards the call with try/except; BatchFillSlots is best-effort
+	// internally (per-cluster failures are logged and skipped).
+	if batched := BatchFillSlots(ctx, deps, &slotTable, sessionEvidence); batched > 0 {
+		_LOG.Printf("[SlotResearch] batched generation filled %d slot(s)", batched)
 	}
 
 	unresolvedOut := make([]map[string]any, 0, len(unresolved))
@@ -3215,6 +3739,13 @@ const (
 	// evidenceBudgetTokens is the token ceiling of the evidence block
 	// (Python agentic_rag._EVIDENCE_BUDGET_TOKENS).
 	evidenceBudgetTokens = 8000
+	// evidencePoolQuota mirrors Python _EVIDENCE_POOL_QUOTA: claim pseudo-chunk
+	// cap across the whole first prefetch.
+	evidencePoolQuota = 24
+	// rawSnippetQuota mirrors Python _RAW_SNIPPET_QUOTA: the raw-chunk
+	// admission budget inside the fan-out, so chunk channels cannot crowd out
+	// the denser evidence rows.
+	rawSnippetQuota = 30
 	// citeChunkCap caps chunks rendered as citation reference
 	// (Python _CITE_CHUNK_CAP).
 	citeChunkCap = 6
@@ -3376,18 +3907,27 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
 	defer cancel()
 
-	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d",
-		trunc(question, 160), len(preSummary), len(prompt.user))
+	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
+		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
 
-	userMsg := schema.UserMessage(prompt.user)
+	// Python fits the composed prompt ONCE before the call:
+	// message_fit_in(form_message(system, user), min(chat_mdl.max_length, 8000))
+	// (agentic_rag_graph.py:946) — msg[0] is the system turn, msg[-1] the user
+	// turn; form_message (generator.py:495) is exactly this two-message shape,
+	// so the fit must not synthesize an extra system turn.
+	systemTurn, userTurn := fitComposePrompt(prompt.system, prompt.user, deps.MaxLength)
+	userMsg := schema.UserMessage(userTurn)
 	if len(deps.UserImages) > 0 {
 		// Mirror Python's direct async_chat fallback, which is called with the
 		// original multimodal messages: attach the vision-gated images to the
 		// final-answer user message so the compose model can see them.
 		userMsg = multimodalUserMsg(prompt.user, deps.UserImages)
 	}
-	reply, err := deps.Model.Complete(callCtx, []schema.Message{
-		*schema.SystemMessage(prompt.system),
+	// Python samples the compose call at answer_conf — gen_conf or the default
+	// {"temperature": 0.3} (build_agentic_graph :962/:1021); the graph runs with
+	// gen_conf unset, so 0.3 always applies.
+	reply, err := modelWithTemperature(deps.Model, answerTemperature).Complete(callCtx, []schema.Message{
+		*schema.SystemMessage(systemTurn),
 		*userMsg,
 	}, nil)
 	if err != nil {
@@ -3395,6 +3935,56 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
 	return AnswerResult{Answer: cleanAnswer(reply.Content), Partial: partial}
+}
+
+// answerTemperature mirrors Python answer_conf's default sampling temperature:
+// build_agentic_graph uses gen_conf or {"temperature": 0.3} (graph.py:962/:1021)
+// and run_agentic_rag invokes the graph with gen_conf unset, so the compose
+// call always samples at 0.3.
+const answerTemperature = 0.3
+
+// fitComposePrompt mirrors Python's compose-time fit
+// (agentic_rag_graph.py:946): message_fit_in(form_message(system, user),
+// min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS)). message_fit_in
+// (generator.py:69-137) normalizes a non-positive budget to 8192, returns the
+// pair untouched when it already fits, then trims by TOKENS (trim_content):
+// the system share branch (>0.8 of the total) preserves the user turn first,
+// otherwise the system turn is preserved first and the user turn gets the
+// remainder. form_message (generator.py:495) is exactly the [system, user]
+// pair, so no extra system turn is synthesized here.
+func fitComposePrompt(system, user string, maxLength int) (string, string) {
+	budget := maxLength
+	if budget > evidenceBudgetTokens {
+		budget = evidenceBudgetTokens
+	}
+	if budget <= 0 {
+		// message_fit_in normalizes a non-positive max_length to 8192
+		// (generator.py:69-72).
+		budget = 8192
+	}
+	ll := tokenizer.NumTokensFromString(system)
+	ll2 := tokenizer.NumTokensFromString(user)
+	if ll+ll2 < budget {
+		return system, user
+	}
+	if ll+ll2 <= 0 {
+		// message_fit_in's degenerate branch: token counts are zero — keep the
+		// content unchanged rather than trimming blindly.
+		return system, user
+	}
+	if float64(ll)/float64(ll+ll2) > 0.8 {
+		// System-dominated prompt: the USER turn is preserved first.
+		preservedLast := min(ll2, budget)
+		user = tokenizer.TrimContentToTokenLimit(user, preservedLast)
+		remaining := max(0, budget-preservedLast)
+		system = tokenizer.TrimContentToTokenLimit(system, remaining)
+		return system, user
+	}
+	preservedSystem := min(ll, budget)
+	system = tokenizer.TrimContentToTokenLimit(system, preservedSystem)
+	remaining := max(0, budget-preservedSystem)
+	user = tokenizer.TrimContentToTokenLimit(user, remaining)
+	return system, user
 }
 
 // answerPrompt is the terminal node's input: the ranked evidence under its token
@@ -3498,7 +4088,11 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *harness.Kbinfos, question strin
 // it renders the same prompt, forwards each piece as it arrives, and returns the
 // assembled answer. A streaming failure is returned so the caller can fall back
 // to the one-shot call.
-func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.StreamingSessionModel, kb *harness.Kbinfos, question string, partial bool, onDelta func(delta string, isThink bool) error) (AnswerResult, error) {
+//
+// emptyResult is Python's state["empty_result"] term of
+// `no_evidence = abstain or empty_result or not chunks` — the graph compose
+// path forwards the state's value (always True there; see formalizeAnswerNode).
+func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.StreamingSessionModel, kb *harness.Kbinfos, question string, partial, emptyResult bool, onDelta func(delta string, isThink bool) error) (AnswerResult, error) {
 	logger := deps.Logger
 	if logger == nil {
 		logger = _LOG
@@ -3512,23 +4106,49 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	}
 	// Same no-evidence rule as the one-shot path (_compose_answer_from_evidence): the prompt must carry
 	// the degradation instruction even when no empty_response short-circuits.
-	noEvidence := len(chunks) == 0
+	noEvidence := emptyResult || len(chunks) == 0
+	// Python _compose_answer_from_evidence:840 — the compose kickoff line. The
+	// streaming path has no separate `abstain` signal (Go threads only
+	// partial/emptyResult), so the abstain note term cannot fire here.
+	note := ""
+	if partial {
+		note = " — partial answer, some gaps remain"
+	}
+	logger.Printf("[Composing the answer] Writing the final answer to %q from %d gathered passage(s)%s.",
+		trunc(question, 60), len(chunks), note)
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 	if noEvidence && deps.EmptyResponse != "" {
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}, nil
 	}
+	// Python _compose_answer_from_evidence:938-944 — the pre_summary the compose
+	// prompt actually carries, content included (first 3000 chars), so a run
+	// that answered without the slot facts is diagnosable from the log alone.
+	preSummary := ""
+	if kb != nil {
+		preSummary = kb.PreSummary
+	}
+	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
+		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
 
 	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
 	defer cancel()
 
-	userMsg := schema.UserMessage(prompt.user)
+	// Same message_fit_in as the one-shot path (agentic_rag_graph.py:946 —
+	// Python composes once and streams from the fitted messages).
+	systemTurn, userTurn := fitComposePrompt(prompt.system, prompt.user, deps.MaxLength)
+	userMsg := schema.UserMessage(userTurn)
 	if len(deps.UserImages) > 0 {
 		// Same as ComposeAnswerWith: attach the vision-gated images so the
 		// compose model sees them on the non-outer path.
 		userMsg = multimodalUserMsg(prompt.user, deps.UserImages)
 	}
+	// Temperature: the production streaming carrier
+	// (harness.InvokerSessionModel.StreamComplete) samples at 0.3 internally —
+	// the same value answer_conf carries here; SessionModel's streaming
+	// surface has no per-call temperature, so other carriers run at their own
+	// default (Python-parity limitation, flagged in the port notes).
 	reply, err := model.StreamComplete(callCtx, []schema.Message{
-		*schema.SystemMessage(prompt.system),
+		*schema.SystemMessage(systemTurn),
 		*userMsg,
 	}, nil, func(delta string, isThink bool) error {
 		if onDelta == nil || delta == "" {
@@ -3582,10 +4202,13 @@ func rankBySimilarity(chunks []map[string]any) []map[string]any {
 }
 
 func similarityOf(c map[string]any) float64 {
-	if v, ok := toFloat(c["similarity"]); ok {
+	// Python: `float(c.get("similarity", 0.0) or c.get("score", 0.0) or 0.0)` —
+	// a FALSY similarity (0.0 or missing) falls through to score, so this is
+	// not "first key present wins" (same rule SelectSCAView/chunkScore follow).
+	if v, ok := toFloat(c["similarity"]); ok && v != 0 {
 		return v
 	}
-	if v, ok := toFloat(c["score"]); ok {
+	if v, ok := toFloat(c["score"]); ok && v != 0 {
 		return v
 	}
 	return 0.0

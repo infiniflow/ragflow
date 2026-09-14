@@ -59,11 +59,18 @@ type RetrievalRequest struct {
 	RerankCandidatesCount    int
 	TopK                     int
 	KeywordsSimilarityWeight *float64
-	UseKG                    bool
-	SimilarityThreshold      *float64
-	RerankID                 string
-	CrossLanguages           []string
-	TOCEnhance               bool
+	// VectorSimilarityWeight is the VECTOR leg's weight forwarded DIRECTLY (no
+	// 1-w inversion) by the agentic harness bridge. When set it wins over the
+	// canvas KeywordsSimilarityWeight inversion in nlpRequestFromRetrieval.
+	VectorSimilarityWeight *float64
+	// DisableVectorLeg mirrors Python embd_mdl=None: the nlp layer runs the
+	// keyword-only branch with NO dense leg at all.
+	DisableVectorLeg    bool
+	UseKG               bool
+	SimilarityThreshold *float64
+	RerankID            string
+	CrossLanguages      []string
+	TOCEnhance          bool
 	// RankFeature mirrors Python RAGTools.retrieve's rank_feature argument:
 	// question-type tags (from label_question) the retriever uses to boost
 	// matching chunks. The Go engine consumes it as a tag → weight map, so it
@@ -71,8 +78,8 @@ type RetrievalRequest struct {
 	RankFeature    *map[string]float64
 	MetaDataFilter map[string]any
 	RetrievalFrom  string
-	// DocScope restricts retrieval to a set of document ids (the doc_id list
-	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
+	// DocScope restricts retrieval to a set of document ids (from document_ids
+	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// It is used for dataset-name resolution and memory access. Reads from

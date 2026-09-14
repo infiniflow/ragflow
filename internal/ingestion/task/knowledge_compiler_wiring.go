@@ -578,7 +578,12 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil || req.MaxTokens != nil || c.maxTokens > 0 {
+	// Union of both sides: per-call overrides (temperature / max tokens), this
+	// branch's thinking toggle (claim extraction and raptor merge ask the
+	// reasoning model to answer WITHOUT chain-of-thought), and upstream's
+	// invoker-level generation cap, which the MaxTokens else-if below applies
+	// when the call site itself sets none.
+	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking || c.maxTokens > 0 {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
@@ -590,6 +595,14 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 			config.MaxTokens = req.MaxTokens
 		} else if c.maxTokens > 0 {
 			config.MaxTokens = &c.maxTokens
+		}
+		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
+		// budget on visible COT before the structured reply; compilation should
+		// run with thinking off. MiniMaxModel maps Thinking=false to
+		// `thinking: {"type": "disabled"}` in the request body.
+		if req.DisableThinking {
+			off := false
+			config.Thinking = &off
 		}
 	}
 	// Retry transient transport/provider failures (HTTP timeout, reset,

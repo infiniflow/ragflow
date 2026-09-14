@@ -229,14 +229,29 @@ func Warn(msg string, fields ...zap.Field) {
 // project's structured logs. When the project logger has not been initialized
 // yet (e.g. before InitLogger runs or in standalone tests) it falls back to the
 // standard-library default. The returned logger writes at Info level.
+//
+// The returned *log.Logger resolves the write target LAZILY on every write.
+// Package-level variables like `var _LOG = common.StdLogger()` are evaluated
+// during package init, long before InitLogger runs; a logger captured eagerly
+// at that moment would be log.Default() forever and its output would vanish
+// into stderr, never reaching the structured log files.
 func StdLogger() *log.Logger {
-	if Logger == nil {
-		return log.Default()
-	}
 	stdLogOnce.Do(func() {
-		stdLogger = zap.NewStdLog(Logger)
+		stdLogger = log.New(stdLogRouter{}, "", 0)
 	})
 	return stdLogger
+}
+
+// stdLogRouter dispatches *log.Logger writes to the current global logger on
+// every write (see StdLogger).
+type stdLogRouter struct{}
+
+func (stdLogRouter) Write(p []byte) (int, error) {
+	if Logger == nil {
+		return os.Stderr.Write(p)
+	}
+	Logger.Info(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 // IsDebugEnabled returns true if debug logging is enabled.

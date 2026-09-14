@@ -949,6 +949,13 @@ func startServer(ctx context.Context) {
 			Model:     model,
 			ModelName: resolvedModelName,
 			Outer:     outerModel,
+			// OriginalQuestion mirrors Python RAGTools(original_user_question=...):
+			// the user's own, unrewritten question as received from the chat
+			// layer. The outer model's `rag(question=...)` argument is
+			// model-generated and often compresses a multi-hop question to its
+			// first hop; resolveEffectiveQuestion (agentic_rag.py:865) prefers
+			// this original over that rewrite when both describe the same turn.
+			OriginalQuestion: req.Question,
 			// OuterSupportsTools gates the outer react loop on tool capability
 			// (Python is_tools); false → fall back to direct RunAgenticRAG.
 			OuterSupportsTools: outerSupportsTools,
@@ -982,11 +989,48 @@ func startServer(ctx context.Context) {
 			WebSearch:   harnessWebSearcher(req.WebSearch),
 			KBs:         kbs,
 			HasEmbedder: hasEmbedder,
+			// Embedder backs claim recall's KNN leg (Python
+			// recall_dataset_claims, navigation.py:1837-1909, which embeds the
+			// query with tools.embed_mdl — the FIRST dataset's embedding model,
+			// dialog_service.py:362-366) and the structure-drill seed vector.
+			// Without it the claim leg silently degrades to BM25-only and
+			// paraphrase-phrased claims are never recalled. Bound to
+			// kbs[0].EmbdID (validateDatasetEmbeddingModels above guarantees
+			// every bound dataset shares it), query-side encoded.
+			Embedder: embedderForDatasets(kbs, modelProviderService),
 			// Tagger is the Go equivalent of Python's label_question
 			// (agentic_rag.py:668): classifies the query into question-type
 			// tags the retriever boosts on. metadataService implements it
 			// (service.MetadataService.LabelQuestion).
 			Tagger: metadataService,
+			// SystemPrompt mirrors Python RAGTools(system_prompt=
+			// _render_reasoning_system_prompt(dialog, prompt_config, kwargs),
+			// dialog_service.py:2084) — the dialog-level UI configuration the
+			// final-answer compose appends after the agentic contract
+			// (agentic_rag_graph.py:923-933).
+			SystemPrompt: req.SystemPrompt,
+			// CiteRules and EvidenceMaxTokens deliberately stay unset: Python's
+			// dialog path constructs RAGTools WITHOUT user_defined_prompts
+			// (dialog_service.py:2072-2090), so citation_prompt defaults apply,
+			// and Python has no evidence-token override (the compose always
+			// uses min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS=8000),
+			// which EvidenceMaxTokens<=0 reproduces).
+		}
+		// Diagnose WHY compiled expansion is disabled: NewCompiledExpander
+		// returns nil for three reasons (store==nil / no datasets / no tenant)
+		// and RAGTools.Expand==nil silences the whole channel with no other
+		// trace — the observed "Compiled expansion enabled = 0" was invisible.
+		if deps.Expand == nil {
+			switch {
+			case docEngine == nil:
+				common.Warn("compiled expansion disabled: document engine unavailable (store==nil)")
+			case len(req.DatasetIDs) == 0:
+				common.Warn("compiled expansion disabled: no bound dataset (DatasetIDs empty)")
+			case strings.TrimSpace(req.TenantID) == "":
+				common.Warn("compiled expansion disabled: no tenant (TenantID empty)")
+			default:
+				common.Warn("compiled expansion disabled: unknown reason")
+			}
 		}
 		if req.AnswerSink != nil {
 			deps.AnswerSink = &advanced_rag.AnswerSink{
@@ -1408,6 +1452,22 @@ func dirHasModels(dir string) bool {
 // passing, all datasets share one model and this equals "all have one".
 func hasEmbedderFor(kbs []*entity.Knowledgebase) bool {
 	return len(kbs) > 0 && kbs[0] != nil && kbs[0].EmbdID != ""
+}
+
+// embedderForDatasets builds the embedding handle the agentic harness uses for
+// query-side encoding outside the main retrieval leg: claim recall's KNN leg
+// (Python recall_dataset_claims, navigation.py:1837-1909, embedding with
+// tools.embed_mdl) and the structure-drill seed vector. The model is the FIRST
+// dataset's embedding (Python dialog_service.py:362-366 resolves
+// kbs[0].embd_id under kbs[0].tenant_id; validateDatasetEmbeddingModels
+// guarantees the rest share it). Nil when no dataset carries an embedding
+// model — the claim leg then degrades to BM25-only, matching a Python run
+// without embed_mdl.
+func embedderForDatasets(kbs []*entity.Knowledgebase, modelSvc *service.ModelProviderService) nlp.NavEmbedder {
+	if len(kbs) == 0 || kbs[0] == nil || kbs[0].EmbdID == "" {
+		return nil
+	}
+	return service.NewNavEmbedder(modelSvc, kbs[0].EmbdID)
 }
 
 // validateDatasetEmbeddingModels mirrors Python validate_dataset_embedding_models
