@@ -670,6 +670,14 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
 	if !hasCustomDelim(c.param.Delimiters) {
+		// Python naive_merge prefixes each delimiter atom with a newline before
+		// counting it. The prefix is a budgeting detail, not emitted content;
+		// without it BPE counts can shift General's soft-cap boundaries.
+		for i := range units {
+			if itemDocType(units[i]) == "text" {
+				units[i].TKNums = intPtr(tokenizeStr("\n" + units[i].Text))
+			}
+		}
 		units = mergeGeneralUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
 	}
 	units = finalizeGeneralChunks(units, childrenPattern)

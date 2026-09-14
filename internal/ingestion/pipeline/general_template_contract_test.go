@@ -49,4 +49,79 @@ func TestGeneralTemplateUsesGeneralChunker(t *testing.T) {
 	if !seenSemicolon {
 		t.Fatalf("general delimiters = %#v, want ASCII semicolon", delimiters)
 	}
+
+	parserComponent, ok := components["Parser:HipSignsRhyme"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general DSL has no Parser:HipSignsRhyme component")
+	}
+	parserObj, ok := parserComponent["obj"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general parser has no object definition")
+	}
+	parserParams, ok := parserObj["params"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general parser has no params")
+	}
+	if _, ok := parserParams["outputs"]; ok {
+		t.Fatal("general parser retains obsolete html/markdown/text output declarations")
+	}
+	spreadsheet, ok := parserParams["spreadsheet"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general parser has no spreadsheet setup")
+	}
+	if got := spreadsheet["output_format"]; got != "json" {
+		t.Fatalf("general spreadsheet output_format = %v, want json", got)
+	}
+}
+
+func TestGeneralTemplateParserGraphUsesJSONContract(t *testing.T) {
+	dsl, err := LoadBuiltinDSL("general")
+	if err != nil {
+		t.Fatalf("LoadBuiltinDSL: %v", err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(dsl), &root); err != nil {
+		t.Fatalf("decode general DSL: %v", err)
+	}
+	graph, ok := root["graph"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general DSL has no graph")
+	}
+	nodes, ok := graph["nodes"].([]interface{})
+	if !ok {
+		t.Fatal("general graph has no nodes")
+	}
+	for _, rawNode := range nodes {
+		node, ok := rawNode.(map[string]interface{})
+		if !ok || node["id"] != "Parser:HipSignsRhyme" {
+			continue
+		}
+		data, ok := node["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("general parser graph node has no data")
+		}
+		form, ok := data["form"].(map[string]interface{})
+		if !ok {
+			t.Fatal("general parser graph node has no form")
+		}
+		if _, ok := form["outputs"]; ok {
+			t.Fatal("general parser graph form retains obsolete output declarations")
+		}
+		setups, ok := form["setups"].([]interface{})
+		if !ok {
+			t.Fatal("general parser graph form has no setups")
+		}
+		for _, rawSetup := range setups {
+			setup, ok := rawSetup.(map[string]interface{})
+			if !ok || setup["fileFormat"] != "spreadsheet" {
+				continue
+			}
+			if got := setup["output_format"]; got != "json" {
+				t.Fatalf("general graph spreadsheet output_format = %v, want json", got)
+			}
+			return
+		}
+		t.Fatal("general parser graph form has no spreadsheet setup")
+	}
+	t.Fatal("general graph has no Parser:HipSignsRhyme node")
 }

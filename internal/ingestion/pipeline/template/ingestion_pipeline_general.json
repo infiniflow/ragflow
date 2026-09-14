@@ -31,24 +31,6 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
-                        "outputs": {
-                            "html": {
-                                "type": "string",
-                                "value": ""
-                            },
-                            "json": {
-                                "type": "Array<object>",
-                                "value": []
-                            },
-                            "markdown": {
-                                "type": "string",
-                                "value": ""
-                            },
-                            "text": {
-                                "type": "string",
-                                "value": ""
-                            }
-                        },
                         "doc": {
                             "output_format": "json",
                             "preprocess": [
@@ -112,7 +94,7 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
+                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -293,24 +275,6 @@
                 {
                     "data": {
                         "form": {
-                            "outputs": {
-                                "html": {
-                                    "type": "string",
-                                    "value": ""
-                                },
-                                "json": {
-                                    "type": "Array<object>",
-                                    "value": []
-                                },
-                                "markdown": {
-                                    "type": "string",
-                                    "value": ""
-                                },
-                                "text": {
-                                    "type": "string",
-                                    "value": ""
-                                }
-                            },
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
@@ -325,7 +289,7 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
+                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
