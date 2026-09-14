@@ -939,7 +939,11 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
             "provided evidence, those three take precedence."
         )
 
-    parts.append(f"Evidence:\n{evidence}")
+    # DESIGN NOTE: dataset names are mutable runtime data — exposed here in
+    # the untrusted evidence block (user directive), never via the system
+    # prompt's {knowledge} placeholder (trusted template content only).
+    bound = (getattr(tools, "_bound_dataset_names", "") or "").strip()
+    parts.append(f"Evidence:\n{('Bound datasets: ' + bound + '\n') if bound else ''}{evidence}")
     user_content = "\n".join(parts)
 
     _LOG.info(
