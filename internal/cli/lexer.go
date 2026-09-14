@@ -447,8 +447,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDisable, Value: ident}
 	case "ENABLE":
 		return Token{Type: TokenEnable, Value: ident}
-	case "INSERT":
-		return Token{Type: TokenInsert, Value: ident}
 	case "FILE":
 		return Token{Type: TokenFile, Value: ident}
 	case "USE":
