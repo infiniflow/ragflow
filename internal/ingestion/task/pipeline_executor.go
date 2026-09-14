@@ -1075,37 +1075,55 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	return payload, logDSL, nil
 }
 
-// buildLogDSL returns the DSL string recorded for a pipeline run: the
-// run-result DSL (static canvas structure + each component's runtime outputs
-// merged into obj.params.outputs) when it can be built and marshaled,
-// otherwise the static dsl unchanged — log recording must never fail a run.
+// buildLogDSL returns the DSL string recorded for a pipeline run. The PERSISTED
+// copy carries the DSL DEFINITION only (static canvas structure + static
+// params + downstream + graph + path + …) — business data is never constructed
+// for it (BuildDebugResultDSL(dsl, output, false)). Log recording must never
+// fail a run, so on any build error the static dsl is returned unchanged.
 //
 // BuildDebugResultDSL needs the full run output, which is in scope only inside
 // runPipelineWithDSL: the extracted payload returned there no longer carries
-// output["state"]. Two consumers:
-//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
-//     ResultSink capability (END-marker `dsl` attachment,
-//     rag/flow/pipeline.py:98);
-//   - persist (dataset parse) runs return its JSON as the log DSL so the
-//     pipeline operation log carries every component's output
-//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
-//     — without it the dataset log "View result" page renders blank panels.
+// output["state"]. Two consumers, split by the includeOutputs flag:
+//   - canvas-debug (dry-run) runs wire a DebugLogSink, which implements the
+//     optional ResultSink capability. buildLogDSL hands it the FULL result DSL
+//     (BuildDebugResultDSL(dsl, output, true)) so the front-end "View result"
+//     page renders parsed chunks from the Redis END marker
+//     (rag/flow/pipeline.py:98). This is the ONLY place business data leaves
+//     the executor, and it targets Redis — never pipeline_operation_log.
+//   - persist (dataset parse) runs use a DB-backed sink that is NOT a
+//     ResultSink, so the preview branch is skipped. The returned logDSL (DSL
+//     definition only) is what recordPipelineLog persists, matching the
+//     "log stores the DSL definition, not business data" contract; the
+//     dataset log "View result" page therefore renders from the dry-run
+//     preview, not from the persisted row.
 //
 // The sink probe stays an optional capability: non-debug (DB-backed) sinks
 // ignore it and the ProgressSink contract is unchanged.
 func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
 	logDSL := dsl
-	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-		if rs, ok := s.progressSink.(ResultSink); ok {
-			rs.SetResult(resultDSL, output)
-		}
-		if raw, e := json.Marshal(resultDSL); e == nil {
+	// Persisted log DSL: DSL definition ONLY. Business data is never
+	// constructed for the persisted copy (includeOutputs=false). Real parses
+	// persist this string via recordPipelineLog; a dry-run also builds it here
+	// but discards it at the IsDebug() early-return before recordPipelineLog,
+	// so no business data is written to pipeline_operation_log.
+	if persisted, e := BuildDebugResultDSL(dsl, output, false); e == nil {
+		if raw, e := json.Marshal(persisted); e == nil {
 			logDSL = string(raw)
 		} else {
 			common.Warn(fmt.Sprintf("marshal run-result dsl for pipeline log: %v", e))
 		}
 	} else {
 		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
+	}
+	// Dry-run live preview: the ResultSink (DebugLogSink, wired ONLY for
+	// canvas-debug runs) receives the FULL result DSL with business data
+	// (includeOutputs=true) so the front-end "View result" page renders parsed
+	// chunks from Redis. Real-parse sinks are NOT ResultSink, so this branch is
+	// skipped and no business data is handed anywhere on the persist path.
+	if rs, ok := s.progressSink.(ResultSink); ok {
+		if previewDSL, e := BuildDebugResultDSL(dsl, output, true); e == nil {
+			rs.SetResult(previewDSL, output)
+		}
 	}
 	return logDSL
 }
