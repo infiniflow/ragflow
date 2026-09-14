@@ -225,7 +225,12 @@ PROMPT_JINJA_ENV = SandboxedEnvironment(autoescape=False, trim_blocks=True, lstr
 
 def citation_prompt(user_defined_prompts: dict = {}) -> str:
     template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("citation_guidelines", CITATION_PROMPT_TEMPLATE))
-    return template.render() + "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
+    suffix = "\n\nIMPORTANT: The example IDs above (45, 46, 78, etc.) are illustrative only. Use the actual chunk IDs from the provided knowledge blocks."
+    # Range citations cannot be resolved to a single source; the ban is
+    # appended unconditionally so it also holds when a user overrides the
+    # template (matches Go's citationIDSuffix behavior).
+    suffix += " Cite each source INDIVIDUALLY: [ID:i][ID:j]. NEVER merge consecutive citations into a range such as [ID:i-j] or [ID:i~j]."
+    return template.render() + suffix
 
 
 def citation_plus(sources: str) -> str:
