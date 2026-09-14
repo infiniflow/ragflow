@@ -154,12 +154,14 @@ class Categorize(LLM, ABC):
         # Prefer the more specific category only when tied names overlap.
         # Otherwise, preserve declaration order as the previous selection did.
         tied = [c for c, n in counts.items() if n == top]
-        overlapping = [
+        # Drop less-specific names whose counts are inflated by a containing
+        # tied category, then preserve declaration order among the remainder.
+        specific = [
             category
             for category in tied
-            if any(category.lower() in other.lower() or other.lower() in category.lower() for other in tied if other != category)
+            if not any(category.lower() in other.lower() and category.lower() != other.lower() for other in tied if other != category)
         ]
-        return max(overlapping, key=len) if overlapping else tied[0]
+        return specific[0] if specific else tied[0]
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):

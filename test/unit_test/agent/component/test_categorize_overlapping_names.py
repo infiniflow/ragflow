@@ -141,7 +141,7 @@ def test_distinct_name_ties_preserve_declaration_order(monkeypatch, categories, 
     assert mod.Categorize._select_category(answer, categories) == expected
 
 
-def test_overlapping_multi_category_tie_uses_longest_name(monkeypatch):
+def test_mixed_overlap_tie_keeps_first_specific_category(monkeypatch):
     mod = _load_categorize_module(monkeypatch)
-    categories = ["A", "B", "AX", "XBC"]
-    assert mod.Categorize._select_category("XBC AX", categories) == "XBC"
+    categories = ["Refund", "Shipping", "Shipping Delay"]
+    assert mod.Categorize._select_category("Refund or Shipping Delay", categories) == "Refund"
