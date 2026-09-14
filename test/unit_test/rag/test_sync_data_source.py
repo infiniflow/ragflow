@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import importlib
 import importlib.util
 import os
 import sys
+import threading
 import types
 import warnings
 from datetime import datetime, timezone
@@ -182,6 +184,46 @@ async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
             )
         )
     )._run_task_logic(_make_task())
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_run_task_logic_keeps_event_loop_responsive_during_parse(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    started = threading.Event()
+    release = threading.Event()
+
+    def _slow_duplicate(*_args, **_kwargs):
+        started.set()
+        if not release.wait(timeout=5):
+            pytest.fail("release was not signalled while parse was blocked")
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _slow_duplicate)
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "increase_docs", lambda *_args, **_kwargs: None)
+
+    probe_done = False
+
+    async def _probe():
+        nonlocal probe_done
+        flagged = await asyncio.to_thread(started.wait, 5)
+        assert flagged, "ingest did not start"
+        probe_done = True
+        release.set()
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            _FakeSync(iter(([_make_fake_doc()],)))._run_task_logic(_make_task()),
+            _probe(),
+        ),
+        timeout=10,
+    )
+    assert probe_done
 
 
 @pytest.mark.asyncio
@@ -931,3 +973,23 @@ async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
     assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert connector.poll_source_called is False
+
+
+def test_index_batch_size_env_helpers_use_defaults_for_invalid_values(monkeypatch):
+    from common.data_source import config as data_source_config
+
+    monkeypatch.delenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", raising=False)
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "32")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 32
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "0")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "nope")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+
+    monkeypatch.delenv("RAGFLOW_TEST_SYNC_PAUSE", raising=False)
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "0.05")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.05
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "-1")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0

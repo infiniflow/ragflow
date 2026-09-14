@@ -43,7 +43,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.config_utils import show_configs
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
@@ -246,13 +246,12 @@ class SyncBase:
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
         saw_documents = False
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
-        existing_doc_ids = {
-            doc["id"]
-            for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
-                task["kb_id"],
-                source_type,
-            )
-        }
+        existing_headers = await asyncio.to_thread(
+            DocumentService.list_doc_headers_by_kb_and_source_type,
+            task["kb_id"],
+            source_type,
+        )
+        existing_doc_ids = {doc["id"] for doc in existing_headers}
 
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
@@ -284,13 +283,9 @@ class SyncBase:
                 docs.append(d)
 
             try:
-                e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update)
                 if err:
                     had_parse_errors = True
-                    if self.RAISE_ON_BATCH_ERROR:
-                        raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
-                SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
                 changed_doc_ids = set(dids)
                 updated_in_batch = len(changed_doc_ids & existing_doc_ids)
                 added_in_batch = len(changed_doc_ids) - updated_in_batch
@@ -310,7 +305,9 @@ class SyncBase:
                 if self.RAISE_ON_BATCH_ERROR:
                     raise
                 failed_docs += len(docs)
-                continue
+            finally:
+                # 0 still yields the event loop so file/API requests can use MySQL between batches.
+                await asyncio.sleep(SYNC_BATCH_PAUSE_SECONDS)
 
         if not saw_documents:
             next_update = self._get_empty_sync_cursor(task, next_update)
@@ -369,6 +366,19 @@ class SyncBase:
 
     async def _generate(self, task: dict):
         raise NotImplementedError
+
+    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime):
+        """Write one connector batch (MinIO + document rows) off the event loop.
+
+        Knowledgebase lookup and parse stay on the same worker thread so Peewee
+        objects are not shared across threads.
+        """
+        _e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+        if err and self.RAISE_ON_BATCH_ERROR:
+            raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
+        SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
+        return err, dids
 
     def _get_source_prefix(self):
         return ""
@@ -2221,7 +2231,12 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             _begin_info = f"from {poll_start}"
 
         self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+        # Validation/prepare may have opened a DB connection on this thread.
+        # Close it so the producer thread creates its own connection.
+        close_connection = getattr(self.connector, "_close_connection", None)
+        if close_connection is not None:
+            close_connection()
+        return iter_in_worker_thread(document_generator)
 
 
 class MySQL(_RDBMSBase):
