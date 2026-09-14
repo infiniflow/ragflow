@@ -42,8 +42,8 @@ func TestDaoxeChatSendsAPIKey(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-daoxe-test" {
-			t.Errorf("Authorization=%q", got)
+		if got, want := r.Header.Get("Authorization"), "Bearer "+testAPIKey; got != want {
+			t.Errorf("Authorization=%q, want %q", got, want)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":      "chat-daoxe",
