@@ -65,6 +65,7 @@ type RetrievalRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	Aggs                   *bool
 	Highlight              *bool
+	AllowDenseFallback     *bool
 	Filter                 map[string]interface{}
 }
 
@@ -143,6 +144,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		RankFeature:            *req.RankFeature,
 		EmbeddingModel:         req.EmbeddingModel,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		AllowDenseFallback:     req.AllowDenseFallback,
 		Filter:                 req.Filter,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
@@ -517,6 +519,7 @@ type RetrievalSearchRequest struct {
 	Filter                 map[string]interface{}
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
+	AllowDenseFallback     *bool
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -569,6 +572,9 @@ type RetrievalSearchResult struct {
 func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchRequest) (*RetrievalSearchResult, error) {
 	if req.Highlight == nil {
 		req.Highlight = func() *bool { v := false; return &v }()
+	}
+	if req.AllowDenseFallback == nil {
+		req.AllowDenseFallback = new(true)
 	}
 	filters := req.GetFilters()
 	if _, ok := filters["available_int"]; !ok {
@@ -685,9 +691,20 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 				return nil, fmt.Errorf("search failed: %w", err)
 			}
 			// If result is empty, retry with relaxed conditions
-			if engineResult.Total == 0 && matchText != nil {
+			if engineResult.Total == 0 {
 				_, hasDocIDFilter := filters["doc_id"]
-				if hasDocIDFilter {
+				if matchText == nil {
+					if *req.AllowDenseFallback {
+						common.Debug("Retrieval dense-only fallback after empty initial search")
+						matchDense = cloneDenseExpr(denseTemplate)
+						matchDense.ExtraOptions["similarity"] = 0.17
+						searchRequest.MatchExprs = []any{matchDense}
+						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						if err != nil {
+							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
+						}
+					}
+				} else if hasDocIDFilter {
 					// When a doc_id filter is present (e.g. from metadata filter like era=960)
 					// and the hybrid search returns no results, fall back to a filter-only
 					// search (no text match, no vector match). This ensures that when a
@@ -728,7 +745,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 						return nil, fmt.Errorf("search retry failed: %w", err)
 					}
 					// Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
-					if engineResult.Total == 0 && matchText != nil {
+					if engineResult.Total == 0 && matchText != nil && *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty hybrid retries")
 						matchDense = cloneDenseExpr(denseTemplate)
 						matchDense.ExtraOptions["similarity"] = 0.17

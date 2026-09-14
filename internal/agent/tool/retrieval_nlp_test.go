@@ -246,10 +246,14 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
 		SimilarityThreshold:      &similarityThreshold,
+		AllowDenseFallback:       new(false),
 	}, []string{"tenant-a"}, 3, embeddingModel)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
+	}
+	if got.AllowDenseFallback == nil || *got.AllowDenseFallback {
+		t.Fatal("dense fallback opt-out was not passed to nlp retrieval")
 	}
 	if len(got.TenantIDs) != 1 || got.TenantIDs[0] != "tenant-a" {
 		t.Fatalf("TenantIDs=%v want [tenant-a]", got.TenantIDs)
@@ -286,6 +290,9 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+	if got.AllowDenseFallback != nil {
+		t.Fatal("ordinary retrieval must preserve default dense fallback policy")
 	}
 }
 

@@ -57,6 +57,7 @@ type RetrievalRequest struct {
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      *float64
+	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
 	TOCEnhance               bool

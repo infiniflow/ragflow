@@ -361,12 +361,12 @@ func TestSearchDenseFallbackContract(t *testing.T) {
 	}
 }
 
-func TestSearchWithoutLexicalExpressionDoesNotRetry(t *testing.T) {
+func TestSearchWithoutLexicalExpressionRetries(t *testing.T) {
 	if GetQueryBuilder() == nil {
 		globalQueryBuilder = NewQueryBuilder()
 	}
 
-	docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0}}
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 1}, mutate: true}
 	service := NewRetrievalService(docEngine, nil)
 	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
 		Question: "!!!", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
@@ -375,8 +375,38 @@ func TestSearchWithoutLexicalExpressionDoesNotRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docEngine.requests) != 1 || len(docEngine.requests[0].MatchExprs) != 1 {
-		t.Fatalf("dense-only request retried or retained lexical expressions: %#v", docEngine.requests)
+	if len(docEngine.requests) != 2 || len(docEngine.requests[1].MatchExprs) != 1 {
+		t.Fatalf("dense-only request did not retry: %#v", docEngine.requests)
+	}
+	dense := docEngine.requests[1].MatchExprs[0].(*types.MatchDenseExpr)
+	if dense.ExtraOptions["similarity"] != 0.17 || dense.ExtraOptions["num_candidates"] != 2048 || dense.ExtraOptions["filter"] != nil {
+		t.Fatalf("fallback options = %#v", dense.ExtraOptions)
+	}
+}
+
+func TestRetrievalDisablesDenseFallback(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	for _, query := range []string{"!!!", "weak lexical query"} {
+		t.Run(query, func(t *testing.T) {
+			wantCalls := 2
+			if query == "!!!" {
+				wantCalls = 1
+			}
+			docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 0, 0}}
+			service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+			_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+				Question: query, TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
+				EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, AllowDenseFallback: new(false),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(docEngine.requests) != wantCalls {
+				t.Fatalf("calls = %d, want %d", len(docEngine.requests), wantCalls)
+			}
+		})
 	}
 }
 
