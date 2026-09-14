@@ -115,32 +115,42 @@ func (s *DocumentService) GetDocumentByID(ctx context.Context, id string) (*Docu
 }
 
 // UpdateDocument update document
-func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) error {
+func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) (common.ErrorCode, error) {
+	if req == nil {
+		return common.CodeDataError, errors.New("invalid request payload")
+	}
+
 	document, err := s.documentDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
-		return err
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, errors.New("document not found")
+		}
+		return common.CodeServerError, err
 	}
 
-	if req.Name != nil {
-		document.Name = req.Name
-	}
-	if req.Run != nil {
-		document.Run = req.Run
-	}
-	if req.TokenNum != nil {
-		document.TokenNum = *req.TokenNum
-	}
-	if req.ChunkNum != nil {
-		document.ChunkNum = *req.ChunkNum
-	}
-	if req.Progress != nil {
-		document.Progress = *req.Progress
-	}
-	if req.ProgressMsg != nil {
-		document.ProgressMsg = req.ProgressMsg
+	if err = validateImmutableDocumentFields(document, immutableDocumentFields{
+		chunkNum:            req.ChunkNum,
+		chunkNumRequestName: "chunk_num",
+		tokenNum:            req.TokenNum,
+		tokenNumRequestName: "token_num",
+		progress:            req.Progress,
+		run:                 req.Run,
+		progressMsg:         req.ProgressMsg,
+	}); err != nil {
+		return common.CodeDataError, err
 	}
 
-	return s.documentDAO.Update(ctx, dao.DB, document)
+	if req.Name == nil {
+		return common.CodeSuccess, nil
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, document.KbID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if err = s.updateDocumentNameOnly(ctx, document, kb.TenantID, *req.Name); err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // ApplyDocCounts records a pipeline run's chunk/token/duration counts on the
@@ -328,6 +338,10 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
+	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	if typeErr != nil {
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
@@ -338,11 +352,11 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return err
 	}
 	// File replacement/deletion uses this path instead of deleteDocumentFull.
-	// Publish the same deletion event so the dataset-level Wiki consumer removes
-	// the deleted document's contribution in both paths.
+	// Publish the same deletion event so the dataset-level consumer removes the
+	// deleted document's contribution in both paths.
 	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	return nil
@@ -412,6 +426,10 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		return
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	_, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
+	if typeErr != nil {
+		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+	}
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
@@ -424,7 +442,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	// never block the document delete, which already succeeded above.
 	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID); err != nil {
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, taskTypes); err != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {

@@ -44,6 +44,11 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
 	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
 	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
+	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
+	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
+	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over
+	// its final answer before it reaches the UI.
+	regexp.MustCompile(`\(\s*\**\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\**\s*\)`), // (**ID: 12**)
 }
 
 // InsertCitations decorates answer with [ID:n] citation markers.

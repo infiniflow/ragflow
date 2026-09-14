@@ -50,7 +50,7 @@ var IMG_BASE64_PREFIX = "data:image/png;base64,"
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
 	GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error)
-	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error
+	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error)
 	DeleteDocument(ctx context.Context, id string) error
 	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -344,10 +344,12 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
+		if errorCode == common.CodeServerError {
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, errorCode, nil, err.Error())
+		} else {
+			common.ErrorWithCode(c, errorCode, err.Error())
+		}
 		return
 	}
 
@@ -1111,6 +1113,12 @@ func isValidHTTPURL(raw string) bool {
 }
 
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
 	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
 
@@ -1123,6 +1131,18 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	// Authorize the caller before serving file bytes. The sibling routes on
+	// this dataset (PATCH/DELETE documents, chunks, metadata) all gate on
+	// datasetService.Accessible, and the Python reference
+	// (document_api.py download) checks KnowledgebaseService.accessible and
+	// DocumentService.accessible; without this, any logged-in user could
+	// download any tenant's document by supplying its dataset and document
+	// ids. Answer exactly like the missing-document case so existence is
+	// not leaked either.
+	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "document not found")
+		return
+	}
 	res, err := h.documentService.DownloadDocument(ctx, datasetID, docID)
 
 	if err != nil {

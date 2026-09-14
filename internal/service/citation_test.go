@@ -313,3 +313,23 @@ func TestMaxRow(t *testing.T) {
 		t.Error("max of nil should be 0")
 	}
 }
+
+// TestRepairBadCitationFormats covers the malformed-citation shapes
+// RepairBadCitationFormats rewrites to "[ID:N]", including the
+// markdown-asterisk-wrapped parenthetical form (**ID:5**) that mirrors Python
+// agentic_rag.py:885's re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...).
+func TestRepairBadCitationFormats(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"(**ID:5**)", "[ID:5]"}, // Python deep-research asterisk form
+		{"(*ID: 5*)", "[ID:5]"},  // single star, spaced
+		{"(ID:12)", "[ID:12]"},   // plain parenthetical (existing pattern)
+		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
+		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
+		{"plain text no cites", "plain text no cites"},
+	}
+	for _, c := range cases {
+		if got := RepairBadCitationFormats(c.in); got != c.want {
+			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
