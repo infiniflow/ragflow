@@ -108,6 +108,20 @@ func TestGeneralChunkerParamsNormalizeConfiguration(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerNormalizesLegacyDelimiterString(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"delimiter": "\n!?;。；！？",
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	general := component.(*GeneralChunkerComponent)
+	want := []string{"\n", "!", "?", ";", "。", "；", "！", "？"}
+	if !reflect.DeepEqual(general.param.Delimiters, want) {
+		t.Fatalf("Delimiters = %#v, want %#v", general.param.Delimiters, want)
+	}
+}
+
 func TestGeneralStrategyForFileType(t *testing.T) {
 	tests := []struct {
 		fileType string
@@ -389,6 +403,27 @@ func TestGeneralChunkerDOCXCustomDelimiterDisablesTextMerge(t *testing.T) {
 	}
 	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"before", "after"}) {
 		t.Fatalf("texts = %q, want custom-delimiter units", texts)
+	}
+}
+
+func TestGeneralChunkerChildrenDelimiterKeepsDelimiter(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"children_delimiters": []string{";"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "part A;part B", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"part A;", "part B"}) {
+		t.Fatalf("children delimiter texts = %q, want [part A; part B]", texts)
 	}
 }
 

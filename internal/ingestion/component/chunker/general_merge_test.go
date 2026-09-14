@@ -137,13 +137,48 @@ func TestMergeGeneralUnitsAppliesUnconditionalCharacterOverlap(t *testing.T) {
 	got := mergeGeneralUnits(units, 2, 50, "\n")
 	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{
 		"abcdefghij@@1\t0\t1\t2\t3##",
-		"fghijklmnopqrst",
-		"mnopqrstuvwxyzABCD",
+		"fghij\nklmnopqrst",
+		"mnopqrst\nuvwxyzABCD",
 	}) {
 		t.Fatalf("texts = %q", texts)
 	}
 	if intValue(got[1].TKNums) <= 2 {
 		t.Errorf("overlap was trimmed to cap: token count = %d", intValue(got[1].TKNums))
+	}
+}
+
+func TestMergeSpreadsheetRowsUsesPositionSheetWhenIdentityFieldsAreMissing(t *testing.T) {
+	rows := []schema.ChunkDoc{
+		{Text: "sheet-1-row", DocType: "text", CKType: "table_row", TKNums: intPtr(1), Positions: json.RawMessage(`[[1,2,2,1,2]]`)},
+		{Text: "sheet-2-row", DocType: "text", CKType: "table_row", TKNums: intPtr(1), Positions: json.RawMessage(`[[2,2,2,1,2]]`)},
+	}
+
+	got := mergeSpreadsheetRows(rows, 10)
+	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{"sheet-1-row", "sheet-2-row"}) {
+		t.Fatalf("position-only sheet boundary was lost: texts = %q", texts)
+	}
+}
+
+func TestMergeMarkdownUnitsCarriesCharacterOverlapIntoNextBudget(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "alpha beta", DocType: "text", CKType: "text"},
+		{Text: "gamma delta", DocType: "text", CKType: "text"},
+		{Text: "epsilon zeta", DocType: "text", CKType: "text"},
+		{Text: "eta theta", DocType: "text", CKType: "text"},
+	}
+	for i := range units {
+		units[i].TKNums = intPtr(tokenizeStr(units[i].Text))
+	}
+	target := intValue(units[0].TKNums) + intValue(units[1].TKNums)
+
+	got := mergeMarkdownUnits(units, target, 50, "\n")
+	want := []string{
+		"alpha beta\ngamma delta",
+		"gamma delta\nepsilon zeta",
+		"epsilon zeta\neta theta",
+	}
+	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, want) {
+		t.Fatalf("markdown overlap = %q, want %q", texts, want)
 	}
 }
 
@@ -277,7 +312,7 @@ func TestGeneralChunkerSplitsChildrenAfterParentMerge(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := outputChunks(t, out)
-	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"alpha", "beta"}) {
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"alpha|", "beta"}) {
 		t.Fatalf("texts = %q", texts)
 	}
 	for i, chunk := range chunks {

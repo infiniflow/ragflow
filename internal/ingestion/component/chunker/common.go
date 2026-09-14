@@ -91,7 +91,9 @@ func stringListFromAny(in []any) []string {
 // content. invokeTextPayload decides whether an active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
-// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Legacy single-string parsing is performed by GeneralChunker at its
+// configuration boundary; the shared regex helper only consumes canonical
+// delimiter lists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
@@ -100,9 +102,10 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
 // glued to a segment: re.split with a captured group keeps delimiters at odd
 // indices, and only the even-index (text) parts are kept. This is the
-// behavior every delimiter path (primary and children, text/markdown/html
-// and JSON) must reproduce so a split chunk reads "first sentence here"
-// without the trailing delimiter.
+// behavior shared TokenChunker paths and General's primary/Markdown splits
+// reproduce so a split chunk reads "first sentence here" without the trailing
+// delimiter. General's legacy-compatible children split is implemented
+// separately because that path keeps the delimiter attached to its parent.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}

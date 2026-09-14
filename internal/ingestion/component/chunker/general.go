@@ -34,6 +34,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/chunk"
 )
 
 const ComponentNameGeneralChunker = "GeneralChunker"
@@ -59,18 +60,22 @@ func (p *generalChunkerParam) Update(conf map[string]any) {
 	if value, ok := schema.NumericFromAny(conf["chunk_token_size"]); ok {
 		p.ChunkTokenSize = int(value)
 	}
-	if value, ok := conf["delimiters"].([]any); ok {
-		p.Delimiters = stringListFromAny(value)
-	} else if value, ok := conf["delimiters"].([]string); ok {
-		p.Delimiters = append([]string(nil), value...)
+	if value, ok := conf["delimiters"]; ok {
+		if delimiters, recognized := normalizeGeneralDelimiterValue(value); recognized {
+			p.Delimiters = delimiters
+		}
+	} else if value, ok := conf["delimiter"]; ok {
+		if delimiters, recognized := normalizeGeneralDelimiterValue(value); recognized {
+			p.Delimiters = delimiters
+		}
 	}
 	if value, ok := conf["overlapped_percent"]; ok {
 		p.OverlappedPercent = schema.NormalizeOverlappedPercent(value)
 	}
-	if value, ok := conf["children_delimiters"].([]any); ok {
-		p.ChildrenDelimiters = stringListFromAny(value)
-	} else if value, ok := conf["children_delimiters"].([]string); ok {
-		p.ChildrenDelimiters = append([]string(nil), value...)
+	if value, ok := conf["children_delimiters"]; ok {
+		if delimiters, recognized := normalizeGeneralDelimiterValue(value); recognized {
+			p.ChildrenDelimiters = delimiters
+		}
 	}
 	if value, ok := schema.NumericFromAny(conf["table_context_size"]); ok {
 		p.TableContextSize = max(0, int(value))
@@ -78,6 +83,26 @@ func (p *generalChunkerParam) Update(conf map[string]any) {
 	if value, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
 		p.ImageContextSize = max(0, int(value))
 	}
+}
+
+// normalizeGeneralDelimiterValue accepts both the canonical list form and
+// the legacy Python single-string form. A legacy string is split into Unicode
+// rune delimiters, except backtick-wrapped tokens which remain one delimiter.
+func normalizeGeneralDelimiterValue(value any) ([]string, bool) {
+	switch value := value.(type) {
+	case string:
+		return splitGeneralDelimiterString(value), true
+	case []string:
+		return append([]string(nil), value...), true
+	case []any:
+		return stringListFromAny(value), true
+	default:
+		return nil, false
+	}
+}
+
+func splitGeneralDelimiterString(value string) []string {
+	return chunk.ParseDelimiterField(value)
 }
 
 // GeneralChunkerComponent owns the general ingestion chunking policy and
@@ -504,8 +529,10 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 // than standalone media chunks, so image-bearing units participate in the
 // text merge and retain their image payload.
 func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
+	overlapPct = max(0, min(100, overlapPct))
 	merged := make([]schema.ChunkDoc, 0, len(units))
 	current := -1
+	currentTokens := 0
 	for _, unit := range units {
 		if itemDocType(unit) == "table" {
 			if current >= 0 && isShortMarkdownHeading(merged[current]) {
@@ -516,7 +543,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				} else {
 					table.Text = heading.Text + table.Text
 				}
-				table.TKNums = intPtr(intValue(heading.TKNums) + generalUnitTokens(unit))
+				table.TKNums = intPtr(currentTokens + generalUnitTokens(unit))
 				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
 				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
 				mergeGeneralMetadata(&table, heading)
@@ -525,10 +552,12 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				table.CKType = "table"
 				merged[current] = table
 				current = -1
+				currentTokens = 0
 				continue
 			}
 			merged = append(merged, cloneChunkDoc(unit))
 			current = -1
+			currentTokens = 0
 			continue
 		}
 
@@ -541,22 +570,40 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 		if current < 0 {
 			merged = append(merged, unit)
 			current = len(merged) - 1
+			currentTokens = generalUnitTokens(unit)
 			continue
 		}
 
 		previous := &merged[current]
 		forceMerge := isShortMarkdownHeading(*previous)
-		projected := intValue(previous.TKNums) + generalUnitTokens(unit)
+		unitTokens := generalUnitTokens(unit)
+		projected := currentTokens + unitTokens
 		if !forceMerge && projected > target {
-			merged = append(merged, unit)
+			overlap, _ := computeOverlapPrefix(previous.Text, overlapPct)
+			if overlap != "" {
+				next := cloneChunkDoc(*previous)
+				next.Text = overlap
+				next.TKNums = intPtr(tokenizeStr(overlap))
+				next.DocType = "text"
+				next.CKType = "text"
+				mergeMarkdownChunk(&next, unit, joinSep)
+				currentTokens = tokenizeStr(overlap) + unitTokens
+				next.TKNums = intPtr(currentTokens)
+				merged = append(merged, next)
+			} else {
+				merged = append(merged, unit)
+				currentTokens = unitTokens
+			}
 			current = len(merged) - 1
 			continue
 		}
 		mergeMarkdownChunk(previous, unit, joinSep)
 		previous.DocType = "text"
 		previous.CKType = "text"
+		currentTokens = projected
+		previous.TKNums = intPtr(currentTokens)
 	}
-	return applyGeneralOverlap(merged, overlapPct)
+	return merged
 }
 
 func isShortMarkdownHeading(unit schema.ChunkDoc) bool {
@@ -724,7 +771,7 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 		mergeGeneralChunk(&merged[current], unit, joinSep)
 	}
 
-	return applyGeneralOverlap(merged, overlapPct)
+	return applyGeneralOverlap(merged, overlapPct, joinSep)
 }
 
 func mergeSpreadsheetRows(rows []schema.ChunkDoc, target int) []schema.ChunkDoc {
@@ -756,7 +803,22 @@ func sameSpreadsheetTable(first, second schema.ChunkDoc) bool {
 	if first.SheetIndex != nil || second.SheetIndex != nil {
 		return first.SheetIndex != nil && second.SheetIndex != nil && *first.SheetIndex == *second.SheetIndex
 	}
-	return first.Sheet == second.Sheet
+	if firstSheet, firstOK := spreadsheetPositionSheet(first); firstOK {
+		secondSheet, secondOK := spreadsheetPositionSheet(second)
+		return secondOK && firstSheet == secondSheet
+	}
+	if first.Sheet != "" || second.Sheet != "" {
+		return first.Sheet != "" && second.Sheet != "" && first.Sheet == second.Sheet
+	}
+	return false
+}
+
+func spreadsheetPositionSheet(doc schema.ChunkDoc) (float64, bool) {
+	row, ok := firstPositionRow(lineRecord{positions: doc.Positions})
+	if !ok {
+		return 0, false
+	}
+	return row[0], true
 }
 
 func mergeSpreadsheetRowRange(dst *schema.ChunkDoc, src schema.ChunkDoc) {
@@ -842,7 +904,7 @@ func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
 	return extendRawJSONArray(first, second)
 }
 
-func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64) []schema.ChunkDoc {
+func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep string) []schema.ChunkDoc {
 	if overlapPct <= 0 {
 		return chunks
 	}
@@ -856,7 +918,7 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64) []schema.
 			prefix, _ := computeOverlapPrefix(chunks[previousText].Text, overlapPct)
 			if prefix != "" {
 				current := cloneChunkDoc(chunks[i])
-				current.Text = prefix + current.Text
+				current.Text = joinGeneralOverlapText(prefix, current.Text, joinSep)
 				current.TKNums = intPtr(tokenizeStr(current.Text))
 				current.PDFPositions = mergeGeneralPositions(chunks[previousText].PDFPositions, current.PDFPositions)
 				current.Positions = mergeGeneralPositions(chunks[previousText].Positions, current.Positions)
@@ -867,6 +929,19 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64) []schema.
 		previousText = i
 	}
 	return chunks
+}
+
+func joinGeneralOverlapText(prefix, text, separator string) string {
+	if prefix == "" {
+		return text
+	}
+	if text == "" || separator == "" {
+		return prefix + text
+	}
+	if strings.HasSuffix(prefix, separator) || strings.HasPrefix(text, separator) {
+		return prefix + text
+	}
+	return prefix + separator + text
 }
 
 func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
@@ -908,11 +983,58 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		}
 		visible = append(visible, chunk)
 	}
-	visible = splitByChildren(visible, childrenPattern)
+	visible = splitGeneralChildren(visible, childrenPattern)
 	for i := range visible {
 		visible[i].TKNums = intPtr(tokenizeStr(visible[i].Text))
 	}
 	return visible
+}
+
+// splitGeneralChildren keeps the matched child delimiter attached to the
+// preceding child. This matches the legacy General/naive path; the shared
+// TokenChunker splitByChildren helper intentionally drops delimiters and is
+// therefore not reused here.
+func splitGeneralChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	if pattern == nil {
+		return chunks
+	}
+	result := make([]schema.ChunkDoc, 0, len(chunks))
+	for _, chunk := range chunks {
+		if itemDocType(chunk) != "text" {
+			result = append(result, chunk)
+			continue
+		}
+		mom := strings.TrimPrefix(chunk.Text, "\n")
+		for _, part := range splitKeepingGeneralDelimiter(chunk.Text, pattern) {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			piece := cloneChunkDoc(chunk)
+			piece.Text = part
+			piece.Mom = mom
+			result = append(result, piece)
+		}
+	}
+	return result
+}
+
+func splitKeepingGeneralDelimiter(text string, pattern *regexp.Regexp) []string {
+	matches := pattern.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return []string{text}
+	}
+	result := make([]string, 0, len(matches)+1)
+	cursor := 0
+	for _, match := range matches {
+		if match[0] > cursor {
+			result = append(result, text[cursor:match[1]])
+		}
+		cursor = match[1]
+	}
+	if cursor < len(text) {
+		result = append(result, text[cursor:])
+	}
+	return result
 }
 
 func init() {
