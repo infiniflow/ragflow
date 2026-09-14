@@ -192,7 +192,7 @@ func (c *FeishuWikiConnector) OpenSync(ctx context.Context, request SyncRequest)
 	}
 	accepted := make([]feishuWikiFile, 0, len(files))
 	for _, file := range files {
-		if request.WindowStart != nil {
+		if request.WindowStart != nil || !request.WindowEnd.IsZero() {
 			var updatedAt *time.Time
 			if file.hasUpdatedAt {
 				updatedAt = &file.updatedAt
@@ -578,7 +578,7 @@ func (c *FeishuWikiConnector) feishuDoRequest(ctx context.Context, method, endpo
 	delay := feishuRetryBaseDelay
 	var lastErr error
 	rateWaits := 0
-	for attempt := 0; attempt < feishuRetryTries; attempt++ {
+	for attempt := 0; attempt < feishuRetryTries; {
 		resp, err := c.feishuSend(ctx, method, endpoint, body, headers)
 		if err != nil {
 			lastErr = err
@@ -595,12 +595,14 @@ func (c *FeishuWikiConnector) feishuDoRequest(ctx context.Context, method, endpo
 			if delay > feishuRetryMaxDelay {
 				delay = feishuRetryMaxDelay
 			}
+			attempt++
 			continue
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close()
 			if rateWaits >= feishu429MaxWaits {
-				return nil, &RateLimitTriedTooManyTimesError{Message: "Feishu rate limit exceeded while requesting " + endpoint}
+				lastErr = &RateLimitTriedTooManyTimesError{Message: "Feishu rate limit exceeded while requesting " + endpoint}
+				break
 			}
 			rateWaits++
 			retryAfter := feishu429DefaultWait
@@ -631,6 +633,7 @@ func (c *FeishuWikiConnector) feishuDoRequest(ctx context.Context, method, endpo
 			if delay > feishuRetryMaxDelay {
 				delay = feishuRetryMaxDelay
 			}
+			attempt++
 			continue
 		}
 		return resp, nil

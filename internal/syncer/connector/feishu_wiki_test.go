@@ -26,14 +26,28 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 type feishuWikiTestServer struct {
 	server    *httptest.Server
+	mu        sync.Mutex
 	authCalls int
 	downloads []string
+}
+
+func (s *feishuWikiTestServer) authCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.authCalls
+}
+
+func (s *feishuWikiTestServer) downloadCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.downloads)
 }
 
 func newFeishuWikiTestServer(t *testing.T, handle func(w http.ResponseWriter, r *http.Request)) *feishuWikiTestServer {
@@ -41,7 +55,9 @@ func newFeishuWikiTestServer(t *testing.T, handle func(w http.ResponseWriter, r 
 	fixture := &feishuWikiTestServer{}
 	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal" {
+			fixture.mu.Lock()
 			fixture.authCalls++
+			fixture.mu.Unlock()
 			feishuWriteJSON(w, map[string]any{"code": 0, "msg": "success", "tenant_access_token": "test-token", "expire": 7200})
 			return
 		}
@@ -217,19 +233,19 @@ func TestFeishuWikiAuthTokenCaching(t *testing.T) {
 	if token != "test-token" {
 		t.Fatalf("token = %q, want test-token", token)
 	}
-	if server.authCalls != 1 {
-		t.Fatalf("auth calls = %d, want 1", server.authCalls)
+	if server.authCount() != 1 {
+		t.Fatalf("auth calls = %d, want 1", server.authCount())
 	}
 	// Cached token must not re-authenticate.
 	_, _ = connector.getAccessToken(context.Background())
-	if server.authCalls != 1 {
-		t.Fatalf("auth calls after cache = %d, want 1", server.authCalls)
+	if server.authCount() != 1 {
+		t.Fatalf("auth calls after cache = %d, want 1", server.authCount())
 	}
 	// Expired token must refresh.
 	connector.accessTokenExpiresAt = time.Now().Add(-time.Minute)
 	_, _ = connector.getAccessToken(context.Background())
-	if server.authCalls != 2 {
-		t.Fatalf("auth calls after expiry = %d, want 2", server.authCalls)
+	if server.authCount() != 2 {
+		t.Fatalf("auth calls after expiry = %d, want 2", server.authCount())
 	}
 }
 
@@ -336,6 +352,27 @@ func TestFeishuWikiWindowFiltering(t *testing.T) {
 	}
 }
 
+func TestFeishuWikiWindowEndOnly(t *testing.T) {
+	server := newFeishuWikiTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		feishuWriteJSON(w, feishuListResponse([]map[string]any{
+			feishuListNode("before", "file", "o-before", "before.pdf", false, "1700000000"),
+			feishuListNode("after", "file", "o-after", "after.pdf", false, "1700000200"),
+			feishuListNode("missing", "file", "o-missing", "missing.pdf", false, nil),
+		}, false, ""))
+	})
+	connector := newFeishuWikiTestConnector(t, server.server, nil)
+
+	end := time.Unix(1700000150, 0).UTC()
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	feishuSession := session.(*feishuWikiSyncSession)
+	if len(feishuSession.files) != 2 {
+		t.Fatalf("accepted %d files, want 2 (before end + missing timestamp): %+v", len(feishuSession.files), feishuSession.files)
+	}
+}
+
 func TestFeishuWikiDownload(t *testing.T) {
 	server := newFeishuWikiTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/open-apis/drive/v1/files/") {
@@ -432,7 +469,7 @@ func TestFeishuWikiSyncSessionBatchingAndResume(t *testing.T) {
 		t.Fatalf("batch 1 checkpoint = %+v", batch.Checkpoint)
 	}
 	for i, document := range batch.Documents {
-		if document.Blob == nil || len(document.Blob) == 0 {
+		if len(document.Blob) == 0 {
 			t.Fatalf("batch 1 doc %d has no blob", i)
 		}
 		if document.SemanticIdentifier == "" || document.Fingerprint == "" {
@@ -505,8 +542,8 @@ func TestFeishuWikiValidateConnects(t *testing.T) {
 	if err := connector.ValidateConnectorSetting(context.Background(), feishuWikiBaseConfig()); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
-	if server.authCalls != 1 {
-		t.Fatalf("auth calls = %d, want 1", server.authCalls)
+	if server.authCount() != 1 {
+		t.Fatalf("auth calls = %d, want 1", server.authCount())
 	}
 }
 
@@ -517,7 +554,11 @@ func TestFeishuWiki429Retry(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		if len(server.downloads) == 0 {
+		server.mu.Lock()
+		server.downloads = append(server.downloads, r.URL.Path)
+		recorded := len(server.downloads)
+		server.mu.Unlock()
+		if recorded == 1 {
 			w.Header().Set("x-ogw-ratelimit-reset", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
 			feishuWriteJSON(w, map[string]any{"code": 99991400, "msg": "request trigger frequency limit"})
@@ -525,7 +566,6 @@ func TestFeishuWiki429Retry(t *testing.T) {
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = io.WriteString(w, "retried-bytes")
 		}
-		server.downloads = append(server.downloads, r.URL.Path)
 	})
 	connector := newFeishuWikiTestConnector(t, server.server, nil)
 
@@ -540,8 +580,43 @@ func TestFeishuWiki429Retry(t *testing.T) {
 	if string(blob) != "retried-bytes" {
 		t.Fatalf("blob = %q", blob)
 	}
-	if len(server.downloads) != 2 {
-		t.Fatalf("download requests = %d, want 2", len(server.downloads))
+	if server.downloadCount() != 2 {
+		t.Fatalf("download requests = %d, want 2", server.downloadCount())
+	}
+}
+
+func TestFeishuWiki429ExhaustionReturnsRateLimitError(t *testing.T) {
+	var server *feishuWikiTestServer
+	server = newFeishuWikiTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/open-apis/drive/v1/files/") {
+			http.NotFound(w, r)
+			return
+		}
+		server.mu.Lock()
+		server.downloads = append(server.downloads, r.URL.Path)
+		server.mu.Unlock()
+		w.Header().Set("x-ogw-ratelimit-reset", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		feishuWriteJSON(w, map[string]any{"code": 99991400, "msg": "request trigger frequency limit"})
+	})
+	connector := newFeishuWikiTestConnector(t, server.server, nil)
+
+	savedWaits := feishu429MaxWaits
+	savedTries := feishuRetryTries
+	feishu429MaxWaits = 5
+	feishuRetryTries = 3 // 429 waits must not consume these general retry attempts
+	t.Cleanup(func() {
+		feishu429MaxWaits = savedWaits
+		feishuRetryTries = savedTries
+	})
+
+	_, err := connector.downloadFile(context.Background(), "o-1")
+	var rateErr *RateLimitTriedTooManyTimesError
+	if !errors.As(err, &rateErr) {
+		t.Fatalf("err=%T want *RateLimitTriedTooManyTimesError, got %v", err, err)
+	}
+	if got := server.downloadCount(); got != feishu429MaxWaits+1 {
+		t.Fatalf("download requests = %d, want %d (429 waits must not consume general retries)", got, feishu429MaxWaits+1)
 	}
 }
 
