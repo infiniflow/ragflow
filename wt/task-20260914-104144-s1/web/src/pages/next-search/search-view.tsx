@@ -1,0 +1,395 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
+import { FileIcon } from '@/components/icon-font';
+import { ImageWithPopover } from '@/components/image';
+import { SkeletonCard } from '@/components/skeleton-card';
+import { TopSelect } from '@/components/top-select';
+import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { IReference } from '@/interfaces/database/chat';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
+import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
+import { ListTree, Search, X } from 'lucide-react';
+import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ISearchAppDetailProps } from '../next-searches/hooks';
+import PdfDrawer from './document-preview-modal';
+import ExpandableContent from './expandable-content';
+import { ISearchReturnProps } from './hooks';
+import './index.less';
+import MarkdownContent from './markdown-content';
+import MindMapSheet from './mindmap-sheet';
+import { RAGFlowLogo } from './ragflow-logo';
+import RetrievalDocuments from './retrieval-documents';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
+import classNames from 'classnames';
+
+const formatMetadataValue = (value: unknown) => {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+export default function SearchingView({
+  setIsSearching,
+  searchData,
+  handleClickRelatedQuestion,
+  handleTestChunk,
+  setSelectedDocumentIds,
+  answer,
+  sendingLoading,
+  relatedQuestions,
+  isFirstRender,
+  selectedDocumentIds,
+  isSearchStrEmpty,
+  searchStr,
+  stopOutputMessage,
+  visible,
+  hideModal,
+  documentId,
+  selectedChunk,
+  clickDocumentButton,
+  mindMapVisible,
+  hideMindMapModal,
+  showMindMapModal,
+  mindMapLoading,
+  mindMap,
+  chunks,
+  total,
+  handleSearch,
+  pageSize,
+  handleTopChange,
+  showEmbedLogo,
+}: ISearchReturnProps & {
+  setIsSearching?: Dispatch<SetStateAction<boolean>>;
+  searchData: ISearchAppDetailProps;
+  showEmbedLogo?: boolean;
+}) {
+  const { t } = useTranslation();
+
+  const [searchText, setSearchText] = useState<string>('');
+  const [retrievalLoading, setRetrievalLoading] = useState(false);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setSearchText(searchStr);
+  }, [searchStr, setSearchText]);
+
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
+  return (
+    <section
+      className={cn(
+        'relative w-full flex transition-all justify-start items-center h-full',
+      )}
+    >
+      {/* search header */}
+      <div
+        className={cn(
+          'relative z-10 px-8 pt-8 flex  text-transparent justify-start items-start w-full h-full',
+        )}
+      >
+        <RAGFlowLogo
+          onClick={() => {
+            setIsSearching?.(false);
+          }}
+          showEmbedIcon={showEmbedLogo}
+        ></RAGFlowLogo>
+        <div
+          className={cn(
+            ' rounded-lg text-primary text-xl sticky flex flex-col justify-center  transform scale-100 ml-16 h-full flex-1 3xl:w-2/3 3xl:flex-none',
+          )}
+        >
+          <div className={cn('flex flex-col justify-start items-start w-full')}>
+            <div className="relative w-full text-primary">
+              <textarea
+                ref={searchInputRef}
+                rows={1}
+                placeholder={t('search.searchGreeting')}
+                className={cn(
+                  'w-full rounded-full py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
+                )}
+                value={searchText}
+                onChange={(e) => {
+                  setSearchText(e.target.value);
+                }}
+                disabled={sendingLoading}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    handleSearch(searchText);
+                  }
+                }}
+              />
+              <div
+                className={cn(
+                  'absolute  right-3 flex items-center gap-3',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
+              >
+                {searchText && (
+                  <X
+                    className="text-text-secondary cursor-pointer opacity-80 hover:opacity-100"
+                    size={16}
+                    onClick={() => {
+                      setSearchText('');
+                      handleClickRelatedQuestion('');
+                    }}
+                  />
+                )}
+                <span className="h-4 w-px bg-border-button" aria-hidden />
+                <button
+                  type="button"
+                  className="flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
+                  onClick={() => {
+                    if (sendingLoading) {
+                      stopOutputMessage();
+                    } else {
+                      handleSearch(searchText);
+                    }
+                  }}
+                >
+                  {sendingLoading ? (
+                    <div className="size-2 bg-bg-base"></div>
+                  ) : (
+                    <Search size={18} />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* search body */}
+          <div
+            className="w-full mt-5 overflow-auto scrollbar-thin "
+            style={{ height: 'calc(100vh - 250px)' }}
+          >
+            {searchData.search_config.summary && !isSearchStrEmpty && (
+              <>
+                <div className="flex justify-start items-start text-text-primary text-2xl">
+                  {t('search.AISummary')}
+                </div>
+                {isEmpty(answer) && sendingLoading ? (
+                  <SkeletonCard className=" mt-2" />
+                ) : (
+                  answer.answer && (
+                    <div className="border rounded-lg p-4 mt-3">
+                      <ExpandableContent maxHeight={208}>
+                        <MarkdownContent
+                          loading={sendingLoading}
+                          content={answer.answer}
+                          reference={answer.reference ?? ({} as IReference)}
+                          clickDocumentButton={clickDocumentButton}
+                        />
+                      </ExpandableContent>
+                    </div>
+                  )
+                )}
+                {answer.answer && !sendingLoading && (
+                  <div className="w-full border-b border-border-default/80 my-6"></div>
+                )}
+              </>
+            )}
+            {/* retrieval documents */}
+            {!isSearchStrEmpty && !sendingLoading && (
+              <section className="flex justify-start items-center gap-4">
+                <div className="w-44 ">
+                  <RetrievalDocuments
+                    selectedDocumentIds={selectedDocumentIds}
+                    setSelectedDocumentIds={setSelectedDocumentIds}
+                    onTesting={(vals: string[]) =>
+                      handleTestChunk(vals, 1, pageSize)
+                    }
+                    setLoading={(loading: boolean) => {
+                      setRetrievalLoading(loading);
+                    }}
+                  ></RetrievalDocuments>
+                </div>
+                <div className="w-44">
+                  <TopSelect
+                    max={
+                      searchData.search_config.rerank_candidates_count ?? 100
+                    }
+                    value={pageSize}
+                    onChange={handleTopChange}
+                  ></TopSelect>
+                </div>
+                <span className="ml-auto text-sm text-text-secondary pr-2">
+                  {t('common.total')}: {total}
+                </span>
+              </section>
+            )}
+            <div className="mt-3 ">
+              {chunks?.length > 0 && (
+                <>
+                  {chunks.map((chunk, index) => {
+                    return (
+                      <div key={index}>
+                        <div className="w-full flex flex-col">
+                          <div className="w-full">
+                            {chunk.image_id && (
+                              <ImageWithPopover
+                                id={chunk.image_id}
+                              ></ImageWithPopover>
+                            )}
+                            <div
+                              dangerouslySetInnerHTML={{
+                                __html: sanitizeHtmlWithImagesAsText(
+                                  chunk.highlight || chunk.content,
+                                ).trim(),
+                              }}
+                              className={classNames(
+                                // Keep whitespaces?
+                                'text-wrap break-words whitespace-pre text-base',
+                                '[&_em]:text-accent-primary [&_em]:not-italic',
+                              )}
+                            />
+                          </div>
+                          {chunk.document_metadata &&
+                            Object.keys(chunk.document_metadata).length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {Object.entries(chunk.document_metadata).map(
+                                  ([key, value]) => (
+                                    <div
+                                      key={key}
+                                      className="text-xs border border-border-default rounded px-2 py-1"
+                                    >
+                                      <span className="text-text-secondary">
+                                        {key}:
+                                      </span>{' '}
+                                      <span className="text-text-primary">
+                                        {formatMetadataValue(value)}
+                                      </span>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
+                          <div
+                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
+                            onClick={() =>
+                              clickDocumentButton(
+                                chunk.document_id,
+                                chunk as any,
+                              )
+                            }
+                          >
+                            <FileIcon name={chunk.document_keyword}></FileIcon>
+                            {chunk.document_keyword}
+                          </div>
+                        </div>
+                        {index < chunks.length - 1 && (
+                          <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              {relatedQuestions?.length > 0 &&
+                searchData.search_config.related_search && (
+                  <>
+                    <div className="w-full border-b border-border-default/80 mt-6"></div>
+
+                    <div className="mt-6 w-full overflow-hidden opacity-100 max-h-96">
+                      <p className="text-text-primary mb-2 text-xl">
+                        {t('search.relatedSearch')}
+                      </p>
+                      <div className="mt-2 flex flex-wrap justify-start gap-2">
+                        {relatedQuestions?.map((x, idx) => (
+                          <Button
+                            key={idx}
+                            variant="transparent"
+                            className="bg-bg-card text-text-secondary"
+                            onClick={handleClickRelatedQuestion(
+                              x,
+                              searchData.search_config.summary,
+                            )}
+                          >
+                            {x}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+            </div>
+            {!isSearchStrEmpty &&
+              !retrievalLoading &&
+              !answer.answer &&
+              !sendingLoading &&
+              total <= 0 &&
+              chunks?.length <= 0 &&
+              relatedQuestions?.length <= 0 && (
+                <div className="h-2/5 flex items-center justify-center">
+                  <Empty type={EmptyType.SearchData} iconWidth={80} />
+                </div>
+              )}
+          </div>
+
+          {!mindMapVisible &&
+            !isFirstRender &&
+            !isSearchStrEmpty &&
+            !isEmpty(searchData.search_config.kb_ids) &&
+            searchData.search_config.query_mindmap && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    onClick={showMindMapModal}
+                    variant={'outline'}
+                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
+                  >
+                    <ListTree />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-fit">
+                  {t('chunk.mind')}
+                </PopoverContent>
+              </Popover>
+            )}
+        </div>
+        {mindMapVisible && (
+          <MindMapSheet
+            visible={mindMapVisible}
+            hideModal={hideMindMapModal}
+            data={mindMap}
+            loading={mindMapLoading}
+          ></MindMapSheet>
+        )}
+      </div>
+
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfDrawer>
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,46 @@
+services:
+  sandbox-executor-manager:
+    build:
+      context: ./executor_manager
+      dockerfile: Dockerfile
+    image: sandbox-executor-manager:latest
+    runtime: runc
+    privileged: true
+    # Bind to loopback only: the /run endpoint executes arbitrary sandboxed code.
+    ports:
+      - "127.0.0.1:${SANDBOX_EXECUTOR_MANAGER_PORT:-9385}:9385"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - sandbox-network
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-5}
+      - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE-sandbox-base-python:latest}
+      - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE-sandbox-base-nodejs:latest}
+      - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m} # b, k, m, g
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s} # s, m, 1m30s
+      # Shared secret for the /run API. Authentication is fail-closed: with
+      # no token the API refuses /run (503) unless the explicit opt-in flag
+      # below is set.
+      - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
+      # Explicit, risk-accepting opt-in for deployments that cannot provide a
+      # token. Leave unset/false in normal deployments.
+      - SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED=${SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED:-false}
+      # Sandbox runner containers get no external network by default.
+      - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}
+      # Rate limits: a small pre-auth throttle applied to all /run traffic,
+      # and the larger per-address quota for authenticated execution.
+      - SANDBOX_RUN_PREAUTH_RATE_LIMIT=${SANDBOX_RUN_PREAUTH_RATE_LIMIT:-30/minute}
+      - SANDBOX_RUN_RATE_LIMIT=${SANDBOX_RUN_RATE_LIMIT:-120/minute}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:9385/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+networks:
+  sandbox-network:
+    driver: bridge

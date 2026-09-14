@@ -1,0 +1,200 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+// Package tool — MCP (Model Context Protocol) wrapper.
+//
+// Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
+// an eino BaseTool so it can be invoked from inside the Agent's
+// ReAct loop. The MCP tool list is fetched via utility/mcpclient
+// (which currently only implements tools/list discovery; tools/call
+// invocation is the next step on the MCP client).
+package tool
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	mcpclient "ragflow/internal/utility"
+
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
+)
+
+// MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
+// eino InvokableTool. The wire format matches what eino's react.Agent
+// expects: a ToolInfo with name/description/params, and an
+// InvokableRun that accepts a JSON arguments string and returns a
+// string result.
+//
+// InvokableRun dispatches through mcpclient.CallTool
+// (streamable-HTTP transport). The MCP server URL + headers
+// are captured on construction so the adapter has everything it
+// needs to call back into the server. Adapters built without
+// a URL (legacy callers) fall back to the "not yet wired"
+// sentinel so existing call sites don't break.
+type MCPToolAdapter struct {
+	mcpTool    mcpclient.Tool
+	serverURL  string
+	headers    map[string]string
+	timeout    time.Duration
+	httpClient *http.Client
+}
+
+// NewMCPToolAdapter constructs a wrapper for a single MCP tool.
+// The returned adapter has no MCP server URL and so cannot be
+// invoked — use NewMCPToolAdapterWithServer for adapters that
+// need to call back into the server.
+func NewMCPToolAdapter(t mcpclient.Tool) *MCPToolAdapter {
+	return &MCPToolAdapter{mcpTool: t}
+}
+
+// NewMCPToolAdapterWithServer constructs a wrapper that knows
+// the MCP server URL + transport headers. InvokableRun uses this
+// to route InvokableRun into mcpclient.CallTool.
+func NewMCPToolAdapterWithServer(t mcpclient.Tool, serverURL string, headers map[string]string, timeout time.Duration) *MCPToolAdapter {
+	return &MCPToolAdapter{
+		mcpTool:   t,
+		serverURL: serverURL,
+		headers:   headers,
+		timeout:   timeout,
+	}
+}
+
+// NewMCPToolAdapterFull is the most-configurable constructor;
+// callers can also pass an *http.Client (e.g. an httptest server's
+// Client, or a custom transport with mTLS) so the underlying
+// CallTool call doesn't have to fall back to a pinned client.
+func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[string]string, timeout time.Duration, client *http.Client) *MCPToolAdapter {
+	return &MCPToolAdapter{
+		mcpTool:    t,
+		serverURL:  serverURL,
+		headers:    headers,
+		timeout:    timeout,
+		httpClient: client,
+	}
+}
+
+// Name returns the underlying MCP tool name.
+func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
+
+// Info returns eino-compatible tool metadata. The MCP client stores the
+// full inputSchema object ({"type":"object","properties":{...},"required":
+// [...]}) on mcpTool.InputSchema, so we pass it through to eino's
+// JSON Schema channel untouched. That keeps the real parameter names under
+// "properties" (never the schema's top-level keys like "type"/"properties"/
+// "required") together with each property's type/description/required flag
+// and any richer keywords (enum, default, items, nested objects, anyOf/oneOf,
+// ...). A tool with no inputSchema takes no parameters: ParamsOneOf is left
+// nil so callers emit an empty object schema instead of an invalid schema.
+func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
+	info := &schema.ToolInfo{
+		Name: m.mcpTool.Name,
+		Desc: m.mcpTool.Description,
+	}
+	if len(m.mcpTool.InputSchema) == 0 {
+		return info, nil
+	}
+	var js jsonschema.Schema
+	raw, err := json.Marshal(m.mcpTool.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	if err := json.Unmarshal(raw, &js); err != nil {
+		return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(&js)
+	return info, nil
+}
+
+// InvokableRun is the eino entry point. When the adapter was
+// built with a server URL, dispatch through mcpclient.CallTool.
+// Legacy adapters (no URL) keep the "not yet wired" sentinel
+// so existing tests that pin the error message don't break.
+func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	if m.serverURL == "" {
+		return "", fmt.Errorf("mcp tool %q: tools/call not yet implemented in mcpclient; arguments were: %s",
+			m.mcpTool.Name, argumentsInJSON)
+	}
+	argsJSON, mErr := marshalArguments(argumentsInJSON)
+	if mErr != nil {
+		return "", mErr
+	}
+	res, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
+		URL:        m.serverURL,
+		ServerType: mcpclient.TransportStreamableHTTP,
+		Headers:    m.headers,
+		ToolName:   m.mcpTool.Name,
+		Arguments:  argsJSON,
+		Timeout:    m.timeout,
+		HTTPClient: m.httpClient,
+	})
+	if err != nil {
+		return "", err
+	}
+	if res == nil {
+		return "", nil
+	}
+	if res.IsError {
+		// Surface the structured tool error under a known prefix
+		// so the ReAct loop can route it as a tool-level error
+		// rather than a transport failure.
+		return "", fmt.Errorf("mcp tool %q returned isError: %s", m.mcpTool.Name, res.Text)
+	}
+	return res.Text, nil
+}
+
+// Close releases resources held by the adapter. In Go's architecture
+// MCP sessions are per-invocation (created and torn down within each
+// InvokableRun call), so there are no persistent connections to drain.
+// The primary resource is the http.Client's idle-connection pool;
+// calling Close explicitly drops those idle connections so they don't
+// accumulate across many adapter instances over long-running processes.
+// Mirrors Python's close_sync() in common/mcp_tool_call_conn.py.
+func (m *MCPToolAdapter) Close() {
+	if m.httpClient != nil {
+		m.httpClient.CloseIdleConnections()
+	}
+}
+
+// BuildMCPToolAdapters wraps a slice of mcpclient.Tool descriptors as
+// eino InvokableTool. Returned slice is suitable for handing to
+// agenttool.NewRetrieverTool / NewMCPToolAdapter paths or directly to
+// the Agent's tool list.
+func BuildMCPToolAdapters(tools []mcpclient.Tool) []tool.InvokableTool {
+	out := make([]tool.InvokableTool, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, NewMCPToolAdapter(t))
+	}
+	return out
+}
+
+// marshalArguments is a helper for the future tools/call
+// implementation. The argumentsInJSON string from eino is
+// round-tripped through json.RawMessage before being passed to the
+// MCP server so the server's expected payload structure is preserved.
+func marshalArguments(argumentsInJSON string) (json.RawMessage, error) {
+	if argumentsInJSON == "" || argumentsInJSON == "{}" {
+		return json.RawMessage("{}"), nil
+	}
+	if !json.Valid([]byte(argumentsInJSON)) {
+		return nil, fmt.Errorf("mcp tool: arguments are not valid JSON: %q", argumentsInJSON)
+	}
+	return json.RawMessage(argumentsInJSON), nil
+}

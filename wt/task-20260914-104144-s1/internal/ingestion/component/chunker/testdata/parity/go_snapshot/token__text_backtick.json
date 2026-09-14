@@ -1,0 +1,17 @@
+{
+  "case_id": "token__text_backtick",
+  "chunks": [
+    {
+      "doc_type_kwd": "text",
+      "text": "first sentence here"
+    },
+    {
+      "doc_type_kwd": "text",
+      "text": "second sentence here"
+    },
+    {
+      "doc_type_kwd": "text",
+      "text": "third sentence here"
+    }
+  ]
+}

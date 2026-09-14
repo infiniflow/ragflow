@@ -1,0 +1,527 @@
+---
+sidebar_position: 0
+slug: /glossary
+sidebar_custom_props: {
+  categoryIcon: LucideCaseUpper
+}
+---
+# Glossary
+
+Definitions of key terms and basic concepts related to RAGFlow.
+
+---
+
+import TOCInline from '@theme/TOCInline';
+
+<TOCInline toc={toc} />
+
+---
+
+### **A**
+
+**Agent**
+
+An Agent is an AI application that combines large language models, knowledge bases, tools, and workflows to perform tasks.
+
+In RAGFlow, users can visually build Agents and combine capabilities such as retrieval, model invocation, conditional logic, loops, variables, code execution, and HTTP requests to implement complex task-processing workflows.
+
+**Agentic Retrieval**
+
+Agentic Retrieval is a retrieval approach designed for complex questions.
+
+Unlike one-time retrieval, it incorporates model reasoning to analyze user queries and, when necessary, perform steps such as question decomposition, retrieval, and evidence checking to obtain more comprehensive context for answer generation.
+
+In Chat, different Thinking levels can be used to control the processing depth of Agentic Retrieval.
+
+**Auto keyword**
+
+Auto keyword uses a model to automatically generate keywords for text chunks during document processing.
+
+The generated keywords can be added as supplementary information to chunks to enrich their content representation and improve subsequent retrieval.
+
+**ASR**
+
+ASR (Automatic Speech Recognition) is a model capability that converts speech into text.
+
+In RAGFlow, ASR can be used to recognize spoken content in audio and convert it into text for subsequent processing.
+
+**Auto question**
+
+Auto question automatically generates relevant questions based on the content of text chunks.
+
+The generated questions help expand the semantic representation of chunks, making it easier for different forms of queries to match relevant knowledge.
+
+### **B**
+
+**Blueprint**
+
+Blueprint is an intermediate artifact used by RAGFlow to plan the content structure of a Wiki during knowledge compilation. Based on the knowledge contained in source documents, it defines the overall Wiki framework, including the topics and pages to be generated and their organizational relationships, providing a structural foundation for subsequent Wiki page generation.
+
+**BM25**
+
+BM25 (Best Matching 25) is a commonly used relevance scoring algorithm in full-text search for measuring keyword matching between a query and text. It calculates relevance scores by considering factors such as term frequency, term rarity, and document length, and uses these scores to rank retrieval results.
+
+In RAGFlow, BM25 is used for relevance scoring in full-text search and can be combined with vector similarity to account for both keyword matching and semantic relevance.
+
+---
+
+### **C**
+
+**Chat**
+
+Chat is a knowledge question-answering application provided by RAGFlow that enables conversations based on one or more knowledge bases and large language models. Chat can combine knowledge retrieval, Agentic Retrieval, and web search to obtain relevant information and generate answers based on the retrieved results.
+
+**Chunk**
+
+A chunk is a basic knowledge unit created after a document is parsed and split. It is also the primary object used by RAGFlow for indexing, retrieval, and citation.
+
+A chunk typically contains the main text along with information such as its source document, location, and metadata.
+
+**Chunk size**
+
+Chunk size controls the approximate length of each chunk during document chunking.
+
+Larger chunks preserve more context but provide coarser retrieval granularity, while smaller chunks provide finer retrieval granularity but may split contextual information across chunks.
+
+**Chunking**
+
+Chunking is the process of dividing parsed document content into chunks.
+
+An appropriate chunking strategy helps preserve document structure and semantic context and directly affects subsequent retrieval and question-answering performance. RAGFlow provides multiple built-in chunking methods and also supports custom document processing workflows through Ingestion Pipeline.
+
+**Citation**
+
+Citations show the knowledge sources on which an answer is based.
+
+When citations are enabled, users can trace generated answers back to the relevant chunks or source documents to verify the supporting information.
+
+**Context**
+
+Context is the information available to a large language model when processing the current request, including user input, conversation history, retrieved knowledge, and system prompts. In RAG, relevant retrieved knowledge is provided to the model as context, enabling it to generate answers based on external knowledge.
+
+**Cross-language search**
+
+Cross-language search allows users to submit a query in one language and retrieve relevant content written in other languages. For example, an English query can be used to retrieve Chinese documents.
+
+This capability reduces retrieval limitations caused by differences between the query language and the language of the knowledge base content.
+
+**Creativity**
+
+Creativity controls the randomness and diversity of model-generated answers. Lower values generally produce more stable and deterministic responses that adhere more closely to existing information, while higher values usually produce more flexible and diverse responses but may increase the likelihood of deviating from the context or generating inaccurate information.
+
+---
+
+### **D**
+
+**Dataset**
+
+A Dataset is the basic unit used in RAGFlow to organize and manage knowledge.
+
+A dataset can contain multiple documents. After documents are parsed, chunked, and indexed, they can be used for retrieval and knowledge applications such as Chat and Search.
+
+**DeepDoc**
+
+DeepDoc is RAGFlow's deep document understanding capability for processing complex documents such as PDFs and scanned files.
+
+It combines capabilities such as OCR, Table Structure Recognition (TSR), and Document Layout Recognition (DLR) to extract text, tables, and layout information from documents, providing structured content for subsequent chunking, indexing, and retrieval.
+
+**Delimiter**
+
+A delimiter specifies the characters used to identify content boundaries during document chunking.
+
+Proper delimiter settings help the system split content according to paragraphs, sentences, or other structural boundaries, reducing inappropriate breaks in semantically related content.
+
+### **E**
+
+**Embedding**
+
+Embedding is the process of converting text or other content into numerical vectors (Vectors), and the term is also commonly used to refer to the resulting vector representations. Semantically similar content generally has similar vector representations. In RAG, embeddings are primarily used for vector search, where relevant content is retrieved by calculating the similarity between query vectors and chunk vectors.
+
+**Embedding model**
+
+An embedding model converts text into vector representations, enabling the system to perform retrieval based on semantic similarity.
+
+Chunks in a knowledge base and user queries can be converted into vectors through an embedding model to support capabilities such as vector search.
+
+**Empty response**
+
+An empty response is predefined content returned when no knowledge satisfying the retrieval conditions is found.
+
+Configuring an empty response can prevent the model from continuing to generate answers unrelated to the knowledge base when valid supporting knowledge is unavailable.
+
+**Entity**
+
+An entity is an independently meaningful object that can be identified and described in text, such as a person, organization, location, product, or event. In a knowledge graph, entities are typically represented as nodes and connected to other entities through relationships to represent and organize knowledge.
+
+**Entity Extraction**
+
+Entity Extraction is the process of identifying and extracting meaningful entities from text, such as people, organizations, locations, products, or events. Extracted entities can be used to build knowledge graphs, establish relationships between entities, and support subsequent knowledge retrieval and analysis.
+
+### **F**
+
+**Full-text search**
+
+Full-text search retrieves relevant content based on lexical matches between query terms and knowledge base content.
+
+Compared with vector search, which primarily focuses on semantic similarity, full-text search is generally better suited for retrieving proper nouns, identifiers, keywords, and other content requiring exact lexical matching.
+
+**Fusion**
+
+Fusion is the process of combining and reranking results from different retrieval methods or queries. In RAG, Fusion is commonly used to integrate results from multiple retrieval methods, such as full-text search and vector search, to obtain more comprehensive and relevant retrieval results.
+
+### **G**
+
+**Graph**
+
+Graph is a knowledge artifact supported by Knowledge Compilation.
+
+It extracts entities and their relationships from existing content and organizes knowledge in a graph structure, helping users understand the connections among different entities, concepts, and information.
+
+**GraphRAG**
+
+GraphRAG (Graph Retrieval-Augmented Generation) is a technique that combines knowledge graphs with Retrieval-Augmented Generation (RAG). It builds a knowledge graph by extracting entities and their relationships from documents and uses the graph structure to assist knowledge retrieval and answer generation.
+
+In RAGFlow, GraphRAG was a knowledge graph-related feature available before v0.27.0. Starting from v0.27.0, the related knowledge organization and generation capabilities have been restructured and are no longer provided as a standalone GraphRAG feature.
+
+### **H**
+
+**Hallucination**
+
+In large language models (LLMs), hallucination refers to generated content that appears plausible but is inaccurate, unsupported by facts, or inconsistent with the provided context. In RAG systems, retrieving relevant knowledge and providing it to the model as context can help reduce hallucinations.
+
+**Hybrid search**
+
+Hybrid search combines vector search and full-text search, taking both semantic similarity and keyword matching into account.
+
+This approach balances semantic understanding with exact lexical matching and can improve retrieval performance across different types of queries.
+
+### **I**
+
+**Index**
+
+An index is a data structure built to improve data retrieval efficiency. In RAGFlow, indexes are used to organize document chunks, vectors, and associated metadata, supporting full-text search, vector search, and hybrid search.
+
+**Ingestion Pipeline**
+
+Ingestion Pipeline defines how documents are processed after they enter a knowledge base.
+
+Users can customize document parsing, content processing, chunking, and other processing steps through a Pipeline to accommodate different data types and business requirements.
+
+### **K**
+
+**Keyword**
+
+A Keyword is a word or phrase used to represent the core content, topic, or important concepts of a piece of text.
+
+In RAGFlow, keywords can be used to enrich the content representation of chunks and assist knowledge retrieval and matching.
+
+**Keyword analysis**
+
+Keyword analysis is the process of analyzing a user query and extracting its key concepts, topics, or important terms.
+
+In RAGFlow, keyword analysis is used to enrich query representation, helping the system identify retrieval intent more accurately and improve the recall of relevant knowledge.
+
+**Knowledge artifact**
+
+A knowledge artifact is a structured representation of knowledge generated from documents or knowledge base content through Knowledge Compilation.
+
+Depending on the Knowledge Compilation template used, different forms of knowledge artifacts can be generated, including Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, and Skills.
+
+These artifacts reorganize existing knowledge into different structures and can be used for knowledge browsing, understanding, and subsequent applications.
+
+**Knowledge Compilation**
+
+Knowledge Compilation further refines, organizes, and structures existing document or knowledge base content.
+
+Knowledge Compilation can be performed on an individual document or an entire knowledge base. By selecting different compilation templates, raw content can be transformed into knowledge artifacts such as Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, or Skills.
+
+**Knowledge Compilation Template**
+
+A Knowledge Compilation Template is a predefined template that determines how knowledge is compiled and how the resulting artifact is structured.
+
+In RAGFlow, different templates can compile source documents or knowledge base content into specific forms of knowledge artifacts, such as Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and Skills, to support different knowledge organization and usage scenarios.
+
+### **L**
+
+**LLM**
+
+LLM (Large Language Model) is a model designed to understand and generate natural language content.
+
+In RAGFlow, LLMs are primarily used for answer generation, content understanding, information extraction, reasoning, and Agent task execution.
+
+### **M**
+
+**Max tokens**
+
+Max tokens limits the maximum number of tokens a model can generate in a single response.
+
+A larger value allows the model to generate longer responses but may also increase model invocation time and token consumption.
+
+**MCP**
+
+MCP (Model Context Protocol) is an open protocol for connecting large language models with external tools, data sources, and services.
+
+In RAGFlow, MCP can be used to integrate external tools and services, enabling Agents to invoke these capabilities for data queries, content processing, and other tasks.
+
+**Metadata**
+
+Metadata is additional information associated with a document or chunk, such as its source, category, tags, or other business attributes.
+
+Metadata can be used to describe and organize knowledge and can also serve as retrieval filtering criteria.
+
+**Metadata filter**
+
+Metadata filtering restricts the retrieval scope based on document or chunk metadata.
+
+For example, retrieval can be limited to content that matches a specified category, source, or other business attribute, making retrieval results more targeted.
+
+**Mind Map**
+
+Mind Map is a knowledge artifact supported by Knowledge Compilation.
+
+It organizes the main topics and subtopics in the content into a hierarchical mind map, helping users quickly understand the knowledge structure and relationships among different topics.
+
+**Model Provider**
+
+A Model Provider is a platform or service provider that provides large language models, embedding models, reranking models, and other AI model services.
+
+In RAGFlow, users can configure different model providers and use their models for tasks such as conversation generation, embedding, reranking, and speech processing.
+
+### **O**
+
+**OCR**
+
+OCR (Optical Character Recognition) is used to recognize text in images, scanned documents, or PDF pages and convert it into machine-processable text. In RAGFlow, OCR can be used during document parsing to extract text that cannot be read directly from images, providing textual content for subsequent chunking, indexing, and retrieval.
+
+**Overlapped percent**
+
+Overlapped percent controls the proportion of duplicated content between adjacent chunks.
+
+An appropriate amount of overlap can reduce context loss caused by chunk boundaries and better preserve information spanning multiple chunks. However, an excessively high overlap percentage can also increase duplicated content.
+
+### **P**
+
+**PageIndex**
+
+PageIndex is a knowledge artifact supported by Knowledge Compilation.
+
+It generates a hierarchical index based on document content and structure, helping the system and users quickly locate content related to specific topics. It is particularly suitable for long documents with clear chapters and hierarchical structures.
+
+**Parser**
+
+A parser is a component used to read and process document content and convert it into data that can be processed by the system.
+
+In a RAG system, parsers extract text, tables, images, and other content from files in formats such as PDF, Word, and Excel, providing the foundation for subsequent chunking, indexing, and retrieval.
+
+**Prompt**
+
+A prompt is an instruction or context provided to a large language model to guide it in understanding a task and generating the desired output.
+
+In a RAG system, a prompt can include task instructions, role definitions, retrieved knowledge context, and output requirements to control the content and format of model responses.
+
+### **Q**
+
+**Query**
+
+A query is a retrieval request submitted by a user to express the information they want to find or the question they want answered.
+
+In a RAG system, queries are used to retrieve relevant content from knowledge bases or other data sources and provide context for subsequent answer generation.
+
+**Query Expansion**
+
+Query Expansion is the process of generating one or more expanded queries by adding terms, expressions, or semantic information related to the original query.
+
+In a RAG system, query expansion enriches the semantic representation of a query, helping the retrieval system recall more relevant content and improve retrieval performance.
+
+**Question**
+
+A question is an information request submitted by a user with the expectation of receiving an answer.
+
+In a RAG system, a question typically serves as input to the retrieval and generation process. The system retrieves relevant knowledge based on the question and generates an answer using the retrieved results.
+
+### **R**
+
+**RAG**
+
+RAG (Retrieval-Augmented Generation) is an approach that combines information retrieval with large language model generation.
+
+The system first retrieves content relevant to a question from a knowledge base or other data sources and then provides the retrieved results to a large language model as context for answer generation, improving consistency with existing knowledge and answer traceability.
+
+**Recall**
+
+Recall refers to the process of retrieving relevant content from a knowledge base based on a user query. In RAGFlow, recall is typically performed through vector search, full-text search, or hybrid search. The recalled content can then be reranked or provided to the model as context for answer generation.
+
+**Reranker**
+
+A reranker further evaluates the relevance of candidate results obtained from initial retrieval and rearranges their order.
+
+Reranking allows content that is more relevant to the user's question to be prioritized in subsequent processing.
+
+**Retrieval**
+
+Retrieval is the process of finding relevant content in a knowledge base based on a user query.
+
+RAGFlow supports vector search, full-text search, and hybrid search, and can further optimize retrieval results using mechanisms such as reranking and metadata filtering.
+
+**Retrieval enhancement**
+
+Retrieval enhancement refers to a set of capabilities that further process queries, the retrieval process, or retrieval results beyond basic retrieval.
+
+Depending on the configuration, the system can perform keyword analysis, semantic expansion, question splitting and merging, and evidence checking to improve retrieval performance for complex questions.
+
+**Retrieval test**
+
+Retrieval test is used to evaluate the retrieval performance of a knowledge base.
+
+Users can enter test queries and inspect the recalled chunks and related information to evaluate and adjust retrieval methods, similarity thresholds, reranking, and other configurations.
+
+**RRF**
+
+RRF (Reciprocal Rank Fusion) is a ranking algorithm used to fuse results from multiple retrieval methods.
+
+It calculates a fusion score based on the ranking position of a document in different retrieval result lists and reranks the results without requiring the original scores from different retrieval methods to use the same scale. It is commonly used to combine results from vector search, full-text search, and other retrieval methods to improve overall relevance.
+
+**RAPTOR**
+
+RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval) is a retrieval method that constructs a hierarchical semantic structure through recursive clustering and summarization.
+
+Before RAGFlow v0.27.0, RAPTOR could be used to cluster and summarize document chunks, forming a hierarchical index ranging from lower-level original chunks to higher-level summaries to support retrieval at different levels of granularity. Starting from RAGFlow v0.27.0, RAPTOR has been replaced by Knowledge Compilation-related capabilities.
+
+**Recommended chunk size**
+
+Recommended chunk size refers to the recommended number of tokens contained in a single chunk during document parsing and chunking.
+
+This parameter controls the target size of generated chunks. Smaller chunks generally contain more localized information, while larger chunks preserve more context. The actual generated chunk size is also affected by factors such as document structure, delimiters, and parsing strategies, so it may not exactly match the configured value.
+
+### **S**
+
+**Search**
+
+Search is one of the knowledge applications provided by RAGFlow. It searches knowledge base content and returns relevant results.
+
+Unlike Chat, which generates answers in a conversational format, Search focuses more on knowledge retrieval and the presentation of search results.
+
+**Semantic Search**
+
+Semantic Search retrieves relevant information based on semantic similarity between a query and content rather than relying solely on exact keyword matching.
+
+In RAGFlow, Semantic Search uses an Embedding model to convert queries and document chunks into vectors and retrieves relevant chunks based on vector similarity. It can be used independently or combined with full-text search for hybrid search.
+
+**Similarity threshold**
+
+Similarity threshold defines the minimum relevance requirement that retrieval results must meet.
+
+Candidate chunks with relevance scores below this threshold are filtered out. Increasing the threshold generally reduces low-relevance results, but setting it too high may also prevent useful content from being recalled.
+
+**Skills**
+
+Skills are a knowledge organization mechanism that precompiles knowledge from a knowledge base into a navigable hierarchical directory.
+
+They organize knowledge into a hierarchical structure based on thematic and semantic relationships, with directory summaries describing the knowledge contained at each level and its child branches. During retrieval, an Agent reads these summaries based on the user query, selects relevant branches, and progressively navigates down the hierarchy to locate and retrieve the relevant source documents or evidence.
+
+Unlike traditional retrieval methods that recall Top-K text chunks based on similarity scores, Skills transform retrieval into a process of navigation and localization over a hierarchical knowledge structure. This enables the Agent to actively explore the knowledge base and progressively narrow the retrieval scope.
+
+
+**System prompt**
+
+A system prompt defines the model's role, behavior, and answer requirements in Chat.
+
+Users can use the system prompt to specify response style, task rules, how knowledge should be used, and other instructions that the model should follow.
+
+### **T**
+
+**Tag**
+
+A tag is an attribute used to label and categorize documents or content and can describe their category, topic, or other characteristics.
+
+In RAGFlow, tags can be used to classify and manage documents in a knowledge base and can also serve as retrieval criteria to help the system filter and locate relevant content.
+
+**Temperature**
+
+Temperature is a parameter that controls randomness in model generation.
+
+Lower values generally make outputs more stable and deterministic, while higher values increase diversity and randomness. The exact effect depends on the model being used.
+
+**Thinking level**
+
+Thinking level controls the depth of retrieval and reasoning used by Chat when processing a question.
+
+RAGFlow provides different Thinking levels. Higher levels can perform deeper question analysis and retrieval processing and are suitable for complex questions that require multi-step analysis or more comprehensive supporting evidence, but they generally require more processing time and model invocations.
+
+**Timeline**
+
+Timeline is a knowledge artifact supported by Knowledge Compilation.
+
+It identifies times, events, and related information in the content and organizes knowledge chronologically, making it suitable for understanding how events develop and their temporal relationships.
+
+**Token**
+
+A Token is a basic text unit processed by a large language model. It can be a character, a word, part of a word, punctuation, or another textual unit.
+
+In RAGFlow, token counts can be used to measure the length of document chunks, queries, prompts, and model context, and they affect document chunking, context organization, and the length of model inputs and outputs.
+
+**Top N**
+
+Top N controls the number of candidate chunks retained during retrieval.
+
+A larger Top N provides more candidate knowledge but may introduce less relevant content, while a smaller Top N keeps results more focused but may omit some useful information.
+
+**Top P**
+
+Top P is a parameter that controls the sampling range during model generation.
+
+The model samples from candidate tokens whose cumulative probability falls within the specified range. Lower values generally make generation more focused, while higher values allow more candidate content to participate in generation. The exact behavior depends on the model being used.
+
+**Tree**
+
+Tree is a knowledge artifact supported by Knowledge Compilation.
+
+It organizes content into a tree structure based on topics and their hierarchical relationships, helping users understand the hierarchy of knowledge from an overall view down to specific details.
+
+**TTS**
+
+TTS (Text-to-Speech) is a model capability that converts text into speech.
+
+In RAGFlow, TTS can be used to convert text answers generated by a model into speech output.
+
+### **V**
+
+**Vector**
+
+A vector is a data representation consisting of a set of numerical values. In RAG, text and other content are represented as vectors after being processed by an Embedding model, and semantically similar content generally has similar vector representations. Vector search finds semantically relevant content by calculating the similarity between query vectors and chunk vectors.
+
+**Vector search**
+
+Vector search retrieves relevant content by comparing the similarity between query vectors and vectors representing knowledge base content.
+
+Unlike full-text search, which relies on lexical matching, vector search primarily focuses on semantic similarity between texts, allowing it to retrieve content with different wording but similar meanings.
+
+**Vector similarity weight**
+
+Vector similarity weight controls the influence of vector similarity on the final relevance score in hybrid search.
+
+Increasing this weight makes retrieval focus more on semantic similarity, while decreasing it relatively increases the influence of keyword matching on the final result.
+
+**Vision**
+
+Vision refers to models designed to understand and process visual content such as images.
+
+In RAGFlow, Vision models can be used to analyze visual information such as images and charts and combine it with textual content for multimodal understanding.
+
+**VLM**
+
+VLM (Vision-Language Model) is a multimodal model capable of understanding both visual information and natural language. In RAGFlow, VLMs can be used to parse and understand images, charts, and other visual content in documents and combine them with textual information for content extraction and understanding.
+
+### **W**
+
+**Wiki**
+
+Wiki is a knowledge artifact supported by Knowledge Compilation.
+
+It reorganizes source content into Wiki content with topics and hierarchical structures, transforming scattered information into a knowledge system that is easier to read, browse, and understand.
+
+**Workflow**
+
+A workflow is an execution process consisting of multiple interconnected steps that complete a specific task according to predefined logic.
+
+In RAGFlow, workflows use a visual canvas to connect different components and orchestrate operations such as retrieval, model invocation, conditional logic, variable processing, and tool invocation to build and execute complex AI application workflows.
