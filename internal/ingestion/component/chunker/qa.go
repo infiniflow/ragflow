@@ -119,7 +119,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
-		qaPairs = extractQAJSON(upstream.JSONResult)
+		qaPairs = extractQAJSON(upstream.JSONResult, isCSV(upstream.Name))
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
@@ -530,7 +530,7 @@ func detectDelimiter(lines []string) string {
 // JSON / structured QA extraction
 // ---------------------------------------------------------------------------
 
-func extractQAJSON(items []schema.ChunkDoc) []qaPair {
+func extractQAJSON(items []schema.ChunkDoc, strictPairs bool) []qaPair {
 	var pairs []qaPair
 	for _, item := range items {
 		txt, _ := itemText(item)
@@ -538,12 +538,12 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 			continue
 		}
 		// XLSX (#18800) emits OutputFormat json with HTML tables in item
-		// text and doc_type_kwd=table. Route those through extractQATable
-		// so spreadsheet QA keeps working; plain text items stay on the
-		// delimiter path used by pdf/docx.
+		// text and doc_type_kwd=table. CSV joined them in #19467. Route
+		// those through extractQATable so spreadsheet QA keeps working;
+		// plain text items stay on the delimiter path used by pdf/docx.
 		var tmp []qaPair
 		if itemDocType(item) == "table" {
-			tmp = extractQATable(txt, false)
+			tmp = extractQATable(txt, strictPairs)
 		} else {
 			tmp = extractQAText(txt)
 		}
