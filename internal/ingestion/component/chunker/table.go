@@ -113,10 +113,24 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 // tableItems returns the per-row records, preferring JSONResult and
 // falling back to Chunks. Each record becomes exactly one chunk.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
-	if len(items) > 0 {
-		return items
+	source := items
+	if len(source) == 0 {
+		source = chunks
 	}
-	return chunks
+	if len(source) == 0 {
+		return nil
+	}
+	filtered := make([]schema.ChunkDoc, 0, len(source))
+	for _, item := range source {
+		// Spreadsheet parsers expose the header as schema metadata. It is
+		// already represented in each table_row and must not become a data
+		// chunk of its own.
+		if item.CKType == "table_header" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }
 
 func init() {

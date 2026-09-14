@@ -238,6 +238,59 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	}
 }
 
+func TestMergeMarkdownUnitsStartsNewChunkForIncomingHeading(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "Background details", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "## Architecture", DocType: "text", CKType: "heading", TKNums: intPtr(1)},
+		{Text: "The architecture is split into parser and chunker.", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+	}
+
+	got := mergeMarkdownUnits(units, 3, 0, "\n")
+	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{
+		"Background details",
+		"## Architecture\nThe architecture is split into parser and chunker.",
+	}) {
+		t.Fatalf("markdown chunks = %q, want body and heading/body chunks", texts)
+	}
+	if got[1].CKType != "text" {
+		t.Fatalf("heading/body chunk CKType = %q, want text after heading absorption", got[1].CKType)
+	}
+}
+
+func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) {
+	previousPage := 4
+	units := []schema.ChunkDoc{
+		{Text: "first", DocType: "text", CKType: "text", TKNums: intPtr(2), Image: "previous-image", ImgID: "previous-image-id", PageNumber: &previousPage, Extra: map[string]json.RawMessage{"source": json.RawMessage(`"previous"`)}},
+		{Text: "second", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+		{Text: "third", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+	}
+
+	got := mergeGeneralUnits(units, 4, 50, "\n")
+	if len(got) != 2 {
+		t.Fatalf("chunks = %#v, want two chunks", got)
+	}
+	current := got[1]
+	if current.Image != "" || current.ImgID != "" {
+		t.Fatalf("overlap chunk copied previous media: image=%q img_id=%q", current.Image, current.ImgID)
+	}
+	if current.PageNumber != nil {
+		t.Fatalf("overlap chunk copied previous page number: %v", current.PageNumber)
+	}
+	if _, ok := current.Extra["source"]; ok {
+		t.Fatalf("overlap chunk copied previous extra metadata: %#v", current.Extra)
+	}
+}
+
+func TestTakeGeneralContextSentencePreservesBoundarySelection(t *testing.T) {
+	text := "one!two!three!"
+	if got, want := takeGeneralContextSentence(text, tokenizeStr("two!three!"), true), "two!three!"; got != want {
+		t.Fatalf("suffix context = %q, want %q", got, want)
+	}
+	if got, want := takeGeneralContextSentence(text, tokenizeStr("one!two!"), false), "one!two!"; got != want {
+		t.Fatalf("prefix context = %q, want %q", got, want)
+	}
+}
+
 func TestMergeGeneralUnitsKeepsMediaAtomicAndBreaksTextRun(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "before", DocType: "text", CKType: "text", TKNums: intPtr(1)},

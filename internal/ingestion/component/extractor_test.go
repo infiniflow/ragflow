@@ -167,6 +167,43 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	}
 }
 
+func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "context summary"})
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"image": "image-only"},
+			{"image": "context-image", "context_above": "The table shows", "context_below": "annual revenue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
+	}
+	if _, exists := chunks[0]["summary"]; exists {
+		t.Errorf("image-only chunk received a summary: %#v", chunks[0]["summary"])
+	}
+	if chunks[1]["summary"] != "context summary" {
+		t.Errorf("context-bearing media summary = %#v, want context summary", chunks[1]["summary"])
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	request := stub.lastRequest()
+	if got := request.Messages[len(request.Messages)-1].Content; got != "The table shows annual revenue." {
+		t.Errorf("media extraction prompt = %q, want joined context", got)
+	}
+}
+
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM
 // error is surfaced through Invoke with the component-name prefix.
 func TestExtractorComponent_Invoke_LLMError(t *testing.T) {

@@ -79,3 +79,20 @@ func TestTableChunker_EmptyRows(t *testing.T) {
 		t.Errorf("got %d chunks, want 0", len(chunks))
 	}
 }
+
+func TestTableChunkerSkipsSpreadsheetHeaderRecord(t *testing.T) {
+	chunks := tableChunksOf(t, map[string]any{
+		"name":          "orders.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
+			{"text": "A-100; paid", "doc_type_kwd": "table", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want only the data row", len(chunks))
+	}
+	if chunks[0]["ck_type"] != "table_row" || chunks[0]["text"] != "A-100; paid" {
+		t.Fatalf("chunks = %#v, want the table row only", chunks)
+	}
+}

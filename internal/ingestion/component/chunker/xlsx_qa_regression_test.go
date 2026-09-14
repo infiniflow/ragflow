@@ -65,8 +65,8 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	return chunks
 }
 
-// TestXLSXQARegression is the end-to-end smoke test: the typed header and each
-// data row become one QA chunk, matching the previous table-row behavior.
+// TestXLSXQARegression is the end-to-end smoke test: the typed header is
+// parser metadata and only data rows become QA chunks.
 func TestXLSXQARegression(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
 		{"question", "answer"},
@@ -74,8 +74,8 @@ func TestXLSXQARegression(t *testing.T) {
 		{"Where are the docs?", "On the website."},
 	}))
 	t.Logf("QA chunks=%d", len(chunks))
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 data-row chunks, got %d", len(chunks))
 	}
 }
 
@@ -94,8 +94,8 @@ func TestXLSXQAMultilineCells(t *testing.T) {
 		{"跨行的问句\n第二行", multilineAnswer},
 	}))
 	t.Logf("QA chunks=%d", len(chunks))
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 data-row chunks, got %d", len(chunks))
 	}
 	texts := strings.Join(chunkTexts(chunks), "\n")
 	for _, want := range []string{multilineQ, multilineA, multilineAnswer} {

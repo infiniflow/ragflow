@@ -534,8 +534,13 @@ func detectDelimiter(lines []string) string {
 func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
 	for _, item := range items {
+		// The typed spreadsheet header describes columns; it is not a QA
+		// record. Data rows carry the header labels when needed for context.
+		if item.CKType == "table_header" {
+			continue
+		}
 		var tmp []qaPair
-		if item.CKType == "table_header" || item.CKType == "table_row" {
+		if item.CKType == "table_row" {
 			tmp = extractQARowCells(item.Cells, strings.EqualFold(fileType, "csv"), item.RowStart)
 		} else {
 			txt, _ := itemText(item)

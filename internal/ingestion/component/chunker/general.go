@@ -451,23 +451,29 @@ func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
 	if len(sentences) == 0 {
 		return text
 	}
-	var selected []string
+	// The sentence pieces are contiguous slices of text. Track byte offsets
+	// instead of repeatedly prepending slices and joining the selected text;
+	// each candidate is still tokenized independently because BPE token counts
+	// are not additive across sentence boundaries.
 	if fromEnd {
+		start := len(text)
 		for i := len(sentences) - 1; i >= 0; i-- {
-			selected = append([]string{sentences[i]}, selected...)
-			if tokenizeStr(strings.Join(selected, "")) >= budget {
+			start -= len(sentences[i])
+			if tokenizeStr(text[start:]) >= budget {
 				break
 			}
 		}
-	} else {
-		for _, sentence := range sentences {
-			selected = append(selected, sentence)
-			if tokenizeStr(strings.Join(selected, "")) >= budget {
-				break
-			}
+		return text[start:]
+	}
+
+	end := 0
+	for _, sentence := range sentences {
+		end += len(sentence)
+		if tokenizeStr(text[:end]) >= budget {
+			break
 		}
 	}
-	return strings.Join(selected, "")
+	return text[:end]
 }
 
 func splitGeneralContextSentences(text string) []string {
@@ -598,8 +604,14 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 		}
 
 		previous := &merged[current]
-		forceMerge := isShortMarkdownHeading(*previous)
 		unitTokens := generalUnitTokens(unit)
+		if unit.CKType == "heading" && previous.CKType != "heading" {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			currentTokens = unitTokens
+			continue
+		}
+		forceMerge := isShortMarkdownHeading(*previous)
 		if !markdownImagesMergeable(previous.Image, unit.Image) {
 			merged = append(merged, unit)
 			current = len(merged) - 1
@@ -968,7 +980,6 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep s
 				current.TKNums = intPtr(tokenizeStr(current.Text))
 				current.PDFPositions = mergeGeneralPositions(chunks[previousText].PDFPositions, current.PDFPositions)
 				current.Positions = mergeGeneralPositions(chunks[previousText].Positions, current.Positions)
-				mergeGeneralMetadata(&current, chunks[previousText])
 				chunks[i] = current
 			}
 		}

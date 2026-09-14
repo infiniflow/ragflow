@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	textparser "ragflow/internal/parser/parser"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -225,6 +226,33 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
+	}
+}
+
+func TestTokenChunkerTextParserJSONKeepsSentenceBoundaries(t *testing.T) {
+	parsed := textparser.NewTextParser().ParseWithResult(t.Context(), "doc.txt", []byte("first!second!"))
+	if parsed.Err != nil {
+		t.Fatalf("TextParser.ParseWithResult: %v", parsed.Err)
+	}
+
+	c, err := NewTokenChunker(map[string]any{
+		"chunk_token_size": 128,
+		"delimiters":       []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("TokenChunker.Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!\nsecond!"}) {
+		t.Fatalf("text parser JSON chunks = %q, want sentence boundary between parser units", texts)
 	}
 }
 
