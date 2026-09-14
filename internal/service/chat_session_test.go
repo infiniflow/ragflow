@@ -910,7 +910,7 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 	result, err := svc.ChatCompletions(ctx, "user-1", "dialog-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "ignored client history"},
 		{"id": "msg-1", "role": "user", "content": "hi"},
-	}, "", nil, "", nil, nil, true, false, false, nil)
+	}, "", nil, "", nil, nil, false, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -990,7 +990,6 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 		"",
 		nil,
 		nil,
-		true,
 		false,
 		false,
 		nil,
@@ -1071,7 +1070,6 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 		"",
 		nil,
 		nil,
-		true,
 		false,
 		true,
 		streamChan,
@@ -1168,7 +1166,6 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 		modelID,
 		nil,
 		nil,
-		true,
 		false,
 		false,
 		nil,
@@ -1181,68 +1178,6 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	}
 	if store.dialogs["dialog-1"].LLMID != modelID {
 		t.Fatalf("dialog LLMID=%q, want model id %q", store.dialogs["dialog-1"].LLMID, modelID)
-	}
-}
-
-// Multi-model comparison sends store_history_messages=false; the ephemeral
-// session must never be persisted, otherwise every model card adds a
-// "New session" row to the session list.
-func TestChatCompletionsStoreHistoryFalseDoesNotPersistSession(t *testing.T) {
-	store := newFakeSessionStore()
-	store.dialogs["dialog-1"] = &entity.Chat{
-		ID:         "dialog-1",
-		TenantID:   "tenant-owner",
-		LLMID:      "chat@factory",
-		LLMSetting: entity.JSONMap{},
-		PromptConfig: entity.JSONMap{
-			"parameters": []interface{}{},
-			"prologue":   "Welcome!",
-		},
-	}
-	store.dialogExists["tenant-owner|dialog-1"] = true
-
-	pipeline := &fakePipeline{
-		resultChan: makeResultChan(
-			AsyncChatResult{Answer: "ok", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
-		),
-	}
-
-	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
-		pipeline:       pipeline,
-	}
-
-	result, err := svc.ChatCompletions(
-		t.Context(),
-		"user-1",
-		"dialog-1",
-		"",
-		[]map[string]interface{}{{"role": "user", "content": "hi"}},
-		"",
-		nil,
-		"",
-		nil,
-		nil,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("ChatCompletions failed: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected a non-nil answer")
-	}
-	if len(store.createCalled) != 0 {
-		t.Fatalf("session must not be created when store_history_messages=false, got %d creates", len(store.createCalled))
-	}
-	if len(store.updateCalled) != 0 {
-		t.Fatalf("session must not be updated when store_history_messages=false, got %d updates", len(store.updateCalled))
-	}
-	if len(store.sessions) != 0 {
-		t.Fatalf("no session should be stored, got %d", len(store.sessions))
 	}
 }
 
@@ -1728,7 +1663,7 @@ func TestChatCompletions_SharedSessionReadonlyForTeammate(t *testing.T) {
 		"session-1",
 		[]map[string]interface{}{{"role": "user", "content": "hi"}},
 		"", nil, "", nil, nil,
-		true, false, false, nil,
+		false, false, nil,
 	)
 	if err == nil {
 		t.Fatalf("expected readonly rejection")

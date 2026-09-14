@@ -141,9 +141,11 @@ func (s *BotService) AgentbotInputs(ctx context.Context, tenantID, agentID strin
 func (s *BotService) AgentbotCompletion(
 	ctx context.Context, tenantID, agentID string, req AgentbotCompletionRequest,
 ) (<-chan canvas.RunEvent, common.ErrorCode, error) {
-	if err := req.ValidateHistory(); err != nil {
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
 		return nil, common.CodeArgumentError, err
 	}
+	req.Question = question
 	if s.agentService == nil {
 		return nil, common.CodeServerError, fmt.Errorf("bot: agent service not wired")
 	}
@@ -195,10 +197,10 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 // accepts; the URL-bound agent_id is the authoritative canvas id
 // (matches python bot_api.py:159).
 type AgentbotCompletionRequest struct {
-	CompletionHistoryRequest
-	SessionID string `json:"session_id"`
-	UserID    string `json:"user_id"`
-	Stream    bool   `json:"stream"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	UserID    string                   `json:"user_id"`
+	Stream    bool                     `json:"stream"`
 	// Query is the free-text chat question. The shared/embedded chat
 	// page sends `query` (the Python completion reads it before
 	// `question`).
@@ -210,19 +212,12 @@ type AgentbotCompletionRequest struct {
 	Files     []map[string]interface{} `json:"files"`
 }
 
-// agentbotUserInput derives the single user-input value RunAgent
-// expects from an AgentbotCompletionRequest. Mirrors the Python
-// `query = kwargs.get("query", "") or kwargs.get("question", "")`
-// precedence in canvas_service.completion, and the in-app chat
-// handler's form-input fallback (handler/agent.go
-// extractUserInputFromFormInputs): when neither query field is set,
-// the begin-form `inputs` map supplies the value — a single field
-// lifts its `value` entry, multiple fields collapse to a
-// name→value map.
+// agentbotUserInput uses the resolved question, falling back to Begin form inputs.
+// A single form field lifts its value; multiple fields collapse to a name/value map.
 func agentbotUserInput(req AgentbotCompletionRequest) any {
-	query := req.Query
+	query := req.Question
 	if query == "" {
-		query = req.Question
+		query = req.Query
 	}
 	if query != "" {
 		return query
@@ -259,11 +254,12 @@ func agentbotUserInput(req AgentbotCompletionRequest) any {
 // `async_iframe_completion` body shape (session_id, question,
 // tts (unused) and a freeform dict).
 type ChatbotCompletionRequest struct {
-	CompletionHistoryRequest
-	SessionID string         `json:"session_id"`
-	Question  string         `json:"question"`
-	Stream    bool           `json:"stream"`
-	Inputs    map[string]any `json:"inputs"`
+	Query     string                   `json:"query,omitempty"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	Question  string                   `json:"question"`
+	Stream    bool                     `json:"stream"`
+	Inputs    map[string]any           `json:"inputs"`
 	// Quote controls citation generation. Nil means "absent" —
 	// python bot_api.py defaults it to False for chatbot
 	// completions, so the service layer mirrors that.

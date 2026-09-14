@@ -1351,7 +1351,7 @@ func (s *ChatSessionService) ChatCompletions(
 	chatID string, sessionID string,
 	messages []map[string]interface{}, question string, files []interface{},
 	llmID string, genConfig map[string]interface{}, kwargs map[string]interface{},
-	storeHistory bool, legacy bool,
+	legacy bool,
 	stream bool, streamChan chan<- string,
 ) (map[string]interface{}, error) {
 
@@ -1411,7 +1411,7 @@ func (s *ChatSessionService) ChatCompletions(
 				return fail(common.NewCodedError(common.CodeAuthenticationError, errSharedSessionReadonly.Error()))
 			}
 		} else {
-			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID, storeHistory)
+			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
 			if err != nil {
 				return fail(err)
 			}
@@ -1466,7 +1466,7 @@ func (s *ChatSessionService) ChatCompletions(
 	}
 
 	// --- 6. Run pipeline ---
-	if session != nil && storeHistory {
+	if session != nil {
 		updates := map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{Message: requestMsg[len(requestMsg)-1]}}
 		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, updates); err != nil {
 			return fail(err)
@@ -1493,7 +1493,7 @@ func (s *ChatSessionService) ChatCompletions(
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
-					if storeHistory && ctx.Err() == nil {
+					if ctx.Err() == nil {
 						s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 					}
 				}
@@ -1607,7 +1607,7 @@ func (s *ChatSessionService) ChatCompletions(
 			if chatID != "" {
 				result["chat_id"] = chatID
 			}
-			if storeHistory && ctx.Err() == nil && !strings.Contains(stringValue(ans["answer"]), "**ERROR**") {
+			if ctx.Err() == nil && !strings.Contains(stringValue(ans["answer"]), "**ERROR**") {
 				s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 			}
 			return sanitizeJSONFloats(result).(map[string]interface{}), nil
@@ -1672,11 +1672,11 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	return ans
 }
 
-// normalizeCompletionMessages uses only the latest client message.
+// normalizeCompletionMessages picks explicit question text or the latest client user message.
 func (s *ChatSessionService) normalizeCompletionMessages(
 	messages []map[string]interface{}, question string, files []interface{},
 ) (requestMsg []map[string]interface{}, messageID string, err error) {
-	if len(messages) == 0 {
+	if question != "" || len(messages) == 0 {
 		if question == "" {
 			return nil, "", errors.New("required argument are missing: messages")
 		}
@@ -1730,7 +1730,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 	}
 }
 
-func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string, saveSession bool) (*entity.ChatSession, error) {
+func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
 	name := "New session"
 
 	prologue := "Hi! I'm your assistant. What can I do for you?"
@@ -1752,11 +1752,6 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 		Message:   msgJSON,
 		UserID:    &userID,
 		Reference: refJSON,
-	}
-	if !saveSession {
-		// Multi-model comparison sends store_history_messages=false; the
-		// ephemeral session must not be persisted (mirrors Python).
-		return session, nil
 	}
 	session.ID = utility.GenerateUUID()
 	if err := s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {

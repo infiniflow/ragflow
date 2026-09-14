@@ -154,10 +154,6 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			return
 		}
 	}
-	if err := body.ValidateHistory(); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
-		return
-	}
 	events, ec, err := h.botService.AgentbotCompletion(
 		c.Request.Context(), user.ID, agentID, body)
 	if err != nil {
@@ -208,10 +204,6 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 				"Invalid request: "+err.Error())
 			return
 		}
-	}
-	if err := body.ValidateHistory(); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
-		return
 	}
 	frames, ec, err := h.botService.ChatbotCompletion(
 		c.Request.Context(), user.ID, dialogID, body)

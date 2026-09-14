@@ -69,9 +69,13 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		return
 	}
 
-	if err := req.ValidateHistory(); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
 	}
 
 	// Messages presence

@@ -873,7 +873,8 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
-	service.CompletionHistoryRequest
+	Question     string                   `json:"question,omitempty"`
+	Query        string                   `json:"query,omitempty"`
 	ProviderName *string                  `json:"provider_name"`
 	InstanceName *string                  `json:"instance_name"`
 	ModelName    *string                  `json:"model_name"`
@@ -894,9 +895,13 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
-	if err := req.ValidateHistory(); err != nil {
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
 		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
 	}
 	if len(req.Messages) > 0 {
 		req.Messages = req.Messages[len(req.Messages)-1:]
@@ -1021,7 +1026,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	// Non-stream response
 	var response *models.ChatResponse
 	var errorCode common.ErrorCode
-	var err error
 
 	// Convert []map[string]interface{} to []models.Message
 	messages := make([]models.Message, len(req.Messages))

@@ -78,32 +78,26 @@ func TestChatSessionHandlerUpdateMessageFeedback_RejectsEmptyJSONObject(t *testi
 func TestChatSessionHandlerChatCompletionsRejectsNonPositiveMaxTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	for _, flags := range []string{"", `"pass_all_history_messages":false,`, `"pass_all_history_messages":true,`, `"pass_all_history":true,`, `"pass_all_history":true,"pass_all_history_messages":false,`} {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{`+flags+`
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{
 		"messages":[{"role":"user","content":"hi"}],
 		"max_tokens":0
 	}`))
-		ctx.Request.Header.Set("Content-Type", "application/json")
-		ctx.Set("user", &entity.User{ID: "user-1"})
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("user", &entity.User{ID: "user-1"})
 
-		handler := NewChatSessionHandler(service.NewChatSessionService(), nil)
-		handler.ChatCompletions(ctx)
+	handler := NewChatSessionHandler(service.NewChatSessionService(), nil)
+	handler.ChatCompletions(ctx)
 
-		var body map[string]interface{}
-		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-			t.Fatalf("decode response body: %v", err)
-		}
-		wantCode, wantMessage := common.CodeBadRequest, "`max_tokens` must be greater than 0."
-		if strings.Contains(flags, ":true") {
-			wantCode, wantMessage = common.CodeArgumentError, "does not support"
-		}
-		if got := body["code"]; got != float64(wantCode) {
-			t.Fatalf("code=%v", got)
-		}
-		if got := body["message"]; got != wantMessage {
-			t.Fatalf("message=%v", got)
-		}
+	var body map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if got := body["code"]; got != float64(common.CodeBadRequest) {
+		t.Fatalf("code=%v", got)
+	}
+	if got := body["message"]; got != "`max_tokens` must be greater than 0." {
+		t.Fatalf("message=%v", got)
 	}
 }

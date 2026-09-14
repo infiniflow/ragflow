@@ -277,9 +277,8 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // mapAgentError normalises service-layer errors onto the existing
 // {code, data, message} response envelope used by every other handler.
 //
-// Four classes:
+// Three classes:
 //   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
-//   - service.ErrAgentSessionBusy -> "session already running" (103)
 //   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
 //   - service.ErrAgentStorageError -> "Internal storage error"  (500)
 //
@@ -296,9 +295,6 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
-	}
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return common.CodeOperatingError, "This agent session is already running."
 	}
 	if errors.Is(err, dao.ErrUserCanvasNotFound) ||
 		errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
@@ -551,20 +547,19 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 func readUserInput(c *gin.Context) (string, error) {
 	if c.Request.ContentLength != 0 {
 		var body struct {
-			service.CompletionHistoryRequest
-			UserInput string `json:"user_input"`
-			Query     string `json:"query"`
-			Message   string `json:"message"`
+			UserInput string                   `json:"user_input"`
+			Question  string                   `json:"question"`
+			Messages  []map[string]interface{} `json:"messages"`
+			Query     string                   `json:"query"`
+			Message   string                   `json:"message"`
 		}
 		if err := c.ShouldBindJSON(&body); err == nil {
-			if err := body.ValidateHistory(); err != nil {
-				return "", err
+			question, err := service.ResolveCompletionQuestion(body.Question, body.Query, body.Messages)
+			if err != nil || question != "" {
+				return question, err
 			}
 			if body.UserInput != "" {
 				return body.UserInput, nil
-			}
-			if body.Query != "" {
-				return body.Query, nil
 			}
 			if body.Message != "" {
 				return body.Message, nil
@@ -1071,7 +1066,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     adapter lives in agent_openai.go so the regular Agent event contract
 //     remains unchanged.
 type agentChatCompletionsRequest struct {
-	service.CompletionHistoryRequest
+	Question     string                   `json:"question,omitempty"`
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
 	Inputs       map[string]interface{}   `json:"inputs"`
@@ -1218,9 +1213,14 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	if err := req.ValidateHistory(); err != nil {
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
+	}
+	req.Query = question
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
 	}
 	if len(req.Messages) > 0 {
 		req.Messages = req.Messages[len(req.Messages)-1:]

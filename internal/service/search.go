@@ -365,10 +365,11 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	if req == nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
-	if err := req.ValidateHistory(); err != nil {
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
 		return nil, common.CodeArgumentError, err
 	}
-	question := strings.TrimSpace(req.Question)
+	question = strings.TrimSpace(question)
 	if question == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
@@ -686,7 +687,8 @@ func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[str
 }
 
 type SearchCompletionsRequest struct {
-	CompletionHistoryRequest
-	Question string   `json:"question" binding:"required"`
-	KBIDs    []string `json:"kb_ids,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KBIDs    []string                 `json:"kb_ids,omitempty"`
 }

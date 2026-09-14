@@ -22,6 +22,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
@@ -161,4 +162,78 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	if got, _ := messages[1]["content"].(string); got != "<think>reasoning trace</think>final answer" {
 		t.Fatalf("persisted assistant content = %q, want %q", got, "<think>reasoning trace</think>final answer")
 	}
+	// Both requests must save their questions while the session is busy,
+	// then complete without overwriting either answer or immutable reference.
+	if err := testDB.AutoMigrate(&entity.UserCanvas{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatal(err)
+	}
+	dsl := entity.JSONMap{"components": map[string]any{
+		"begin_0":   map[string]any{"obj": map[string]any{"component_name": "Begin", "params": map[string]any{}}, "downstream": []any{"message_0"}},
+		"message_0": map[string]any{"obj": map[string]any{"component_name": "Message", "params": map[string]any{"text": "answer {{sys.query}}"}}, "upstream": []any{"begin_0"}},
+	}, "path": []any{"begin_0", "message_0"}}
+	if err := testDB.Create(&entity.UserCanvas{ID: "canvas-think", UserID: "user-1", DSL: dsl}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	svc.activeSessions["session-think"] = &activeAgentRun{sessionID: "session-think"}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	results := make(chan error, 2)
+	for _, question := range []string{"concurrent question 1", "concurrent question 2"} {
+		go func(question string) {
+			events, err := svc.RunAgent(ctx, "user-1", "canvas-think", "session-think", "", question, nil)
+			if err == nil {
+				for event := range events {
+					if event.Type == "error" {
+						err = errors.New(event.Data)
+					}
+				}
+			}
+			results <- err
+		}(question)
+	}
+	wait := time.NewTicker(10 * time.Millisecond)
+	defer wait.Stop()
+	for {
+		var questions int64
+		if err := testDB.Model(&entity.API4ConversationMessage{}).Where("conversation_id = ? AND role = ?", "session-think", "user").Count(&questions).Error; err != nil {
+			t.Fatal(err)
+		}
+		if questions == 3 {
+			break
+		}
+		select {
+		case err := <-results:
+			t.Fatalf("queued request finished before the active run was released: %v", err)
+		case <-ctx.Done():
+			t.Fatal("concurrent questions were not saved immediately")
+		case <-wait.C:
+		}
+	}
+	svc.runMu.Lock()
+	delete(svc.activeSessions, "session-think")
+	svc.runMu.Unlock()
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent run: %v", err)
+		}
+	}
+	conv, err = dao.NewAPI4ConversationDAO().GetByID(ctx, testDB, "session-think")
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages = parseMessages(conv.Message)
+	if len(messages) != 6 || len(parseReferenceList(conv.Reference)) != 3 {
+		t.Fatalf("concurrent turns were lost: messages=%s references=%s", conv.Message, conv.Reference)
+	}
+	for _, index := range []int{2, 4} {
+		if messages[index]["role"] != "user" || messages[index+1]["role"] != "assistant" || messages[index]["id"] != messages[index+1]["id"] {
+			t.Fatalf("answer is not associated with its question: %#v", messages[index:index+2])
+		}
+	}
+
 }

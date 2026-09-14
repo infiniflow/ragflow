@@ -296,10 +296,12 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 func (s *BotService) ChatbotCompletion(
 	ctx context.Context, tenantID, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
-	if err := req.ValidateHistory(); err != nil {
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
 		return nil, common.CodeArgumentError, err
 	}
-	receivedAt := float64(time.Now().UnixNano()) / 1e9
+	req.Question = question
 	// 1. Load and authorise the dialog.
 	//
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
@@ -334,8 +336,9 @@ func (s *BotService) ChatbotCompletion(
 	// behaviour and add the comment so a future reader doesn't
 	// "fix" it to a tenant-id lookup and break the symmetry.
 	if req.SessionID == "" {
-		// No session yet: seed one with the prologue and return it
-		// immediately WITHOUT running the pipeline. Mirrors python
+		// Seed a new session. An empty question is the opening handshake;
+		// a supplied question continues through the normal generation path.
+		// Mirrors python
 		// async_iframe_completion (conversation_service.py:324-334):
 		// the share page calls this endpoint once with an empty
 		// question to obtain a session_id, then sends the real
@@ -358,24 +361,27 @@ func (s *BotService) ChatbotCompletion(
 			return nil, common.CodeServerError, err
 		}
 
-		// Mirror python async_iframe_completion
-		// (conversation_service.py:324-334): a request without a
-		// session_id is the share page's opening handshake — the
-		// front-end sends an empty question only to obtain a session.
-		// Persist the prologue-seeded session and stream the prologue
-		// back WITHOUT invoking the pipeline; running the model here
-		// would fabricate a reply to a message the user never sent.
-		out := make(chan ChatbotSSEFrame, 2)
-		go func() {
-			defer close(out)
-			out <- ChatbotSSEFrame{
-				Data:      prologue,
-				Reference: map[string]any{},
-				SessionID: session.ID,
-			}
-			out <- ChatbotSSEFrame{Done: true}
-		}()
-		return out, common.CodeSuccess, nil
+		req.SessionID = session.ID
+		if req.Question == "" {
+			// Mirror python async_iframe_completion
+			// (conversation_service.py:324-334): a request without a
+			// session_id is the share page's opening handshake — the
+			// front-end sends an empty question only to obtain a session.
+			// Persist the prologue-seeded session and stream the prologue
+			// back WITHOUT invoking the pipeline; running the model here
+			// would fabricate a reply to a message the user never sent.
+			out := make(chan ChatbotSSEFrame, 2)
+			go func() {
+				defer close(out)
+				out <- ChatbotSSEFrame{
+					Data:      prologue,
+					Reference: map[string]any{},
+					SessionID: session.ID,
+				}
+				out <- ChatbotSSEFrame{Done: true}
+			}()
+			return out, common.CodeSuccess, nil
+		}
 	}
 
 	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)

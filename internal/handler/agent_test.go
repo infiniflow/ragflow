@@ -1299,13 +1299,6 @@ func TestAgentChatCompletions_OpenAICompat_MapsErrors(t *testing.T) {
 		wantMessage string
 	}{
 		{
-			name:        "session busy",
-			err:         service.ErrAgentSessionBusy,
-			status:      http.StatusConflict,
-			errorType:   "invalid_request_error",
-			wantMessage: "already running",
-		},
-		{
 			name:        "operating error",
 			err:         service.ErrAgentNotOwner,
 			status:      http.StatusForbidden,

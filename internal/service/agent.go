@@ -326,10 +326,6 @@ func splitMessageContent(content string) []string {
 // ErrAgentNotOwner (owner).
 var ErrAgentNotOwner = errors.New("agent not owned by user")
 
-// ErrAgentSessionBusy is returned when a second request attempts to run the
-// same Agent session before the current run reaches a terminal state.
-var ErrAgentSessionBusy = errors.New("agent session is already running")
-
 // ErrAgentStorageError identifies internal Agent service failures such as
 // database connectivity, schema drift, or persistence errors. Synchronous
 // callers map this sentinel to a sanitized 500 response; failures raised after
@@ -1464,6 +1460,31 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
+	messageID := utility.GenerateToken()
+	questionSaved := false
+	persistQuestion := func() error {
+		if questionSaved || s.api4ConversationDAO == nil || dao.DB == nil {
+			return nil
+		}
+		session, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
+		if err != nil {
+			return fmt.Errorf("RunAgent: load session: %w: %w", err, ErrAgentStorageError)
+		}
+		if session == nil {
+			return nil
+		}
+		if session.UserID != userID {
+			return fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		}
+		if err := s.persistAgentRunQuestion(ctx, canvasID, userID, sessionID, messageID, userInput, receivedAt); err != nil {
+			return fmt.Errorf("RunAgent: persist question: %w: %w", err, ErrAgentStorageError)
+		}
+		questionSaved = true
+		return nil
+	}
+	if err := persistQuestion(); err != nil {
+		return nil, err
+	}
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
@@ -1485,45 +1506,60 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 		s.runMu.Unlock()
 	}
-	// Make the distributed lease the first run-lifecycle mutation after canvas
-	// access is authorized. All version, session, and DSL initialization happens
-	// only after other instances can observe and cancel this starting run.
-	if s.runTracker != nil {
-		registered, registerErr := s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
-			SessionID: sessionID,
-			Token:     lockToken,
-			UserID:    userID,
-			CanvasID:  canvasID,
-			RunID:     runID,
-		})
-		if registerErr != nil {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			cleanupCancel()
-			releaseLocal()
+	// Accept concurrent questions, but serialize stateful runs so checkpoints
+	// and persisted DSL cannot be overwritten by another run of this session.
+	wait := time.NewTicker(100 * time.Millisecond)
+	defer wait.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
 			cancelRun()
-			return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
+			return nil, err
 		}
-		if !registered {
-			releaseLocal()
-			cancelRun()
-			return nil, ErrAgentSessionBusy
-		}
-	}
-
-	s.runMu.Lock()
-	if _, exists := s.activeSessions[sessionID]; exists {
-		s.runMu.Unlock()
+		registered := true
 		if s.runTracker != nil {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			cleanupCancel()
+			var registerErr error
+			registered, registerErr = s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
+				SessionID: sessionID,
+				Token:     lockToken,
+				UserID:    userID,
+				CanvasID:  canvasID,
+				RunID:     runID,
+			})
+			if registerErr != nil {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+				_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+				cleanupCancel()
+				cancelRun()
+				return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
+			}
 		}
-		cancelRun()
-		return nil, ErrAgentSessionBusy
+		if registered {
+			s.runMu.Lock()
+			_, busy := s.activeSessions[sessionID]
+			if !busy {
+				s.activeSessions[sessionID] = active
+			}
+			s.runMu.Unlock()
+			if !busy {
+				break
+			}
+			if s.runTracker != nil {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+				_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+				cleanupCancel()
+			}
+		}
+		if err := persistQuestion(); err != nil {
+			cancelRun()
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			cancelRun()
+			return nil, ctx.Err()
+		case <-wait.C:
+		}
 	}
-	s.activeSessions[sessionID] = active
-	s.runMu.Unlock()
 
 	if s.runTracker == nil {
 		// Without the distributed registry, clear a marker left by a prior
@@ -1691,16 +1727,17 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 
-	if err := s.persistAgentRunQuestion(ctx, canvasID, userID, sessionID, utility.GenerateToken(), userInput, receivedAt); err != nil {
-		return nil, fmt.Errorf("RunAgent: persist question: %w: %w", err, ErrAgentStorageError)
+	if err := persistQuestion(); err != nil {
+		return nil, err
 	}
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
 	root := map[string]any{
-		"canvas_id":  canvasID,
-		"version_id": version,
-		"session_id": sessionID,
-		"user_id":    userID,
+		"__message_id__": messageID,
+		"canvas_id":      canvasID,
+		"version_id":     version,
+		"session_id":     sessionID,
+		"user_id":        userID,
 	}
 	// Drop failed first-touch sessions only when there was no user question.
 	if (!sessionFound || newSession) && stringifyAgentUserInput(agentRunQuery(userInput)) == "" {
@@ -2457,6 +2494,9 @@ func (s *AgentService) persistAgentRunSession(
 		return nil
 	}
 	history := dao.ConversationHistoryUpdate{Reference: normalizeAgentReferenceEntry(reference), AppendReference: true}
+	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {
+		history.QuestionID = messageID
+	}
 	if appendAssistantMessage {
 		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now}
 	}
