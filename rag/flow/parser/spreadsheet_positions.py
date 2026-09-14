@@ -17,6 +17,9 @@ import re
 
 # Same @@page\tleft\tright\ttop\tbottom## form the PDF TCADP path parses.
 _TCADP_POSITION_TAG_RE = re.compile(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##")
+_TABLE_ROW_RE = re.compile(r"<tr\b[^>]*>(.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
+_TABLE_CELL_RE = re.compile(r"<t[dh]\b([^>]*)>", flags=re.IGNORECASE)
+_COLSPAN_RE = re.compile(r"""colspan\s*=\s*(?:["']\s*)?(\d+)""", flags=re.IGNORECASE)
 
 
 def spreadsheet_positions_from_tcadp_tag(position_tag):
@@ -37,15 +40,27 @@ def spreadsheet_positions_from_tcadp_tag(position_tag):
     return [[sheet, int(float(left)), int(float(right)), int(float(top)), int(float(bottom))]]
 
 
+def _cell_colspan(attrs):
+    """Visual column span for a cell; absent or invalid colspan counts as 1."""
+    match = _COLSPAN_RE.search(attrs or "")
+    if not match:
+        return 1
+    span = int(match.group(1))
+    return span if span > 0 else 1
+
+
+def _row_visual_width(row_html):
+    return sum(_cell_colspan(attrs) for attrs in _TABLE_CELL_RE.findall(row_html))
+
+
 def html_table_row_col_span(html):
     """Return 1-based row/col counts from a TCADP HTML table, defaulting to 1x1."""
     if not isinstance(html, str) or not html.strip():
         return 1, 1
     n_rows = len(re.findall(r"<tr\b", html, flags=re.IGNORECASE))
     n_cols = 0
-    first_row = re.search(r"<tr\b[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
-    if first_row:
-        n_cols = len(re.findall(r"<t[dh]\b", first_row.group(1), flags=re.IGNORECASE))
+    for row_html in _TABLE_ROW_RE.findall(html):
+        n_cols = max(n_cols, _row_visual_width(row_html))
     return max(n_rows, 1), max(n_cols, 1)
 
 

@@ -63,6 +63,15 @@ def test_spreadsheet_positions_from_tcadp_table_uses_html_span():
 
 
 @pytest.mark.p1
+def test_spreadsheet_positions_from_tcadp_table_uses_max_colspan_width():
+    merged_then_wider = "<table><tr><td colspan='2'>merged header</td></tr><tr><td>a</td><td>b</td><td>c</td></tr></table>"
+    assert spreadsheet_positions_from_tcadp_table(0, merged_then_wider) == [[0, 1, 2, 1, 3]]
+
+    invalid_colspan = "<table><tr><td colspan='x'>a</td><td colspan='0'>b</td></tr></table>"
+    assert spreadsheet_positions_from_tcadp_table(0, invalid_colspan) == [[0, 1, 1, 1, 2]]
+
+
+@pytest.mark.p1
 def test_tcadp_spreadsheet_json_items_include_positions():
     tcadp = Mock()
     tcadp.parse_pdf.return_value = (_MOCK_SECTIONS, _MOCK_TABLES)
