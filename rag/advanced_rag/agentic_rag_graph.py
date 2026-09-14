@@ -861,6 +861,13 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
 
     _CITE_CHUNK_CAP = 6
     cite_chunks = ranked[:_CITE_CHUNK_CAP] or all_chunks
+    # DESIGN ENHANCEMENT (Go parity: RunResponse.SlotCitations): expose the
+    # slot evidence ids and the citation-pool chunk ids so the rag tool's
+    # post-processing can rewrite unresolvable [ID:Slot N] markers into real
+    # chunk citations (see _repair_slot_citation_markers in agentic_rag.py)
+    # and expand range-merged citations (see _expand_range_citation_markers).
+    tools._rag_slot_evidence = state.get("slot_evidence") or {}
+    tools._rag_cite_chunk_ids = [str(c.get("chunk_id") or c.get("id") or "") for c in cite_chunks]
     evidence_kbinfos = dict(kbinfos, chunks=cite_chunks)
     evidence_blocks = kb_prompt(evidence_kbinfos, min(tools.chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS))
     evidence = "\n".join(evidence_blocks) if isinstance(evidence_blocks, list) else str(evidence_blocks)
