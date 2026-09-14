@@ -498,9 +498,16 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 					_ string,
 					_ entity.ModelType,
 					modelRef string,
-				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				) (*ResolvedModel, error) {
 					resolver.call = "resolve:" + modelRef
-					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+					if resolver.err != nil {
+						return nil, resolver.err
+					}
+					return &ResolvedModel{
+						Name:      resolver.modelName,
+						APIConfig: &modelModule.APIConfig{},
+						MaxTokens: 512,
+					}, nil
 				},
 			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
