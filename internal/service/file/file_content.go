@@ -354,6 +354,10 @@ func renderSpreadsheetTable(items []map[string]any) string {
 		if len(header) == 0 {
 			header = spreadsheetStringSlice(items[0]["text"])
 		}
+	} else {
+		// Row IR carries the logical column names separately from its cells.
+		// Use those names as a preview header without consuming the first row.
+		header = spreadsheetStringSlice(items[0]["headers"])
 	}
 
 	sheet, _ := items[0]["sheet"].(string)

@@ -122,8 +122,8 @@ func TestParseResultText_SpreadsheetRowsWithoutHeaderDoNotDuplicateFirstRow(t *t
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
 	}
-	if strings.Contains(result, "<th>") {
-		t.Fatalf("header row was synthesized from data cells: %q", result)
+	if !strings.Contains(result, "<th>name</th>") {
+		t.Fatalf("row headers were not rendered: %q", result)
 	}
 	if got := strings.Count(result, "<td>alpha</td>"); got != 1 {
 		t.Fatalf("first row rendered %d times, want once: %q", got, result)
