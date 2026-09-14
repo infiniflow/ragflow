@@ -17,9 +17,14 @@
 package chunker
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"regexp"
 	"strings"
 
@@ -146,7 +151,169 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 }
 
 func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
-	return c.chunkGeneral(ctx, upstream)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("GeneralChunker: %w", err)
+	}
+	units := upstream.JSONResult
+	if upstream.OutputFormat == schema.PayloadFormatChunks {
+		units = upstream.Chunks
+	}
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+	primaryPattern := compileDelimPattern(c.param.Delimiters)
+	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	units = splitMarkdownUnits(units, primaryPattern)
+	units = mergeMarkdownUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
+	units = finalizeGeneralChunks(units, childrenPattern)
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+	return chunkOutputs(units), nil
+}
+
+// splitMarkdownUnits expands only text units while retaining the semantic
+// parser type on every piece. Markdown heading detection depends on ck_type,
+// so the generic splitter's type normalization cannot be used here.
+func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	result := make([]schema.ChunkDoc, 0, len(units))
+	for _, unit := range units {
+		unit = cloneChunkDoc(unit)
+		unit.Text = strings.TrimSpace(normalizeGeneralNewlines(itemTextOrFallback(unit)))
+		unit.DocType = itemDocType(unit)
+		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
+			unit.TKNums = intPtr(tokenizeStr(unit.Text))
+			result = append(result, unit)
+			continue
+		}
+		for _, part := range splitDroppingDelim(unit.Text, pattern) {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			piece := cloneChunkDoc(unit)
+			piece.Text = part
+			piece.TKNums = intPtr(tokenizeStr(part))
+			result = append(result, piece)
+		}
+	}
+	return result
+}
+
+// mergeMarkdownUnits mirrors the Markdown branch of Python naive.chunk:
+// ordinary units use a projected token cap, while a short heading is always
+// kept with the following unit. Markdown images are block attachments rather
+// than standalone media chunks, so image-bearing units participate in the
+// text merge and retain their image payload.
+func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
+	merged := make([]schema.ChunkDoc, 0, len(units))
+	current := -1
+	for _, unit := range units {
+		if itemDocType(unit) == "table" {
+			if current >= 0 && isShortMarkdownHeading(merged[current]) {
+				table := cloneChunkDoc(unit)
+				heading := merged[current]
+				if heading.Text != "" && table.Text != "" {
+					table.Text = heading.Text + joinSep + table.Text
+				} else {
+					table.Text = heading.Text + table.Text
+				}
+				table.TKNums = intPtr(intValue(heading.TKNums) + generalUnitTokens(unit))
+				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
+				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
+				mergeGeneralMetadata(&table, heading)
+				table.Image = mergeMarkdownImages(heading.Image, table.Image)
+				table.DocType = "table"
+				table.CKType = "table"
+				merged[current] = table
+				current = -1
+				continue
+			}
+			merged = append(merged, cloneChunkDoc(unit))
+			current = -1
+			continue
+		}
+
+		unit = cloneChunkDoc(unit)
+		unit.DocType = "text"
+		if unit.CKType == "" {
+			unit.CKType = "text"
+		}
+		unit.TKNums = intPtr(generalUnitTokens(unit))
+		if current < 0 {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			continue
+		}
+
+		previous := &merged[current]
+		forceMerge := isShortMarkdownHeading(*previous)
+		projected := intValue(previous.TKNums) + generalUnitTokens(unit)
+		if !forceMerge && projected > target {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			continue
+		}
+		mergeMarkdownChunk(previous, unit, joinSep)
+		previous.DocType = "text"
+		previous.CKType = "text"
+	}
+	return applyGeneralOverlap(merged, overlapPct)
+}
+
+func isShortMarkdownHeading(unit schema.ChunkDoc) bool {
+	return unit.CKType == "heading" && tokenizeStr(strings.TrimSpace(unit.Text)) < 50
+}
+
+func mergeMarkdownChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep string) {
+	mergeGeneralChunk(dst, src, joinSep)
+	dst.Image = mergeMarkdownImages(dst.Image, src.Image)
+}
+
+// mergeMarkdownImages preserves the single image field consumed by downstream
+// components while matching Python's vertical image aggregation when both
+// payloads are decodable raster data. Unsupported or malformed payloads keep
+// the first image rather than emitting a corrupt data URI.
+func mergeMarkdownImages(first, second string) string {
+	if first == "" {
+		return second
+	}
+	if second == "" || first == second {
+		return first
+	}
+	firstImage, firstOK := decodeMarkdownImage(first)
+	secondImage, secondOK := decodeMarkdownImage(second)
+	if !firstOK || !secondOK {
+		return first
+	}
+	width := firstImage.Bounds().Dx()
+	if secondImage.Bounds().Dx() > width {
+		width = secondImage.Bounds().Dx()
+	}
+	canvas := image.NewRGBA(image.Rect(0, 0, width, firstImage.Bounds().Dy()+secondImage.Bounds().Dy()))
+	draw.Draw(canvas, image.Rect(0, 0, firstImage.Bounds().Dx(), firstImage.Bounds().Dy()), firstImage, image.Point{}, draw.Src)
+	draw.Draw(canvas, image.Rect(0, firstImage.Bounds().Dy(), secondImage.Bounds().Dx(), canvas.Bounds().Dy()), secondImage, image.Point{}, draw.Src)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, canvas); err != nil {
+		return first
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
+}
+
+func decodeMarkdownImage(value string) (image.Image, bool) {
+	marker := strings.Index(value, "base64,")
+	if marker < 0 {
+		return nil, false
+	}
+	raw, err := base64.StdEncoding.DecodeString(value[marker+len("base64,"):])
+	if err != nil {
+		return nil, false
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, false
+	}
+	return decoded, true
 }
 
 func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {

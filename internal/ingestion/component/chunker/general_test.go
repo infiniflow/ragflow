@@ -172,3 +172,134 @@ func TestGeneralChunkerPreservesSingleParserUnit(t *testing.T) {
 		t.Errorf("single parser unit was not preserved: %#v", chunks[0])
 	}
 }
+
+func TestGeneralChunkerMarkdownShortHeadingForcesNextUnit(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one forced heading/body chunk", chunks)
+	}
+	if text, _ := chunks[0]["text"].(string); text != "Title\nbody" {
+		t.Errorf("text = %q, want %q", text, "Title\nbody")
+	}
+}
+
+func TestGeneralChunkerMarkdownLongHeadingUsesNormalCap(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	longHeading := strings.Repeat("heading ", 60)
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": longHeading, "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want separate long heading and body chunks", chunks)
+	}
+	if text, _ := chunks[0]["text"].(string); text != strings.TrimSpace(longHeading) {
+		t.Errorf("first text = %q, want long heading", text)
+	}
+	if text, _ := chunks[1]["text"].(string); text != "body" {
+		t.Errorf("second text = %q, want body", text)
+	}
+}
+
+func TestGeneralChunkerMarkdownImageMergesWithTextAndPreservesPayload(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "figure caption", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one heading/image chunk", chunks)
+	}
+	if text, _ := chunks[0]["text"].(string); text != "Title\nfigure caption" {
+		t.Errorf("text = %q, want %q", text, "Title\nfigure caption")
+	}
+	if image, _ := chunks[0]["image"].(string); image != "data:image/png;base64,AAAA" {
+		t.Errorf("image = %q, want original image payload", image)
+	}
+}
+
+func TestMergeMarkdownImagesStacksRasterPayloads(t *testing.T) {
+	const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+	const secondPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
+	got := mergeMarkdownImages("data:image/png;base64,"+pixel, "data:image/png;base64,"+secondPixel)
+	decoded, ok := decodeMarkdownImage(got)
+	if !ok {
+		t.Fatalf("merged image is not decodable: %q", got)
+	}
+	if got := decoded.Bounds(); got.Dx() != 1 || got.Dy() != 2 {
+		t.Fatalf("merged image bounds = %v, want 1x2", got)
+	}
+}
+
+func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table", "ck_type": "table"},
+			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want table and body", chunks)
+	}
+	if text, _ := chunks[0]["text"].(string); text != "Title\n<table><tr><td>A</td></tr></table>" {
+		t.Errorf("table text = %q", text)
+	}
+	if got := chunks[0]["doc_type_kwd"]; got != "table" {
+		t.Errorf("table doc_type_kwd = %v, want table", got)
+	}
+	if got := chunks[0]["ck_type"]; got != "table" {
+		t.Errorf("table ck_type = %v, want table", got)
+	}
+}
