@@ -1887,13 +1887,35 @@ func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 	}
 }
 
-func TestDownloadDocument_Success(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
+// downloadHandlerWithAccessDB wires the real dataset permission check against
+// the seeded in-memory DB (ds-1 is owned by tenant-1 / user-1) so the tests
+// exercise the tenant gate on the download route.
+func downloadHandlerWithAccessDB(t *testing.T) *DocumentHandler {
+	t.Helper()
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+	return &DocumentHandler{
 		documentService: &fakeDocumentService{},
+		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/doc-1", "")
-	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "doc-1"}}
+}
+
+func downloadContextAs(userID, datasetID, docID string) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/datasets/"+datasetID+"/documents/"+docID, nil)
+	c.Set("user", &entity.User{ID: userID})
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: docID}}
+	return c, w
+}
+
+func TestDownloadDocument_Success(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
 
 	h.DownloadDocument(c)
 
@@ -1909,12 +1931,8 @@ func TestDownloadDocument_Success(t *testing.T) {
 }
 
 func TestDownloadDocument_NotFound(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
-		documentService: &fakeDocumentService{},
-	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/not-found", "")
-	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "not-found"}}
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-1", "ds-1", "not-found")
 
 	h.DownloadDocument(c)
 
@@ -1925,5 +1943,29 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+// A logged-in user who is not a member of the dataset's tenant must not be
+// able to download its documents, and must not learn whether they exist.
+func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-2", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 envelope, got %d: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "document data") {
+		t.Fatalf("document bytes must not be served to a foreign user")
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	if resp["message"] != "document not found" {
+		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
 	}
 }
