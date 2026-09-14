@@ -192,3 +192,56 @@ def test_greater_than_unaffected_by_prior_dict_entry_coercing_the_query_value():
     filters = [{"key": "score", "op": ">", "value": "5"}]
 
     assert meta_filter(metas, filters) == ["doc2"]
+
+
+class TestApplyMetaDataFilterBaseScope:
+    """apply_meta_data_filter must narrow the caller-scoped base doc ids,
+    never widen them (parity with Go constrainDocIDs)."""
+
+    @staticmethod
+    def _run(filter_def, metas, base):
+        import asyncio
+        import sys
+        import types
+        from unittest.mock import patch
+
+        stub = types.ModuleType("rag.prompts.generator")
+
+        async def gen_meta_filter(*a, **k):  # pragma: no cover - manual mode never calls the LLM
+            raise RuntimeError("unexpected LLM call in manual mode")
+
+        stub.gen_meta_filter = gen_meta_filter
+
+        from common.metadata_utils import apply_meta_data_filter
+
+        with patch.dict(sys.modules, {"rag.prompts.generator": stub}):
+            return asyncio.run(apply_meta_data_filter(filter_def, metas, base_doc_ids=base, kb_ids=None))
+
+    def test_filter_excludes_base_doc_that_does_not_match(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run(flt, metas, ["docA"]) == ["-999"]
+
+    def test_filter_intersects_with_base_scope(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA", "docB"]}}
+        assert self._run(flt, metas, ["docA"]) == ["docA"]
+
+    def test_empty_base_keeps_filter_hits_deduped(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA", "docA", "docB"]}}
+        result = self._run(flt, metas, [])
+        assert set(result) == {"docA", "docB"}
+        assert len(result) == 2
+
+    def test_duplicate_base_doc_ids_are_deduped(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA"]}}
+        assert self._run(flt, metas, ["docA", "docA"]) == ["docA"]
+
+    def test_scope_constraint_logs_counts_and_full_removal(self, caplog):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docB"]}}
+        with caplog.at_level("DEBUG"):
+            assert self._run(flt, metas, ["docA"]) == ["-999"]
+        assert "base_count=1, filter_hit_count=1, constrained_count=0, removed_all_filter_hits=True" in caplog.text
