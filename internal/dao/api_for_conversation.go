@@ -56,30 +56,10 @@ func (dao *API4ConversationDAO) Create(ctx context.Context, db *gorm.DB, conv *e
 		if err := tx.Create(conv).Error; err != nil {
 			return err
 		}
-		if err := syncHistory(ctx, tx, apiConversationMessageTable, "message", "message", conv.ID, conv.Message); err != nil {
+		if err := createHistory(ctx, tx, apiConversationMessageTable, "message", conv.ID, conv.Message); err != nil {
 			return err
 		}
-		return syncHistory(ctx, tx, apiConversationReferenceTable, "reference", "reference", conv.ID, conv.Reference)
-	})
-}
-
-// Update writes back an existing api_4_conversation row and synchronizes
-// its ordered message and reference rows.
-func (dao *API4ConversationDAO) Update(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
-	if conv == nil {
-		return errors.New("api4 conversation: nil row")
-	}
-	if conv.ID == "" {
-		return errors.New("api4 conversation: empty id")
-	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(conv).Error; err != nil {
-			return err
-		}
-		if err := syncHistory(ctx, tx, apiConversationMessageTable, "message", "message", conv.ID, conv.Message); err != nil {
-			return err
-		}
-		return syncHistory(ctx, tx, apiConversationReferenceTable, "reference", "reference", conv.ID, conv.Reference)
+		return createHistory(ctx, tx, apiConversationReferenceTable, "reference", conv.ID, conv.Reference)
 	})
 }
 
@@ -87,6 +67,12 @@ func (dao *API4ConversationDAO) Update(ctx context.Context, db *gorm.DB, conv *e
 func (dao *API4ConversationDAO) UpdateHistory(ctx context.Context, db *gorm.DB, sessionID, agentID, userID string, updates map[string]interface{}, history ConversationHistoryUpdate) error {
 	if updates == nil {
 		updates = make(map[string]interface{})
+	}
+	for key := range updates {
+		switch key {
+		case "message", "Message", "messages", "Messages", "reference", "Reference":
+			return errors.New("does not support")
+		}
 	}
 	now := time.Now().Local()
 	updates["update_time"], updates["update_date"] = now.UnixMilli(), now.Truncate(time.Second)

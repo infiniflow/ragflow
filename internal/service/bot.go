@@ -141,6 +141,9 @@ func (s *BotService) AgentbotInputs(ctx context.Context, tenantID, agentID strin
 func (s *BotService) AgentbotCompletion(
 	ctx context.Context, tenantID, agentID string, req AgentbotCompletionRequest,
 ) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+	if err := req.ValidateHistory(); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 	if s.agentService == nil {
 		return nil, common.CodeServerError, fmt.Errorf("bot: agent service not wired")
 	}
@@ -192,6 +195,7 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 // accepts; the URL-bound agent_id is the authoritative canvas id
 // (matches python bot_api.py:159).
 type AgentbotCompletionRequest struct {
+	CompletionHistoryRequest
 	SessionID string `json:"session_id"`
 	UserID    string `json:"user_id"`
 	Stream    bool   `json:"stream"`
@@ -255,6 +259,7 @@ func agentbotUserInput(req AgentbotCompletionRequest) any {
 // `async_iframe_completion` body shape (session_id, question,
 // tts (unused) and a freeform dict).
 type ChatbotCompletionRequest struct {
+	CompletionHistoryRequest
 	SessionID string         `json:"session_id"`
 	Question  string         `json:"question"`
 	Stream    bool           `json:"stream"`

@@ -135,15 +135,6 @@ func BenchmarkConversationHistoryOperations(b *testing.B) {
 					messageID, remaining := "new-question", size+b.N-1
 					if answer {
 						messageID, remaining = pendingID, size-1
-						// Also exercise the array-replacement path outside measurement:
-						// references must remain addressable after slots are rebuilt.
-						row, err := store.GetByID(b.Context(), db, conversation.ID)
-						if err != nil {
-							b.Fatal(err)
-						}
-						if err := store.Update(b.Context(), db, row); err != nil {
-							b.Fatal(err)
-						}
 						if err := store.UpdateHistory(b.Context(), db, conversation.ID, conversation.DialogID, conversation.UserID, nil, ConversationHistoryUpdate{FeedbackMessageID: pendingID, Feedback: map[string]interface{}{"thumb_up": true, "feedback": nil}}); err != nil {
 							b.Fatal(err)
 						}

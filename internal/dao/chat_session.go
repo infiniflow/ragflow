@@ -86,10 +86,10 @@ func (dao *ChatSessionDAO) Create(ctx context.Context, db *gorm.DB, conv *entity
 		if err := tx.Create(conv).Error; err != nil {
 			return err
 		}
-		if err := syncHistory(ctx, tx, conversationMessageTable, "message", "message", conv.ID, conv.Message); err != nil {
+		if err := createHistory(ctx, tx, conversationMessageTable, "message", conv.ID, conv.Message); err != nil {
 			return err
 		}
-		return syncHistory(ctx, tx, conversationReferenceTable, "reference", "reference", conv.ID, conv.Reference)
+		return createHistory(ctx, tx, conversationReferenceTable, "reference", conv.ID, conv.Reference)
 	})
 }
 
@@ -101,13 +101,11 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 
 	historyUpdate, targeted := updates["history_update"].(ConversationHistoryUpdate)
 	delete(updates, "history_update")
-	message, updateMessage, err := popHistoryUpdate(updates, "message")
-	if err != nil {
-		return err
-	}
-	reference, updateReference, err := popHistoryUpdate(updates, "reference")
-	if err != nil {
-		return err
+	for key := range updates {
+		switch key {
+		case "message", "Message", "messages", "Messages", "reference", "Reference":
+			return errors.New("does not support")
+		}
 	}
 
 	now := time.Now().Local()
@@ -130,23 +128,6 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 		}
 		if targeted {
 			return updateConversationHistory(ctx, tx, conversationMessageTable, conversationReferenceTable, id, historyUpdate)
-		}
-		if updateMessage {
-			if err := syncHistory(ctx, tx, conversationMessageTable, "message", "message", id, message); err != nil {
-				return err
-			}
-			if !updateReference {
-				// Explicit array replacement also resets reference positions so
-				// old reserved slots cannot point at newly compacted messages.
-				history, err := loadHistory(ctx, tx, conversationReferenceTable, "reference", []string{id})
-				if err != nil {
-					return err
-				}
-				reference, updateReference = history[id], true
-			}
-		}
-		if updateReference {
-			return syncHistory(ctx, tx, conversationReferenceTable, "reference", "reference", id, reference)
 		}
 		return nil
 	})

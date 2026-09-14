@@ -873,6 +873,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
+	service.CompletionHistoryRequest
 	ProviderName *string                  `json:"provider_name"`
 	InstanceName *string                  `json:"instance_name"`
 	ModelName    *string                  `json:"model_name"`
@@ -893,6 +894,13 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
+	if err := req.ValidateHistory(); err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
+	}
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")

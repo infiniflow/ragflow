@@ -296,6 +296,9 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 func (s *BotService) ChatbotCompletion(
 	ctx context.Context, tenantID, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
+	if err := req.ValidateHistory(); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	// 1. Load and authorise the dialog.
 	//

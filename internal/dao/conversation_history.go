@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 
 	"gorm.io/gorm"
 
@@ -204,21 +203,6 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 	return nil
 }
 
-func historyRaw(value interface{}) (json.RawMessage, error) {
-	switch typed := value.(type) {
-	case nil:
-		return json.RawMessage(`[]`), nil
-	case json.RawMessage:
-		return typed, nil
-	case []byte:
-		return json.RawMessage(typed), nil
-	case string:
-		return json.RawMessage(typed), nil
-	default:
-		return json.Marshal(value)
-	}
-}
-
 func splitHistory(raw json.RawMessage, kind string) ([]json.RawMessage, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
@@ -271,14 +255,6 @@ func splitHistory(raw json.RawMessage, kind string) ([]json.RawMessage, error) {
 		items = append(items, byPosition[position])
 	}
 	return items, nil
-}
-
-func compactHistoryItem(item json.RawMessage) (json.RawMessage, error) {
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, item); err != nil {
-		return nil, err
-	}
-	return json.RawMessage(compact.Bytes()), nil
 }
 
 func flattenMessage(item json.RawMessage) (entity.ConversationMessageFields, error) {
@@ -354,110 +330,28 @@ func messageValues(fields entity.ConversationMessageFields) map[string]interface
 	}
 }
 
-func syncMessages(ctx context.Context, db *gorm.DB, table, conversationID string, items []json.RawMessage) error {
-	var existing []entity.ConversationMessage
-	if err := db.WithContext(ctx).Table(table).Where("conversation_id = ?", conversationID).Find(&existing).Error; err != nil {
-		return err
-	}
-	existingByPosition := make(map[int]entity.ConversationMessageFields, len(existing))
-	for _, row := range existing {
-		existingByPosition[row.Position] = row.ConversationMessageFields
-	}
-	for position, item := range items {
-		fields, err := flattenMessage(item)
-		if err != nil {
-			return fmt.Errorf("flatten message %d: %w", position, err)
-		}
-		query := db.WithContext(ctx).Table(table).Where("conversation_id = ? AND position = ?", conversationID, position)
-		values := messageValues(fields)
-		if old, ok := existingByPosition[position]; ok {
-			oldRaw, err := marshalMessage(old)
-			if err != nil {
-				return err
-			}
-			newRaw, err := marshalMessage(fields)
-			if err != nil {
-				return err
-			}
-			if bytes.Equal(oldRaw, newRaw) {
-				continue
-			}
-			if err := query.Updates(values).Error; err != nil {
-				return err
-			}
-			continue
-		}
-		values["conversation_id"], values["position"] = conversationID, position
-		if err := db.WithContext(ctx).Table(table).Create(values).Error; err != nil {
-			if !errors.Is(err, gorm.ErrDuplicatedKey) {
-				return err
-			}
-			delete(values, "conversation_id")
-			delete(values, "position")
-			if err := query.Updates(values).Error; err != nil {
-				return err
-			}
-		}
-	}
-	return db.WithContext(ctx).Table(table).Where("conversation_id = ? AND position >= ?", conversationID, len(items)).Delete(map[string]interface{}{}).Error
-}
-
-func syncHistory(ctx context.Context, db *gorm.DB, table, payloadColumn, kind, conversationID string, raw json.RawMessage) error {
+func createHistory(ctx context.Context, db *gorm.DB, table, kind, conversationID string, raw json.RawMessage) error {
 	items, err := splitHistory(raw, kind)
 	if err != nil {
 		return fmt.Errorf("split %s history: %w", kind, err)
 	}
-	if kind == "message" {
-		return syncMessages(ctx, db, table, conversationID, items)
-	}
-
-	var existing []conversationHistoryRow
-	if err = db.WithContext(ctx).Table(table).
-		Select(conversationHistoryOrderColumn+", message_position, "+payloadColumn+" AS payload").
-		Where(conversationHistoryIDColumn+" = ?", conversationID).
-		Find(&existing).Error; err != nil {
-		return err
-	}
-	existingByPosition := make(map[int]string, len(existing))
-	associated := make(map[int]bool, len(existing))
-	for _, row := range existing {
-		existingByPosition[row.Position] = row.Payload
-		associated[row.Position] = row.MessagePos != nil
-	}
-
+	rows := make([]map[string]interface{}, 0, len(items))
 	for position, item := range items {
-		item, err = compactHistoryItem(item)
-		if err != nil {
-			return fmt.Errorf("compact %s history item %d: %w", kind, position, err)
+		row := map[string]interface{}{"conversation_id": conversationID, "position": position, "reference": string(item)}
+		if kind == "message" {
+			fields, err := flattenMessage(item)
+			if err != nil {
+				return fmt.Errorf("flatten message %d: %w", position, err)
+			}
+			row = messageValues(fields)
+			row["conversation_id"], row["position"] = conversationID, position
 		}
-		if old, ok := existingByPosition[position]; ok {
-			oldCompact, compactErr := compactHistoryItem(json.RawMessage(old))
-			if compactErr == nil && bytes.Equal(oldCompact, item) && !associated[position] {
-				continue
-			}
-			if err = db.WithContext(ctx).Table(table).
-				Where(conversationHistoryIDColumn+" = ? AND "+conversationHistoryOrderColumn+" = ?", conversationID, position).
-				Updates(map[string]interface{}{payloadColumn: string(item), "message_position": nil}).Error; err != nil {
-				return err
-			}
-			continue
-		}
-		row := map[string]interface{}{conversationHistoryIDColumn: conversationID, conversationHistoryOrderColumn: position, payloadColumn: string(item)}
-		if err = db.WithContext(ctx).Table(table).Create(row).Error; err != nil {
-			if !errors.Is(err, gorm.ErrDuplicatedKey) {
-				return err
-			}
-			if err = db.WithContext(ctx).Table(table).
-				Where(conversationHistoryIDColumn+" = ? AND "+conversationHistoryOrderColumn+" = ?", conversationID, position).
-				Update(payloadColumn, string(item)).Error; err != nil {
-				return err
-			}
-		}
+		rows = append(rows, row)
 	}
-
-	return db.WithContext(ctx).Table(table).
-		Where(conversationHistoryIDColumn+" = ? AND "+conversationHistoryOrderColumn+" >= ?", conversationID, len(items)).
-		Delete(map[string]interface{}{}).Error
+	if len(rows) == 0 {
+		return nil
+	}
+	return db.WithContext(ctx).Table(table).CreateInBatches(rows, 100).Error
 }
 
 func loadHistory(ctx context.Context, db *gorm.DB, table, payloadColumn string, conversationIDs []string) (map[string]json.RawMessage, error) {
@@ -552,19 +446,4 @@ func deleteHistory(ctx context.Context, db *gorm.DB, tables []string, conversati
 		}
 	}
 	return nil
-}
-
-func popHistoryUpdate(updates map[string]interface{}, key string) (json.RawMessage, bool, error) {
-	value, ok := updates[key]
-	if !ok {
-		value, ok = updates[strings.ToUpper(key[:1])+key[1:]]
-		if !ok {
-			return nil, false, nil
-		}
-		delete(updates, strings.ToUpper(key[:1])+key[1:])
-	} else {
-		delete(updates, key)
-	}
-	raw, err := historyRaw(value)
-	return raw, true, err
 }

@@ -34,6 +34,7 @@ import (
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
+	service.CompletionHistoryRequest
 	Question string             `json:"question" binding:"required"`
 	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
 	SearchID string             `json:"search_id,omitempty"`
@@ -233,6 +234,11 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+
+	if err := req.ValidateHistory(); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}

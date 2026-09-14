@@ -69,6 +69,11 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		return
 	}
 
+	if err := req.ValidateHistory(); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+
 	// Messages presence
 	if len(req.Messages) == 0 {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You have to provide messages.")

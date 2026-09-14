@@ -63,7 +63,7 @@ func TestFlattenedMessagePersistence(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw := json.RawMessage(`[{"id":"turn-1","role":"assistant","content":"searchable content","thumbup":false,"feedback":"bad","created_at":123.25,"attachment":"file-1"}]`)
-			if err := syncHistory(t.Context(), db, table, "message", "message", "session-1", raw); err != nil {
+			if err := createHistory(t.Context(), db, table, "message", "session-1", raw); err != nil {
 				t.Fatal(err)
 			}
 			var row entity.ConversationMessage
@@ -89,16 +89,6 @@ func TestFlattenedMessagePersistence(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("loaded history = %s, want %s", histories["session-1"], raw)
-			}
-			if err := syncHistory(t.Context(), db, table, "message", "message", "session-1", json.RawMessage(`[{"role":"assistant","content":"updated","thumbup":true}]`)); err != nil {
-				t.Fatal(err)
-			}
-			row = entity.ConversationMessage{}
-			if err := db.Table(table).First(&row).Error; err != nil {
-				t.Fatal(err)
-			}
-			if row.MessageID != nil || row.Feedback != nil || row.CreatedAt != nil || row.ThumbUp == nil || !*row.ThumbUp || string(row.Metadata) != `{}` {
-				t.Fatalf("removed fields were not cleared: %+v", row.ConversationMessageFields)
 			}
 		})
 	}

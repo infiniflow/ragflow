@@ -383,6 +383,10 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
+	if err := req.ValidateHistory(); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	searchSvc := h.searchService
 	if searchSvc == nil {
 		searchSvc = service.NewSearchService()

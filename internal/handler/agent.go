@@ -504,7 +504,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		// Persistence of the session record remains owned by AgentService.RunAgent.
 		sessionID = utility.GenerateToken()
 	}
-	userInput := readUserInput(c)
+	userInput, err := readUserInput(c)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
@@ -544,26 +548,30 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 // present, otherwise from the ?user_input= query string. An empty body
 // (no body sent) is treated as "" so the resume cycle still works
 // when the client only passes ?session_id=...&user_input=... on the URL.
-func readUserInput(c *gin.Context) string {
-	if c.Request.ContentLength > 0 {
+func readUserInput(c *gin.Context) (string, error) {
+	if c.Request.ContentLength != 0 {
 		var body struct {
+			service.CompletionHistoryRequest
 			UserInput string `json:"user_input"`
 			Query     string `json:"query"`
 			Message   string `json:"message"`
 		}
 		if err := c.ShouldBindJSON(&body); err == nil {
+			if err := body.ValidateHistory(); err != nil {
+				return "", err
+			}
 			if body.UserInput != "" {
-				return body.UserInput
+				return body.UserInput, nil
 			}
 			if body.Query != "" {
-				return body.Query
+				return body.Query, nil
 			}
 			if body.Message != "" {
-				return body.Message
+				return body.Message, nil
 			}
 		}
 	}
-	return c.Query("user_input")
+	return c.Query("user_input"), nil
 }
 
 // runCanvasPipelineDebug runs a canvas in pipeline dry-run (debug) mode: it builds
@@ -1063,6 +1071,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     adapter lives in agent_openai.go so the regular Agent event contract
 //     remains unchanged.
 type agentChatCompletionsRequest struct {
+	service.CompletionHistoryRequest
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
 	Inputs       map[string]interface{}   `json:"inputs"`
@@ -1112,23 +1121,20 @@ func (f *agentFiles) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// extractLastUserContent returns the content of the last message in
-// `messages` whose role is "user", or "" if none is found. Mirrors the
-// Python derivation in api/apps/restful_apis/agent_api.py:1258 that drives
-// `completion_openai` when the request uses the openai-compatible wire
-// format but no top-level `query` is supplied.
+// extractLastUserContent returns the latest message's content only if it is from a user.
 func extractLastUserContent(messages []map[string]interface{}) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		role, _ := messages[i]["role"].(string)
-		if role != "user" {
-			continue
-		}
-		content, err := service.NormalizeOpenAIMessageContent(messages[i]["content"])
-		if err == nil && content != "" {
-			return content
-		}
+	if len(messages) == 0 {
+		return ""
 	}
-	return ""
+	message := messages[len(messages)-1]
+	if message["role"] != "user" {
+		return ""
+	}
+	content, err := service.NormalizeOpenAIMessageContent(message["content"])
+	if err != nil {
+		return ""
+	}
+	return content
 }
 
 // extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
@@ -1211,6 +1217,13 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
+	}
+	if err := req.ValidateHistory(); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
 	}
 	if req.AgentID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
