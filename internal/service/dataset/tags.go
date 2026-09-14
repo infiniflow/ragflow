@@ -109,6 +109,12 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		loader = component.TagVocabularyFromTagFileID
 	}
 	merged := make(map[string]int)
+	// The handler accepts repeated IDs, and distinct raw IDs can normalize to
+	// the same dataset (hyphenated vs. compact form). Track the normalized IDs
+	// so each dataset is loaded and merged exactly once — otherwise a repeated
+	// dataset (e.g. dataset_ids=A,A) would load the same vocabulary twice and
+	// double every count.
+	seen := make(map[string]struct{}, len(datasetIDs))
 	for _, rawID := range datasetIDs {
 		rawID = strings.TrimSpace(rawID)
 		if rawID == "" {
@@ -118,6 +124,10 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
+		if _, dup := seen[datasetID]; dup {
+			continue
+		}
+		seen[datasetID] = struct{}{}
 		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
 		}
@@ -130,12 +140,17 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		}
 
 		// Include the dataset's tag-source vocabulary. The count for each tag is
-		// the number of times it occurs in the tag source file.
+		// the number of times it occurs in the tag source file. The file is
+		// resolved against the dataset's own tenant: tag_file_id is user-writable,
+		// so a foreign file ID must not resolve (IDOR, CWE-639).
 		if tagFileID := extractTagFileID(kb.ParserConfig); tagFileID != "" {
-			if counts, vErr := loader(ctx, tagFileID); vErr == nil {
-				for tag, c := range counts {
-					merged[tag] += c
-				}
+			counts, vErr := loader(ctx, tagFileID, kb.TenantID)
+			if vErr != nil {
+				return nil, common.CodeServerError,
+					fmt.Errorf("load tag vocabulary for dataset %q: %w", datasetID, vErr)
+			}
+			for tag, c := range counts {
+				merged[tag] += c
 			}
 		}
 	}

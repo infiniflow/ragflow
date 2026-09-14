@@ -10,7 +10,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-func testDatasetServiceForAggregateTags(t *testing.T, loader func(ctx context.Context, tagFileID string) (map[string]int, error)) *DatasetService {
+func testDatasetServiceForAggregateTags(t *testing.T, loader func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error)) *DatasetService {
 	t.Helper()
 	return &DatasetService{
 		kbDAO:               dao.NewKnowledgebaseDAO(),
@@ -77,7 +77,7 @@ func TestDatasetServiceAggregateTagsSeedsFromTagFile(t *testing.T) {
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
 
-	loader := func(ctx context.Context, tagFileID string) (map[string]int, error) {
+	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
 		if tagFileID == "file-1" {
 			return map[string]int{"finance": 2, "urgent": 1}, nil
 		}
@@ -118,7 +118,7 @@ func TestDatasetServiceAggregateTagsMergesAcrossTagFiles(t *testing.T) {
 	insertAggregateTagsKB(t, kb1ID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
 	insertAggregateTagsKB(t, kb2ID, "user-1", string(entity.TenantPermissionMe), "file-2", 0)
 
-	loader := func(ctx context.Context, tagFileID string) (map[string]int, error) {
+	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
 		switch tagFileID {
 		case "file-1":
 			return map[string]int{"finance": 2, "urgent": 1}, nil
@@ -160,7 +160,7 @@ func TestDatasetServiceAggregateTagsEmptyWhenNoTagFile(t *testing.T) {
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), "", 0)
 
-	loader := func(ctx context.Context, tagFileID string) (map[string]int, error) {
+	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
 		t.Fatalf("loader should not be called when no tag_file_id is set")
 		return nil, nil
 	}
@@ -196,5 +196,36 @@ func TestDatasetServiceAggregateTagsRejectsUnauthorizedDataset(t *testing.T) {
 	}
 	if err.Error() != "No authorization for dataset '"+kbID+"'" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestDatasetServiceAggregateTagsScopesLoaderToDatasetTenant verifies the loader
+// receives the dataset's tenant — the authorization scope used to resolve the
+// user-writable tag_file_id — rather than the caller's user ID.
+func TestDatasetServiceAggregateTagsScopesLoaderToDatasetTenant(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kbInput := "523e4567-e89b-12d3-a456-426614174004"
+	kbID := strings.ReplaceAll(kbInput, "-", "")
+	const kbTenant = "tenant-owner"
+	insertAggregateTagsKB(t, kbID, kbTenant, string(entity.TenantPermissionTeam), "file-foreign", 0)
+	insertAggregateTagsMembership(t, kbTenant, "user-1")
+	ctx := t.Context()
+
+	var gotOwner string
+	loader := func(_ context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+		if tagFileID != "file-foreign" {
+			t.Fatalf("tagFileID = %q, want file-foreign", tagFileID)
+		}
+		gotOwner = ownerTenantID
+		return map[string]int{"finance": 1}, nil
+	}
+
+	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput}, "user-1"); err != nil {
+		t.Fatalf("AggregateTags failed: code=%d err=%v", code, err)
+	}
+	if gotOwner != kbTenant {
+		t.Fatalf("loader ownerTenantID = %q, want %q (must be the dataset tenant, not the user)", gotOwner, kbTenant)
 	}
 }

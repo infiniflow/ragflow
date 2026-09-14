@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -145,9 +146,99 @@ func TestTagVocabularyFromBytes(t *testing.T) {
 		t.Fatalf("expected Alpha_Beta=2, got %v", vocab2)
 	}
 
+	// A tag repeated inside one source example counts once: the count is the
+	// number of source examples mentioning the tag, consistent with
+	// buildMemoryTagIndex's per-sample deduplication.
+	csv3 := []byte("\"dup content\",\"finance,finance,urgent\"\n\"other content\",\"finance\"")
+	vocab3, err := TagVocabularyFromBytes(csv3, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vocab3["finance"] != 2 { // two examples, not three occurrences
+		t.Fatalf("expected finance=2 (per source example), got %v", vocab3)
+	}
+	if vocab3["urgent"] != 1 {
+		t.Fatalf("expected urgent=1, got %v", vocab3)
+	}
+	if len(vocab3) != 2 {
+		t.Fatalf("expected 2 distinct tags, got %v", vocab3)
+	}
+
 	// Unsupported extension is rejected.
 	if _, err := TagVocabularyFromBytes([]byte("x"), "tags.pdf"); err == nil {
 		t.Fatal("expected error for unsupported extension")
+	}
+}
+
+// TestTagVocabularyFromTagFileID_RejectsForeignTenantFile pins the IDOR guard.
+// parser_config.tags.tag_file_id is user-controlled (the dataset update API
+// accepts parser_config), so the file it names must belong to the caller's
+// tenant before its bytes are read. The tag source bytes are deliberately
+// seeded in storage: without the ownership check the loader would happily
+// return them to the other tenant.
+func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
+	db := withFileComponentTestDB(t)
+	ms := withMemoryStorage(t)
+
+	const (
+		ownerTenant    = "tenant-owner"
+		attackerTenant = "tenant-attacker"
+		fileID         = "tag-file-foreign"
+		bucket         = "kb-bucket-1"
+		location       = "tags/tags.csv"
+	)
+
+	csv := []byte("\"some content\",\"finance,urgent\"\n\"other content\",\"finance\"")
+	loc := location
+	if err := db.Create(&entity.File{
+		ID:        fileID,
+		ParentID:  bucket,
+		TenantID:  ownerTenant,
+		CreatedBy: ownerTenant,
+		Name:      "tags.csv",
+		Type:      "doc",
+		Location:  &loc,
+	}).Error; err != nil {
+		t.Fatalf("seed file row: %v", err)
+	}
+	if err := ms.Put(t.Context(), bucket, location, csv); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	// A dataset whose tenant does not own the file must be denied, and must not
+	// get the bytes.
+	vocab, err := TagVocabularyFromTagFileID(t.Context(), fileID, attackerTenant)
+	if err == nil {
+		t.Fatalf("IDOR: foreign tenant read the tag source file, vocab=%v", vocab)
+	}
+	if vocab != nil {
+		t.Fatalf("IDOR: expected no vocabulary for foreign tenant, got %v", vocab)
+	}
+
+	// An empty owner tenant fails closed as well.
+	if _, err := TagVocabularyFromTagFileID(t.Context(), fileID, ""); err == nil {
+		t.Fatal("empty owner tenant must fail closed")
+	}
+
+	// The owning tenant still gets the vocabulary.
+	vocab, err = TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	if err != nil {
+		t.Fatalf("owner tenant load failed: %v", err)
+	}
+	if vocab["finance"] != 2 || vocab["urgent"] != 1 {
+		t.Fatalf("owner vocab = %v, want finance=2 urgent=1", vocab)
+	}
+
+	// Sharing is intentional: the guard is tenant-scoped, not dataset-scoped (the
+	// file's ParentID is never compared against the referencing dataset), so any
+	// number of datasets in ownerTenant can point at this same tag source file —
+	// each passes its own dataset tenant (kb.TenantID) here.
+	shared, err := TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	if err != nil {
+		t.Fatalf("a second dataset in the same tenant must resolve the shared file: %v", err)
+	}
+	if shared["finance"] != 2 {
+		t.Fatalf("shared vocab = %v, want finance=2", shared)
 	}
 }
 

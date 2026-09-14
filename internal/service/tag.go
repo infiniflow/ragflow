@@ -114,16 +114,24 @@ func SetTagsToCache(ctx context.Context, kbIDs []string, tags map[string]float64
 type Knowledgebase = entity.Knowledgebase
 
 // GetAllTagsInPortion returns all tag_kwd values and their occurrence counts
-// for documents belonging to the given kbIDs.
-func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantID string, kbIDs []string) (map[string]float64, error) {
-	if len(kbIDs) == 0 {
+// for documents belonging to the given kbIDs, aggregated across every tenant
+// index in tenantIDs — the same tenant scope TagQuery searches. The dataset
+// and chunk-search callers can supply authorized knowledgebases from multiple
+// tenants, so restricting the aggregation to a single tenant index would omit
+// tags that exist only in the other tenants' indices (leaving them absent from
+// allTags and scored with the 0.0001 fallback, which inflates their scores).
+func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantIDs []string, kbIDs []string) (map[string]float64, error) {
+	if len(kbIDs) == 0 || len(tenantIDs) == 0 {
 		return make(map[string]float64), nil
 	}
 
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	indexNames := make([]string, len(tenantIDs))
+	for i, tenantID := range tenantIDs {
+		indexNames[i] = fmt.Sprintf("ragflow_%s", tenantID)
+	}
 
 	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
+		IndexNames: indexNames,
 		KbIDs:      kbIDs,
 		Offset:     0,
 		// Python passes limit=0 ("unlimited") which Go SearchRequest treats
@@ -304,7 +312,7 @@ func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kb
 	}
 	if allTags == nil {
 		// Cache miss - compute all_tags_in_portion
-		allTags, err = s.GetAllTagsInPortion(ctx, lastKB.TenantID, kbIDs)
+		allTags, err = s.GetAllTagsInPortion(ctx, uniqueTenantIDs, kbIDs)
 		if err != nil {
 			common.Warn("Failed to get all tags in portion", zap.Error(err))
 			return nil
