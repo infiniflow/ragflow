@@ -485,6 +485,26 @@ func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testi
 	}
 }
 
+func TestIngestionTaskServiceRequestStopTransitionsScheduledTaskToStopped(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("set SCHEDULED: %v", err)
+	}
+	ctx := t.Context()
+
+	svc := NewIngestionTaskService()
+	task, err := svc.RequestStop(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("RequestStop failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+}
+
 func TestIngestionTaskServiceMarkCompletedRejectsNonRunningTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

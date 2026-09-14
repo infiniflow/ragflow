@@ -1041,6 +1041,40 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 	}
 }
 
+func TestDocumentHandlerIngest_CancelDispatchesToService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":2}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v", resp["code"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %#v", resp["data"])
+	}
+	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
+		t.Fatalf("unexpected ingestReq: %#v", fake.ingestReq)
+	}
+	if fmt.Sprint(fake.ingestReq.Run) != "2" {
+		t.Fatalf("run = %v, want 2", fake.ingestReq.Run)
+	}
+}
+
 func TestStopParseDocumentsHandler_EmptyDocIDs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

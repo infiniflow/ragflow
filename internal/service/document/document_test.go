@@ -3514,6 +3514,145 @@ func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 	}
 }
 
+// TestIngest_CancelScheduledTask_TransitionsToStopped verifies that canceling a
+// SCHEDULED document task transitions the task immediately to STOPPED and resets
+// document progress to 0, ensuring the frontend never hangs in a transient state.
+func TestIngest_CancelScheduledTask_TransitionsToStopped(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(cancel) on SCHEDULED task failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task == nil || task.Status != common.STOPPED {
+		t.Fatalf("task status = %v, want %s", task, common.STOPPED)
+	}
+
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("doc.Progress = %v, want 0", doc.Progress)
+	}
+
+	// Verify that querying document reflects STOPPED status for frontend.
+	resp, err := svc.toResponse(ctx, doc)
+	if err != nil {
+		t.Fatalf("toResponse failed: %v", err)
+	}
+	if resp.IngestionStatus != common.STOPPED {
+		t.Fatalf("resp.IngestionStatus = %q, want %q", resp.IngestionStatus, common.STOPPED)
+	}
+}
+
+// TestIngest_CancelRunningTask_LifecycleToStopped verifies the complete cancel
+// lifecycle for a RUNNING task:
+//  1. Ingest(cancel) puts the task in STOPPING and resets progress to 0.
+//  2. A duplicate cancel call while STOPPING succeeds (idempotent guard).
+//  3. Once worker settles the cancellation via MarkStopped, the task reaches STOPPED.
+//  4. In STOPPED state, the document reflects ingestion_status=STOPPED and is
+//     recognized as terminal, unblocking the frontend and allowing re-parse.
+func TestIngest_CancelRunningTask_LifecycleToStopped(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("progress", 0.6).Error; err != nil {
+		t.Fatalf("set initial progress: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+
+	// 1. First cancel call: transitions RUNNING -> STOPPING
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("first Ingest(cancel): %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	task, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil || task == nil {
+		t.Fatalf("load task after cancel: %v", err)
+	}
+	if task.Status != common.STOPPING {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPING)
+	}
+
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("doc.Progress = %v, want 0 after cancel", doc.Progress)
+	}
+
+	// 2. Duplicate cancel while in STOPPING must succeed as an idempotent no-op
+	code, err = svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("duplicate Ingest(cancel) while STOPPING: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// 3. Worker settlement: transitions STOPPING -> STOPPED
+	if err = svc.ingestionTaskSvc.MarkStopped(ctx, "task-1"); err != nil {
+		t.Fatalf("MarkStopped failed: %v", err)
+	}
+
+	task, err = svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil || task == nil {
+		t.Fatalf("load task after MarkStopped: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPED)
+	}
+
+	// 4. Verify document query returns STOPPED status for frontend consumption
+	resp, err := svc.toResponse(ctx, doc)
+	if err != nil {
+		t.Fatalf("toResponse failed: %v", err)
+	}
+	if resp.IngestionStatus != common.STOPPED {
+		t.Fatalf("resp.IngestionStatus = %q, want %q", resp.IngestionStatus, common.STOPPED)
+	}
+
+	// 5. AssertIngestionTasksTerminal succeeds on STOPPED (document unblocked)
+	if err = svc.AssertIngestionTasksTerminal(ctx, []string{"doc-1"}); err != nil {
+		t.Fatalf("AssertIngestionTasksTerminal should succeed on STOPPED: %v", err)
+	}
+}
+
 // TestIngest_DeleteOnlyCleansTasks verifies that when run is neither running nor
 // cancel, passing delete=true deletes prior tasks and resets progress to 0 without starting a parse.
 func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
