@@ -1,10 +1,7 @@
 // for the dataset list
 // The data structures returned by the `datasets` interface and `/api/v1/datasets/{id}` are inconsistent.
 
-import {
-  IngestionTaskStatus,
-  RunningStatus,
-} from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
 
 export interface IConnector {

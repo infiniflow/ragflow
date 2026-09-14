@@ -84,8 +84,7 @@ function getSection(container: HTMLElement) {
 // namespaced attribute, so read it instead of relying on a CSS selector.
 function hasIconFont(container: HTMLElement, name: string) {
   return Array.from(container.querySelectorAll('svg use')).some((el) => {
-    const href =
-      el.getAttribute('xlink:href') ?? el.getAttribute('href') ?? '';
+    const href = el.getAttribute('xlink:href') ?? el.getAttribute('href') ?? '';
     return href === `#icon-${name}`;
   });
 }
@@ -144,7 +143,9 @@ describe('ParsingStatusCell', () => {
         ingestion_status: IngestionTaskStatus.RUNNING,
       });
       expect(getSection(container)).toHaveAttribute('data-state', 'running');
-      expect(container.querySelector('svg.lucide-circle-x')).toBeInTheDocument();
+      expect(
+        container.querySelector('svg.lucide-circle-x'),
+      ).toBeInTheDocument();
       expect(
         container.querySelector('button[disabled]'),
       ).not.toBeInTheDocument();

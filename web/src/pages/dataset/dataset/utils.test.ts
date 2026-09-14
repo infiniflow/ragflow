@@ -47,9 +47,7 @@ describe('isDocumentProcessing', () => {
       IngestionTaskStatus.RUNNING,
       IngestionTaskStatus.STOPPING,
     ])('treats active ingestion_status %s as processing', (status) => {
-      expect(
-        isDocumentProcessing({ ingestion_status: status }),
-      ).toBe(true);
+      expect(isDocumentProcessing({ ingestion_status: status })).toBe(true);
     });
 
     it.each([
@@ -58,11 +56,12 @@ describe('isDocumentProcessing', () => {
       IngestionTaskStatus.FAILED,
       IngestionTaskStatus.STOPPED,
       undefined,
-    ])('treats idle/terminal ingestion_status %s as not processing', (status) => {
-      expect(
-        isDocumentProcessing({ ingestion_status: status }),
-      ).toBe(false);
-    });
+    ])(
+      'treats idle/terminal ingestion_status %s as not processing',
+      (status) => {
+        expect(isDocumentProcessing({ ingestion_status: status })).toBe(false);
+      },
+    );
 
     it('ignores a stale legacy run field on Go responses', () => {
       expect(
@@ -80,9 +79,7 @@ describe('isDocumentProcessing', () => {
     });
 
     it('treats run=RUNNING as processing', () => {
-      expect(
-        isDocumentProcessing({ run: RunningStatus.RUNNING }),
-      ).toBe(true);
+      expect(isDocumentProcessing({ run: RunningStatus.RUNNING })).toBe(true);
     });
 
     it.each([
@@ -152,9 +149,9 @@ describe('getDocumentRunningStatus', () => {
   });
 
   it('reads the legacy run field on Python', () => {
-    expect(
-      getDocumentRunningStatus({ run: RunningStatus.DONE }),
-    ).toBe(RunningStatus.DONE);
+    expect(getDocumentRunningStatus({ run: RunningStatus.DONE })).toBe(
+      RunningStatus.DONE,
+    );
   });
 
   it('falls back to UNSTART when Python omits run', () => {

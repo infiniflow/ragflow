@@ -127,9 +127,8 @@ const isGoDocumentProcessing = (
 // Python backend only serializes the legacy run field), so run is the
 // only signal — exactly the pre-Go polling contract
 // (docs.some(doc => doc.run === RUNNING)).
-const isPythonDocumentProcessing = (
-  document: Pick<IDocumentInfo, 'run'>,
-) => isParserRunning(document.run);
+const isPythonDocumentProcessing = (document: Pick<IDocumentInfo, 'run'>) =>
+  isParserRunning(document.run);
 
 /**
  * Whether a document is currently being parsed (queued, running or
