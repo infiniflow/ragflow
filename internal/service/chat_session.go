@@ -1647,6 +1647,10 @@ func (s *ChatSessionService) ChatCompletions(
 					fullAnswer.WriteString("</think>")
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
+				} else if result.Reasoning != "" {
+					// In-think reasoning text between the markers (tool and
+					// harness paths) — keep it inside the <think> block.
+					fullAnswer.WriteString(result.Reasoning)
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
@@ -1694,6 +1698,15 @@ func (s *ChatSessionService) ChatCompletions(
 				} else if result.Answer != "" {
 					fullAnswer.WriteString(result.Answer)
 					deltaAnswer = result.Answer
+				} else if result.Reasoning != "" {
+					// In-think reasoning text arriving between the
+					// StartToThink / EndToThink markers (the tool path and the
+					// harness high/ultra path both deliver it via Reasoning so
+					// OpenAI-compat can map it to reasoning_content). Treat it
+					// as think-block content so the chat UI shows the
+					// reasoning instead of dropping it.
+					fullAnswer.WriteString(result.Reasoning)
+					deltaAnswer = result.Reasoning
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)

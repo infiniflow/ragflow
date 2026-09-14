@@ -159,7 +159,6 @@ const (
 	TokenMax
 	TokenLS
 	TokenCat
-	TokenInsert
 	TokenFile
 	TokenMetadata
 	TokenTable

@@ -1033,7 +1033,7 @@ func (b *BedrockModel) Embed(ctx context.Context, modelName *string, request Emb
 		return b.embedTitan(ctx, modelID, request.Texts, region, key, embeddingConfig, modelUsage)
 	}
 	if strings.HasPrefix(modelID, "cohere.embed-") {
-		return b.embedCohere(ctx, modelID, request.Texts, region, key, embeddingConfig, modelUsage)
+		return b.embedCohere(ctx, modelID, request.Texts, request.Query, region, key, embeddingConfig, modelUsage)
 	}
 	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
 }
@@ -1101,10 +1101,17 @@ func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []s
 	return embeddings, nil
 }
 
-func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, key *bedrockKey, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, query bool, region string, key *bedrockKey, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	// Python BedrockEmbed.encode uses input_type="search_document" and
+	// encode_queries uses "search_query" for the Cohere models; Titan has no
+	// query/document distinction (see embedTitan).
+	inputType := "search_document"
+	if query {
+		inputType = "search_query"
+	}
 	req := bedrockCohereEmbeddingRequest{
 		Texts:     texts,
-		InputType: "search_document",
+		InputType: inputType,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 && strings.HasPrefix(modelID, "cohere.embed-v4") {
 		req.OutputDimension = &embeddingConfig.Dimension

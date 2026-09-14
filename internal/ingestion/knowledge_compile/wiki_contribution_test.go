@@ -83,7 +83,7 @@ func TestProcessBatchSkipsUnchangedWikiOnlyEvent(t *testing.T) {
 	)
 	if err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "token-1", []BacklogEntry{{
 		DocID: "doc-1", EventType: string(EventTypeCompleted), Variants: []string{"wiki"},
-	}}); err != nil {
+	}}, []string{kccommon.TaskTypeWiki}); err != nil {
 		t.Fatalf("processBatch failed: %v", err)
 	}
 	if factoryCalled {

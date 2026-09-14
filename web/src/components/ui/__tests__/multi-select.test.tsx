@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { MultiSelect } from '../multi-select';
 
@@ -60,5 +60,61 @@ describe('MultiSelect badge labels', () => {
       <MultiSelect options={[]} defaultValue={['z']} onValueChange={noop} />,
     );
     expect(screen.getByText('z')).toBeTruthy();
+  });
+});
+
+describe('MultiSelect disabled options', () => {
+  const options = [
+    { label: 'Alpha', value: 'a', disabled: true },
+    { label: 'Beta', value: 'b' },
+  ];
+
+  it('removes a disabled selected value via its badge remove icon', () => {
+    const onValueChange = jest.fn();
+    render(
+      <MultiSelect
+        options={options}
+        defaultValue={['a', 'b']}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const badgeRow = screen.getByText('Alpha').parentElement!;
+    const removeIcon = badgeRow.querySelector('svg.lucide-circle-x');
+    expect(removeIcon).toBeTruthy();
+
+    fireEvent.click(removeIcon!);
+    expect(onValueChange).toHaveBeenCalledWith(['b']);
+  });
+
+  it('clears disabled selected values via the clear icon', () => {
+    const onValueChange = jest.fn();
+    const { container } = render(
+      <MultiSelect
+        options={options}
+        defaultValue={['a', 'b']}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(container.querySelector('svg.lucide-x')!);
+    expect(onValueChange).toHaveBeenCalledWith([]);
+  });
+
+  it('select all picks only enabled options', () => {
+    const onValueChange = jest.fn();
+    render(
+      <MultiSelect
+        options={options}
+        defaultValue={[]}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button'));
+    // i18next is not initialized in jsdom, so the select-all label renders
+    // empty; it is always the first command item.
+    fireEvent.click(document.querySelector('[cmdk-item]')!);
+    expect(onValueChange).toHaveBeenCalledWith(['b']);
   });
 });

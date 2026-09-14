@@ -172,37 +172,23 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
 
-        def row_has_data(row_idx):
-            for col_idx in range(1, max_col + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                if cell.value is not None and str(cell.value).strip():
-                    return True
-            return False
+        # max_row is often inflated by styling far below real data. Scan only
+        # materialized cells so we do not call ws.cell() on every empty row.
+        highest = 0
+        for (row_idx, col_idx), cell in ws._cells.items():
+            if col_idx > max_col:
+                continue
+            if cell.value is not None and str(cell.value).strip():
+                highest = max(highest, row_idx)
 
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
-
-        return last_data_row
+        if highest:
+            logging.debug(
+                "Excel row scan: max_row=%s max_col=%s detected_highest_data_row=%s",
+                max_row,
+                max_col,
+                highest,
+            )
+        return highest
 
     @staticmethod
     def _get_rows_limited(ws):
@@ -245,6 +231,14 @@ class RAGFlowExcelParser:
             # when the data-row count is an exact multiple of chunk_rows and emits
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
+            if n_data_rows <= 0:
+                # A template sheet holds only its header row. Emit it as a
+                # captioned table instead of dropping the sheet, which is what
+                # Go does (recordsToHTMLTableChunkList, nData == 0). Without
+                # this the column schema of a blank template is lost.
+                tb = f"<table><caption>{sheetname}</caption>" + tb_rows_0 + "</table>"
+                tb_chunks.append((tb, (sheet_idx, 1, 1, 1, col_max)))
+                continue
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
                 row_start = 2 + chunk_i * chunk_rows
                 row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))

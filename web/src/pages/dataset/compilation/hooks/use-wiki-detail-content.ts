@@ -6,9 +6,9 @@ import {
 import { Docagg } from '@/interfaces/database/chat';
 import { IArtifact, IWikiCommit } from '@/interfaces/database/dataset';
 import { downloadMarkdownFile } from '@/utils/file-util';
+import type { WikiPageType } from '@/utils/wiki-link-util';
 import { useCallback, useEffect, useMemo } from 'react';
 
-import type { WikiPageType } from '../utils/parse-wiki-link';
 import { useCommitArtifact } from './use-commit-artifact';
 import { useWikiEditor } from './use-wiki-editor';
 import { useWikiLinkNavigation } from './use-wiki-link-navigation';

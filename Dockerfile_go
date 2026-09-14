@@ -159,6 +159,11 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
+# build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
+# ORT version pins from these files; without them the --go build fails with
+# "could not parse the ONNX Runtime version from one of the pinned locations".
+COPY ragflow_deps/download_go_deps.py ragflow_deps/download_deps.py ./ragflow_deps/
+COPY Dockerfile_go ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
 # static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).
@@ -169,10 +174,19 @@ COPY build.sh ./
 # silently skipped and the binary fails at startup with
 # "no in-process DeepDoc backend serving" (dlopen(NULL)/dlsym can't find OrtGetApiBase).
 # ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
-ARG ORT_VERSION=1.23.2
+ARG ORT_VERSION=1.29.0
 RUN set -eux; \
-    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
-    cp -rn /opt/ragflow-native-libs/onnxruntime/* "${HOME}/ragflow-native-libs/onnxruntime/"; \
+    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime/static_lib"; \
+    _src="/opt/ragflow-native-libs/onnxruntime/static_lib"; \
+    _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-"${ORT_VERSION}"-* 2>/dev/null | head -1)"; \
+    if [ -z "${_v}" ]; then \
+      _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-* 2>/dev/null | head -1)"; \
+    fi; \
+    if [ -n "${_v}" ]; then \
+      cp -r "${_v}" "${HOME}/ragflow-native-libs/onnxruntime/static_lib/"; \
+    else \
+      echo "Warning: no pre-baked onnxruntime static_lib in runner image; build.sh will attempt download" >&2; \
+    fi; \
     find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
 
 RUN git config --global safe.directory "*" && \

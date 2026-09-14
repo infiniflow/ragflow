@@ -18,6 +18,8 @@ package dao
 
 import (
 	"context"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -60,6 +62,18 @@ func (dao *TaskDAO) UpdateProgress(ctx context.Context, db *gorm.DB, id string, 
 		"progress":     progress,
 		"progress_msg": progressMsg,
 	}).Error
+}
+
+// MarkActiveMemoryTaskFailed marks an unfinished memory task's UI projection
+// as failed without overwriting a task that completed or failed concurrently.
+func (dao *TaskDAO) MarkActiveMemoryTaskFailed(ctx context.Context, db *gorm.DB, id, progressMsg string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.Task{}).
+		Where("id = ? AND task_type = ? AND progress >= 0 AND progress < 1", id, common.TaskTypeMemory).
+		Updates(map[string]any{
+			"progress":     -1,
+			"progress_msg": progressMsg,
+		})
+	return result.RowsAffected == 1, result.Error
 }
 
 // DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
