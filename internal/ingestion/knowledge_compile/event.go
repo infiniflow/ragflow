@@ -110,37 +110,38 @@ func DefaultClaimer() Claimer { return defaultClaimer }
 // doc so the consumer can dispatch to the matching dataset-level path. It is a
 // no-op when no Publisher has been installed (e.g. DB unavailable). A failure is
 // returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), variants)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), variants, taskTypes)
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
-// append + notify pairing). Deleted events carry no compile types.
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) error {
+// append + notify pairing). taskTypes identifies the document-level artifacts
+// that were removed before the event was published.
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil, taskTypes)
 }
 
 // PublishEnabled records that a document with compiled products became
 // available again and must be merged into dataset-level products.
-func PublishEnabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+func PublishEnabled(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeEnabled), variants)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeEnabled), variants, taskTypes)
 }
 
 // PublishDisabled records that a document with compiled products became
 // unavailable. The consumer retracts only its dataset-level contributions;
 // document-level compiled rows remain available for a later re-enable.
-func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
 	if defaultPublisher == nil {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants, taskTypes)
 }
