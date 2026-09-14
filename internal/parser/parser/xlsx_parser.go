@@ -26,14 +26,10 @@ import (
 )
 
 type XLSXParser struct {
-	libType      string
-	ParseMethod  string
-	OutputFormat string
-	HTML4Excel   bool
-	// ChunkRows is retained only to surface legacy configuration in
-	// diagnostics. Spreadsheet row grouping belongs to the downstream
-	// chunker and this value is intentionally not used during parsing.
-	ChunkRows                      int
+	libType                        string
+	ParseMethod                    string
+	OutputFormat                   string
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -68,9 +64,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["html4excel"].(bool); ok {
 		p.HTML4Excel = v
 	}
-	if rows, ok := deprecatedChunkRows(setup, p.String()); ok {
-		p.ChunkRows = rows
-	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}

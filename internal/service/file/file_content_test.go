@@ -108,6 +108,58 @@ func TestParseResultText_SpreadsheetRowsRenderReadableHTMLTable(t *testing.T) {
 	}
 }
 
+func TestParseResultText_SpreadsheetRowsWithoutHeaderDoNotDuplicateFirstRow(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{
+				"ck_type": "table_row",
+				"headers": []string{"name", "value"},
+				"cells":   []string{"alpha", "1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if strings.Contains(result, "<th>") {
+		t.Fatalf("header row was synthesized from data cells: %q", result)
+	}
+	if got := strings.Count(result, "<td>alpha</td>"); got != 1 {
+		t.Fatalf("first row rendered %d times, want once: %q", got, result)
+	}
+}
+
+func TestParseResultText_SpreadsheetRowsWithoutIdentityStaySeparate(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{
+				"ck_type": "table_header",
+				"cells":   []string{"first"},
+			},
+			{
+				"ck_type": "table_row",
+				"cells":   []string{"one"},
+			},
+			{
+				"ck_type": "table_header",
+				"cells":   []string{"second"},
+			},
+			{
+				"ck_type": "table_row",
+				"cells":   []string{"two"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if got := strings.Count(result, "<table>"); got != 2 {
+		t.Fatalf("unknown spreadsheet tables were merged: got %d tables in %q", got, result)
+	}
+}
+
 func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
 	raw := []byte("From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Parser contract\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nEmail body")
 	p := parser.NewEmailParser()

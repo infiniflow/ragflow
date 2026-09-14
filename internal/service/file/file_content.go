@@ -283,10 +283,7 @@ func renderSpreadsheetJSON(items []map[string]any) (string, bool) {
 		}
 
 		start := i
-		key := spreadsheetTableKey(items[i])
-		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
-			i++
-		}
+		i = spreadsheetTableEnd(items, start)
 		parts = append(parts, renderSpreadsheetTable(items[start:i]))
 		rendered = true
 	}
@@ -305,22 +302,58 @@ func spreadsheetTableKey(item map[string]any) string {
 	if tableID, _ := item["table_id"].(string); strings.TrimSpace(tableID) != "" {
 		return "table:" + tableID
 	}
+	if sheetIndex, ok := item["sheet_index"].(float64); ok {
+		return fmt.Sprintf("sheet-index:%g", sheetIndex)
+	}
+	if sheetIndex, ok := item["sheet_index"].(int); ok {
+		return fmt.Sprintf("sheet-index:%d", sheetIndex)
+	}
 	if sheet, _ := item["sheet"].(string); strings.TrimSpace(sheet) != "" {
 		return "sheet:" + sheet
 	}
 	return ""
 }
 
+func spreadsheetTableEnd(items []map[string]any, start int) int {
+	key := spreadsheetTableKey(items[start])
+	if key != "" {
+		i := start
+		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
+			i++
+		}
+		return i
+	}
+
+	// Without a stable table identity, do not merge unrelated row sequences.
+	// A header can still own the following anonymous rows until the next
+	// anonymous header; anonymous row-only inputs are kept as separate tables
+	// because their table boundary cannot be inferred safely.
+	if kind, _ := items[start]["ck_type"].(string); kind == "table_header" {
+		i := start + 1
+		for i < len(items) && isSpreadsheetRowItem(items[i]) {
+			if nextKind, _ := items[i]["ck_type"].(string); nextKind == "table_header" {
+				break
+			}
+			if spreadsheetTableKey(items[i]) != "" {
+				break
+			}
+			i++
+		}
+		return i
+	}
+	return start + 1
+}
+
 func renderSpreadsheetTable(items []map[string]any) string {
 	if len(items) == 0 {
 		return ""
 	}
-	header := spreadsheetStringSlice(items[0]["cells"])
-	if len(header) == 0 {
-		header = spreadsheetStringSlice(items[0]["headers"])
-	}
-	if len(header) == 0 {
-		header = spreadsheetStringSlice(items[0]["text"])
+	var header []string
+	if kind, _ := items[0]["ck_type"].(string); kind == "table_header" {
+		header = spreadsheetStringSlice(items[0]["cells"])
+		if len(header) == 0 {
+			header = spreadsheetStringSlice(items[0]["text"])
+		}
 	}
 
 	sheet, _ := items[0]["sheet"].(string)

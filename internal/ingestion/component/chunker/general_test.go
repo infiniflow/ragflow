@@ -338,7 +338,10 @@ func TestGeneralChunkerMarkdownImageMergesWithTextAndPreservesPayload(t *testing
 func TestMergeMarkdownImagesStacksRasterPayloads(t *testing.T) {
 	const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
 	const secondPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
-	got := mergeMarkdownImages("data:image/png;base64,"+pixel, "data:image/png;base64,"+secondPixel)
+	got, ok := mergeMarkdownImagesChecked("data:image/png;base64,"+pixel, "data:image/png;base64,"+secondPixel)
+	if !ok {
+		t.Fatal("mergeMarkdownImagesChecked rejected valid PNG payloads")
+	}
 	decoded, ok := decodeMarkdownImage(got)
 	if !ok {
 		t.Fatalf("merged image is not decodable: %q", got)
@@ -351,7 +354,10 @@ func TestMergeMarkdownImagesStacksRasterPayloads(t *testing.T) {
 func TestMergeMarkdownImagesAcceptsBareBase64Payloads(t *testing.T) {
 	const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
 	const secondPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
-	got := mergeMarkdownImages(pixel, secondPixel)
+	got, ok := mergeMarkdownImagesChecked(pixel, secondPixel)
+	if !ok {
+		t.Fatal("mergeMarkdownImagesChecked rejected bare base64 payloads")
+	}
 	decoded, ok := decodeMarkdownImage(got)
 	if !ok {
 		t.Fatalf("merged bare-base64 image is not decodable: %q", got)
@@ -368,7 +374,7 @@ func TestMergeMarkdownImagesRejectsOversizedCanvas(t *testing.T) {
 	if !markdownImageWithinLimits(1024, 1024) {
 		t.Fatal("normal image dimensions should remain mergeable")
 	}
-	if got := mergeMarkdownImages("s3://bucket/first.png", "s3://bucket/second.png"); got != "s3://bucket/first.png" {
+	if got, ok := mergeMarkdownImagesChecked("s3://bucket/first.png", "s3://bucket/second.png"); ok || got != "s3://bucket/first.png" {
 		t.Fatalf("opaque image references were changed: %q", got)
 	}
 }

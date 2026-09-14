@@ -259,23 +259,21 @@ func numericItemInt(value any) (int, bool) {
 	}
 }
 
-// deprecatedChunkRows reports the removed parser-side chunking option while
-// retaining its value for diagnostics. Row boundaries are now emitted as
-// structured IR and GeneralChunker owns token-budget merging; silently
-// accepting chunk_rows would make an existing configuration look effective
-// when it is not.
-func deprecatedChunkRows(setup map[string]any, parserName string) (int, bool) {
+// deprecatedChunkRows reports the removed parser-side chunking option. Row
+// boundaries are now emitted as structured IR and the selected chunker owns
+// token-budget merging; silently accepting chunk_rows would make an existing
+// configuration look effective when it is not.
+func deprecatedChunkRows(setup map[string]any, parserName string) {
 	raw, exists := setup["chunk_rows"]
 	if !exists {
-		return 0, false
+		return
 	}
 	rows, ok := numericItemInt(raw)
 	if !ok {
 		slog.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", raw)
-		return 0, true
+		return
 	}
 	slog.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", rows)
-	return rows, true
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a
