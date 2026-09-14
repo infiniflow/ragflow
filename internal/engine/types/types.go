@@ -30,6 +30,14 @@ var ErrDocumentNotFound = errors.New("document not found")
 // tolerable no-op, mirroring Python's docStoreConn behavior.
 var ErrIndexNotFound = errors.New("index does not exist")
 
+// ErrMetaValueSpaceIncomplete marks a metadata value space that could not be
+// read in full -- the doc store answered with partial results. Distinct from a
+// failure to read it at all: callers must not generate a metadata filter from a
+// partial value space, because a value missing because its shard failed is
+// indistinguishable from a value that does not exist, and the filter is applied
+// as a hard document scope.
+var ErrMetaValueSpaceIncomplete = errors.New("metadata value space is incomplete")
+
 // SearchRequest unified search request for all engines
 type SearchRequest struct {
 	// Search target
