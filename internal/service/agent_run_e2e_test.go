@@ -43,6 +43,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -495,7 +496,7 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	}
 
 	unchanged := getAPIConversationForTest(t, testDB, "session-foreign")
-	if string(unchanged.Message) != string(foreignMessage) {
+	if !reflect.DeepEqual(parseMessages(unchanged.Message), parseMessages(foreignMessage)) {
 		t.Fatalf("foreign session message was overwritten: %s", unchanged.Message)
 	}
 }

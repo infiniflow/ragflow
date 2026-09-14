@@ -273,6 +273,7 @@ func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
 	createNamedAgentSessionForDAOTest(t, db, "release-session-id", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary"}]`), 1000)
 	createNamedAgentSessionForDAOTest(t, db, "session-title", "agent-1", "user-1", "Release Notes", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
 	createNamedAgentSessionForDAOTest(t, db, "session-message", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"release details"}]`), 3000)
+	createNamedAgentSessionForDAOTest(t, db, "session-metadata", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary","feedback":"release","attachment":"release"}]`), 3500)
 	createNamedAgentSessionForDAOTest(t, db, "other-agent-release", "agent-2", "user-1", "Release Notes", json.RawMessage(`[{"content":"release details"}]`), 4000)
 
 	ctx := t.Context()

@@ -123,10 +123,134 @@ func compactHistoryItem(item json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(compact.Bytes()), nil
 }
 
+func flattenMessage(item json.RawMessage) (entity.ConversationMessageFields, error) {
+	var fields entity.ConversationMessageFields
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(item, &metadata); err != nil {
+		return fields, err
+	}
+	if metadata == nil {
+		return fields, errors.New("conversation message must be a JSON object")
+	}
+	for key, target := range map[string]interface{}{
+		"id": &fields.MessageID, "role": &fields.Role, "status": &fields.Status,
+		"thumbup": &fields.ThumbUp, "feedback": &fields.Feedback, "created_at": &fields.CreatedAt,
+	} {
+		if value, ok := metadata[key]; ok && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if err := json.Unmarshal(value, target); err == nil {
+				delete(metadata, key)
+			} else {
+				// Keep nonstandard values in metadata without populating the typed column.
+				if err := json.Unmarshal([]byte("null"), target); err != nil {
+					return fields, err
+				}
+			}
+		}
+	}
+	fields.ContentType = "text"
+	if value, ok := metadata["content"]; ok {
+		var content string
+		if err := json.Unmarshal(value, &content); err != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			content = string(value)
+			fields.ContentType = "json"
+		}
+		fields.Content = &content
+		delete(metadata, "content")
+	}
+	raw, err := json.Marshal(metadata)
+	fields.Metadata = string(raw)
+	return fields, err
+}
+
+func marshalMessage(fields entity.ConversationMessageFields) (json.RawMessage, error) {
+	metadata := make(map[string]json.RawMessage)
+	if len(fields.Metadata) > 0 {
+		if err := json.Unmarshal([]byte(fields.Metadata), &metadata); err != nil {
+			return nil, err
+		}
+		if metadata == nil {
+			metadata = make(map[string]json.RawMessage)
+		}
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return nil, err
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, err
+	}
+	for key, value := range values {
+		metadata[key] = value
+	}
+	if fields.Content != nil && fields.ContentType == "json" {
+		metadata["content"] = json.RawMessage(*fields.Content)
+	}
+	return json.Marshal(metadata)
+}
+
+func messageValues(fields entity.ConversationMessageFields) map[string]interface{} {
+	return map[string]interface{}{
+		"message_id": fields.MessageID, "role": fields.Role, "content": fields.Content, "content_type": fields.ContentType,
+		"status": fields.Status, "thumb_up": fields.ThumbUp, "feedback": fields.Feedback, "created_at": fields.CreatedAt, "metadata": fields.Metadata,
+	}
+}
+
+func syncMessages(ctx context.Context, db *gorm.DB, table, conversationID string, items []json.RawMessage) error {
+	var existing []entity.ConversationMessage
+	if err := db.WithContext(ctx).Table(table).Where("conversation_id = ?", conversationID).Find(&existing).Error; err != nil {
+		return err
+	}
+	existingByPosition := make(map[int]entity.ConversationMessageFields, len(existing))
+	for _, row := range existing {
+		existingByPosition[row.Position] = row.ConversationMessageFields
+	}
+	for position, item := range items {
+		fields, err := flattenMessage(item)
+		if err != nil {
+			return fmt.Errorf("flatten message %d: %w", position, err)
+		}
+		query := db.WithContext(ctx).Table(table).Where("conversation_id = ? AND position = ?", conversationID, position)
+		values := messageValues(fields)
+		if old, ok := existingByPosition[position]; ok {
+			oldRaw, err := marshalMessage(old)
+			if err != nil {
+				return err
+			}
+			newRaw, err := marshalMessage(fields)
+			if err != nil {
+				return err
+			}
+			if bytes.Equal(oldRaw, newRaw) {
+				continue
+			}
+			if err := query.Updates(values).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		values["conversation_id"], values["position"] = conversationID, position
+		if err := db.WithContext(ctx).Table(table).Create(values).Error; err != nil {
+			if !errors.Is(err, gorm.ErrDuplicatedKey) {
+				return err
+			}
+			delete(values, "conversation_id")
+			delete(values, "position")
+			if err := query.Updates(values).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return db.WithContext(ctx).Table(table).Where("conversation_id = ? AND position >= ?", conversationID, len(items)).Delete(map[string]interface{}{}).Error
+}
+
 func syncHistory(ctx context.Context, db *gorm.DB, table, payloadColumn, kind, conversationID string, raw json.RawMessage) error {
 	items, err := splitHistory(raw, kind)
 	if err != nil {
 		return fmt.Errorf("split %s history: %w", kind, err)
+	}
+	if kind == "message" {
+		return syncMessages(ctx, db, table, conversationID, items)
 	}
 
 	var existing []conversationHistoryRow
@@ -181,17 +305,28 @@ func loadHistory(ctx context.Context, db *gorm.DB, table, payloadColumn string, 
 	if len(conversationIDs) == 0 {
 		return result, nil
 	}
-	var rows []conversationHistoryRow
-	if err := db.WithContext(ctx).Table(table).
-		Select(conversationHistoryIDColumn+", "+conversationHistoryOrderColumn+", "+payloadColumn+" AS payload").
-		Where(conversationHistoryIDColumn+" IN ?", conversationIDs).
-		Order(conversationHistoryIDColumn + ", " + conversationHistoryOrderColumn).
-		Find(&rows).Error; err != nil {
-		return nil, err
-	}
 	itemsByConversation := make(map[string][]json.RawMessage, len(conversationIDs))
-	for _, row := range rows {
-		itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], json.RawMessage(row.Payload))
+	query := db.WithContext(ctx).Table(table).Where(conversationHistoryIDColumn+" IN ?", conversationIDs).Order(conversationHistoryIDColumn + ", " + conversationHistoryOrderColumn)
+	if payloadColumn == "message" {
+		var rows []entity.ConversationMessage
+		if err := query.Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			raw, err := marshalMessage(row.ConversationMessageFields)
+			if err != nil {
+				return nil, fmt.Errorf("marshal message for conversation %s: %w", row.ConversationID, err)
+			}
+			itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], raw)
+		}
+	} else {
+		var rows []conversationHistoryRow
+		if err := query.Select(conversationHistoryIDColumn + ", " + conversationHistoryOrderColumn + ", " + payloadColumn + " AS payload").Find(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], json.RawMessage(row.Payload))
+		}
 	}
 	for _, conversationID := range conversationIDs {
 		items := itemsByConversation[conversationID]

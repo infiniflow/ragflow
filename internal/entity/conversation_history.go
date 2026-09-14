@@ -18,12 +18,25 @@ package entity
 
 import "encoding/json"
 
+// ConversationMessageFields contains searchable fields and variable message metadata.
+type ConversationMessageFields struct {
+	MessageID   *string  `gorm:"column:message_id;size:255;index" json:"id,omitempty"`
+	Role        *string  `gorm:"column:role;size:32;index" json:"role,omitempty"`
+	Content     *string  `gorm:"column:content;type:longtext" json:"content,omitempty"`
+	ContentType string   `gorm:"column:content_type;size:8" json:"-"`
+	Status      *string  `gorm:"column:status;size:32" json:"status,omitempty"`
+	ThumbUp     *bool    `gorm:"column:thumb_up" json:"thumbup,omitempty"`
+	Feedback    *string  `gorm:"column:feedback;type:longtext" json:"feedback,omitempty"`
+	CreatedAt   *float64 `gorm:"column:created_at" json:"created_at,omitempty"`
+	Metadata    string   `gorm:"column:metadata;type:longtext" json:"-"`
+}
+
 // ConversationMessage stores one ordered message for a conversation.
 type ConversationMessage struct {
-	ConversationID string          `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
-	Position       int             `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
-	Message        json.RawMessage `gorm:"column:message;type:longtext;not null" json:"message"`
-	Conversation   ChatSession     `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
+	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
+	ConversationMessageFields
+	Conversation ChatSession `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (ConversationMessage) TableName() string {
@@ -44,10 +57,10 @@ func (ConversationReference) TableName() string {
 
 // API4ConversationMessage stores one ordered message for an API conversation.
 type API4ConversationMessage struct {
-	ConversationID string           `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
-	Position       int              `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
-	Message        json.RawMessage  `gorm:"column:message;type:longtext;not null" json:"message"`
-	Conversation   API4Conversation `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
+	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
+	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
+	ConversationMessageFields
+	Conversation API4Conversation `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (API4ConversationMessage) TableName() string {

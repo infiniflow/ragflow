@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -84,6 +85,11 @@ type legacyConversationHistory struct {
 }
 
 func migrateConversationHistory(ctx context.Context, db *gorm.DB) error {
+	for _, table := range []string{conversationMessageTable, apiConversationMessageTable} {
+		if err := migrateMessageFields(ctx, db, table); err != nil {
+			return fmt.Errorf("flatten %s: %w", table, err)
+		}
+	}
 	tables := []string{conversationMessageTable, conversationReferenceTable, apiConversationMessageTable, apiConversationReferenceTable}
 	for _, table := range tables {
 		var count int64
@@ -101,6 +107,36 @@ func migrateConversationHistory(ctx context.Context, db *gorm.DB) error {
 		}
 		return migrateConversationTableHistory(ctx, tx, "api_4_conversation", apiConversationMessageTable, apiConversationReferenceTable)
 	})
+}
+
+func migrateMessageFields(ctx context.Context, db *gorm.DB, table string) error {
+	if !db.WithContext(ctx).Migrator().HasColumn(table, "message") {
+		return nil
+	}
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []conversationHistoryRow
+		if err := tx.Table(table).Select("conversation_id, position, message AS payload").Where("metadata IS NULL").Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			fields, err := flattenMessage(json.RawMessage(row.Payload))
+			if err != nil {
+				return fmt.Errorf("message %s/%d: %w", row.ConversationID, row.Position, err)
+			}
+			if err := tx.Table(table).Where("conversation_id = ? AND position = ?", row.ConversationID, row.Position).Updates(messageValues(fields)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	// Drop the old NOT NULL payload only after all message fields have been copied.
+	var model interface{} = &entity.ConversationMessage{}
+	if table == apiConversationMessageTable {
+		model = &entity.API4ConversationMessage{}
+	}
+	return db.WithContext(ctx).Migrator().DropColumn(model, "message")
 }
 
 func migrateConversationTableHistory(ctx context.Context, db *gorm.DB, parentTable, messageTable, referenceTable string) error {
