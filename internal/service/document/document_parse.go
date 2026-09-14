@@ -54,10 +54,7 @@ func lockDocumentParse(docID string) func() {
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
-// The document run status is NOT set here; service.IngestionTaskService.StartRunning
-// sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED or SCHEDULED. Extracted from Ingest so
-// other entry points (e.g. ChunkService.Parse)
+// Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
@@ -101,7 +98,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docI
 		if task == nil {
 			continue
 		}
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
+		if common.IsRunningOrStopping(task.Status) {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", docID, task.Status)
 		}
 	}
@@ -207,14 +204,6 @@ func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string)
 	})
 }
 
-func (s *DocumentService) countDoneDocuments(datasetID string) (int64, error) {
-	var count int64
-	err := dao.GetDB().Model(&entity.Document{}).
-		Where("kb_id = ? AND run = ?", datasetID, string(entity.TaskStatusDone)).
-		Count(&count).Error
-	return count, err
-}
-
 func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
@@ -294,7 +283,7 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID 
 }
 
 // StopParseDocuments stops parsing for the given documents in a dataset.
-// It sets Redis cancel signals for associated tasks and updates doc.run to CANCEL.
+// It requests stop for the associated ingestion tasks.
 // Returns a map with success_count and optionally errors.
 func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	deduped := common.Deduplicate(docIDs)
@@ -382,53 +371,42 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
-// errParseNotRunning is returned by CancelDocParse when the document is not in
-// a cancelable state: its run status is neither RUNNING nor CANCEL and it has
-// no in-flight ingestion task. Callers map it to their endpoint-specific
-// message (the Python /documents/ingest and /documents/stop messages differ).
+// errParseNotRunning is returned by CancelDocParse when the document has no
+// in-flight ingestion task and is not already stopped. Callers map it to their
+// endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
 var errParseNotRunning = errors.New("parse task is not in running status")
 
 // CancelDocParse stops the ingestion task for the document by calling
-// RequestStop (STOPPING), then marks the document run status as CANCEL.
-// It mirrors the Python cancel precondition: only a document whose run status
-// is RUNNING or CANCEL, or one with an in-flight ingestion task
-// (CREATED/SCHEDULED/RUNNING/STOPPING), can be canceled; otherwise errParseNotRunning
-// is returned. A missing ingestion task is not an error by itself — cancel is
-// then a no-op on the task side, matching Python's cancel_all_task_of.
+// RequestStop (STOPPING).
+// It returns errParseNotRunning if the document has neither an in-flight
+// ingestion task (CREATED/SCHEDULED/RUNNING/STOPPING) nor an already stopped
+// task (STOPPED).
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
 
-	docRun := ""
-	if doc.Run != nil {
-		docRun = *doc.Run
-	}
-	inFlight := task != nil && (task.Status == common.CREATED || task.Status == common.SCHEDULED || task.Status == common.RUNNING || task.Status == common.STOPPING)
-	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !inFlight {
+	inFlight := task != nil && common.IsActiveTaskStatus(task.Status)
+	isStopped := task != nil && task.Status == common.STOPPED
+	if !inFlight && !isStopped {
 		return errParseNotRunning
 	}
 
-	if task != nil {
+	if inFlight {
 		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
 		}
 	}
 
-	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
-		return fmt.Errorf("failed to update document %s: %w", doc.ID, upErr)
-	}
 	return nil
 }
 
 func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
 	progressMsg := ""
-	run := string(entity.TaskStatusUnstart)
 	updates := map[string]interface{}{
 		"progress":     0,
 		"progress_msg": progressMsg,
-		"run":          run,
 	}
 	if parserID != nil {
 		updates["parser_id"] = *parserID

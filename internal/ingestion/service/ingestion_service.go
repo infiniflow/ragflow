@@ -1050,8 +1050,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 }
 
 // markCancelProgress writes the cancelled-progress markers to the document
-// row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
-// appended timestamped cancel message (progress_msg += cancelMsg).
+// row: progress=-1 and an appended timestamped cancel message (progress_msg += cancelMsg).
 func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
@@ -1064,7 +1063,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+cancelMsg)
 }
 
 // markTimeoutProgress writes the timeout-progress markers to the document
@@ -1082,7 +1081,7 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+timeoutMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another
