@@ -254,7 +254,6 @@ def test_call_emits_zero_based_sheet_index():
     assert second == (1, 2, 2, 1, 1)
 
 
-
 def _make_large_used_range_xlsx(first_data_row, last_data_row, inflate_row=12000):
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -318,6 +317,7 @@ def test_row_number_includes_rows_after_blank_gap():
     xlsx = _make_gap_xlsx(gap_rows=600)
     total = RAGFlowExcelParser.row_number("test.xlsx", xlsx)
     assert total >= 1001
+
 
 @pytest.mark.p2
 def test_large_blank_gap_does_not_drop_rows():
