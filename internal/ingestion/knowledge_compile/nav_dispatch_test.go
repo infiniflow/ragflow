@@ -105,6 +105,28 @@ func TestNavInputFromProducts_EmptySummaryDropped(t *testing.T) {
 	}
 }
 
+func TestNavInputFromProducts_TreeSummaryWinsRegardlessOfOrder(t *testing.T) {
+	products := []kccommon.Product{
+		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantStructure,
+			Content: `{"name":"A","description":"structure summary"}`,
+			Meta:    map[string]any{"kind": "entity"}},
+		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
+			Content: "tree summary", Vector: []float32{0.1},
+			Meta: map[string]any{"kind": "root"}},
+	}
+
+	got := navInputFromProducts("kb1", products)
+	if len(got) != 1 {
+		t.Fatalf("want one nav input, got %d", len(got))
+	}
+	if got[0].Summary != "tree summary" {
+		t.Fatalf("summary = %q, want tree summary", got[0].Summary)
+	}
+	if !reflect.DeepEqual(got[0].Embedd, []float32{0.1}) {
+		t.Fatalf("embedding = %v, want tree embedding", got[0].Embedd)
+	}
+}
+
 // TestProductsForVariants_GatesDispatch covers the A0-4 per-variant gate: a doc
 // whose event carries only ["wiki"] must NOT have its stale tree/structure
 // doc-level products leak into the nav/structure paths. Empty variants (legacy

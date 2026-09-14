@@ -195,7 +195,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Html,
+      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
