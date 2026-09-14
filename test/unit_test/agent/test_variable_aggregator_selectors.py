@@ -15,13 +15,13 @@
 #
 """VariableAggregator selector shapes (issue #19412).
 
-`param_refs` already accepts both dict selectors (`{"value": "a@x"}`) and
-plain-string selectors (`"a@x"`). `_invoke` used to index `selector["value"]`
-unconditionally, so a string selector raised `TypeError: string indices must
-be integers` after the canvas had already ordered dependencies correctly.
+`param_refs` and `_invoke` must accept both dict selectors (`{"value": "a@x"}`)
+and plain-string selectors (`"a@x"`), and share one normalization path so the
+two cannot drift.
 
-These tests pin both shapes resolving at runtime without loading the full
-canvas stack.
+`Canvas.get_variable_value` raises for a missing component (it does not
+return None). These tests pin that contract: missing refs are skipped via
+exception fallthrough, not via a fake None-returning canvas.
 """
 
 from __future__ import annotations
@@ -86,13 +86,18 @@ def aggregator_mod(monkeypatch):
 
 
 class _Canvas:
+    """Mirrors Canvas.get_variable_value: raises for missing refs."""
+
     def __init__(self, values: dict):
         self._values = values
         self.requested: list = []
 
     def get_variable_value(self, key):
         self.requested.append(key)
-        return self._values.get(key)
+        if key not in self._values:
+            # Same failure mode as agent/canvas.py: missing component raises.
+            raise Exception(f"Can't find variable: '{key}'")
+        return self._values[key]
 
 
 def _make_component(mod, groups, values):
@@ -109,14 +114,27 @@ def _make_component(mod, groups, values):
     return component, canvas
 
 
+def test_normalize_selector_ref_shapes(aggregator_mod):
+    n = aggregator_mod.normalize_selector_ref
+    assert n({"value": "a@x"}) == "a@x"
+    assert n("a@x") == "a@x"
+    assert n("  a@x  ") == "a@x"
+    assert n("{a@x}") == "a@x"
+    assert n("") == ""
+    assert n("   ") == ""
+    assert n({"value": ""}) == ""
+    assert n({"value": "   "}) == ""
+    assert n({}) == ""
+    assert n(None) == ""
+    assert n(123) == ""
+
+
 def test_param_refs_accepts_string_and_dict_selectors(aggregator_mod):
     component, _ = _make_component(
         aggregator_mod,
-        [{"group_name": "G", "variables": ["a@x", {"value": "b@y"}]}],
+        [{"group_name": "G", "variables": ["a@x", {"value": "b@y"}, "", {"value": " "}]}],
         {},
     )
-    if not hasattr(component, "param_refs"):
-        pytest.skip("param_refs landed after this branch base; _invoke contract is still covered below")
     assert component.param_refs() == ["a@x", "b@y"]
 
 
@@ -142,12 +160,38 @@ def test_invoke_resolves_string_selectors(aggregator_mod):
     assert component.output("G") == "from-string"
 
 
-def test_invoke_skips_empty_string_selector_and_uses_next(aggregator_mod):
+def test_invoke_skips_invalid_and_missing_then_uses_next(aggregator_mod):
+    """Empty/malformed selectors never reach the canvas; a missing component
+    raises from the canvas fake (as in production) and falls through."""
     component, canvas = _make_component(
         aggregator_mod,
-        [{"group_name": "G", "variables": ["missing@x", "a@x", {"value": "b@y"}]}],
+        [
+            {
+                "group_name": "G",
+                "variables": [
+                    "",
+                    {"value": "  "},
+                    {},
+                    None,
+                    "missing@x",
+                    "a@x",
+                    {"value": "b@y"},
+                ],
+            }
+        ],
         {"a@x": "second", "b@y": "third"},
     )
     component._invoke()
     assert canvas.requested == ["missing@x", "a@x"]
     assert component.output("G") == "second"
+
+
+def test_invoke_mixed_shapes_pick_first_truthy(aggregator_mod):
+    component, canvas = _make_component(
+        aggregator_mod,
+        [{"group_name": "G", "variables": [{"value": "a@x"}, "b@y"]}],
+        {"a@x": "", "b@y": "fallback"},
+    )
+    component._invoke()
+    assert canvas.requested == ["a@x", "b@y"]
+    assert component.output("G") == "fallback"

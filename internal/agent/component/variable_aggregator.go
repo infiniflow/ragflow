@@ -30,6 +30,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 
@@ -47,7 +48,7 @@ type variableAggregatorParam struct {
 }
 
 // Update copies a fresh param map into the receiver. Mirrors the Python
-// ComponentParamBase contract.
+// ComponentParamBase
 //
 // `groups` may arrive as either []any (engine-decoded from JSON) or
 // []map[string]any (test/direct construction); both shapes are accepted
@@ -212,11 +213,7 @@ func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, i
 		}
 		selectors, _ := g["variables"].([]any)
 		for _, raw := range selectors {
-			sel, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			ref, _ := sel["value"].(string)
+			ref := normalizeSelectorRef(raw)
 			if ref == "" {
 				continue
 			}
@@ -229,6 +226,25 @@ func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, i
 		}
 	}
 	return out, nil
+}
+
+// normalizeSelectorRef accepts {"value": ref} dicts (UI form) and plain
+// reference strings (SDK/API-built canvases), matching the Python
+// normalize_selector_ref helper. Invalid selectors yield "".
+func normalizeSelectorRef(raw any) string {
+	var ref string
+	switch sel := raw.(type) {
+	case string:
+		ref = sel
+	case map[string]any:
+		if v, ok := sel["value"].(string); ok {
+			ref = v
+		}
+	default:
+		return ""
+	}
+	ref = strings.TrimSpace(strings.Trim(ref, "{}"))
+	return ref
 }
 
 // Stream mirrors Invoke; VariableAggregator is a single-shot reduce.

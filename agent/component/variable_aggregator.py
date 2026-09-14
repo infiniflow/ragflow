@@ -51,8 +51,31 @@ class VariableAggregatorParam(ComponentParamBase):
         }
 
 
+def normalize_selector_ref(selector: Any) -> str:
+    """Normalize a VariableAggregator selector to a canvas ref string.
+
+    Selectors arrive as either {"value": "cpn@var"} dicts (UI form) or
+    plain reference strings (SDK/API-built canvases). Returns "" for
+    non-string, empty, or whitespace-only refs so callers can skip them
+    before hitting Canvas.get_variable_value.
+    """
+    ref = selector.get("value") if isinstance(selector, dict) else selector
+    if not isinstance(ref, str):
+        return ""
+    return ref.strip("{}").strip()
+
+
 class VariableAggregator(ComponentBase):
     component_name = "VariableAggregator"
+
+    def param_refs(self) -> list[str]:
+        refs = []
+        for group in self._param.groups:
+            for selector in group.get("variables", []):
+                ref = normalize_selector_ref(selector)
+                if ref:
+                    refs.append(ref)
+        return refs
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
@@ -63,10 +86,15 @@ class VariableAggregator(ComponentBase):
             # record candidate selectors within this group
             self.set_input_value(f"{gname}.variables", list(group.get("variables", [])))
             for selector in group.get("variables", []):
-                # Accept dict selectors ({"value": "cpn@var"}) and plain-string
-                # selectors ("cpn@var"), matching param_refs and the Go runtime.
-                key = selector.get("value") if isinstance(selector, dict) else selector
-                val = self._canvas.get_variable_value(key)
+                ref = normalize_selector_ref(selector)
+                if not ref:
+                    continue
+                try:
+                    val = self._canvas.get_variable_value(ref)
+                except Exception:
+                    # Missing component / unresolved global: treat like the
+                    # Go runtime and fall through to the next selector.
+                    continue
                 if val:
                     self.set_output(gname, val)
                     break

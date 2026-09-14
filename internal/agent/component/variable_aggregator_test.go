@@ -211,3 +211,83 @@ func TestVariableAggregator_Registered(t *testing.T) {
 		t.Errorf("Name()=%q, want VariableAggregator", c.Name())
 	}
 }
+
+// TestVariableAggregator_StringSelectors: SDK/API-built canvases may pass
+// plain-string selectors instead of {"value": ref} dicts. Both must resolve.
+// See infiniflow/ragflow#19412.
+func TestVariableAggregator_StringSelectors(t *testing.T) {
+	state := canvas.NewCanvasState("run-str", "task-str")
+	state.Outputs["cpn_1"] = map[string]any{"y": "from-string"}
+	ctx := canvas.WithState(t.Context(), state)
+
+	groups := []map[string]any{
+		{
+			"group_name": "g",
+			"variables":  []any{"cpn_1@y"},
+		},
+	}
+	c, err := NewVariableAggregatorComponent(map[string]any{"groups": groups})
+	if err != nil {
+		t.Fatalf("NewVariableAggregatorComponent: %v", err)
+	}
+	out, err := c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["g"], "from-string"; got != want {
+		t.Errorf("g: got %v, want %v", got, want)
+	}
+}
+
+// TestVariableAggregator_MixedSelectorShapes: mixed string/dict selectors
+// skip missing and pick the first truthy value.
+func TestVariableAggregator_MixedSelectorShapes(t *testing.T) {
+	state := canvas.NewCanvasState("run-mix", "task-mix")
+	state.Outputs["cpn_1"] = map[string]any{"y": "mixed-ok"}
+	ctx := canvas.WithState(t.Context(), state)
+
+	groups := []map[string]any{
+		{
+			"group_name": "g",
+			"variables": []any{
+				"",                          // empty string selector
+				map[string]any{"value": ""}, // empty dict selector
+				"cpn_missing@y",             // string, component absent
+				map[string]any{"value": "cpn_1@y"},
+			},
+		},
+	}
+	c, err := NewVariableAggregatorComponent(map[string]any{"groups": groups})
+	if err != nil {
+		t.Fatalf("NewVariableAggregatorComponent: %v", err)
+	}
+	out, err := c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["g"], "mixed-ok"; got != want {
+		t.Errorf("g: got %v, want %v", got, want)
+	}
+}
+
+func TestNormalizeSelectorRef(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+	}{
+		{"a@x", "a@x"},
+		{"  a@x  ", "a@x"},
+		{"{a@x}", "a@x"},
+		{map[string]any{"value": "a@x"}, "a@x"},
+		{"", ""},
+		{map[string]any{"value": ""}, ""},
+		{map[string]any{}, ""},
+		{nil, ""},
+		{42, ""},
+	}
+	for _, tc := range cases {
+		if got := normalizeSelectorRef(tc.in); got != tc.want {
+			t.Errorf("normalizeSelectorRef(%v)=%q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
