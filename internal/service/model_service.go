@@ -2375,6 +2375,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 			"status":     model.Status,
 			"verify":     verify,
 			"features":   features,
+			"extra":      modelExtra,
 		})
 	}
 
