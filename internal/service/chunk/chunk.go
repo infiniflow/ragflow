@@ -242,6 +242,11 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		method, _ := filter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			modelProviderSvc := service.NewModelProviderService()
+			// filterModelRef is the reference the context window is resolved
+			// from. The int the model resolvers return alongside the driver is
+			// max_output, the generation cap -- not the context window -- so it
+			// cannot serve as the prompt budget.
+			filterModelRef := ""
 			if chatID != "" {
 				// Use chat_id from search_config (it's actually the model name)
 				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
@@ -249,6 +254,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
 					chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
+					filterModelRef = chatID
 					common.Info("Fetched chat model (from search_config) for metadata filter",
 						zap.String("chatID", chatID),
 						zap.String("tenantID", tenantIDs[0]))
@@ -268,11 +274,20 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 					} else {
 						chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
+						filterModelRef = modelName
 						common.Info("Fetched chat model (tenant default) for metadata filter",
 							zap.String("tenantID", tenantIDs[0]),
 							zap.String("modelName", modelName))
 					}
 
+				}
+			}
+
+			if chatModelForFilter != nil && filterModelRef != "" {
+				if contextLength, err := modelProviderSvc.ResolveModelContextLength(ctx, tenantIDs[0], filterModelRef); err != nil {
+					common.Warn("Failed to resolve the chat model context window for meta_data_filter", zap.String("modelRef", filterModelRef), zap.Error(err))
+				} else {
+					chatModelForFilter.ContextLength = contextLength
 				}
 			}
 		}

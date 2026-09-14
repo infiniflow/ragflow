@@ -2139,6 +2139,23 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		// The context window, not the max_output GetChatModelConfig returns
+		// alongside the driver: prompt budgets (gen_meta_filter's among them)
+		// are measured against the model's total context.
+		chatModelRef := chat.LLMID
+		if chatModelRef == "" {
+			if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
+				chatModelRef = ref
+			}
+		}
+		if chatModelRef != "" {
+			if contextLength, lenErr := s.ModelProviderSvc.ResolveModelContextLength(ctx, chat.TenantID, chatModelRef); lenErr != nil {
+				common.Warn("Failed to resolve the chat model context window",
+					zap.String("modelRef", chatModelRef), zap.Error(lenErr))
+			} else {
+				chatModel.ContextLength = contextLength
+			}
+		}
 	}
 
 	// Rerank model.
