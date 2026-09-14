@@ -379,3 +379,24 @@ func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
 		t.Errorf("empty name + no file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
 	}
 }
+
+func TestBuildFilterFromCondition_UnconstrainedFilter(t *testing.T) {
+	clmns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"id": {"Varchar", ""},
+	}
+	// empty condition yields "1=1"
+	if got := buildFilterFromCondition(map[string]interface{}{}, clmns); got != "1=1" {
+		t.Errorf("empty condition: got %q, want '1=1'", got)
+	}
+	// condition with nil or empty string values yields "1=1"
+	cond := map[string]interface{}{
+		"source_id": "",
+		"nil_field": nil,
+	}
+	if got := buildFilterFromCondition(cond, clmns); got != "1=1" {
+		t.Errorf("non-empty condition with blank values: got %q, want '1=1'", got)
+	}
+}

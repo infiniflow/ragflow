@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { lazy, memo, Suspense } from 'react';
 import {
   createBrowserRouter,
@@ -43,8 +59,7 @@ export enum Routes {
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
-  CompilationTemplates = '/compilation-templates',
-  CompilationTemplatesCreateNext = '/compilation-templates/create-next',
+  CompilationTemplatesEditNext = '/compilation-templates/edit-next',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
   ChatChannel = '/chat-channel',
@@ -70,7 +85,6 @@ export enum Routes {
   UserSetting = '/user-setting',
   DataSetOverview = '/logs',
   DataSetSetting = '/configuration',
-  DataSetSettingNext = '/setting',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
@@ -205,10 +219,6 @@ const routeConfigOptions = [
           },
           {
             path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
-            Component: () => import('@/pages/dataset/dataset-setting'),
-          },
-          {
-            path: `${Routes.DatasetBase}${Routes.DataSetSettingNext}/:id`,
             Component: () => import('@/pages/dataset/setting'),
           },
         ],
@@ -268,9 +278,7 @@ const routeConfigOptions = [
         children: [
           {
             path: Routes.UserSetting,
-            element: (
-              <Navigate to={`/user-setting${Routes.DataSource}`} replace />
-            ),
+            element: <Navigate to={`/user-setting/model`} replace />,
           },
           {
             path: `${Routes.UserSetting}/profile`,
@@ -307,11 +315,6 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}${Routes.ChatChannel}`,
             Component: () => import('@/pages/user-setting/chat-channel'),
           },
-          {
-            path: `${Routes.UserSetting}${Routes.CompilationTemplates}`,
-            Component: () =>
-              import('@/pages/user-setting/compilation-templates'),
-          },
         ],
       },
       {
@@ -323,16 +326,16 @@ const routeConfigOptions = [
     ],
   },
   {
-    path: Routes.CompilationTemplatesCreateNext,
+    path: Routes.CompilationTemplatesEditNext,
     layout: false,
     Component: () =>
-      import('@/pages/user-setting/compilation-templates/create-next'),
+      import('@/pages/user-setting/compilation-templates/edit-next'),
   },
   {
-    path: `${Routes.CompilationTemplatesCreateNext}/:id`,
+    path: `${Routes.CompilationTemplatesEditNext}/:id`,
     layout: false,
     Component: () =>
-      import('@/pages/user-setting/compilation-templates/create-next'),
+      import('@/pages/user-setting/compilation-templates/edit-next'),
   },
   {
     path: `${Routes.SearchShare}`,

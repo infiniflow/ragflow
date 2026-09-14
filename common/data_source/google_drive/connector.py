@@ -192,6 +192,23 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             raise RuntimeError("Creds missing, should not call this property before calling load_credentials")
         return self._creds
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "GoogleDriveConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            include_shared_drives=config.get("include_shared_drives", False),
+            include_my_drives=config.get("include_my_drives", False),
+            include_files_shared_with_me=config.get("include_files_shared_with_me", False),
+            shared_drive_urls=config.get("shared_drive_urls"),
+            my_drive_emails=config.get("my_drive_emails"),
+            shared_folder_urls=config.get("shared_folder_urls"),
+            specific_user_emails=config.get("specific_user_emails"),
+            batch_size=batch_size,
+        )
+        connector.set_allow_images(config.get("allow_images", False))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # TODO: ensure returned new_creds_dict is actually persisted when this is called?
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         try:

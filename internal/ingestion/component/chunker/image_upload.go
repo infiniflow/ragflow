@@ -122,7 +122,7 @@ func uploadOneImage(ctx context.Context, up component.ImageUploader, kbID, chunk
 
 // decodeChunkImage strips an optional data-URL prefix and base64-decodes the
 // payload. Chunker image payloads are "data:image/...;base64,<b64>" (pdfcrop,
-// markdown, docx). A bare base64 string is also accepted.
+// Markdown, docx). A bare base64 string is also accepted.
 func decodeChunkImage(s string) ([]byte, error) {
 	if i := strings.Index(s, ";base64,"); i >= 0 {
 		s = s[i+len(";base64,"):]

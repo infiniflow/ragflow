@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"math"
 	"regexp"
 	"strings"
@@ -30,7 +31,7 @@ const minSentenceLen = 5
 
 // Embedder abstracts embedding-model access so InsertCitations is testable.
 type Embedder interface {
-	Encode(texts []string) ([][]float64, error)
+	Encode(ctx context.Context, texts []string) ([][]float64, error)
 }
 
 // CitationMarkerPattern matches "[ID:N]" or bare "[N]" with Arabic digit support,
@@ -43,6 +44,11 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
 	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
 	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
+	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
+	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
+	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over
+	// its final answer before it reaches the UI.
+	regexp.MustCompile(`\(\s*\**\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\**\s*\)`), // (**ID: 12**)
 }
 
 // InsertCitations decorates answer with [ID:n] citation markers.
@@ -57,13 +63,13 @@ var badCitationPatterns = []*regexp.Regexp{
 //  6. Rebuild answer text with [ID:n] markers inserted after cited sentences.
 //
 // Returns the decorated answer and the set of cited chunk indices.
-func InsertCitations(answer string, chunks []SourcedChunk, embedder Embedder, chunkVectors [][]float64) (string, []int) {
+func InsertCitations(ctx context.Context, answer string, chunks []SourcedChunk, embedder Embedder, chunkVectors [][]float64) (string, []int) {
 	sentences, sentenceIdx := splitAnswer(answer)
 	if len(sentences) == 0 || len(chunks) == 0 || len(chunkVectors) == 0 {
 		return answer, nil
 	}
 
-	sentenceVecs, err := embedder.Encode(sentences)
+	sentenceVecs, err := embedder.Encode(ctx, sentences)
 	if err != nil || len(sentenceVecs) == 0 {
 		return answer, nil
 	}

@@ -75,10 +75,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
 			protected.GET("/service_types/:service_type", r.handler.GetServicesByType)
-			protected.GET("/services/:service_id", r.handler.GetService)
-			protected.DELETE("/services/:service_id", r.handler.ShutdownService)
-			protected.PUT("/services/:service_id", r.handler.RestartService)
-			protected.POST("/services/:service_id", r.handler.StartService)
+			protected.GET("/services/:service_name", r.handler.GetService)
+			protected.DELETE("/services/:service_name", r.handler.ShutdownService)
+			protected.PUT("/services/:service_name", r.handler.RestartService)
+			protected.POST("/services/:service_name", r.handler.StartService)
 
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)

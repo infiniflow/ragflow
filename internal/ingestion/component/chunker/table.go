@@ -33,6 +33,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTableChunker = "TableChunker"
@@ -65,7 +67,7 @@ func (c *TableChunkerComponent) Inputs() map[string]string { return ChunkerInput
 
 func (c *TableChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *TableChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TableChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 

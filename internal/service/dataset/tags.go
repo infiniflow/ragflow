@@ -13,7 +13,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 )
 
-func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
@@ -31,10 +31,10 @@ func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
-		if !d.kbDAO.Accessible(datasetID, userID) {
+		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
 		}
-		kb, err := d.kbDAO.GetByID(datasetID)
+		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
@@ -51,7 +51,7 @@ func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 	merged := make(map[string]int)
 	for tenantID, kbIDs := range datasetIDsByTenant {
 		for offset := 0; ; offset += pageSize {
-			searchResp, err := d.docEngine.Search(context.Background(), &enginetypes.SearchRequest{
+			searchResp, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
 				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 				KbIDs:        kbIDs,
 				Offset:       offset,
@@ -96,30 +96,30 @@ func (d *DatasetService) AggregateTags(datasetIDs []string, userID string) ([]ma
 	return result, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
 	}
 	normalizedID, err := normalizeDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
 	datasetID = normalizedID
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+		return nil, common.CodeServerError, errors.New("document engine is not initialized")
 	}
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	exists, err := d.docEngine.ChunkStoreExists(ctx, indexName, datasetID)
+	exists, err := d.docEngine.ChunkStoreExists(newCtx, indexName, datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
 	}
@@ -129,10 +129,10 @@ func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interf
 	const pageSize = 10000
 	counts := make(map[string]int)
 	for offset := 0; ; offset += pageSize {
-		if err = ctx.Err(); err != nil {
+		if err = newCtx.Err(); err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("list tags timeout or canceled: %w", err)
 		}
-		searchResp, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		searchResp, err := d.docEngine.Search(newCtx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
@@ -189,7 +189,7 @@ func (d *DatasetService) ListTags(datasetID, userID string) ([]map[string]interf
 	return result, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
 	fromTag = strings.TrimSpace(fromTag)
 	toTag = strings.TrimSpace(toTag)
 	datasetID, err := normalizeDatasetID(datasetID)
@@ -197,17 +197,17 @@ func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (ma
 		return nil, common.CodeDataError, err
 	}
 	if strings.TrimSpace(datasetID) == "" {
-		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+		return nil, common.CodeServerError, errors.New("document engine is not initialized")
 	}
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	condition := map[string]interface{}{
@@ -222,7 +222,7 @@ func (d *DatasetService) RenameTag(datasetID, userID, fromTag, toTag string) (ma
 			"tag_kwd": toTag,
 		},
 	}
-	err = d.docEngine.UpdateChunks(context.Background(), condition, newValue, indexName, datasetID)
+	err = d.docEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to rename tag: %w", err)
 	}

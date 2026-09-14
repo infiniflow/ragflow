@@ -248,6 +248,19 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self._discord_bot_token: str | None = None
         self.requested_start_date_string: str = start_date or ""
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "DiscordConnector":
+        server_ids = config.get("server_ids")
+        channel_names = config.get("channel_names")
+        connector = cls(
+            server_ids=server_ids.split(",") if server_ids else [],
+            channel_names=channel_names.split(",") if channel_names else [],
+            start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
+            batch_size=int(config.get("batch_size") or INDEX_BATCH_SIZE),
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     @property
     def discord_bot_token(self) -> str:
         if self._discord_bot_token is None:

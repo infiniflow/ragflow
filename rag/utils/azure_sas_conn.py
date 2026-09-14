@@ -51,14 +51,14 @@ class RAGFlowAzureSasBlob:
         self.conn = None
 
     def health(self):
-        _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        return self.conn.upload_blob(name=f"{_bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
+        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
+        return self.conn.upload_blob(name=f"{bucket}/{fnm}", data=BytesIO(binary), length=len(binary), overwrite=True)
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
         for attempt in range(MAX_RETRIES):
             try:
-                return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary))
+                return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary), overwrite=True)
             except Exception:
                 logging.exception(f"Fail put {blob_name} (attempt {attempt + 1}/{MAX_RETRIES})")
                 if attempt == MAX_RETRIES - 1:
@@ -66,13 +66,13 @@ class RAGFlowAzureSasBlob:
                 self.__open__()
                 time.sleep(2 ** attempt)
 
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         try:
             self.conn.delete_blob(f"{bucket}/{fnm}")
         except Exception:
             logging.exception(f"Fail rm {bucket}/{fnm}")
 
-    def get(self, bucket, fnm):
+    def get(self, bucket, fnm, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
         for attempt in range(MAX_RETRIES):
             try:
@@ -88,12 +88,12 @@ class RAGFlowAzureSasBlob:
                 time.sleep(2 ** attempt)
         return None
 
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, fnm, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
         try:
             return self.conn.get_blob_client(f"{blob_name}").exists()
         except Exception:
-            logging.exception(f"Fail put {blob_name}")
+            logging.exception(f"Fail obj_exist {blob_name}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):

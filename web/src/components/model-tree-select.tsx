@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import LLMLabel from '@/components/llm-select/llm-label';
 import { LlmIcon } from '@/components/svg-icon';
 import {
@@ -9,9 +25,14 @@ import {
 } from '@/components/ui/form';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
-import { buildModelValue, getRealModelName } from '@/utils/llm-util';
-import { useCallback, useMemo } from 'react';
-import { useFormContext } from 'react-hook-form';
+import {
+  buildModelValue,
+  getRealModelName,
+  parseModelValue,
+} from '@/utils/llm-util';
+import { TriangleAlert } from 'lucide-react';
+import { forwardRef, useCallback, useEffect, useMemo } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { TreeSelect, TreeSelectNode } from './tree-select';
 
@@ -116,23 +137,30 @@ export interface ModelTreeSelectProps {
   ownerTenantId?: string;
 }
 
-export function ModelTreeSelect({
-  modelTypes = ModelTypeMap.llm_id,
-  value,
-  onChange,
-  disabled,
-  placeholder,
-  showSearch = true,
-  allowClear = false,
-  className,
-  renderSelected,
-  testId,
-  ownerTenantId,
-}: ModelTreeSelectProps) {
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
+export const ModelTreeSelect = forwardRef<
+  HTMLButtonElement,
+  ModelTreeSelectProps
+>(function ModelTreeSelect(
+  {
+    modelTypes = ModelTypeMap.llm_id,
+    value,
+    onChange,
+    disabled,
+    placeholder,
+    showSearch = true,
+    allowClear = false,
+    className,
+    renderSelected,
+    testId,
     ownerTenantId,
-  );
+  },
+  ref,
+) {
+  const {
+    data: allAddedModels,
+    isFetched: modelsFetched,
+    isError: modelsError,
+  } = useFetchAllAddedModels(undefined, ownerTenantId);
 
   const treeData = useMemo(
     () => buildModelTree(allAddedModels, modelTypes),
@@ -183,8 +211,24 @@ export function ModelTreeSelect({
     [],
   );
 
+  // The persisted model no longer matches any added model (e.g. it was
+  // deleted from the provider) — keep it visible with a warning marker
+  // instead of rendering a blank select. Prefer the readable model name over
+  // the raw composite id.
+  const renderMissingModel = useCallback((missingValue: string) => {
+    return (
+      <span className="flex items-center gap-1.5 text-text-disabled">
+        <TriangleAlert className="size-4 flex-shrink-0" />
+        <span className="truncate">
+          {parseModelValue(missingValue)?.model_name ?? missingValue}
+        </span>
+      </span>
+    );
+  }, []);
+
   return (
     <TreeSelect
+      ref={ref}
       data={treeData}
       value={normalizedValue}
       onChange={onChange}
@@ -195,10 +239,13 @@ export function ModelTreeSelect({
       defaultExpandAll
       className={className}
       renderSelected={renderSelected ?? defaultRenderSelected}
+      renderMissingValue={renderMissingModel}
+      loading={!modelsFetched || modelsError}
       testId={testId}
     />
   );
-}
+});
+
 
 export interface ModelTreeSelectFormFieldProps extends ModelTreeSelectProps {
   name?: string;
@@ -216,6 +263,23 @@ export function ModelTreeSelectFormField({
 }: ModelTreeSelectFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
+  const { loading } = useFetchAllAddedModels(undefined, rest.ownerTenantId);
+  const value = useWatch({ control: form.control, name });
+
+  // `form` from context is a new object on every provider render, so it must
+  // not be an effect dependency — `trigger` is a stable control method. With
+  // `form` in the deps, each trigger() emits formState updates that re-render
+  // the provider, which recreates `form`, which refires this effect: an
+  // infinite validation loop whenever the field keeps failing validation.
+  const trigger = form.trigger;
+
+  // A persisted value never fires onChange validation, so once the model list
+  // has loaded, revalidate explicitly — it may reference a model that has
+  // since been deleted, and the error should be visible before submit.
+  useEffect(() => {
+    if (loading || !value) return;
+    trigger(name);
+  }, [trigger, loading, name, value]);
 
   return (
     <FormField
@@ -231,6 +295,7 @@ export function ModelTreeSelectFormField({
           <FormControl>
             <ModelTreeSelect
               {...rest}
+              ref={field.ref}
               value={field.value}
               onChange={field.onChange}
               placeholder={rest.placeholder ?? t('common.pleaseSelect')}

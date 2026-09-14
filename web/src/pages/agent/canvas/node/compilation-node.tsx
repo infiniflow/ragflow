@@ -10,14 +10,15 @@ export function CompilationNode({ ...props }: NodeProps<IRagNode>) {
   const { data } = props;
   const { t } = useTranslation();
   const options = useCompilationTemplateGroupOptions();
-  const groupId = get(data, 'form.compilation_template_group_ids');
+  const groupId = get(data, 'form.compilation_template_group_id');
+  const llmId = get(data, 'form.llm_id');
   const groupName =
     options.find((option) => option.value === groupId)?.label ?? groupId;
 
   return (
     <RagNode {...props}>
       <section className="flex flex-col gap-2">
-        <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
+        <LLMLabelCard llmId={llmId}></LLMLabelCard>
         <LabelCard className="text-text-primary flex justify-between flex-col gap-1">
           <span className="text-text-secondary">
             {t('knowledgeConfiguration.compilationTemplate')}

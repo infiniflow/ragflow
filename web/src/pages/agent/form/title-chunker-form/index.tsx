@@ -1,6 +1,8 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
@@ -63,6 +65,7 @@ export const FormSchema = z.object({
   root_chunk_as_heading: z.boolean().optional(),
   hierarchyRules: rulesSchema,
   groupRules: rulesSchema,
+  chunk_token_cap: z.coerce.number().int().min(128).max(8000).optional(),
 });
 
 export enum TitleChunkerRulesField {
@@ -225,6 +228,7 @@ const TitleChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const { t } = useTranslation();
   const initialValues = useFormValues(initialTitleChunkerValues, node);
@@ -234,6 +238,8 @@ const TitleChunkerForm = ({
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
   const [showAllTip, setShowAllTip] = useState(true);
 
   const method = useWatch({ name: 'method', control: form.control });
@@ -295,6 +301,16 @@ const TitleChunkerForm = ({
             </div>
           </div>
         </div>
+        <SliderInputFormField
+          name="chunk_token_cap"
+          max={8000}
+          min={128}
+          label={t('flow.chunkTokenCap', 'Chunk token cap')}
+          tooltip={t(
+            'flow.chunkTokenCapTip',
+            'Maximum tokens per chunk. Chunks exceeding the cap are re-split on sentence boundaries (Chinese/English period, exclamation mark, question mark, newline). 0 disables the cap.',
+          )}
+        />
         <RAGFlowFormItem
           name={'hierarchyHierarchy'}
           label={''}

@@ -12,10 +12,10 @@ func TestAgentTool_DepthErrorMessage(t *testing.T) {
 	m.addResp("ok")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("inner").WithDescription("Inner")
 
-	tool := NewAgentTool(context.Background(), agent, WithMaxDepth(1))
+	tool := NewAgentTool(t.Context(), agent, WithMaxDepth(1))
 
 	// Create parent context with depth=1 (simulating one level of nesting).
-	ctx := context.WithValue(context.Background(), subAgentDepthKey{}, 1)
+	ctx := context.WithValue(t.Context(), subAgentDepthKey{}, 1)
 
 	_, err := tool.Invoke(ctx, "{}")
 	if err == nil {

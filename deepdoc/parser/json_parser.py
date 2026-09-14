@@ -21,7 +21,7 @@
 import json
 from typing import Any
 
-from rag.nlp import find_codec
+from rag.nlp import decode_text
 
 
 class RAGFlowJsonParser:
@@ -31,8 +31,7 @@ class RAGFlowJsonParser:
         self.min_chunk_size = min_chunk_size if min_chunk_size is not None else max(max_chunk_size - 200, 50)
 
     def __call__(self, binary):
-        encoding = find_codec(binary)
-        txt = binary.decode(encoding, errors="ignore")
+        txt, _ = decode_text(binary, document_type="JSON document")
 
         if self.is_jsonl_format(txt):
             sections = self._parse_jsonl(txt)
@@ -44,6 +43,15 @@ class RAGFlowJsonParser:
     def _json_size(data: dict) -> int:
         """Calculate the size of the serialized JSON object."""
         return len(json.dumps(data, ensure_ascii=False))
+
+    @staticmethod
+    def _is_empty_chunk(chunk: Any) -> bool:
+        """Only null and empty containers carry no content; 0 and false do."""
+        if chunk is None:
+            return True
+        if isinstance(chunk, (dict, list, str)):
+            return not chunk
+        return False
 
     @staticmethod
     def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
@@ -93,7 +101,11 @@ class RAGFlowJsonParser:
                     self._json_split(value, new_path, chunks)
         else:
             # handle single item
-            self._set_nested_dict(chunks[-1], current_path, data)
+            if not current_path:
+                # top-level scalar (number/string/bool/null) has no key to nest under
+                chunks[-1] = data
+            else:
+                self._set_nested_dict(chunks[-1], current_path, data)
         return chunks
 
     def split_json(
@@ -110,7 +122,7 @@ class RAGFlowJsonParser:
             chunks = self._json_split(json_data, None, None)
 
         # Remove the last chunk if it's empty
-        if not chunks[-1]:
+        if chunks and self._is_empty_chunk(chunks[-1]):
             chunks.pop()
         return chunks
 
@@ -132,7 +144,7 @@ class RAGFlowJsonParser:
         try:
             json_data = json.loads(content)
             chunks = self.split_json(json_data, True)
-            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if line]
+            sections = [json.dumps(line, ensure_ascii=False) for line in chunks if not self._is_empty_chunk(line)]
         except json.JSONDecodeError:
             pass
         return sections
@@ -146,7 +158,7 @@ class RAGFlowJsonParser:
             try:
                 data = json.loads(line)
                 chunks = self.split_json(data, convert_lists=True)
-                all_chunks.extend(json.dumps(chunk, ensure_ascii=False) for chunk in chunks if chunk)
+                all_chunks.extend(json.dumps(chunk, ensure_ascii=False) for chunk in chunks if not self._is_empty_chunk(chunk))
             except json.JSONDecodeError:
                 continue
         return all_chunks

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"ragflow/internal/engine/types"
+
+	"gorm.io/gorm"
 )
 
 // fakeChatDocEngine is a no-op DocEngine implementation for tests.
@@ -77,6 +79,6 @@ func (fakeChatDocEngine) Ping(context.Context) error                          { 
 func (fakeChatDocEngine) Close() error                                        { return nil }
 func (fakeChatDocEngine) GetType() string                                     { return "fake" }
 func (fakeChatDocEngine) SupportsPageRank() bool                              { return false }
-func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }

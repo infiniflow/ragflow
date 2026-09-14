@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -244,7 +245,7 @@ type fakeEmbedder struct {
 	err  error
 }
 
-func (f *fakeEmbedder) Encode(texts []string) ([][]float64, error) {
+func (f *fakeEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -252,10 +253,11 @@ func (f *fakeEmbedder) Encode(texts []string) ([][]float64, error) {
 }
 
 func TestInsertCitations_Happy(t *testing.T) {
+	ctx := t.Context()
 	chunks := []SourcedChunk{{ID: "abc123"}, {ID: "def456"}}
 	chunkVectors := [][]float64{{1, 0, 0}, {0, 1, 0}}
 	embedder := &fakeEmbedder{vecs: [][]float64{{1, 0, 0}, {0, 1, 0}}}
-	answer, cited := InsertCitations("First sentence. Second sentence here.", chunks, embedder, chunkVectors)
+	answer, cited := InsertCitations(ctx, "First sentence. Second sentence here.", chunks, embedder, chunkVectors)
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
@@ -265,28 +267,32 @@ func TestInsertCitations_Happy(t *testing.T) {
 }
 
 func TestInsertCitations_EmptyAnswer(t *testing.T) {
-	c, _ := InsertCitations("", nil, &fakeEmbedder{}, nil)
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "", nil, &fakeEmbedder{}, nil)
 	if c != "" {
 		t.Errorf("empty answer: %q", c)
 	}
 }
 
 func TestInsertCitations_NoChunks(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", nil, &fakeEmbedder{}, [][]float64{})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", nil, &fakeEmbedder{}, [][]float64{})
 	if c != "Hello world." {
 		t.Errorf("no chunks should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeError(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("encode error should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeEmpty(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("empty encode result should return original: %q", c)
 	}
@@ -305,5 +311,25 @@ func TestMaxRow(t *testing.T) {
 	}
 	if maxRow(nil) != 0 {
 		t.Error("max of nil should be 0")
+	}
+}
+
+// TestRepairBadCitationFormats covers the malformed-citation shapes
+// RepairBadCitationFormats rewrites to "[ID:N]", including the
+// markdown-asterisk-wrapped parenthetical form (**ID:5**) that mirrors Python
+// agentic_rag.py:885's re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...).
+func TestRepairBadCitationFormats(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"(**ID:5**)", "[ID:5]"}, // Python deep-research asterisk form
+		{"(*ID: 5*)", "[ID:5]"},  // single star, spaced
+		{"(ID:12)", "[ID:12]"},   // plain parenthetical (existing pattern)
+		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
+		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
+		{"plain text no cites", "plain text no cites"},
+	}
+	for _, c := range cases {
+		if got := RepairBadCitationFormats(c.in); got != c.want {
+			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

@@ -157,6 +157,10 @@ func (j *JSONMap) Scan(value interface{}) error {
 	return json.Unmarshal(b, j)
 }
 
+func (j *JSONMap) GormDataType() string {
+	return "longtext"
+}
+
 // JSONSlice is a slice type that can store JSON array data
 type JSONSlice []interface{}
 

@@ -103,7 +103,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
-      '^(/api/v1/datasets/search)|^(/api/v1/chat/completions)': {
+      '^(/api/v1/chat/completions)': {
         target: 'http://127.0.0.1:9384/',
         changeOrigin: true,
         ws: true,
@@ -141,12 +141,6 @@ export default defineConfig(({ mode }) => {
   const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
-    define: {
-      // Expose to client code via import.meta.env
-      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
-      // Keep backward compatibility
-      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
-    },
     plugins: [
       inspectorBabelPlugin(),
       react(),
@@ -159,6 +153,14 @@ export default defineConfig(({ mode }) => {
           {
             src: 'node_modules/monaco-editor/min/vs/',
             dest: './',
+          },
+          {
+            src: 'node_modules/pdfjs-dist/cmaps/',
+            dest: 'pdfjs-dist/',
+          },
+          {
+            src: 'node_modules/pdfjs-dist/standard_fonts/',
+            dest: 'pdfjs-dist/',
           },
         ],
       }),

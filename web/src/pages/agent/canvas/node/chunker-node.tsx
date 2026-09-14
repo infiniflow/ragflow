@@ -2,7 +2,7 @@ import { IRagNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { PropsWithChildren, memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';

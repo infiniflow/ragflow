@@ -90,3 +90,72 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentSessionMessageContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		answer   string
+		thinking string
+		want     string
+	}{
+		{"no thinking keeps answer as-is", "final answer", "", "final answer"},
+		{"thinking wrapped before answer", "final answer", "reasoning trace", "<think>reasoning trace</think>final answer"},
+		{"empty answer keeps thinking section", "", "reasoning trace", "<think>reasoning trace</think>"},
+		{"inline think tags preserved when no separate thinking", "pre <think>inline</think> post", "", "pre <think>inline</think> post"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentSessionMessageContent(tt.answer, tt.thinking); got != tt.want {
+				t.Errorf("agentSessionMessageContent(%q, %q) = %q, want %q", tt.answer, tt.thinking, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPersistAgentRunSessionPreservesThinking guards the chat.thought
+// ("思考完成") indicator: the assistant message stored on the agent session
+// must keep the reasoning segment wrapped in <think> tags, mirroring Python
+// canvas_service.completion. The chat UI refetches the session message list
+// after streaming and renders the thought section from those tags.
+func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.API4Conversation{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	originalDB := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-think",
+		DialogID:  "canvas-think",
+		UserID:    "user-1",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewAgentService()
+	if err := svc.persistAgentRunSession(context.Background(), "canvas-think", "user-1", "session-think", "msg-think-1", "question", "final answer", "reasoning trace", map[string]interface{}{}, nil, nil, true); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	var conv entity.API4Conversation
+	if err := testDB.First(&conv, "id = ?", "session-think").Error; err != nil {
+		t.Fatalf("reload session: %v", err)
+	}
+	var messages []map[string]any
+	if err := json.Unmarshal(conv.Message, &messages); err != nil {
+		t.Fatalf("decode messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (user + assistant)", len(messages))
+	}
+	if role, _ := messages[1]["role"].(string); role != "assistant" {
+		t.Fatalf("second message role = %q, want assistant", role)
+	}
+	if got, _ := messages[1]["content"].(string); got != "<think>reasoning trace</think>final answer" {
+		t.Fatalf("persisted assistant content = %q, want %q", got, "<think>reasoning trace</think>final answer")
+	}
+}

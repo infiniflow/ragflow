@@ -73,7 +73,7 @@ class TestSessionsWithChatAssistantList:
         "params, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, "not instance of"),
-            ({"page_size": 0}, 0, ""),
+            ({"page_size": 0}, 5, ""),
             ({"page_size": 1}, 1, ""),
             ({"page_size": 6}, 5, ""),
             ({"page_size": "1"}, 0, "not instance of"),
@@ -227,7 +227,7 @@ class TestSessionsWithChatAssistantList:
 
         with pytest.raises(Exception) as exception_info:
             chat_assistant.list_sessions()
-        assert "No authorization." in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2

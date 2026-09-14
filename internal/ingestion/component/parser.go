@@ -28,10 +28,8 @@
 //   - Per-page parallelism is delegated to the parser backends
 //     (e.g. internal/deepdoc/parser/pdf fans out one worker per
 //     page and assembles the results in page order). This
-//     component only reshapes the parser output into the
-//     schema.Page layout and keeps the deterministic, page-number
-//     sorted merge contract (plan §8 R8) that the downstream
-//     chunker / tokenizer rely on for stable chunk IDs.
+//     component normalizes the parser output into structured JSON
+//     items while preserving the backend's deterministic item order.
 //
 //   - Progress (start/done callback) and elapsed-time stamping
 //     (_created_time / _elapsed_time) are owned by the canvas
@@ -42,20 +40,23 @@
 //   - WHAT IS NOT YET PORTED:
 //
 //   - The Python component dispatches to 13 file-format branches
-//     (pdf, markdown, text&code, html, spreadsheet, slides, doc,
+//     (pdf, Markdown, text&code, html, spreadsheet, slides, doc,
 //     docx, image, audio, video, email, epub) — see parser.py
-//     function_map at line ~1273. The Go counterparts in
-//     internal/parser/parser/ are SKELETONS that print to
-//     stdout and return nil. The cgo-gated office variants
-//     (docx, doc, ppt, pptx, xls, xlsx) call office_oxide but
-//     discard the result.
+//     function_map at line ~1273. The Go port is LANDed and LIVE
+//     in production for the families the ingestor claims (see
+//     cmd/ragflow_server.go: Ingestor.supportedTypes =
+//     ["pdf","docx","txt"]); those run their real parsers,
+//     including the cgo-gated office variants via office_oxide.
+//     Families not yet ported fall through to the raw-text path
+//     below rather than printing skeletons.
 //
-//   - Until the parser package returns real data, the Go Parser
-//     component uses a "raw text" fallback: it treats the input
-//     binary as UTF-8 and slices it into 1 page (or N pages
-//     when the upstream signals a page boundary with a literal
+//   - For any family NOT yet ported (its Go parser returns no real
+//     data), the component uses a "raw text" fallback: it treats
+//     the input binary as UTF-8 and slices it into 1 page (or N
+//     pages when the upstream signals a page boundary with a literal
 //     "\f" form feed). This is the conservative, observable
-//     behaviour until the real format dispatch lands.
+//     behaviour for UNPORTED families only; ported families run
+//     their real parsers.
 //
 //   - The Python side's "image2id" pipeline (parser.py:1317-1329)
 //     that uploads embedded images to MinIO is not replicated —
@@ -64,29 +65,32 @@
 //     side-effect component (out of scope for Phase 2.2).
 //
 //   - The Python _param.check() business validation
-//     (parse_method whitelist, output_format whitelist, etc.) is
-//     not replicated. The component trusts the param block
-//     passed in at construction time; invalid values surface as
-//     runtime errors in the chosen parser branch.
+//     (parse_method whitelist, conditional lang checks) is mirrored
+//     by (*ParserComponent).Check() below, which NewParserComponent
+//     runs at construction time. The Python flow check() also
+//     validates audio/video vlm.llm_id, but Go media_dispatch uses
+//     tenant default models (resolveTenantModelByType) rather than
+//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
 //
-//   - NO PERSISTENCE: parsed pages live only in the per-run
-//     output map, exactly as the schema.Page type is intended.
+//   - NO PERSISTENCE: structured parser items live only in the per-run
+//     output map.
 package component
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
@@ -99,43 +103,41 @@ const ComponentNameParser = "Parser"
 const pageFormFeed = '\f'
 
 // ParserComponent runs the configured parser branch against the
-// upstream "binary" payload and returns a deterministic, page-
-// sorted slice of schema.Page values.
+// upstream "binary" payload and returns structured parser outputs.
 //
 // The instance is safe for concurrent invocation: each Invoke call
 // builds its own per-batch goroutine tree and merges results in
 // the goroutine that returned from Invoke. The static Param is
 // read-only after construction.
 type ParserComponent struct {
-	Setups map[string]schema.ParserSetup
-	Param  schema.ParserParam
+	setups map[string]schema.ParserSetup
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
-// The map is decoded into schema.ParserParam.Defaults() and then
-// overlaid with the supplied values. This matches the Python
-// "default + override" pattern in parser.py:ParserParam.__init__.
+// The default setups are overlaid with the supplied values. Historical
+// output_format values are accepted but normalized to JSON so downstream
+// components consume one parser output protocol. This applies to every
+// family, including PDF and office documents: Markdown is an internal
+// backend representation only and is never a public Parser output.
 //
-// Param map shape (all keys optional; missing keys fall back to
-// schema.ParserParam.Defaults() values):
+// Param map shape (all keys optional):
 //
 //	{
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
-//	  "allowed_output_format": map[string][]string,
 //	}
 //
 // Errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
 func NewParserComponent(params map[string]any) (runtime.Component, error) {
-	p := schema.ParserParam{}.Defaults()
 	s := defaultSetups()
 	if params == nil {
-		return &ParserComponent{Setups: s, Param: p}, nil
+		normalizeParserOutputFormats(s)
+		return &ParserComponent{setups: s}, nil
 	}
 	for k, raw := range params {
-		if k == "outputs" {
+		if k == "outputs" || k == "allowed_output_format" {
 			continue
 		}
 		ftCfg, ok := raw.(map[string]any)
@@ -146,27 +148,116 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k] = schema.ParserSetup{}
 		}
 		for fk, fv := range ftCfg {
-			s[k][fk] = fv
+			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
-	if rawAllowed, ok := params["allowed_output_format"].(map[string]any); ok {
-		allowed := make(map[string][]string, len(rawAllowed))
-		for fileType, raw := range rawAllowed {
-			list, ok := raw.([]any)
-			if !ok {
-				continue
-			}
-			formats := make([]string, 0, len(list))
-			for _, item := range list {
-				if s, ok := item.(string); ok {
-					formats = append(formats, s)
-				}
-			}
-			allowed[fileType] = formats
-		}
-		p.AllowedOutputFormat = allowed
+	normalizeParserOutputFormats(s)
+	pc := &ParserComponent{setups: s}
+	if err := pc.Check(); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
 	}
-	return &ParserComponent{Setups: s, Param: p}, nil
+	return pc, nil
+}
+
+func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
+	// The Go Parser component intentionally exposes JSON only. Keep this
+	// normalization unconditional so PDF/office legacy Markdown settings
+	// cannot silently select a second public output path.
+	for _, setup := range setups {
+		setup["output_format"] = "json"
+	}
+}
+
+func cloneParserSetupValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		cloned := make(map[string]any, len(v))
+		for key, nested := range v {
+			cloned[key] = cloneParserSetupValue(nested)
+		}
+		return cloned
+	case schema.ParserSetup:
+		cloned := make(schema.ParserSetup, len(v))
+		for key, nested := range v {
+			cloned[key] = cloneParserSetupValue(nested)
+		}
+		return cloned
+	case []any:
+		cloned := make([]any, len(v))
+		for i, nested := range v {
+			cloned[i] = cloneParserSetupValue(nested)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), v...)
+	case []int:
+		return append([]int(nil), v...)
+	case [][]int:
+		cloned := make([][]int, len(v))
+		for i, nested := range v {
+			cloned[i] = append([]int(nil), nested...)
+		}
+		return cloned
+	default:
+		return value
+	}
+}
+
+// Check mirrors the applicable subset of Python ParserParam.check()
+// (rag/flow/parser/parser.py:251-321). Runs at construction time so
+// a malformed DSL surfaces as a canvas compile failure rather than a
+// mid-run error. Returns the first validation error encountered
+// (Python raises ValueError on the first failure).
+//
+// NOT covered here (intentional):
+//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
+//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
+//     The Python flow check() for vlm.llm_id does not apply — Go
+//     never reads that field, and validating it would block every
+//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+func (c *ParserComponent) Check() error {
+	// PDF family (parser.py:252-261).
+	if pdf, ok := c.setups["pdf"]; ok {
+		pm, _ := pdf["parse_method"].(string)
+		if pm == "" {
+			return errors.New("parse method abnormal. does not support empty value")
+		}
+		pmLower := strings.ToLower(pm)
+		pdfWhitelist := []string{
+			"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
+			"opendataloader", "tcadp parser", "paddleocr", "somark",
+		}
+		if !containsString(pdfWhitelist, pmLower) {
+			// Non-whitelist parse_method is treated as a VLM method,
+			// which requires lang (Python parser.py:257-258).
+			if lang, _ := pdf["lang"].(string); lang == "" {
+				return errors.New("PDF VLM language does not support empty value")
+			}
+		}
+	}
+	// image family (parser.py:283-287).
+	if img, ok := c.setups["image"]; ok {
+		pm, _ := img["parse_method"].(string)
+		// OCR mode does not need a VLM language; any other value does.
+		if pm != "ocr" {
+			if lang, _ := img["lang"].(string); lang == "" {
+				return errors.New("image VLM language does not support empty value")
+			}
+		}
+	}
+	return nil
+}
+
+// containsString reports whether s is in list. Used by Check() for
+// whitelist membership tests; kept unexported and local to this file
+// to avoid polluting the package namespace.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -183,7 +274,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
-			"output_format":         "html",
+			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
@@ -237,7 +328,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -245,11 +336,11 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
-			"output_format": "text",
+			"output_format": "json",
 			"prompt":        "",
 		},
 		"epub": {
@@ -267,39 +358,54 @@ func defaultSetups() map[string]schema.ParserSetup {
 // reads the following from the inputs map at Invoke time:
 //
 //	binary    ([]byte, optional) — file bytes from upstream File.
-//	                                When absent, Parser resolves
-//	                                them from bucket/path or doc_id.
+//	                                When absent, Parser resolves them from
+//	                                bucket/path or doc_id.
+//	name      (string, optional) — resolved source filename.
+//	file      (map[string]any, optional) — source descriptor; its name is
+//	                                used when name is absent.
+//	file_type (string, optional) — explicit parser routing hint.
+//	lang      (string, optional) — language forwarded to downstream stages.
 //	doc_id    (string, optional) — document ID used for naming and,
 //	                                when binary is absent, storage lookup.
 func (c *ParserComponent) Inputs() map[string]string {
 	return map[string]string{
-		"binary": "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
-		"doc_id": "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
-		"bucket": "Optional storage bucket override. Used when binary is absent.",
-		"path":   "Optional storage object key override. Used when binary is absent.",
+		"binary":    "Optional file bytes ([]byte). When absent, Parser resolves them from bucket/path or doc_id.",
+		"name":      "Optional resolved source filename. Takes precedence over file.name.",
+		"file":      "Optional source file descriptor (map[string]any). file.name is used when name is absent.",
+		"file_type": "Optional explicit parser routing hint (string).",
+		"lang":      "Optional language for downstream tokenization (string).",
+		"doc_id":    "Optional document ID (string). Used for downstream correlation and doc_id-driven storage lookup.",
+		"bucket":    "Optional storage bucket override. Used when binary is absent.",
+		"path":      "Optional storage object key override. Used when binary is absent.",
 	}
 }
 
 // Outputs returns the public surface that downstream ingestion
 // components (Chunker, Tokenizer, Extractor) can wire into.
 //
-//	pages   []schema.Page — sorted by PageNumber. Deterministic
-//	                        merge per plan §8 R8.
-//	name    string        — carried over from the upstream file/document
+//	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
-//	output_format string  — "text" when emitting text pages,
-//	                        otherwise the parser-selected wire
-//	                        format.
-//	_ERROR  string        — populated when the component short-
-//	                        circuits with an error message
-//	                        (mirrors Python set_output("_ERROR", ...)).
+//	output_format string  — always "json".
+//	json          []map[string]any — canonical structured parser items.
+//	lang          string  — language for tokenization.
+//	file          map[string]any — backend-produced file metadata, when present.
+//	doc_id        string  — source document ID, when present.
+//	bucket        string  — source storage bucket, when present.
+//	path          string  — source storage path, when present.
+//
+// Parser failures are returned as Go errors. The canvas execution wrapper
+// preserves that error path and does not convert failures into an _ERROR
+// output field.
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
-		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
-		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"output_format": "string: always \"json\".",
+		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
-		"_ERROR":        "string: set on short-circuit errors.",
+		"file":          "map[string]any: backend-produced file metadata, when present.",
+		"doc_id":        "string: source document ID, when present.",
+		"bucket":        "string: source storage bucket, when present.",
+		"path":          "string: source storage object path, when present.",
 	}
 }
 
@@ -308,9 +414,9 @@ func (c *ParserComponent) Outputs() map[string]string {
 // Returns:
 //
 //	{
-//	  "pages":          []schema.Page (sorted by PageNumber),
-//	  "name":           string (from inputs["doc_id"]),
-//	  "output_format": "text",
+//	  "name":           string (from inputs["name"], file.name, or doc_id),
+//	  "output_format": "json",
+//	  "json":           []map[string]any,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -320,21 +426,15 @@ func (c *ParserComponent) Outputs() map[string]string {
 // backends (e.g. internal/deepdoc/parser/pdf fans out one worker
 // per page and assembles the results in page order), so this
 // component does no goroutine fan-out of its own.
-//
-// DETERMINISTIC MERGE (plan §8 R8): after the page slice is built,
-// it is sorted by PageNumber. This guarantees the same input
-// produces byte-identical output across runs and is the contract
-// that downstream Chunker / Tokenizer rely on for stable chunk
-// IDs (chunks that span pages must reference adjacent PageNumbers
-// in input order).
-func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, inputs)
+	binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
+	setups := c.setups
 
 	// Inject run-level metadata from Globals into inputs so media
 	// dispatch branches (audio/image/video) can resolve tenant_id.
@@ -355,29 +455,9 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	//     "docx", ...). Used by parser.GetParser, whose switch
 	//     arms are keyed off the utility constants.
 	//
-	//   - fileTypeFam  — the python-side family name ("markdown",
-	//     "docx", ...). Used by setups[fileType] and
-	//     allowed_output_format[fileType] lookups, which are keyed
-	//     off the python family identifiers in schema.ParserParam.
-	//
-	// For most families the two forms coincide; the divergence
-	// exists for markdown ("md" vs "markdown") and slides
-	// ("ppt"/"pptx" vs "slides") and is intentional — the python
-	// ParserParam collapses the slide family into a single key.
 	fileTypeExt := fileTypeFromInputs(inputs)
-	fileTypeFam := pythonFamilyName(string(fileTypeExt))
 
-	// 2a. Validate the requested output_format against the
-	//     family-specific allowed_output_format whitelist. We do
-	//     this even when no setups entry exists so a misconfigured
-	//     DSL surfaces as _ERROR instead of a silent fallback.
-	if _, hasSetup := c.Setups[fileTypeFam]; hasSetup {
-		if _, verr := resolveOutputFormat(fileTypeFam, c.Setups, c.Param.AllowedOutputFormat); verr != nil {
-			return nil, verr
-		}
-	}
-
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -386,7 +466,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -395,7 +475,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -404,76 +484,35 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Setups)
-		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
 
-		// DOCX vision figure enhancement: enrich the markdown
-		// with LLM-generated descriptions of embedded images.
-		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
-		dispatched, _, _ = maybeDispatchDOCXVision(fileTypeExt, dispatched, inputs, c.Setups)
-
-		// Markdown vision figure enhancement: enrich parsed
-		// markdown JSON items with LLM-generated descriptions of
-		// referenced images (![alt](url)). Mirrors Python's
-		// enhance_media_sections_with_vision in _markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(fileTypeExt, dispatched, inputs)
+		// Vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image and
+		// table items. Mirrors Python's enhance_media_sections_with_vision
+		// (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
+		// Errors (including context cancellation) are intentionally
+		// discarded — enhancement is best-effort, matching Python's
+		// try/except pass pattern.
+		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
 	}
+	reportParserWarnings(ctx, dispatched.Warnings)
 
-	// 3. Build the legacy `pages` slice. When the dispatch path
-	//    produced a JSON payload, we re-shape it into the page
-	//    layout the chunker side consumes (`{text, doc_type_kwd,
-	//    page_number?}`); when the dispatch produced a string
-	//    payload we emit a single page carrying the rendered text;
-	//    otherwise we slice the binary on ASCII form-feed and
-	//    treat the input as text pages.
-	var pages [][]byte
-	var dispatchedPages []schema.Page
-	switch {
-	case dispatched.Err == nil && dispatched.OutputFormat == "json" && len(dispatched.JSON) > 0:
-		dispatchedPages = jsonItemsToPages(dispatched.JSON)
-		pages = pagesFromDispatch(dispatchedPages)
-	case dispatched.Err == nil && dispatched.OutputFormat != "":
-		var text string
-		switch dispatched.OutputFormat {
-		case "markdown":
-			text = dispatched.Markdown
-		case "html":
-			text = dispatched.HTML
-		case "text":
-			text = dispatched.Text
-		}
-		pages = [][]byte{[]byte(text)}
-	default:
-		pages = splitIntoPages(binary)
-		if len(pages) == 0 {
-			pages = [][]byte{nil}
-		}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
 	}
-
-	// 4. Build the page slice sequentially. Per-page parallelism now
-	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf
-	//    fans out one worker per page and assembles in page order), so
-	//    this component only reshapes the parser output. The DETERMINISTIC
-	//    MERGE (plan §8 R8) keeps pages sorted by PageNumber so the
-	//    downstream chunker / tokenizer get stable chunk IDs.
-	parsed, err := buildPagesFromBytes(ctx, pages, dispatched.DocType)
-	if err != nil {
-		return nil, fmt.Errorf("Parser: %w", err)
-	}
-	sortPagesByNumber(parsed)
 	lang, _ := getString(inputs, "lang")
-	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
+	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
@@ -492,52 +531,42 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	// Debug log: summarize parser output for pipeline debugging.
-	if dispatched.OutputFormat == "json" {
-		common.Debug("parser stage output",
-			zap.String("component", "Parser"),
-			zap.String("output_format", "json"),
-			zap.Int("json_items", len(dispatched.JSON)),
-		)
-	} else if dispatched.OutputFormat != "" {
-		common.Debug("parser stage output",
-			zap.String("component", "Parser"),
-			zap.String("output_format", dispatched.OutputFormat),
-		)
-	}
+	items, _ := out["json"].([]map[string]any)
+	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
 	return out, nil
 }
 
-// buildPagesFromBytes reshapes already-prepared page bytes into the
-// schema.Page layout the downstream chunker consumes. The per-page
-// parse (including any parallelism) now lives in the parser backends
-// (internal/parser/parser and internal/deepdoc/parser/pdf); this
-// component only wraps the bytes into pages and honors context
-// cancellation so an abandoned run does not keep reshaping pages.
-//
-// The function is format-agnostic: it does not resolve parsers or
-// inspect file families — it only carries the raw bytes under the
-// "text" key with the given doc_type_kwd (defaults to "text" when
-// empty), matching the shape downstream readers expect from the
-// raw-text fallback and dispatch paths.
-func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([]schema.Page, error) {
-	if docType == "" {
-		docType = "text"
+func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+	common.Debug("parser stage output",
+		zap.String("component", "Parser"),
+		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
+		zap.Int("json_items", len(items)),
+	)
+}
+
+func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
+	if len(dispatched.JSON) > 0 {
+		return "json"
 	}
-	out := make([]schema.Page, 0, len(pages))
-	for _, raw := range pages {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		out = append(out, schema.Page{
-			"text":         string(raw),
-			"doc_type_kwd": docType,
-		})
+	if dispatched.Markdown != "" {
+		return "markdown"
 	}
-	return out, nil
+	if dispatched.HTML != "" {
+		return "html"
+	}
+	if dispatched.Text != "" {
+		return "text"
+	}
+	return "raw"
+}
+
+func reportParserWarnings(ctx context.Context, warnings []string) {
+	for _, warning := range warnings {
+		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
+	}
 }
 
 // --- input helpers ---
@@ -546,13 +575,13 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([
 // map. The accepted shapes are:
 //
 //	[]byte          — the in-process caller's normal form
-//	string          — UTF-8 text (json callers' normal form)
+//	string          — UTF-8 text (JSON callers' normal form)
 //	nil / absent    — returns an empty page (not an error)
 //
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -562,8 +591,8 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
-				"Parser: binary string is not valid UTF-8. " +
-					"Text-page mode only accepts UTF-8 text input.")
+				"parser: binary string is not valid UTF-8. " +
+					"Text-page mode only accepts UTF-8 text input")
 		}
 		return []byte(s), nil
 	}
@@ -573,9 +602,9 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
-			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
+			return nil, fmt.Errorf("parser: resolve doc_id %q: %w", docID, err)
 		}
 		return FetchBinary(ctx, ref.Bucket, ref.Path)
 	}
@@ -615,57 +644,6 @@ func containsFormFeed(b []byte) bool {
 	}
 	return false
 }
-
-// sortPagesByNumber orders pages by their PageNumber key
-// ascending. Pages without a PageNumber key (or with a non-int
-// value) sort to the END so the deterministic contract is
-// "numbered pages first, then unnumbered" — this matches the
-// Python component's loop order (it processes pages in input
-// order, not in PageNumber order, but the Go merge is
-// intentionally stricter so the test can assert exact byte
-// equality across runs).
-func sortPagesByNumber(pages []schema.Page) {
-	sort.SliceStable(pages, func(i, j int) bool {
-		pi, oki := numericPageNumber(pages[i])
-		pj, okj := numericPageNumber(pages[j])
-		switch {
-		case oki && okj:
-			return pi < pj
-		case oki:
-			return true // i is numbered, j is not
-		case okj:
-			return false
-		default:
-			return false // stable
-		}
-	})
-}
-
-func numericPageNumber(p schema.Page) (int, bool) {
-	if p == nil {
-		return 0, false
-	}
-	v, ok := p["page_number"]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// toAnyPages is a tiny adapter that hands the page slice to
-// the output map as `any`. We use it instead of a direct cast
-// so the type stays `[]schema.Page` in the Go source and the
-// output map value type is `any` — matching the runtime.Component
-// contract.
-func toAnyPages(pages []schema.Page) any { return pages }
 
 // init registers Parser under CategoryIngestion per plan §4
 // Phase 2.2. The factory is a thin closure that decodes the

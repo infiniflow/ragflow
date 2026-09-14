@@ -47,6 +47,8 @@ func newReasoningFamilyChatServer(t *testing.T, handler func(t *testing.T, body 
 }
 
 func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-8b" {
 			t.Errorf("model=%v, want qwen3-8b", body["model"])
@@ -72,6 +74,7 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "chat/completions"},
 	).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -85,6 +88,8 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 }
 
 func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen/qwen3-8b" {
 			t.Errorf("model=%v, want qwen/qwen3-8b", body["model"])
@@ -110,6 +115,7 @@ func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t 
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "chat/completions"},
 	).ChatWithMessages(
+		ctx,
 		"qwen/qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},

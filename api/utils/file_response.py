@@ -3,7 +3,7 @@
 #
 
 import re
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 CONTENT_TYPE_MAP = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -80,8 +80,30 @@ def should_force_attachment(ext: str | None, content_type: str | None = None) ->
 def sanitize_content_disposition_filename(filename: str | None) -> str | None:
     if not filename:
         return None
-    base = re.sub(r"[^\w.\-]", "_", str(filename).split("/")[-1].split("\\")[-1])
+    base = re.sub(r"[^\w.\-]", "_", str(filename).split("/")[-1].split("\\")[-1], flags=re.ASCII)
     return base or None
+
+
+def ascii_content_disposition_filename(filename: str | None) -> str | None:
+    if not filename:
+        return None
+    base = str(filename).split("/")[-1].split("\\")[-1]
+    if not base:
+        return None
+    ascii_only = base.encode("ascii", "ignore").decode("ascii")
+    safe = re.sub(r"[^\w.\-]", "_", ascii_only).strip("._")
+    return safe or None
+
+
+def format_content_disposition(disposition: str, filename: str | None) -> str:
+    if not filename:
+        return disposition
+    base = str(filename).split("/")[-1].split("\\")[-1]
+    if not base:
+        return disposition
+    ascii_fallback = ascii_content_disposition_filename(base) or "file"
+    encoded = quote(base, safe="")
+    return f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def resolve_attachment_content_type(ext: str | None = None, mime_type: str | None = None) -> tuple[str | None, str | None]:
@@ -107,11 +129,10 @@ def apply_preview_file_response_headers(
         response.headers.set("Content-Type", content_type)
     if should_force_attachment(ext, content_type):
         response.headers.set("X-Content-Type-Options", "nosniff")
-        response.headers.set("Content-Disposition", "attachment")
+        response.headers.set("Content-Disposition", format_content_disposition("attachment", filename) if filename else "attachment")
         return response
-    safe_filename = sanitize_content_disposition_filename(filename)
-    if safe_filename:
-        response.headers.set("Content-Disposition", f'inline; filename="{safe_filename}"')
+    if filename:
+        response.headers.set("Content-Disposition", format_content_disposition("inline", filename))
     else:
         response.headers.set("Content-Disposition", "inline")
     return response
@@ -127,11 +148,10 @@ def apply_download_file_response_headers(
         response.headers.set("Content-Type", content_type)
     if should_force_attachment(ext, content_type):
         response.headers.set("X-Content-Type-Options", "nosniff")
-        response.headers.set("Content-Disposition", "attachment")
+        response.headers.set("Content-Disposition", format_content_disposition("attachment", filename) if filename else "attachment")
         return response
-    safe_filename = sanitize_content_disposition_filename(filename)
-    if safe_filename:
-        response.headers.set("Content-Disposition", f'attachment; filename="{safe_filename}"')
+    if filename:
+        response.headers.set("Content-Disposition", format_content_disposition("attachment", filename))
     else:
         response.headers.set("Content-Disposition", "attachment")
     return response

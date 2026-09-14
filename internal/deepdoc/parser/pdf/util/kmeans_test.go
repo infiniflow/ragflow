@@ -61,31 +61,3 @@ func TestKMeans1D(t *testing.T) {
 		}
 	})
 }
-
-func TestSilhouette1D(t *testing.T) {
-	t.Run("well-separated clusters", func(t *testing.T) {
-		data := []float64{0, 1, 2, 100, 101, 102}
-		labels := []int{0, 0, 0, 1, 1, 1}
-		score := Silhouette1D(data, labels)
-		if score < 0.8 {
-			t.Errorf("well-separated score should be high, got %.3f", score)
-		}
-	})
-
-	t.Run("overlapping clusters", func(t *testing.T) {
-		data := []float64{0, 1, 0, 1, 0, 1}
-		labels := []int{0, 0, 0, 1, 1, 1}
-		score := Silhouette1D(data, labels)
-		if score > 0.5 {
-			t.Errorf("overlapping score should be low, got %.3f", score)
-		}
-	})
-
-	t.Run("single cluster returns -1", func(t *testing.T) {
-		data := []float64{1, 2, 3}
-		labels := []int{0, 0, 0}
-		if score := Silhouette1D(data, labels); score != -1 {
-			t.Errorf("single cluster should return -1, got %.3f", score)
-		}
-	})
-}

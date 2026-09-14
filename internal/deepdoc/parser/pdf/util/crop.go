@@ -240,7 +240,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-// cropSectionByDLA crops a section using the best-overlapping DLA region,
+// CropSectionByDLA crops a section using the best-overlapping DLA region,
 // mimicking Python's cropout() in deepdoc/parser/pdf_parser.py (around line
 // 1307). Unlike the original Go version (which only cropped the first page),
 // it now walks every position and every page the section spans, crops each
@@ -483,7 +483,7 @@ func rotateCoordCW(x, y float64, origW, origH int, angle int) (float64, float64)
 	}
 }
 
-// rotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
+// RotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
 // other values return nil. Matches Python PIL.Image.rotate(-angle, expand=True).
 func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	b := img.Bounds()
@@ -509,7 +509,7 @@ func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	return dst
 }
 
-// mapRotatedPointToOriginal maps a point from rotated image coords back to
+// MapRotatedPointToOriginal maps a point from rotated image coords back to
 // original coords. angle is the clockwise rotation applied. origW, origH
 // are the ORIGINAL (pre-rotation) image dimensions.
 //
@@ -558,13 +558,19 @@ func MapRotatedRectToOriginal(x0, y0, x1, y1 float64, angle int, origW, origH in
 	return minX, minY, maxX, maxY
 }
 
-// CropImageRegion crops a pdf.DLARegion from an image with a 3% margin
-// (matching Python's _table_transformer_job: w*0.03, h*0.03).
+// TSRRegionMarginPx is the fixed pixel margin added around a DLA table bbox
+// before it is sent to TSR. It matches Python's _table_transformer_job, which
+// expands the box by MARGIN = 10 PDF points and then scales by ZM
+// (10 * DlaScale = 30px at the 216-DPI render). The margin is FIXED, not
+// proportional to table size — an earlier Go port mistakenly used w*0.03 /
+// h*0.03, which diverged from Python.
+const TSRRegionMarginPx = 10.0 * pdf.DlaScale
+
+// CropImageRegion crops a pdf.DLARegion from an image with a fixed margin
+// (matching Python's _table_transformer_job: MARGIN=10 points scaled by ZM).
 func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
-	w := r.X1 - r.X0
-	h := r.Y1 - r.Y0
-	marginX := w * 0.03
-	marginY := h * 0.03
+	marginX := TSRRegionMarginPx
+	marginY := TSRRegionMarginPx
 	maxX := float64(img.Bounds().Dx())
 	maxY := float64(img.Bounds().Dy())
 	x0 := int(math.Max(0, r.X0-marginX))

@@ -1,8 +1,8 @@
 instruction: |
     - Each page must be a proper encyclopedic article, NOT a flat bullet list:
-    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 1. Take prefix ">" or "-" in the "example" as instructions to generate the content.
     - 2. Sections with H2 headings, each starting with prose before sub-bullets.
-page_example: |
+example: |
     # Onboarding flow update
     ## Background & research
     summary(example): 40% of new users aren't activating. By reviewing our onboarding flow we'll help teams better understand the value of the product and activate faster on Slite.

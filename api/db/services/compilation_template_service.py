@@ -30,35 +30,6 @@ class CompilationTemplateService(CommonService):
     model = CompilationTemplate
 
     @classmethod
-    def fill_config_default_llm(cls, config: dict, tenant_id: str | None) -> dict:
-        if not isinstance(config, dict) or config.get("llm_id") or not tenant_id:
-            return config
-        try:
-            from api.db.services.user_service import TenantService
-
-            ok, tenant = TenantService.get_by_id(tenant_id)
-            if ok and getattr(tenant, "tenant_llm_id", None):
-                config = dict(config)
-                config["llm_id"] = tenant.tenant_llm_id
-        except Exception:
-            logging.exception(
-                "compilation_template: llm_id default-fill lookup failed for tenant=%s",
-                tenant_id,
-            )
-        return config
-
-    @classmethod
-    def fill_default_llm_for_templates(cls, templates: list[dict], tenant_id: str | None) -> list[dict]:
-        if not tenant_id:
-            return templates
-        filled = []
-        for template in templates:
-            item = dict(template)
-            item["config"] = cls.fill_config_default_llm(item.get("config") or {}, tenant_id)
-            filled.append(item)
-        return filled
-
-    @classmethod
     def _sort_builtins(cls, templates: list[dict]) -> list[dict]:
         return sorted(
             templates,
@@ -78,33 +49,15 @@ class CompilationTemplateService(CommonService):
     def _to_saved_dict(cls, template: CompilationTemplate) -> dict:
         data = template.to_dict()
         config = data.get("config") or {}
-        # Lazy-fill llm_id with the tenant's default chat model so the
-        # frontend always sees a value (legacy templates predate the
-        # field). The DB row is left untouched — this is a read-side
-        # default. If the tenant has no default chat model set,
-        # silently leave llm_id absent and let the caller fall back
-        # however it likes.
-        if isinstance(config, dict) and not config.get("llm_id"):
-            tenant_id = data.get("tenant_id")
-            if tenant_id:
-                try:
-                    from api.db.services.user_service import TenantService
-
-                    ok, tenant = TenantService.get_by_id(tenant_id)
-                    if ok and getattr(tenant, "tenant_llm_id", None):
-                        config = dict(config)
-                        config["llm_id"] = tenant.tenant_llm_id
-                except Exception:
-                    logging.exception(
-                        "compilation_template: llm_id lazy-fill lookup failed for tenant=%s",
-                        tenant_id,
-                    )
+        if isinstance(config, dict):
+            config = dict(config)
+            config.pop("llm_id", None)
         return {
             "id": data["id"],
             "name": data["name"],
             "description": data.get("description") or "",
             "kind": data["kind"],
-            "config": cls.fill_config_default_llm(config, data.get("tenant_id")),
+            "config": config,
             "create_time": data.get("create_time"),
             "update_time": data.get("update_time"),
         }
@@ -233,7 +186,7 @@ class CompilationTemplateService(CommonService):
         ``api/db/init_data/compilation_templates/wiki/*.yaml``.
 
         Each file contributes one preset dict with ``topic`` /
-        ``instruction`` / ``page_example`` fields (plus ``id`` derived
+        ``instruction`` / ``example`` fields (plus ``id`` derived
         from the filename stem so the frontend can key list items
         even when several presets share the same ``topic`` — which is
         by design; the UI groups presets by topic).
@@ -278,7 +231,7 @@ class CompilationTemplateService(CommonService):
                     "id": os.path.splitext(filename)[0],
                     "topic": str(doc.get("topic") or "").strip(),
                     "instruction": str(doc.get("instruction") or ""),
-                    "page_example": str(doc.get("page_example") or ""),
+                    "example": str(doc.get("example") or ""),
                 }
             )
         return presets

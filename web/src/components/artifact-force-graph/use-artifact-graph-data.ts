@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   type IArtifactGraph,
   type IArtifactGraphEntity,
@@ -47,11 +63,22 @@ export const useArtifactGraphData = ({
       __radius: getNodeRadius(entity, minWeight, maxWeight),
     }));
 
-    const links: ArtifactGraphLink[] = (data.relations || []).map(
-      (relation) => ({
-        source: relation.from,
-        target: relation.to,
-      }),
+    const nodesBySlug = new Map(nodes.map((node) => [node.slug, node]));
+    // ForceLink throws when a relation references an entity omitted from the
+    // current graph slice, so only pass relations with two loaded endpoints.
+    const links: ArtifactGraphLink[] = (data.relations || []).flatMap(
+      (relation) => {
+        const source = nodesBySlug.get(relation.from);
+        const target = nodesBySlug.get(relation.to);
+        if (!source || !target) return [];
+        return [
+          {
+            source: source.id,
+            target: target.id,
+            type: relation.type,
+          },
+        ];
+      },
     );
 
     // cross-link node objects for hover highlighting

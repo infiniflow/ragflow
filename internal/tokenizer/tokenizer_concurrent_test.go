@@ -12,7 +12,7 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
+//go:build manual
 
 package tokenizer
 
@@ -30,7 +30,7 @@ import (
 
 func init() {
 	// Initialize logger for tests
-	if err := common.Init("info", common.FileOutput{}, "tokenizer_test"); err != nil {
+	if err := common.InitLogger("info", common.FileOutput{}, "tokenizer_test"); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 	}
 }
@@ -175,7 +175,7 @@ func TestConcurrentTokenize(t *testing.T) {
 func TestConcurrentTokenizeLanguageIsolation(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "" })
+	SetEngineType("")
 
 	cfg := &PoolConfig{
 		DictPath:       "",

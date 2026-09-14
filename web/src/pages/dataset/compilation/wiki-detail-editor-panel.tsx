@@ -10,8 +10,8 @@ import {
 import { Spin } from '@/components/ui/spin';
 import type { Docagg } from '@/interfaces/database/chat';
 import type { IWikiCommitDetail } from '@/interfaces/database/dataset';
+import type { WikiPageType } from '@/utils/wiki-link-util';
 
-import type { WikiPageType } from './utils/parse-wiki-link';
 import { WikiVersionDiffPanel } from './wiki-version-diff-panel';
 
 type WikiDetailEditorPanelProps = {
@@ -57,7 +57,7 @@ export function WikiDetailEditorPanel({
             {referenceDocuments.length > 0 && (
               <div className="mt-8">
                 <h3 className="text-sm font-medium text-text-secondary mb-3">
-                  {t('knowledgeDetails.sourceDocuments')}
+                  {t('knowledgeCompilation.sourceDocuments')}
                 </h3>
                 <ReferenceDocumentList list={referenceDocuments} />
               </div>

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
@@ -129,7 +145,7 @@ export const useFetchNextChunkList = (
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds;
+  const chunkIds = options?.chunkIds?.slice(0, 100);
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -160,9 +176,7 @@ export const useFetchNextChunkList = (
         kb_id: knowledgeId,
         doc_id: documentId,
         page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length
-          ? Math.max(chunkIds.length, 100)
-          : pagination.pageSize,
+        size: chunkIds?.length ? chunkIds.length : Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,

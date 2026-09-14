@@ -162,7 +162,6 @@ class TextRecognizer:
         return padding_im
 
     def resize_norm_img_vl(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         img = img[:, :, ::-1]  # bgr2rgb
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -197,7 +196,6 @@ class TextRecognizer:
         return np.reshape(img_black, (c, row, col)).astype(np.float32)
 
     def srn_other_inputs(self, image_shape, num_heads, max_text_length):
-
         imgC, imgH, imgW = image_shape
         feature_dim = int((imgH / 8) * (imgW / 8))
 
@@ -281,7 +279,6 @@ class TextRecognizer:
         return img
 
     def resize_norm_img_svtr(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
@@ -291,7 +288,6 @@ class TextRecognizer:
         return resized_image
 
     def resize_norm_img_abinet(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
 
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -307,7 +303,6 @@ class TextRecognizer:
         return resized_image
 
     def norm_img_can(self, img, image_shape):
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
 
         if self.rec_image_shape[0] == 1:
@@ -382,11 +377,29 @@ class TextRecognizer:
 
 
 class TextDetector:
-    def __init__(self, model_dir, device_id: int | None = None):
+    def __init__(self, model_dir, device_id: int | None = None, *, limit_side_len: int = 2048):
+        """Initialize the text detector.
+
+        Args:
+            model_dir: Path to the ONNX model directory.
+            device_id: GPU device id; None / 0 = CPU. Kept as the 2nd positional
+                arg for backwards compatibility with the four internal call sites
+                in :class:`OCR` and any external callers.
+            limit_side_len: Upper bound on the longer image side after the
+                ``DetResizeForTest`` downscale. Only used for dynamic-input models
+                (when ``self.input_tensor.shape[2:]`` is symbolic); for
+                fixed-shape models the pre-process list is replaced with
+                ``image_shape`` and ``limit_side_len`` is ignored — see the
+                comment near the ``pre_process_list[0] = ...`` assignment below.
+
+        ``limit_side_len`` is keyword-only so a future caller writing
+        ``TextDetector(model_dir, 2048)`` cannot silently bind ``2048`` to
+        ``device_id``. (See PR #18888 review comment from xugangqiang.)
+        """
         pre_process_list = [
             {
                 "DetResizeForTest": {
-                    "limit_side_len": 960,
+                    "limit_side_len": limit_side_len,
                     "limit_type": "max",
                 }
             },
@@ -402,8 +415,16 @@ class TextDetector:
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
+            # Dynamic-shape model: ``limit_side_len`` is the resize cap; keep
+            # the first pre-process entry as built above.
             pass
         elif img_h is not None and img_w is not None and img_h > 0 and img_w > 0:
+            # Fixed-shape ONNX model: the model forces a concrete input size,
+            # so ``limit_side_len`` is ignored and we resize to the model's
+            # own shape. This is intentional — overriding ``image_shape``
+            # with ``limit_side_len`` would crash the model. See PR #18888
+            # review (xugangqiang) — fixed-shape models silently ignore
+            # ``limit_side_len`` and the contract is now documented here.
             pre_process_list[0] = {"DetResizeForTest": {"image_shape": [img_h, img_w]}}
         self.preprocess_op = create_operators(pre_process_list)
 
@@ -640,6 +661,27 @@ class OCR:
                 text = ""
             texts.append(text)
         return texts
+
+    def recognize_batch_with_score(self, img_list, device_id: int | None = None):
+        """Like recognize_batch but keeps the per-item recognition score.
+
+        Returns a list of (text, score) tuples. Text below drop_score is
+        blanked, matching recognize_batch, but the score is preserved so the
+        caller (the OCR HTTP adapter) can surface it for score-based layer-2
+        rotation selection. Adding this method instead of changing
+        recognize_batch keeps the in-process __ocr path (pdf_parser.py) on the
+        original text-only contract.
+        """
+        if device_id is None:
+            device_id = 0
+        rec_res, elapse = self.text_recognizer[device_id](img_list)
+        out = []
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if score < self.drop_score:
+                text = ""
+            out.append((text, score))
+        return out
 
     def __call__(self, img, device_id=0, cls=True):
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}

@@ -1,6 +1,6 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { ModelTreeSelect } from '@/components/model-tree-select';
-import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import { EmbeddingSelect } from '@/pages/dataset/setting/python/configuration/common-item';
 import { MemoryOptions, MemoryType } from '@/pages/memories/constants';
 import { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';

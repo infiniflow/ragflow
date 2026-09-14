@@ -27,14 +27,15 @@ import (
 // task_executor.run_dataflow:879 re.split(r"[,，;；、\r\n]+", keywords).
 var keywordsSplitRE = regexp.MustCompile(`[,，;；、\r\n]+`)
 
-// nonEmpty drops empty strings from parts and returns nil if none remain. It is
-// the shared tail of SplitKeywords and SplitQuestions: split by whatever
-// delimiter, then prune empties and collapse an all-empty result to nil so a
-// _kwd array is absent (nil) rather than [""].
+// nonEmpty drops empty and whitespace-only strings from parts and returns nil
+// if none remain. It is the shared tail of SplitKeywords and SplitQuestions:
+// split by whatever delimiter, then prune blanks and collapse an all-blank
+// result to nil so a _kwd array is absent (nil) rather than [""].
+// Mirrors Python task_executor's `if k.strip()` filter.
 func nonEmpty(parts []string) []string {
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if p != "" {
+		if strings.TrimSpace(p) != "" {
 			out = append(out, p)
 		}
 	}
@@ -45,10 +46,17 @@ func nonEmpty(parts []string) []string {
 }
 
 // SplitKeywords splits a keywords string by common (ASCII + CJK) delimiters,
-// dropping empty elements. Returns nil for an empty input. It is the single
-// authority for materializing the important_kwd array from the keywords
-// string, shared by the Tokenizer component (in-pipeline) and the executor's
-// persist-schema mapping. Mirrors Python task_executor.run_dataflow:879.
+// dropping empty elements. Returns nil for an empty input. It is the authority
+// for materializing the important_kwd array in the executor's persist-schema
+// mapping (rag/flow/task_executor.py run_dataflow:879), which tolerates mixed
+// delimiters from older upstream producers.
+//
+// NOTE: the in-pipeline Tokenizer component does NOT use this function. For
+// DSL byte-compatibility it splits keywords on the ENGLISH COMMA ONLY via
+// strings.Split(kw, ",") and PRESERVES empty elements (mirroring Python
+// rag/flow/tokenizer/tokenizer.py:153 "a,,b".split(",")), so the two paths
+// intentionally diverge. See tokenizeChunks in
+// internal/ingestion/component/tokenizer.go.
 func SplitKeywords(keywords string) []string {
 	if keywords == "" {
 		return nil

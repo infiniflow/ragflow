@@ -243,4 +243,4 @@ class TestSessionsWithChatAssistantList:
 
         res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
         assert res["code"] == 109
-        assert res["message"] == "No authorization."
+        assert res["message"] == "no authorization"

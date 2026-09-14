@@ -49,6 +49,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/utility"
 )
@@ -84,7 +85,7 @@ func (i *InvokeComponent) Name() string { return i.name }
 
 // Invoke executes a single HTTP request and returns its response text as
 // `result`, matching the Python Invoke component. See Inputs() for the
-// param contract.
+// param
 //
 // SSRF flow (PR #15426):
 //  1. Validate the target URL via utility.AssertURLSafe (loopback /
@@ -101,7 +102,7 @@ func (i *InvokeComponent) Name() string { return i.name }
 // On any of those checks failing the function returns an `_ERROR`
 // output (no Go error) so the canvas can route around the failure
 // the same way the Python fix does, instead of crashing the node.
-func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (output map[string]any, invokeErr error) {
+func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (output map[string]any, invokeErr error) {
 	startedAt := time.Now()
 	defer func() {
 		if output == nil {
@@ -353,15 +354,22 @@ func invokeHeaders(raw any) (map[string]any, error) {
 		return headers, nil
 	}
 	text, ok := raw.(string)
-	if !ok || strings.TrimSpace(text) == "" {
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: unsupported type", zap.String("type", fmt.Sprintf("%T", raw)))
 		return nil, nil
 	}
-	var headers map[string]any
-	if err := json.Unmarshal([]byte(text), &headers); err != nil {
-		return nil, fmt.Errorf("Invoke: headers must be a JSON object: %w", err)
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
 	}
-	if headers == nil {
-		return nil, errors.New("Invoke: headers must be a JSON object")
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		zap.L().Warn("Invoke headers ignored: invalid JSON", zap.Error(err))
+		return nil, nil
+	}
+	headers, ok := decoded.(map[string]any)
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: decoded type", zap.String("type", fmt.Sprintf("%T", decoded)))
+		return nil, nil
 	}
 	return headers, nil
 }
@@ -404,8 +412,8 @@ func sanitizeLogURL(raw string) string {
 
 // Stream is a synchronous facade over Invoke. Real streaming
 // (chunked transfer as it arrives) is a future enhancement.
-func (i *InvokeComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := i.Invoke(ctx, inputs)
+func (i *InvokeComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := i.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

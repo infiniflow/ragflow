@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from itertools import permutations
 from typing import Optional, List
 
 from common.constants import MemoryType
@@ -77,7 +78,7 @@ You are an expert at analyzing conversations to extract structured memory.
         "semantic": [
             {
                 "content": "Clear factual statement",
-                "valid_at": "timestamp or empty",
+                "valid_at": "timestamp — use the conversation time when the fact has no date of its own",
                 "invalid_at": "timestamp or empty"
             }
         ]
@@ -113,7 +114,16 @@ You are an expert at analyzing conversations to extract structured memory.
     @classmethod
     def assemble_system_prompt(cls, config: dict) -> str:
         types_to_extract = cls._get_types_to_extract(config["memory_type"])
+        return cls._assemble_system_prompt(config, types_to_extract)
 
+    @classmethod
+    def is_default_system_prompt(cls, system_prompt: str, config: dict) -> bool:
+        """Recognize generated defaults without depending on type section order."""
+        types_to_extract = cls._get_types_to_extract(config["memory_type"])
+        return any(system_prompt == cls._assemble_system_prompt(config, list(type_order)) for type_order in permutations(types_to_extract))
+
+    @classmethod
+    def _assemble_system_prompt(cls, config: dict, types_to_extract: List[str]) -> str:
         type_instructions = cls._generate_type_instructions(types_to_extract)
 
         output_format = cls._generate_output_format(types_to_extract)
@@ -132,22 +142,16 @@ You are an expert at analyzing conversations to extract structured memory.
 
     @staticmethod
     def _get_types_to_extract(requested_types: List[str]) -> List[str]:
-        types = set()
-        for rt in requested_types:
-            if rt in [e.name.lower() for e in MemoryType] and rt != MemoryType.RAW.name.lower():
-                types.add(rt)
-        return list(types)
+        return [memory_type.name.lower() for memory_type in MemoryType if memory_type is not MemoryType.RAW and memory_type.name.lower() in requested_types]
 
     @classmethod
     def _generate_type_instructions(cls, types_to_extract: List[str]) -> str:
-        target_types = set(types_to_extract)
-        instructions = [cls.TYPE_INSTRUCTIONS[mt] for mt in target_types]
+        instructions = [cls.TYPE_INSTRUCTIONS[mt] for mt in types_to_extract]
         return "\n".join(instructions)
 
     @classmethod
     def _generate_output_format(cls, types_to_extract: List[str]) -> str:
-        target_types = set(types_to_extract)
-        output_parts = [cls.OUTPUT_TEMPLATES[mt] for mt in target_types]
+        output_parts = [cls.OUTPUT_TEMPLATES[mt] for mt in types_to_extract]
         return ",\n".join(output_parts)
 
     @staticmethod

@@ -16,6 +16,27 @@
 
 from typing import Any
 
+# Parser-specific option keys. ``_has_mineru_options`` uses these to detect
+# whether the operator clearly intended the MinerU parser (issue #17114).
+MINERU_OPTION_KEYS: tuple[str, ...] = (
+    "mineru_parse_method",
+    "mineru_formula_enable",
+    "mineru_table_enable",
+    "mineru_lang",
+)
+
+
+def has_mineru_options(parser_config: Any) -> bool:
+    """Return True if parser_config carries any MinerU-specific option.
+
+    Used by the PDF dispatch in :mod:`rag.app.naive` to recover from a
+    misconfigured ``layout_recognize`` value (a stale TenantModel id rather
+    than the ``"MinerU"`` keyword) — see issue #17114.
+    """
+    if not isinstance(parser_config, dict):
+        return False
+    return any(k in parser_config for k in MINERU_OPTION_KEYS)
+
 
 def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | None]:
     parser_model_name: str | None = None
@@ -23,7 +44,10 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
 
     if isinstance(layout_recognizer_raw, str):
         lowered = layout_recognizer_raw.lower()
-        if lowered.endswith("@mineru"):
+        if lowered.endswith("@monkeyocrv2"):
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "MonkeyOCRv2"
+        elif lowered.endswith("@mineru"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "MinerU"
         elif lowered.endswith("@paddleocr"):
@@ -39,5 +63,10 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
             # expects all three segments to locate the provider/instance row.
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "SoMark"
+        elif lowered.endswith("@mistral ocr"):
+            # Separate OCR-only factory (never the multi-type "Mistral" factory),
+            # so this suffix cannot collide with pixtral vision models.
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "Mistral OCR"
 
     return layout_recognizer, parser_model_name

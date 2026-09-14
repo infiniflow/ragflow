@@ -144,7 +144,7 @@ func (fakeChatDocEngine) GetScores(map[string]interface{}) map[string]float64 { 
 func (fakeChatDocEngine) Ping(context.Context) error                          { return nil }
 func (fakeChatDocEngine) Close() error                                        { return nil }
 func (fakeChatDocEngine) CheckStatus() error                                  { return nil }
-func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 func (fakeChatDocEngine) GetMessages(context.Context, string, int, int) ([]interface{}, error) {

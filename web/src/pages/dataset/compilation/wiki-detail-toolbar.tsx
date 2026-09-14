@@ -44,7 +44,7 @@ export function WikiDetailToolbar({
           {t('common.cancel')}
         </Button>
         <Button type="button" size="sm" onClick={onCommitClick}>
-          {t('knowledgeDetails.commit')}
+          {t('knowledgeCompilation.commit')}
         </Button>
       </div>
     );
@@ -63,7 +63,7 @@ export function WikiDetailToolbar({
             <Download className="size-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{t('knowledgeDetails.export')}</TooltipContent>
+        <TooltipContent>{t('knowledgeCompilation.export')}</TooltipContent>
       </Tooltip>
       <VersionHistorySheet
         selectedArtifact={selectedArtifact}

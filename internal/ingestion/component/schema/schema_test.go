@@ -120,81 +120,16 @@ func TestFileOutputsJSONRoundTrip(t *testing.T) {
 // Parser
 // ---------------------------------------------------------------------------
 
-func TestParserFromUpstreamValidate(t *testing.T) {
-	// Name is required.
-	if err := (&ParserFromUpstream{}).Validate(); err == nil {
-		t.Fatal("expected Validate to fail when Name is empty")
-	}
-	if err := (&ParserFromUpstream{Name: "doc.pdf"}).Validate(); err != nil {
-		t.Fatalf("Validate with Name unexpectedly failed: %v", err)
-	}
-}
-
-func TestParserParamDefaults(t *testing.T) {
-	p := ParserParam{}.Defaults()
-	if err := p.Validate(); err != nil {
-		t.Fatalf("default ParserParam failed Validate: %v", err)
-	}
-	if got := p.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
-		t.Errorf("default pdf allowed_output_format = %v, want [json markdown]", got)
-	}
-}
-
-func TestParserParamJSONRoundTrip(t *testing.T) {
-	original := ParserParam{}.Defaults()
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(data), `"allowed_output_format"`) {
-		t.Errorf("expected allowed_output_format in JSON, got %s", data)
-	}
-	var decoded ParserParam
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got := decoded.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
-		t.Errorf("round-trip lost pdf allowed_output_format: got %v", got)
-	}
-}
-
-func TestParserFromUpstreamJSONRoundTrip(t *testing.T) {
-	original := ParserFromUpstream{
-		Name:     "input.pdf",
-		Abstract: true,
-		Author:   false,
-	}
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	// abstract=true should be emitted; author=false has omitempty so it's
-	// dropped (zero-value bool with omitempty). We test the
-	// non-zero path.
-	if !strings.Contains(string(data), `"abstract":true`) {
-		t.Errorf("expected abstract=true in JSON, got %s", data)
-	}
-	var decoded ParserFromUpstream
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if decoded.Name != original.Name {
-		t.Errorf("Name round-trip mismatch: got %q", decoded.Name)
-	}
-	if !decoded.Abstract {
-		t.Errorf("Abstract round-trip mismatch: got %v", decoded.Abstract)
-	}
-	// author field is omitempty, so JSON round-trip should leave it false
-	// (default value) on both sides.
-	if decoded.Author {
-		t.Errorf("Author should be false, got true")
-	}
-}
-
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
+		Name:         "input.pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
+		Lang:         "English",
+		File:         map[string]any{"name": "input.pdf", "page_count": float64(1)},
+		DocID:        "doc-1",
+		Bucket:       "bucket-1",
+		Path:         "tenant/doc-1.pdf",
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -212,6 +147,37 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	}
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
+	}
+	if decoded.Name != original.Name || decoded.Lang != original.Lang {
+		t.Errorf("parser identity round-trip mismatch: got name=%q lang=%q", decoded.Name, decoded.Lang)
+	}
+	if decoded.DocID != original.DocID || decoded.Bucket != original.Bucket || decoded.Path != original.Path {
+		t.Errorf("parser storage round-trip mismatch: got doc_id=%q bucket=%q path=%q", decoded.DocID, decoded.Bucket, decoded.Path)
+	}
+	if decoded.File["name"] != "input.pdf" {
+		t.Errorf("parser file metadata round-trip mismatch: got %#v", decoded.File)
+	}
+}
+
+func TestParserOutputsJSONRoundTripPreservesEmptyItems(t *testing.T) {
+	original := ParserOutputs{
+		Name:         "empty.txt",
+		OutputFormat: "json",
+		JSON:         []map[string]any{},
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"json":[]`) {
+		t.Fatalf("empty JSON payload omitted: %s", data)
+	}
+	var decoded ParserOutputs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.JSON == nil || len(decoded.JSON) != 0 {
+		t.Fatalf("empty JSON payload round-trip mismatch: %#v", decoded.JSON)
 	}
 }
 
@@ -278,8 +244,8 @@ func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestTokenChunkerParamDefaults(t *testing.T) {
 	p := TokenChunkerParam{}.Defaults()
-	if p.DelimiterMode != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", p.DelimiterMode)
+	if p.DelimiterMode != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", p.DelimiterMode)
 	}
 	if p.ChunkTokenSize != 512 {
 		t.Errorf("default chunk_token_size = %d, want 512", p.ChunkTokenSize)
@@ -364,11 +330,11 @@ func TestTokenizerFromUpstreamValidate(t *testing.T) {
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatChunks}).Validate(); err != nil {
 		t.Fatalf("output_format=chunks should be valid, got %v", err)
 	}
-	// output_format=markdown with no MarkdownResult -> error.
+	// output_format=Markdown with no MarkdownResult -> error.
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown}).Validate(); err == nil {
 		t.Fatal("expected error for markdown without payload")
 	}
-	// output_format=markdown with payload -> OK.
+	// output_format=Markdown with payload -> OK.
 	md := "# title"
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown, MarkdownResult: &md}).Validate(); err != nil {
 		t.Fatalf("markdown with payload should be valid, got %v", err)
@@ -434,7 +400,7 @@ func TestTokenizerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.MarkdownResult == nil || *decoded.MarkdownResult != "# title" {
 		t.Errorf("markdown round-trip mismatch: got %v", decoded.MarkdownResult)
 	}
-	// Re-marshal the decoded and confirm we can read markdown back.
+	// Re-marshal the decoded and confirm we can read Markdown back.
 	data2, err := json.Marshal(decoded)
 	if err != nil {
 		t.Fatalf("re-marshal: %v", err)
@@ -504,8 +470,8 @@ func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestExtractorParamDefaults(t *testing.T) {
 	p := ExtractorParam{}.Defaults()
-	if p.FieldName != "" {
-		t.Errorf("default field_name should be empty, got %q", p.FieldName)
+	if p.LLMID != "" {
+		t.Errorf("default llm_id should be empty, got %q", p.LLMID)
 	}
 	if err := p.Validate(); err != nil {
 		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
@@ -516,8 +482,8 @@ func TestExtractorParamValidate(t *testing.T) {
 	if err := (&ExtractorParam{}).Validate(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
-		t.Fatalf("Validate with field_name should pass, got %v", err)
+	if err := (&ExtractorParam{LLMID: "model@provider"}).Validate(); err != nil {
+		t.Fatalf("Validate should pass, got %v", err)
 	}
 }
 

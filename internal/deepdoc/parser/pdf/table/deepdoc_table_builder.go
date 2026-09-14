@@ -70,6 +70,17 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	SortYFirstly(rows, 10)
 	SortXFirstly(cols, 10)
 
+	// Python's _table_transformer_job de-duplicates the structure lines before
+	// grouping: rows via gather (layouts_cleanup far=5 thr=0.6), columns via
+	// layouts_cleanup far=5 thr=0.5. Overlapping duplicate row/column lines are
+	// collapsed (higher detection score wins), so the cross-product grid rows
+	// match the rows Python's per-char R/C view counts.
+	rows = layoutCleanup(rows, nil, 5, 0.6)
+	cols = layoutCleanup(cols, nil, 5, 0.5)
+	if len(rows) == 0 {
+		return nil
+	}
+
 	// 2. If no column cells, synthesize one wide column from row extents.
 	if len(cols) == 0 {
 		x0 := rows[0].X0
@@ -117,7 +128,14 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 				}
 			}
 		}
-		if len(covered) < 2 {
+		// A span box that covers only a single grid cell (e.g. a TSR
+		// spanning cell whose box only reaches one row's center because the
+		// model's box edge missed the neighbour row) is still a real TSR
+		// span and must be labelled, not silently dropped. A 1-cell span
+		// renders as rowspan=1/colspan=1 (harmless) but keeps the TSR
+		// recognition visible downstream. Only skip when the box overlaps
+		// no grid cell at all (genuine coordinate mismatch).
+		if len(covered) == 0 {
 			continue
 		}
 		sort.Slice(covered, func(a, b int) bool {
@@ -132,9 +150,14 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		grid[first.r][first.c].X1 = sp.X1
 		grid[first.r][first.c].Y1 = sp.Y1
 		grid[first.r][first.c].Label = sp.Label
-		for _, idx := range covered[1:] {
-			grid[idx.r][idx.c] = pdf.TSRCell{}
-		}
+		// The remaining covered cells KEEP their row×column bbox. Python's
+		// construct_table assigns every box to a cell by its TSR row/column
+		// label (R/C) regardless of spanning cells, then __cal_spans folds the
+		// covered cells' text into the span origin cell at render time. If Go
+		// zeroed these bboxes here, FillCellTextFromBoxesWithRows would skip
+		// them, their text would never reach the span cell, and orphan-row/
+		// column cleanup would drop the covered rows/columns — the
+		// dell/prodeploy/screenshot real-PDF parity gap (11→6 rows).
 	}
 
 	return grid

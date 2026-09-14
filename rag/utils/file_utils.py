@@ -202,14 +202,12 @@ def extract_links_from_pdf(pdf_bytes: bytes):
 _GLOBAL_SESSION: Optional[requests.Session] = None
 
 
-def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
+def _get_session() -> requests.Session:
     """Get or create a global reusable session."""
     global _GLOBAL_SESSION
     if _GLOBAL_SESSION is None:
         _GLOBAL_SESSION = requests.Session()
         _GLOBAL_SESSION.headers.update({"User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36")})
-    if headers:
-        _GLOBAL_SESSION.headers.update(headers)
     return _GLOBAL_SESSION
 
 
@@ -234,12 +232,12 @@ def extract_html(
             - html_bytes: Raw HTML content (or None if failed)
             - metadata: HTTP info (status_code, content_type, final_url, error if any)
     """
-    session = _get_session(headers=headers)
+    session = _get_session()
     metadata = {"final_url": url, "status_code": "", "content_type": "", "error": ""}
 
     for attempt in range(1, max_retries + 1):
         try:
-            resp = session.get(url, timeout=timeout)
+            resp = session.get(url, timeout=timeout, headers=headers)
             resp.raise_for_status()
 
             html_bytes = resp.content
