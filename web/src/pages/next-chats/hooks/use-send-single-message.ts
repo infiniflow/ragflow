@@ -8,6 +8,7 @@ import {
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { useParams } from 'react-router';
@@ -32,6 +33,7 @@ export function useSendSingleMessage({
   Pick<ReturnType<typeof useUploadFile>, 'files' | 'clearFiles'>) {
   const { conversationId } = useGetChatSearchParams();
   const { id: chatId } = useParams();
+  const isGoBackend = useIsGoBackend();
 
   const { send, answer, done } = useSendMessageWithSse();
 
@@ -86,7 +88,10 @@ export function useSendSingleMessage({
           ...(storeHistoryMessages === undefined
             ? {}
             : { store_history_messages: storeHistoryMessages }),
-          pass_all_history_messages: true,
+          // The Go backend owns session history server-side and appends the
+          // new question; the Python backend is overwritten with the
+          // client-sent list.
+          pass_all_history_messages: !isGoBackend,
         },
         controller,
       );
@@ -106,6 +111,7 @@ export function useSendSingleMessage({
       setValue,
       send,
       controller,
+      isGoBackend,
     ],
   );
 
