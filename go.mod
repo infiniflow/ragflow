@@ -11,7 +11,6 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
 	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0
-	github.com/RealAlexandreAI/json-repair v0.0.17
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
 	github.com/alicebob/miniredis/v2 v2.38.0
