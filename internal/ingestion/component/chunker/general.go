@@ -758,11 +758,6 @@ func mergeMarkdownImagesChecked(first, second string) (string, bool) {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), true
 }
 
-func markdownImagesMergeable(first, second string) bool {
-	_, ok := mergeMarkdownImagesChecked(first, second)
-	return ok
-}
-
 func markdownImageWithinLimits(width, height int) bool {
 	if width <= 0 || height <= 0 || width > maxMarkdownImageDimension || height > maxMarkdownImageDimension {
 		return false
