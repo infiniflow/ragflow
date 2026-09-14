@@ -128,6 +128,28 @@ func TestRecordsToHTMLTableChunkList_Alignment(t *testing.T) {
 	}
 }
 
+// TestRecordsToHTMLTableChunkList_DefaultCeilingDoesNotSplit pins the default row
+// ceiling: a sheet is emitted as ONE self-contained <table>. Splitting it would
+// cut inside <td> content or drop the delimiter characters it cut on, and the
+// value must stay in sync with Python's TABLE_NO_SPLIT_ROWS.
+func TestRecordsToHTMLTableChunkList_DefaultCeilingDoesNotSplit(t *testing.T) {
+	const dataRows = 5000
+	records := make([][]string, 0, dataRows+1)
+	records = append(records, []string{"C1", "C2"})
+	for i := 0; i < dataRows; i++ {
+		records = append(records, []string{"x", "y"})
+	}
+
+	chunks := recordsToHTMLTableChunkList(records, defaultTableChunkRows, "S", 1)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk with the default ceiling, got %d", len(chunks))
+	}
+	// The single chunk spans every data row.
+	if chunks[0].RowStart != 2 || chunks[0].RowEnd != dataRows+1 {
+		t.Fatalf("want rows 2..%d, got %d..%d", dataRows+1, chunks[0].RowStart, chunks[0].RowEnd)
+	}
+}
+
 // TestRecordsToHTMLTableChunkList_Chunking asserts 256-row chunking with a repeated
 // header (ceil(n_data / chunk_rows) chunks).
 func TestRecordsToHTMLTableChunkList_Chunking(t *testing.T) {

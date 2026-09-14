@@ -53,13 +53,15 @@ class RAGFlowAzureSasBlob:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 return self.conn.upload_blob(name=blob_name, data=BytesIO(binary), length=len(binary), overwrite=True)
             except Exception:
                 logging.exception(f"Fail put {blob_name}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
 
     def rm(self, bucket, fnm, tenant_id=None):
         try:
@@ -69,14 +71,16 @@ class RAGFlowAzureSasBlob:
 
     def get(self, bucket, fnm, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 r = self.conn.download_blob(blob_name)
                 return r.read()
             except Exception:
                 logging.exception(f"fail get {blob_name}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return None
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
@@ -89,11 +93,13 @@ class RAGFlowAzureSasBlob:
 
     def get_presigned_url(self, bucket, fnm, expires):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, blob_name, expires)
             except Exception:
                 logging.exception(f"fail get {blob_name}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return None

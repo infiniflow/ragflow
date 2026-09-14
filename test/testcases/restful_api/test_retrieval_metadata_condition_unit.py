@@ -139,7 +139,13 @@ def _load_module(monkeypatch, request_payload):
     utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", utils_mod)
 
-    _stub("api.utils.image_utils", store_chunk_image=lambda *a, **k: None)
+    _stub(
+        "api.utils.image_utils",
+        IMAGE_UPDATE_MODE_REMOVE="remove",
+        IMAGE_UPDATE_MODES=frozenset({"append", "replace", "remove"}),
+        remove_chunk_image=lambda *a, **k: None,
+        store_chunk_image=lambda *a, **k: None,
+    )
     _stub(
         "api.utils.pagination_utils",
         DEFAULT_PAGE=1,
