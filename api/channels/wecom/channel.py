@@ -102,10 +102,39 @@ class _SharedWebhookServer:
                 LOGGER.error("[wecom:%s] parse error", account_id, exc_info=True)
                 return web.Response(text="")
 
+            # WeCom retries callbacks that are not acknowledged within a few
+            # seconds. Answering a message runs an LLM completion that can take
+            # far longer, so acknowledge the webhook immediately and process
+            # the message in the background; a late retry is deduped by the
+            # message id instead of being answered a second time.
+            message_id = str(getattr(msg, "id", "") or "")
+            dedupe_key = (account_id, message_id) if message_id else None
+            if dedupe_key is not None:
+                now = time.time()
+                last_seen = _recent_message_ids.get(dedupe_key)
+                if last_seen is not None and now - last_seen < _MESSAGE_DEDUPE_WINDOW_SECS:
+                    LOGGER.info(
+                        "[wecom:%s] skip duplicate callback message_id=%s",
+                        account_id,
+                        message_id,
+                    )
+                    return web.Response(text="")
+                _recent_message_ids[dedupe_key] = now
+                if len(_recent_message_ids) > _MESSAGE_DEDUPE_MAX:
+                    for key, ts in list(_recent_message_ids.items()):
+                        if now - ts > _MESSAGE_DEDUPE_WINDOW_SECS:
+                            del _recent_message_ids[key]
+                    while len(_recent_message_ids) > _MESSAGE_DEDUPE_MAX:
+                        del _recent_message_ids[min(_recent_message_ids, key=_recent_message_ids.get)]
+
             try:
-                await channel.handle_decrypted_message(msg)
+                task = asyncio.create_task(channel.handle_decrypted_message(msg))
+                _pending_handler_tasks.add(task)
+                task.add_done_callback(_on_handler_task_done)
             except Exception:
-                LOGGER.error("[wecom:%s] handler error", account_id, exc_info=True)
+                if dedupe_key is not None:
+                    _recent_message_ids.pop(dedupe_key, None)
+                LOGGER.error("[wecom:%s] failed to schedule handler", account_id, exc_info=True)
         except Exception:
             LOGGER.error("[wecom:%s] inbound request handling error", account_id, exc_info=True)
         # Empty 200 OK tells WeCom we accepted the event.
@@ -114,6 +143,26 @@ class _SharedWebhookServer:
 
 _servers: Dict[Tuple[str, int], _SharedWebhookServer] = {}
 _active_per_server: Dict[Tuple[str, int], int] = {}
+
+# In-process guard against WeCom callback retries: the same (account, message)
+# pair seen within this window is acknowledged but not answered twice.
+_recent_message_ids: Dict[Tuple[str, str], float] = {}
+_MESSAGE_DEDUPE_WINDOW_SECS = 30.0
+_MESSAGE_DEDUPE_MAX = 2000
+
+# Strong references to background handler tasks: asyncio only keeps weak
+# references, so an unreferenced long-running task can be garbage-collected
+# before it sends the answer. Tasks are discarded when they finish.
+_pending_handler_tasks: set = set()
+
+
+def _on_handler_task_done(task: asyncio.Task) -> None:
+    _pending_handler_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        LOGGER.error("background wecom handler task failed: %s", exc, exc_info=exc)
 
 
 async def _acquire_server(host: str, port: int) -> _SharedWebhookServer:
