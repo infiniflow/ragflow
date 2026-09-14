@@ -95,6 +95,18 @@ func modelImageCapability(ctx context.Context, db *gorm.DB, modelRef, modelName 
 	return false, true
 }
 
+func rejectUnsupportedImages(ctx context.Context, db *gorm.DB, state *runtime.CanvasState, modelRef, modelName string) error {
+	if state == nil {
+		return nil
+	}
+	if _, images := collectSysFiles(state); len(images) > 0 {
+		if supports, known := modelImageCapability(ctx, db, modelRef, modelName); known && !supports {
+			return runtime.NewUserFacingError(fmt.Sprintf(`Image input is not supported by the selected model %q. Please select a vision-capable model.`, modelRef))
+		}
+	}
+	return nil
+}
+
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
 func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {

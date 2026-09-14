@@ -892,11 +892,8 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if state != nil {
-		if _, images := collectSysFiles(state); len(images) > 0 {
-			if supports, known := modelImageCapability(ctx, db, originalModelID, p.ModelID); known && !supports {
-				return nil, runtime.NewUserFacingError(fmt.Sprintf(
-					`Image input is not supported by the selected model %q. Please select a vision-capable model.`, p.ModelID))
-			}
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
 		}
 	}
 	if hasRuntimeUserPrompt {
