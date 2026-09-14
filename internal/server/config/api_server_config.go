@@ -29,7 +29,8 @@ type APIServerConfig struct {
 	// TrustedProxies lists the IPs / CIDRs whose X-Forwarded-For and
 	// X-Real-IP headers are trusted when resolving the client address.
 	// nil means "not configured" and resolves to common.DefaultTrustedProxies
-	// (loopback, i.e. the nginx bundled in the ragflow image); an empty
+	// (loopback, i.e. the nginx bundled in the ragflow image). An explicit
+	// list replaces that default rather than extending it, and an empty
 	// list trusts no proxy at all.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
 
