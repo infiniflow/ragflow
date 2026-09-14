@@ -15,8 +15,8 @@
 #
 import re
 
-# Same @@page\tleft\tright\ttop\tbottom## form the PDF TCADP path parses.
-_TCADP_POSITION_TAG_RE = re.compile(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##")
+# @@page\tleft\tright\ttop\tbottom##; shared with the PDF TCADP path in parser.py.
+TCADP_POSITION_TAG_RE = re.compile(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##")
 _TABLE_ROW_RE = re.compile(r"<tr\b[^>]*>(.*?)</tr>", flags=re.IGNORECASE | re.DOTALL)
 _TABLE_CELL_RE = re.compile(r"<t[dh]\b([^>]*)>", flags=re.IGNORECASE)
 _COLSPAN_RE = re.compile(r"""colspan\s*=\s*(?:["']\s*)?(\d+)""", flags=re.IGNORECASE)
@@ -32,7 +32,7 @@ def spreadsheet_positions_from_tcadp_tag(position_tag):
     fallback = [[0, 1, 1, 1, 1]]
     if not position_tag:
         return fallback
-    match = _TCADP_POSITION_TAG_RE.match(str(position_tag).strip())
+    match = TCADP_POSITION_TAG_RE.match(str(position_tag).strip())
     if not match:
         return fallback
     pn, left, right, top, bottom = match.groups()
@@ -50,6 +50,7 @@ def _cell_colspan(attrs):
 
 
 def _row_visual_width(row_html):
+    """Visual column count for a table row, summing each cell's colspan."""
     return sum(_cell_colspan(attrs) for attrs in _TABLE_CELL_RE.findall(row_html))
 
 

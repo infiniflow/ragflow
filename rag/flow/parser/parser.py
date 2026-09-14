@@ -55,7 +55,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     reorder_multi_column_bboxes,
 )
 from rag.flow.parser.schema import ParserFromUpstream
-from rag.flow.parser.spreadsheet_positions import tcadp_spreadsheet_json_items
+from rag.flow.parser.spreadsheet_positions import TCADP_POSITION_TAG_RE, tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
@@ -627,7 +627,7 @@ class Parser(ProcessBase):
             bboxes = []
             for section, position_tag in sections:
                 if position_tag:
-                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    match = TCADP_POSITION_TAG_RE.match(position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
                         bboxes.append(
