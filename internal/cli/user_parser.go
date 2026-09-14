@@ -2396,7 +2396,7 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 			//	continue
 			//}
 
-			return nil, fmt.Errorf("unknow parameter: %s", p.curToken.Value)
+			return nil, fmt.Errorf("unknown parameter: %s", p.curToken.Value)
 		} else if p.curToken.Type == TokenIdentifier {
 			if cmd.Params["path"] == nil {
 				cmd.Params["path"] = p.curToken.Value
