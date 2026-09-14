@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -276,5 +279,18 @@ func TestSpreadsheetParsersRetainLegacyChunkRowsForDiagnostics(t *testing.T) {
 	xls.ConfigureFromSetup(map[string]any{"chunk_rows": float64(16)})
 	if xls.ChunkRows != 16 {
 		t.Fatalf("XLSParser.ChunkRows = %d, want 16", xls.ChunkRows)
+	}
+}
+
+func TestSpreadsheetParserWarnsForDeprecatedChunkRows(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{"chunk_rows": 32})
+	if !strings.Contains(logs.String(), "deprecated chunk_rows") {
+		t.Fatalf("logs = %q, want deprecated chunk_rows warning", logs.String())
 	}
 }
