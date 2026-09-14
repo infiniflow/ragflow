@@ -792,6 +792,13 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	}
 }
 
+func TestParseChunkImageUpdateModeRejectsEmptyString(t *testing.T) {
+	empty := "   "
+	if _, err := parseChunkImageUpdateMode(&empty); err == nil {
+		t.Fatal("expected error for empty image_update_mode")
+	}
+}
+
 func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
 	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
@@ -1646,26 +1653,6 @@ type updateChunksCall struct {
 	newValue  map[string]interface{}
 	indexName string
 	datasetID string
-}
-
-type updateChunkTestEngine struct {
-	parseTestDocEngine
-	existingChunk interface{}
-	updateCalls   []updateChunksCall
-}
-
-func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
-	return e.existingChunk, nil
-}
-
-func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
-	e.updateCalls = append(e.updateCalls, updateChunksCall{
-		condition: copyMap(condition),
-		newValue:  copyMap(newValue),
-		indexName: indexName,
-		datasetID: datasetID,
-	})
-	return nil
 }
 
 type switchChunksEngineMock struct {
