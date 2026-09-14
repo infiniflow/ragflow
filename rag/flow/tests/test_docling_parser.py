@@ -55,9 +55,7 @@ def test_media_record_conversion_is_shared_by_parser_backends(caplog):
     with caplog.at_level(logging.DEBUG, logger="rag.flow.parser.docling"):
         bboxes = media_records_to_bboxes([((None, "<table></table>"), [(0, 1, 2, 3, 4)])], "OpenDataLoader")
 
-    assert bboxes == [
-        {"layout_type": "table", "text": "<table></table>", "positions": [[1, 1, 2, 3, 4]], "page_number": 1}
-    ]
+    assert bboxes == [{"layout_type": "table", "text": "<table></table>", "positions": [[1, 1, 2, 3, 4]], "page_number": 1}]
     assert "[OpenDataLoader] Converted 1 media records" in caplog.text
 
 

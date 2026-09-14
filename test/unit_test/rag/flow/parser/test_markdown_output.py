@@ -21,6 +21,7 @@ from unittest.mock import Mock
 
 import pytest
 
+
 def _load_parser_module(monkeypatch):
     for module_name in ("rag.flow.parser.parser", "deepdoc.parser.pdf_parser", "deepdoc.parser", "deepdoc"):
         monkeypatch.delitem(sys.modules, module_name, raising=False)
