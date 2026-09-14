@@ -17,6 +17,8 @@
 package chunker
 
 import (
+	"bytes"
+	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
@@ -142,6 +144,44 @@ func TestGeneralStrategyForFileType(t *testing.T) {
 				t.Errorf("generalStrategyForFileType(%q) = %v, want %v", test.fileType, got, test.want)
 			}
 		})
+	}
+}
+
+func TestGeneralChunkerLogsUnknownFileTypeFallback(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	component, err := NewGeneralChunker(nil)
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	_, err = component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.bin",
+		"file_type":     "application/x-custom",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "alpha", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke unknown file type: %v", err)
+	}
+	if !strings.Contains(logs.String(), "unknown file_type") {
+		t.Fatalf("logs = %q, want unknown file_type fallback diagnostic", logs.String())
+	}
+
+	logs.Reset()
+	_, err = component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "alpha", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke canonical text file type: %v", err)
+	}
+	if strings.Contains(logs.String(), "unknown file_type") {
+		t.Fatalf("canonical text fallback emitted unknown-file diagnostic: %q", logs.String())
 	}
 }
 

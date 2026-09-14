@@ -39,6 +39,8 @@ import (
 
 const ComponentNameGeneralChunker = "GeneralChunker"
 
+var generalSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
+
 type generalChunkerParam struct {
 	ChunkTokenSize     int
 	Delimiters         []string
@@ -130,7 +132,12 @@ func (c *GeneralChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, input
 		return nil, fmt.Errorf("GeneralChunker: file_type is required")
 	}
 
-	switch generalStrategyForFileType(upstream.FileType) {
+	strategy := generalStrategyForFileType(upstream.FileType)
+	if strategy == generalStrategyText && !isKnownGeneralFileType(upstream.FileType) {
+		slog.Debug("GeneralChunker: unknown file_type; using text fallback", "file_type", upstream.FileType)
+	}
+
+	switch strategy {
 	case generalStrategyPDF:
 		return c.chunkPDF(ctx, db, upstream)
 	case generalStrategyDOCX:
@@ -166,6 +173,17 @@ func generalStrategyForFileType(fileType string) generalStrategy {
 		return generalStrategySpreadsheet
 	default:
 		return generalStrategyText
+	}
+}
+
+func isKnownGeneralFileType(fileType string) bool {
+	switch strings.ToLower(strings.TrimSpace(fileType)) {
+	case "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv",
+		"html", "md", "txt", "epub", "json", "video", "email", "visual",
+		"aural", "folder", "other":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -453,8 +471,7 @@ func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
 }
 
 func splitGeneralContextSentences(text string) []string {
-	pattern := regexp.MustCompile(`([。!?？；！\n]|\. )`)
-	indices := pattern.FindAllStringIndex(text, -1)
+	indices := generalSentencePattern.FindAllStringIndex(text, -1)
 	if len(indices) == 0 {
 		if text == "" {
 			return nil
@@ -593,14 +610,15 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 		if !forceMerge && projected > target {
 			overlap, _ := computeOverlapPrefix(previous.Text, overlapPct)
 			if overlap != "" {
-				next := cloneChunkDoc(*previous)
-				next.Text = overlap
-				next.TKNums = intPtr(tokenizeStr(overlap))
-				next.DocType = "text"
-				next.CKType = "text"
-				mergeMarkdownChunk(&next, unit, joinSep)
+				// The emitted chunk belongs to the current unit. Clone it
+				// first so media and other metadata from the previous chunk
+				// cannot leak through the overlap prefix.
+				next := cloneChunkDoc(unit)
+				next.Text = joinGeneralOverlapText(overlap, unit.Text, joinSep)
 				currentTokens = tokenizeStr(overlap) + unitTokens
 				next.TKNums = intPtr(currentTokens)
+				next.PDFPositions = mergeGeneralPositions(previous.PDFPositions, next.PDFPositions)
+				next.Positions = mergeGeneralPositions(previous.Positions, next.Positions)
 				merged = append(merged, next)
 			} else {
 				merged = append(merged, unit)

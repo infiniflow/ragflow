@@ -75,7 +75,7 @@ func migrateGeneralChunkerParserConfigs(ctx context.Context, db *gorm.DB) error 
 	var knowledgebases []entity.Knowledgebase
 	if db.WithContext(ctx).Migrator().HasTable("knowledgebase") {
 		if err := db.WithContext(ctx).
-			Where("parser_id IN ? AND pipeline_id IS NULL", []string{"general", "naive"}).
+			Where("parser_id IN ? AND (pipeline_id IS NULL OR pipeline_id = '')", []string{"general", "naive"}).
 			Find(&knowledgebases).Error; err != nil {
 			return fmt.Errorf("load knowledgebase parser configs: %w", err)
 		}
@@ -97,7 +97,7 @@ func migrateGeneralChunkerParserConfigs(ctx context.Context, db *gorm.DB) error 
 	var documents []entity.Document
 	if db.WithContext(ctx).Migrator().HasTable("document") {
 		if err := db.WithContext(ctx).
-			Where("parser_id IN ? AND pipeline_id IS NULL", []string{"general", "naive"}).
+			Where("parser_id IN ? AND (pipeline_id IS NULL OR pipeline_id = '')", []string{"general", "naive"}).
 			Find(&documents).Error; err != nil {
 			return fmt.Errorf("load document parser configs: %w", err)
 		}

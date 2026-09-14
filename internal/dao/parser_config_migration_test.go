@@ -117,6 +117,34 @@ func TestMigrateGeneralChunkerParserConfigsUpdatesBuiltinRows(t *testing.T) {
 	if err := db.Create(doc).Error; err != nil {
 		t.Fatalf("create document: %v", err)
 	}
+	emptyPipelineID := ""
+	emptyPipelineKB := &entity.Knowledgebase{
+		ID:           "kb-empty-pipeline",
+		TenantID:     "tenant-migrate",
+		Name:         "empty-pipeline",
+		EmbdID:       "embedding",
+		CreatedBy:    "user-migrate",
+		ParserID:     "general",
+		PipelineID:   &emptyPipelineID,
+		ParserConfig: entity.JSONMap{legacyGeneralChunkerID: legacyParams},
+	}
+	if err := db.Create(emptyPipelineKB).Error; err != nil {
+		t.Fatalf("create empty-pipeline knowledgebase: %v", err)
+	}
+	emptyPipelineDoc := &entity.Document{
+		ID:           "doc-empty-pipeline",
+		KbID:         kb.ID,
+		ParserID:     "naive",
+		PipelineID:   &emptyPipelineID,
+		ParserConfig: entity.JSONMap{legacyGeneralChunkerID: legacyParams},
+		SourceType:   "local",
+		Type:         "file",
+		CreatedBy:    "user-migrate",
+		Suffix:       "txt",
+	}
+	if err := db.Create(emptyPipelineDoc).Error; err != nil {
+		t.Fatalf("create empty-pipeline document: %v", err)
+	}
 	customPipelineID := "canvas-migrate"
 	customKB := &entity.Knowledgebase{
 		ID:           "kb-custom",
@@ -144,7 +172,20 @@ func TestMigrateGeneralChunkerParserConfigsUpdatesBuiltinRows(t *testing.T) {
 	if err := db.First(&gotDoc, "id = ?", doc.ID).Error; err != nil {
 		t.Fatalf("reload document: %v", err)
 	}
-	for name, config := range map[string]entity.JSONMap{"knowledgebase": gotKB.ParserConfig, "document": gotDoc.ParserConfig} {
+	var gotEmptyPipelineKB entity.Knowledgebase
+	if err := db.First(&gotEmptyPipelineKB, "id = ?", emptyPipelineKB.ID).Error; err != nil {
+		t.Fatalf("reload empty-pipeline knowledgebase: %v", err)
+	}
+	var gotEmptyPipelineDoc entity.Document
+	if err := db.First(&gotEmptyPipelineDoc, "id = ?", emptyPipelineDoc.ID).Error; err != nil {
+		t.Fatalf("reload empty-pipeline document: %v", err)
+	}
+	for name, config := range map[string]entity.JSONMap{
+		"knowledgebase":                gotKB.ParserConfig,
+		"document":                     gotDoc.ParserConfig,
+		"empty-pipeline knowledgebase": gotEmptyPipelineKB.ParserConfig,
+		"empty-pipeline document":      gotEmptyPipelineDoc.ParserConfig,
+	} {
 		if _, ok := config[legacyGeneralChunkerID]; ok {
 			t.Errorf("%s retained legacy component id: %#v", name, config)
 		}

@@ -19,6 +19,7 @@ package chunker
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
@@ -179,6 +180,61 @@ func TestMergeMarkdownUnitsCarriesCharacterOverlapIntoNextBudget(t *testing.T) {
 	}
 	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, want) {
 		t.Fatalf("markdown overlap = %q, want %q", texts, want)
+	}
+}
+
+func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
+	previousPage := 4
+	currentPage := 5
+	units := []schema.ChunkDoc{
+		{
+			Text:       "alpha beta",
+			DocType:    "text",
+			CKType:     "text",
+			Image:      "previous-image",
+			ImgID:      "previous-image-id",
+			PageNumber: &previousPage,
+			Positions:  json.RawMessage(`[[0,0,10,0,10]]`),
+			Extra:      map[string]json.RawMessage{"previous": json.RawMessage(`true`)},
+		},
+		{
+			Text:       "gamma delta",
+			DocType:    "text",
+			CKType:     "text",
+			PageNumber: &currentPage,
+			Positions:  json.RawMessage(`[[0,0,10,20,30]]`),
+			Extra:      map[string]json.RawMessage{"current": json.RawMessage(`true`)},
+		},
+	}
+	for i := range units {
+		units[i].TKNums = intPtr(tokenizeStr(units[i].Text))
+	}
+
+	target := intValue(units[0].TKNums)
+	got := mergeMarkdownUnits(units, target, 50, "\n")
+	if len(got) != 2 {
+		t.Fatalf("chunks = %#v, want previous and overlapped current chunks", got)
+	}
+	if got[1].Text == "gamma delta" || !strings.HasSuffix(got[1].Text, "\ngamma delta") {
+		t.Fatalf("overlapped text = %q, want a prefix followed by current text", got[1].Text)
+	}
+	if got[1].Image != "" {
+		t.Errorf("overlap chunk inherited previous image %q", got[1].Image)
+	}
+	if got[1].ImgID != "" {
+		t.Errorf("overlap chunk inherited previous image id %q", got[1].ImgID)
+	}
+	if got[1].PageNumber == nil || *got[1].PageNumber != currentPage {
+		t.Errorf("overlap chunk page number = %v, want current page %d", got[1].PageNumber, currentPage)
+	}
+	if string(got[1].Positions) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
+		t.Errorf("overlap chunk positions = %s, want previous and current positions", got[1].Positions)
+	}
+	if _, ok := got[1].Extra["previous"]; ok {
+		t.Errorf("overlap chunk inherited previous extra metadata: %#v", got[1].Extra)
+	}
+	if _, ok := got[1].Extra["current"]; !ok {
+		t.Errorf("overlap chunk lost current extra metadata: %#v", got[1].Extra)
 	}
 }
 
