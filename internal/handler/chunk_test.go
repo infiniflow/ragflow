@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -303,6 +304,51 @@ func TestChunkHandlerUpdateChunkValidationErrorIsBadRequest(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"tag_feas":{"tag":0}}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChunkHandlerUpdateChunkPassesImageUpdateFields(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	validJPEG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pRZ0AAAAASUVORK5CYII="
+	mock.updateChunkFn = func(_ context.Context, req *service.UpdateChunkRequest, _ string) error {
+		if !req.TouchChunkImageFields {
+			t.Fatal("expected TouchChunkImageFields")
+		}
+		if req.ImageBase64 == nil || *req.ImageBase64 != validJPEG {
+			t.Fatalf("image_base64 = %v", req.ImageBase64)
+		}
+		if req.ImageUpdateMode == nil || *req.ImageUpdateMode != "replace" {
+			t.Fatalf("image_update_mode = %v", req.ImageUpdateMode)
+		}
+		return nil
+	}
+
+	body := fmt.Sprintf(`{"image_base64":"%s","image_update_mode":"replace"}`, validJPEG)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsUnsupportedImageUpdateModeType(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"image_update_mode":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
