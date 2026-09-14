@@ -261,9 +261,20 @@ func tableRows(htmlStr string) [][]string {
 	return rows
 }
 
-// isTableHTML reports whether the text is a rendered HTML table.
+// isTableHTML reports whether the text is a rendered HTML table. The byte
+// after the tag name must be one that ends a tag name, so item text such as
+// "<tableau>\tanswer" stays on the delimiter path.
 func isTableHTML(s string) bool {
-	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+	const tag = "<table"
+	s = strings.TrimSpace(strings.ToLower(s))
+	if !strings.HasPrefix(s, tag) || len(s) == len(tag) {
+		return false
+	}
+	switch s[len(tag)] {
+	case ' ', '\t', '\n', '\f', '\r', '/', '>':
+		return true
+	}
+	return false
 }
 
 // cellText returns the visible text of a table cell. The parser hands text

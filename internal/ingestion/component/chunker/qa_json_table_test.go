@@ -145,3 +145,34 @@ func TestQAChunker_JSONTabTextStaysOnTheTextPath(t *testing.T) {
 		t.Errorf("chunk = %q, want %q", got, want)
 	}
 }
+
+// TestQAChunker_JSONTagNamePrefixStaysOnTheTextPath keeps text that only
+// starts with the tag name on the text extractor. "<tableau>" is not a
+// <table> tag, so the delimiter in the same item still makes a pair.
+func TestQAChunker_JSONTagNamePrefixStaysOnTheTextPath(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatalf("NewQAChunker: %v", err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "notes.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "<tableau>\tThe data visualization tool.", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks has type %T", out["chunks"])
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("chunk count = %d, want 1", len(chunks))
+	}
+	want := "Question: <tableau>\tAnswer: The data visualization tool."
+	if got, _ := chunks[0]["text"].(string); got != want {
+		t.Errorf("chunk = %q, want %q", got, want)
+	}
+}
