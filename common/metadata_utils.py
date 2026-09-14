@@ -228,8 +228,7 @@ async def apply_meta_data_filter(
             allowed = set(filtered)
             constrained = dedupe_list([doc_id for doc_id in base_doc_ids if doc_id in allowed])
         logging.debug(
-            "Metadata filter scope constraint: base_count=%d, filter_hit_count=%d, "
-            "constrained_count=%d, removed_all_filter_hits=%s",
+            "Metadata filter scope constraint: base_count=%d, filter_hit_count=%d, constrained_count=%d, removed_all_filter_hits=%s",
             base_count,
             len(filtered),
             len(constrained),
