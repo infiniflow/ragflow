@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"ragflow/internal/tokenizer"
@@ -157,10 +158,12 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		// Execute the round's tool calls and fold their results into history.
 		// If one of them is a terminal tool and succeeded, its result is already
 		// the final answer — return it directly instead of re-invoking the model
-		// (Python chat_model.py:619-627).
+		// (Python chat_model.py:619-627). Non-streaming matches Python's
+		// all-empty fallthrough: no qualifying terminal result and the loop
+		// runs another round (chat_model.py:692-704).
 		var hit bool
 		var toolAnswer string
-		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), false)
 		if hit {
 			// This round's usage was already folded in by addRoundUsage above
 			// (it accumulates into aggUsage and forwards a per-round delta to the
@@ -363,9 +366,14 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		// A terminal tool's successful result is already the final answer:
 		// stream it to the caller and stop instead of asking the model again
 		// (Python chat_model.py:2574-2582). sendTerminal streams the result.
+		// Streaming passes emptyTerminalIsHit=true: a Go streaming tool returns
+		// "" to say "already delivered through the sink", and the loop must
+		// stop even when the folded content is empty — unlike Python, whose rag
+		// tool returns the full text and whose all-empty fallthrough would only
+		// buy an extra model round whose output the mux drops.
 		var termAnswer string
 		var termHit bool
-		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm))
+		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), true)
 		if termHit {
 			if err := sendTerminal(sender, &termAnswer); err != nil {
 				return totalTokens, err
@@ -401,9 +409,22 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 // When terminal is non-empty, a successful call to one of those tools
 // short-circuits: the loop returns (history, that result, true) so the caller
 // treats it as the final answer instead of re-invoking the model (mirrors
-// Python chat_model.py:619-627 / :2574-2582). When terminal is empty or no
-// terminal tool fired, it returns (history, "", false).
-func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}) ([]Message, string, bool) {
+// Python chat_model.py:619-627 / :2574-2582). An EMPTY terminal result does
+// not win on its own: Python's fold only returns on a non-empty string
+// (`if out:`, chat_model.py:696), so an empty result is skipped in favour of
+// a later non-empty sibling. When NO terminal result is non-empty,
+// emptyTerminalIsHit decides:
+//   - false (non-streaming, Python :692-704 fallthrough): no hit — the tool
+//     responses are in history and the loop runs another model round, which
+//     then answers from them or re-calls the tool;
+//   - true (streaming): hit with the first successful call's (empty) content.
+//     The Go streaming tool returns "" to say "already delivered through the
+//     sink", and the loop must stop (sendTerminal stays silent) instead of
+//     paying another model round whose output the mux would only drop.
+//
+// When terminal is empty or no terminal tool fired, it returns
+// (history, "", false) either way.
+func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}, emptyTerminalIsHit bool) ([]Message, string, bool) {
 	if session == nil {
 		history = append(history, Message{
 			Role:      "assistant",
@@ -474,21 +495,37 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 		ToolCalls: toolCalls,
 	})
 
-	// A successful terminal tool is the final answer; remember its result but
-	// still append every tool message so history stays well-formed if the
-	// caller ignores the short-circuit (defensive).
-	var terminalAnswer string
-	var terminalHit bool
+	// Every tool_call the assistant declared gets its matching tool message,
+	// well-formed history whichever path the caller takes. Then two passes over
+	// the (tiny) results slice pick the fold: the FIRST non-empty successful
+	// terminal result wins (Python chat_model.py:696 `if out:` — an empty
+	// terminal result never ships while a non-empty sibling exists, trimmed
+	// whitespace counts as empty), then the empty fallthrough per
+	// emptyTerminalIsHit (see the doc comment above).
 	for _, r := range results {
 		history = append(history, Message{
 			Role:       "tool",
 			Content:    r.content,
 			ToolCallID: r.tcID,
 		})
-		if !terminalHit && r.err == nil && r.name != "" {
+	}
+	var terminalAnswer string
+	var terminalHit bool
+	for _, r := range results {
+		if r.err == nil && r.name != "" && strings.TrimSpace(r.content) != "" {
 			if _, ok := terminal[r.name]; ok {
-				terminalAnswer = r.content
-				terminalHit = true
+				terminalAnswer, terminalHit = r.content, true
+				break
+			}
+		}
+	}
+	if !terminalHit && emptyTerminalIsHit {
+		for _, r := range results {
+			if r.err == nil && r.name != "" {
+				if _, ok := terminal[r.name]; ok {
+					terminalAnswer, terminalHit = r.content, true
+					break
+				}
 			}
 		}
 	}

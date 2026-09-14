@@ -140,8 +140,13 @@ func TestCitationPromptCarriesIllustrativeIDCaveat(t *testing.T) {
 }
 
 func TestCitationPromptHonoursOverride(t *testing.T) {
-	if got := CitationPrompt("Cite as [n]."); got != "Cite as [n]." {
-		t.Errorf("CitationPrompt(override) = %q, want the override verbatim", got)
+	// Python generator.py:227-228 renders the override (citation_guidelines)
+	// template and STILL appends the illustrative-IDs caveat unconditionally —
+	// the suffix is concatenated after whatever template rendered, so the
+	// override replaces the template but never the caveat.
+	want := "Cite as [n]." + citationIDSuffix
+	if got := CitationPrompt("Cite as [n]."); got != want {
+		t.Errorf("CitationPrompt(override) = %q, want override + caveat %q", got, want)
 	}
 }
 

@@ -242,21 +242,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	if query == "" {
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
-	router := e.deps.NavRouter
-	if router == nil {
-		// Default navigation-tree router mirrors Python _NAV_TREE_ROUTER = "chunk_agg":
-		// route documents by aggregating raw-chunk retrieval rather than by a nav-row
-		// KNN descent (nav.NewNavServiceRouter). A nil retrieval backend degrades to the
-		// nav-row router, which needs no backend.
-		if e.deps.Backend != nil {
-			router = nav.NewChunkAggRouter(
-				chunkAggRetrieveFrom(e.deps.Backend),
-				nav.ChunkAggSummarize(),
-			)
-		} else {
-			router = nav.NewNavServiceRouter()
-		}
-	}
+	router := e.navRouter()
 	// The tool argument is NOT threaded (Python _exec_navigate_tree,
 	// action_session.py:_exec_navigate_tree, calls _navigate_tree_impl(query, keywords=...) with
 	// no doc_scope), but the SESSION scope still applies: the impl routes through
@@ -264,8 +250,11 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	// — the session doc_scope (navigation.py:_nav_search_titled). The router must therefore
 	// receive the session ceiling, never the tool argument.
 	res := NavigateTree(ctx, router, NavTreeInput{
-		Query:    query,
-		Keywords: e.req.Keywords,
+		Query: query,
+		// Python :985 threads ONLY the tool argument's keywords (usually absent,
+		// so "") — the run-level request keywords are a Go-only invention that
+		// re-biased every tree routing toward the original question keywords.
+		Keywords: argString(args, "keywords"),
 		DocScope: e.deps.DocScope,
 		TenantID: e.deps.TenantID,
 		KbIDs:    e.deps.KbIDs,
@@ -275,28 +264,24 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	case ReasonNoStructure:
 		return ToolOutcome{
 			Payload: []any{map[string]any{
-				"kind":    "navigate_tree",
-				"note":    "This dataset has no compiled document-navigation tree. Use search_chunks / retrieve instead.",
-				"query":   query,
-				"doc_ids": []string{},
+				// Python action_session.py:_exec_navigate_tree (dataset_has_compilation
+				// gate) — note text verbatim; the payload carries kind+note only.
+				"kind": "navigate_tree",
+				"note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead.",
 			}},
-			Status:  StatusEmpty,
-			Reason:  ReasonNoStructure,
-			Metrics: map[string]any{"docs": 0, "routed_docs": [][2]string{}},
+			Status: StatusEmpty,
+			Reason: ReasonNoStructure,
 		}, nil
 	case ReasonNoDoc:
 		// Structure exists, this query reached nothing — a MISS, not an EMPTY.
+		// Python :990 note verbatim; the payload carries kind+note only.
 		return ToolOutcome{
 			Payload: []any{map[string]any{
-				"kind":    "navigate_tree",
-				"content": res.Text,
-				"doc_ids": []string{},
-				"note":    "The navigation tree exists but this query routed to no document. Try a different topic/entity phrasing, or use search_chunks.",
-				"query":   query,
+				"kind": "navigate_tree",
+				"note": "navigate_tree routed to no document for this query. Rephrase the query, or use search_chunks / retrieve instead.",
 			}},
-			Status:  StatusMiss,
-			Reason:  ReasonNoDoc,
-			Metrics: map[string]any{"docs": 0},
+			Status: StatusMiss,
+			Reason: ReasonNoDoc,
 		}, nil
 	case ReasonInfra, ReasonBadArgs:
 		return ToolOutcome{
@@ -306,10 +291,15 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		}, nil
 	}
 
-	// Routed: expose the summary-bearing payload the ladder consumes.
+	// Routed: expose the summary-bearing payload the ladder consumes. Python
+	// :995 caps the content at 8000 chars.
+	content := res.Text
+	if len(content) > 8000 {
+		content = content[:8000]
+	}
 	payload := []any{map[string]any{
 		"kind":    "navigate_tree",
-		"content": res.Text,
+		"content": content,
 		"doc_ids": res.DocIDs,
 	}}
 	return ToolOutcome{
@@ -407,13 +397,13 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 			docIDs = docIDs[:navTreeMaxDocs]
 		}
 		if len(docIDs) == 0 {
-			// Routing reached no document (Python: empty_reason="no_doc").
+			// Routing reached no document (Python: empty_reason="no_doc"). Python
+			// :1037 emits the SAME note for every empty_reason — text verbatim.
 			return ToolOutcome{
 				Payload: []any{map[string]any{
-					"kind":    "navigate_structure",
-					"note":    "The query routed to no document in this dataset. Try a different topic/entity phrasing, pass doc_id, or use search_chunks.",
-					"query":   query,
-					"doc_ids": []string{},
+					"kind":   "navigate_structure",
+					"doc_id": docID,
+					"note":   fmt.Sprintf("No compiled structure of kind='%s' reachable for this document. Try another doc_id or kind, or use search_chunks / retrieve / list_chunks.", kind),
 				}},
 				Status: StatusMiss,
 				Reason: ReasonNoDoc,
@@ -431,13 +421,16 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		"chunk_ptrs":  drill.chunkPtrs,
 		"top_score":   drill.topScore,
 		"chunk_paths": drill.chunkPaths,
+		"claim_hits":  drill.claimHits,
 	}
 	if res.EmptyReason != "" {
+		// Python :1037 — one note for every empty_reason; kind renders with
+		// Python repr() quoting (kind!r).
 		return ToolOutcome{
 			Payload: []any{map[string]any{
-				"kind":    "navigate_structure",
-				"note":    fmt.Sprintf("No compiled structure of kind=%q reachable for the located document(s). Try another kind, or use search_chunks / retrieve / list_chunks.", kind),
-				"doc_ids": docIDs,
+				"kind":   "navigate_structure",
+				"doc_id": docID,
+				"note":   fmt.Sprintf("No compiled structure of kind='%s' reachable for this document. Try another doc_id or kind, or use search_chunks / retrieve / list_chunks.", kind),
 			}},
 			Status:  ReasonStatus(res.EmptyReason),
 			Reason:  res.EmptyReason,
@@ -445,9 +438,11 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		}, nil
 	}
 	// Reached structures but drilled to nothing usable: not an error, just weak —
-	// the orchestrator falls back to retrieval on status == poor.
+	// the orchestrator falls back to retrieval on status == poor. Claim-first
+	// hits are the exception: the claims carry the answer material and load no
+	// chunk snippets, so a zero chunk_ptr count with matched claims is a success.
 	status := StatusOK
-	if drill.chunkPtrs == 0 {
+	if drill.chunkPtrs == 0 && drill.claimHits == 0 {
 		status = StatusPoor
 	}
 	content := res.Text
@@ -468,19 +463,29 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 }
 
 // navRouter returns the navigation-tree router navigateTree and navigateStructure
-// share (mirrors Python's _NAV_TREE_ROUTER = "chunk_agg"; a nil retrieval backend
-// degrades to the nav-row router, which needs no backend).
+// share. It mirrors Python's agentic router choice: the navigation-tree route
+// asks for router="claim_agg" (dataset_api_service.search_dataset_layers) — the
+// claim leg runs first and decides the ranking when it hits, and raw-chunk
+// aggregation (chunk_agg) is the fallback. A nil retrieval backend degrades to
+// the nav-row router, which needs no backend.
 func (e *searchExecutor) navRouter() NavTreeRouter {
 	if e.deps.NavRouter != nil {
 		return e.deps.NavRouter
 	}
-	if e.deps.Backend != nil {
-		return nav.NewChunkAggRouter(
-			chunkAggRetrieveFrom(e.deps.Backend),
-			nav.ChunkAggSummarize(),
-		)
+	return defaultNavRouter(e.deps)
+}
+
+// defaultNavRouter builds the claim_agg router over the chunk_agg fallback.
+// See ClaimAggRouter and nav.NewChunkAggRouter.
+func defaultNavRouter(deps SearchDeps) NavTreeRouter {
+	if deps.Backend == nil {
+		return nav.NewNavServiceRouter()
 	}
-	return nav.NewNavServiceRouter()
+	return &ClaimAggRouter{
+		Deps:      deps,
+		Fallback:  nav.NewChunkAggRouter(chunkAggRetrieveFrom(deps.Backend), nav.ChunkAggSummarize()),
+		Summarize: nav.ChunkAggSummarize(),
+	}
 }
 
 func firstOr(xs []string, def string) string {
@@ -506,11 +511,17 @@ func argString(args map[string]any, key string) string {
 }
 
 // evidencePoolCap is the hard cap on the shared evidence pool
-// (kbinfos["chunks"]). Mirrors Python _EVIDENCE_POOL_CAP (=60, the same ceiling
-// as _MAX_SNIPPET_POOL / _SCA_VIEW_CAP): once the pool is saturated, further
-// admits cannot reach the SCA view or improve the answer, so the action session
-// stops admitting chunks (observed pools otherwise grew to ~106).
-const evidencePoolCap = 60
+// (kbinfos["chunks"]). Mirrors Python _EVIDENCE_POOL_CAP (=120,
+// action_session.py:62): deliberately LARGER than _SCA_VIEW_CAP (=60) so
+// storage and review stay DECOUPLED — the pool accumulates while the SCA reads
+// a ranked top-60 view. Coupling them at 60 starved the raw-evidence channel in
+// 42% of rounds (every admit rejected -> status REDUNDANT -> the model
+// re-searched for nothing).
+//
+// Claim pseudo-chunks BYPASS this cap: Python's _claim_prefetch appends them
+// directly to kbinfos["chunks"] (:755), and the cap check (:657) only guards
+// _admit_evidence's regular chunks.
+const evidencePoolCap = 120
 
 // The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
 // the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
@@ -567,6 +578,51 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
 	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
+	// Claim-first, MUTUALLY EXCLUSIVE (Python _run_search: _claim_prefetch +
+	// _CLAIM_PREFETCH_EXCLUSIVE): when claim rows hit, their verbatim evidence
+	// IS the answer material — chunk snippets on top would echo the same
+	// passages and burn tokens. Claims carry chunk pointers, so deep-reading
+	// stays one list_chunks away. No hits → the chunk search runs exactly as
+	// before. Applies to the whole retrieve family + search_chunks, matching
+	// Python's _exec_retrieve/_exec_search_chunks (both route through
+	// _run_search). Best effort: any failure falls through without claims.
+	if name == "retrieve" || name == "search_chunks" || strings.HasPrefix(name, "grep") {
+		if len(queries) > 0 {
+			if claimPayload, _, claimPseudo, ok := ClaimPrefetch(ctx, e.deps, queries[0], seen); ok {
+				newEvidence := 0
+				e.deps.KB.Admit(func(p *PoolAdmitter) {
+					for _, pc := range claimPseudo {
+						// Claim pseudo-chunks BYPASS the pool cap: Python
+						// _claim_prefetch appends them directly to
+						// kbinfos["chunks"] (:755) and the cap check (:657)
+						// only guards regular chunk admits — the verbatim
+						// evidence must land in the pool even when it is FULL.
+						cid := ChunkIDOf(pc)
+						if seen[cid] {
+							continue
+						}
+						seen[cid] = true
+						evidenceIDs = append(evidenceIDs, cid)
+						payload = append(payload, passageFromChunk(pc))
+						if p.Add(pc) {
+							newEvidence++
+						}
+					}
+				})
+				status := StatusOK
+				if newEvidence == 0 {
+					status = StatusRedundant
+				}
+				return ToolOutcome{
+					Payload:     payload,
+					EvidenceIDs: evidenceIDs,
+					Status:      status,
+					Reason:      ReasonNone,
+					Metrics:     map[string]any{"hits": len(claimPayload), "new_evidence": newEvidence, "claims": len(claimPayload)},
+				}, nil
+			}
+		}
+	}
 	for _, q := range queries {
 		// Per-tool top_n (mirrors Python action_session: retrieve=10,
 		// search_chunks=20). They were previously collapsed onto e.req.TopN,
@@ -645,6 +701,10 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// cannot interleave two sessions' batches. Locking per chunk would let
 		// them interleave into pool orders Python can never produce.
 		e.deps.KB.Admit(func(p *PoolAdmitter) {
+			// Python _admit_evidence computes _claim_covered_ids(kbinfos) from the
+			// LIVE pool once per call; compute it once per batch under the same
+			// critical section.
+			covered := p.ClaimCoveredIDs()
 			for _, c := range chunks {
 				// Python _admit_evidence early-stops at the top once the shared pool
 				// reaches the cap, BEFORE the per-call dedup.
@@ -653,6 +713,12 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				}
 				cid := ChunkIDOf(c)
 				if seen[cid] {
+					continue
+				}
+				// Python :672-676 — already quoted verbatim by a pooled claim →
+				// skip the full passage (table chunks exempt: their answer rows
+				// survive only in full text). Not pooled, not passed to the model.
+				if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
 					continue
 				}
 				seen[cid] = true
@@ -951,10 +1017,11 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		// stay nil so the retrieval service keeps its own default, while a zero
 		// is a real override. Taking the address of a zero value here forced
 		// "threshold 0 / full vector weight" onto every caller that omitted them.
-		SimilarityThreshold:      req.SimilarityThreshold,
-		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
-		TenantID:                 req.TenantID,
-		RankFeature:              req.RankFeature,
+		SimilarityThreshold:    req.SimilarityThreshold,
+		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		DisableVectorLeg:       req.DisableVectorLeg,
+		TenantID:               req.TenantID,
+		RankFeature:            req.RankFeature,
 		// ExcludeCompiled maps Python hybrid_search's
 		// must_not={"exists":"compile_kwd"} onto the runtime request's
 		// OnlyOriginalText (the "no compile_kwd" exclusion).
