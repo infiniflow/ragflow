@@ -123,6 +123,7 @@ func TestFileOutputsJSONRoundTrip(t *testing.T) {
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
 		Name:         "input.pdf",
+		FileType:     "pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
 		Lang:         "English",
@@ -138,12 +139,18 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"json"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ParserOutputs
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if decoded.OutputFormat != "json" {
 		t.Errorf("OutputFormat round-trip mismatch: got %q", decoded.OutputFormat)
+	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
 	}
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
@@ -198,6 +205,7 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	md := "# title"
 	original := ChunkerFromUpstream{
 		Name:           "doc.pdf",
+		FileType:       "pdf",
 		OutputFormat:   PayloadFormatChunks,
 		Chunks:         []ChunkDoc{{Text: "alpha"}},
 		MarkdownResult: &md,
@@ -209,12 +217,18 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"chunks"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ChunkerFromUpstream
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if decoded.Name != "doc.pdf" || decoded.OutputFormat != PayloadFormatChunks {
 		t.Errorf("round-trip mismatch: %+v", decoded)
+	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
 	}
 	if len(decoded.Chunks) != 1 {
 		t.Errorf("Chunks round-trip mismatch: got %d", len(decoded.Chunks))

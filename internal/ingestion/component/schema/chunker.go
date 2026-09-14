@@ -41,6 +41,7 @@ import (
 //	created_time: float | None  (alias _created_time)
 //	elapsed_time: float | None  (alias _elapsed_time)
 //	name: str                   (required)
+//	file_type: str              (canonical parser routing extension)
 //	file: dict | None
 //	chunks: list[dict] | None
 //	output_format: Literal["json","markdown","text","html","chunks"] | None
@@ -54,6 +55,9 @@ type ChunkerFromUpstream struct {
 
 	// Name is the source document name. Required.
 	Name string `json:"name"`
+
+	// FileType is the canonical extension selected by the upstream Parser.
+	FileType string `json:"file_type,omitempty"`
 
 	// DocID is the originating document ID. When set, the chunker can
 	// re-resolve the source PDF from storage to crop section images on

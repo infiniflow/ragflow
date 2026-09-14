@@ -385,6 +385,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 //
 //	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
+//	file_type     string  — canonical extension used for parser dispatch.
 //	output_format string  — always "json".
 //	json          []map[string]any — canonical structured parser items.
 //	lang          string  — language for tokenization.
@@ -399,6 +400,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
+		"file_type":     "string: canonical extension used for parser dispatch (for example pdf, md, xlsx, or other).",
 		"output_format": "string: always \"json\".",
 		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
@@ -415,6 +417,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //
 //	{
 //	  "name":           string (from inputs["name"], file.name, or doc_id),
+//	  "file_type":      string (canonical extension used for parser dispatch),
 //	  "output_format": "json",
 //	  "json":           []map[string]any,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
@@ -513,6 +516,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	lang, _ := getString(inputs, "lang")
 	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
+	out["file_type"] = string(fileTypeExt)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
