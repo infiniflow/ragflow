@@ -20,6 +20,7 @@ Uses importlib to load chunk_feedback_service.py in isolation so that
 test/testcases/test_web_api/common.py (a test-helper module) does not shadow
 the project-level common/ package during collection.
 """
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -72,9 +73,7 @@ def _load_feedback_module(monkeypatch):
         _REPO_ROOT / "api" / "db" / "services" / "chunk_feedback_service.py",
     )
     mod = importlib.util.module_from_spec(spec)
-    monkeypatch.setitem(
-        sys.modules, "api.db.services.chunk_feedback_service", mod
-    )
+    monkeypatch.setitem(sys.modules, "api.db.services.chunk_feedback_service", mod)
     spec.loader.exec_module(mod)
 
     return mod, settings_mod
@@ -157,12 +156,7 @@ class TestUpdateChunkWeight:
         mock_doc_store.update.return_value = True
         settings_mod.docStoreConn = mock_doc_store
 
-        result = mod.ChunkFeedbackService.update_chunk_weight(
-            tenant_id="tenant1",
-            chunk_id="chunk1",
-            kb_id="kb1",
-            delta=1
-        )
+        result = mod.ChunkFeedbackService.update_chunk_weight(tenant_id="tenant1", chunk_id="chunk1", kb_id="kb1", delta=1)
 
         assert result is True
         mock_doc_store.update.assert_called_once()
@@ -176,12 +170,7 @@ class TestUpdateChunkWeight:
         mock_doc_store.get.return_value = None
         settings_mod.docStoreConn = mock_doc_store
 
-        result = mod.ChunkFeedbackService.update_chunk_weight(
-            tenant_id="tenant1",
-            chunk_id="chunk1",
-            kb_id="kb1",
-            delta=1
-        )
+        result = mod.ChunkFeedbackService.update_chunk_weight(tenant_id="tenant1", chunk_id="chunk1", kb_id="kb1", delta=1)
 
         assert result is False
 
@@ -199,7 +188,7 @@ class TestUpdateChunkWeight:
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
-            delta=10  # Would exceed max
+            delta=10,  # Would exceed max
         )
 
         # Verify the new_value passed to update has clamped weight
@@ -221,7 +210,7 @@ class TestUpdateChunkWeight:
             tenant_id="tenant1",
             chunk_id="chunk1",
             kb_id="kb1",
-            delta=-10  # Would go below min
+            delta=-10,  # Would go below min
         )
 
         call_args = mock_doc_store.update.call_args
@@ -363,11 +352,7 @@ class TestApplyFeedback:
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", False)
 
-        result = mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1",
-            reference={"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]},
-            is_positive=True
-        )
+        result = mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference={"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]}, is_positive=True)
 
         assert result["success_count"] == 0
         assert result["fail_count"] == 0
@@ -378,9 +363,7 @@ class TestApplyFeedback:
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         mock_update = MagicMock(return_value=True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
 
         reference = {
             "chunks": [
@@ -388,11 +371,7 @@ class TestApplyFeedback:
                 {"id": "chunk2", "dataset_id": "kb1"},
             ]
         }
-        result = mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1",
-            reference=reference,
-            is_positive=True
-        )
+        result = mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=True)
 
         assert result["success_count"] == 1
         assert result["fail_count"] == 0
@@ -404,16 +383,10 @@ class TestApplyFeedback:
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         mock_update = MagicMock(return_value=True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
 
         reference = {"chunks": [{"id": "chunk1", "dataset_id": "kb1"}]}
-        result = mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1",
-            reference=reference,
-            is_positive=False
-        )
+        result = mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=False)
 
         assert result["success_count"] == 1
         mock_update.assert_called_with("tenant1", "chunk1", "kb1", -1, row_id=None)
@@ -423,11 +396,7 @@ class TestApplyFeedback:
         mod, _ = feedback_env
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
 
-        result = mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1",
-            reference={},
-            is_positive=True
-        )
+        result = mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference={}, is_positive=True)
 
         assert result["success_count"] == 0
         assert result["fail_count"] == 0
@@ -439,9 +408,7 @@ class TestApplyFeedback:
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "uniform")
         mock_update = MagicMock(side_effect=[True, False])
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
 
         reference = {
             "chunks": [
@@ -449,11 +416,7 @@ class TestApplyFeedback:
                 {"id": "chunk2", "dataset_id": "kb1"},
             ]
         }
-        result = mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1",
-            reference=reference,
-            is_positive=True
-        )
+        result = mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=True)
 
         assert result["success_count"] == 1
         assert result["fail_count"] == 1
@@ -464,18 +427,14 @@ class TestApplyFeedback:
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "uniform")
         mock_update = MagicMock(return_value=True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
         reference = {
             "chunks": [
                 {"id": "chunk1", "dataset_id": "kb1"},
                 {"id": "chunk2", "dataset_id": "kb1"},
             ]
         }
-        mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1", reference=reference, is_positive=True
-        )
+        mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=True)
         mock_update.assert_any_call("tenant1", "chunk1", "kb1", mod.UPVOTE_WEIGHT_INCREMENT, row_id=None)
         mock_update.assert_any_call("tenant1", "chunk2", "kb1", mod.UPVOTE_WEIGHT_INCREMENT, row_id=None)
 
@@ -485,18 +444,14 @@ class TestApplyFeedback:
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "relevance")
         mock_update = MagicMock(return_value=True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
         reference = {
             "chunks": [
                 {"id": "a", "dataset_id": "kb1", "similarity": 0.9},
                 {"id": "b", "dataset_id": "kb1", "similarity": 0.1},
             ]
         }
-        mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1", reference=reference, is_positive=True
-        )
+        mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=True)
         mock_update.assert_called_once_with("tenant1", "a", "kb1", 1, row_id=None)
 
     def test_apply_feedback_passes_row_id_from_reference(self, feedback_env, monkeypatch):
@@ -505,17 +460,13 @@ class TestApplyFeedback:
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_ENABLED", True)
         monkeypatch.setattr(mod, "CHUNK_FEEDBACK_WEIGHTING", "relevance")
         mock_update = MagicMock(return_value=True)
-        monkeypatch.setattr(
-            mod.ChunkFeedbackService, "update_chunk_weight", mock_update
-        )
+        monkeypatch.setattr(mod.ChunkFeedbackService, "update_chunk_weight", mock_update)
         reference = {
             "chunks": [
                 {"id": "c1", "dataset_id": "kb1", "similarity": 0.8, "row_id": 99},
             ]
         }
-        mod.ChunkFeedbackService.apply_feedback(
-            tenant_id="tenant1", reference=reference, is_positive=True
-        )
+        mod.ChunkFeedbackService.apply_feedback(tenant_id="tenant1", reference=reference, is_positive=True)
         mock_update.assert_called_once_with("tenant1", "c1", "kb1", 1, row_id=99)
 
 
@@ -540,11 +491,15 @@ class TestThumbFlipFeedback:
         if apply_chunk_feedback and reference:
             if isinstance(prior_thumb, bool) and prior_thumb != new_thumb:
                 r = mod.ChunkFeedbackService.apply_feedback(
-                    tenant_id="t1", reference=reference, is_positive=not prior_thumb,
+                    tenant_id="t1",
+                    reference=reference,
+                    is_positive=not prior_thumb,
                 )
                 calls.append(("undo", r))
             r = mod.ChunkFeedbackService.apply_feedback(
-                tenant_id="t1", reference=reference, is_positive=new_thumb is True,
+                tenant_id="t1",
+                reference=reference,
+                is_positive=new_thumb is True,
             )
             calls.append(("new", r))
 

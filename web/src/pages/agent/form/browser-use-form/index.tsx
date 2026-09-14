@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialBrowserValues } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -39,11 +40,13 @@ function BrowserForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
+  const ownerTenantId = useOwnerTenantId();
+
   return (
     <Form {...form}>
       <FormWrapper>
         <RAGFlowFormItem label={t('chat.model')} name="llm_id">
-          <NextLLMSelect></NextLLMSelect>
+          <NextLLMSelect ownerTenantId={ownerTenantId}></NextLLMSelect>
         </RAGFlowFormItem>
         <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
           <PromptEditor showToolbar={true}></PromptEditor>

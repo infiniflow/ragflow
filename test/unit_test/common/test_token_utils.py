@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-from common.token_utils import num_tokens_from_string, total_token_count_from_response, truncate, encoder
+from common.token_utils import get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 import pytest
 
 
@@ -58,8 +58,7 @@ class TestNumTokensFromString:
 
     def test_long_text(self):
         """Test token count for longer text"""
-        long_text = "This is a longer piece of text that should contain multiple sentences. " \
-                    "It will help verify that the token counting works correctly for substantial input."
+        long_text = "This is a longer piece of text that should contain multiple sentences. It will help verify that the token counting works correctly for substantial input."
         result = num_tokens_from_string(long_text)
         assert result > 10
 
@@ -89,13 +88,16 @@ class TestNumTokensFromString:
 
 
 # Additional parameterized tests for efficiency
-@pytest.mark.parametrize("input_string,expected_min_tokens", [
-    ("a", 1),  # Single character
-    ("test", 1),  # Single word
-    ("hello world", 2),  # Two words
-    ("This is a sentence.", 4),  # Short sentence
-    # ("A" * 100, 100),  # Repeated characters
-])
+@pytest.mark.parametrize(
+    "input_string,expected_min_tokens",
+    [
+        ("a", 1),  # Single character
+        ("test", 1),  # Single word
+        ("hello world", 2),  # Two words
+        ("This is a sentence.", 4),  # Short sentence
+        # ("A" * 100, 100),  # Repeated characters
+    ],
+)
 def test_token_count_ranges(input_string, expected_min_tokens):
     """Parameterized test for various input strings"""
     result = num_tokens_from_string(input_string)
@@ -117,88 +119,42 @@ class TestTotalTokenCountFromResponse:
 
     def test_dict_with_usage_total_tokens(self):
         """Test dictionary response with usage['total_tokens']"""
-        resp_dict = {
-            'usage': {
-                'total_tokens': 175
-            }
-        }
+        resp_dict = {"usage": {"total_tokens": 175}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 175
 
     def test_dict_with_usage_input_output_tokens(self):
         """Test dictionary response with input_tokens and output_tokens in usage"""
-        resp_dict = {
-            'usage': {
-                'input_tokens': 100,
-                'output_tokens': 50
-            }
-        }
+        resp_dict = {"usage": {"input_tokens": 100, "output_tokens": 50}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 150
 
     def test_dict_with_meta_tokens_input_output(self):
         """Test dictionary response with meta.tokens.input_tokens and output_tokens"""
-        resp_dict = {
-            'meta': {
-                'tokens': {
-                    'input_tokens': 80,
-                    'output_tokens': 40
-                }
-            }
-        }
+        resp_dict = {"meta": {"tokens": {"input_tokens": 80, "output_tokens": 40}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 120
 
     def test_priority_order_dict_usage_total_tokens_third(self):
         """Test that dict['usage']['total_tokens'] is third in priority"""
-        resp_dict = {
-            'usage': {
-                'total_tokens': 180,
-                'input_tokens': 100,
-                'output_tokens': 80
-            },
-            'meta': {
-                'tokens': {
-                    'input_tokens': 200,
-                    'output_tokens': 100
-                }
-            }
-        }
+        resp_dict = {"usage": {"total_tokens": 180, "input_tokens": 100, "output_tokens": 80}, "meta": {"tokens": {"input_tokens": 200, "output_tokens": 100}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 180  # Should use total_tokens from usage
 
     def test_priority_order_dict_usage_input_output_fourth(self):
         """Test that dict['usage']['input_tokens'] + output_tokens is fourth in priority"""
-        resp_dict = {
-            'usage': {
-                'input_tokens': 120,
-                'output_tokens': 60
-            },
-            'meta': {
-                'tokens': {
-                    'input_tokens': 200,
-                    'output_tokens': 100
-                }
-            }
-        }
+        resp_dict = {"usage": {"input_tokens": 120, "output_tokens": 60}, "meta": {"tokens": {"input_tokens": 200, "output_tokens": 100}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 180  # Should sum input_tokens + output_tokens from usage
 
     def test_priority_order_meta_tokens_last(self):
         """Test that meta.tokens is the last option in priority"""
-        resp_dict = {
-            'meta': {
-                'tokens': {
-                    'input_tokens': 90,
-                    'output_tokens': 30
-                }
-            }
-        }
+        resp_dict = {"meta": {"tokens": {"input_tokens": 90, "output_tokens": 30}}}
 
         result = total_token_count_from_response(resp_dict)
         assert result == 120
@@ -212,8 +168,8 @@ class TestTotalTokenCountFromResponse:
     def test_partial_dict_usage_missing_output_tokens(self):
         """Test dictionary with usage but missing output_tokens"""
         resp_dict = {
-            'usage': {
-                'input_tokens': 100
+            "usage": {
+                "input_tokens": 100
                 # Missing output_tokens
             }
         }
@@ -224,9 +180,9 @@ class TestTotalTokenCountFromResponse:
     def test_partial_meta_tokens_missing_input_tokens(self):
         """Test dictionary with meta.tokens but missing input_tokens"""
         resp_dict = {
-            'meta': {
-                'tokens': {
-                    'output_tokens': 50
+            "meta": {
+                "tokens": {
+                    "output_tokens": 50
                     # Missing input_tokens
                 }
             }
@@ -263,18 +219,18 @@ class TestTruncate:
         original_string = "hello"
         result = truncate(original_string, 10)
         assert result == original_string
-        assert len(encoder.encode(result)) <= 10
+        assert len(get_encoder().encode(result)) <= 10
 
     def test_string_equal_to_max_len(self):
         """Test string that exactly equals max_len in tokens"""
-        # Create a string that encodes to exactly 5 tokens
+        # max_len is the string's own token length, so truncate must return it whole.
         test_string = "hello world test"
-        encoded = encoder.encode(test_string)
+        encoded = get_encoder().encode(test_string)
         exact_length = len(encoded)
 
         result = truncate(test_string, exact_length)
         assert result == test_string
-        assert len(encoder.encode(result)) == exact_length
+        assert len(get_encoder().encode(result)) == exact_length
 
     def test_string_longer_than_max_len(self):
         """Test string that is longer than max_len"""
@@ -282,7 +238,7 @@ class TestTruncate:
         max_len = 5
 
         result = truncate(long_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
         assert result != long_string
 
     def test_truncation_preserves_beginning(self):
@@ -291,10 +247,10 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(test_string, max_len)
-        encoded_result = encoder.encode(result)
+        encoded_result = get_encoder().encode(result)
 
         # The truncated result should match the beginning of the original encoding
-        original_encoded = encoder.encode(test_string)
+        original_encoded = get_encoder().encode(test_string)
         assert encoded_result == original_encoded[:max_len]
 
     def test_unicode_characters(self):
@@ -303,7 +259,7 @@ class TestTruncate:
         max_len = 4
 
         result = truncate(unicode_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
         # Should be a valid string
         assert isinstance(result, str)
 
@@ -313,7 +269,7 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(special_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_whitespace_string(self):
         """Test truncation of whitespace-only string"""
@@ -321,7 +277,7 @@ class TestTruncate:
         max_len = 2
 
         result = truncate(whitespace_string, max_len)
-        assert len(encoder.encode(result)) <= max_len
+        assert len(get_encoder().encode(result)) <= max_len
         assert isinstance(result, str)
 
     def test_max_len_zero(self):
@@ -329,13 +285,13 @@ class TestTruncate:
         test_string = "hello world"
         result = truncate(test_string, 0)
         assert result == ""
-        assert len(encoder.encode(result)) == 0
+        assert len(get_encoder().encode(result)) == 0
 
     def test_max_len_one(self):
         """Test truncation with max_len = 1"""
         test_string = "hello world"
         result = truncate(test_string, 1)
-        assert len(encoder.encode(result)) == 1
+        assert len(get_encoder().encode(result)) == 1
 
     def test_preserves_decoding_encoding_consistency(self):
         """Test that truncation preserves encoding-decoding consistency"""
@@ -344,7 +300,7 @@ class TestTruncate:
 
         result = truncate(test_string, max_len)
         # Re-encoding the result should give the same token count
-        re_encoded = encoder.encode(result)
+        re_encoded = get_encoder().encode(result)
         assert len(re_encoded) == max_len
 
     def test_multibyte_characters_truncation(self):
@@ -354,7 +310,7 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(multibyte_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_mixed_english_chinese_text(self):
         """Test truncation with mixed English and Chinese text"""
@@ -362,7 +318,7 @@ class TestTruncate:
         max_len = 5
 
         result = truncate(mixed_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_numbers_and_symbols(self):
         """Test truncation with numbers and symbols"""
@@ -370,4 +326,4 @@ class TestTruncate:
         max_len = 4
 
         result = truncate(number_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len

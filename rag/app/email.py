@@ -20,20 +20,20 @@ from email.parser import BytesParser
 from rag.app.naive import chunk as naive_chunk
 from common.constants import MAXIMUM_PAGE_NUMBER
 import re
-from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
+from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks, DEFAULT_DELIMITER
 from deepdoc.parser import HtmlParser, TxtParser
 from timeit import default_timer as timer
 import io
 
 
 def chunk(
-        filename,
-        binary=None,
-        from_page=0,
-        to_page=MAXIMUM_PAGE_NUMBER,
-        lang="Chinese",
-        callback=None,
-        **kwargs,
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    **kwargs,
 ):
     """
     Only eml is supported
@@ -41,7 +41,7 @@ def chunk(
     eng = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config",
-        {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"},
+        {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"},
     )
     doc = {
         "docnm_kwd": filename,
@@ -51,7 +51,7 @@ def chunk(
     main_res = []
     attachment_res = []
 
-    if binary:
+    if binary is not None:
         with io.BytesIO(binary) as buffer:
             msg = BytesParser(policy=policy.default).parse(buffer)
     else:
@@ -93,19 +93,16 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (line, "") for line in
-        HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line
-    ]
+    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line]
 
     st = timer()
     chunks = naive_merge(
         sections,
         int(parser_config.get("chunk_token_num", 128)),
-        parser_config.get("delimiter", "\n!?。；！？"),
+        parser_config.get("delimiter", DEFAULT_DELIMITER),
     )
 
-    main_res.extend(tokenize_chunks(chunks, doc, eng, None))
+    main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
     for part in msg.iter_attachments():
@@ -116,9 +113,7 @@ def chunk(
                 filename = part.get_filename()
                 payload = part.get_payload(decode=True)
                 try:
-                    attachment_res.extend(
-                        naive_chunk(filename, payload, callback=callback, **kwargs)
-                    )
+                    attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
                 except Exception:
                     pass
 
@@ -128,9 +123,7 @@ def chunk(
 if __name__ == "__main__":
     import sys
 
-
     def dummy(prog=None, msg=""):
         pass
-
 
     chunk(sys.argv[1], callback=dummy)

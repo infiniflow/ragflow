@@ -22,7 +22,6 @@ from io import BytesIO
 from PIL import Image
 
 
-
 from common.misc_utils import thread_pool_exec
 from rag.utils.lazy_image import open_image_for_processing
 
@@ -33,7 +32,7 @@ test_image = base64.b64decode(test_image_base64)
 async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str = "imagetemps"):
     import logging
     from io import BytesIO
-    from rag.svr.task_executor import minio_limiter
+    from rag.svr.task_executor_limiter import minio_limiter
 
     if "image" not in d:
         return
@@ -41,65 +40,83 @@ async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str
         del d["image"]
         return
 
+    image = d.pop("image")
+
     def encode_image():
-        with BytesIO() as buf:
-            img, close_after = open_image_for_processing(d["image"], allow_bytes=False)
+        img, close_after = open_image_for_processing(image, allow_bytes=False)
 
-            if isinstance(img, bytes):
-                buf.write(img)
-                buf.seek(0)
-                return buf.getvalue()
+        if isinstance(img, bytes):
+            return bytes(img)
 
-            if not isinstance(img, Image.Image):
-                return None
+        if not isinstance(img, Image.Image):
+            return None
 
+        owned_images = [img] if close_after else []
+        try:
+            img.load()
             if img.mode in ("RGBA", "P"):
-                orig_img = img
-                img = img.convert("RGB")
-                if close_after:
-                    try:
-                        orig_img.close()
-                    except Exception:
-                        pass
+                converted = img.convert("RGB")
+                owned_images.append(converted)
+                img = converted
 
-            try:
+            with BytesIO() as buf:
                 img.save(buf, format="JPEG")
-                buf.seek(0)
                 return buf.getvalue()
-            except OSError as e:
-                logging.warning(f"Saving image exception: {e}")
-                return None
-            finally:
-                if close_after:
-                    try:
-                        img.close()
-                    except Exception:
-                        pass
+        except (OSError, ValueError) as e:
+            logging.warning(f"Saving image exception: {e}")
+            return None
+        finally:
+            for owned_img in owned_images:
+                try:
+                    owned_img.close()
+                except Exception:
+                    pass
 
     jpeg_binary = await thread_pool_exec(encode_image)
     if jpeg_binary is None:
-        del d["image"]
         return
 
     async with minio_limiter:
-        await thread_pool_exec(
-            lambda: storage_put_func(bucket=bucket, fnm=objname, binary=jpeg_binary)
-        )
+        await thread_pool_exec(lambda: storage_put_func(bucket=bucket, fnm=objname, binary=jpeg_binary))
 
     d["img_id"] = f"{bucket}-{objname}"
 
-    if not isinstance(d["image"], bytes):
-        d["image"].close()
-    del d["image"]
+
+def parse_storage_composite_id(composite_id: str) -> tuple[str, str] | None:
+    """Split a ``{bucket}-{object_key}`` storage ID on the first hyphen only.
+
+    ``image2id`` stores ``img_id`` as ``f"{bucket}-{objname}"``. The object key
+    may contain additional hyphens (e.g. ``page-1.jpg``).
+
+    Args:
+        composite_id: Composite storage identifier.
+
+    Returns:
+        ``(bucket, object_key)`` when valid, otherwise ``None``.
+    """
+    parts = composite_id.split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1] or composite_id.endswith("-"):
+        return None
+    return parts[0], parts[1]
 
 
 def id2image(image_id: str | None, storage_get_func: partial):
+    """Load a PIL image from storage using a composite ``img_id``.
+
+    Args:
+        image_id: Value produced by ``image2id`` (``{bucket}-{object_key}``).
+        storage_get_func: Callable ``(bucket=, fnm=)`` returning raw bytes.
+
+    Returns:
+        A PIL ``Image`` instance, or ``None`` when the ID is invalid or load fails.
+    """
     if not image_id:
         return
-    arr = image_id.split("-")
-    if len(arr) != 2:
+    parsed = parse_storage_composite_id(image_id)
+    if not parsed:
+        logging.debug("Invalid image_id composite format: %s", image_id)
         return
-    bkt, nm = image_id.split("-")
+    bkt, nm = parsed
     try:
         blob = storage_get_func(bucket=bkt, fnm=nm)
         if not blob:

@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -82,7 +83,7 @@ func isElasticsearch(docEngine engine.DocEngine) bool {
 func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
 	spaceID = normalizeSpaceID(spaceID)
 
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
@@ -208,7 +209,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		return nil
 	}
 
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
@@ -280,7 +281,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	timestamp := now.UnixMilli()
 	isES := isElasticsearch(docEngine)
 
-	var indexErrors []string
+	var indexErrors []error
 	for i, skill := range skills {
 		// Delete old versions (both new format and old format with version suffix)
 		// This ensures only the latest version is indexed
@@ -345,13 +346,13 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		common.Info("Batch: Calling IndexDocument", zap.String("indexName", indexName), zap.String("docID", docID), zap.Int("index", i))
 		if err := docEngine.IndexDocument(ctx, indexName, docID, doc); err != nil {
 			common.Error(fmt.Sprintf("Failed to index skill %s", skill.ID), err)
-			indexErrors = append(indexErrors, fmt.Sprintf("%s: %v", skill.ID, err))
+			indexErrors = append(indexErrors, fmt.Errorf("%s: %w", skill.ID, err))
 			continue
 		}
 	}
 
 	if len(indexErrors) > 0 {
-		return fmt.Errorf("failed to index %d skill(s): %s", len(indexErrors), strings.Join(indexErrors, "; "))
+		return fmt.Errorf("failed to index %d skill(s): %w", len(indexErrors), errors.Join(indexErrors...))
 	}
 
 	return nil
@@ -414,14 +415,14 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	// Get current config and increment semantic version
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
 	// Increment semantic version (e.g., "1.0.0" -> "1.0.1" or "1.0.9" -> "1.1.0")
 	newVersion := incrementSemanticVersion(config.IndexVersion)
-	if err := s.configDAO.UpdateByTenantID(tenantID, spaceID, map[string]interface{}{
+	if err = s.configDAO.UpdateByTenantID(ctx, dao.DB, tenantID, spaceID, map[string]interface{}{
 		"index_version": newVersion,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to update version: %w", err)
@@ -451,7 +452,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	}
 
 	// Get space info to find folder ID
-	space, err := s.spaceDAO.GetByID(spaceID)
+	space, err := s.spaceDAO.GetByID(ctx, dao.DB, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get space: %w", err)
 	}
@@ -461,7 +462,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 
 	// Find the actual space folder ID by space name (consistent with frontend behavior)
 	// Frontend uses space name to find folder, not space.FolderID which may be outdated
-	spaceFolderID, err := s.getSpaceFolderIDByName(tenantID, space.Name)
+	spaceFolderID, err := s.getSpaceFolderIDByName(ctx, tenantID, space.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
@@ -504,7 +505,7 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 	var skills []SkillInfo
 
 	// Get all skill folders under the space
-	skillFolders, err := s.fileDAO.ListByParentID(spaceFolderID)
+	skillFolders, err := s.fileDAO.ListByParentID(ctx, dao.DB, spaceFolderID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skill folders: %w", err)
 	}
@@ -517,7 +518,7 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 		}
 
 		// Get all versions of this skill
-		versions, err := s.fileDAO.ListByParentID(skillFolder.ID)
+		versions, err := s.fileDAO.ListByParentID(ctx, dao.DB, skillFolder.ID)
 		if err != nil {
 			common.Warn(fmt.Sprintf("failed to list versions for skill %s: %v", skillFolder.Name, err))
 			continue
@@ -590,7 +591,7 @@ func (s *SkillIndexerService) findLatestVersion(versions []*entity.File) *entity
 // getSkillContentFromFolder reads skill content from the version folder
 func (s *SkillIndexerService) getSkillContentFromFolder(ctx context.Context, tenantID string, skillFolder, versionFolder *entity.File, spaceID string) (*SkillInfo, error) {
 	// Get all files in the version folder
-	files, err := s.fileDAO.ListByParentID(versionFolder.ID)
+	files, err := s.fileDAO.ListByParentID(ctx, dao.DB, versionFolder.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files in version folder: %w", err)
 	}
@@ -672,15 +673,15 @@ func isTextFileForSkill(fileName string) bool {
 
 // getSpaceFolderIDByName finds the space folder ID by space name (consistent with frontend behavior)
 // Frontend finds space folder by listing folders under skills folder and matching by name
-func (s *SkillIndexerService) getSpaceFolderIDByName(tenantID, spaceName string) (string, error) {
+func (s *SkillIndexerService) getSpaceFolderIDByName(ctx context.Context, tenantID, spaceName string) (string, error) {
 	// Get root folder
-	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+	rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get root folder: %w", err)
 	}
 
 	// Find skills folder under root
-	files, _, err := s.fileDAO.GetByPfID(tenantID, rootFolder.ID, 0, 0, "name", false, "")
+	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, "name", false, "", false)
 	if err != nil {
 		return "", fmt.Errorf("failed to list root folder contents: %w", err)
 	}
@@ -698,7 +699,7 @@ func (s *SkillIndexerService) getSpaceFolderIDByName(tenantID, spaceName string)
 	}
 
 	// Find space folder by name under skills folder
-	spaceFolders, _, err := s.fileDAO.GetByPfID(tenantID, skillsFolderID, 0, 0, "name", false, "")
+	spaceFolders, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, skillsFolderID, 0, 0, "name", false, "", false)
 	if err != nil {
 		return "", fmt.Errorf("failed to list skills folder contents: %w", err)
 	}
@@ -786,7 +787,7 @@ func (s *SkillIndexerService) getFileContent(ctx context.Context, tenantID strin
 		// Fallback to tenantID if ParentID is empty (should not happen)
 		bucket = tenantID
 	}
-	content, err := storageImpl.Get(bucket, *file.Location)
+	content, err := storageImpl.Get(ctx, bucket, *file.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file from storage (bucket=%s, location=%s): %w", bucket, *file.Location, err)
 	}
@@ -922,7 +923,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -935,7 +936,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 	truncatedText := truncate(text, maxLen-10)
 
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{truncatedText}}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
@@ -960,7 +961,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -979,7 +980,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	common.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: truncatedTexts}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -1018,7 +1019,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -1026,7 +1027,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, nil)
+	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{testText}}, embeddingModel.APIConfig, nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}

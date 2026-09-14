@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -9,15 +25,6 @@ const {
   setting,
   userInfo,
   tenantInfo,
-  factoriesList,
-  llmList,
-  myLlm,
-  setApiKey,
-  setTenantInfo,
-  addLlm,
-  deleteLlm,
-  enableLlm,
-  deleteFactory,
   getSystemVersion,
   getSystemTokenList,
   removeSystemToken,
@@ -51,45 +58,9 @@ const methods = {
     url: tenantInfo,
     method: 'get',
   },
-  setTenantInfo: {
-    url: setTenantInfo,
-    method: 'patch',
-  },
-  factoriesList: {
-    url: factoriesList,
-    method: 'get',
-  },
-  llmList: {
-    url: llmList,
-    method: 'get',
-  },
-  myLlm: {
-    url: myLlm,
-    method: 'get',
-  },
-  setApiKey: {
-    url: setApiKey,
-    method: 'post',
-  },
-  addLlm: {
-    url: addLlm,
-    method: 'post',
-  },
-  deleteLlm: {
-    url: deleteLlm,
-    method: 'post',
-  },
-  enableLlm: {
-    url: enableLlm,
-    method: 'post',
-  },
   getSystemVersion: {
     url: getSystemVersion,
     method: 'get',
-  },
-  deleteFactory: {
-    url: deleteFactory,
-    method: 'post',
   },
   listToken: {
     url: getSystemTokenList,

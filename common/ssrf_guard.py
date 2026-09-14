@@ -21,6 +21,7 @@ Uses only the standard library so it can be imported from both ``api/`` and
 
 import ipaddress
 import logging
+import os
 import socket
 import threading
 from contextlib import contextmanager
@@ -91,20 +92,40 @@ def pin_dns_global(hostname: str, ip: str):
 
 
 _DEFAULT_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+_ALLOW_ANY_HOST_ENV = "ALLOW_ANY_HOST"
+
+
+def _allow_any_host() -> bool:
+    return os.environ.get(_ALLOW_ANY_HOST_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
 
 
 def _effective_ip(
     ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
-    """Return the IPv4 equivalent for IPv4-mapped IPv6 addresses, unchanged otherwise.
+    """Return the routable IPv4 address carried by an IPv6 address, unchanged otherwise.
 
-    Without this normalization ``::ffff:127.0.0.1`` would pass ``is_global``
-    as an IPv6Address in some Python versions, bypassing the loopback check.
+    Some IPv6 forms embed an arbitrary IPv4 address that ``is_global`` does not
+    look at, so a private/link-local IPv4 target could be reached by wrapping it:
+
+    - IPv4-mapped ``::ffff:127.0.0.1``
+    - NAT64 well-known prefix ``64:ff9b::7f00:1`` (RFC 6052)
+    - deprecated IPv4-compatible ``::127.0.0.1`` (RFC 4291)
+
+    6to4 (``2002::/16``) and Teredo (``2001::/32``) are already handled by
+    ``ipaddress.is_global``.
     """
-    if isinstance(ip, ipaddress.IPv6Address):
-        mapped = ip.ipv4_mapped
-        if mapped is not None:
-            return mapped
+    if not isinstance(ip, ipaddress.IPv6Address):
+        return ip
+    mapped = ip.ipv4_mapped
+    if mapped is not None:
+        return mapped
+    if ip in _NAT64_WELL_KNOWN_PREFIX:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    if ip.packed[:12] == b"\x00" * 12:
+        return ipaddress.IPv4Address(ip.packed[12:])
     return ip
 
 
@@ -145,6 +166,15 @@ def assert_url_is_safe(
         logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
         raise ValueError("URL is missing a host.")
 
+    allow_any_host = _allow_any_host()
+    if allow_any_host:
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing URL host without validation: hostname=%r url=%r",
+            _ALLOW_ANY_HOST_ENV,
+            hostname,
+            url,
+        )
+
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
@@ -155,7 +185,7 @@ def assert_url_is_safe(
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         raw_ip = ipaddress.ip_address(sockaddr[0])
         eff_ip = _effective_ip(raw_ip)
-        if not eff_ip.is_global:
+        if not allow_any_host and not eff_ip.is_global:
             logger.warning(
                 "SSRF guard blocked URL: hostname=%r resolved to non-public address=%s",
                 hostname,
@@ -181,8 +211,16 @@ def assert_host_is_safe(host: str) -> str:
 
     Returns the first validated public IP string so the caller can pin it if needed.
     """
+    host = host.strip()
     if not host:
         raise ValueError("Host must not be empty.")
+    if _allow_any_host():
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing host without validation: host=%r",
+            _ALLOW_ANY_HOST_ENV,
+            host,
+        )
+        return host
 
     try:
         addr_infos = socket.getaddrinfo(host, None)

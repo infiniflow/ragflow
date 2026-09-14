@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { memo, useState } from 'react';
@@ -70,9 +86,9 @@ const FilterItem = memo(
       <div
         className={`flex items-center justify-between text-text-primary text-xs ${level > 0 ? 'ml-1' : ''}`}
       >
-        <FormItem className="flex flex-row space-x-3 space-y-0 items-center ">
+        <FormItem className="flex flex-row space-x-3 space-y-0 items-center min-w-0 flex-1">
           <FormControl>
-            <div className="flex space-x-3">
+            <div className="flex items-center space-x-2 min-w-0">
               <Checkbox
                 checked={field.value?.includes?.(item.id.toString())}
                 onCheckedChange={(checked: boolean) =>
@@ -88,7 +104,7 @@ const FilterItem = memo(
                     item,
                   })
                 }
-                className="truncate w-[200px] text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-text-secondary"
+                className="truncate text-sm font-normal leading-normal peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-text-secondary"
               >
                 {item.label}
               </div>
@@ -96,7 +112,7 @@ const FilterItem = memo(
           </FormControl>
         </FormItem>
         {item.count !== undefined && (
-          <span className="text-sm">{item.count}</span>
+          <span className="text-sm shrink-0 ml-2 text-right">{item.count}</span>
         )}
       </div>
     );

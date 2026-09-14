@@ -1,0 +1,20 @@
+[project]
+name = "deepdoc-server-oss"
+version = "0.1.0"
+description = "OSS DeepDoc Server with DLA, OCR, and TSR models via ONNX Runtime"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "litserve>=0.2.17",
+    "onnxruntime>=1.20.0",
+    "opencv-python-headless",
+    "numpy",
+    "pillow",
+    "pyclipper>=1.4.0",
+    "python-multipart",
+    "shapely",
+    "six",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

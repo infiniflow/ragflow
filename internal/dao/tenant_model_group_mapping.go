@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelGroupMappingDAO tenant model group mapping data access object
@@ -29,9 +32,9 @@ func NewTenantModelGroupMappingDAO() *TenantModelGroupMappingDAO {
 }
 
 // GetByID get tenant model group mapping by composite primary key
-func (dao *TenantModelGroupMappingDAO) GetByID(groupID, providerID, instanceID, modelID string) (*entity.TenantModelGroupMapping, error) {
+func (dao *TenantModelGroupMappingDAO) GetByID(ctx context.Context, db *gorm.DB, groupID, providerID, instanceID, modelID string) (*entity.TenantModelGroupMapping, error) {
 	var mapping entity.TenantModelGroupMapping
-	err := DB.Where("group_id = ? AND provider_id = ? AND instance_id = ? AND model_id = ?", groupID, providerID, instanceID, modelID).First(&mapping).Error
+	err := db.WithContext(ctx).Where("group_id = ? AND provider_id = ? AND instance_id = ? AND model_id = ?", groupID, providerID, instanceID, modelID).First(&mapping).Error
 	if err != nil {
 		return nil, err
 	}

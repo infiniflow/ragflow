@@ -22,7 +22,7 @@ from utils.engine_utils import get_doc_engine
 
 
 class TestChunksList:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [
@@ -46,7 +46,7 @@ class TestChunksList:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [
@@ -136,7 +136,7 @@ class TestChunksList:
         assert len(responses) == count, responses
         assert all(len(future.result()) == 5 for future in futures)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_default(self, add_document):
         _, document = add_document
         batch_add_chunks(document, 31)

@@ -36,7 +36,6 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-
     def ask(
         self,
         question="",
@@ -89,8 +88,7 @@ class Session(Base):
 
         if inputs is not None or release is not None or return_trace is not None:
             logger.debug(
-                "Session.ask explicit-params session_type=%s session_id=%s "
-                "input_keys=%s release=%s return_trace=%s",
+                "Session.ask explicit-params session_type=%s session_id=%s input_keys=%s release=%s return_trace=%s",
                 self.__session_type,
                 getattr(self, "id", None),
                 list(inputs.keys()) if isinstance(inputs, dict) else None,
@@ -111,7 +109,7 @@ class Session(Base):
                     continue  # Skip empty lines
                 line = line.strip()
                 if line.startswith("data:"):
-                    content = line[len("data:"):].strip()
+                    content = line[len("data:") :].strip()
                     if content == "[DONE]":
                         break  # End of stream
                 else:
@@ -122,17 +120,23 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
-                event = json_data.get("event",None)
-                if event and event != "message":
-                    continue
+                event = json_data.get("event", None)
+                if event:
+                    if self.__session_type == "agent" and event not in {"message", "message_end"}:
+                        continue
+                    if self.__session_type == "chat" and event != "message":
+                        continue
 
-                if (
-                    (self.__session_type == "agent" and event == "message_end")
-                    or (self.__session_type == "chat" and json_data.get("data") is True)
-                ):
+                if self.__session_type == "chat" and json_data.get("data") is True:
                     return
                 if self.__session_type == "agent":
-                    yield self._structure_answer(json_data)
+                    message = self._structure_answer(json_data)
+                    if event == "message_end":
+                        message.content = ""
+                        if message.reference:
+                            yield message
+                        continue
+                    yield message
                 else:
                     yield self._structure_answer(json_data["data"])
         else:
@@ -141,30 +145,33 @@ class Session(Base):
             except ValueError:
                 raise Exception(f"Invalid response {res}")
             yield self._structure_answer(json_data["data"])
-        
 
     def _structure_answer(self, json_data):
         answer = ""
+        event = None
         if self.__session_type == "agent":
-            answer = json_data["data"]["content"]
+            event = json_data.get("event")
+            json_data = json_data["data"]
+            answer = json_data.get("content", "")
         elif self.__session_type == "chat":
             answer = json_data["answer"]
         reference = json_data.get("reference", {})
-        temp_dict = {
-            "content": answer,
-            "role": "assistant"
-        }
+        temp_dict = {"content": answer, "role": "assistant"}
         if reference and "chunks" in reference:
             chunks = reference["chunks"]
+            if isinstance(chunks, dict):
+                chunks = list(chunks.values())
             temp_dict["reference"] = chunks
+            if self.__session_type == "agent":
+                reference_count = len(chunks) if isinstance(chunks, list) else 0
+                logger.debug("Session.ask parsed agent references session_id=%s event=%s reference_count=%s", self.id, event, reference_count)
         message = Message(self.rag, temp_dict)
         return message
 
     def _ask_chat(self, question: str, stream: bool, **kwargs):
         json_data = {"question": question, "stream": stream, "session_id": self.id}
         json_data.update(kwargs)
-        res = self.post(f"/chats/{self.chat_id}/completions",
-                        json_data, stream=stream)
+        res = self.post(f"/chats/{self.chat_id}/completions", json_data, stream=stream)
         return res
 
     def _ask_agent(self, question: str, stream: bool, **kwargs):
@@ -180,8 +187,7 @@ class Session(Base):
         return res
 
     def update(self, update_message):
-        res = self.patch(f"/chats/{self.chat_id}/sessions/{self.id}",
-                         update_message)
+        res = self.patch(f"/chats/{self.chat_id}/sessions/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

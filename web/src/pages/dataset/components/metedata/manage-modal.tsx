@@ -65,6 +65,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowValueSwitch = false,
     isVerticalShowValue = true,
     builtInMetadata,
+    isLocalSave,
     success,
     documentIds,
     secondTitle,
@@ -102,6 +103,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     metadataType,
     otherData,
     documentIds,
+    isLocalSave,
   );
   // const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);
@@ -210,6 +212,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowDescription,
     showTypeColumn,
     setShouldSave,
+    addUpdateValue,
   });
 
   const table = useReactTable({
@@ -452,7 +455,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                         <TableHead>
                           {t('knowledgeDetails.metadata.field')}
                         </TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>
+                          {t('knowledgeDetails.metadata.type')}
+                        </TableHead>
                         <TableHead>
                           {t('knowledgeDetails.metadata.description')}
                         </TableHead>

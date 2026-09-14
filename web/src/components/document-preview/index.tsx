@@ -1,7 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { memo } from 'react';
 
+import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
+import { EpubPreviewer } from './epub-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
@@ -14,6 +32,7 @@ type PreviewProps = {
   fileType: string;
   className?: string;
   url: string;
+  positions?: number[][];
 };
 const DocumentPreview = function ({
   fileType,
@@ -21,10 +40,13 @@ const DocumentPreview = function ({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
 }: PreviewProps & Partial<IProps>) {
+  const isPdf = fileType === 'pdf';
+
   return (
     <>
-      {fileType === 'pdf' && highlights && setWidthAndHeight && (
+      {isPdf && (
         <section className="h-full">
           <PdfPreviewer
             className={className}
@@ -39,14 +61,12 @@ const DocumentPreview = function ({
           <DocPreviewer className={className} url={url} />
         </section>
       )}
-      {['txt'].indexOf(fileType) > -1 && (
+      {['txt', 'json'].indexOf(fileType) > -1 && (
         <section>
           <TxtPreviewer className={className} url={url} />
         </section>
       )}
-      {['jpg', 'png', 'gif', 'jpeg', 'svg', 'bmp', 'ico', 'tif'].indexOf(
-        fileType,
-      ) > -1 && (
+      {Images.indexOf(fileType) > -1 && (
         <section>
           <ImagePreviewer className={className} url={url} />
         </section>
@@ -73,9 +93,13 @@ const DocumentPreview = function ({
           <PptPreviewer className={className} url={url} />
         </section>
       )}
-      {['xlsx'].indexOf(fileType) > -1 && (
-        <section>
-          <ExcelCsvPreviewer className={className} url={url} />
+      {['xlsx', 'xls'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <ExcelCsvPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (
@@ -86,6 +110,11 @@ const DocumentPreview = function ({
       {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
+        </section>
+      )}
+      {['epub'].indexOf(fileType) > -1 && (
+        <section>
+          <EpubPreviewer className={className} url={url} />
         </section>
       )}
     </>

@@ -21,8 +21,10 @@ class LoopItemParam(ComponentParamBase):
     """
     Define the LoopItem component parameters.
     """
+
     def check(self):
         return True
+
 
 class LoopItem(ComponentBase, ABC):
     component_name = "LoopItem"
@@ -30,7 +32,6 @@ class LoopItem(ComponentBase, ABC):
     def __init__(self, canvas, id, param: ComponentParamBase):
         super().__init__(canvas, id, param)
         self._idx = 0
-
 
     def _invoke(self, **kwargs):
         if self.check_if_canceled("LoopItem processing"):
@@ -45,7 +46,7 @@ class LoopItem(ComponentBase, ABC):
                 return
         self._idx += 1
 
-    def evaluate_condition(self,var, operator, value):
+    def evaluate_condition(self, var, operator, value):
         if isinstance(var, str):
             if operator == "contains":
                 return value in var
@@ -140,11 +141,7 @@ class LoopItem(ComponentBase, ABC):
             else:
                 raise ValueError("Invalid input mode.")
             conditions.append(self.evaluate_condition(var, operator, value))
-        should_end = (
-            all(conditions) if logical_operator == "and"
-            else any(conditions) if logical_operator == "or"
-            else None
-        )
+        should_end = all(conditions) if logical_operator == "and" else any(conditions) if logical_operator == "or" else None
         if should_end is None:
             raise ValueError("Invalid logical operator,should be 'and' or 'or'.")
 

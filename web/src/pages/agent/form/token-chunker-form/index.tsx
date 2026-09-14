@@ -1,17 +1,20 @@
 import { DelimiterInput } from '@/components/delimiter-form-field';
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty } from 'lodash';
 import { Info, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { initialTokenChunkerValues } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -36,24 +39,39 @@ export const FormSchema = z.object({
     }),
   ),
   overlapped_percent: z.number(),
-  delimiter_mode: z.enum(['token_size', 'delimiter', 'one']).optional(),
+  delimiter_mode: z.enum(['delimiter', 'one']).optional(),
 });
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
-const TokenChunkerForm = ({ node }: INextOperatorForm) => {
+const TokenChunkerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+  externalErrors,
+}: INextOperatorForm) => {
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
 
+  // Normalize legacy values: 'token_size' (removed tab) and empty fall back
+  // to 'delimiter'; nodes saved in the removed tab may carry empty delimiters,
+  // so seed the default '\n' row.
   const formDefaultValues = {
     ...defaultValues,
-    delimiter_mode: defaultValues.delimiter_mode || 'token_size',
+    delimiter_mode:
+      defaultValues.delimiter_mode === 'one' ? 'one' : 'delimiter',
+    delimiters: isEmpty(defaultValues.delimiters)
+      ? [{ value: '\n' }]
+      : defaultValues.delimiters,
   };
 
   const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const delimiterMode = form.watch('delimiter_mode');
   const name = 'delimiters';
@@ -69,6 +87,7 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
   });
 
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
@@ -79,38 +98,36 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
             type: FormFieldType.Segmented,
             label: '',
             options: [
-              { label: 'Token Size', value: 'token_size' },
               { label: t('flow.delimiters'), value: 'delimiter' },
               { label: t('flow.one'), value: 'one' },
             ],
           }}
         />
 
-        {delimiterMode === 'token_size' && (
+        {delimiterMode === 'delimiter' && (
           <>
             <SliderInputFormField
               name="chunk_token_size"
               max={2048}
+              min={1}
+              integer
               label={t('knowledgeConfiguration.chunkTokenNumber')}
             />
             <SliderInputFormField
               name="overlapped_percent"
               max={30}
               min={0}
+              integer
               label={t('flow.overlappedPercent')}
             />
             <SliderInputFormField
               name="image_table_context_window"
               max={256}
               min={0}
+              integer
               label={t('knowledgeConfiguration.imageTableContextWindow')}
               tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
             />
-          </>
-        )}
-
-        {delimiterMode === 'delimiter' && (
-          <>
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">
@@ -136,7 +153,7 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
                 ))}
               </div>
             </section>
-            <BlockButton onClick={() => append({ value: '\n' })}>
+            <BlockButton type="button" onClick={() => append({ value: '\n' })}>
               {t('common.add')}
             </BlockButton>
           </>
@@ -161,21 +178,14 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
             <div className="mb-2 flex justify-between items-center gap-1">
               <span>{t('flow.enableChildrenDelimiters')}</span>
 
-              <FormField
-                control={form.control}
-                name="enable_children"
-                render={({ field: { value, onChange, ...restProps } }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Switch
-                        checked={value}
-                        onCheckedChange={onChange}
-                        {...restProps}
-                      />
-                    </FormControl>
-                  </FormItem>
+              <RAGFlowFormItem name="enable_children">
+                {(field) => (
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
                 )}
-              />
+              </RAGFlowFormItem>
             </div>
 
             {form.getValues('enable_children') && (
@@ -202,6 +212,7 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
                 ))}
 
                 <BlockButton
+                  type="button"
                   onClick={() => childrenDelimiters.append({ value: '\n' })}
                 >
                   {t('common.add')}
@@ -211,9 +222,11 @@ const TokenChunkerForm = ({ node }: INextOperatorForm) => {
           </fieldset>
         )}
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

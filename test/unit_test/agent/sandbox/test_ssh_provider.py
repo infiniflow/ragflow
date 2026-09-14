@@ -56,7 +56,7 @@ class _FakeSFTP:
         for file_path, payload in self.files.items():
             if not file_path.startswith(prefix):
                 continue
-            relative = file_path[len(prefix):]
+            relative = file_path[len(prefix) :]
             if "/" in relative:
                 continue
             names.append(
@@ -115,9 +115,7 @@ def test_ssh_provider_executes_python_main_and_collects_artifacts(monkeypatch):
             return "", "", 0
         if command.startswith("cd /tmp/ws-123 && python3 /tmp/ws-123/main.py"):
             fake_sftp.files["/tmp/ws-123/artifacts/chart.png"] = b"PNGDATA"
-            payload = base64.b64encode(
-                b'{"present":true,"value":{"message":"hello ssh"},"type":"json"}'
-            ).decode("ascii")
+            payload = base64.b64encode(b'{"present":true,"value":{"message":"hello ssh"},"type":"json"}').decode("ascii")
             return f"debug line\n{RESULT_MARKER_PREFIX}{payload}\n", "", 0
         if command.startswith("rm -rf "):
             return "", "", 0

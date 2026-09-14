@@ -1,4 +1,3 @@
-
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 try:
@@ -37,6 +36,4 @@ def wait_for_login_complete(page, timeout_ms: int | None = None) -> None:
             )
         except Exception:
             testids = []
-        raise AssertionError(
-            f"Login did not complete within {timeout_ms}ms. url={url} auth_testids={testids}"
-        ) from exc
+        raise AssertionError(f"Login did not complete within {timeout_ms}ms. url={url} auth_testids={testids}") from exc

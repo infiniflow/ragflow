@@ -107,7 +107,7 @@ export const TagFeatureItem = () => {
                                 'knowledgeConfiguration.frequency',
                               )}
                               max={10}
-                              min={0}
+                              min={1}
                             />
                           </FormControl>
                           <FormMessage />
@@ -125,7 +125,7 @@ export const TagFeatureItem = () => {
             <Button
               variant="dashed"
               className="w-full flex items-center justify-center gap-2"
-              onClick={() => append({ tag: '', frequency: 0 })}
+              onClick={() => append({ tag: '', frequency: 1 })}
             >
               <Plus size={16} />
               {t('knowledgeConfiguration.addTag')}

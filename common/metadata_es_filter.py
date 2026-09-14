@@ -305,9 +305,7 @@ class MetaFilterTranslator:
 
     def _translate_start_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         text = _coerce_string(value, flt)
-        return TranslatedFilter(
-            must=[{"prefix": {_keyword_path(field_path): {"value": text, "case_insensitive": True}}}]
-        )
+        return TranslatedFilter(must=[{"prefix": {_keyword_path(field_path): {"value": text, "case_insensitive": True}}}])
 
     def _translate_end_with(self, field_path: str, value: Any, flt: Dict[str, Any]) -> TranslatedFilter:
         text = _coerce_string(value, flt)
