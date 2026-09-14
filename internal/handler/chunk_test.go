@@ -358,6 +358,21 @@ func TestChunkHandlerUpdateChunkRejectsUnsupportedImageUpdateModeType(t *testing
 	}
 }
 
+func TestChunkHandlerUpdateChunkRejectsEmptyImageUpdateMode(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"image_update_mode":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
 func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
 	r, _ := setupChunkRetrievalTest("user1")
 

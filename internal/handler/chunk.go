@@ -609,6 +609,10 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	if _, ok := rawBody["image_update_mode"]; ok {
 		req.TouchChunkImageFields = true
 		if imageMode, ok := rawBody["image_update_mode"].(string); ok {
+			if strings.TrimSpace(imageMode) == "" {
+				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_update_mode` must be one of: append, replace, remove")
+				return
+			}
 			req.ImageUpdateMode = &imageMode
 		} else {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_update_mode` must be a string")

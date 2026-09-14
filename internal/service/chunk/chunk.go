@@ -1222,7 +1222,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 
 	if req.TouchChunkImageFields {
-		removeImageAfterUpdate := false
 		err = s.withChunkImageLock(req.DatasetID, req.ChunkID, func() error {
 			imageMode, parseErr := parseChunkImageUpdateMode(req.ImageUpdateMode)
 			if parseErr != nil {
@@ -1232,7 +1231,13 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			case chunkImageUpdateModeRemove:
 				d["img_id"] = ""
 				d["doc_type_kwd"] = "text"
-				removeImageAfterUpdate = true
+				if updateErr := s.updateChunkIndexAfterImageMutation(ctx, req, indexName, d); updateErr != nil {
+					return updateErr
+				}
+				if remErr := s.removeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID); remErr != nil {
+					return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
+				}
+				return nil
 			case chunkImageUpdateModeAppend, chunkImageUpdateModeReplace:
 				if req.ImageBase64 == nil {
 					return updateChunkError{
@@ -1244,32 +1249,36 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 				if decErr != nil {
 					return updateChunkError{code: common.CodeDataError, message: decErr.Error()}
 				}
+				var rollback chunkImageRollbackSnapshot
+				var rollbackEnabled bool
+				if s.storeChunkImageFunc == nil {
+					var snapErr error
+					rollback, snapErr = s.snapshotChunkImageForRollback(ctx, req.DatasetID, req.ChunkID)
+					if snapErr != nil {
+						return updateChunkError{code: common.CodeDataError, message: "Failed to read chunk image"}
+					}
+					rollbackEnabled = true
+				}
 				if storeErr := s.storeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID, imageBinary, imageMode); storeErr != nil {
 					return updateChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
 				}
 				d["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, req.ChunkID)
 				d["doc_type_kwd"] = "image"
+				if updateErr := s.updateChunkIndexAfterImageMutation(ctx, req, indexName, d); updateErr != nil {
+					if rollbackEnabled {
+						if restoreErr := s.restoreChunkImageRollback(ctx, req.DatasetID, req.ChunkID, rollback); restoreErr != nil {
+							return fmt.Errorf("failed to update chunk: %w (failed to restore chunk image: %v)", updateErr, restoreErr)
+						}
+					}
+					return updateErr
+				}
+				return nil
 			default:
 				return updateChunkError{
 					code:    common.CodeArgumentError,
 					message: "`image_update_mode` must be one of: append, replace, remove",
 				}
 			}
-
-			d["id"] = req.ChunkID
-			condition := map[string]interface{}{
-				"id":     req.ChunkID,
-				"doc_id": req.DocumentID,
-			}
-			if updateErr := s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID); updateErr != nil {
-				return fmt.Errorf("failed to update chunk: %w", updateErr)
-			}
-			if removeImageAfterUpdate {
-				if remErr := s.removeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID); remErr != nil {
-					return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
-				}
-			}
-			return nil
 		})
 		if err != nil {
 			return err
@@ -1786,6 +1795,52 @@ func (s *ChunkService) withChunkImageLock(bucket, chunkID string, fn func() erro
 		releaseChunkImageMergeLock(lockKey)
 	}()
 	return fn()
+}
+
+type chunkImageRollbackSnapshot struct {
+	hadObject bool
+	data      []byte
+}
+
+func (s *ChunkService) updateChunkIndexAfterImageMutation(ctx context.Context, req *service.UpdateChunkRequest, indexName string, d map[string]interface{}) error {
+	d["id"] = req.ChunkID
+	condition := map[string]interface{}{
+		"id":     req.ChunkID,
+		"doc_id": req.DocumentID,
+	}
+	if err := s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID); err != nil {
+		return fmt.Errorf("failed to update chunk: %w", err)
+	}
+	return nil
+}
+
+func (s *ChunkService) snapshotChunkImageForRollback(ctx context.Context, bucket, chunkID string) (chunkImageRollbackSnapshot, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return chunkImageRollbackSnapshot{}, fmt.Errorf("storage not initialized")
+	}
+	if !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return chunkImageRollbackSnapshot{hadObject: false}, nil
+	}
+	data, err := storageImpl.Get(ctx, bucket, chunkID)
+	if err != nil {
+		return chunkImageRollbackSnapshot{}, err
+	}
+	return chunkImageRollbackSnapshot{hadObject: true, data: append([]byte(nil), data...)}, nil
+}
+
+func (s *ChunkService) restoreChunkImageRollback(ctx context.Context, bucket, chunkID string, snap chunkImageRollbackSnapshot) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	if snap.hadObject {
+		return storageImpl.Put(ctx, bucket, chunkID, snap.data)
+	}
+	if storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return storageImpl.Remove(ctx, bucket, chunkID)
+	}
+	return nil
 }
 
 func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID string, imageBinary []byte, mode string) error {
