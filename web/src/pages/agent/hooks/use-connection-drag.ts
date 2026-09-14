@@ -8,7 +8,9 @@ import {
 import { useCallback, useRef } from 'react';
 import { useDropdownManager } from '../canvas/context';
 import { Operator, PREVENT_CLOSE_DELAY } from '../constant';
+import useGraphStore from '../store';
 import { useAddNode } from './use-add-node';
+import { useIsPipeline } from './use-is-pipeline';
 
 interface ConnectionStartParams {
   nodeId: string;
@@ -42,15 +44,18 @@ export const useConnectionDrag = (
   const preventCloseRef = useRef(false);
   // Reference to track mouse position for click detection
   const mouseStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  // The next-step dropdown renders only after the drag ends, so the origin it
+  // needs for filtering operators and wiring the new node must outlive the
+  // drag itself.
+  const pendingOriginRef = useRef<ConnectionStartParams | null>(null);
 
   const { addCanvasNode } = useAddNode(reactFlowInstance);
   const { setActiveDropdown } = useDropdownManager();
+  const isPipeline = useIsPipeline();
 
-  /**
-   * Connection start handler function
-   */
   const onConnectStart: OnConnectStart = useCallback((event, params) => {
     isConnectedRef.current = false;
+    pendingOriginRef.current = null;
 
     // Record mouse start position to detect click vs drag
     if ('clientX' in event && 'clientY' in event) {
@@ -67,9 +72,6 @@ export const useConnectionDrag = (
     }
   }, []);
 
-  /**
-   * Connection end handler function
-   */
   const onConnectEnd: OnConnectEnd = useCallback(
     (event) => {
       if ('clientX' in event && 'clientY' in event) {
@@ -87,17 +89,35 @@ export const useConnectionDrag = (
             isHandleClick = movementDistance < 5; // Consider clicks within 5px as handle clicks
           }
 
-          if (isHandleClick) {
+          const abortConnection = () => {
             removePlaceholderNode();
             hideModal();
             clearActiveDropdown();
             connectionStartRef.current = null;
             mouseStartPosRef.current = null;
+          };
+
+          if (isHandleClick) {
+            abortConnection();
+            return;
+          }
+
+          // A pipeline node may only feed one downstream node, so a node that
+          // already has a committed successor must not open another branch.
+          if (
+            isPipeline &&
+            useGraphStore
+              .getState()
+              .hasDownstreamNode(connectionStartRef.current.nodeId)
+          ) {
+            abortConnection();
             return;
           }
 
           // Check and remove existing placeholder-node before creating new one
           checkAndRemoveExistingPlaceholder();
+
+          pendingOriginRef.current = connectionStartRef.current;
 
           // Create placeholder node and establish connection
           const mockEvent = { clientX, clientY };
@@ -157,6 +177,7 @@ export const useConnectionDrag = (
       calculateDropdownPosition,
       setActiveDropdown,
       showModal,
+      isPipeline,
     ],
   );
 
@@ -171,17 +192,14 @@ export const useConnectionDrag = (
     [onConnect],
   );
 
-  /**
-   * Get connection start context data
-   */
   const getConnectionStartContext = useCallback(() => {
-    if (!connectionStartRef.current) {
+    if (!pendingOriginRef.current) {
       return null;
     }
 
     return {
-      nodeId: connectionStartRef.current.nodeId,
-      id: connectionStartRef.current.handleId,
+      nodeId: pendingOriginRef.current.nodeId,
+      id: pendingOriginRef.current.handleId,
       type: 'source' as const,
       position: Position.Right,
       isFromConnectionDrag: true,
@@ -201,13 +219,14 @@ export const useConnectionDrag = (
    */
   const onMove = useCallback(() => {
     // Clean up placeholder and dropdown when canvas moves/zooms
+    pendingOriginRef.current = null;
     removePlaceholderNode();
     hideModal();
     clearActiveDropdown();
   }, [removePlaceholderNode, hideModal, clearActiveDropdown]);
 
   return {
-    nodeId: connectionStartRef.current?.nodeId,
+    nodeId: pendingOriginRef.current?.nodeId,
     onConnectStart,
     onConnectEnd,
     handleConnect,

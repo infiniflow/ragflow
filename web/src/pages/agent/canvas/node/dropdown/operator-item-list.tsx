@@ -7,6 +7,8 @@ import {
 import { Operator } from '@/constants/agent';
 import { IModalProps } from '@/interfaces/common';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
+import { useIsPipeline } from '@/pages/agent/hooks/use-is-pipeline';
+import useGraphStore from '@/pages/agent/store';
 import OperatorIcon from '@/components/operator-icon';
 import { Position } from '@xyflow/react';
 import { lowerFirst } from 'lodash';
@@ -36,6 +38,7 @@ export function OperatorItemList({
   const hideModal = useContext(HideModalContext);
   const onNodeCreated = useContext(OnNodeCreatedContext);
   const { t } = useTranslation();
+  const isPipeline = useIsPipeline();
 
   const handleClick =
     (operator: Operator): React.MouseEventHandler<HTMLElement> =>
@@ -47,6 +50,15 @@ export function OperatorItemList({
         position: Position.Right,
         isFromConnectionDrag: true,
       };
+
+      if (
+        isPipeline &&
+        contextData.nodeId &&
+        useGraphStore.getState().hasDownstreamNode(contextData.nodeId)
+      ) {
+        hideModal?.();
+        return;
+      }
 
       const mockEvent = mousePosition
         ? {
