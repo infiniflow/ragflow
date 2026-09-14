@@ -379,7 +379,8 @@ def test_dispatch_does_not_fall_back_to_mineru_for_vision_composite_name(naive_m
     )
     assert name == vision_ref.lower()
     assert lr == vision_ref
-    assert parser is _ByPlaintext
+    # Unknown layout names use the by_plaintext default (not PARSERS["plaintext"]).
+    assert parser is naive_module.by_plaintext
 
 
 # CodeRabbit review #4: layout_recognize_override preserves parser_model_name.
