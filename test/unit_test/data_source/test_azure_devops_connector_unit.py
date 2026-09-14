@@ -476,6 +476,44 @@ def test_organization_url_rejects_credentials_in_urls():
 
 
 @pytest.mark.p2
+def test_organization_url_rejects_hostless_urls():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(base_url="https:///DefaultCollection")
+    assert "valid host" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("https:///DefaultCollection")
+    assert "valid host" in str(excinfo.value)
+
+
+@pytest.mark.p2
+def test_organization_url_rejects_query_and_fragment():
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs?test=1")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url(organization="DefaultCollection", base_url="http://tfs.corp.local:8080/tfs#frag")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("http://tfs.corp.local:8080/DefaultCollection?test=1")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("http://tfs.corp.local:8080/DefaultCollection#frag")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("DefaultCollection?test=1")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+    with pytest.raises(UnexpectedValidationError) as excinfo:
+        azure_utils.organization_url("DefaultCollection#frag")
+    assert "query parameters or fragments" in str(excinfo.value)
+
+
+@pytest.mark.p2
 def test_html_body_is_not_an_auth_failure_for_raw_content():
     """A repository may legitimately contain .html files."""
     response = _FakeResponse(status_code=200, content_type="text/html", text="<html>page</html>")
@@ -496,6 +534,14 @@ def test_html_body_is_not_an_auth_failure_for_raw_content():
         {"organization": "", "base_url": "http://tfs.corp.local:8080"},
         {"organization": "DefaultCollection", "base_url": "http://user:pass@tfs.corp.local:8080/tfs"},
         {"organization": "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection", "base_url": ""},
+        {"organization": "", "base_url": "https:///DefaultCollection"},
+        {"organization": "https:///DefaultCollection", "base_url": ""},
+        {"organization": "DefaultCollection", "base_url": "http://tfs.corp.local:8080/tfs?test=1"},
+        {"organization": "DefaultCollection", "base_url": "http://tfs.corp.local:8080/tfs#frag"},
+        {"organization": "http://tfs.corp.local:8080/DefaultCollection?test=1", "base_url": ""},
+        {"organization": "http://tfs.corp.local:8080/DefaultCollection#frag", "base_url": ""},
+        {"organization": "DefaultCollection?test=1", "base_url": ""},
+        {"organization": "DefaultCollection#frag", "base_url": ""},
     ],
 )
 def test_unusable_settings_are_rejected_before_any_request(overrides):

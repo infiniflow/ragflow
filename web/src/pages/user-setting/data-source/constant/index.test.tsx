@@ -190,4 +190,60 @@ describe('Azure DevOps data source', () => {
       validate('', { config: { base_url: 'http://tfs.corp.local:8080' } }),
     ).toBe('setting.dataSourceValidationFieldRequired');
   });
+
+  it('validates base_url rejects hostless URLs and URLs with query or fragment', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const baseUrlField = fields.find((f) => f.name === 'config.base_url');
+    expect(baseUrlField).toBeDefined();
+    const validate = baseUrlField!.customValidate!;
+
+    expect(validate('')).toBe(true);
+    expect(validate('https://dev.azure.com')).toBe(true);
+    expect(validate('http://tfs.corp.local:8080/tfs')).toBe(true);
+
+    // Invalid scheme
+    expect(validate('ftp://dev.azure.com')).toBe('setting.azureDevOpsBaseUrlTip');
+
+    // Hostless
+    expect(validate('https:///DefaultCollection')).toBe('setting.azureDevOpsBaseUrlTip');
+
+    // Query or fragment
+    expect(validate('https://dev.azure.com/myorg?test=1')).toBe('setting.azureDevOpsBaseUrlTip');
+    expect(validate('https://dev.azure.com/myorg#frag')).toBe('setting.azureDevOpsBaseUrlTip');
+
+    // Credentials
+    expect(validate('https://user:pass@dev.azure.com')).toBe('setting.azureDevOpsPatTip');
+  });
+
+  it('validates organization rejects query, fragment, and hostless URLs', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const orgField = fields.find((f) => f.name === 'config.organization');
+    expect(orgField).toBeDefined();
+    const validate = orgField!.customValidate!;
+
+    expect(validate('myorg?test=1', { config: { base_url: '' } })).toBe(
+      'setting.azureDevOpsOrganizationTip',
+    );
+    expect(validate('myorg#frag', { config: { base_url: '' } })).toBe(
+      'setting.azureDevOpsOrganizationTip',
+    );
+    expect(validate('https:///DefaultCollection', { config: { base_url: '' } })).toBe(
+      'setting.azureDevOpsOrganizationTip',
+    );
+    expect(
+      validate('https://user:pass@dev.azure.com/myorg', { config: { base_url: '' } }),
+    ).toBe('setting.azureDevOpsPatTip');
+  });
 });

@@ -183,6 +183,12 @@ func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) 
 	cleanOrg := strings.TrimRight(strings.TrimSpace(organization), "/")
 
 	if cleanBase != "" {
+		if u, err := url.Parse(cleanBase); err == nil && u.Scheme != "" {
+			u.RawQuery = ""
+			u.Fragment = ""
+			u.ForceQuery = false
+			cleanBase = strings.TrimRight(u.String(), "/")
+		}
 		if cleanOrg == "" {
 			if u, err := url.Parse(cleanBase); err == nil && u.Path != "" {
 				trimmedPath := strings.Trim(u.Path, "/")
@@ -194,6 +200,12 @@ func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) 
 			return cleanBase, cleanOrg
 		}
 		if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+			if u, err := url.Parse(cleanOrg); err == nil && u.Scheme != "" {
+				u.RawQuery = ""
+				u.Fragment = ""
+				u.ForceQuery = false
+				cleanOrg = strings.TrimRight(u.String(), "/")
+			}
 			return cleanOrg, cleanOrg
 		}
 		if strings.HasSuffix(cleanBase, "/"+cleanOrg) || strings.HasSuffix(cleanBase, "/"+url.PathEscape(cleanOrg)) {
@@ -206,6 +218,12 @@ func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) 
 		return "", ""
 	}
 	if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+		if u, err := url.Parse(cleanOrg); err == nil && u.Scheme != "" {
+			u.RawQuery = ""
+			u.Fragment = ""
+			u.ForceQuery = false
+			cleanOrg = strings.TrimRight(u.String(), "/")
+		}
 		return cleanOrg, cleanOrg
 	}
 	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(cleanOrg), cleanOrg
@@ -251,17 +269,33 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 		if !strings.HasPrefix(c.customBaseURL, "http://") && !strings.HasPrefix(c.customBaseURL, "https://") {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must use HTTP or HTTPS")
 		}
-		if u, err := url.Parse(c.customBaseURL); err == nil && u.User != nil {
+		u, err := url.Parse(c.customBaseURL)
+		if err != nil || u.Hostname() == "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must include a valid host")
+		}
+		if u.User != nil {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must not contain credentials")
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must not contain query parameters or fragments")
 		}
 	}
 	if c.organization != "" && strings.Contains(c.organization, "://") {
 		if !strings.HasPrefix(c.organization, "http://") && !strings.HasPrefix(c.organization, "https://") {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTP or HTTPS")
 		}
-		if u, err := url.Parse(c.organization); err == nil && u.User != nil {
+		u, err := url.Parse(c.organization)
+		if err != nil || u.Hostname() == "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must include a valid host")
+		}
+		if u.User != nil {
 			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must not contain credentials")
 		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must not contain query parameters or fragments")
+		}
+	} else if c.organization != "" && (strings.Contains(c.organization, "?") || strings.Contains(c.organization, "#")) {
+		return fmt.Errorf("Invalid connector settings: Azure DevOps organization must not contain query parameters or fragments")
 	}
 	switch c.indexMode {
 	case azureDevOpsIndexModeOrganization, azureDevOpsIndexModeProjects, azureDevOpsIndexModeRepositories:

@@ -118,8 +118,12 @@ def organization_url(organization: str | None = None, base_url: str | None = Non
         if not clean_base.startswith(("http://", "https://")):
             raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
         parsed_base = urlparse(clean_base)
+        if not parsed_base.hostname:
+            raise UnexpectedValidationError("Azure DevOps base URL must include a valid host.")
         if parsed_base.username or parsed_base.password:
             raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
+        if parsed_base.query or parsed_base.fragment:
+            raise UnexpectedValidationError("Azure DevOps base URL must not contain query parameters or fragments.")
         if not clean_org:
             path_segments = [seg for seg in parsed_base.path.strip("/").split("/") if seg]
             if not path_segments:
@@ -127,9 +131,15 @@ def organization_url(organization: str | None = None, base_url: str | None = Non
             return clean_base
         if clean_org.startswith(("http://", "https://")):
             parsed_org = urlparse(clean_org)
+            if not parsed_org.hostname:
+                raise UnexpectedValidationError("Azure DevOps organization URL must include a valid host.")
             if parsed_org.username or parsed_org.password:
                 raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
+            if parsed_org.query or parsed_org.fragment:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain query parameters or fragments.")
             return clean_org
+        if "?" in clean_org or "#" in clean_org:
+            raise UnexpectedValidationError("Azure DevOps organization must not contain query parameters or fragments.")
         if clean_base.endswith((f"/{clean_org}", f"/{quote(clean_org, safe='')}")):
             return clean_base
         return f"{clean_base}/{quote(clean_org, safe='')}"
@@ -139,11 +149,17 @@ def organization_url(organization: str | None = None, base_url: str | None = Non
 
     if clean_org.startswith(("http://", "https://")):
         parsed_org = urlparse(clean_org)
+        if not parsed_org.hostname:
+            raise UnexpectedValidationError("Azure DevOps organization URL must include a valid host.")
         if parsed_org.username or parsed_org.password:
             raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
+        if parsed_org.query or parsed_org.fragment:
+            raise UnexpectedValidationError("Azure DevOps organization URL must not contain query parameters or fragments.")
         return clean_org
     if "://" in clean_org:
         raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTP or HTTPS.")
+    if "?" in clean_org or "#" in clean_org:
+        raise UnexpectedValidationError("Azure DevOps organization must not contain query parameters or fragments.")
     return f"https://dev.azure.com/{quote(clean_org, safe='')}"
 
 

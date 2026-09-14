@@ -729,6 +729,72 @@ func TestAzureDevOpsRejectsURLWithCredentials(t *testing.T) {
 	}
 }
 
+func TestAzureDevOpsRejectsHostlessURL(t *testing.T) {
+	connectorBase, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "https:///DefaultCollection",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorBase.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "host") {
+		t.Fatalf("base URL without host must be rejected, got %v", err)
+	}
+
+	connectorOrg, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "https:///DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorOrg.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "host") {
+		t.Fatalf("organization URL without host must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsQueryAndFragment(t *testing.T) {
+	testCases := []map[string]any{
+		{"base_url": "http://tfs.corp.local:8080/tfs?test=1", "organization": "DefaultCollection"},
+		{"base_url": "http://tfs.corp.local:8080/tfs#frag", "organization": "DefaultCollection"},
+		{"organization": "http://tfs.corp.local:8080/DefaultCollection?test=1"},
+		{"organization": "http://tfs.corp.local:8080/DefaultCollection#frag"},
+		{"organization": "DefaultCollection?test=1"},
+		{"organization": "DefaultCollection#frag"},
+	}
+
+	for _, tc := range testCases {
+		cfg := map[string]any{
+			"credentials": map[string]any{"azure_devops_pat": "token"},
+		}
+		for k, v := range tc {
+			cfg[k] = v
+		}
+		connector, err := NewAzureDevOpsConnector(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := connector.Validate(context.Background()); err == nil || (!strings.Contains(err.Error(), "query") && !strings.Contains(err.Error(), "fragment")) {
+			t.Fatalf("expected query/fragment rejection for %+v, got %v", tc, err)
+		}
+	}
+}
+
+func TestAzureDevOpsResolveURLStripsQueryAndFragment(t *testing.T) {
+	got, org := azureDevOpsResolveURL("DefaultCollection", "http://tfs.corp.local:8080/tfs?test=1#frag")
+	if got != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected resolved URL: %s", got)
+	}
+	if org != "DefaultCollection" {
+		t.Fatalf("unexpected org: %s", org)
+	}
+
+	gotOrg, _ := azureDevOpsResolveURL("http://tfs.corp.local:8080/DefaultCollection?test=1#frag", "")
+	if gotOrg != "http://tfs.corp.local:8080/DefaultCollection" {
+		t.Fatalf("unexpected resolved URL: %s", gotOrg)
+	}
+}
+
 func TestAzureDevOpsRejectsUnknownSelectorValues(t *testing.T) {
 	for field, value := range map[string]string{"index_mode": "everything", "content_types": "everything"} {
 		connector, _ := NewAzureDevOpsConnector(map[string]any{

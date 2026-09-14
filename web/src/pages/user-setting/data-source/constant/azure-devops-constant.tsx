@@ -42,6 +42,9 @@ export const azureDevOpsConstant = (t: TFunction) => [
       }
       try {
         const parsed = new URL(trimmed);
+        if (!parsed.hostname || parsed.search || parsed.hash) {
+          return t('setting.azureDevOpsBaseUrlTip');
+        }
         if (parsed.username || parsed.password) {
           return t('setting.azureDevOpsPatTip');
         }
@@ -59,6 +62,21 @@ export const azureDevOpsConstant = (t: TFunction) => [
     customValidate: (val: string, formValues: any) => {
       const org = val?.trim();
       if (org) {
+        if (/^https?:\/\//i.test(org)) {
+          try {
+            const parsed = new URL(org);
+            if (!parsed.hostname || parsed.search || parsed.hash) {
+              return t('setting.azureDevOpsOrganizationTip');
+            }
+            if (parsed.username || parsed.password) {
+              return t('setting.azureDevOpsPatTip');
+            }
+          } catch {
+            return t('setting.azureDevOpsOrganizationTip');
+          }
+        } else if (org.includes('?') || org.includes('#') || org.includes('://')) {
+          return t('setting.azureDevOpsOrganizationTip');
+        }
         return true;
       }
       const baseUrl = formValues?.config?.base_url?.trim();

@@ -123,7 +123,7 @@ def _redact_url(value: str | None) -> str:
             netloc = f"{netloc}:{parsed.port}"
         return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
     except (ValueError, TypeError):
-        return value
+        return "<invalid URL>"
 
 
 async def _iterate_document_batches(generator):

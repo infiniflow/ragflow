@@ -128,9 +128,13 @@ class AzureDevOpsConnector(
         self.base_url = (base_url or "").strip() or None
         self.organization = (organization or "").strip()
         if not self.organization and self.base_url:
-            path_segments = [seg for seg in self.base_url.split("://", 1)[-1].split("/")[1:] if seg]
-            if path_segments:
-                self.organization = path_segments[-1]
+            try:
+                parsed = urlparse(self.base_url)
+                path_segments = [seg for seg in parsed.path.strip("/").split("/") if seg]
+                if path_segments:
+                    self.organization = path_segments[-1]
+            except Exception:
+                pass
         self.index_mode = index_mode or INDEX_MODE_ORGANIZATION
         self._projects = self._split(projects)
         self._repositories = self._split(repositories)
@@ -589,14 +593,24 @@ class AzureDevOpsConnector(
             if not self.base_url.startswith(("http://", "https://")):
                 raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
             parsed_base = urlparse(self.base_url)
+            if not parsed_base.hostname:
+                raise UnexpectedValidationError("Azure DevOps base URL must include a valid host.")
             if parsed_base.username or parsed_base.password:
                 raise UnexpectedValidationError("Azure DevOps base URL must not contain credentials; provide a personal access token instead.")
+            if parsed_base.query or parsed_base.fragment:
+                raise UnexpectedValidationError("Azure DevOps base URL must not contain query parameters or fragments.")
         if self.organization and "://" in self.organization:
             if not self.organization.startswith(("http://", "https://")):
                 raise UnexpectedValidationError("Azure DevOps organization URL must use HTTP or HTTPS.")
             parsed_org = urlparse(self.organization)
+            if not parsed_org.hostname:
+                raise UnexpectedValidationError("Azure DevOps organization URL must include a valid host.")
             if parsed_org.username or parsed_org.password:
                 raise UnexpectedValidationError("Azure DevOps organization URL must not contain credentials; provide a personal access token instead.")
+            if parsed_org.query or parsed_org.fragment:
+                raise UnexpectedValidationError("Azure DevOps organization URL must not contain query parameters or fragments.")
+        elif self.organization and ("?" in self.organization or "#" in self.organization):
+            raise UnexpectedValidationError("Azure DevOps organization must not contain query parameters or fragments.")
         if self.index_mode not in (INDEX_MODE_ORGANIZATION, INDEX_MODE_PROJECTS, INDEX_MODE_REPOSITORIES):
             raise UnexpectedValidationError(f"Unsupported index mode: {self.index_mode}")
         if self.content_types not in (CONTENT_CODE, CONTENT_PULL_REQUESTS, CONTENT_BOTH):
