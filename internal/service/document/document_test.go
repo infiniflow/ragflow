@@ -2030,22 +2030,142 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentAllowsZeroCounterLikePythonTruthyCheck(t *testing.T) {
+func TestUpdateDatasetDocumentRejectsZeroImmutableFields(t *testing.T) {
+	zeroCount := int64(0)
+	zeroProgress := 0.0
+	tests := []struct {
+		name    string
+		request UpdateDatasetDocumentRequest
+		present map[string]bool
+		wantErr string
+	}{
+		{name: "chunk count", request: UpdateDatasetDocumentRequest{ChunkCount: &zeroCount}, present: map[string]bool{"chunk_count": true}, wantErr: "can't change `chunk_count`"},
+		{name: "token count", request: UpdateDatasetDocumentRequest{TokenCount: &zeroCount}, present: map[string]bool{"token_count": true}, wantErr: "can't change `token_count`"},
+		{name: "progress", request: UpdateDatasetDocumentRequest{Progress: &zeroProgress}, present: map[string]bool{"progress": true}, wantErr: "can't change `progress`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("progress", 0.5).Error; err != nil {
+				t.Fatalf("prepare document: %v", err)
+			}
+
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &tt.request, tt.present)
+			if err == nil {
+				t.Fatalf("expected %s mutation error", tt.name)
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("err = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdateDocumentRejectsImmutableFieldChanges(t *testing.T) {
+	tests := []struct {
+		name    string
+		request UpdateDocumentRequest
+		wantErr string
+	}{
+		{name: "progress", request: UpdateDocumentRequest{Progress: float64Ptr(0)}, wantErr: "can't change `progress`"},
+		{name: "run", request: UpdateDocumentRequest{Run: sptr("0")}, wantErr: "can't change `run`"},
+		{name: "progress message", request: UpdateDocumentRequest{ProgressMsg: sptr("reset")}, wantErr: "can't change `progress_msg`"},
+		{name: "chunk count", request: UpdateDocumentRequest{ChunkNum: int64Ptr(0)}, wantErr: "can't change `chunk_num`"},
+		{name: "token count", request: UpdateDocumentRequest{TokenNum: int64Ptr(0)}, wantErr: "can't change `token_num`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			run := "3"
+			progressMsg := "parsing"
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+				"progress":     0.5,
+				"run":          run,
+				"progress_msg": progressMsg,
+			}).Error; err != nil {
+				t.Fatalf("prepare document: %v", err)
+			}
+
+			code, err := testDocumentService(t).UpdateDocument(t.Context(), "doc-1", &tt.request)
+			if err == nil {
+				t.Fatalf("expected %s mutation error", tt.name)
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("err = %q, want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 10, 5)
+	insertTestFile(t, "file-1", "folder-1", "old.pdf", sptr("old.pdf"))
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	run := "3"
+	progressMsg := "complete"
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"progress":     1.0,
+		"run":          run,
+		"progress_msg": progressMsg,
+	}).Error; err != nil {
+		t.Fatalf("prepare document: %v", err)
+	}
 
-	chunkCount := int64(0)
-	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ChunkCount: &chunkCount,
-	}, map[string]bool{"chunk_count": true})
+	newName := "new.pdf"
+	progress := 1.0
+	chunkNum := int64(5)
+	tokenNum := int64(10)
+	req := &UpdateDocumentRequest{
+		Name:        &newName,
+		Run:         &run,
+		TokenNum:    &tokenNum,
+		ChunkNum:    &chunkNum,
+		Progress:    &progress,
+		ProgressMsg: &progressMsg,
+	}
+	code, err := testDocumentService(t).UpdateDocument(t.Context(), "doc-1", req)
 	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+		t.Fatalf("UpdateDocument failed: code=%v err=%v", code, err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if doc.Name == nil || *doc.Name != newName {
+		t.Fatalf("name = %v, want %q", doc.Name, newName)
+	}
+	file, err := dao.NewFileDAO().GetByID(t.Context(), db, "file-1")
+	if err != nil {
+		t.Fatalf("get file: %v", err)
+	}
+	if file.Name != newName {
+		t.Fatalf("file name = %q, want %q", file.Name, newName)
+	}
+	if doc.Progress != progress || doc.Run == nil || *doc.Run != run || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
+		t.Fatalf("immutable fields changed: %#v", doc)
 	}
 }
+
+func float64Ptr(value float64) *float64 { return &value }
+
+func int64Ptr(value int64) *int64 { return &value }
 
 func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.T) {
 	db := setupServiceTestDB(t)

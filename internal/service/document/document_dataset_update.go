@@ -94,6 +94,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			}
 		}
 		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
+		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
 
@@ -265,19 +266,19 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 			return code, err
 		}
 	}
-	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
-		return common.CodeDataError, errors.New("can't change `chunk_count`")
-	}
-	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
-		return common.CodeDataError, errors.New("can't change `token_count`")
-	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
 			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%s>", pythonFloatRepr(*req.Progress))
 		}
-		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-			return common.CodeDataError, errors.New("can't change `progress`")
-		}
+	}
+	if err := validateImmutableDocumentFields(doc, immutableDocumentFields{
+		chunkNum:            requestField(req.ChunkCount, present["chunk_count"]),
+		chunkNumRequestName: "chunk_count",
+		tokenNum:            requestField(req.TokenCount, present["token_count"]),
+		tokenNumRequestName: "token_count",
+		progress:            requestField(req.Progress, present["progress"]),
+	}); err != nil {
+		return common.CodeDataError, err
 	}
 
 	if present["enabled"] {
@@ -330,6 +331,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func requestField[T any](value *T, present bool) *T {
+	if !present {
+		return nil
+	}
+	return value
 }
 
 // validateDocumentName mirrors Python's validate_document_name: length check

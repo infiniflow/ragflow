@@ -354,15 +354,22 @@ func invokeHeaders(raw any) (map[string]any, error) {
 		return headers, nil
 	}
 	text, ok := raw.(string)
-	if !ok || strings.TrimSpace(text) == "" {
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: unsupported type", zap.String("type", fmt.Sprintf("%T", raw)))
 		return nil, nil
 	}
-	var headers map[string]any
-	if err := json.Unmarshal([]byte(text), &headers); err != nil {
-		return nil, fmt.Errorf("Invoke: headers must be a JSON object: %w", err)
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
 	}
-	if headers == nil {
-		return nil, errors.New("Invoke: headers must be a JSON object")
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		zap.L().Warn("Invoke headers ignored: invalid JSON", zap.Error(err))
+		return nil, nil
+	}
+	headers, ok := decoded.(map[string]any)
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: decoded type", zap.String("type", fmt.Sprintf("%T", decoded)))
+		return nil, nil
 	}
 	return headers, nil
 }

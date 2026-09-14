@@ -466,7 +466,7 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 5 * 60 * time.Second
+	t.ResponseHeaderTimeout = 20 * time.Minute
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t

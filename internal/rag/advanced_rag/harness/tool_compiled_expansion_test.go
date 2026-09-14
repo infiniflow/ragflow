@@ -17,7 +17,10 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log"
 	"strings"
 	"testing"
 
@@ -36,6 +39,9 @@ import (
 type stubCompiledStore struct {
 	rows   []map[string]any
 	chunks map[string]string
+	// loadErrByChunk makes LoadChunks fail when one of the requested ids is
+	// listed, standing in for a per-doc store error.
+	loadErrByChunk map[string]error
 }
 
 func (s *stubCompiledStore) SearchCompiled(_ context.Context, _, _ string, _ []string, filters map[string][]string, matchText string, topN int) ([]map[string]any, error) {
@@ -59,6 +65,11 @@ func (s *stubCompiledStore) SearchCompiled(_ context.Context, _, _ string, _ []s
 }
 
 func (s *stubCompiledStore) LoadChunks(_ context.Context, _, _ string, chunkIDs []string) ([]map[string]any, error) {
+	for _, id := range chunkIDs {
+		if err, ok := s.loadErrByChunk[id]; ok {
+			return nil, err
+		}
+	}
 	var out []map[string]any
 	for _, id := range chunkIDs {
 		if content, ok := s.chunks[id]; ok {
@@ -427,5 +438,113 @@ func TestExpandCapsMaxChunksAndSkipsSeen(t *testing.T) {
 		if asString(c["id"]) == "b1" && asString(c["content"]) != "pre-existing" {
 			t.Error("seen chunk b1 was duplicated")
 		}
+	}
+}
+
+// mapTenantResolver resolves each doc id to its own owner and can fail the whole
+// batch, standing in for the batched DB lookup (a per-doc lookup in Python).
+type mapTenantResolver struct {
+	owners map[string]DocTenant
+	err    error
+}
+
+func (m mapTenantResolver) ResolveDocTenants(_ context.Context, docIDs []string) (map[string]DocTenant, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	out := make(map[string]DocTenant, len(docIDs))
+	for _, d := range docIDs {
+		if o, ok := m.owners[d]; ok {
+			out[d] = o
+		}
+	}
+	return out, nil
+}
+
+// TestCompiledExpanderReportsDocTenantResolutionFailure pins the two rules apart:
+// a row whose owner cannot be resolved is dropped silently (see the test above),
+// but a FAILED batched lookup is a transport error — Python lets it raise out of
+// _load_chunks_for_doc, so nothing is loaded and the failure is reported instead
+// of masquerading as "no row resolved".
+func TestCompiledExpanderReportsDocTenantResolutionFailure(t *testing.T) {
+	store := &ownerRecordingStore{stubCompiledStore: &stubCompiledStore{
+		rows: []map[string]any{
+			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
+				"name_kwd": "Culdcept", "content_with_weight": `{"name":"Culdcept"}`, "doc_id": "seedDoc"},
+			{"knowledge_graph_kwd": "relation", "compilation_template_kind_kwd": "knowledge_graph",
+				"from_entity_kwd": "Culdcept", "to_entity_kwd": "OmiyaSoft", "doc_id": "seedDoc"},
+			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
+				"name_kwd": "OmiyaSoft", "content_with_weight": `{"name":"OmiyaSoft"}`,
+				"source_chunk_ids": []string{"s1"}, "doc_id": "docA"},
+		},
+		chunks: map[string]string{"s1": "a"},
+	}}
+	exp := NewCompiledExpander(store, CompiledScopeConfig{
+		DatasetIDs:        []string{"kb1"},
+		TenantID:          "t1",
+		KBs:               []*entity.Knowledgebase{{ID: "kb1", TenantID: "t1"}},
+		DocTenantResolver: mapTenantResolver{err: errors.New("db unavailable")},
+	}).(*compiledExpander)
+
+	kb := &Kbinfos{}
+	err := exp.Expand(context.Background(), kb, "culdcept", "", nil)
+	if err == nil {
+		t.Fatal("Expand must report the resolver failure instead of silently loading nothing")
+	}
+	if !strings.Contains(err.Error(), "doc-tenant resolution failed for 1 doc(s)") {
+		t.Errorf("error = %q, want it to name the failed batch and its size", err)
+	}
+	if len(store.loads) != 0 {
+		t.Errorf("LoadChunks calls = %+v, want none after a resolver failure", store.loads)
+	}
+	if len(kb.Chunks) != 0 {
+		t.Errorf("chunks = %v, want none", compiledIDs(kb.Chunks))
+	}
+}
+
+// TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails mirrors Python's
+// per-doc load: the failing doc is logged (compiled_expansion.py:248) and
+// dropped, while the remaining docs still contribute.
+func TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails(t *testing.T) {
+	var buf bytes.Buffer
+	prevLog := _LOG
+	_LOG = log.New(&buf, "", 0)
+	t.Cleanup(func() { _LOG = prevLog })
+
+	store := &ownerRecordingStore{stubCompiledStore: &stubCompiledStore{
+		rows: []map[string]any{
+			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
+				"name_kwd": "Culdcept", "content_with_weight": `{"name":"Culdcept"}`, "doc_id": "seedDoc"},
+			{"knowledge_graph_kwd": "relation", "compilation_template_kind_kwd": "knowledge_graph",
+				"from_entity_kwd": "Culdcept", "to_entity_kwd": "OmiyaSoft", "doc_id": "seedDoc"},
+			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
+				"name_kwd": "OmiyaSoft", "content_with_weight": `{"name":"OmiyaSoft"}`,
+				"source_chunk_ids": []string{"s1"}, "doc_id": "docA"},
+			{"knowledge_graph_kwd": "entity", "compilation_template_kind_kwd": "knowledge_graph",
+				"name_kwd": "OmiyaSoft", "content_with_weight": `{"name":"OmiyaSoft"}`,
+				"source_chunk_ids": []string{"s2"}, "doc_id": "docB"},
+		},
+		chunks:         map[string]string{"s1": "a", "s2": "b"},
+		loadErrByChunk: map[string]error{"s1": errors.New("store unavailable")},
+	}}
+	exp := NewCompiledExpander(store, CompiledScopeConfig{
+		DatasetIDs: []string{"kb1"},
+		TenantID:   "t1",
+		KBs:        []*entity.Knowledgebase{{ID: "kb1", TenantID: "t1"}},
+		DocTenantResolver: mapTenantResolver{owners: map[string]DocTenant{
+			"docA": {KBID: "kbA", TenantID: "tA"},
+			"docB": {KBID: "kbB", TenantID: "tB"},
+		}},
+	}).(*compiledExpander)
+
+	kb := &Kbinfos{}
+	if err := exp.Expand(context.Background(), kb, "culdcept", "", nil); err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if got := compiledIDs(kb.Chunks); len(got) != 1 || got[0] != "s2" {
+		t.Errorf("expanded = %v, want only s2 (docA's load failed)", got)
+	}
+	if !strings.Contains(buf.String(), "failed to load chunks for doc_id=docA") {
+		t.Errorf("log = %q, want the failing doc named", buf.String())
 	}
 }

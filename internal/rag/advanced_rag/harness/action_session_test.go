@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
@@ -95,7 +96,7 @@ func TestToolNodeContinuesLadderInCode(t *testing.T) {
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
 		NavRuleID:    llmRung,
-		ToolCache:    map[string]ToolOutcome{},
+		ToolCache:    NewToolCache(),
 		PendingCalls: []ToolCall{
 			{ID: "call-1", Name: "navigate_structure"},
 		},
@@ -152,7 +153,7 @@ func TestToolNodeLeavesLadderAloneWithNoPendingRule(t *testing.T) {
 		DeadlineLeft: 60,
 		Direction:    "who created Culdcept",
 		NavRuleID:    "", // ladder finished
-		ToolCache:    map[string]ToolOutcome{},
+		ToolCache:    NewToolCache(),
 		PendingCalls: []ToolCall{
 			{ID: "call-1", Name: "retrieve"},
 		},
@@ -1089,3 +1090,148 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Tool spec / schema contract (moved here from action_session_schema_test.go)
+// ---------------------------------------------------------------------------
+
+// playbookAnchors are the 5-section contract every tool description must carry
+// (mirrors PLAYBOOK_ANCHORS in the Python action-session schema test).
+var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTPUT", "IF IT FAILS"}
+
+// executorSupportedParams lists the params the executor actually consumes per
+// tool (mirrors _EXECUTOR_SUPPORTED). The schema MUST NOT declare any param
+// outside this set — otherwise the model is told to fill an argument the runtime
+// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: doc_scope /
+// keywords are supported by the executor but intentionally NOT declared in the
+// schema (keep the description honest with the implementation).
+var executorSupportedParams = map[string]map[string]bool{
+	"retrieve":           {"query": true, "doc_scope": true},
+	"search_chunks":      {"query": true},
+	"list_chunks":        {"doc_id": true},
+	"navigate_tree":      {"query": true, "keywords": true},
+	"navigate_structure": {"doc_id": true, "query": true, "kind": true},
+	"calculate":          {"question": true, "facts": true},
+	"web_search":         {"query": true},
+}
+
+// TestToolSpecsHavePlaybookSections pins the PR: each of the 7 tools documents
+// the 5-section contract, within the token budget (cap 1200 chars).
+func TestToolSpecsHavePlaybookSections(t *testing.T) {
+	for _, name := range allTools {
+		desc := ToolMap[name].Function.Description
+		for _, anchor := range playbookAnchors {
+			if !strings.Contains(desc, anchor) {
+				t.Errorf("%s description missing anchor %q", name, anchor)
+			}
+		}
+		if n := utf8.RuneCountInString(desc); n > 1200 {
+			t.Errorf("%s description too long: %d chars (cap 1200)", name, n)
+		}
+	}
+}
+
+// TestActiveToolSpecsToolSurface pins mode -> exposed tool count: low=0,
+// medium/high=7, ultra=8, web-hidden=6.
+func TestActiveToolSpecsToolSurface(t *testing.T) {
+	cases := []struct {
+		mode string
+		web  bool
+		want int
+	}{
+		{"low", true, 0},
+		{"medium", true, 7},
+		{"high", true, 7},
+		{"ultra", true, 8},
+		{"medium", false, 6},
+	}
+	for _, c := range cases {
+		ts := &Toolset{ThinkingMode: c.mode, HasWebSearch: c.web}
+		if got := len(ts.ActiveToolSpecs()); got != c.want {
+			t.Errorf("mode=%s web=%t: tools = %d, want %d", c.mode, c.web, got, c.want)
+		}
+	}
+}
+
+// TestSchemaParamsMatchExecutor pins that no schema declares a param the
+// executor cannot consume (no ghost args).
+func TestSchemaParamsMatchExecutor(t *testing.T) {
+	for _, name := range allTools {
+		props, _ := ToolMap[name].Function.Parameters["properties"].(map[string]any)
+		supported := executorSupportedParams[name]
+		for param := range props {
+			if param == "decision" {
+				continue
+			}
+			if !supported[param] {
+				t.Errorf("%s declares unsupported param %q", name, param)
+			}
+		}
+	}
+}
+
+// TestActionRunPromptHasPlaybook pins that action_run.md exposes the TOOL
+// PLAYBOOK and only references real tools.
+func TestActionRunPromptHasPlaybook(t *testing.T) {
+	prompt := loadPrompt(nil, "action_run")
+	if !strings.Contains(prompt, "TOOL PLAYBOOK") {
+		t.Error("action_run prompt missing TOOL PLAYBOOK")
+	}
+	for _, tool := range []string{"navigate_structure", "calculate", "graph_explore"} {
+		if !strings.Contains(prompt, tool) {
+			t.Errorf("action_run prompt missing tool %q", tool)
+		}
+	}
+	for _, name := range append(append([]string{}, allTools...), GraphExploreTool) {
+		if _, ok := ToolMap[name]; !ok {
+			t.Errorf("%q referenced by the playbook is not in ToolMap", name)
+		}
+	}
+}
+
+// TestParseTerminalEmptyAnswerNotFound pins Python _parse_terminal:1282:
+// `answer = str(data.get("answer", "")).strip() or None` — an empty or
+// whitespace <answer> payload is NOT a found answer. Python's _run_action_node
+// then only ends the session when the <answer> carried a new_state patch; with
+// neither an answer nor a patch it NUDGES and the session continues, so a bare
+// <answer> block can never end a session with collected_answer="".
+func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
+	parent := NewState([]Variable{{ID: 0, Type: "answer"}}, 0, nil)
+
+	// Whitespace answer, no patch: no found answer, no branches — the session
+	// keeps running (runActionNode falls through to the nudge).
+	states, found, tt, _ := ParseTerminal("<answer>{\"answer\": \"   \"}</answer>", parent)
+	if found != nil {
+		t.Errorf("whitespace answer: FoundAnswer = %q, want nil", *found)
+	}
+	if len(states) != 0 {
+		t.Errorf("whitespace answer: %d branch(es), want 0", len(states))
+	}
+	if tt == nil || *tt != "answer" {
+		t.Errorf("whitespace answer: terminal type = %v, want answer", tt)
+	}
+
+	// Missing answer field, no patch: same.
+	states, found, _, _ = ParseTerminal("<answer>{}</answer>", parent)
+	if found != nil || len(states) != 0 {
+		t.Errorf("missing answer: FoundAnswer=%v branches=%d, want nil/0", found, len(states))
+	}
+
+	// A real answer still parses.
+	_, found, _, _ = ParseTerminal("<answer>{\"answer\": \"  74  \"}</answer>", parent)
+	if found == nil || *found != "74" {
+		t.Errorf("real answer: FoundAnswer = %v, want 74 (stripped)", found)
+	}
+
+	// Empty answer WITH a new_state patch: the patch is returned (Python
+	// :1283-1288 final_state), terminal type stays "answer", found stays nil.
+	states, found, _, _ = ParseTerminal(
+		"<answer>{\"answer\": \"\", \"new_state\": [{\"id\": 0, \"candidate\": \"74\", \"candidate_strength\": 0.9}]}</answer>",
+		parent)
+	if found != nil {
+		t.Errorf("empty answer with patch: FoundAnswer = %q, want nil", *found)
+	}
+	if len(states) != 1 || states[0].State[0].Candidate == nil || *states[0].State[0].Candidate != "74" {
+		t.Errorf("empty answer with patch: branches = %+v, want one state with candidate 74", states)
+	}
+}

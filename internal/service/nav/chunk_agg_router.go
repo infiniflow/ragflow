@@ -119,7 +119,13 @@ func rankedAggregates(agg map[string]*chunkAggregate) []*chunkAggregate {
 // agentic harness stays free of the nlp/service layer; production wiring
 // supplies a hybrid retriever that excludes compiled rows (compile_kwd) — see
 // the navigation_tree retrieval contract.
-type ChunkRetriever func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, vecWeight float64) []map[string]any
+//
+// The error is part of the contract: a retrieval FAILURE must not be reported as
+// an empty route. Python's _search_layers_nav_chunk_agg returns
+// ok=False/SERVER_ERROR on a retrieval exception and reserves ok=True/total=0
+// for "the pool aggregated to nothing", and the orchestrator picks its fallback
+// from exactly that distinction.
+type ChunkRetriever func(ctx context.Context, tenantID, kbID, query string, docScope []string, topN int, vecWeight float64) ([]map[string]any, error)
 
 // DocSummarizer loads the nav_doc "description" (the document's overall summary)
 // for a set of doc_ids, mirroring Python _nav_doc_summaries. Injected for the
@@ -137,8 +143,10 @@ type ChunkAggRouter struct {
 
 // Route implements the agentic NavTreeRouter contract. It returns (nil, nil)
 // when no retriever is installed (treat as "no compiled tree", mirroring
-// NavServiceRouter's contract), and an empty non-nil slice when a structure
-// exists but no chunk routed to a doc.
+// NavServiceRouter's contract), an empty non-nil slice when a structure exists
+// but no chunk routed to a doc, and a non-nil error when retrieval itself failed
+// — mirroring NavServiceRouter, which propagates a backend failure instead of
+// reporting it as an empty route.
 func (r *ChunkAggRouter) Route(ctx context.Context, tenantID, kbID, query string, docScope []string, topK int) ([][2]string, error) {
 	if r.Retrieve == nil {
 		return nil, nil
@@ -152,7 +160,12 @@ func (r *ChunkAggRouter) Route(ctx context.Context, tenantID, kbID, query string
 	}
 	// Pull a wide pool, then roll up per document (a focused doc may surface on
 	// many chunks, so a small pool starves the aggregation).
-	chunks := r.Retrieve(ctx, tenantID, kbID, query, docScope, chunkAggPool, chunkAggVecWeight)
+	chunks, err := r.Retrieve(ctx, tenantID, kbID, query, docScope, chunkAggPool, chunkAggVecWeight)
+	if err != nil {
+		// A retrieval failure is NOT "no document routed": the caller must be
+		// able to take its fallback instead of re-phrasing the query.
+		return nil, err
+	}
 	agg := aggregateChunks(chunks)
 	if len(agg) == 0 {
 		return make([][2]string, 0), nil // structure exists, nothing routed
