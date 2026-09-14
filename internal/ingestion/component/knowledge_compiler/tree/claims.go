@@ -441,19 +441,10 @@ func isRetryableClaimErr(err error) bool {
 
 // parseClaimItems tolerates the model wrapping JSON in prose or fences.
 func parseClaimItems(raw string) []Claim {
-	s := strings.TrimSpace(raw)
-	if s == "" {
+	s, err := common.RepairJSONText(raw)
+	if err != nil {
 		return nil
 	}
-	if i := strings.Index(s, "{"); i > 0 {
-		s = s[i:]
-	}
-	if j := strings.LastIndex(s, "}"); j >= 0 && j+1 < len(s) {
-		s = s[:j+1]
-	}
-	s = strings.TrimPrefix(s, "```json")
-	s = strings.TrimPrefix(s, "```")
-	s = strings.TrimSuffix(s, "```")
 
 	var out struct {
 		Items []Claim `json:"items"`
