@@ -98,7 +98,7 @@ def _load_agent_module(monkeypatch):
     )
     _stub_module("api.db.services.llm_service", LLMBundle=_LLMBase)
     _stub_module("api.db.services.mcp_server_service", MCPServerService=_LLMBase)
-    _stub_module("common.connection_utils", timeout=lambda *a, **k: (lambda f: f))
+    _stub_module("common.connection_utils", timeout=lambda *a, **k: lambda f: f)
     _stub_module(
         "common.mcp_tool_call_conn",
         MCPToolBinding=_LLMBase,
