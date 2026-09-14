@@ -1636,7 +1636,28 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// dataset row's description stays a plain-text string (mirror Python
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
-	if desc := structureProductDescription(p.Content); desc != "" {
+	desc := structureProductDescription(p.Content)
+	if desc == "" {
+		// Match Python's dataset merger fallback: mindmap entities only carry
+		// name/type, while their dataset row still needs searchable text.
+		// Relations likewise use the endpoint names and relation type when the
+		// source payload has no description.
+		from := metaString(p.Meta, "from")
+		to := metaString(p.Meta, "to")
+		if kind := metaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
+			relType := metaString(p.Meta, "relation_type")
+			if relType == "" {
+				relType = metaString(p.Meta, "type")
+			}
+			if relType == "" {
+				relType = "related"
+			}
+			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
+		} else {
+			desc = strings.TrimSpace(metaString(p.Meta, "name"))
+		}
+	}
+	if desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"
 		}

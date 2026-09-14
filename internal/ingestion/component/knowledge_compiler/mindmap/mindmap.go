@@ -16,9 +16,12 @@ import (
 	"fmt"
 	"strings"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
+
+const mindmapJSONRetryMax = 3
 
 // batchSubmitter fans out the batch extraction jobs on the process-wide
 // knowledge-compilation pool. It is injected by the knowledge_compiler wiring
@@ -70,21 +73,28 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
-			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-				LLMID:        llmID,
-				SystemPrompt: renderPrompt(batch.text),
-				UserPrompt:   userMessage,
-			})
-			if err != nil {
-				return err
+			var lastContent string
+			for attempt := 0; attempt < mindmapJSONRetryMax; attempt++ {
+				resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+					LLMID:           llmID,
+					SystemPrompt:    renderPrompt(batch.text),
+					UserPrompt:      userMessage,
+					JSONMode:        true,
+					DisableThinking: true,
+				})
+				if err != nil {
+					return err
+				}
+				lastContent = resp.Content
+				// Distinct slice index per batch → no cross-goroutine contention.
+				if tree, ok := parseJSONTree(resp.Content, batch.ids); ok {
+					results[i].tree = tree
+					return nil
+				}
 			}
-			// Distinct slice index per batch → no cross-goroutine contention.
-			if tree, ok := parseJSONTree(resp.Content, batch.ids); ok {
-				results[i].tree = tree
-			} else {
-				// Keep the old Markdown protocol as a compatibility fallback.
-				results[i].outline = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
-			}
+			// Keep the old Markdown protocol as a compatibility fallback after
+			// exhausting JSON retries.
+			results[i].outline = utility.Todict(utility.Dictify(utility.StripFences(lastContent)))
 			return nil
 		})
 	}
@@ -295,8 +305,14 @@ type jsonMindmapNode struct {
 }
 
 func parseJSONTree(content string, batchIDs []string) (*utility.Node, bool) {
+	content = appcommon.StripThinkTrailing(content)
+	content = strings.TrimSpace(utility.StripFences(content))
+	// Accept a short prose prefix/suffix from providers that ignore JSON mode.
+	if start, end := strings.IndexByte(content, '{'), strings.LastIndexByte(content, '}'); start >= 0 && end >= start {
+		content = content[start : end+1]
+	}
 	var raw jsonMindmapNode
-	if err := json.Unmarshal([]byte(utility.StripFences(content)), &raw); err != nil {
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return nil, false
 	}
 	if strings.TrimSpace(raw.ID) == "" {

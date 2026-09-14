@@ -1,10 +1,13 @@
 package mindmap
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
 
@@ -129,5 +132,40 @@ func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
 	products := treeToProducts("t1", "d1", root, nil)
 	if ids, ok := products[0].Meta["source_chunk_ids"].([]string); !ok || len(ids) != 1 || ids[0] != "c1" {
 		t.Fatalf("entity meta source chunk ids = %#v, want [c1]", products[0].Meta["source_chunk_ids"])
+	}
+}
+
+type retryChat struct {
+	calls int
+}
+
+func (c *retryChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	c.calls++
+	if !req.JSONMode || !req.DisableThinking {
+		return nil, fmt.Errorf("mindmap request must enable JSON mode and disable thinking")
+	}
+	if c.calls == 1 {
+		return &common.ChatResponse{Content: "not json"}, nil
+	}
+	return &common.ChatResponse{Content: `{"id":"root","children":[{"id":"child","children":[]}]}`}, nil
+}
+
+func TestRunRetriesInvalidJSON(t *testing.T) {
+	chat := &retryChat{}
+	outputs, err := Run(context.Background(), common.Deps{
+		Chat:     chat,
+		TenantID: "t1",
+	}, common.Param{}, common.Inputs{
+		Chunks: []common.Chunk{{ID: "c1", Text: "source text"}},
+		DocID:  "d1",
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if chat.calls != 2 {
+		t.Fatalf("chat calls = %d, want 2 after one invalid JSON response", chat.calls)
+	}
+	if len(outputs.Products) != 3 {
+		t.Fatalf("products = %d, want root, child, and relation", len(outputs.Products))
 	}
 }
