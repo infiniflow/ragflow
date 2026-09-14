@@ -50,6 +50,7 @@ type ListAgentSessionsRequest struct {
 	Desc       bool
 	ExpUserID  string
 	IncludeDSL bool
+	NoHistory  bool
 }
 
 // ListAgentSessionsResponse is the response body for ListAgentSessions.
@@ -359,6 +360,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 		SessionID:  req.SessionID,
 		UserID:     req.UserID,
 		IncludeDSL: req.IncludeDSL,
+		NoHistory:  req.NoHistory,
 		Keywords:   req.Keywords,
 		FromDate:   fromDate,
 		ToDate:     toDate,
@@ -371,6 +373,9 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 	data := make([]map[string]interface{}, 0, len(sessions))
 	for _, session := range sessions {
 		data = append(data, normalizeAgentSession(session, req.IncludeDSL))
+		if req.NoHistory {
+			delete(data[len(data)-1], "message")
+		}
 	}
 	return &ListAgentSessionsResponse{Data: data, Total: total}, common.CodeSuccess, nil
 }

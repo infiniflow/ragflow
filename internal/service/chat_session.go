@@ -48,7 +48,7 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error)
+	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 	CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error)
 }
@@ -245,7 +245,7 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -286,7 +286,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize)
+	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +408,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1)
+			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1, false)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
@@ -700,8 +700,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeServerError, err
 	}
 	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
-		"message":   messageRaw,
-		"reference": referenceRaw,
+		"history_update": dao.ConversationHistoryUpdate{DeleteMessageID: msgID},
 	}); err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -815,7 +814,13 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": messageRaw}); err != nil {
+	feedbackUpdate := map[string]interface{}{"thumb_up": thumbup}
+	if thumbup {
+		feedbackUpdate["feedback"] = nil
+	} else if messageIndex != -1 && messages[messageIndex]["feedback"] != nil {
+		feedbackUpdate["feedback"] = messages[messageIndex]["feedback"]
+	}
+	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{FeedbackMessageID: msgID, Feedback: feedbackUpdate}}); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
@@ -1382,7 +1387,7 @@ func (s *ChatSessionService) Completion(ctx context.Context, userID string, conv
 	}
 	if !isEmbedded {
 		session.Message, _ = json.Marshal(sessionMessages)
-		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": []byte(session.Message)}); err != nil {
+		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": []byte(session.Message), "reference": []byte(session.Reference)}); err != nil {
 			return nil, err
 		}
 	}
@@ -1481,7 +1486,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 	}
 	if !isEmbedded {
 		session.Message, _ = json.Marshal(sessionMessages)
-		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": []byte(session.Message)}); err != nil {
+		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": []byte(session.Message), "reference": []byte(session.Reference)}); err != nil {
 			s.sendSSEError(streamChan, err.Error())
 			return err
 		}
@@ -1672,7 +1677,11 @@ func (s *ChatSessionService) ChatCompletions(
 
 	// --- 6. Run pipeline ---
 	if session != nil && storeHistory {
-		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": []byte(session.Message)}); err != nil {
+		updates := map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{Message: requestMsg[len(requestMsg)-1]}}
+		if passAllHistory {
+			updates = map[string]interface{}{"message": []byte(session.Message), "reference": []byte(session.Reference)}
+		}
+		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, updates); err != nil {
 			return fail(err)
 		}
 	}
@@ -2367,10 +2376,15 @@ func (s *ChatSessionService) updateSessionMessages(ctx context.Context, session 
 		return
 	}
 
-	updates := map[string]interface{}{
-		"message":   messagesJSON,
-		"reference": referenceJSON,
+	if len(messages) == 0 || stringValue(messages[len(messages)-1]["role"]) != "assistant" {
+		return
 	}
+	message := messages[len(messages)-1]
+	var latestReference map[string]interface{}
+	if len(reference) > 0 {
+		latestReference, _ = reference[len(reference)-1].(map[string]interface{})
+	}
+	updates := map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{Message: message, QuestionID: stringValue(message["id"]), Reference: latestReference, AppendReference: true}}
 	if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, updates); err != nil {
 		common.Warn("updateSessionMessages: DAO update failed", zap.Error(err))
 		return

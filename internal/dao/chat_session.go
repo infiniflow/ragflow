@@ -18,10 +18,12 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -40,6 +42,7 @@ type ListAgentSessionsParams struct {
 	UserID     string
 	TenantID   string
 	IncludeDSL bool
+	NoHistory  bool
 	Keywords   string
 	FromDate   *time.Time
 	ToDate     *time.Time
@@ -54,7 +57,7 @@ func NewChatSessionDAO() *ChatSessionDAO {
 // GetByID gets chat session by ID
 func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := db.WithContext(ctx).Where("id = ?", id).First(&conv).Error
+	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ?", id).First(&conv).Error
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +70,7 @@ func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) 
 // GetBySessionIDAndChatID gets a chat session by session ID and chat ID.
 func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
+	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +99,8 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 		updates = make(map[string]interface{})
 	}
 
+	historyUpdate, targeted := updates["history_update"].(ConversationHistoryUpdate)
+	delete(updates, "history_update")
 	message, updateMessage, err := popHistoryUpdate(updates, "message")
 	if err != nil {
 		return err
@@ -123,9 +128,21 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 				return gorm.ErrRecordNotFound
 			}
 		}
+		if targeted {
+			return updateConversationHistory(ctx, tx, conversationMessageTable, conversationReferenceTable, id, historyUpdate)
+		}
 		if updateMessage {
 			if err := syncHistory(ctx, tx, conversationMessageTable, "message", "message", id, message); err != nil {
 				return err
+			}
+			if !updateReference {
+				// Explicit array replacement also resets reference positions so
+				// old reserved slots cannot point at newly compacted messages.
+				history, err := loadHistory(ctx, tx, conversationReferenceTable, "reference", []string{id})
+				if err != nil {
+					return err
+				}
+				reference, updateReference = history[id], true
 			}
 		}
 		if updateReference {
@@ -138,6 +155,10 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 // DeleteByID deletes a chat session by ID (hard delete)
 func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent entity.ChatSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", id).Take(&parent).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, []string{id}); err != nil {
 			return err
 		}
@@ -146,9 +167,9 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Where("dialog_id = ?", chatID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ?", chatID)
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
 	}
@@ -173,8 +194,10 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 	if err != nil {
 		return nil, err
 	}
-	if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
-		return nil, err
+	if len(includeHistory) == 0 || includeHistory[0] {
+		if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
+			return nil, err
+		}
 	}
 	return chatSessions, nil
 }
@@ -209,7 +232,7 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, d
 	var rowsAffected int64
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ids []string
-		if err := tx.Model(&entity.ChatSession{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &ids).Error; err != nil {
+		if err := tx.Model(&entity.ChatSession{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("dialog_id IN ?", dialogIDs).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
 		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, ids); err != nil {
@@ -260,7 +283,7 @@ func normalizeAgentSessionOrderBy(orderBy string) string {
 }
 
 func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, params ListAgentSessionsParams) (int64, []*entity.API4Conversation, error) {
-	query := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
 	if !params.IncludeDSL {
 		query = query.Omit("dsl")
 	}
@@ -328,8 +351,10 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 	if err != nil {
 		return 0, nil, err
 	}
-	if err = hydrateAPIConversations(ctx, db, sessions); err != nil {
-		return 0, nil, err
+	if !params.NoHistory {
+		if err = hydrateAPIConversations(ctx, db, sessions); err != nil {
+			return 0, nil, err
+		}
 	}
 
 	return total, sessions, nil

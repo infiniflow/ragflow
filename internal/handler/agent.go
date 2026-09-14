@@ -944,6 +944,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		UserID:     queryUserID,
 		ExpUserID:  expUserID,
 		IncludeDSL: includeDSL,
+		NoHistory:  c.Query("include_history") == "false" || c.Query("include_history") == "False",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())

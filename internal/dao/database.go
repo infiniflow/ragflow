@@ -190,6 +190,15 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
 		}
 	}
+	// Conversation lists filter by dialog and usually order by update time.
+	for _, table := range []string{"conversation", "api_4_conversation"} {
+		indexName := "idx_" + table + "_dialog_updated"
+		if !DB.WithContext(ctx).Migrator().HasIndex(table, indexName) {
+			if err = DB.WithContext(ctx).Exec("CREATE INDEX " + indexName + " ON " + table + " (dialog_id, update_time, id)").Error; err != nil {
+				common.Warn("Failed to create conversation list index", zap.String("table", table), zap.Error(err))
+			}
+		}
+	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
 	// initialization.

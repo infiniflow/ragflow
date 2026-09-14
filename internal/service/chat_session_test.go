@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -90,6 +91,48 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 	if !ok {
 		return gorm.ErrRecordNotFound
 	}
+	if history, ok := updates["history_update"].(dao.ConversationHistoryUpdate); ok {
+		messages := parseMessages(s.Message)
+		references := parseReferenceList(s.Reference)
+		if history.DeleteMessageID != "" {
+			for i, message := range messages {
+				if stringValue(message["id"]) != history.DeleteMessageID {
+					continue
+				}
+				end := i + 1
+				if end < len(messages) && stringValue(messages[end]["role"]) == "assistant" && stringValue(messages[end]["id"]) == history.DeleteMessageID {
+					refIndex := sessionMessageReferenceIndex(messages, end)
+					if refIndex >= 0 && refIndex < len(references) {
+						references = append(references[:refIndex], references[refIndex+1:]...)
+					}
+					end++
+				}
+				messages = append(messages[:i], messages[end:]...)
+				break
+			}
+		} else if history.FeedbackMessageID != "" {
+			for _, message := range messages {
+				if stringValue(message["id"]) == history.FeedbackMessageID && stringValue(message["role"]) == "assistant" {
+					message["thumbup"] = history.Feedback["thumb_up"]
+					if feedback, ok := history.Feedback["feedback"]; ok {
+						if feedback == nil {
+							delete(message, "feedback")
+						} else {
+							message["feedback"] = feedback
+						}
+					}
+				}
+			}
+		} else if history.Message != nil {
+			messages = append(messages, history.Message)
+			if history.AppendReference {
+				references = append(references, history.Reference)
+			}
+		}
+		updates["message"], _ = json.Marshal(messages)
+		updates["reference"], _ = json.Marshal(references)
+		delete(updates, "history_update")
+	}
 	f.updateCalled = append(f.updateCalled, struct {
 		id      string
 		updates map[string]interface{}
@@ -118,7 +161,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
 		if s.DialogID != chatID {

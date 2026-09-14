@@ -1665,7 +1665,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	sessionFound := false
 	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, canvasID)
+		session, sessionErr := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
 		if sessionErr != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
 		}
@@ -2437,21 +2437,8 @@ func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, use
 	if text == "" {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
-	if err != nil {
-		return err
-	}
-	if session == nil || session.UserID != userID {
-		return nil
-	}
-	messages := parseAgentSessionMessages(session.Message)
-	messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": messageID, "created_at": receivedAt})
-	raw, err := json.Marshal(messages)
-	if err != nil {
-		return err
-	}
-	session.Message = raw
-	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+	message := map[string]interface{}{"role": "user", "content": text, "id": messageID, "created_at": receivedAt}
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, agentID, userID, nil, dao.ConversationHistoryUpdate{Message: message})
 }
 
 func (s *AgentService) persistAgentRunSession(
@@ -2469,31 +2456,15 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
-	if err != nil {
-		common.Warn("agent run: load session for update failed", zap.String("agent_id", agentID), zap.String("session_id", sessionID), zap.Error(err))
-		return nil
-	}
-	if session == nil || session.UserID != userID {
-		return nil
-	}
-	messages := parseAgentSessionMessages(session.Message)
+	history := dao.ConversationHistoryUpdate{Reference: normalizeAgentReferenceEntry(reference), AppendReference: true}
 	if appendAssistantMessage {
-		messages = append(messages, map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now})
+		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now}
 	}
-	if raw, err := json.Marshal(messages); err == nil {
-		session.Message = raw
-	}
-	references := parseAgentSessionReferences(session.Reference)
-	references = append(references, normalizeAgentReferenceEntry(reference))
-	if raw, err := json.Marshal(references); err == nil {
-		session.Reference = raw
-	}
+	updates := map[string]interface{}{"round": gorm.Expr("COALESCE(round, 0) + 1")}
 	if state != nil {
-		session.DSL = buildPersistedAgentDSL(runDSL, state)
+		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
-	session.Round++
-	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, agentID, userID, updates, history)
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

@@ -27,8 +27,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
@@ -51,14 +49,6 @@ type BotService struct {
 	agentService        *AgentService
 	llmService          *LLMService
 	pipeline            *ChatPipelineService
-	// persistLocks serialises persistChatbotTurn's read-modify-write
-	// on a single api_4_conversation row. ChatbotCompletion fetches
-	// the session before streaming starts, so without this lock two
-	// concurrent requests on the same session_id would each append
-	// their turn to the same stale base and the last Update would
-	// silently drop the other exchange. Striped to a fixed size so
-	// the lock set does not grow with the number of sessions.
-	persistLocks [64]sync.Mutex
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
@@ -281,16 +271,6 @@ type ChatbotCompletionRequest struct {
 	// DocIDs is an optional comma-separated document filter,
 	// same shape as the regular chat completion kwargs.
 	DocIDs string `json:"doc_ids"`
-}
-
-// persistLock returns the striped mutex guarding one session row's
-// read-modify-write in persistChatbotTurn. The modulo runs on the
-// unsigned hash — converting to int first would go negative on
-// 32-bit architectures and panic with an out-of-bounds index.
-func (s *BotService) persistLock(sessionID string) *sync.Mutex {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(sessionID))
-	return &s.persistLocks[h.Sum32()%uint32(len(s.persistLocks))]
 }
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the

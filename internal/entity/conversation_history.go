@@ -20,8 +20,8 @@ import "encoding/json"
 
 // ConversationMessageFields contains searchable fields and variable message metadata.
 type ConversationMessageFields struct {
-	MessageID   *string  `gorm:"column:message_id;size:255;index" json:"id,omitempty"`
-	Role        *string  `gorm:"column:role;size:32;index" json:"role,omitempty"`
+	MessageID   *string  `gorm:"column:message_id;size:255;index:,composite:message_lookup,priority:2" json:"id,omitempty"`
+	Role        *string  `gorm:"column:role;size:32;index:,composite:message_lookup,priority:3" json:"role,omitempty"`
 	Content     *string  `gorm:"column:content;type:longtext" json:"content,omitempty"`
 	ContentType string   `gorm:"column:content_type;size:8" json:"-"`
 	Status      *string  `gorm:"column:status;size:32" json:"status,omitempty"`
@@ -33,8 +33,8 @@ type ConversationMessageFields struct {
 
 // ConversationMessage stores one ordered message for a conversation.
 type ConversationMessage struct {
-	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
-	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
+	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32;index:,composite:message_lookup,priority:1" json:"conversation_id"`
+	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false;index:,composite:message_lookup,priority:4" json:"position"`
 	ConversationMessageFields
 	Conversation ChatSession `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
@@ -48,6 +48,7 @@ type ConversationReference struct {
 	ConversationID string          `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
 	Position       int             `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
 	Reference      json.RawMessage `gorm:"column:reference;type:longtext;not null" json:"reference"`
+	MessagePos     *int            `gorm:"column:message_position" json:"-"`
 	Conversation   ChatSession     `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
@@ -57,8 +58,8 @@ func (ConversationReference) TableName() string {
 
 // API4ConversationMessage stores one ordered message for an API conversation.
 type API4ConversationMessage struct {
-	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
-	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
+	ConversationID string `gorm:"column:conversation_id;primaryKey;size:32;index:,composite:message_lookup,priority:1" json:"conversation_id"`
+	Position       int    `gorm:"column:position;primaryKey;autoIncrement:false;index:,composite:message_lookup,priority:4" json:"position"`
 	ConversationMessageFields
 	Conversation API4Conversation `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
@@ -72,6 +73,7 @@ type API4ConversationReference struct {
 	ConversationID string           `gorm:"column:conversation_id;primaryKey;size:32" json:"conversation_id"`
 	Position       int              `gorm:"column:position;primaryKey;autoIncrement:false" json:"position"`
 	Reference      json.RawMessage  `gorm:"column:reference;type:longtext;not null" json:"reference"`
+	MessagePos     *int             `gorm:"column:message_position" json:"-"`
 	Conversation   API4Conversation `gorm:"foreignKey:ConversationID;references:ID;constraint:OnDelete:CASCADE" json:"-"`
 }
 

@@ -44,6 +44,164 @@ type conversationHistoryRow struct {
 	ConversationID string `gorm:"column:conversation_id"`
 	Position       int    `gorm:"column:position"`
 	Payload        string `gorm:"column:payload"`
+	MessagePos     *int   `gorm:"column:message_position"`
+}
+
+// ConversationHistoryUpdate changes only the addressed turn, never synchronizing
+// historical payloads. QuestionID places an answer in its question's reserved slot.
+type ConversationHistoryUpdate struct {
+	Message           map[string]interface{}
+	QuestionID        string
+	Reference         map[string]interface{}
+	AppendReference   bool
+	DeleteMessageID   string
+	FeedbackMessageID string
+	Feedback          map[string]interface{}
+}
+
+func historyReferenceQuery(ctx context.Context, db *gorm.DB, messageTable, referenceTable, conversationID string, messagePosition int) (*gorm.DB, error) {
+	query := db.WithContext(ctx).Table(referenceTable).Where("conversation_id = ?", conversationID)
+	var row conversationHistoryRow
+	err := query.Session(&gorm.Session{}).Select("position").Where("position = ? AND message_position = ?", messagePosition, messagePosition).Take(&row).Error
+	if err == nil {
+		return query.Where("position = ?", row.Position), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	// Histories explicitly supplied as arrays have no position association.
+	// Resolve their remaining references by assistant order, not array pairs.
+	var ordinal int64
+	err = db.WithContext(ctx).Table(messageTable).
+		Where("conversation_id = ? AND role = ? AND position < ? AND position >= (SELECT MIN(position) FROM "+messageTable+" WHERE conversation_id = ? AND role = ?)", conversationID, "assistant", messagePosition, conversationID, "user").Count(&ordinal).Error
+	if err != nil {
+		return nil, err
+	}
+	err = query.Session(&gorm.Session{}).Select("position").Where("message_position IS NULL").Order("position").Offset(int(ordinal)).Take(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return query.Where("position = ?", row.Position), nil
+}
+
+func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, referenceTable, conversationID string, update ConversationHistoryUpdate) error {
+	if update.DeleteMessageID != "" {
+		var question entity.ConversationMessage
+		query := db.WithContext(ctx).Table(messageTable).Where("conversation_id = ? AND message_id = ?", conversationID, update.DeleteMessageID)
+		if err := query.Session(&gorm.Session{}).Select("position").Where("role = ?", "user").Order("position").Take(&question).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		positions := []int{question.Position}
+		var answer entity.ConversationMessage
+		err := query.Session(&gorm.Session{}).Select("position").Where("role = ? AND position = ?", "assistant", question.Position+1).Take(&answer).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil {
+			positions = append(positions, answer.Position)
+			refQuery, err := historyReferenceQuery(ctx, db, messageTable, referenceTable, conversationID, answer.Position)
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil {
+				if err := refQuery.Delete(map[string]interface{}{}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return query.Where("position IN ?", positions).Delete(map[string]interface{}{}).Error
+	}
+	if update.FeedbackMessageID != "" {
+		query := db.WithContext(ctx).Table(messageTable).Where("conversation_id = ? AND message_id = ? AND role = ?", conversationID, update.FeedbackMessageID, "assistant")
+		var message entity.ConversationMessage
+		if err := query.Session(&gorm.Session{}).Select("position", "metadata").Order("position").Take(&message).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		metadata := make(map[string]json.RawMessage)
+		if message.Metadata != "" {
+			if err := json.Unmarshal([]byte(message.Metadata), &metadata); err != nil {
+				return err
+			}
+		}
+		if metadata == nil {
+			metadata = make(map[string]json.RawMessage)
+		}
+		delete(metadata, "thumbup")
+		if feedback, ok := update.Feedback["feedback"]; ok {
+			delete(metadata, "feedback")
+			if _, isString := feedback.(string); feedback != nil && !isString {
+				raw, err := json.Marshal(feedback)
+				if err != nil {
+					return err
+				}
+				metadata["feedback"] = raw
+				update.Feedback["feedback"] = nil
+			}
+		}
+		raw, err := json.Marshal(metadata)
+		if err != nil {
+			return err
+		}
+		update.Feedback["metadata"] = string(raw)
+		return query.Where("position = ?", message.Position).Updates(update.Feedback).Error
+	}
+	if update.Message == nil && !update.AppendReference {
+		return nil
+	}
+	var fields entity.ConversationMessageFields
+	if update.Message != nil {
+		raw, err := json.Marshal(update.Message)
+		if err != nil {
+			return err
+		}
+		fields, err = flattenMessage(raw)
+		if err != nil {
+			return err
+		}
+	}
+	position := 0
+	if update.QuestionID != "" {
+		var question entity.ConversationMessage
+		if err := db.WithContext(ctx).Table(messageTable).Select("position").Where("conversation_id = ? AND message_id = ? AND role = ?", conversationID, update.QuestionID, "user").Order("position DESC").Take(&question).Error; err != nil {
+			return err
+		}
+		position = question.Position + 1
+	} else {
+		var lastMessage, lastReference int
+		if err := db.WithContext(ctx).Table(messageTable).Select("COALESCE(MAX(position), -2)").Where("conversation_id = ?", conversationID).Scan(&lastMessage).Error; err != nil {
+			return err
+		}
+		if err := db.WithContext(ctx).Table(referenceTable).Select("COALESCE(MAX(position), -2)").Where("conversation_id = ?", conversationID).Scan(&lastReference).Error; err != nil {
+			return err
+		}
+		position = max(lastMessage, lastReference) + 2
+	}
+	if update.Message != nil {
+		values := messageValues(fields)
+		values["conversation_id"], values["position"] = conversationID, position
+		// A reserved answer slot cannot overwrite a later question.
+		if err := db.WithContext(ctx).Table(messageTable).Create(values).Error; err != nil {
+			return err
+		}
+	}
+	if update.AppendReference {
+		raw, err := json.Marshal(update.Reference)
+		if err != nil {
+			return err
+		}
+		row := map[string]interface{}{"conversation_id": conversationID, "position": position, "reference": string(raw)}
+		if update.Message != nil {
+			row["message_position"] = position
+		}
+		return db.WithContext(ctx).Table(referenceTable).Create(row).Error
+	}
+	return nil
 }
 
 func historyRaw(value interface{}) (json.RawMessage, error) {
@@ -255,14 +413,16 @@ func syncHistory(ctx context.Context, db *gorm.DB, table, payloadColumn, kind, c
 
 	var existing []conversationHistoryRow
 	if err = db.WithContext(ctx).Table(table).
-		Select(conversationHistoryOrderColumn+", "+payloadColumn+" AS payload").
+		Select(conversationHistoryOrderColumn+", message_position, "+payloadColumn+" AS payload").
 		Where(conversationHistoryIDColumn+" = ?", conversationID).
 		Find(&existing).Error; err != nil {
 		return err
 	}
 	existingByPosition := make(map[int]string, len(existing))
+	associated := make(map[int]bool, len(existing))
 	for _, row := range existing {
 		existingByPosition[row.Position] = row.Payload
+		associated[row.Position] = row.MessagePos != nil
 	}
 
 	for position, item := range items {
@@ -272,12 +432,12 @@ func syncHistory(ctx context.Context, db *gorm.DB, table, payloadColumn, kind, c
 		}
 		if old, ok := existingByPosition[position]; ok {
 			oldCompact, compactErr := compactHistoryItem(json.RawMessage(old))
-			if compactErr == nil && bytes.Equal(oldCompact, item) {
+			if compactErr == nil && bytes.Equal(oldCompact, item) && !associated[position] {
 				continue
 			}
 			if err = db.WithContext(ctx).Table(table).
 				Where(conversationHistoryIDColumn+" = ? AND "+conversationHistoryOrderColumn+" = ?", conversationID, position).
-				Update(payloadColumn, string(item)).Error; err != nil {
+				Updates(map[string]interface{}{payloadColumn: string(item), "message_position": nil}).Error; err != nil {
 				return err
 			}
 			continue

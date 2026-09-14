@@ -623,24 +623,8 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 }
 
 func (s *BotService) persistChatbotQuestion(ctx context.Context, session *entity.API4Conversation, question, messageID string, receivedAt float64) error {
-	lock := s.persistLock(session.ID)
-	lock.Lock()
-	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
-	if err != nil {
-		return err
-	}
-	if fresh == nil || fresh.UserID != session.UserID {
-		return errors.New("session not found")
-	}
-	turns := parseChatbotTurns(fresh.Message)
-	turns = append(turns, map[string]any{"role": "user", "content": question, "id": messageID, "created_at": receivedAt})
-	raw, err := json.Marshal(turns)
-	if err != nil {
-		return err
-	}
-	fresh.Message = raw
-	return s.api4ConversationDAO.Update(ctx, dao.DB, fresh)
+	message := map[string]interface{}{"role": "user", "content": question, "id": messageID, "created_at": receivedAt}
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message})
 }
 
 // persistChatbotTurn completes an already-persisted user turn with its
@@ -649,74 +633,11 @@ func (s *BotService) persistChatbotTurn(
 	ctx context.Context, session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
 	completedAt float64,
 ) error {
-	// Serialise the read-modify-write per session and re-read the row
-	// inside the lock: the caller's session was loaded before the
-	// stream ran, so a concurrent request on the same session_id may
-	// already have appended its own turn. Without the lock + re-read
-	// the last Update would silently drop the other exchange.
-	lock := s.persistLock(session.ID)
-	lock.Lock()
-	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
-	if err != nil {
-		return err
-	}
-	if fresh == nil || fresh.UserID != session.UserID {
-		return errors.New("session not found")
-	}
-	session = fresh
-
-	turns := parseChatbotTurns(session.Message)
-	// Both turns of the pair share messageID by design: a Q&A exchange
-	// is addressed as a unit — mirrors the in-app chat convention
-	// where the answer id is derived from the question id so the pair
-	// is deleted together (web/src/hooks/logic-hooks.ts
-	// buildMessageUuid).
-	position, referencePosition := -1, 0
-	for i, turn := range turns {
-		if turn["role"] == "user" && turn["id"] == messageID && turn["content"] == question {
-			position = i + 1
-			break
-		}
-		if turn["role"] == "assistant" && turn["id"] != nil {
-			referencePosition++
-		}
-	}
-	if position < 0 {
-		return errors.New("chatbot question not found")
-	}
-	turns = append(turns, nil)
-	copy(turns[position+1:], turns[position:])
-	turns[position] = map[string]any{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
-	rawMsg, err := json.Marshal(turns)
-	if err != nil {
-		return err
-	}
-	session.Message = rawMsg
-
-	refs := make([]any, 0)
-	if len(session.Reference) > 0 {
-		// Tolerate malformed / missing reference history — the
-		// message turns above are the authoritative history;
-		// a lost reference list degrades citation display only.
-		_ = json.Unmarshal(session.Reference, &refs)
-	}
 	if reference == nil {
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
-	if referencePosition > len(refs) {
-		referencePosition = len(refs)
-	}
-	refs = append(refs, nil)
-	copy(refs[referencePosition+1:], refs[referencePosition:])
-	refs[referencePosition] = reference
-	rawRef, err := json.Marshal(refs)
-	if err != nil {
-		return err
-	}
-	session.Reference = rawRef
-
-	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+	message := map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID, Reference: reference, AppendReference: true})
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet
