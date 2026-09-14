@@ -184,17 +184,19 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 // Get retrieves an object from MinIO
 func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Warn("failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -206,13 +208,14 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 			return err
 		}()
 		if readErr != nil {
+			lastErr = readErr
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -220,7 +223,7 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 		return buf.Bytes(), nil
 	}
 
-	return nil, err
+	return nil, lastErr
 }
 
 // Remove removes an object from MinIO
