@@ -30,13 +30,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+
+	"ragflow/internal/common"
 )
 
 func securityCtx(t *testing.T, remoteAddr string, headers map[string]string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
+	c, engine := gin.CreateTestContext(w)
+	// Same trust boundary as the production engine in cmd/ragflow_server.go.
+	if err := common.ConfigureTrustedProxies(engine, nil); err != nil {
+		t.Fatalf("ConfigureTrustedProxies: %v", err)
+	}
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/c1/webhook", strings.NewReader("{}"))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.RemoteAddr = remoteAddr
@@ -478,11 +484,11 @@ func newSecurityCtx(canvasID string) *gin.Context {
 	return c
 }
 
-// TestValidateIPWhitelist_IgnoresForwardedForSpoof asserts the whitelist is
-// evaluated against the real socket peer, not the client-controlled
-// X-Forwarded-For / X-Real-IP headers. The server never configures trusted
-// proxies, so gin.ClientIP() would otherwise return the spoofed header value
-// and let any caller bypass the allowlist.
+// TestValidateIPWhitelist_IgnoresForwardedForSpoof asserts that a peer
+// outside the trusted proxy list is judged by its socket address, not by
+// the X-Forwarded-For / X-Real-IP headers it sends. Under gin's
+// trust-everything default the spoofed header value would have satisfied
+// the allowlist.
 func TestValidateIPWhitelist_IgnoresForwardedForSpoof(t *testing.T) {
 	// Real peer 192.168.1.5 is not on the list; the headers claim 10.0.0.5.
 	c := securityCtx(t, "192.168.1.5:0", map[string]string{
@@ -508,5 +514,41 @@ func TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof(t *testing.T) {
 	cfg := map[string]any{"ip_whitelist": []any{"10.0.0.0/8"}}
 	if err := validateIPWhitelist(c, cfg); err != nil {
 		t.Fatalf("real peer on the list must pass: err = %v", err)
+	}
+}
+
+// TestValidateIPWhitelist_BehindBundledProxy covers the shipped deployment:
+// docker/entrypoint.sh runs nginx in the same container and
+// docker/nginx/ragflow.conf.golang proxies the webhook route to
+// 127.0.0.1:9384 with X-Forwarded-For set by proxy.conf. The socket peer is
+// therefore always loopback and the whitelist has to be evaluated against
+// the forwarded address, which the loopback default in
+// common.DefaultTrustedProxies makes gin.ClientIP() return.
+func TestValidateIPWhitelist_BehindBundledProxy(t *testing.T) {
+	cfg := map[string]any{"ip_whitelist": []any{"203.0.113.7"}}
+
+	allowed := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "203.0.113.7",
+	})
+	if err := validateIPWhitelist(allowed, cfg); err != nil {
+		t.Fatalf("listed caller forwarded by the bundled nginx must pass: err = %v", err)
+	}
+
+	denied := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "198.51.100.9",
+	})
+	err := validateIPWhitelist(denied, cfg)
+	if err == nil || !strings.Contains(err.Error(), "198.51.100.9") {
+		t.Fatalf("unlisted caller forwarded by the bundled nginx must be rejected by its own address: err = %v", err)
+	}
+
+	// A caller that reaches nginx through a further, undeclared hop is
+	// attributed to that hop, never to the leftmost value it chose itself.
+	chained := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "203.0.113.7, 198.51.100.9",
+	})
+	err = validateIPWhitelist(chained, cfg)
+	if err == nil || !strings.Contains(err.Error(), "198.51.100.9") {
+		t.Fatalf("spoofed leftmost X-Forwarded-For entry must not pass: err = %v", err)
 	}
 }

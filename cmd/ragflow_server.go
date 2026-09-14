@@ -558,6 +558,11 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every peer.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
@@ -1184,6 +1189,14 @@ func startServer(ctx context.Context) {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every
+	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
+	// login audit records, so gin's trust-everything default would let any
+	// caller pick its own address.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	// Note: common.GinLogger() is registered inside router.Setup so the

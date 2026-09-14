@@ -3,6 +3,11 @@ general:
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380
+  # Proxies whose X-Forwarded-For / X-Real-IP headers the Go API server trusts
+  # when resolving the client address (agent webhook ip_whitelist, login audit).
+  # Defaults to loopback, i.e. the nginx bundled in this image; list the
+  # addresses or CIDRs of any additional proxy in front of it.
+  # trusted_proxies: ['127.0.0.0/8', '::1/128']
 admin:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9381

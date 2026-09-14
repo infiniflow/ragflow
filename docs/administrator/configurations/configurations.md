@@ -150,6 +150,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
 - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `trusted_proxies`: The proxy IPs or CIDRs whose `X-Forwarded-For` / `X-Real-IP` headers the Go API server trusts when resolving the client address (used by the agent webhook `ip_whitelist` and login audit records). Defaults to loopback (`['127.0.0.0/8', '::1/128']`), i.e. the nginx bundled in the Docker image; add the address of any further proxy placed in front of it.
 
 ### `mysql`
 
