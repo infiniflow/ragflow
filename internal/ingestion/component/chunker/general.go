@@ -162,6 +162,16 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	if len(units) == 0 {
 		return emptyOutputs(), nil
 	}
+	primaryPattern := compileDelimPattern(c.param.Delimiters)
+	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	units = splitGeneralUnits(units, primaryPattern)
+	if !hasCustomDelim(c.param.Delimiters) {
+		units = mergeGeneralUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
+	}
+	units = finalizeGeneralChunks(units, childrenPattern)
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
 	return chunkOutputs(units), nil
 }
 
