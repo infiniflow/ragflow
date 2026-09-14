@@ -117,6 +117,40 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	}
 }
 
+func TestTagVocabularyFromBytes(t *testing.T) {
+	// Each line is [content, tags]; the tags column may hold a comma-separated
+	// list, which requires quoting (or a tab delimiter) to survive CSV parsing.
+	csv := []byte("\"some content\",\"finance,urgent\"\n\"other content\",\"finance\"\n\"just a line\",\"legal\"")
+	vocab, err := TagVocabularyFromBytes(csv, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"finance": 2, "urgent": 1, "legal": 1}
+	if len(vocab) != len(want) {
+		t.Fatalf("vocab=%v want=%v", vocab, want)
+	}
+	for tag, c := range want {
+		if vocab[tag] != c {
+			t.Fatalf("tag %q count=%d want=%d", tag, vocab[tag], c)
+		}
+	}
+
+	// Dots in tags are normalized to underscores, matching the extractor.
+	csv2 := []byte("\"x\",\"Alpha.Beta\"\n\"y\",\"Alpha.Beta\"")
+	vocab2, err := TagVocabularyFromBytes(csv2, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vocab2["Alpha_Beta"] != 2 {
+		t.Fatalf("expected Alpha_Beta=2, got %v", vocab2)
+	}
+
+	// Unsupported extension is rejected.
+	if _, err := TagVocabularyFromBytes([]byte("x"), "tags.pdf"); err == nil {
+		t.Fatal("expected error for unsupported extension")
+	}
+}
+
 func TestExtractorTags_ComponentRegistration(t *testing.T) {
 	factory, cat, md, ok := runtime.DefaultRegistry.Lookup(componentNameExtractor)
 	if !ok {

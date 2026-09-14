@@ -733,6 +733,63 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 	}
 }
 
+// TagVocabularyFromBytes is the storage/DAO-free core of
+// TagVocabularyFromTagFileID. It parses a tag source file's raw bytes (mirroring
+// rag/app/tag.py's chunk format) and returns the vocabulary as tag -> number of
+// source examples that mention the tag. Note: the Go tag extractor
+// (matchAndTagChunk) DOES write tag_kwd onto chunks at parse time, but this
+// vocabulary is the authoritative selectable-tag list for the Go backend (the
+// tag-options/aggregation API sources the list from the tag source file, not
+// from chunk usage).
+func TagVocabularyFromBytes(data []byte, filename string) (map[string]int, error) {
+	labels, err := parseTagSourceByFilename(data, filename)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, lbl := range labels {
+		for _, t := range lbl.Tags {
+			t = strings.TrimSpace(strings.ReplaceAll(t, ".", "_"))
+			if t != "" {
+				counts[t]++
+			}
+		}
+	}
+	return counts, nil
+}
+
+// TagVocabularyFromTagFileID loads a tag source file (parser_config.tags.tag_file_id)
+// and returns the tag vocabulary it defines. It is the Go-native source of the
+// selectable-tag list surfaced by the tag-options API. Although the Go tag
+// extractor (matchAndTagChunk) writes tag_kwd onto chunks during parsing, the
+// selectable-tag list is taken from this vocabulary (the tag source file), not
+// from chunk usage.
+//
+// It returns (nil, nil) when tagFileID is empty.
+func TagVocabularyFromTagFileID(ctx context.Context, tagFileID string) (map[string]int, error) {
+	if tagFileID == "" {
+		return nil, nil
+	}
+	common.Info(fmt.Sprintf("tag_vocab: loading tag source file_id=%q", tagFileID))
+	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, tagFileID)
+	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
+		return nil, fmt.Errorf("tag source file %q not found: %w", tagFileID, err)
+	}
+	common.Info(fmt.Sprintf("tag_vocab: file_id=%q name=%q parent_id=%q location=%q",
+		tagFileID, f.Name, f.ParentID, *f.Location))
+	stg := resolveStorage()
+	if stg == nil {
+		return nil, fmt.Errorf("tag source file %q: no storage backend registered", tagFileID)
+	}
+	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
+	data, err := stg.Get(ctx, f.ParentID, *f.Location, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("load tag source file %q/%q: %w", f.ParentID, *f.Location, err)
+	}
+	common.Info(fmt.Sprintf("tag_vocab: file_id=%q loaded %d bytes", tagFileID, len(data)))
+	return TagVocabularyFromBytes(data, f.Name)
+}
+
 func parseCSVTagSource(text string) []schema.TagLabel {
 	return parseCSVTagSourceBytes([]byte(text))
 }
