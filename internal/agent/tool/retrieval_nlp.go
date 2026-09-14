@@ -93,12 +93,24 @@ type NLPRetrievalAdapter struct {
 	enhancer            retrievalEnhancer
 }
 
+// ResolvedModel is what a modelConfigResolver returns: the provider objects
+// plus the two token limits, kept apart because they are not
+// interchangeable. MaxTokens is the generation cap; ContextLength is the
+// model's context window, the budget a prompt is fitted to.
+type ResolvedModel struct {
+	Driver        modelModule.ModelDriver
+	Name          string
+	APIConfig     *modelModule.APIConfig
+	MaxTokens     int
+	ContextLength int
+}
+
 type modelConfigResolver func(
 	ctx context.Context,
 	tenantID string,
 	modelType entity.ModelType,
 	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+) (*ResolvedModel, error)
 
 type knowledgebaseLookup interface {
 	GetByIDs(ctx context.Context, sqlDB *gorm.DB, ids []string) ([]*entity.Knowledgebase, error)
@@ -188,11 +200,18 @@ func (a *NLPRetrievalAdapter) resolveModelConfig(
 	tenantID string,
 	modelType entity.ModelType,
 	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+) (*ResolvedModel, error) {
 	if a == nil || a.modelConfigResolver == nil {
-		return nil, "", nil, 0, fmt.Errorf("retrieval: model config resolver is not configured")
+		return nil, fmt.Errorf("retrieval: model config resolver is not configured")
 	}
-	return a.modelConfigResolver(ctx, tenantID, modelType, modelRef)
+	resolved, err := a.modelConfigResolver(ctx, tenantID, modelType, modelRef)
+	if err != nil {
+		return nil, err
+	}
+	if resolved == nil {
+		return nil, fmt.Errorf("retrieval: model config resolver returned no model")
+	}
+	return resolved, nil
 }
 
 // Search implements RetrievalService. The translation rules live
@@ -500,30 +519,27 @@ func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
 	}
 
 	var (
-		driver    modelModule.ModelDriver
-		modelName string
-		apiConfig *modelModule.APIConfig
-		maxTokens int
-		err       error
+		resolved *ResolvedModel
+		err      error
 	)
 	switch {
 	case kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "":
-		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
+		resolved, err = a.resolveModelConfig(
 			ctx, kb.TenantID, entity.ModelTypeEmbedding, *kb.TenantEmbdID,
 		)
 	case strings.TrimSpace(kb.EmbdID) != "":
-		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
+		resolved, err = a.resolveModelConfig(
 			ctx, kb.TenantID, entity.ModelTypeEmbedding, kb.EmbdID,
 		)
 	default:
-		driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
+		resolved, err = a.resolveModelConfig(
 			ctx, kb.TenantID, entity.ModelTypeEmbedding, "",
 		)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve embedding model for dataset %s: %w", kb.ID, err)
 	}
-	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens), nil
+	return modelModule.NewEmbeddingModel(resolved.Driver, &resolved.Name, resolved.APIConfig, resolved.MaxTokens), nil
 }
 
 func (a *NLPRetrievalAdapter) resolveChatModel(
@@ -539,13 +555,19 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	if a == nil {
 		return nil, fmt.Errorf("retrieval: model resolver is not configured")
 	}
-	driver, modelName, apiConfig, _, err := a.resolveModelConfig(
+	resolved, err := a.resolveModelConfig(
 		ctx, tenantID, entity.ModelTypeChat, "",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve default chat model: %w", err)
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+	chatModel := modelModule.NewChatModel(resolved.Driver, &resolved.Name, resolved.APIConfig)
+	// The metadata filter renders the dataset's whole value space into its
+	// prompt, so it needs the model's context window to decide whether that
+	// prompt can be sent at all. A window that cannot be resolved stays 0, which
+	// message fitting reads as the 8192 default.
+	chatModel.ContextLength = resolved.ContextLength
+	return chatModel, nil
 }
 
 func (a *NLPRetrievalAdapter) resolveRerankModel(
@@ -559,20 +581,13 @@ func (a *NLPRetrievalAdapter) resolveRerankModel(
 	if a == nil || a.modelConfigResolver == nil {
 		return nil, fmt.Errorf("retrieval: model resolver is not configured")
 	}
-	var (
-		driver    modelModule.ModelDriver
-		modelName string
-		apiConfig *modelModule.APIConfig
-		maxTokens int
-		err       error
-	)
-	driver, modelName, apiConfig, maxTokens, err = a.resolveModelConfig(
+	resolved, err := a.resolveModelConfig(
 		ctx, tenantID, entity.ModelTypeRerank, req.RerankID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve rerank model: %w", err)
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
+	return modelModule.NewRerankModel(resolved.Driver, &resolved.Name, resolved.APIConfig, resolved.MaxTokens), nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.
