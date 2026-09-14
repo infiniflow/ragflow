@@ -12,6 +12,7 @@ package mindmap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -140,7 +141,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 //   - each node (including the root) → an entity product (kind="entity",
 //     name = node id, type = "mindmap").
 //   - each parent→child edge → a relation product (kind="relation",
-//     from = parent id, to = child id, type = "related" — Python's default).
+//     from = parent id, to = child id, type = "related", matching Python's
+//     mindmap structure-graph projection).
 //
 // The entity/relation discriminator is carried in Meta["kind"] so the consumer's
 // mergeStructureDataset buckets entities by (name,type) and relations by
@@ -157,7 +159,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 		DocID:    docID,
 		TenantID: tenantID,
 		Variant:  common.VariantMindmap,
-		Content:  root.ID,
+		Content:  payloadJSON(map[string]any{"name": root.ID, "type": "mindmap"}),
 		Meta: map[string]any{
 			"kind":        "entity",
 			"name":        root.ID,
@@ -188,7 +190,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 					DocID:    docID,
 					TenantID: tenantID,
 					Variant:  common.VariantMindmap,
-					Content:  child.ID,
+					Content:  payloadJSON(map[string]any{"name": child.ID, "type": "mindmap"}),
 					Meta: map[string]any{
 						"kind":        "entity",
 						"name":        child.ID,
@@ -203,7 +205,11 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 				DocID:    docID,
 				TenantID: tenantID,
 				Variant:  common.VariantMindmap,
-				Content:  p.parent + " related " + child.ID,
+				Content: payloadJSON(map[string]any{
+					"source": p.parent,
+					"target": child.ID,
+					"type":   "related",
+				}),
 				Meta: map[string]any{
 					"kind":          "relation",
 					"from":          p.parent,
@@ -216,6 +222,16 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 		}
 	}
 	return out
+}
+
+// payloadJSON serializes the graph payload stored in content_with_weight.
+// Structure-graph projection expects entity and relation content to be JSON.
+func payloadJSON(payload map[string]any) string {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func chunkTexts(chunks []common.Chunk) []string {

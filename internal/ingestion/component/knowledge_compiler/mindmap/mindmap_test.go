@@ -1,6 +1,7 @@
 package mindmap
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -58,6 +59,13 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 		switch kind {
 		case "entity":
 			entCount++
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(p.Content), &payload); err != nil {
+				t.Fatalf("entity %q content is not JSON: %v", p.Meta["name"], err)
+			}
+			if payload["name"] != p.Meta["name"] || payload["type"] != "mindmap" {
+				t.Errorf("entity payload = %v, want name=%v and type=mindmap", payload, p.Meta["name"])
+			}
 			if p.Meta["entity_type"] != "mindmap" {
 				t.Errorf("entity %v type = %v, want mindmap", p.Meta["name"], p.Meta["entity_type"])
 			}
@@ -68,6 +76,13 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 			relCount++
 			from, _ := p.Meta["from"].(string)
 			to, _ := p.Meta["to"].(string)
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(p.Content), &payload); err != nil {
+				t.Fatalf("relation %q content is not JSON: %v", p.Meta["name"], err)
+			}
+			if payload["source"] != from || payload["target"] != to || payload["type"] != "related" {
+				t.Errorf("relation payload = %v, want source=%v target=%v type=related", payload, from, to)
+			}
 			fromTo[from+"->"+to] = true
 			if p.Meta["relation_type"] != "related" {
 				t.Errorf("relation %v->%v type = %v, want related", from, to, p.Meta["relation_type"])
