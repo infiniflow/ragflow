@@ -1,7 +1,7 @@
 // for the dataset list
 // The data structures returned by the `datasets` interface and `/api/v1/datasets/{id}` are inconsistent.
 
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
 
 export interface IConnector {
@@ -133,7 +133,10 @@ export interface IKnowledgeFile {
   process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
-  run: RunningStatus; // parsing status
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus; // parsing status
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string; // enabled
