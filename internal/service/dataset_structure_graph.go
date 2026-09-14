@@ -848,9 +848,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 	}
 
-	// RAPTOR summary graph blob (compile_kwd = raptor_graph).
-	s.appendRaptorBlob(ctx, in.TenantID, in.DatasetID, in.DocumentID, grouped)
-
 	// Order: configured templates first, then discovered.
 	orderedIDs := []string{}
 	for _, tid := range configuredIDs {
@@ -1083,23 +1080,27 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[
 		if bucketKind == "" {
 			bucketKind = kindVal
 		}
-		return map[string]interface{}{
+		bucket := map[string]interface{}{
 			"template_id":   tid,
 			"template_name": bucketName,
 			"kind":          bucketKind,
-		}, graphBucketScope(documentID, map[string]interface{}{
+		}
+		scope := graphBucketScope(documentID, map[string]interface{}{
 			"compilation_template_ids": []string{tid},
 		})
+		return bucket, scope
 	}
 	bucketID := "legacy:" + compileKwd
-	return map[string]interface{}{
+	legacyBucket := map[string]interface{}{
 		"template_id":   bucketID,
 		"template_name": "Legacy (" + compileKwd + ")",
 		"kind":          kindVal,
-	}, graphBucketScope(documentID, map[string]interface{}{
+	}
+	legacyScope := graphBucketScope(documentID, map[string]interface{}{
 		"compile_kwd": []string{compileKwd},
 		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
 	})
+	return legacyBucket, legacyScope
 }
 
 func graphBucketScope(documentID string, scope map[string]interface{}) map[string]interface{} {
@@ -1131,33 +1132,6 @@ func rowTemplateID(row map[string]interface{}) string {
 		}
 	}
 	return ""
-}
-
-func (s *DatasetArtifactService) appendRaptorBlob(ctx context.Context, tenantID, datasetID, documentID string, grouped map[string]DocumentStructureGraphTemplate) {
-	rows, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "content_with_weight", "compile_kwd"},
-		map[string]interface{}{"doc_id": []string{documentID}, "compile_kwd": []string{"raptor_graph"}}, nil, 0, 16, nil)
-	if err != nil {
-		return
-	}
-	for _, row := range rows {
-		payload := graphLoadPayload(row)
-		if payload == nil {
-			continue
-		}
-		rEntities, _ := payload["entities"].([]interface{})
-		rRelations, _ := payload["relations"].([]interface{})
-		if len(rEntities) == 0 && len(rRelations) == 0 {
-			continue
-		}
-		rb, ok := grouped["raptor"]
-		if !ok {
-			rb = DocumentStructureGraphTemplate{TemplateID: "raptor", TemplateName: "RAPTOR Summary", Kind: "raptor"}
-			grouped["raptor"] = rb
-		}
-		rb.Entities = append(rb.Entities, toNodeSlice(rEntities)...)
-		rb.Relations = append(rb.Relations, toRelationSlice(rRelations)...)
-		grouped["raptor"] = rb
-	}
 }
 
 func toNodeSlice(in []interface{}) []StructureGraphNode {

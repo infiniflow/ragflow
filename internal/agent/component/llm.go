@@ -1401,6 +1401,12 @@ func validateFittedMessages(msgFit []schema.Message) string {
 	return ""
 }
 
+// FitMessages exposes message_fit_in semantics (LLM.fit_messages, PR #16413)
+// for packages that compose final-answer prompts outside the agent loop.
+func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
+	return fitMessages(systemPrompt, msgs, maxLength)
+}
+
 // fitMessages calls message_fit_in semantics on the given messages and
 // validates that the result ends with a non-empty user turn. Returns the
 // fitted messages and an error string (empty on success).
