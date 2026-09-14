@@ -2,13 +2,15 @@
 
 package native
 
-// Integration tests run the real ONNX models on the committed test crops and
-// compare the Go output against golden JSON produced by the Python reference
-// scripts (ref_dla.py / ref_tsr.py / ref_ocr_rec.py). They require MODEL_DIR
-// (the DeepDoc model directory: layout.onnx, tsr.onnx, rec.onnx, ocr.res) and a
-// usable ONNX Runtime. ONNX Runtime is linked statically (libonnxruntime.a)
-// and resolved via dlopen(NULL) from the running binary, so no ORT_LIB / .so
-// is needed.
+// Integration tests run the real FlatBuffer (.ort) models on the committed test
+// crops and compare the Go output against golden JSON produced by the Python
+// reference scripts (ref_dla.py / ref_tsr.py / ref_ocr_rec.py). They require
+// MODEL_DIR (the DeepDoc model directory: layout.ort, tsr.ort, rec.ort, ocr.res)
+// and a usable ONNX Runtime. ONNX Runtime is linked statically
+// (libonnxruntime.a) and resolved via dlopen(NULL) from the running binary, so
+// no ORT_LIB / .so is needed. The Go backend consumes .ort only (the static
+// build drops the protobuf .onnx parser); the .onnx weights remain on the
+// Python side.
 //
 // Run with:
 //   MODEL_DIR=... go test -tags integration ./native/...
@@ -68,11 +70,11 @@ func skipIfNoModels(t *testing.T) {
 // and regenerate every golden fixture against the new snapshot in the same
 // change (see /tmp/gen_corpus.py and ref_*.py).
 var modelSnapshotHashes = map[string]string{
-	"det.onnx":    "30a86f5731181461d08021402766601e4302a9b9b9666be8aff402696339cdff",
-	"layout.onnx": "de401c03ee30b1c120416dc06f0705237f0c36d3cdb692c9bfefe8a8f98a4b70",
-	"tsr.onnx":    "1585f88015c60209f16a079a26d944afca790ab7022fe7d0574113ccb9a6f9b4",
-	"rec.onnx":    "1c7cf60de2afd728d512f4190cf37455092b45f06175365c6fc58d8cd7e2a68b",
-	"ocr.res":     "28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7",
+	"det.ort":    "fd62614cbae0b073aa203b2393081e641826ecfc85414669458506d91e23c095",
+	"layout.ort": "55e3e5743ba2f2a03879578ac818089afa32bdedda51159d340bc2eec968b030",
+	"tsr.ort":    "24930ee6d025dc8e5c17587713d74a7d665d3ca8a464df015afb6e939af0d2f7",
+	"rec.ort":    "a6eb83a8943d2dca6de8e1393420904bddd4dded455d72ca177ade63b56533d0",
+	"ocr.res":    "28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7",
 }
 
 func sha256File(path string) (string, error) {

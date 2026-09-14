@@ -30,6 +30,7 @@ interface IProps extends IModalProps<any> {
   documentId: string;
   chunk: {
     docnm_kwd?: string;
+    document_keyword?: string;
     document_name?: string;
     positions?: number[][];
     content_with_weight?: string;
@@ -53,7 +54,8 @@ const PdfDrawer = ({
   );
   // const ref = useRef<(highlight: IHighlight) => void>(() => {});
   // const [loaded, setLoaded] = useState(false);
-  const documentName = chunk.docnm_kwd || chunk.document_name;
+  const documentName =
+    chunk.document_keyword || chunk.docnm_kwd || chunk.document_name;
   const fileType = documentName ? getFileExtensionRegex(documentName) : '';
   const isWebPage = !fileType && !!chunk.document_url;
   const url = isWebPage ? (chunk.document_url as string) : getDocumentUrl();

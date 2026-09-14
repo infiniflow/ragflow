@@ -22,7 +22,7 @@ from api.db.services.file_service import FileService
 from api.utils import validation_utils
 from common import settings
 from common.constants import TaskStatus
-from api.utils.api_utils import get_error_data_result, server_error_response, get_parser_config
+from api.utils.api_utils import get_error_data_result, server_error_response, get_parser_config, strip_graphrag_raptor_config
 from api.utils.validation_utils import UpdateDocumentReq
 from rag.nlp import rag_tokenizer, search
 
@@ -282,7 +282,7 @@ def _process_key_mappings(doc):
     for key, value in items:
         new_key = key_mapping.get(key, key)
         renamed_doc[new_key] = value
-    return renamed_doc
+    return strip_graphrag_raptor_config(renamed_doc)
 
 
 def _process_run_mapping(doc, run_status):

@@ -311,15 +311,16 @@ func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string
 	}
 }
 
-func TestBuildRetrievalFusionExprKeepsLegacyWeightsOutsideInfinity(t *testing.T) {
+func TestBuildRetrievalFusionExprKeepsPythonWeightsOutsideInfinity(t *testing.T) {
 	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
 
-	if got := expr.FusionParams["weights"]; got != "0.05,0.95" {
-		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
+	// Python Dealer.search's non-Infinity branch (rag/nlp/search.py:265).
+	if got := expr.FusionParams["weights"]; got != "0.001,1" {
+		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
 	}
 }
 
-func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
+func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
 	if GetQueryBuilder() == nil {
 		globalQueryBuilder = NewQueryBuilder()
 	}
@@ -350,7 +351,7 @@ func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
 	}
-	if got := fusionExpr.FusionParams["weights"]; got != "0.05,0.95" {
-		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
+	if got := fusionExpr.FusionParams["weights"]; got != "0.001,1" {
+		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
 	}
 }

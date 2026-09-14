@@ -450,6 +450,16 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		"model": *modelName,
 		"input": request.Texts,
 	}
+	// Python JinaMultiVecEmbed sends task="retrieval.passage" in encode and
+	// "retrieval.query" in encode_queries, but only for the v3/v4 models
+	// ("if 'v3' in model_name or 'v4' in model_name"); earlier models take none.
+	if strings.Contains(*modelName, "v3") || strings.Contains(*modelName, "v4") {
+		if request.Query {
+			reqBody["task"] = "retrieval.query"
+		} else {
+			reqBody["task"] = "retrieval.passage"
+		}
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {

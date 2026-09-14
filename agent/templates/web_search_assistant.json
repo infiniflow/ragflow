@@ -266,7 +266,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "kb_ids": [],
+                        "dataset_ids": [],
                         "retrieval_from": "dataset",
                         "keywords_similarity_weight": 0.7,
                         "outputs": {
@@ -278,9 +278,9 @@
                         "query": "Agent:ThreePathsDecide@content",
                         "rerank_id": "",
                         "similarity_threshold": 0.2,
-                        "top_k": 1024,
                         "top_n": 8,
-                        "use_kg": false
+                        "use_kg": false,
+                        "rerank_candidates_count": 64
                     }
                 },
                 "upstream": [
@@ -617,7 +617,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {

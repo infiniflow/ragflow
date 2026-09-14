@@ -17,6 +17,9 @@
 package models
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,7 +154,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocrv2.json", "paddleocr_local.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -172,6 +175,17 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
+	monkeyOCRv2 := pm.FindProvider("MonkeyOCRv2")
+	if monkeyOCRv2 == nil {
+		t.Fatal("MonkeyOCRv2 provider not found")
+	}
+	if _, ok := monkeyOCRv2.ModelDriver.(*MonkeyOCRv2Model); !ok {
+		t.Fatalf("MonkeyOCRv2 ModelDriver=%T, want *models.MonkeyOCRv2Model", monkeyOCRv2.ModelDriver)
+	}
+	if monkeyOCRv2.URLSuffix.DocumentParse != "parse" {
+		t.Errorf("MonkeyOCRv2 doc_parse suffix=%q", monkeyOCRv2.URLSuffix.DocumentParse)
+	}
+
 	paddleOCR := pm.FindProvider("PaddleOCR.local")
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR.local provider not found")
@@ -181,6 +195,37 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
 		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestModelFactoryCreatesMonkeyOCRv2Driver(t *testing.T) {
+	driver, err := NewModelFactory().CreateModelDriver("MonkeyOCRv2", map[string]string{"default": "http://localhost:8000"}, URLSuffix{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver.Name() != "monkeyocrv2" {
+		t.Fatalf("driver.Name()=%q", driver.Name())
+	}
+}
+
+func TestMonkeyOCRv2DriverVerifiesNativeParseEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/openapi.json" {
+			t.Fatalf("path=%q", request.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"paths":{"/parse":{}}}`))
+	}))
+	defer server.Close()
+
+	driver := NewMonkeyOCRv2Model(map[string]string{"default": server.URL}, URLSuffix{})
+	if _, err := driver.OCRFile(context.Background(), nil, nil, nil, &APIConfig{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	driver = NewMonkeyOCRv2Model(nil, URLSuffix{})
+	apiKey := `{"MONKEYOCRV2_SERVER_URL":"` + server.URL + `"}`
+	if err := driver.CheckConnection(context.Background(), &APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Fatalf("environment-provisioned API config: %v", err)
 	}
 }
 

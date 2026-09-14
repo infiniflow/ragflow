@@ -92,6 +92,10 @@ func validateDynamicParams(component string, params map[string]any) error {
 		return validateVariableAggregatorGroups(component, params)
 	case "userfillup":
 		return validateInputOptions(component, params)
+	case "exesql":
+		if err := validateExeSQLParams(params); err != nil {
+			return fmt.Errorf("[%s] %w", component, err)
+		}
 	}
 	return nil
 }

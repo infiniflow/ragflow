@@ -54,6 +54,16 @@ _EMPTY_STRIKES = 2
 _NEAR_DUP_JACCARD = 0.8
 _RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
 
+# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Deliberately
+# LARGER than _SCA_VIEW_CAP (=60) in agentic_rag_graph.py so storage and review stay
+# DECOUPLED: the pool accumulates while the SCA reads a ranked top-60 view. Coupling them
+# at 60 starved the raw-evidence channel in 42% of rounds (every admit rejected -> status
+# REDUNDANT -> playbook told the model to vary the query -> it re-searched for nothing).
+_EVIDENCE_POOL_CAP = 120
+# Per-process flag so the "pool FULL" log line is emitted once per fill, not once
+# per rejected chunk. The pool never shrinks mid-session, so no reset is needed.
+_EVIDENCE_POOL_STATE = {"full_logged": False}
+
 
 def _search_tokens(q: str) -> set[str]:
     """Lowercased alphanumeric tokens of a query for near-duplicate detection."""
@@ -189,10 +199,11 @@ _RETRIEVE_TOOL_SPEC = {
     "function": {
         "name": "retrieve",
         "description": (
-            "Keyword-first search of the fixed document corpus. Pass natural-"
-            "language queries; returns SHORT snippets of the most relevant "
-            "passages (exact-term matched where possible). Use multiple queries "
-            "to cover different aspects. Supports 1-3 queries per call."
+            "WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets."
+            "DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document."
+            "ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there."
+            "IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch."
         ),
         "parameters": {
             "type": "object",
@@ -214,10 +225,11 @@ _LIST_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "list_chunks",
         "description": (
-            "Deep-read the FULL text of one document by doc_id (returned in "
-            "retrieve snippets). Use for enumeration / count / arithmetic answers "
-            "when snippets are insufficient. Returns all chunks of the document "
-            "in reading order. One doc_id per call."
+            "WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result."
+            "DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first)."
+            "ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result. ONLY doc_id is accepted; there is no chunk_ids argument, and the tool returns the whole document (capped at 30 chunks)."
+            "OUTPUT: All chunks of the document in reading order. ok = new evidence; redundant = already in pool."
+            "IF IT FAILS: An unknown or blank doc_id yields an empty result (query-level miss, not a dataset fact) — pick a different doc_id or locate one first. Do not treat this as a reason to disable the tool."
         ),
         "parameters": {
             "type": "object",
@@ -237,18 +249,13 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "SEMANTIC retrieval (hybrid vector+BM25) with COMPILED-STRUCTURE "
-            "EXPANSION. Use as the PRIMARY recall tool when exact-term "
-            "``retrieve`` returns nothing useful, or when the dataset is large and "
-            "you are unsure which document holds the answer — the answer passage "
-            "may share NO surface words with the query. "
-            "Compiled expansion: automatically appends related chunks from the "
-            "dataset's compiled structure (page index, tree/heading hierarchy, "
-            "knowledge graph, wiki pages when present) so a semantic hit carries "
-            "its structural neighbours (parent/child headings, sibling pages). "
-            "If the dataset has NO compiled structure (incl. no wiki), expansion "
-            "is a no-op — no error, just semantic hits. "
-            "Returns snippet chunks ranked by relevance. 1-2 queries per call."
+            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). "
+            "DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours appended. "
+            "Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. "
+            "ok = new evidence; redundant = already seen."
+            "IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it."
         ),
         "parameters": {
             "type": "object",
@@ -272,11 +279,11 @@ _WEB_SEARCH_TOOL_SPEC = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the open WEB. Use ONLY when the needed fact is world "
-            "knowledge / recent event / not covered by the fixed corpus — e.g. "
-            "a current event, a person's alive-now status, or a statistic newer "
-            "than the corpus. If the fact plausibly lives in the documents, "
-            "prefer corpus tools (retrieve/search_chunks) first. 1-2 queries per call."
+            "WHEN TO CALL: The needed fact is world knowledge, a recent event, or newer than the corpus (a current event, a person's alive-now status, a fresh statistic). This tool only appears when a web provider is configured."
+            "DO NOT CALL: When the fact plausibly lives in the fixed corpus — prefer retrieve or search_chunks first. For corpus-only questions this tool is unavailable."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Web results shaped like corpus chunks, merged into the same evidence pool."
+            "IF IT FAILS: error (no provider) — it will not appear at all this session; if it does appear and fails, switch to corpus tools permanently and do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -298,23 +305,11 @@ _NAVIGATE_TREE_TOOL_SPEC = {
     "function": {
         "name": "navigate_tree",
         "description": (
-            "LOCATE the RIGHT DOCUMENT among MANY before deep-reading. Use it "
-            "BEFORE search_chunks when the dataset is large and you have no "
-            "doc_id yet — it routes by TOPIC/CLUSTERING similarity over the "
-            "compiled document-navigation tree (not exact surface words), so it "
-            "finds the document even when your query words differ from its text. "
-            "Returns candidate doc_ids + a first-chunk summary of each. "
-            "This is the FIRST hop of a navigation chain: "
-            "navigate_tree(query) -> doc_id -> navigate_structure(doc_id, ...) "
-            "-> list_chunks(doc_id, chunk_ids). "
-            "Use when: the question names a topic/entity/alias but you do not "
-            "know which document discusses it; search_chunks returned scattered "
-            "hits across many docs and you must pick the source. "
-            "Do NOT use if you already hold a doc_id (go straight to "
-            "navigate_structure) or if the answer is likely a single exact "
-            "passage (prefer retrieve/search_chunks). "
-            "If the dataset has no compiled document navigation tree, it returns "
-            "empty — fall back to search_chunks."
+            "WHEN TO CALL: The question names a topic, entity, or alias but you do NOT know which document discusses it, especially on a large corpus. Routes by topic or cluster similarity over the compiled navigation tree."
+            "DO NOT CALL: When you already hold a doc_id (go straight to navigate_structure); when the answer is likely a single exact passage (use retrieve or search_chunks)."
+            "ARGUMENTS: query — string, the topic / entity / alias whose document(s) to locate. Note: keywords is read by the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Candidate doc_ids plus a first-chunk summary of each; these become your known-docs set for the next step."
+            "IF IT FAILS: empty (no_structure) means the dataset has no compiled navigation tree — immediately switch to search_chunks. A second such empty disables this tool for the rest of the session, so do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -334,18 +329,12 @@ _NAVIGATE_STRUCTURE_TOOL_SPEC = {
     "function": {
         "name": "navigate_structure",
         "description": (
-            "PINPOINT A PASSAGE inside ONE document using its compiled structure "
-            "(heading/catalog tree, concept mindmap, or entity graph) — the "
-            "in-document counterpart of navigate_tree. "
-            "Use AFTER you know the doc_id (from navigate_tree / search_chunks / "
-            "retrieve) and need to find where the answer lives WITHOUT reading "
-            "every chunk. Returns the structure outline annotated with matching "
-            "chunk_ids (reading-order aware). Then call list_chunks(doc_id, "
-            "chunk_ids) to read exactly those. "
-            "kind: 'catalog' (default) for page-index/heading/timeline trees, "
-            "'mindmap' for concept maps, 'graph' for entity-relation graphs. "
-            "If the document has NO compiled structure, an empty <doc/> is "
-            "returned — fall back to list_chunks to read the full document."
+            "WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree."
+            "DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document)."
+            "ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind)."
+            "OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. [claim] lines carry VERBATIM quotes from the document — cite them and answer WITHOUT calling list_chunks when they directly answer the query (deep-read the claimed chunk ids only for surrounding context or numbers the quotes lack). "
+            "ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable."
+            "IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session."
         ),
         "parameters": {
             "type": "object",
@@ -364,19 +353,11 @@ _CALCULATE_TOOL_SPEC = {
     "function": {
         "name": "calculate",
         "description": (
-            "COMPUTE a numeric answer by generating and safely running code. "
-            "MANDATORY whenever the question asks you to DERIVE a number by "
-            "combining facts you found (sum/difference/percentage/ratio/sort/"
-            "compare/difference in length/age, price, area, growth, etc.) — do "
-            "NOT do arithmetic mentally. Language-neutral: the question and "
-            "facts may be in ANY language (English, Chinese, ...); pass the "
-            "numbers verbatim as written in the evidence regardless of language. "
-            "Steps: (1) collect every needed number first (retrieve / "
-            "search_chunks / navigate_* / list_chunks); (2) call calculate with "
-            "the question + ALL those numbers; (3) report the computed result "
-            "verbatim. If a needed number is missing, search for it first — do "
-            "not estimate. If the answer IS one of the stated numbers (no "
-            "combination needed), answer directly without this tool."
+            "WHEN TO CALL: The question asks you to DERIVE a number by combining facts you found (sum / difference / percentage / ratio / sort / compare / length / age / price / area / growth). NEVER do arithmetic mentally."
+            "DO NOT CALL: When the answer IS one of the stated numbers (no combination needed) — answer directly. When a needed number is still missing — retrieve it first; do not estimate."
+            "ARGUMENTS: question — string, the user question verbatim. facts — array of strings, the numbers or facts found in evidence, verbatim (keep the original language; pass them exactly as written)."
+            "OUTPUT: an object with expression and result — report the computed result verbatim."
+            "IF IT FAILS: poor (no numeric answer derivable) — retrieve more numbers, or answer directly if the answer is already stated. Never fabricate a computation."
         ),
         "parameters": {
             "type": "object",
@@ -485,10 +466,10 @@ def _disable_tool(tools, name: str) -> None:
             disabled = set()
             try:
                 tools._disabled_tools = disabled
-            except Exception:  # tools may be frozen/slots in tests
+            except Exception:  # tools may be frozen/slots in tests  # noqa: BLE001
                 return
         disabled.add(name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not mark tool %r disabled", name, exc_info=True)
 
 
@@ -536,13 +517,13 @@ def extract_json(text: str):
                     candidate = text[start : j + 1]
                     try:
                         return json.loads(candidate, strict=False)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     try:
                         import json_repair
 
                         return json_repair.loads(candidate)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         break  # invalid object; try the next "{"
         i = start + 1
     return None
@@ -566,7 +547,7 @@ def extract_tag(text: str, tag: str):
             want = {"new_states"} if tag == "state" else {"answer", "new_state"}
             if isinstance(obj, dict) and (keys & want):
                 return frag.strip()
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
     return None
 
@@ -602,7 +583,7 @@ def apply_patch(base: State, branch_patches: list) -> State | None:
             try:
                 nv.candidate_strength = min(max(float(pv["candidate_strength"]), 0.0), 1.0)
                 changed = True
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         if isinstance(pv.get("discovered_clues"), list):
             nv.discovered_clues.extend(str(c)[:160] for c in pv["discovered_clues"][-4:])
@@ -629,10 +610,25 @@ def _seed_evidence(tools):
         kbinfos = {}
         try:
             tools.kbinfos = kbinfos
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     kbinfos.setdefault("chunks", [])
     return kbinfos
+
+
+def _claim_covered_ids(kbinfos) -> set:
+    """Chunk ids already represented verbatim by a claim pseudo-chunk in the pool.
+
+    A claim carries its own verbatim quote plus the ids of the chunks it was
+    distilled from, so admitting those passages again is duplicate payload: the
+    answer material is already in the pool at a fraction of the size.
+    """
+    covered: set = set()
+    for c in kbinfos.get("chunks") or []:
+        if str(c.get("chunk_id") or "").startswith("claim_"):
+            for cid in c.get("source_chunk_ids") or []:
+                covered.add(str(cid))
+    return covered
 
 
 def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) -> bool:
@@ -652,10 +648,31 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
     """
+    # Early-stop: the shared evidence pool is hard-capped. Once it reaches the
+    # cap, admit no further chunk. The cap is deliberately ABOVE _SCA_VIEW_CAP
+    # (60): the SCA reads a ranked view while the pool accumulates, so extra
+    # admits still reach the view via ranking. Coupling them at 60 starved the
+    # raw channel in 42% of rounds (admits rejected -> REDUNDANT -> re-search).
+    _pool = kbinfos.get("chunks", []) if isinstance(kbinfos, dict) else (getattr(kbinfos, "chunks", []) or [])
+    if len(_pool) >= _EVIDENCE_POOL_CAP:
+        if not _EVIDENCE_POOL_STATE["full_logged"]:
+            _EVIDENCE_POOL_STATE["full_logged"] = True
+            _LOG.info(
+                "[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.",
+                len(_pool),
+                _EVIDENCE_POOL_CAP,
+            )
+        return False
+
     from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id, _is_table_chunk
 
     cid = _chunk_id(c)
     if cid in seen:
+        return False
+    # Already in the pool as a claim's verbatim quote -> skip the full passage.
+    # Table chunks are exempt: their answer rows survive only in full text.
+    if not _is_table_chunk(c) and cid in _claim_covered_ids(kbinfos):
+        _LOG.debug("[Action Session] skip chunk %s: already covered by a claim", cid)
         return False
     seen.add(cid)
     ids.append(cid)
@@ -679,6 +696,73 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     return False
 
 
+# Claim hits REPLACE the chunk search for that query (not stack on top of it):
+# a claim's verbatim evidence is the answer material, and echoing the same
+# passages as chunk snippets burns tokens without adding information.  Flip to
+# False for the additive behaviour (claims first, chunks after).
+_CLAIM_PREFETCH_EXCLUSIVE = True
+
+
+async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tuple:
+    """Framework-automatic claim-first prefetch for every corpus search.
+
+    KB-wide KNN over claim rows; matched claims (with their verbatim evidence)
+    lead the search output AND enter the shared evidence pool as pseudo-chunks,
+    so the model sees and can cite them without having chosen
+    navigate_structure — retrieval priority must not rest on the model's tool
+    pick.  Best effort: any failure returns empty and the search proceeds
+    exactly as before.
+    """
+    import hashlib
+
+    if not query:
+        return [], []
+    try:
+        from rag.advanced_rag.harness.tools.navigation import (
+            _STRUCT_CLAIM_EVIDENCE_CHARS,
+            dataset_has_compilation,
+            recall_dataset_claims,
+        )
+
+        # No compiled rows at all -> no claim rows can exist.  Skip the recall
+        # instead of issuing legs that come back empty on every single turn.
+        if not await dataset_has_compilation(tools):
+            return [], []
+        claims = await recall_dataset_claims(tools, query)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[Action Session] claim prefetch failed", exc_info=True)
+        return [], []
+    entries: list = []
+    new_ids: list = []
+    for c in claims:
+        cid = "claim_" + hashlib.md5(f"{c['doc_id']}:{c['name']}".encode("utf-8", "ignore")).hexdigest()[:12]
+        if cid in kb_seen:
+            continue
+        content = f"[claim #{c.get('rank') or '?'}] {c['name']}"
+        if c.get("description") and c["description"] != c["name"]:
+            content += f" — {c['description']}"
+        if c.get("quote"):
+            content += f'\nEvidence (verbatim): "{str(c["quote"])[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+        doc_id = c.get("doc_id") or ""
+        entries.append({"id": cid, "content": content[:1200], "doc_id": doc_id})
+        new_ids.append(cid)
+        kb_seen.add(cid)
+        # Enter the shared pool as a pseudo-chunk so the compose stage can cite
+        # the verbatim evidence directly (search-context parity with chunks).
+        # source_chunk_ids ride along so a later deep-read of the underlying
+        # chunk can retire this pseudo-chunk (its quote would then duplicate
+        # the full text already in the pool).
+        kbinfos["chunks"].append({"chunk_id": cid, "content_with_weight": content, "doc_id": doc_id, "source_chunk_ids": c["chunk_ids"]})
+    _LOG.info(
+        "[Claim] prefetch q=%r -> recalled=%d new=%d (exclusive=%s)",
+        str(query)[:60],
+        len(claims or []),
+        len(new_ids),
+        _CLAIM_PREFETCH_EXCLUSIVE,
+    )
+    return entries, new_ids
+
+
 async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
     """Run a corpus search fn per query and admit hits to output + evidence pool.
 
@@ -695,11 +779,22 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     new_evidence = 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
+    # Claim-first, MUTUALLY EXCLUSIVE: when claims hit, their verbatim evidence
+    # IS the answer material — shipping 20 chunk snippets on top would echo the
+    # same passages a second time and burn tokens.  Claims carry their chunk
+    # pointers, so deep-reading stays one list_chunks away.  No hits → chunk
+    # search runs exactly as before.
+    claim_entries, claim_ids = await _claim_prefetch(tools, (queries or [""])[0], kbinfos, kb_seen)
+    out.extend(claim_entries)
+    ids.extend(claim_ids)
+    new_evidence += len(claim_ids)
+    if claim_entries and _CLAIM_PREFETCH_EXCLUSIVE:
+        return out, ids, new_evidence
     for fq in queries[:max_q]:
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
@@ -752,10 +847,10 @@ async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) 
     """Semantic retrieval (hybrid vector+BM25, narrow bypass) — the react-style
     channel that finds passages sharing NO surface words with the query.
 
-    ``use_compiled=True`` (high mode) turns on hybrid_search's COMPILED
-    expansion: page-index / tree / knowledge-graph / wiki pages (when the
-    dataset has them) are appended to a semantic hit so its structural
-    neighbours (parent/child headings, sibling wiki pages) come along.
+    ``use_compiled=True`` (enabled in ALL modes, not just high) turns on
+    hybrid_search's COMPILED expansion: page-index / tree / knowledge-graph /
+    wiki pages (when the dataset has them) are appended to a semantic hit so its
+    structural neighbours (parent/child headings, sibling wiki pages) come along.
     Datasets with NO compiled structure are unaffected — expansion is a no-op.
     """
     from rag.advanced_rag.harness.tools.search import hybrid_search
@@ -794,7 +889,7 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
             web_res = provider.retrieve_chunks(q)
             if asyncio.iscoroutine(web_res) or hasattr(web_res, "__await__"):
                 web_res = await web_res
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] web_search failed for %r", q, exc_info=True)
             continue
         for c in ((web_res or {}).get("chunks") or [])[:8]:
@@ -817,7 +912,7 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
 
     try:
         res = await list_chunks(tools, doc_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] list_chunks failed doc=%r", doc_id, exc_info=True)
         return ToolOutcome(payload=[], status=ERROR, reason="infra")
     out, ids, new_ev = [], [], 0
@@ -830,6 +925,13 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
             continue
         if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
             new_ev += 1
+    # A deep-read COVERS its claims: once the full chunk text is in the pool,
+    # the claim's 1200-char quote of the same passage is duplicated tokens in
+    # every later prompt. Retire claim pseudo-chunks whose source chunk was
+    # just read — the claim already did its job (it pointed here).
+    read_ids = set(ids)
+    if read_ids:
+        kbinfos["chunks"] = [c for c in kbinfos["chunks"] if not (str(c.get("chunk_id") or "").startswith("claim_") and read_ids.intersection(c.get("source_chunk_ids") or []))]
     return _search_outcome(out, ids, new_ev)
 
 
@@ -854,7 +956,7 @@ def _inject_nav_tools_ref(tools) -> None:
         import rag.advanced_rag.harness.tools.navigation as _nav
 
         _nav._tools_ref["tools"] = tools
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not inject navigation tools ref", exc_info=True)
 
 
@@ -868,9 +970,17 @@ async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
     routing falls through at ``_NAV_MIN_DOC_SCORE``, which is query-dependent,
     not a statement about the dataset.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Dataset-level fact, not a per-query miss: with no compiled rows every
+    # navigation leg comes back empty, so short-circuit instead of paying for it.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[{"kind": "navigate_tree", "note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead."}],
+            status=EMPTY,
+            reason="no_structure",
+        )
     query = str(args.get("query") or "")
     res = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
     if res.empty_reason:
@@ -895,9 +1005,19 @@ async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     As with navigate_tree, classification only — ``_tool_node`` decides whether
     to disable.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Same dataset-level gate as navigate_tree: without compiled rows the
+    # in-document drill has nothing to walk.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[
+                {"kind": "navigate_structure", "doc_id": str(args.get("doc_id") or ""), "note": "This dataset has no compiled document structure; use search_chunks / retrieve / list_chunks instead."}
+            ],
+            status=EMPTY,
+            reason="no_structure",
+        )
     doc_id = str(args.get("doc_id") or "")
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")
@@ -948,7 +1068,7 @@ async def _exec_calculate(tools, args: dict) -> ToolOutcome:
         return ToolOutcome(payload=[{"kind": "calculate", "error": "no model"}], status=ERROR, reason="infra")
     try:
         res = await compute_from_facts(mdl, question, facts)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] calculate failed", exc_info=True)
         res = None
     if not res:
@@ -977,7 +1097,7 @@ async def _exec_graph_explore(tools, args: dict) -> ToolOutcome:
     doc_scope = [str(d) for d in (args.get("doc_scope") or []) if str(d).strip()]
     try:
         res = await graph_explore(tools, query, doc_scope=doc_scope or None)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] graph_explore failed", exc_info=True)
         res = {}
     answer = str(res.get("answer") or "").strip()
@@ -1059,7 +1179,7 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         client = mdl.async_client
         chat_obj = getattr(client, "chat", client)
         completions = getattr(chat_obj, "completions", chat_obj)
-        create = getattr(completions, "create")
+        create = getattr(completions, "create")  # noqa: B009
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
@@ -1117,7 +1237,7 @@ def _parse_tool_calls(msg) -> list:
         raw_args = fn.arguments if fn else "{}"
         try:
             args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else (raw_args or {})
-        except Exception:
+        except Exception:  # noqa: BLE001
             args = {}
         if not isinstance(args, dict):
             args = {}
@@ -1491,7 +1611,7 @@ async def _finalize_node(state: _SessionState) -> dict:
             _LOG.info("[Action Session] answer salvaged from exhausted session")
         elif new_states:
             _LOG.info("[Action Session] %d branch(es) salvaged from exhausted session", len(new_states))
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session] salvage call failed")
 
     # Loose-clue harvest (deterministic, zero-LLM): even when every JSON
@@ -1706,7 +1826,7 @@ async def _run_drill_merge(tools, ctx: _NavContext, available: set, budget_s: fl
             try:
                 async with asyncio.timeout(max(5.0, budget_s or _NAV_PREFIX_CALL_TIMEOUT_S)):
                     s_oc = await execute_tool(tools, "navigate_structure", {"doc_id": doc_id, "query": ctx.direction, "kind": "catalog"})
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOG.warning("[Action Session] drill structure load failed doc=%s", doc_id, exc_info=True)
                 continue
             for d in s_oc.evidence_ids:
@@ -1807,7 +1927,7 @@ def _nav_tool_surface(tools) -> set:
     """Tools this session may call, or an empty set when it cannot be resolved."""
     try:
         return {s["function"]["name"] for s in _active_tool_specs(tools)}
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not resolve the tool surface", exc_info=True)
         return set()
 
@@ -1882,7 +2002,7 @@ async def _run_nav_chain(
             else:
                 async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
                     oc = await execute_tool(tools, rule.tool, rule.args(ctx))
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] nav chain step %r failed", rule_id, exc_info=True)
             break
 
@@ -2009,7 +2129,7 @@ async def run_action_session(
     if _NAV_RULES_ENABLED:
         try:
             prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] navigation prefix failed; continuing with the plain loop", exc_info=True)
     if prefix_msgs:
         _LOG.info(
@@ -2045,7 +2165,7 @@ async def run_action_session(
     }
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session] session failed")
         return Result(messages=[], new_states=[])
     return Result(
@@ -2072,9 +2192,28 @@ async def _init_chat(tools, system: str, user: str, tmo: float) -> str:
             return str(ans or "")
     except TimeoutError:
         _LOG.warning("[Action Session:init] timed out (%ds)", tmo)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session:init] failed")
     return ""
+
+
+def _init_retry_timeout(first_tmo: float, deadline_left: float | None) -> float:
+    """Budget for the slot-table decomposition retry.
+
+    The first attempt uses the official ``_INIT_TIMEOUT_S`` (45s) bound. If the
+    model is slower than that (deepseek-v4-flash: 40-80s/turn), the retry needs a
+    longer window to actually produce a slot table — otherwise both attempts
+    time out and the table degrades to one answer slot. Never exceed the first
+    bound's cap plus a 2x ceiling, and never overrun the session deadline:
+
+    - floor: the first attempt's budget (never shrink below what already failed),
+    - ceiling: 2x the first attempt, capped at a generous 90s absolute upper
+      bound,
+    - deadline: leave at least 5s of the round budget for the rest of the session.
+    """
+    if not deadline_left or deadline_left <= 0:
+        return min(2 * first_tmo, 90.0)
+    return max(first_tmo, min(2 * first_tmo, 90.0, deadline_left - 5.0))
 
 
 async def initialize_state(tools, question, fanout_hint, deadline_left=None):
@@ -2085,12 +2224,32 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     if fanout_hint:
         user += "\n\nCandidate aspects already identified:\n" + "\n".join(f"- {h}" for h in fanout_hint)
     tmo = min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)
+
+    # ``_init_chat`` runs on the raw model (it bypasses CountingChatModel like
+    # ``_base_chat_mdl`` does), so the slot-table decomposition call would be
+    # invisible to the phase accounting.  Count it explicitly.
+    def _book_raw_call() -> None:
+        try:
+            from rag.advanced_rag.harness.stats import record_external_call
+
+            record_external_call(None)
+        except Exception:  # noqa: BLE001
+            pass
+
     raw = await _init_chat(tools, system, user, tmo)
+    _book_raw_call()
     data = extract_json(raw) or {}
     if not data:
         # one quick retry — transient provider stalls were observed (45s with
         # zero bytes); a second attempt succeeded in production logs.
-        raw = await _init_chat(tools, system, user, tmo)
+        # Give the retry a longer budget than the first attempt: on slow models
+        # (deepseek-v4-flash, 40-80s/turn) a 45s bound times out both times and
+        # the slot table degrades to a single answer slot — losing the second
+        # hop of a multi-hop question (observed: Q86 170526). Still clamped by
+        # the session deadline so the retry cannot overrun the round budget.
+        retry_tmo = _init_retry_timeout(tmo, deadline_left)
+        raw = await _init_chat(tools, system, user, retry_tmo)
+        _book_raw_call()
         data = extract_json(raw) or {}
     slots = []
     for i, s in enumerate(data.get("slots") or []):

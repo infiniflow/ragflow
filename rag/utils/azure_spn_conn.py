@@ -80,14 +80,14 @@ class RAGFlowAzureSpnBlob:
                 return None
         return None
 
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         blob = f"{bucket}/{fnm}"
         try:
             self.conn.delete_file(f"{blob}")
         except Exception:
             logging.exception(f"Fail rm {blob}")
 
-    def get(self, bucket, fnm):
+    def get(self, bucket, fnm, tenant_id=None):
         blob = f"{bucket}/{fnm}"
         for _ in range(1):
             try:
@@ -100,13 +100,13 @@ class RAGFlowAzureSpnBlob:
                 time.sleep(1)
         return None
 
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, fnm, tenant_id=None):
         blob = f"{bucket}/{fnm}"
         try:
             client = self.conn.get_blob_client(f"{blob}")
             return client.exists()
         except Exception:
-            logging.exception(f"Fail put {blob}")
+            logging.exception(f"Fail obj_exist {blob}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):

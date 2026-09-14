@@ -46,7 +46,7 @@ _LOG = logging.getLogger(__name__)
 # or a page index. ``_compilation_template_kind`` in the API folds page_index
 # and knowledge_graph into "timeline"; RAPTOR is its own bucket and is
 # inherently tree-like, so it counts too.
-_CATALOG_KINDS = {"tree", "timeline", "raptor", "page_index", "pageindex"}
+_CATALOG_KINDS = {"tree", "timeline", "page_index", "pageindex"}
 
 # Compiled-structure kinds that describe the document's *concepts*.
 _MINDMAP_KINDS = {"mindmap", "mind_map"}
@@ -99,11 +99,20 @@ class NavResult:
 
 
 def _normalize_kind(kind) -> str:
-    """Mirror the API's kind normalization (page_index/knowledge_graph -> timeline)."""
+    """Normalize a compile-template kind.
+
+    ``page_index`` keeps its own identity.  It used to fold into ``timeline``,
+    which made tree and page_index indistinguishable at the read sites even
+    though they carry different row shapes (graph blob vs per-entity rows).
+    ``knowledge_graph`` still folds into ``timeline`` — that is the legacy
+    marker the catalog kind set is built around.
+    """
     if not isinstance(kind, str):
         return ""
     normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+    if normalized in {"pageindex", "page_index"}:
+        return "page_index"
+    if normalized == "knowledge_graph":
         return "timeline"
     return normalized
 
@@ -177,22 +186,22 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     # may also have entity/relation rows. Read BOTH and merge so navigation works
     # regardless of which shape a given compile type produced.
     rows: dict = {}
-    rows.update(await _query({"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]}, 1000))
+    # The compact graph blob (knowledge_graph_kwd="graph") is gone from the
+    # storage model: tree compilation now writes the same per-row shape as
+    # page_index, so this single entity/relation query covers every compiled
+    # doc.
     rows.update(
         await _query(
             {"doc_id": [doc_id], "knowledge_graph_kwd": ["entity", "relation"]},
             3000,
         )
     )
-    rows.update(await _query({"doc_id": [doc_id], "compile_kwd": ["raptor_graph"]}, 16))
 
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
         compile_kwd = row.get("compile_kwd") or ""
         kind = _normalize_kind(row.get("compilation_template_kind_kwd") or compile_kwd)
-        if compile_kwd == "raptor_graph":
-            kind = "raptor"
         if kind not in kinds:
             continue
         try:
@@ -659,14 +668,20 @@ _NAV_MIN_DOC_SCORE = 0.2  # drop docs below this score
 async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[tuple[str, str]]:
     """Descend the compiled nav TREE and return ``(doc_id, summary)`` pairs.
 
-    Uses ``mode="navigation_tree"`` (BFS beam descent: root cluster → sub-clusters
-    → nav_doc leaves) rather than a flat sweep over every nav_doc row. Routing
-    through the hierarchy narrows the field level by level, which is what makes it
-    accurate on large datasets where many document summaries look alike in a flat
-    comparison.
+    Uses ``mode="navigation_tree"``, which routes through the dataset's claim
+    rows when the compiler produced any and falls back to raw-chunk aggregation
+    otherwise. The choice lives server-side and is driven by what the dataset
+    actually contains, so this function is agnostic to which leg ran.
 
-    HYBRID descent (vector + BM25): both the KNN legs and the ``_text_score``
-    gates stay armed. A pure-vector descent was tried — it dropped the text legs
+    Flat routing is deliberate. A BFS beam descent narrows the field level by
+    level, and a wrong pick at the first level cannot be undone — the correct
+    branch was already pruned and never reaches the comparison. Nav rows embed
+    ``graph_text`` (the document's full entity/relation listing), so they are
+    discriminating enough to be compared directly without the cluster levels
+    narrowing them for us.
+
+    HYBRID sweep (vector + BM25): both the KNN legs and the ``_text_score``
+    gates stay armed. A pure-vector routing was tried — it dropped the text legs
     and the ``_text_score > 0`` gate, on the theory that routing cares about
     semantic matches a summary never spells out. It regressed routing badly:
     scores collapsed onto the dense leg alone, the descent fell below
@@ -709,6 +724,10 @@ async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: l
                 "navigation_tree",
                 top_k=_NAV_SEARCH_MAX_DOCS,
                 doc_scope=list(allowed_docs) or None,
+                # Agentic rag routes by claims: atomic propositions with
+                # verbatim evidence decide the ranking, raw-chunk aggregation
+                # is the fallback. The artifacts UI keeps main's tree descent.
+                router="claim_agg",
             )
         except Exception:
             _LOG.exception("[Dataset navigation search] search_dataset_layers failed for kb=%s", kb.id)
@@ -742,9 +761,10 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     descending the dataset's compiled navigation tree.
 
     Routes through :func:`_nav_search_titled`, which runs
-    ``search_dataset_layers`` with ``mode="navigation_tree"``: a hybrid BFS beam
-    descent (vector + BM25) from the root clusters down to the ``nav_doc``
-    leaves, with the ``_text_score`` gates armed.
+    ``search_dataset_layers`` with ``mode="navigation_tree"``: claim rows first
+    (hybrid vector + BM25), falling back to raw-chunk aggregation when the
+    dataset has no claim rows. Which leg runs is decided server-side by what the
+    dataset contains, so this function does not depend on it.
 
     Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
     ``[]`` when no question/keywords are given or the search returns nothing.
@@ -963,8 +983,12 @@ async def _navigate_structure_impl(
     structure of the requested kind, an empty <doc/> is returned (no error) — fall
     back to list_chunks / search_chunks.
 
-    This tool performs NO chat-LLM calls: it only reads the compiled structure
-    rows from the doc store.
+    Cost: the structure rows themselves are read from the doc store. When the
+    document's nodes carry their own embeddings (page_index), the whole TOC is
+    additionally handed to the chat model once, so it can pick the relevant
+    sections — see ``_STRUCT_TOC_LLM_SELECT``. That pass is a single call per
+    document, and an empty or failed result falls through to local scoring, so
+    the tool still works without a chat model.
 
     :param query: REQUIRED: the question/topic (used to route to a document when
         ``doc_id`` is not given).
@@ -1008,12 +1032,14 @@ async def _navigate_structure_impl(
 
     parts = [f'<structure_navigation count="{len(structures)}" query="{_xml_escape(query)}" kind="{_xml_escape(kind)}">']
     total_entities = 0
+    total_claims = 0
     total_ptrs = 0
     best_score = 0.0
     all_chunk_paths: dict[str, str] = {}
     for i, s in enumerate(structures):
         stats = s.get("stats") or {}
         total_entities += len(s.get("entities") or [])
+        total_claims += int(stats.get("claim_hits") or 0)
         total_ptrs += int(stats.get("chunk_ptrs") or 0)
         best_score = max(best_score, float(stats.get("top_score") or 0.0))
         for cid, path in (s.get("chunk_paths") or {}).items():
@@ -1023,6 +1049,8 @@ async def _navigate_structure_impl(
         outline = s["outline"]
         if outline:
             parts.append(f"    <structure>{_xml_escape(outline)}</structure>")
+        if int((s.get("stats") or {}).get("claim_hits") or 0) >= _STRUCT_CLAIM_SUFFICIENT_HITS:
+            parts.append("    <claims_sufficient/>")
         parts.append("  </doc>")
     parts.append("</structure_navigation>")
     return NavResult(
@@ -1032,7 +1060,11 @@ async def _navigate_structure_impl(
         chunk_ptrs=total_ptrs,
         top_score=round(best_score, 4),
         chunk_paths=all_chunk_paths,
-        empty_reason="no_structure" if total_entities == 0 else "",
+        # A document whose compiler wrote claims but no tree nodes (an offline
+        # batch can produce claim rows alone) still renders a claim-first
+        # outline — counting only entities here would throw that output away
+        # and the session would strike the tool as "no compiled structure".
+        empty_reason="no_structure" if (total_entities == 0 and total_claims == 0) else "",
     )
 
 
@@ -1043,7 +1075,7 @@ def _structure_kinds_for(kind: str) -> set:
     if k in ("mindmap", "mind_map", "concept"):
         return set(_MINDMAP_KINDS)
     if k in ("graph", "kg", "entity", "ontology"):
-        return {"graph", "ontology", "entity", "raptor"}
+        return {"graph", "ontology", "entity"}
     return set(_CATALOG_KINDS)
 
 
@@ -1056,10 +1088,74 @@ _STRUCT_VEC_BEAM_RATIO = 0.5  # vector beam: drop nodes below best*this similari
 _STRUCT_MAX_NODES = 10  # cap on nodes rendered in the outline.
 _STRUCT_MAX_CHUNKS = 4  # cap on chunk snippets returned in the outline.
 _STRUCT_DESC_SNIPPET = 180  # cap on a node's description snippet in the outline.
+# Chunks recalled per document when a tree cannot score its own nodes and the
+# chunk index has to choose instead.  Wide enough that several nodes can be
+# covered, so the outline is not pinned to a single branch.
+_STRUCT_RECALL_TOP_N = 24
+# Snippets rendered on that path.  Higher than _STRUCT_MAX_CHUNKS because there
+# the chunks *are* the answer's material — the outline is only the annotation.
+_STRUCT_MAX_CHUNK_HITS = 8
+# Document-in-LLM selection (PageIndex tree-search / VecTree-RAG Layer 1): the
+# whole TOC is handed to the model at once and it returns every node it thinks
+# is relevant.  This is deliberately NOT a top-down descent — the model sees all
+# levels simultaneously, so a wrong pick cannot prune a branch, which is the
+# failure mode beam descent has (SCT measures it as routing accuracy 20.2% vs
+# 39.3% for flat selection).
+# OFF by default.  Correct in principle — the model sees every level at once, so
+# nothing is pruned — but it costs one chat call per document, and the drill rung
+# calls navigate_structure once per routed document (8 docs = 8 extra calls per
+# question).  Measured 2026-09-02: with it on, per-question LLM calls went 9-17
+# -> 37 and the 180s research budget was exhausted on 15 of 16 questions
+# (baseline: 1 of 28).  Turn it on only when the LLM has headroom; prefer
+# restricting it to the top-ranked document first.
+_STRUCT_TOC_LLM_SELECT = False
+# Budget for the serialized TOC.  VecTree-RAG quotes 200-500 tokens per document
+# for section summaries; facts are included here too, so this allows more.
+# _ask_nav_select truncates past this via message_fit_in regardless.
+_STRUCT_TOC_MAX_NODES = 120
+_STRUCT_TOC_DESC_SNIPPET = 120
+_STRUCT_TOC_MAX_DEPTH = 6
 # Snippet length / per-doc cap for the related chunks appended after a
 # search_chunks hit (from the document's compiled structure, not a full read).
 _STRUCT_RELATED_SNIPPET_CHARS = 300
 _STRUCT_RELATED_MAX_PER_DOC = 4
+
+# --- claim/evidence leg -------------------------------------------------
+# Claim rows (entity_type_kwd="claim", written by the tree compiler) carry their
+# own vector and their verbatim evidence. Matching them is FLAT: every claim is
+# scored directly against the query, so a bad early pick cannot prune the subtree
+# holding the answer — the failure mode SCT measured for top-down descent
+# (20.2% vs 39.3% routing accuracy). Beam descent stays as the fallback.
+_STRUCT_CLAIM_LEG = True
+_STRUCT_CLAIM_TOP_N = 8  # claims rendered per document
+_STRUCT_CLAIM_EVIDENCE_CHARS = 1200  # cap on the rendered verbatim quote.
+# 1200 over 600: the quote must be self-sufficient in ONE shot — a thin quote
+# makes the SCA judge the context insufficient, and one extra re-search turn
+# costs a full 10k+-token prompt, far more than the ~600 extra chars per claim.
+# Claim-first: when claims hit, they REPLACE the drill-down instead of layering
+# on top of it.  A claim is an atomic proposition scored flat against the query
+# and it carries its own verbatim evidence, so a hit already is the answer
+# material — descending the tree (or recalling chunks to choose for it) can only
+# re-derive what the claim states, and every descent step is another chance to
+# prune the branch holding the answer (SCT: first-level routing 20.2% vs 39.3%
+# for flat).  The tree still does the one job left: labelling where each claim
+# sits.  Drill-down becomes the fallback for documents without claim hits.
+_STRUCT_CLAIM_FIRST = True
+# Fewest claim hits that justify skipping the drill.  Raising it makes a weak
+# claim set fall back to the old path instead of answering from thin evidence.
+_STRUCT_CLAIM_FIRST_MIN_HITS = 1
+# Claim hits are threshold-free: hybrid recall (BM25 + KNN, RRF-fused) returns
+# the store's best-matching claims and the top-N ARE the hit set — ranks need no
+# cross-leg score calibration, and a similarity cut was the wrong tool (the
+# right rank depends on the query, not on a global constant).  "Sufficiency" is
+# likewise a COUNT, not a score: enough distinct claims matching the query means
+# the model may cite them without deep-reading chunks.  Benchmark-tunable.
+_STRUCT_CLAIM_SUFFICIENT_HITS = 3
+
+# page_index spreads facts across TOC levels, so scoring every node at once beats
+# descending level by level (same reason as the claim leg). Falls back to beam.
+_STRUCT_FLAT_NODE_SELECT = True
+_STRUCT_FLAT_TOP_N = 10
 
 
 async def _embed_query(tools_slot, query: str):
@@ -1112,23 +1208,11 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
         fields.append(vec_field)
 
     try:
-        # Same dual-shape logic as _load_compiled_structure: RAPTOR/tree writes a
-        # compact graph blob (knowledge_graph_kwd="graph"), while page_index /
-        # pipeline-Compiler tree write per-entity rows (knowledge_graph_kwd="entity").
-        # Read BOTH so vector beam descent works for either shape.
+        # Tree compilation now writes the same per-row shape as page_index
+        # (per-entity rows with their own vectors), so one entity query covers
+        # every compiled doc -- no graph-blob leg, and beam descent gets a real
+        # per-node vector for tree docs too.
         res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            {"doc_id": [doc_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [kb_id],
-        )
-        res2 = await thread_pool_exec(
             settings.docStoreConn.search,
             fields,
             [],
@@ -1141,7 +1225,6 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
             [kb_id],
         )
         rows = settings.docStoreConn.get_fields(res, fields) or {}
-        rows.update(settings.docStoreConn.get_fields(res2, fields) or {})
     except Exception:
         _LOG.exception("[navigate_structure] _load_entities_with_vectors failed for doc=%s", doc_id)
         return []
@@ -1207,7 +1290,47 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
                 relations = structure.get("relations") or []
         except Exception:
             _LOG.exception("[navigate_structure] structure load failed for doc=%s", doc_id)
-        outline, stats, chunk_paths = await _render_toc_drilldown(query, qvec, entities, relations)
+
+        # Selection strategies, in priority order: claims when they hit, then
+        # whatever the tree's own shape supports (the claim leg reads compiled
+        # rows, so it is available for either shape).
+        hits: list[tuple[str, float]] = []
+        selected: list[str] = []
+        claim_hits: list[dict] = []
+        if _STRUCT_CLAIM_LEG:
+            claim_hits = await _recall_claim_hits(tools_slot, query, qvec, doc_id, kinds, _STRUCT_CLAIM_TOP_N)
+
+        # Claim-first: the claims decide, so nothing is drilled and no chunks are
+        # recalled to choose.  See _STRUCT_CLAIM_FIRST.
+        if _STRUCT_CLAIM_FIRST and len(claim_hits) >= _STRUCT_CLAIM_FIRST_MIN_HITS:
+            pass
+        elif entities and _has_distinct_node_vectors(entities):
+            # page_index / per-node embeddings: the nodes can be scored directly.
+            # Handing the whole TOC to the model sees every level at once, but it
+            # costs one chat call per document; scoring every node here costs
+            # nothing extra and is equally immune to an early bad pick.
+            if _STRUCT_TOC_LLM_SELECT:
+                selected = await _select_toc_nodes(tools_slot, query, entities, relations)
+            if not selected and _STRUCT_FLAT_NODE_SELECT:
+                selected = _flat_select_nodes(qvec, entities, _STRUCT_FLAT_TOP_N)
+        else:
+            # RAPTOR blob path: every node shares the blob's one embedding, so
+            # beam descent would select arbitrarily.  Let the chunk index choose
+            # and keep the tree for labelling where the chosen chunks sit.
+            hits = await _recall_chunk_ids_in_doc(tools_slot, query, doc_id, _STRUCT_RECALL_TOP_N)
+
+        outline, stats, chunk_paths = await _render_toc_drilldown(
+            query,
+            qvec,
+            entities,
+            relations,
+            chunk_hits=hits or None,
+            selected=selected or None,
+            claim_hits=claim_hits or None,
+        )
+        if claim_hits:
+            stats["claim_hits"] = len(claim_hits)
+            _publish_claim_hits(tools_slot, claim_hits, doc_id)
         out.append(
             {
                 "doc_id": doc_id,
@@ -1286,6 +1409,622 @@ def _cosine(a, b):
         return float(np.dot(aa, bb) / denom)
     except Exception:
         return 0.0
+
+
+def _vecs_equal(a, b) -> bool:
+    """Whether two node embeddings are the same vector."""
+    try:
+        if a is b:
+            return True
+        la, lb = list(a), list(b)
+        if len(la) != len(lb):
+            return False
+        # Distinct embeddings diverge long before the tail; a prefix compare is
+        # enough and keeps this cheap on 1024-dim vectors.
+        return all(x == y for x, y in zip(la[:16], lb[:16]))
+    except Exception:
+        return False
+
+
+def _has_distinct_node_vectors(entities: list[dict]) -> bool:
+    """Whether nodes carry per-node embeddings rather than one shared vector.
+
+    The RAPTOR/tree main path persists a single graph blob, so every node
+    inherits that blob's one vector (see ``_load_entities_with_vectors``) and
+    beam scoring degenerates: every node gets the same cosine, the top-K is
+    whatever the row order happened to be, and the drill carries no signal.
+    page_index and the pipeline Compiler write one row per entity with its own
+    embedding, so their trees do discriminate.
+    """
+    first = None
+    for e in entities:
+        v = e.get("_vec")
+        if v is None:
+            continue
+        if first is None:
+            first = v
+        elif not _vecs_equal(first, v):
+            return True
+    # Either no node has a vector, or they all share one — neither discriminates.
+    return False
+
+
+async def _recall_chunk_ids_in_doc(tools, query: str, doc_id: str, top_n: int) -> list[tuple[str, float]]:
+    """Hybrid chunk retrieval confined to one document, as ``[(chunk_id, score)]``.
+
+    Used when a compiled tree cannot score its own nodes: the chunk index then
+    decides *which* nodes matter, and the tree is left to label where they sit.
+    """
+    if not query or not doc_id:
+        return []
+    from common import settings
+
+    target_ids = getattr(tools, "kb_ids", None) or []
+    if not target_ids:
+        return []
+    embd_mdl = getattr(tools, "embed_mdl", None)
+    try:
+        kbinfos = await settings.retriever.retrieval(
+            query,
+            embd_mdl,
+            getattr(tools, "tenant_ids", None),
+            target_ids,
+            1,
+            top_n,
+            0.0,
+            vector_similarity_weight=0.3 if embd_mdl else 0,
+            doc_ids=[str(doc_id).strip()],
+            highlight=False,
+            # RAPTOR cluster nodes live in the chunk index (rechunk_kwd=tree, no
+            # compile_kwd), so they survive this filter and stay retrievable —
+            # which is the point, since they are the structure.
+            must_not={"exists": "compile_kwd"},
+        )
+    except Exception:
+        _LOG.exception("[navigate_structure] chunk recall failed for doc=%s", doc_id)
+        return []
+    hits: list[tuple[str, float]] = []
+    for c in kbinfos.get("chunks", []):
+        cid = str(c.get("chunk_id") or c.get("id") or "").strip()
+        if cid:
+            hits.append((cid, float(c.get("similarity") or 0.0)))
+    return hits
+
+
+def _parse_claim_row(row: dict) -> dict | None:
+    """Extract one claim hit from a store row. ``None`` when the row is not a
+    usable claim (bad payload, unnamed, or no chunk pointer)."""
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return None
+    ids = row.get("source_chunk_ids") or payload.get("source_chunk_ids") or []
+    if isinstance(ids, str):
+        ids = [ids]
+    chunk_ids = [str(c).strip() for c in ids if str(c).strip()]
+    if not chunk_ids:
+        return None
+    quote = ""
+    for ev in payload.get("evidence") or []:
+        if isinstance(ev, dict) and str(ev.get("quote") or "").strip():
+            quote = str(ev["quote"]).strip()
+            break
+    return {
+        "name": name,
+        "description": str(payload.get("description") or "").strip(),
+        "quote": quote,
+        "doc_id": str(row.get("doc_id") or "").strip(),
+        "chunk_ids": chunk_ids,
+        "score": float(row.get("similarity") or 0.0),
+    }
+
+
+def _rrf_fuse(*legs: list[dict], k: int = 60) -> list[dict]:
+    """Reciprocal-rank fusion across retrieval legs (BM25 + KNN).
+
+    RRF consumes ranks only, so hybrid claim search carries NO similarity
+    threshold to calibrate — the store's best-matching claims fuse into one
+    ordering regardless of which leg found them.  Each fused hit keeps its
+    best leg score (diagnostics) and gains a 1-based ``rank``.
+    """
+    best: dict[tuple, dict] = {}
+    fused_score: dict[tuple, float] = {}
+    for leg in legs:
+        for rank, hit in enumerate(leg):
+            key = (hit.get("doc_id") or "", hit["name"])
+            fused_score[key] = fused_score.get(key, 0.0) + 1.0 / (k + rank + 1)
+            cur = best.get(key)
+            if cur is None or hit.get("score", 0.0) > cur.get("score", 0.0):
+                best[key] = hit
+    fused = sorted(best.values(), key=lambda h: fused_score[(h.get("doc_id") or "", h["name"])], reverse=True)
+    for i, hit in enumerate(fused):
+        hit["rank"] = i + 1
+    return fused
+
+
+# Memo for _recall_claim_hits, keyed by (doc_id, query). The drill calls it once
+# per routed doc and the model re-issues navigate_structure, so the same
+# (doc, query) pair recurs within a session; each miss costs two store
+# round-trips (BM25 + KNN). Same TTL/cap policy as _CLAIM_PREFETCH_CACHE.
+_STRUCT_CLAIM_HITS_CACHE: dict = {}
+
+
+def _publish_claim_hits(tools_slot, claim_hits: list, doc_id: str) -> int:
+    """Mirror navigate_structure's claim hits into the shared evidence pool.
+
+    navigate_structure renders its claims into the outline, so the model sees
+    them - but the SCA, the slot prefill and the final compose all read ONLY the
+    pool, so a claim that already states the fact was invisible to every
+    downstream consumer and the answer stage went back to raw chunks. Publishing
+    the same pseudo-chunk the session prefetch writes (identical id scheme, so a
+    claim found by either path is one entry) fixes that, and lets the
+    claim-vs-chunk dedup in _admit_evidence retire passages a claim already
+    quotes verbatim. Pure addition: no retrieval is suppressed.
+    """
+    import hashlib
+
+    pool = getattr(tools_slot, "kbinfos", None)
+    if not isinstance(pool, dict) or not claim_hits:
+        return 0
+    try:
+        chunks = pool.setdefault("chunks", [])
+        known = {str(c.get("chunk_id") or "") for c in chunks}
+        added = 0
+        for h in claim_hits or []:
+            name = str(h.get("name") or "").strip()
+            if not name:
+                continue
+            cid = "claim_" + hashlib.md5(f"{doc_id}:{name}".encode("utf-8", "ignore")).hexdigest()[:12]
+            if cid in known:
+                continue
+            content = f"[claim #{h.get('rank') or '?'}] {name}"
+            desc = str(h.get("description") or "").strip()
+            if desc and desc != name:
+                content += f" \u2014 {desc}"
+            quote = ""
+            for ev in h.get("evidence") or []:
+                if isinstance(ev, dict) and str(ev.get("quote") or "").strip():
+                    quote = str(ev["quote"]).strip()
+                    break
+            if quote:
+                content += f'\nEvidence (verbatim): "{quote[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+            src = str(h.get("chunk_id") or "").strip()
+            chunks.append(
+                {
+                    "chunk_id": cid,
+                    "content_with_weight": content[:1200],
+                    "doc_id": doc_id,
+                    "source_chunk_ids": [src] if src else [],
+                }
+            )
+            known.add(cid)
+            added += 1
+        if added:
+            _LOG.info("[navigate_structure] published %d claim(s) to the evidence pool (doc=%s)", added, doc_id)
+        return added
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[navigate_structure] claim publish failed (doc=%s)", doc_id, exc_info=True)
+        return 0
+
+
+async def _recall_claim_hits(
+    tools_slot,
+    query: str,
+    qvec,
+    doc_id: str,
+    kinds: set,
+    top_n: int,
+) -> list[dict]:
+    """Claim-level FLAT recall for one document — HYBRID (BM25 + KNN, RRF).
+
+    Two independent legs over the document's claim rows
+    (``entity_type_kwd="claim"``): a full-text leg on the tokenized fields
+    (exact/proper-noun recall) and a KNN leg on the claim's own vector
+    (paraphrase recall), fused by reciprocal rank.  RRF consumes ranks only, so
+    there is NO similarity threshold to calibrate; nothing is pruned by an early
+    pick, the failure mode of descending the tree (SCT: 20.2% vs 39.3% flat).
+
+    Both legs are single store round-trips, so the call stays inside the drill's
+    few-second budget (the original full scan — up to 2000 rows fetched + Python
+    cosine per row — was cancelled mid-flight and killed the whole drill merge).
+
+    Returns ``[{chunk_id, score, rank, name, description, evidence}]`` ordered
+    by fused rank.  Empty — and never raising (beyond cancellation, which must
+    propagate) — when the document has no compiled claims, no embedding is
+    available, or the store fails; the BM25 leg alone keeps the call alive
+    without one.  With ``_STRUCT_CLAIM_FIRST`` a non-empty result replaces the
+    drill-down outright (the claims carry their own evidence).
+    """
+    if not doc_id or top_n <= 0:
+        return []
+    import time
+
+    _ckey = (doc_id, str(query or "").strip().lower())
+    _now = time.time()
+    _hit = _STRUCT_CLAIM_HITS_CACHE.get(_ckey)
+    if _hit and _now - _hit[0] < _CLAIM_PREFETCH_CACHE_TTL:
+        return _hit[1]
+    if len(_STRUCT_CLAIM_HITS_CACHE) >= _CLAIM_PREFETCH_CACHE_CAP:
+        _STRUCT_CLAIM_HITS_CACHE.clear()
+    from common import settings
+    from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr, OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    resolved = tools_slot._resolve_doc_tenant(doc_id)
+    if not resolved:
+        return []
+    kb_id, tenant_id = resolved
+    index_name = search.index_name(tenant_id)
+    fields = [
+        "content_with_weight",
+        "source_chunk_ids",
+        "entity_type_kwd",
+        "compile_kwd",
+    ]
+    # Both compilers spell their evidence rows ``claim`` now.
+    row_types = _evidence_row_types(kinds) if kinds else ("claim",)
+    condition: dict = {
+        "doc_id": [doc_id],
+        "entity_type_kwd": list(row_types),
+        # Doc-scope rows only: the Build button's KB-wide merged rows carry a
+        # doc_id too, and without this filter they would answer for a single
+        # document. Mirrors the dataset-level claim leg.
+        "scope_kwd": ["doc"],
+    }
+    if kinds:
+        condition["compile_kwd"] = sorted(str(k) for k in kinds if k)
+    limit = max(top_n, 32)
+
+    async def _run(exprs: list) -> list[dict]:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            exprs,
+            OrderByExpr(),
+            0,
+            limit,
+            index_name,
+            [kb_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields) or {}
+        return [h for h in (_parse_claim_row(r) for r in rows.values()) if h]
+
+    dense_leg: list[dict] = []
+    text_leg: list[dict] = []
+    try:
+        if qvec is not None:
+            dense = MatchDenseExpr(f"q_{len(qvec)}_vec", [float(v) for v in qvec], "float", "cosine", limit, {})
+            dense_leg = await _run([dense])
+    except Exception:
+        _LOG.exception("[navigate_structure] claim KNN leg failed for doc=%s", doc_id)
+    try:
+        from rag.advanced_rag.knowlege_compile.dataset_nav import _tokenize
+
+        text = MatchTextExpr(["content_ltks", "content_sm_ltks"], _tokenize(query), limit)
+        text_leg = await _run([text])
+    except Exception:
+        _LOG.exception("[navigate_structure] claim BM25 leg failed for doc=%s", doc_id)
+
+    if not dense_leg and not text_leg:
+        return []
+    fused = _rrf_fuse(dense_leg, text_leg)
+    out = [
+        {
+            "chunk_id": h["chunk_ids"][0],
+            "score": h["score"],
+            "rank": h["rank"],
+            "name": h["name"],
+            "description": h["description"] or h["name"],
+            "evidence": [{"quote": h["quote"]}] if h["quote"] else [],
+        }
+        for h in fused[:top_n]
+    ]
+    _STRUCT_CLAIM_HITS_CACHE[_ckey] = (time.time(), out)
+    return out
+
+
+# --- dataset-level claim prefetch (search-time, framework-automatic) ---------
+# The claim-first takeover inside navigate_structure only fires when the model
+# CHOOSES that tool — which it often does not, defaulting to search_chunks.
+# Retrieval priority must not rest on the model's tool pick, so the main search
+# driver prefetches claims itself: KB-wide KNN over claim rows, verbatim
+# evidence offered at the top of the search result. Floor is looser than the
+# per-doc takeover floor (0.5) — here a claim is OFFERED to the model, not
+# ruling the selection. Benchmark-tunable.
+_CLAIM_PREFETCH_TOP_N = 6
+# Small TTL cache: the agent re-issues near-identical queries across turns, and
+# each miss costs one KNN round-trip per KB.
+_CLAIM_PREFETCH_CACHE: dict = {}
+_CLAIM_PREFETCH_CACHE_TTL = 300.0
+_CLAIM_PREFETCH_CACHE_CAP = 64
+
+
+# ``compile_kwd`` values the knowledge-compilation paths write.  A dataset whose
+# rows carry none of these has no compiled structure at all, so navigation
+# (claim recall, tree routing, in-document drill) can only come back empty.
+_COMPILATION_KWDS = ("tree", "page_index", "pageindex", "timeline", "dataset_nav")
+_COMPILATION_PROBE_TTL = 300.0
+
+
+# "Evidence rows" — atomic propositions carrying verbatim evidence.  Every
+# compiler writes them as ``entity_type_kwd="claim"``: tree via raptor claim
+# extraction, page_index via its own atomic claim type with gate-verified
+# verbatim evidence.  page_index's pre-rename ``fact``/``conclusion`` spellings
+# are deliberately NOT searched — a recompile retypes those rows.
+_EVIDENCE_ROW_TYPES_BY_COMPILE = {
+    "tree": ("claim",),
+    "raptor": ("claim",),
+    "page_index": ("claim",),
+}
+
+
+def _evidence_row_types(compile_kinds) -> tuple:
+    """Row types carrying evidence for the given compile kinds."""
+    types: list = []
+    for kind in compile_kinds or ():
+        for t in _EVIDENCE_ROW_TYPES_BY_COMPILE.get(kind, ()):
+            if t not in types:
+                types.append(t)
+    return tuple(types)
+
+
+async def dataset_compilation_kinds(tools) -> tuple:
+    """Return the compile kinds present in the in-scope KBs.
+
+    One cheap probe per KB (limit=16, id + compile_kwd only), cached on the
+    session's ``tools`` object.  Best effort: a probe failure falls back to a
+    non-empty result so a glitch never silently disables navigation.
+    """
+    import time
+
+    now = time.time()
+    cached = getattr(tools, "_compilation_probe", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and now - cached[0] < _COMPILATION_PROBE_TTL:
+        return cached[1]
+
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    kbs = getattr(tools, "kbs", None) or []
+    kinds: list = []
+    failed = False
+    for kb in kbs:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["doc_id", "compile_kwd"],
+                [],
+                {"compile_kwd": list(_COMPILATION_KWDS)},
+                [],
+                OrderByExpr(),
+                0,
+                16,
+                [search.index_name(kb.tenant_id)],
+                [kb.id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["doc_id", "compile_kwd"]) or {}
+            for row in rows.values():
+                kind = _normalize_kind(row.get("compile_kwd") or "")
+                if kind and kind not in kinds:
+                    kinds.append(kind)
+        except Exception:  # noqa: BLE001
+            _LOG.exception("[compilation probe] failed for kb=%s", getattr(kb, "id", "?"))
+            failed = True
+
+    result = tuple(kinds) if kinds else (("tree",) if failed else ())
+    try:
+        tools._compilation_probe = (now, result)
+    except Exception:  # noqa: BLE001
+        pass
+    return result
+
+
+async def dataset_has_compilation(tools) -> bool:
+    """True when any in-scope KB carries compiled rows (see above)."""
+    return bool(await dataset_compilation_kinds(tools))
+
+
+async def recall_dataset_claims(tools, query: str, top_n: int = _CLAIM_PREFETCH_TOP_N) -> list[dict]:
+    """KB-wide FLAT claim recall — the dataset-level mirror of
+    ``_recall_claim_hits``.  HYBRID: a BM25 leg and a KNN leg per KB over
+    ``entity_type_kwd="claim"`` rows, fused by reciprocal rank — no similarity
+    threshold anywhere; the store ranks, we never scan.
+
+    Returns ``[{name, description, quote, doc_id, chunk_ids, score, rank}]``
+    ordered by fused rank.  Empty (never raising) on any failure — and the BM25
+    leg alone keeps recall alive without an embedding model — so the prefetch
+    can only ever add to a search result.
+    """
+    import time
+
+    if not query or top_n <= 0:
+        return []
+    key = query.strip().lower()
+    now = time.time()
+    cached = _CLAIM_PREFETCH_CACHE.get(key)
+    if cached and now - cached[0] < _CLAIM_PREFETCH_CACHE_TTL:
+        return cached[1]
+    if len(_CLAIM_PREFETCH_CACHE) >= _CLAIM_PREFETCH_CACHE_CAP:
+        _CLAIM_PREFETCH_CACHE.clear()
+
+    from common import settings
+    from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr, OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    qvec, dim = await _embed_query(tools, query)
+    limit = max(top_n, 32)
+    fields = ["content_with_weight", "source_chunk_ids", "doc_id"]
+    kbs = getattr(tools, "kbs", None) or []
+    row_types = _evidence_row_types(await dataset_compilation_kinds(tools)) or ("claim",)
+
+    async def _run(kb, exprs: list) -> list[dict]:
+        condition = {"entity_type_kwd": list(row_types), "scope_kwd": ["doc"]}
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            exprs,
+            OrderByExpr(),
+            0,
+            limit,
+            [search.index_name(kb.tenant_id)],
+            [kb.id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields) or {}
+        return [h for h in (_parse_claim_row(r) for r in rows.values()) if h]
+
+    dense_leg: list[dict] = []
+    text_leg: list[dict] = []
+    for kb in kbs:
+        try:
+            if qvec is not None:
+                dense = MatchDenseExpr(f"q_{dim}_vec", [float(v) for v in qvec], "float", "cosine", limit, {})
+                dense_leg.extend(await _run(kb, [dense]))
+        except Exception:
+            _LOG.exception("[claim prefetch] KNN leg failed for kb=%s", kb.id)
+        try:
+            from rag.advanced_rag.knowlege_compile.dataset_nav import _tokenize
+
+            text = MatchTextExpr(["content_ltks", "content_sm_ltks"], _tokenize(query), limit)
+            text_leg.extend(await _run(kb, [text]))
+        except Exception:
+            _LOG.exception("[claim prefetch] BM25 leg failed for kb=%s", kb.id)
+
+    if not dense_leg and not text_leg:
+        return []
+    out = _rrf_fuse(dense_leg, text_leg)[:top_n]
+    _CLAIM_PREFETCH_CACHE[key] = (now, out)
+    return out
+
+
+def _flat_select_nodes(qvec, entities: list[dict], top_n: int) -> list[str]:
+    """Score every node at once and return the top-N names.
+
+    page_index spreads facts across TOC levels, so descending level by level can
+    prune the branch holding the answer before it is ever scored. Scoring all
+    nodes against the query costs nothing extra (their embeddings are already
+    loaded) and cannot prune — the same argument as the claim leg, applied to the
+    nodes we already hold.
+
+    Returns [] when no query vector is available: the caller then falls back to
+    beam descent, which also works from keyword overlap.
+    """
+    if qvec is None or not entities or top_n <= 0:
+        return []
+    scored: list[tuple[str, float]] = []
+    for e in entities:
+        name = (e.get("name") or "").strip()
+        vec = e.get("_vec")
+        if not name or vec is None:
+            continue
+        scored.append((name, float(_cosine(qvec, vec))))
+    if not scored:
+        return []
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return [name for name, _score in scored[:top_n]]
+
+
+def _build_toc_items(entities: list[dict], relations: list[dict]) -> list[dict]:
+    """Serialize the whole TOC, indented by depth, for one-shot LLM selection.
+
+    Indentation is the only structure the model gets: it reads the list the way a
+    reader reads a table of contents.  Every node carries its real name through
+    ``_node`` so the selection can be mapped back without string matching.
+
+    Orphans (nodes no relation attaches to a root) are appended last at depth 0 —
+    dropping them would silently hide content from the model.
+    """
+    by_name, children, parents, roots = _build_toc_tree(entities, relations)
+    if not by_name:
+        return []
+
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    def _walk(name: str, depth: int) -> None:
+        if name in seen or depth > _STRUCT_TOC_MAX_DEPTH:
+            return
+        seen.add(name)
+        e = by_name.get(name)
+        if not e:
+            return
+        desc = str(e.get("description") or "").strip().replace("\n", " ")
+        items.append(
+            {
+                "_node": name,
+                "name": "  " * depth + name,
+                "description": _snippet(desc, _STRUCT_TOC_DESC_SNIPPET),
+            }
+        )
+        for child in children.get(name, []):
+            _walk(child, depth + 1)
+
+    for r in roots:
+        _walk(r, 0)
+    for name in by_name:
+        if name not in seen:
+            _walk(name, 0)
+    return items
+
+
+async def _select_toc_nodes(tools, query: str, entities: list[dict], relations: list[dict]) -> list[str]:
+    """Let the model pick TOC nodes in one shot. Returns node names (''-filtered).
+
+    Returns ``[]`` on any failure so the caller can fall back — never raises.
+    """
+    if not entities:
+        return []
+    try:
+        items = _build_toc_items(entities, relations)
+    except Exception:
+        _LOG.exception("[navigate_structure] TOC serialization failed")
+        return []
+    if not items:
+        return []
+    try:
+        picked = await _ask_nav_select(tools, query, items, "sections", _STRUCT_TOC_MAX_NODES)
+    except Exception:
+        # _ask_nav_select catches model failures, but serialization/other paths can
+        # still raise; the caller must be able to fall through to local scoring.
+        _LOG.exception("[navigate_structure] TOC model selection failed")
+        return []
+    names = []
+    for it in picked or []:
+        name = str(it.get("_node") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _nodes_covering_chunks(entities: list[dict], chunk_ids: set[str]) -> list[str]:
+    """Names of nodes whose ``source_chunk_ids`` cover any of ``chunk_ids``.
+
+    Used only to give retrieved chunks a structural home.  A chunk that no node
+    covers is still returned — the tree annotates, it does not select.
+    """
+    if not chunk_ids:
+        return []
+    names: list[str] = []
+    for e in entities:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        ids = {str(c) for c in (e.get("source_chunk_ids") or []) if isinstance(c, str) and c}
+        if ids & chunk_ids:
+            names.append(name)
+    return names
 
 
 def _node_score(qvec, query_terms, entity: dict) -> float:
@@ -1369,13 +2108,46 @@ def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relati
     return kept_nodes, parents, kept_names, best_overall
 
 
-async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relations: list[dict]) -> tuple[str, dict, dict]:
-    """Drill down the pre-built TOC hierarchy toward the query and render an outline.
+async def _render_toc_drilldown(
+    query: str,
+    qvec,
+    entities: list[dict],
+    relations: list[dict],
+    chunk_hits: list[tuple[str, float]] | None = None,
+    selected: list[str] | None = None,
+    claim_hits: list[dict] | None = None,
+) -> tuple[str, dict, dict]:
+    """Render a query-focused outline of one document's compiled structure.
 
-    Uses VECTOR BEAM descent when the nodes carry embeddings (``_vec``) and a query
-    vector is available: from the roots, at each level keep the top-K nodes by
-    cosine similarity to the query and descend to their children. Falls back to
-    keyword-overlap when no vectors are available.
+    ``claim_hits`` comes from ``_recall_claim_hits``: gated claims that matched
+    the query directly. They are rendered as statement + verbatim evidence and
+    their chunk is skipped in the snippet list, so a matched fact is not also
+    echoed as a truncated chunk.  With ``_STRUCT_CLAIM_FIRST`` a hit set does
+    more than that — it takes over the selection and nothing is drilled.
+
+    Four ways to choose what to show.  Claims win when present; the other three
+    are then tried in the order the caller uses them:
+
+    claims — flat-scored atomic propositions with verbatim evidence. A hit is
+        already the answer material, so no descent happens and no chunk snippets
+        are loaded; the tree only labels where each claim sits.
+
+    ``selected`` — node names already chosen elsewhere (the whole-TOC LLM pass,
+        see ``_select_toc_nodes``).  Every level was visible to the model at once,
+        so nothing is pruned; chunks come from the chosen nodes' ``source_ids``.
+
+    ``chunk_hits`` — ``[(chunk_id, score)]`` from chunk retrieval, used when the
+        tree cannot score its own nodes (RAPTOR blob path).  Selection belongs to
+        the chunk index outright: the chunks are returned **as retrieved**, not
+        filtered back through the nodes, and the tree is left to do the only job
+        it is still needed for — labelling where each chunk sits.  Round-tripping
+        the selection through the nodes would silently drop every chunk no node
+        happens to cover, which for a clustered tree is most of them.
+
+    neither — VECTOR BEAM descent: from the roots, at each level keep the top-K
+        nodes by cosine similarity to the query and descend to their children,
+        falling back to keyword overlap when no vectors are available.  Kept as
+        the fallback when the model pass returns nothing.
 
     Returns lines like:
         - Paris Demographics (tree_node): <desc> [chunks: c1,c2]
@@ -1388,11 +2160,62 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
     structure context onto retrieved evidence without re-deriving the tree.
     """
     query_terms = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", (query or "").lower()) if len(t) >= 2]
-    if not query_terms and qvec is None:
+    # Pinned nodes were chosen elsewhere (chunk retrieval), so they stand even
+    # when the query yields no usable terms — bailing out here would discard a
+    # perfectly good selection just because the query is short.
+    if not chunk_hits and not selected and not query_terms and qvec is None:
         return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
-    kept_nodes, parents, kept_names, best = _drill_kept_nodes(query_terms, qvec, entities, relations)
-    if not kept_nodes:
+    by_name, _children, parents, _roots = _build_toc_tree(entities, relations)
+
+    def _with_ancestors(names: set[str]) -> set[str]:
+        """Pull in ancestors so a path renders as root -> ... -> node."""
+        for name in list(names):
+            cur = parents.get(name)
+            guard = 0
+            while cur and cur not in names and guard < _STRUCT_MAX_DEPTH:
+                names.add(cur)
+                cur = parents.get(cur)
+                guard += 1
+        return names
+
+    selected_ids: list[str] = []
+    if _STRUCT_CLAIM_FIRST and len(claim_hits or []) >= _STRUCT_CLAIM_FIRST_MIN_HITS:
+        # Claims already carry the answer material (statement + verbatim
+        # evidence), so nothing is drilled: the tree's only remaining job is to
+        # show where each claim sits.  Descending would re-derive the same facts
+        # and risk pruning past them.
+        claim_cids = {str(h.get("chunk_id") or "").strip() for h in claim_hits or []}
+        claim_cids.discard("")
+        kept_names = _with_ancestors({n for n in _nodes_covering_chunks(entities, claim_cids) if n in by_name})
+        kept_nodes = [by_name[n] for n in kept_names if n in by_name]
+        best = max((float(h.get("score") or 0.0) for h in claim_hits or []), default=0.0)
+        selector = "claim"
+    elif selected:
+        kept_names = _with_ancestors({n for n in selected if n in by_name})
+        kept_nodes = [by_name[n] for n in kept_names if n in by_name]
+        # The model picked nodes, so the chunks are theirs to supply.
+        # No score: the model chooses, it does not rank (see stats["selector"]).
+        best = 0.0
+        selector = "llm_toc"
+    elif chunk_hits:
+        # Keep the retrieval's own ordering — it is the relevance order.
+        seen: set[str] = set()
+        for cid, _score in chunk_hits:
+            if cid and cid not in seen:
+                seen.add(cid)
+                selected_ids.append(cid)
+        kept_names = _with_ancestors({n for n in _nodes_covering_chunks(entities, set(selected_ids)) if n in by_name})
+        kept_nodes = [by_name[n] for n in kept_names if n in by_name]
+        best = max((float(s) for _c, s in chunk_hits), default=0.0)
+        selector = "chunk_retrieval"
+    else:
+        kept_nodes, parents, kept_names, best = _drill_kept_nodes(query_terms, qvec, entities, relations)
+        selector = "beam"
+    # Claim-first still has something to show with no nodes at all — upper RAPTOR
+    # clusters carry no source_chunk_ids, so no node may cover a hit claim, and
+    # bailing out here would throw the claims away.
+    if not kept_nodes and not selected_ids and not (_STRUCT_CLAIM_FIRST and claim_hits):
         return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
     # Render the drilled nodes (indented by depth via ancestor count).
@@ -1438,13 +2261,62 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
             line += f" [chunks: {chunks}]"
         lines.append(line)
 
-    # Rank the chunks behind the drilled nodes and add short snippets.
-    wanted = _collect_chunk_ids(kept_nodes)
+    # Claim/evidence lines come before the chunk snippets: a gated claim is a
+    # verified atomic fact carrying its verbatim quote, so it reads better than a
+    # truncated chunk and needs no chunk load at all. Its chunk is dropped from
+    # the snippet list below so the same content is not sent twice.
+    claimed: set[str] = set()
+    for hit in claim_hits or []:
+        cid = str(hit.get("chunk_id") or "").strip()
+        if not cid or cid in claimed:
+            continue
+        claimed.add(cid)
+        quote = ""
+        for ev in hit.get("evidence") or []:
+            if isinstance(ev, dict) and str(ev.get("quote") or "").strip():
+                quote = str(ev["quote"]).strip()
+                break
+        line = f"- [claim] {str(hit.get('name') or '').strip()}"
+        if quote:
+            line += f' | Evidence: "{_snippet(quote, _STRUCT_CLAIM_EVIDENCE_CHARS)}"'
+        line += f" [chunks: {cid}]"
+        lines.append(line)
+
+    # A claim's chunk still deserves a structural label — annotate it from the
+    # node that covers it, falling back to nothing when no node does (upper
+    # RAPTOR clusters carry no source_chunk_ids, so this stays honest rather than
+    # inventing a path).
+    for cid in claimed:
+        if cid in chunk_paths:
+            continue
+        owners = [n for n in _nodes_covering_chunks(entities, {cid}) if n in by_name]
+        if owners:
+            chunk_paths[cid] = owners[0]
+
+    # Chunk snippets.  When chunk retrieval did the selecting, those hits are
+    # returned as-is: filtering them back through the nodes would drop every
+    # chunk no node happens to cover.  Otherwise take the chunks behind the
+    # drilled nodes.
+    if _STRUCT_CLAIM_FIRST and len(claim_hits or []) >= _STRUCT_CLAIM_FIRST_MIN_HITS:
+        # A matched claim already renders its verbatim evidence; loading the
+        # chunk behind it would echo the same passage a second time.
+        wanted = []
+    else:
+        wanted = selected_ids or _collect_chunk_ids(kept_nodes)
+    if wanted:
+        wanted = [c for c in wanted if c not in claimed]
     if wanted:
         chunks = await _load_chunks_for_ids(_tools_slot(), wanted)
         if chunks:
-            ranked = _rank_chunks_by_terms(chunks, [query])
-            for c in ranked[:_STRUCT_MAX_CHUNKS]:
+            if selected_ids:
+                # Retrieval order is the relevance order; re-ranking by terms
+                # would discard the score that selected them.
+                ranked = sorted(chunks, key=lambda c: selected_ids.index(_chunk_id(c)))
+                limit = _STRUCT_MAX_CHUNK_HITS
+            else:
+                ranked = _rank_chunks_by_terms(chunks, [query])
+                limit = _STRUCT_MAX_CHUNKS
+            for c in ranked[:limit]:
                 cid = _chunk_id(c)
                 text = _chunk_text(c).strip()
                 lines.append(f"- [chunk {cid}]: {_snippet(text, 300)}")
@@ -1452,6 +2324,12 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
         "nodes": len(kept_nodes),
         "chunk_ptrs": len(wanted),
         "top_score": round(float(best), 4),
+        # Best claim cosine, surfaced so the caller can emit <claims_sufficient/>
+        # when the matched claims are strong enough to cite as answer material.
+        "claim_top": round(max((float(h.get("score") or 0.0) for h in claim_hits or []), default=0.0), 4),
+        # Which strategy chose the nodes.  top_score is only meaningful for
+        # "beam" and "chunk_retrieval"; llm_toc has no comparable score.
+        "selector": selector,
     }
     return "\n".join(lines), stats, chunk_paths
 

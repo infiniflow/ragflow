@@ -45,60 +45,6 @@ export const formSchema = z
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
-        raptor: z
-          .object({
-            use_raptor: z.boolean().optional(),
-            prompt: z.string().optional(),
-            max_token: z.coerce.number().optional(),
-            threshold: z.coerce.number().optional(),
-            max_cluster: z.coerce.number().optional(),
-            random_seed: z.coerce.number().optional(),
-            scope: z.string().optional(),
-            clustering_method: z.enum(['gmm', 'ahc']).optional(),
-            tree_builder: z.enum(['raptor', 'psi']).optional(),
-            ext: z.record(z.string(), z.any()).optional(),
-          })
-          .refine(
-            (data) => {
-              if (data.use_raptor && !data.prompt) {
-                return false;
-              }
-              return true;
-            },
-            {
-              message: 'Prompt is required',
-              path: ['prompt'],
-            },
-          ),
-        graphrag: z
-          .object({
-            use_graphrag: z.boolean().optional(),
-            entity_types: z.array(z.string()).optional(),
-            method: z.string().optional(),
-            resolution: z.boolean().optional(),
-            community: z.boolean().optional(),
-            batch_chunk_token_size: z
-              .number()
-              .int()
-              .min(512)
-              .max(8196)
-              .optional(),
-          })
-          .refine(
-            (data) => {
-              if (
-                data.use_graphrag &&
-                (!data.entity_types || data.entity_types.length === 0)
-              ) {
-                return false;
-              }
-              return true;
-            },
-            {
-              message: 'Please enter Entity types',
-              path: ['entity_types'],
-            },
-          ),
         metadata: z.any().optional(),
         built_in_metadata: z
           .array(

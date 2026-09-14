@@ -86,8 +86,8 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult emits one JSON item per slide with the slide's
-// plain text. Mirrors the python parser.py:slides branch which
-// forces output_format="json" for the slide family.
+// plain text. Forces OutputFormat to "json" and emits one JSON item
+// per slide section.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// p == nil guard: the struct is embedded by value in PPTParser and
 	// always created via NewPPTXParser or the "ppt"-format constructor in
@@ -168,10 +168,13 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	if len(items) == 0 {
-		// A deck whose IR carries no sections at all: keep the
-		// whole-document text as a single item so a still-readable
-		// file yields one chunk instead of none.
+	if len(items) == 0 || itemsAllEmpty(items) {
+		// A deck whose IR carries no sections at all, or whose sections
+		// all flatten to empty text (text the IR walker does not cover):
+		// keep the whole-document text as a single item so a
+		// still-readable file yields content instead of none. Without
+		// the all-empty check, empty items flow to the Tokenizer, which
+		// filters them as empty text, silently yielding 0 chunks.
 		text, perr := doc.PlainText()
 		if perr != nil {
 			return ParseResult{Err: fmt.Errorf("presentation plain-text: %w", perr)}

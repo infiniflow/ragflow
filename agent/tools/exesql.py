@@ -16,9 +16,13 @@
 import contextlib
 import json
 import logging
+import math
 import os
 import re
 from abc import ABC
+from datetime import date, datetime, time
+from decimal import Decimal
+
 import pandas as pd
 import pymysql
 import psycopg2
@@ -26,6 +30,34 @@ import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
 from common.ssrf_guard import assert_host_is_safe
+
+
+def convert_decimals(obj):
+    """Make ExeSQL row values JSON-serializable.
+
+    SQL drivers may yield Decimal and plain date/datetime/time objects that
+    are not JSON-safe (object-dtype DATE columns skip the datetime64 path).
+    Recurse through dict/list the same way as before.
+    """
+    if isinstance(obj, float):
+        # Handle NaN and Infinity which are not valid JSON values
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, Decimal):
+        return float(obj)
+    # datetime subclasses date — check datetime first and truncate to YYYY-MM-DD.
+    if isinstance(obj, datetime):
+        return obj.strftime("%Y-%m-%d")
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {k: convert_decimals(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_decimals(item) for item in obj]
+    return obj
 
 
 class ExeSQLParam(ToolParamBase):
@@ -74,23 +106,6 @@ class ExeSQL(ToolBase, ABC):
     def _invoke(self, **kwargs):
         if self.check_if_canceled("ExeSQL processing"):
             return
-
-        def convert_decimals(obj):
-            from decimal import Decimal
-            import math
-
-            if isinstance(obj, float):
-                # Handle NaN and Infinity which are not valid JSON values
-                if math.isnan(obj) or math.isinf(obj):
-                    return None
-                return obj
-            if isinstance(obj, Decimal):
-                return float(obj)  # 或 str(obj)
-            elif isinstance(obj, dict):
-                return {k: convert_decimals(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_decimals(item) for item in obj]
-            return obj
 
         sql = kwargs.get("sql")
         if not sql:

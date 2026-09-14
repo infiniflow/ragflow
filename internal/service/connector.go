@@ -71,13 +71,14 @@ var (
 	connectorRedisGet = redis.Get
 )
 
-// Sentinel errors so handlers can map to the proper response codes,
-// mirroring the Python connector_api responses.
+// Sentinel errors so handlers can map to the proper response codes.
 var (
-	// ErrConnectorNotFound mirrors Python's "Can't find this Connector!".
+	// ErrConnectorNotFound is returned when a connector is not found.
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
+	// ErrConnectorNoAuth is returned when the caller cannot access the connector or knowledge base.
 	ErrConnectorNoAuth = errors.New("no authorization")
+	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
+	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
 	// ErrConnectorIDRequired is returned when a connector ID is missing.
 	ErrConnectorIDRequired = errors.New("connector_id is required")
 	// ErrConnectorTestUnsupported is returned for connector sources without a settings validator.
@@ -91,6 +92,7 @@ var (
 // ConnectorService connector service
 type ConnectorService struct {
 	connectorDAO      *dao.ConnectorDAO
+	knowledgebaseDAO  *dao.KnowledgebaseDAO
 	userTenantDAO     *dao.UserTenantDAO
 	connectorRegistry *syncerconnector.Registry
 }
@@ -130,6 +132,7 @@ var getSyncCheckpointDeleter = func() (syncCheckpointDeleter, bool) {
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
 		connectorDAO:      dao.NewConnectorDAO(),
+		knowledgebaseDAO:  dao.NewKnowledgebaseDAO(),
 		userTenantDAO:     dao.NewUserTenantDAO(),
 		connectorRegistry: newConnectorRegistry(),
 	}
@@ -146,7 +149,7 @@ type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
 }
 
-// CreateConnectorRequest creates a connector with Python-compatible defaults.
+// CreateConnectorRequest holds the fields used to create a connector.
 type CreateConnectorRequest struct {
 	Name        string         `json:"name"`
 	Source      string         `json:"source"`
@@ -291,7 +294,6 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 }
 
 // CreateConnector creates a connector owned by the current user.
-// Equivalent to Python's create_connector endpoint.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
@@ -1082,6 +1084,23 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 	}
 	if !canAccess {
 		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+
+	// The caller-supplied kb is targeted by delete + re-sync below, so it must
+	// be accessible to the caller and the connector must be bound to it.
+	if !s.knowledgebaseDAO.Accessible(ctx, dao.DB, kbID, userID) {
+		common.Warn("rebuild denied: kb not accessible",
+			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
+		return false, common.CodeAuthenticationError, ErrConnectorNoAuth
+	}
+	bound, err := s.connectorDAO.Connector2KBExists(ctx, dao.DB, connectorID, kbID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if !bound {
+		common.Warn("rebuild denied: connector not bound to kb",
+			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
+		return false, common.CodeAuthenticationError, ErrConnectorNotBoundToKB
 	}
 
 	sourceType := fmt.Sprintf("%s/%s", connector.Source, connector.ID)

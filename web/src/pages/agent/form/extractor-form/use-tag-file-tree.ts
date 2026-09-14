@@ -36,7 +36,7 @@ export function useTagFileTree(value?: string) {
           files
             .filter(
               (x) =>
-                (isFolderType(x.type) && x.name.toLowerCase() !== 'skills') ||
+                isFolderType(x.type) ||
                 AllowedExtensions.includes(getExtension(x.name)),
             )
             .map(toTreeNode),

@@ -23,7 +23,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
+	"sync"
 
 	"ragflow/internal/common"
 )
@@ -182,25 +185,6 @@ func aliyunToolChoice(modelName string, messages []Message, configured *string) 
 	return choice
 }
 
-type aliyunEmbeddingResponse struct {
-	Data   []aliyunEmbeddingData `json:"data"`
-	Model  string                `json:"model"`
-	Object string                `json:"object"`
-	Usage  aliyunUsage           `json:"usage"`
-	ID     string                `json:"id"`
-}
-
-type aliyunEmbeddingData struct {
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-	Object    string    `json:"object"`
-}
-
-type aliyunUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
-
 // Embed embeds a list of texts into embeddings
 func (a *AliyunModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -221,61 +205,249 @@ func (a *AliyunModel) Embed(ctx context.Context, modelName *string, request Embe
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Embedding)
-
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": request.Texts,
+	// Tongyi-Qianwen text embeddings are asymmetric (query vs document), and only
+	// the native API can express that distinction (text_type). Every call therefore
+	// goes to the native API, exactly as Python's QWenEmbed does
+	// (embedding_model.py): a recognized DashScope host is mapped onto its /api/v1
+	// root, and an unrecognized base URL is IGNORED — the dashscope SDK keeps its own
+	// endpoint (DASHSCOPE_HTTP_BASE_URL, else
+	// https://dashscope.aliyuncs.com/api/<DASHSCOPE_API_VERSION|v1>) and QWenEmbed
+	// only warns once at construction time (:121-127, :134-138). There is
+	// deliberately no OpenAI-compatible fallback: that endpoint cannot send
+	// text_type, so it would encode query-side embeddings (dense seed / retrieval
+	// query) in document space. Use the OpenAI-API-Compatible / vLLM factory for a
+	// private gateway — Python requires the same choice.
+	if nativeRoot := aliyunNativeEmbeddingRoot(baseURL); nativeRoot != "" {
+		return a.embedNative(ctx, nativeRoot, *modelName, request, apiConfig, modelUsage)
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// Unrecognized host: warn once per host, then use the SDK's default native root.
+	aliyunWarnIgnoredBaseURL(baseURL)
+	return a.embedNative(ctx, aliyunSDKDefaultNativeRoot(), *modelName, request, apiConfig, modelUsage)
+}
+
+// aliyunIgnoredHostWarned dedups the unrecognized-host warning to once per host.
+var aliyunIgnoredHostWarned sync.Map
+
+// aliyunWarnSink writes the warning line. Tests replace it to capture the warning
+// without going through the logger.
+var aliyunWarnSink = func(format string, args ...any) { common.StdLogger().Printf(format, args...) }
+
+// aliyunWarnIgnoredBaseURL reports, once per host and never per call, that the
+// configured base URL is not a DashScope host and is therefore ignored in favour
+// of the SDK default endpoint — Python QWenEmbed warns once at construction time
+// instead (embedding_model.py:121-127).
+func aliyunWarnIgnoredBaseURL(baseURL string) {
+	host := aliyunBaseURLHost(baseURL)
+	if host == "" {
+		return
+	}
+	if _, seen := aliyunIgnoredHostWarned.LoadOrStore(host, struct{}{}); seen {
+		return
+	}
+	aliyunWarnSink(
+		"[Qwen embedding] base URL host %q is not a DashScope host, so the configured base URL is ignored: "+
+			"using the native text-embedding API at %s instead (Python QWenEmbed behaviour). Point the base URL at "+
+			"dashscope.aliyuncs.com / dashscope-intl.aliyuncs.com, or end it with /api/v1 to address a "+
+			"native-compatible endpoint directly.", host, aliyunSDKDefaultNativeRoot())
+}
+
+// aliyunSDKDefaultNativeRoot mirrors the dashscope SDK's default native API root
+// (dashscope/common/env.py:14-23): DASHSCOPE_HTTP_BASE_URL when set, else
+// https://dashscope.aliyuncs.com/api/<DASHSCOPE_API_VERSION|v1>. It is where
+// Python's QWenEmbed ends up when the configured base URL is not a DashScope host,
+// and the only override that still carries text_type.
+func aliyunSDKDefaultNativeRoot() string {
+	if root := strings.TrimSpace(os.Getenv("DASHSCOPE_HTTP_BASE_URL")); root != "" {
+		return strings.TrimRight(root, "/")
+	}
+	version := strings.TrimSpace(os.Getenv("DASHSCOPE_API_VERSION"))
+	if version == "" {
+		version = "v1"
+	}
+	return fmt.Sprintf("https://dashscope.aliyuncs.com/api/%s", version)
+}
+
+// aliyunBaseURLHost returns the lowercase host of a configured base URL for log
+// lines. Only the host is used, so credentials, path and query string cannot leak
+// (Python's _dashscope_base_url_for_log is strict the same way,
+// embedding_model.py:73-75).
+func aliyunBaseURLHost(baseURL string) string {
+	raw := strings.TrimSpace(baseURL)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(raw); err == nil && parsed.Hostname() != "" {
+		return strings.ToLower(parsed.Hostname())
+	}
+	// Schemeless config (e.g. "gateway.internal/v1"): the first path segment is the
+	// host.
+	return strings.ToLower(strings.SplitN(strings.TrimPrefix(raw, "//"), "/", 2)[0])
+}
+
+// aliyunNativeEmbeddingPath is the DashScope native text-embedding endpoint,
+// appended to the native API root ("https://<host>/api/v1").
+const aliyunNativeEmbeddingPath = "services/embeddings/text-embedding/text-embedding"
+
+// aliyunNativeEmbedBatchSize mirrors Python QWenEmbed.encode's batch_size = 4.
+const aliyunNativeEmbedBatchSize = 4
+
+// aliyunNativeEmbeddingRoot maps a configured DashScope base URL onto the native
+// API root, mirroring Python embedding_model._dashscope_native_http_api_url
+// (rag/llm/embedding_model.py:80-128): an already-native base is kept as-is,
+// known DashScope hosts (CN and international) are mapped to their /api/v1 root,
+// and anything else returns "" so the caller falls back to the dashscope SDK's
+// default native root (aliyunSDKDefaultNativeRoot), as Python QWenEmbed does.
+// Matching on the parsed hostname (never a substring of the full URL) prevents a
+// crafted query string from selecting the native API.
+func aliyunNativeEmbeddingRoot(baseURL string) string {
+	u := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if u == "" {
+		return ""
+	}
+	if strings.HasSuffix(u, "/api/v1") {
+		return u
+	}
+	parsed, err := url.Parse(u)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return ""
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	host := strings.ToLower(parsed.Hostname())
+	switch {
+	case host == "dashscope-intl.aliyuncs.com" || strings.HasSuffix(host, ".dashscope-intl.aliyuncs.com"):
+		return "https://dashscope-intl.aliyuncs.com/api/v1"
+	case host == "dashscope.aliyuncs.com" || strings.HasSuffix(host, ".dashscope.aliyuncs.com"):
+		return "https://dashscope.aliyuncs.com/api/v1"
+	default:
+		return ""
 	}
+}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+type aliyunNativeEmbedInput struct {
+	Texts []string `json:"texts"`
+}
 
-	resp, err := a.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+type aliyunNativeEmbedRequest struct {
+	Model      string                 `json:"model"`
+	Input      aliyunNativeEmbedInput `json:"input"`
+	Parameters map[string]interface{} `json:"parameters,omitempty"`
+}
+
+type aliyunNativeEmbedResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	// RequestID is the DashScope request id every native response carries (the same
+	// id Python surfaces in its ModelException messages).
+	RequestID string `json:"request_id"`
+	Output    struct {
+		Embeddings []struct {
+			// TextIndex is a pointer so an absent/null key is distinguishable
+			// from index 0: Python does embds[e["text_index"]] and raises
+			// KeyError when the key is missing (wrapped into EmbeddingError).
+			TextIndex *int      `json:"text_index"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"embeddings"`
+	} `json:"output"`
+	Usage struct {
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// embedNative calls the DashScope native text-embedding API, the only transport
+// that carries text_type ("document" for encode, "query" for encode_queries —
+// Python QWenEmbed). Inputs are sent in batches of 4 like Python; the response's
+// text_index is relative to the batch, so it is offset back to the caller's
+// slice before being returned.
+//
+// The response is reassembled exactly like Python QWenEmbed.encode: each batch's
+// chunk is sized by the NUMBER OF RETURNED EMBEDDINGS and every vector is
+// PLACED at its batch-relative text_index (never appended in response order),
+// because consumers such as NavEmbedder read the slice positionally and discard
+// EmbeddingData.Index. As in Python, a duplicate text_index overwrites the
+// earlier vector, a gap leaves an empty vector in that slot, and a text_index
+// outside the returned chunk raises — a NEGATIVE text_index counts from the end
+// of the chunk (embds[-1] is the last slot), exactly like a Python list
+// assignment.
+func (a *AliyunModel) embedNative(ctx context.Context, root, modelName string, request EmbedRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	textType := "document"
+	if request.Query {
+		textType = "query"
 	}
-	defer resp.Body.Close()
+	endpoint := fmt.Sprintf("%s/%s", strings.TrimRight(root, "/"), aliyunNativeEmbeddingPath)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	embeddings := make([]EmbeddingData, 0, len(request.Texts))
+	for start := 0; start < len(request.Texts); start += aliyunNativeEmbedBatchSize {
+		end := min(start+aliyunNativeEmbedBatchSize, len(request.Texts))
+		batch := request.Texts[start:end]
+
+		jsonData, err := json.Marshal(aliyunNativeEmbedRequest{
+			Model:      modelName,
+			Input:      aliyunNativeEmbedInput{Texts: batch},
+			Parameters: map[string]interface{}{"text_type": textType},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		callCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+		req, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+		resp, err := a.baseModel.httpClient.Do(req)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read response: %w", readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("aliyun native embeddings API error: %s, body: %s", resp.Status, string(body))
+		}
+
+		var parsed aliyunNativeEmbedResponse
+		if err = json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if parsed.Code != "" {
+			return nil, fmt.Errorf("aliyun native embeddings API error: %s: %s", parsed.Code, parsed.Message)
+		}
+		// Mirror Python QWenEmbed.encode:
+		//   embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
+		//   for e in resp["output"]["embeddings"]:
+		//       embds[e["text_index"]] = e["embedding"]
+		//   res.extend(embds)
+		// including Python list-assignment indexing: a negative text_index
+		// counts from the END of the chunk (embds[-1] is the last slot), and out
+		// of range in either direction raises.
+		embds := make([]EmbeddingData, len(parsed.Output.Embeddings))
+		for _, item := range parsed.Output.Embeddings {
+			if item.TextIndex == nil {
+				return nil, fmt.Errorf("aliyun native embeddings response item missing text_index")
+			}
+			idx := *item.TextIndex
+			if idx < 0 {
+				idx += len(embds)
+			}
+			if idx < 0 || idx >= len(embds) {
+				return nil, fmt.Errorf("aliyun native embeddings response index %d out of range for %d embeddings", *item.TextIndex, len(embds))
+			}
+			embds[idx] = EmbeddingData{
+				Embedding: item.Embedding,
+				Index:     len(embeddings) + idx,
+			}
+		}
+		embeddings = append(embeddings, embds...)
+		recordResponseUsage(modelUsage, parsed.RequestID, &TokenUsage{TotalTokens: parsed.Usage.TotalTokens}, "embedding")
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("aliyun embeddings API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	var parsed aliyunEmbeddingResponse
-	if err = json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	var embeddings []EmbeddingData
-	for _, dataElem := range parsed.Data {
-		var embeddingData EmbeddingData
-		embeddingData.Embedding = dataElem.Embedding
-		embeddingData.Index = dataElem.Index
-		embeddings = append(embeddings, embeddingData)
-	}
-	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
-		PromptTokens: parsed.Usage.PromptTokens,
-		TotalTokens:  parsed.Usage.TotalTokens,
-	}, "embedding")
-
 	return embeddings, nil
 }
 

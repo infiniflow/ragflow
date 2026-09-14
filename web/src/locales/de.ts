@@ -350,6 +350,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       runningStatus2: 'ABGEBROCHEN',
       runningStatus3: 'ERFOLGREICH',
       runningStatus4: 'FEHLGESCHLAGEN',
+      runningStatusQueued: 'In Warteschlange',
       pageRanges: 'Seitenbereiche',
       pageRangesTip:
         'Bereich der zu analysierenden Seiten; Seiten außerhalb dieses Bereichs werden nicht verarbeitet.',
@@ -397,10 +398,10 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Verwenden Sie dies zusammen mit der General-Schnittmethode. Wenn deaktiviert, werden Tabellenkalkulationsdateien (XLSX, XLS (Excel 97-2003)) zeilenweise in Schlüssel-Wert-Paare analysiert. Wenn aktiviert, werden Tabellenkalkulationsdateien in HTML-Tabellen umgewandelt. Wenn die ursprüngliche Tabelle mehr als 12 Zeilen enthält, teilt das System sie automatisch alle 12 Zeilen in mehrere HTML-Tabellen auf. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.',
       autoKeywords: 'Auto-Schlüsselwort',
       autoKeywordsTip:
-        'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren. Für weitere Informationen siehe https://ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Extrahieren Sie automatisch N Schlüsselwörter für jeden Abschnitt, um deren Ranking in Abfragen mit diesen Schlüsselwörtern zu verbessern. Beachten Sie, dass zusätzliche Tokens vom in den "Systemmodelleinstellungen" angegebenen Chat-Modell verbraucht werden. Sie können die hinzugefügten Schlüsselwörter eines Abschnitts in der Abschnittsliste überprüfen oder aktualisieren. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       autoQuestions: 'Auto-Frage',
       autoQuestionsTip:
-        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt. Für weitere Informationen siehe https://ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Um die Ranking-Ergebnisse zu verbessern, extrahieren Sie N Fragen für jeden Wissensdatenbank-Chunk mithilfe des im "Systemmodell-Setup" definierten Chatmodells. Beachten Sie, dass dies zusätzliche Token verbraucht. Die Ergebnisse können in der Chunk-Liste eingesehen und bearbeitet werden. Fehler bei der Fragenextraktion blockieren den Chunking-Prozess nicht; leere Ergebnisse werden dem ursprünglichen Chunk hinzugefügt. Für weitere Informationen siehe https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       redo: 'Möchten Sie die vorhandenen {{chunkNum}} Chunks löschen?',
       setMetaData: 'Metadaten festlegen',
       pleaseInputJson: 'Bitte JSON eingeben',
@@ -639,7 +640,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
 `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
       useRaptorTip:
-        'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/dev/enable_raptor.',
+        'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree.',
       prompt: 'Prompt',
       promptTip:
         'Verwenden Sie den Systemprompt, um die Aufgabe für das LLM zu beschreiben, festzulegen, wie es antworten soll, und andere verschiedene Anforderungen zu skizzieren. Der Systemprompt wird oft in Verbindung mit Schlüsseln (Variablen) verwendet, die als verschiedene Dateninputs für das LLM dienen. Verwenden Sie einen Schrägstrich `/` oder die (x)-Schaltfläche, um die zu verwendenden Schlüssel anzuzeigen.',
@@ -688,7 +689,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       addTag: 'Tag hinzufügen',
       useGraphRag: 'Wissensgraph extrahieren',
       useGraphRagTip:
-        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
+        'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
       Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
@@ -1014,7 +1015,10 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
-      azure_devopsDescription: 'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
+      sitemapDescription:
+        'Verbinden Sie eine öffentliche sitemap.xml, um die aufgeführten Webseiten und PDF-Dokumente mit Ihrer Wissensdatenbank zu synchronisieren.',
+      azure_devopsDescription:
+        'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
       bitbucketDescription:
         'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
       zendeskDescription:

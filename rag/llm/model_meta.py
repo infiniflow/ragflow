@@ -1063,7 +1063,7 @@ class HuggingFace(Base):
         if isinstance(model_type, dict):
             if "embedding" in model_type:
                 return [LLMType.EMBEDDING.value]
-            if "rerank" in model_type:
+            if "reranker" in model_type:
                 return [LLMType.RERANK.value]
             return []
         # TGI format: "text-generation" / "text2text-generation"
@@ -1126,6 +1126,46 @@ class GPUStack(OpenAIAPICompatible):
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class Llmman(OpenAIAPICompatible):
+    _FACTORY_NAME = "llmman"
+
+
+class Hubris(OpenAIAPICompatible):
+    """Hubris model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat and
+    embedding classes pin their endpoint: the catalogue must be read from the
+    gateway itself, never from a host supplied by the tenant.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
+class AnonRouter(OpenAIAPICompatible):
+    """AnonRouter model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat class pins
+    its endpoint: the catalogue must be read from the gateway itself, never
+    from a host supplied by the tenant. The listing is served in OpenAI format
+    and requires the tenant's bearer key, which ``Base._get_raw_model_list``
+    already sends.
+    """
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
 
 
 class NewAPI(OpenAIAPICompatible):

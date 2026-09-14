@@ -509,7 +509,7 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 		TaskID:   taskID,
 		TaskType: common.TaskTypeIngestionTask,
 	}
-	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
+	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
 }
 
 // UpdateComponentTotal records the number of components in the task's DSL

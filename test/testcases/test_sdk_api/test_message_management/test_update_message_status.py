@@ -53,7 +53,7 @@ class TestUpdateMessageStatus:
         updated_message_res = memory.get_message_content(message["message_id"])
         assert not updated_message_res["status"], str(updated_message_res)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_update_to_true(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})
