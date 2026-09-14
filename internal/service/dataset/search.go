@@ -294,11 +294,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, maxTokens, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
-		rerankModel = modelModule.NewRerankModel(driver, &modelName, apiConfig)
+		rerankModel = modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens)
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{

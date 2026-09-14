@@ -1,16 +1,10 @@
 import { Collapse } from '@/components/collapse';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-fom-field';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -101,70 +95,42 @@ function BeginForm({ node }: INextOperatorForm) {
   return (
     <section className="px-5 space-y-5 pb-4">
       <Form {...form}>
-        <FormField
-          control={form.control}
-          name={'mode'}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('flow.modeTip')}>
-                {t('flow.mode')}
-              </FormLabel>
-              <FormControl>
-                <RAGFlowSelect
-                  placeholder={t('common.pleaseSelect')}
-                  options={ModeOptions}
-                  {...field}
-                  onChange={(val) => {
-                    handleModeChange(val);
-                    field.onChange(val);
-                  }}
-                ></RAGFlowSelect>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
+        <RAGFlowFormItem
+          name="mode"
+          label={t('flow.mode')}
+          tooltip={t('flow.modeTip')}
+        >
+          {(field) => (
+            <RAGFlowSelect
+              placeholder={t('common.pleaseSelect')}
+              options={ModeOptions}
+              {...field}
+              onChange={(val) => {
+                handleModeChange(val);
+                field.onChange(val);
+              }}
+            ></RAGFlowSelect>
           )}
-        />
+        </RAGFlowFormItem>
         {mode === AgentDialogueMode.Conversational && (
-          <FormField
-            control={form.control}
-            name={'enablePrologue'}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('flow.openingSwitchTip')}>
-                  {t('flow.openingSwitch')}
-                </FormLabel>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          <SwitchFormField
+            name="enablePrologue"
+            label={t('flow.openingSwitch')}
+            tooltip={t('flow.openingSwitchTip')}
           />
         )}
         {mode === AgentDialogueMode.Conversational && enablePrologue && (
-          <FormField
-            control={form.control}
-            name={'prologue'}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                  {t('flow.openingCopy')}
-                </FormLabel>
-                <FormControl>
-                  <Textarea
-                    rows={5}
-                    {...field}
-                    className="overflow-auto"
-                    placeholder={t('common.pleaseInput')}
-                  ></Textarea>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <RAGFlowFormItem
+            name="prologue"
+            label={t('flow.openingCopy')}
+            tooltip={t('chat.setAnOpenerTip')}
+          >
+            <Textarea
+              rows={5}
+              className="overflow-auto"
+              placeholder={t('common.pleaseInput')}
+            ></Textarea>
+          </RAGFlowFormItem>
         )}
         {mode === AgentDialogueMode.Webhook && <WebHook></WebHook>}
         {mode !== AgentDialogueMode.Webhook && (

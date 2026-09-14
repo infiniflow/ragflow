@@ -786,43 +786,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     except Exception as e:
         return server_error_response(e)
 
-    # RAPTOR summary graph is stored as a standalone blob rather than raw
-    # knowledge_graph_kwd entity/relation rows, so include its arrays explicitly.
-    raptor_entities: list[dict] = []
-    raptor_relations: list[dict] = []
-    try:
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["content_with_weight", "compile_kwd"],
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
-    except Exception:
-        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
-        raptor_rows = {}
-    for row in raptor_rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        r_entities = graph.get("entities") or []
-        r_relations = graph.get("relations") or []
-        if isinstance(r_entities, list):
-            raptor_entities.extend(r_entities)
-        if isinstance(r_relations, list):
-            raptor_relations.extend(r_relations)
-    total_entities += len(raptor_entities)
-    total_relations += len(raptor_relations)
-
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
         if isinstance(raw, list):
@@ -911,31 +874,44 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_result(data=_response([bucket]))
 
     # ── normal mode: per-template subgraph sampling from the raw rows ──
-    # Metadata-only scan of the per-doc graph blob rows (one per
-    # (compile_kwd, template_id)) purely to discover buckets and resolve their
-    # display name/kind — WITHOUT loading the (potentially huge)
-    # content_with_weight. Each bucket's entities/relations are then fetched
-    # from the raw ``knowledge_graph_kwd`` rows with subgraph sampling.
-    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            meta_fields,
-            [],
-            {"doc_id": [document_id], "knowledge_graph_kwd": ["graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_name,
-            [dataset_id],
-        )
-        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
-    except Exception as e:
-        return server_error_response(e)
+    # Discover buckets from the authoritative per-doc entity/relation rows,
+    # WITHOUT loading the (potentially huge) content_with_weight. The compact
+    # graph blob is gone from the storage model: tree compilation now writes
+    # the same per-row shape as page_index, so buckets are discovered from the
+    # rows themselves. The scan is paged (metadata-only) to avoid truncating
+    # large docs — a doc carries one row per entity/relation, not one per
+    # template. Each bucket's entities/relations are then fetched with
+    # subgraph sampling.
+    meta_fields = ["id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
+    meta_rows: dict = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                meta_fields,
+                [],
+                {"doc_id": [document_id], "knowledge_graph_kwd": ["entity", "relation"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_name,
+                [dataset_id],
+            )
+            page_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+        except Exception as e:
+            return server_error_response(e)
+        if not page_rows:
+            break
+        meta_rows.update(page_rows)
+        if len(page_rows) < page_size:
+            break
+        offset += page_size
 
-    # Discover unique buckets. A template can own multiple compile_kwd blob
-    # rows; scoping by template_id folds them together, matching prior behavior.
+    # Discover unique buckets. A template can own multiple raw entity/relation
+    # rows; scoping by template_id folds them together.
     bucket_metas: dict[str, dict] = {}
     bucket_scopes: dict[str, dict] = {}
     for row in meta_rows.values():
@@ -955,15 +931,8 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             continue
         grouped[bid] = {**meta, "entities": entities, "relations": relations}
 
-    # RAPTOR was loaded above so its full counts are also available to keyword
-    # responses; append it only in normal mode, matching the existing behavior.
-    if raptor_entities or raptor_relations:
-        rb = grouped.setdefault("raptor", {"template_id": "raptor", "template_name": "RAPTOR Summary", "kind": "raptor", "entities": [], "relations": []})
-        rb["entities"].extend(raptor_entities)
-        rb["relations"].extend(raptor_relations)
-
     # Order: configured templates first (in the user's chosen order),
-    # then any discovered / legacy / raptor buckets after.
+    # then any discovered / legacy buckets after.
     ordered_ids: list[str] = []
     for tid in configured_ids:
         if tid in grouped and tid not in ordered_ids:
@@ -973,6 +942,27 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             ordered_ids.append(bucket_id)
 
     page_index_groups = [group for group in grouped.values() if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}]
+    for group in page_index_groups:
+        # Headings at every level carry a claim badge, not just leaves: the UI
+        # opens a node's claims from any level, and a heading's own chunk span
+        # covers its whole subtree. Failures are logged and the tree renders
+        # without badges.
+        try:
+            await sgc.attach_claim_counts(
+                group.get("entities") or [],
+                group.get("relations") or [],
+                index_name,
+                dataset_id,
+                document_id,
+                _compilation_template_kind(group.get("kind")),
+                leaves_only=False,
+            )
+        except Exception:
+            logging.exception(
+                "structure graph: page_index claim count attach failed for doc=%s template=%s",
+                document_id,
+                group.get("template_id"),
+            )
     if page_index_groups:
         # PageIndex nodes should follow the document's chunk order. Use the
         # current chunk query order directly. Do not derive the order
@@ -1020,6 +1010,98 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     return get_result(data=_response(templates_out))
 
 
+async def _template_compile_kwd(template_id: str) -> str:
+    """The ``compile_kwd`` rows of this template were stamped with.
+
+    Compiled rows carry the template's ``kind`` (page_index, tree, timeline…),
+    so any query that pins ``compile_kwd`` has to read it from the template
+    rather than assume one. Best-effort: ``None`` means "don't filter on it",
+    which is safe because the template id scopes the query anyway.
+
+    Deliberately defined ABOVE the route it serves: slotting a helper between a
+    decorator stack and its function steals the registration, and the route
+    then calls the helper with the path parameters instead.
+    """
+    from api.db.services.compilation_template_service import (
+        CompilationTemplateService,
+    )
+
+    try:
+        rows = await thread_pool_exec(CompilationTemplateService.query, id=template_id)
+    except Exception:  # pragma: no cover - lookup is best-effort
+        return ""
+    if not rows:
+        return ""
+    first = rows[0]
+    cfg = first.get("config") if isinstance(first, dict) else None
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except (TypeError, ValueError):
+            cfg = None
+    if isinstance(cfg, dict) and cfg.get("kind"):
+        return _compilation_template_kind(cfg.get("kind"))
+    kind = first.get("kind") if isinstance(first, dict) else None
+    return _compilation_template_kind(kind)
+
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/claims", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_document_structure_claims(tenant_id, dataset_id, document_id):
+    """Page through a document's claim/evidence rows (entity_type_kwd="claim").
+
+    Tree artifacts keep claims out of the node list, so the UI fetches them per
+    leaf cluster on demand. Query args:
+
+        chunk_ids:   comma-separated source chunk ids — a leaf cluster's
+                     members; without it the endpoint pages the whole document
+        template_id: compilation template scoping (optional)
+        offset/limit: paging, limit capped at 100
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not docs:
+        return get_error_data_result(message=f"you don't own the document {document_id}")
+
+    chunk_ids = [c.strip() for c in (request.args.get("chunk_ids") or "").split(",") if c.strip()]
+    template_id = (request.args.get("template_id") or "").strip() or None
+    try:
+        offset = max(int(request.args.get("offset") or 0), 0)
+        limit = min(max(int(request.args.get("limit") or 20), 1), 100)
+    except ValueError:
+        return get_error_data_result(message="offset/limit must be integers")
+
+    # The rows' ``compile_kwd`` is the template's own kind. It used to be
+    # pinned to "tree" here, so a page_index document (compile_kwd="page_index")
+    # matched no rows at all and every node reported zero claims.
+    compile_kwd = None
+    if template_id:
+        compile_kwd = await _template_compile_kwd(template_id) or None
+
+    from rag.nlp import search
+
+    index_name = search.index_name(dataset_tenant_id)
+    try:
+        claims, total = await sgc.list_claim_rows(
+            index_name,
+            dataset_id,
+            document_id,
+            compile_kwd=compile_kwd,
+            compilation_template_id=template_id,
+            chunk_ids=chunk_ids or None,
+            offset=offset,
+            limit=limit,
+        )
+    except Exception as e:
+        return server_error_response(e)
+    return get_result(data={"claims": claims, "total": total, "offset": offset, "limit": limit})
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/graph", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1028,11 +1110,10 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
 
     Request body::
 
-        {"template_id": "<template id> | legacy:<compile_kwd> | raptor"}
+        {"template_id": "<template id> | legacy:<compile_kwd>"}
 
     Template-backed structure tabs remove both the compact graph row and
-    the underlying entity/relation rows. RAPTOR only removes the graph
-    projection row so summary chunks remain available for retrieval.
+    the underlying entity/relation rows.
     """
     from rag.nlp import search
 
@@ -1057,10 +1138,6 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
 
     try:
         deleted = 0
-        if template_id == "raptor":
-            deleted += _delete({"doc_id": [document_id], "compile_kwd": ["raptor_graph"]})
-            return get_result(data={"deleted": deleted}, message=f"deleted {deleted} structure graph rows")
-
         if template_id.startswith("legacy:"):
             compile_kwd = template_id[len("legacy:") :].strip()
             if not compile_kwd:

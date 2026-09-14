@@ -8,8 +8,8 @@ import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
-import { MenuItemKey, SideBar } from './template-sidebar';
 import { bindUnboundRetrieval } from './template-retrieval-binding';
+import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
   const list = useFetchAgentTemplates();

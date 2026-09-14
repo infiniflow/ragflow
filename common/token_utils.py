@@ -104,8 +104,10 @@ def record_run_token_usage(prompt_tokens: int = 0, completion_tokens: int = 0, t
 def usage_from_response(resp) -> dict:
     """Extract a {prompt_tokens, completion_tokens, total_tokens} split from an LLM response.
 
-    Handles OpenAI/OpenRouter-style ``resp.usage`` objects and dict variants. Missing
-    fields default to 0; ``total_tokens`` falls back to prompt+completion when absent.
+    Handles OpenAI/OpenRouter-style ``resp.usage`` objects and dict variants, including
+    the camelCase spelling (``promptTokens``/``completionTokens``/``totalTokens``) that
+    some providers such as Moark return. Missing fields default to 0; ``total_tokens``
+    falls back to prompt+completion when absent.
     """
     out = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     if resp is None:
@@ -131,9 +133,9 @@ def usage_from_response(resp) -> dict:
                 return int(v)
         return 0
 
-    out["prompt_tokens"] = _get(usage, "prompt_tokens", "input_tokens")
-    out["completion_tokens"] = _get(usage, "completion_tokens", "output_tokens")
-    out["total_tokens"] = _get(usage, "total_tokens")
+    out["prompt_tokens"] = _get(usage, "prompt_tokens", "input_tokens", "promptTokens")
+    out["completion_tokens"] = _get(usage, "completion_tokens", "output_tokens", "completionTokens")
+    out["total_tokens"] = _get(usage, "total_tokens", "totalTokens")
     if not out["total_tokens"]:
         out["total_tokens"] = out["prompt_tokens"] + out["completion_tokens"]
     return out

@@ -42,7 +42,6 @@ const (
 	CompileKwdSkill        = "skill"
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
-	CompileKwdRaptorGraph  = "raptor_graph"
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -837,39 +836,6 @@ func sortedSetKeys(set map[string]struct{}) []string {
 	return ids
 }
 
-// ClearWiki deletes all wiki artifacts for a dataset.
-func (s *DatasetArtifactService) ClearWiki(ctx context.Context, tenantID, datasetID string) (map[string]int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil, fmt.Errorf("document engine is not initialized")
-	}
-	kwds := []string{CompileKwdWikiPage, CompileKwdWikiEntity, CompileKwdWikiRelation, CompileKwdWikiAlter}
-	deleted := map[string]int{}
-	for _, kwd := range kwds {
-		chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{kwd}}, []string{"id"}, 0, 10000, nil)
-		if err != nil {
-			return nil, err
-		}
-		if len(chunks) == 0 {
-			deleted[kwd] = 0
-			continue
-		}
-		ids := make([]string, 0, len(chunks))
-		for _, c := range chunks {
-			if id, ok := c["id"].(string); ok {
-				ids = append(ids, id)
-			}
-		}
-		cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-		if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-			return nil, err
-		}
-		deleted[kwd] = len(ids)
-	}
-	return deleted, nil
-}
-
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
 	docEngine := engine.Get()
@@ -929,65 +895,6 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 		return nil, 0, err
 	}
 	return nodes, total, nil
-}
-
-// DeleteNav removes the direct nav_doc children of every root cluster of a
-// dataset. DEPRECATED — this is the minimal-loop approximation of Python
-// delete_nav: it drains only the immediate nav_doc rows under root clusters and
-// does NOT implement Python's full subtree traversal or empty-cluster cascade
-// cleanup. Prefer the NavService (future work) for a complete delete. Returns
-// the number of nav_doc rows removed.
-func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, c := range clusters {
-		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
-		if err != nil {
-			continue
-		}
-		for _, ch := range children {
-			if ch.DocID != "" {
-				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-					return deleted, err
-				}
-				deleted++
-			}
-		}
-	}
-	return deleted, nil
-}
-
-// DeleteNavNode deletes the direct nav_doc children of a named cluster.
-// DEPRECATED — the minimal loop only drains immediate doc children (returns the
-// count); it does NOT delete sub-clusters recursively nor perform Python's
-// empty-cluster cascade. A full tree-node delete is future NavService work.
-func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
-	ns := nav.GetNavService()
-	if ns == nil {
-		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
-	}
-	// Minimal loop has no per-node delete; drain direct children's docs.
-	children, _, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
-	if err != nil {
-		return 0, err
-	}
-	deleted := 0
-	for _, ch := range children {
-		if ch.DocID != "" {
-			if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
-				return deleted, err
-			}
-			deleted++
-		}
-	}
-	return deleted, nil
 }
 
 // SkillTreeItem is a single skill-tree page summary.
@@ -1138,4 +1045,155 @@ func toStringSlice(v interface{}) []string {
 		return t
 	}
 	return []string{}
+}
+
+// claimRowTypes lists the entity_type_kwd values that carry a claim.
+// “claim“ is what every compiler writes now (page_index folded its
+// “fact“/“conclusion“ types into it); the older two spellings stay listed
+// so rows compiled before the rename keep showing up until a recompile.
+var claimRowTypes = []string{"claim", "fact", "conclusion"}
+
+// ListDocumentStructureClaims pages one document's claim/evidence rows
+// (entity_type_kwd="claim"), mirroring Python
+// structure_graph_common.list_claim_rows + chunk_api.get_document_structure_claims.
+//
+// “chunkIDs“ narrows the page to claims sourced from those chunks — the tree
+// UI passes a leaf cluster's members when the user expands it; without it the
+// endpoint pages the whole document. “templateID“ scopes by
+// compilation_template_ids; unlike Python we deliberately do NOT narrow by
+// compile_kwd on top of it: rows of one template always share one stamped
+// compile_kwd, so the template id alone scopes identically (Python's own
+// lookup there is documented as best-effort).
+func (s *DatasetArtifactService) ListDocumentStructureClaims(ctx context.Context, tenantID, datasetID, documentID, templateID string, chunkIDs []string, offset, limit int) ([]map[string]interface{}, int64, error) {
+	if limit < 1 {
+		limit = 1
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	filter := map[string]interface{}{
+		"doc_id":          []string{documentID},
+		"entity_type_kwd": claimRowTypes,
+	}
+	if templateID != "" {
+		filter["compilation_template_ids"] = []string{templateID}
+	}
+	if len(chunkIDs) > 0 {
+		deduped := appendUniqueSorted(chunkIDs)
+		if len(deduped) > 0 {
+			filter["source_chunk_ids"] = deduped
+		}
+	}
+
+	rows, total, err := graphRowSearch(ctx, tenantID, datasetID,
+		[]string{"content_with_weight", "source_chunk_ids"}, filter, nil, offset, limit, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	claims := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		if claim := projectClaimRow(row); claim != nil {
+			claims = append(claims, claim)
+		}
+	}
+	return claims, total, nil
+}
+
+// projectClaimRow projects a raw claim row to the API shape, keeping its
+// verbatim evidence. Unlike graph entities, the quote and its location ARE the
+// payload — that is what a compiled claim exists to carry (Python
+// structure_graph_common.project_claim).
+func projectClaimRow(row map[string]interface{}) map[string]interface{} {
+	payload := graphLoadPayload(row)
+	if payload == nil {
+		return nil
+	}
+	name := strings.TrimSpace(graphStr(payload["name"]))
+	if name == "" {
+		return nil
+	}
+
+	chunkIDs := appendUniqueSorted(stringSliceValue(row["source_chunk_ids"], payload["source_chunk_ids"]))
+	claim := map[string]interface{}{
+		"name":             name,
+		"description":      strings.TrimSpace(graphStr(payload["description"])),
+		"source_chunk_ids": chunkIDs,
+	}
+	if claim["description"] == "" {
+		claim["description"] = name
+	}
+	if typ := strings.TrimSpace(graphStr(payload["type"])); typ != "" {
+		claim["type"] = typ
+	}
+	if evidence := keptEvidence(payload["evidence"]); len(evidence) > 0 {
+		claim["evidence"] = evidence
+	}
+	return claim
+}
+
+// stringSliceValue coerces the row column first, falling back to the payload's
+// own source_chunk_ids (Python: row.source_chunk_ids or payload.source_chunk_ids).
+func stringSliceValue(values ...interface{}) []string {
+	for _, v := range values {
+		switch x := v.(type) {
+		case []string:
+			return x
+		case []interface{}:
+			out := make([]string, 0, len(x))
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					out = append(out, strings.TrimSpace(s))
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		case string:
+			if strings.TrimSpace(x) != "" {
+				return []string{x}
+			}
+		}
+	}
+	return nil
+}
+
+// keptEvidence drops evidence entries without a verbatim quote.
+func keptEvidence(v interface{}) []map[string]interface{} {
+	items, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	kept := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(graphStr(m["quote"])) == "" {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+// appendUniqueSorted deduplicates and sorts chunk ids (Python:
+// sorted({...}) over the requested chunk_ids; stable output for tests).
+func appendUniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }

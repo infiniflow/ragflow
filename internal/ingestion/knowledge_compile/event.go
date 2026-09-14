@@ -44,10 +44,12 @@ type EventType string
 const (
 	EventTypeCompleted EventType = "doc_completed"
 	EventTypeDeleted   EventType = "doc_deleted"
+	EventTypeEnabled   EventType = "doc_enabled"
+	EventTypeDisabled  EventType = "doc_disabled"
 )
 
-// KCCompileEvent is the payload published when a document's pipeline finishes
-// (doc_completed) or is deleted (doc_deleted). It is intentionally decoupled
+// KCCompileEvent is the payload published when a document's pipeline finishes,
+// its availability changes, or it is deleted. It is intentionally decoupled
 // from common.TaskMessage because the consumer reads the raw JSON body.
 type KCCompileEvent struct {
 	TenantID  string `json:"tenant_id"`
@@ -122,4 +124,23 @@ func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) erro
 		return nil
 	}
 	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil)
+}
+
+// PublishEnabled records that a document with compiled products became
+// available again and must be merged into dataset-level products.
+func PublishEnabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+	if defaultPublisher == nil {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeEnabled), variants)
+}
+
+// PublishDisabled records that a document with compiled products became
+// unavailable. The consumer retracts only its dataset-level contributions;
+// document-level compiled rows remain available for a later re-enable.
+func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+	if defaultPublisher == nil {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants)
 }
