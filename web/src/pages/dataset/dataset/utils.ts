@@ -13,11 +13,11 @@ import {
   transformParserConfigSetups,
 } from '@/utils/pipeline-operator';
 import { cloneDeep } from 'lodash';
-import { IngestionTaskStatus, RunningStatus } from './constant';
+import { IngestionTaskStatus } from './constant';
+import { normalizeRunningStatus, RunningStatus, RunningStatusValue } from '@/constants/knowledge';
 
-export const isParserRunning = (text: RunningStatus) => {
-  const isRunning = text === RunningStatus.RUNNING;
-  return isRunning;
+export const isParserRunning = (status: RunningStatusValue) => {
+  return normalizeRunningStatus(status) === RunningStatus.RUNNING;
 };
 
 export const isDocumentQueued = (
