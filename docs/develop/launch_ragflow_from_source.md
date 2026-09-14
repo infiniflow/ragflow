@@ -118,17 +118,13 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
+2. Start the RAGFlow frontend service with the proxy configured for the Python backend:
 
    ```bash
-   vim vite.config.ts
+   API_PROXY_SCHEME=python npm run dev
    ```
 
-3. Start up the RAGFlow frontend service:
-
-   ```bash
-   npm run dev
-   ```
+   The `python` proxy scheme routes API requests to the Python backend on port `9380`. Use `go` for the Go backend on port `9384`, or `hybrid` when running both backends.
 
    *The following message appears, showing the IP address and port number of your frontend service:*
 
