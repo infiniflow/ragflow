@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -145,6 +146,28 @@ func TestMergeGeneralUnitsAppliesUnconditionalCharacterOverlap(t *testing.T) {
 	}
 	if intValue(got[1].TKNums) <= 2 {
 		t.Errorf("overlap was trimmed to cap: token count = %d", intValue(got[1].TKNums))
+	}
+}
+
+func TestApplyGeneralOverlapDoesNotAccumulatePositions(t *testing.T) {
+	position := func(page int) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf("[[%d,0,10,0,5]]", page))
+	}
+	chunks := []schema.ChunkDoc{
+		{Text: "alpha beta", DocType: "text", CKType: "text", PDFPositions: position(1), Positions: position(1)},
+		{Text: "gamma delta", DocType: "text", CKType: "text", PDFPositions: position(2), Positions: position(2)},
+		{Text: "epsilon zeta", DocType: "text", CKType: "text", PDFPositions: position(3), Positions: position(3)},
+	}
+
+	got := applyGeneralOverlap(chunks, 50, "\n")
+	if len(got) != 3 {
+		t.Fatalf("chunks = %d, want 3", len(got))
+	}
+	if string(got[1].PDFPositions) != string(position(2)) || string(got[1].Positions) != string(position(2)) {
+		t.Fatalf("second overlap chunk inherited prior positions: pdf=%s positions=%s", got[1].PDFPositions, got[1].Positions)
+	}
+	if string(got[2].PDFPositions) != string(position(3)) || string(got[2].Positions) != string(position(3)) {
+		t.Fatalf("third overlap chunk accumulated prior positions: pdf=%s positions=%s", got[2].PDFPositions, got[2].Positions)
 	}
 }
 

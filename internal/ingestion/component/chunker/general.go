@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
 	"image/png"
 	"log/slog"
 	"path/filepath"
@@ -271,9 +273,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	return chunkOutputs(chunks), nil
 }
 
-// sortPDFUnits orders positioned units by physical reading order and leaves
-// coordinate-free units after them in their original stable order. When no
-// positions are present at all, parser order is preserved unchanged.
+// sortPDFUnits orders each contiguous positioned run by physical reading
+// order. Coordinate-free units are barriers: they stay at their parser
+// positions and preserve their relative order instead of being moved to the
+// end of the document.
 func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	type positionedUnit struct {
 		unit       schema.ChunkDoc
@@ -281,30 +284,30 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 		positioned bool
 	}
 	ordered := make([]positionedUnit, 0, len(units))
-	hasPosition := false
 	for _, unit := range units {
 		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
-		if ok {
-			hasPosition = true
-		}
 		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok})
 	}
-	if !hasPosition {
-		result := make([]schema.ChunkDoc, 0, len(ordered))
-		for _, item := range ordered {
-			result = append(result, item.unit)
+	runStart := -1
+	flush := func(end int) {
+		if runStart < 0 {
+			return
 		}
-		return result
+		sort.SliceStable(ordered[runStart:end], func(i, j int) bool {
+			return pdfPosRowLess(ordered[runStart+i].row, ordered[runStart+j].row)
+		})
+		runStart = -1
 	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].positioned != ordered[j].positioned {
-			return ordered[i].positioned
+	for i := 0; i <= len(ordered); i++ {
+		positioned := i < len(ordered) && ordered[i].positioned
+		if positioned {
+			if runStart < 0 {
+				runStart = i
+			}
+			continue
 		}
-		if !ordered[i].positioned {
-			return false
-		}
-		return pdfPosRowLess(ordered[i].row, ordered[j].row)
-	})
+		flush(i)
+	}
 	result := make([]schema.ChunkDoc, 0, len(ordered))
 	for _, item := range ordered {
 		result = append(result, item.unit)
@@ -455,7 +458,10 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		step = 1
 	}
 	for cursor := index + step; cursor >= 0 && cursor < len(units) && remaining > 0; cursor += step {
-		if units[cursor].CKType != "text" {
+		if generalMediaContextCrossesSpreadsheetBoundary(units[index], units[cursor]) {
+			break
+		}
+		if itemDocType(units[cursor]) != "text" {
 			continue
 		}
 		text := units[cursor].Text
@@ -477,6 +483,17 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		remaining -= tokens
 	}
 	return strings.Join(parts, "\n")
+}
+
+func generalMediaContextCrossesSpreadsheetBoundary(media, candidate schema.ChunkDoc) bool {
+	if !hasSpreadsheetIdentity(media) && !hasSpreadsheetIdentity(candidate) {
+		return false
+	}
+	return !sameSpreadsheetTable(media, candidate)
+}
+
+func hasSpreadsheetIdentity(doc schema.ChunkDoc) bool {
+	return doc.TableID != "" || doc.Sheet != "" || doc.SheetIndex != nil
 }
 
 func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
@@ -789,6 +806,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	if len(units) == 0 {
 		return emptyOutputs(), nil
 	}
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	pendingRows := make([]schema.ChunkDoc, 0)
 	var pendingHeader *schema.ChunkDoc
@@ -1054,8 +1072,6 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep s
 				current := cloneChunkDoc(chunks[i])
 				current.Text = joinGeneralOverlapText(prefix, current.Text, joinSep)
 				current.TKNums = intPtr(tokenizeStr(current.Text))
-				current.PDFPositions = mergeGeneralPositions(chunks[previousText].PDFPositions, current.PDFPositions)
-				current.Positions = mergeGeneralPositions(chunks[previousText].Positions, current.Positions)
 				chunks[i] = current
 			}
 		}

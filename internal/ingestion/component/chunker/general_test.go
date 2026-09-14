@@ -18,6 +18,12 @@ package chunker
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -351,6 +357,48 @@ func TestMergeMarkdownImagesStacksRasterPayloads(t *testing.T) {
 	}
 }
 
+func TestDecodeMarkdownImageSupportsJPEGAndGIF(t *testing.T) {
+	var jpegData bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := jpeg.Encode(&jpegData, img, nil); err != nil {
+		t.Fatalf("jpeg.Encode: %v", err)
+	}
+	cases := []struct {
+		name string
+		mime string
+		data []byte
+	}{
+		{
+			name: "jpeg",
+			mime: "image/jpeg",
+			data: jpegData.Bytes(),
+		},
+		{
+			name: "gif",
+			mime: "image/gif",
+			data: mustDecodeBase64(t, "R0lGODdhAgACAIEAAP8AAAAAAAAAAAAAACwAAAAAAgACAAAIBgABCAQQEAA7"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			value := "data:" + tc.mime + ";base64," + base64.StdEncoding.EncodeToString(tc.data)
+			if _, ok := decodeMarkdownImage(value); !ok {
+				t.Fatalf("decodeMarkdownImage rejected %s payload", tc.mime)
+			}
+		})
+	}
+}
+
+func mustDecodeBase64(t *testing.T, value string) []byte {
+	t.Helper()
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		t.Fatalf("DecodeString: %v", err)
+	}
+	return decoded
+}
+
 func TestMergeMarkdownImagesAcceptsBareBase64Payloads(t *testing.T) {
 	const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
 	const secondPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
@@ -661,6 +709,22 @@ func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
 	}
 }
 
+func TestSortPDFUnitsKeepsUnpositionedMediaInInputOrder(t *testing.T) {
+	position := func(top float64) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf("[[1,0,10,%g,%g]]", top, top+5))
+	}
+	units := []schema.ChunkDoc{
+		{Text: "before", DocType: "text", CKType: "text", Positions: position(10)},
+		{Text: "figure", DocType: "image", CKType: "image"},
+		{Text: "after", DocType: "text", CKType: "text", Positions: position(30)},
+	}
+
+	got := sortPDFUnits(units)
+	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{"before", "figure", "after"}) {
+		t.Fatalf("PDF units = %q, want unpositioned media to keep its input position", texts)
+	}
+}
+
 func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	component, err := NewGeneralChunker(nil)
 	if err != nil {
@@ -688,6 +752,66 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	}
 	if chunks[0]["text"] != "Name; Amount" || chunks[0]["ck_type"] != "table_header" {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
+	}
+}
+
+func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"image_context_size": 10,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "figures.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Revenue", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Growth", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want row, image, row", chunks)
+	}
+	if chunks[1]["ck_type"] != "image" {
+		t.Fatalf("image chunk = %#v", chunks[1])
+	}
+	if chunks[1]["context_above"] != "Revenue" || chunks[1]["context_below"] != "Growth" {
+		t.Fatalf("image context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
+	}
+}
+
+func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"image_context_size": 10})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "figures.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "Sheet one", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Sheet two", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-2", "sheet_index": 2, "tk_nums": 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want row, image, row", chunks)
+	}
+	if chunks[1]["context_above"] != "Sheet one" || chunks[1]["context_below"] != nil {
+		t.Fatalf("cross-sheet image context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
 	}
 }
 
