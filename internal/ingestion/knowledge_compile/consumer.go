@@ -611,7 +611,12 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	for _, d := range deleted {
 		deletedSet[d] = true
 	}
-	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, deleted)
+	retractedDocIDs := append([]string(nil), deleted...)
+	for _, entry := range disabled {
+		retractedDocIDs = append(retractedDocIDs, entry.DocID)
+	}
+	retractedDocIDs = uniqueSortedStrings(retractedDocIDs)
+	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, retractedDocIDs)
 	if err != nil {
 		return err
 	}
@@ -624,7 +629,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			break
 		}
 	}
-	if len(deleted) == 0 && wikiOnly && len(wikiDiff.affectedKeys) == 0 {
+	if len(retractedDocIDs) == 0 && wikiOnly && len(wikiDiff.affectedKeys) == 0 {
 		c.mu.Lock()
 		for _, docID := range pendingTombClear {
 			delete(c.tombs[kb], docID)
@@ -650,14 +655,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// A merged product referencing several deleted docs is pruned in one pass,
 	// and an emptied product is removed exactly once.
 	if len(deleted) > 0 || len(disabled) > 0 {
-		delIDs := make([]string, 0, len(deletedSet)+len(disabled))
-		for d := range deletedSet {
-			delIDs = append(delIDs, d)
-		}
-		for _, entry := range disabled {
-			delIDs = append(delIDs, entry.DocID)
-		}
-		delIDs = uniqueSortedStrings(delIDs)
+		delIDs := retractedDocIDs
 		// Each destructive write runs under the scheduler's per-dataset
 		// write/rebuild lock with the generation check performed INSIDE the lock,
 		// so a rewrite can neither land between the check and the write nor
@@ -700,6 +698,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		}
 	}
 	if len(completed) == 0 && len(wikiDiff.affectedKeys) == 0 {
+		if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
+			return err
+		}
 		c.mu.Lock()
 		for _, docID := range pendingTombClear {
 			delete(c.tombs[kb], docID)
@@ -1141,7 +1142,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		}
 		return err
 	}
-	if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, deleted); err != nil {
+	if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
 		return err
 	}
 
@@ -1461,7 +1462,10 @@ func productsForVariants(products []kccommon.Product, variants []string) []kccom
 // summary itself when Embedd is empty, so the consumer needs no embedder.
 func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDocInput {
 	type acc struct {
-		in nav.UpsertDocInput
+		in             nav.UpsertDocInput
+		treeSummary    string
+		treeEmbedd     []float32
+		structureLines []string
 	}
 	byDoc := make(map[string]*acc, len(products))
 	for i := range products {
@@ -1476,8 +1480,8 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
 				a = byDoc[p.DocID]
 			}
-			a.in.Summary = p.Content
-			a.in.Embedd = p.Vector
+			a.treeSummary = p.Content
+			a.treeEmbedd = p.Vector
 		case kccommon.VariantStructure:
 			// Python's page_index path rebuilds the doc graph from the stored
 			// entity rows and folds their descriptions into the nav summary
@@ -1496,14 +1500,20 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
 				a = byDoc[p.DocID]
 			}
-			if a.in.Summary != "" {
-				a.in.Summary += "\n"
-			}
-			a.in.Summary += line
+			a.structureLines = append(a.structureLines, line)
 		}
 	}
 	out := make([]nav.UpsertDocInput, 0, len(byDoc))
 	for _, a := range byDoc {
+		// Tree is the canonical navigation summary when both variants are present;
+		// otherwise use the folded structure/page-index summary. This makes the
+		// result independent of product iteration order.
+		if strings.TrimSpace(a.treeSummary) != "" {
+			a.in.Summary = a.treeSummary
+			a.in.Embedd = a.treeEmbedd
+		} else {
+			a.in.Summary = strings.Join(a.structureLines, "\n")
+		}
 		if strings.TrimSpace(a.in.Summary) == "" {
 			continue
 		}

@@ -1,6 +1,7 @@
 package knowledge_compile
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -62,5 +63,18 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 		if !ok || len(entries) != 1 {
 			t.Fatalf("dataset log entries were not split by task type: %+v", log.DSL["entries"])
 		}
+	}
+}
+
+func TestTaskTypesForEntryLegacyFallbacks(t *testing.T) {
+	got := taskTypesForEntry(BacklogEntry{Variants: []string{"structure"}})
+	want := []string{kccommon.TaskTypeGraph, kccommon.TaskTypePageIndex, kccommon.TaskTypeTimeline}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("legacy structure task types = %v, want %v", got, want)
+	}
+
+	got = taskTypesForEntry(BacklogEntry{})
+	if !reflect.DeepEqual(got, allDatasetTaskTypes) {
+		t.Fatalf("unknown entry task types = %v, want %v", got, allDatasetTaskTypes)
 	}
 }

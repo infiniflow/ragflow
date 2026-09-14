@@ -40,6 +40,12 @@ var allDatasetTaskTypes = []string{
 	kccommon.TaskTypePageIndex,
 }
 
+var structureTaskTypes = []string{
+	kccommon.TaskTypeGraph,
+	kccommon.TaskTypeTimeline,
+	kccommon.TaskTypePageIndex,
+}
+
 // Dataset ingestion logs use the status values exposed by the Python API and
 // consumed by the shared frontend. The Go scheduler uses a different set of
 // internal terminal names, so translate them at the persistence boundary.
@@ -73,7 +79,11 @@ func taskTypesForVariants(variants []string) []string {
 		case "mindmap", "mind_map":
 			taskType = kccommon.TaskTypeMindmap
 		case "structure":
-			taskType = kccommon.TaskTypeGraph
+			// Legacy structure events predate the task-type field and cannot
+			// distinguish graph, timeline, and page-index products.
+			for _, structureTaskType := range structureTaskTypes {
+				seen[structureTaskType] = struct{}{}
+			}
 		}
 		if taskType != "" {
 			seen[taskType] = struct{}{}
@@ -92,7 +102,13 @@ func taskTypesForEntry(entry BacklogEntry) []string {
 	if len(seen) > 0 {
 		return sortedTaskTypes(seen)
 	}
-	return taskTypesForVariants(entry.Variants)
+	if taskTypes := taskTypesForVariants(entry.Variants); len(taskTypes) > 0 {
+		return taskTypes
+	}
+	// An event with no routing metadata must remain visible in every possible
+	// dataset log. Returning the fallback per entry prevents an unknown entry
+	// from disappearing when other entries in the same batch are typed.
+	return append([]string(nil), allDatasetTaskTypes...)
 }
 
 func normalizeTaskType(taskType string) string {
