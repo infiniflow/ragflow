@@ -155,8 +155,7 @@ class RAGFlowMinio:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
 
     @use_default_bucket
@@ -178,8 +177,7 @@ class RAGFlowMinio:
                 logging.exception(f"Fail to get {bucket}/{filename}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return
 
@@ -217,16 +215,15 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
-                if _ == 2:
+                if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
-                time.sleep(2**_)
+                self.__open__()
+                time.sleep(2**attempt)
         return
 
     @use_default_bucket

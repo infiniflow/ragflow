@@ -77,13 +77,12 @@ class RAGFlowGCS:
                 return True
             except NotFound:
                 logging.error(f"Fail to put: Main bucket {self.bucket_name} does not exist.")
-                raise
+                return False
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return False
 
@@ -114,8 +113,7 @@ class RAGFlowGCS:
                 logging.exception(f"Fail to get {bucket}/{filename}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return None
 
@@ -141,7 +139,7 @@ class RAGFlowGCS:
 
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, fnm)
@@ -155,11 +153,10 @@ class RAGFlowGCS:
                 return url
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
-                if _ == 2:
+                if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
-                time.sleep(2**_)
+                self.__open__()
+                time.sleep(2**attempt)
         return None
 
     def remove_bucket(self, bucket):

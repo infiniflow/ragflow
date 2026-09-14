@@ -60,8 +60,7 @@ class RAGFlowAzureSasBlob:
                 logging.exception(f"Fail put {blob_name}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
 
     def rm(self, bucket, fnm, tenant_id=None):
@@ -80,8 +79,7 @@ class RAGFlowAzureSasBlob:
                 logging.exception(f"fail get {blob_name}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return None
 
@@ -95,14 +93,13 @@ class RAGFlowAzureSasBlob:
 
     def get_presigned_url(self, bucket, fnm, expires):
         blob_name = f"{bucket}/{fnm}"
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, blob_name, expires)
             except Exception:
                 logging.exception(f"fail get {blob_name}")
-                if _ == 2:
+                if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
-                time.sleep(2**_)
+                self.__open__()
+                time.sleep(2**attempt)
         return None

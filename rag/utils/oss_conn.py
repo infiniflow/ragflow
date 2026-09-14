@@ -126,8 +126,7 @@ class RAGFlowOSS:
                 logging.exception(f"Fail put {bucket}/{fnm}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
 
     @use_prefix_path
@@ -150,8 +149,7 @@ class RAGFlowOSS:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return None
 
@@ -170,16 +168,15 @@ class RAGFlowOSS:
     @use_prefix_path
     @use_default_bucket
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 r = self.conn.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": fnm}, ExpiresIn=expires)
 
                 return r
             except Exception:
                 logging.exception(f"fail get url {bucket}/{fnm}")
-                if _ == 2:
+                if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
-                time.sleep(2**_)
+                self.__open__()
+                time.sleep(2**attempt)
         return None

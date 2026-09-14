@@ -77,8 +77,7 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"Fail put {blob}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return None
 
@@ -100,8 +99,7 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"fail get {blob}")
                 if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
+                self.__open__()
                 time.sleep(2**attempt)
         return None
 
@@ -116,14 +114,13 @@ class RAGFlowAzureSpnBlob:
 
     def get_presigned_url(self, bucket, fnm, expires):
         f_path = f"{bucket}/{fnm}"
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, f_path, expires)
             except Exception:
                 logging.exception(f"fail get {bucket}/{fnm}")
-                if _ == 2:
+                if attempt == 2:
                     raise
-                if not self.__open__():
-                    raise
-                time.sleep(2**_)
+                self.__open__()
+                time.sleep(2**attempt)
         return None
