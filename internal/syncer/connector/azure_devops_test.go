@@ -789,9 +789,12 @@ func TestAzureDevOpsResolveURLStripsQueryAndFragment(t *testing.T) {
 		t.Fatalf("unexpected org: %s", org)
 	}
 
-	gotOrg, _ := azureDevOpsResolveURL("http://tfs.corp.local:8080/DefaultCollection?test=1#frag", "")
-	if gotOrg != "http://tfs.corp.local:8080/DefaultCollection" {
-		t.Fatalf("unexpected resolved URL: %s", gotOrg)
+	gotWithoutOrg, orgExtracted := azureDevOpsResolveURL("", "http://tfs.corp.local:8080/tfs/DefaultCollection?test=1#frag")
+	if gotWithoutOrg != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected resolved URL: %s", gotWithoutOrg)
+	}
+	if orgExtracted != "DefaultCollection" {
+		t.Fatalf("unexpected org: %s", orgExtracted)
 	}
 }
 

@@ -200,12 +200,6 @@ func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) 
 			return cleanBase, cleanOrg
 		}
 		if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
-			if u, err := url.Parse(cleanOrg); err == nil && u.Scheme != "" {
-				u.RawQuery = ""
-				u.Fragment = ""
-				u.ForceQuery = false
-				cleanOrg = strings.TrimRight(u.String(), "/")
-			}
 			return cleanOrg, cleanOrg
 		}
 		if strings.HasSuffix(cleanBase, "/"+cleanOrg) || strings.HasSuffix(cleanBase, "/"+url.PathEscape(cleanOrg)) {
@@ -218,12 +212,6 @@ func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) 
 		return "", ""
 	}
 	if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
-		if u, err := url.Parse(cleanOrg); err == nil && u.Scheme != "" {
-			u.RawQuery = ""
-			u.Fragment = ""
-			u.ForceQuery = false
-			cleanOrg = strings.TrimRight(u.String(), "/")
-		}
 		return cleanOrg, cleanOrg
 	}
 	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(cleanOrg), cleanOrg
