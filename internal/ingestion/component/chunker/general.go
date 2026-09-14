@@ -536,6 +536,12 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 	for _, unit := range units {
 		if itemDocType(unit) == "table" {
 			if current >= 0 && isShortMarkdownHeading(merged[current]) {
+				if !markdownImagesMergeable(merged[current].Image, unit.Image) {
+					merged = append(merged, cloneChunkDoc(unit))
+					current = -1
+					currentTokens = 0
+					continue
+				}
 				table := cloneChunkDoc(unit)
 				heading := merged[current]
 				if heading.Text != "" && table.Text != "" {
@@ -577,6 +583,12 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 		previous := &merged[current]
 		forceMerge := isShortMarkdownHeading(*previous)
 		unitTokens := generalUnitTokens(unit)
+		if !markdownImagesMergeable(previous.Image, unit.Image) {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			currentTokens = unitTokens
+			continue
+		}
 		projected := currentTokens + unitTokens
 		if !forceMerge && projected > target {
 			overlap, _ := computeOverlapPrefix(previous.Text, overlapPct)
@@ -617,8 +629,9 @@ func mergeMarkdownChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep strin
 
 // mergeMarkdownImages preserves the single image field consumed by downstream
 // components while matching Python's vertical image aggregation when both
-// payloads are decodable raster data. Unsupported or malformed payloads keep
-// the first image rather than emitting a corrupt data URI.
+// payloads are decodable raster data. Callers must check
+// markdownImagesMergeable before merging two non-empty payloads; a single
+// string cannot represent two opaque object-storage references safely.
 func mergeMarkdownImages(first, second string) string {
 	if first == "" {
 		return second
@@ -645,12 +658,27 @@ func mergeMarkdownImages(first, second string) string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
 }
 
-func decodeMarkdownImage(value string) (image.Image, bool) {
-	marker := strings.Index(value, "base64,")
-	if marker < 0 {
-		return nil, false
+func markdownImagesMergeable(first, second string) bool {
+	if first == "" || second == "" || first == second {
+		return true
 	}
-	raw, err := base64.StdEncoding.DecodeString(value[marker+len("base64,"):])
+	_, firstOK := decodeMarkdownImage(first)
+	_, secondOK := decodeMarkdownImage(second)
+	return firstOK && secondOK
+}
+
+func decodeMarkdownImage(value string) (image.Image, bool) {
+	payload := value
+	if marker := strings.Index(value, "base64,"); marker >= 0 {
+		payload = value[marker+len("base64,"):]
+	} else if strings.HasPrefix(value, "data:") {
+		marker := strings.IndexByte(value, ',')
+		if marker < 0 {
+			return nil, false
+		}
+		payload = value[marker+1:]
+	}
+	raw, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
 		return nil, false
 	}

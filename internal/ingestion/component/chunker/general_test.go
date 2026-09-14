@@ -286,6 +286,45 @@ func TestMergeMarkdownImagesStacksRasterPayloads(t *testing.T) {
 	}
 }
 
+func TestMergeMarkdownImagesAcceptsBareBase64Payloads(t *testing.T) {
+	const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="
+	const secondPixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg=="
+	got := mergeMarkdownImages(pixel, secondPixel)
+	decoded, ok := decodeMarkdownImage(got)
+	if !ok {
+		t.Fatalf("merged bare-base64 image is not decodable: %q", got)
+	}
+	if got := decoded.Bounds(); got.Dx() != 1 || got.Dy() != 2 {
+		t.Fatalf("merged image bounds = %v, want 1x2", got)
+	}
+}
+
+func TestGeneralChunkerMarkdownDoesNotDropUnmergeableImages(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first", "doc_type_kwd": "image", "image": "s3://bucket/first.png"},
+			{"text": "second", "doc_type_kwd": "image", "image": "s3://bucket/second.png"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two chunks so neither image reference is lost", chunks)
+	}
+	if chunks[0]["image"] != "s3://bucket/first.png" || chunks[1]["image"] != "s3://bucket/second.png" {
+		t.Fatalf("image references = %#v, want both source references", chunks)
+	}
+}
+
 func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
 	if err != nil {
