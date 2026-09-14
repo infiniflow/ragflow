@@ -219,3 +219,129 @@ def test_invoke_still_raises_for_non_list_input(monkeypatch):
     component = _make_invoke_component(module, resolved="not-a-list")
     with pytest.raises(TypeError, match="should be an array"):
         component._invoke()
+
+
+def _make_sort_component(module, *, inputs, sort_method="asc", sort_by=""):
+    component = module.ListOperations.__new__(module.ListOperations)
+    component.inputs = inputs
+    component._param = SimpleNamespace(
+        sort_method=sort_method,
+        sort_by=sort_by,
+        outputs={
+            "result": {"value": []},
+            "first": {"value": None},
+            "last": {"value": None},
+        },
+    )
+    return component
+
+
+@pytest.mark.p2
+def test_sort_by_tolerates_missing_field_values(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    items = [{"name": "b", "score": None}, {"name": "a", "score": 5}, {"name": "c", "score": 3}]
+    component = _make_sort_component(module, inputs=items, sort_by="score")
+    component._sort()
+    assert [i["name"] for i in component._param.outputs["result"]["value"]] == ["c", "a", "b"]
+
+
+@pytest.mark.p2
+def test_sort_by_tolerates_mixed_value_types(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    items = [{"k": 10}, {"k": "9"}, {"k": 2}]
+    component = _make_sort_component(module, inputs=items, sort_by="k")
+    component._sort()
+    assert [i["k"] for i in component._param.outputs["result"]["value"]] == [2, 10, "9"]
+
+
+@pytest.mark.p2
+def test_sort_by_tolerates_non_dict_items(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    items = [{"k": 1}, "plain", {"k": 0}]
+    component = _make_sort_component(module, inputs=items, sort_by="k")
+    component._sort()
+    result = component._param.outputs["result"]["value"]
+    assert result[0] == {"k": 0}
+    assert result[1] == {"k": 1}
+    assert result[2] == "plain"
+
+
+@pytest.mark.p2
+def test_sort_plain_list_tolerates_mixed_scalars(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[1, "a", None, 2])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [1, 2, None, "a"]
+
+
+@pytest.mark.p2
+def test_sort_legacy_hashable_path_tolerates_mixed_values(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[{"a": 1}, {"a": "x"}, {"a": 0}])
+    component._sort()
+    assert [i["a"] for i in component._param.outputs["result"]["value"]] == [0, 1, "x"]
+
+
+@pytest.mark.p2
+def test_sort_still_orders_numbers_numerically_desc(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[3, 10, 2], sort_method="desc")
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [10, 3, 2]
+
+
+@pytest.mark.p2
+def test_sort_by_multi_key_still_applies_tiebreak(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    items = [{"a": 1, "b": 2}, {"a": 1, "b": 1}, {"a": 0, "b": 9}]
+    component = _make_sort_component(module, inputs=items, sort_by="a,b")
+    component._sort()
+    assert [(i["a"], i["b"]) for i in component._param.outputs["result"]["value"]] == [(0, 9), (1, 1), (1, 2)]
+
+
+@pytest.mark.p2
+def test_sort_matches_go_text_order_for_mixed_number_and_string(monkeypatch):
+    # Go lessScalar compares a number/string pair by text, so "10" sorts
+    # before 2 (internal/agent/component/list_operations.go).
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[2, "10"])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == ["10", 2]
+
+
+@pytest.mark.p2
+def test_sort_orders_none_by_go_nil_text_form(monkeypatch):
+    # Go renders nil as "<nil>", which sorts after digit text and before
+    # letters.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[None, "a", "10"])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == ["10", None, "a"]
+
+
+@pytest.mark.p2
+def test_sort_treats_bool_as_text_not_number(monkeypatch):
+    # Mirrors Go's toFloat64OK, which excludes booleans from numeric ordering.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[True, 1])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [1, True]
+
+
+@pytest.mark.p2
+def test_sort_legacy_path_tolerates_nested_mixed_set(monkeypatch):
+    # Raw sorted() inside the legacy canonicalization raised TypeError on
+    # mixed set members; the comparator-based canonical form never raises.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[{"tags": {1, "x"}}, {"tags": {2}}])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [{"tags": {1, "x"}}, {"tags": {2}}]
+
+
+@pytest.mark.p2
+def test_sort_legacy_path_tolerates_mixed_dict_keys(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[{1: "v", "k": "w"}, {"a": 1}])
+    component._sort()
+    # Deterministic, no TypeError: the nested canonical form compares first.
+    assert component._param.outputs["result"]["value"] == [{1: "v", "k": "w"}, {"a": 1}]
