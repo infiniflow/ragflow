@@ -1464,7 +1464,16 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 			a.in.Summary = p.Content
 			a.in.Embedd = p.Vector
 		case kccommon.VariantStructure:
-			if kind, _ := p.Meta["kind"].(string); kind != "graph" {
+			// Python's page_index path rebuilds the doc graph from the stored
+			// entity rows and folds their descriptions into the nav summary
+			// (runner.py rebuild_structure_graph_json + _page_index_graph_summary).
+			// The graph blob product (Meta.kind=="graph") is gone from the
+			// storage model, so fold directly from the entity rows.
+			if kind, _ := p.Meta["kind"].(string); kind != "entity" {
+				continue
+			}
+			line := structureEntityNavLine(p.Content)
+			if line == "" {
 				continue
 			}
 			a := byDoc[p.DocID]
@@ -1472,9 +1481,10 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 				byDoc[p.DocID] = &acc{in: nav.UpsertDocInput{TenantID: p.TenantID, KbID: kb, DocID: p.DocID}}
 				a = byDoc[p.DocID]
 			}
-			// Graph vector is NOT the summary vector; leave Embedd empty so
-			// NavService embeds the folded summary text.
-			a.in.Summary = pageIndexSummary(p.Content)
+			if a.in.Summary != "" {
+				a.in.Summary += "\n"
+			}
+			a.in.Summary += line
 		}
 	}
 	out := make([]nav.UpsertDocInput, 0, len(byDoc))
@@ -1487,33 +1497,24 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 	return out
 }
 
-// pageIndexSummary folds the entity descriptions of a structure graph JSON
-// ({"entities":[{"name","description"},...]}) into a document-level summary for
-// dataset navigation, matching the component's by-product logic.
-func pageIndexSummary(graphJSON string) string {
-	var graph struct {
-		Entities []struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		} `json:"entities"`
+// structureEntityNavLine renders one entity row's payload JSON as a
+// "name: description" line for the page_index nav summary.
+func structureEntityNavLine(payloadJSON string) string {
+	var ent struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
 	}
-	if err := json.Unmarshal([]byte(graphJSON), &graph); err != nil {
+	if err := json.Unmarshal([]byte(payloadJSON), &ent); err != nil {
 		return ""
 	}
-	var b strings.Builder
-	for _, e := range graph.Entities {
-		desc := strings.Join(strings.Fields(e.Description), " ")
-		if desc == "" {
-			continue
-		}
-		if e.Name != "" {
-			b.WriteString(e.Name)
-			b.WriteString(": ")
-		}
-		b.WriteString(desc)
-		b.WriteString("\n")
+	desc := strings.Join(strings.Fields(ent.Description), " ")
+	if desc == "" {
+		return ""
 	}
-	return b.String()
+	if ent.Name != "" {
+		return ent.Name + ": " + desc
+	}
+	return desc
 }
 
 // mergeStructureDataset performs the dataset-level structure merge (G1/G4): it

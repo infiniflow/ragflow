@@ -51,6 +51,9 @@ const (
 	keywordQualifierRepeat = 3
 	// keywordMaxChars caps both strings (Python: _KEYWORD_MAX_CHARS).
 	keywordMaxChars = 400
+	// keywordExtractionTemperature pins Python keywords.py:141's
+	// {"temperature": 0.1} for the extraction call.
+	keywordExtractionTemperature = 0.1
 )
 
 // keywordAspects is the aspect order. Entity and qualifiers are the weighted
@@ -220,21 +223,18 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 			*schema.SystemMessage(systemPrompt),
 			*schema.UserMessage(userContent),
 		}
-		// Temperature (one intentional seam vs Python): Python hardcodes
-		// {"temperature": 0.1} — a mechanical rewrite, not a reasoning task, so
-		// it must be stable. Go mirrors that exactly WHEN the model implements
-		// TemperatureModel by calling CompleteWithTemperature(ctx, msgs, nil, 0.1).
-		// Models that do NOT support per-call temperature fall back to the plain
-		// Complete and therefore run at the model's own default temperature. We
-		// deliberately prefer widest compatibility over a literal 0.1: forcing
-		// 0.1 unconditionally would make keyword extraction error out on models
-		// without temperature control. (Documented seam, not a bug — see
-		// HARNESS.md.)
+		// Python hardcodes {"temperature": 0.1} (keywords.py:141) — a mechanical
+		// rewrite, not a reasoning task, so it must be stable. The value is a
+		// pinned constant: every production carrier implements TemperatureModel
+		// (compile-time assertion on InvokerSessionModel), so the temperature is
+		// always sent; a carrier without per-call temperature support falls back
+		// to its own default (Go-only provider limitation, flagged).
 		var reply *ModelReply
 		var err error
 		if tm, ok := model.(TemperatureModel); ok {
-			reply, err = tm.CompleteWithTemperature(ctx, msgs, nil, 0.1)
+			reply, err = tm.CompleteWithTemperature(ctx, msgs, nil, keywordExtractionTemperature)
 		} else {
+			_LOG.Printf("[Keywords] model %T cannot carry per-call temperature; using its default (Python would send %v)", model, keywordExtractionTemperature)
 			reply, err = model.Complete(ctx, msgs, nil)
 		}
 		if err == nil {

@@ -145,32 +145,54 @@ func TestHybridSearchEffectiveQueryCapsCodePoints(t *testing.T) {
 	}
 }
 
-func TestHybridSearchPassesRankFeature(t *testing.T) {
-	// label_question -> rank_feature must flow into the underlying retrieve
-	// request (Python retrieve: rank_feature=label_question(question, self.kbs),
-	// agentic_rag.py:retrieve). A nil Tagger must leave RankFeature empty.
+func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
+	// Python passes rank_feature ONLY from RAGTools.retrieve
+	// (agentic_rag.py:668 rank_feature=label_question(question, self.kbs)).
+	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
+	// (:158-173 hybrid, :223-238 vector, :260-275 bm25; grep_search delegates to
+	// bm25_search, :428), so those requests must stay nil even with a Tagger.
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.KBs = []*entity.Knowledgebase{{}}
 	deps.Tagger = stubTagger{t: t}
+
 	HybridSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
-	if len(r.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r.requests))
-	}
+	VectorSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+	BM25Search(context.Background(), deps, SearchParams{Question: "who made it?"})
+	GrepSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+
 	want := map[string]float64{"definition": 1.0, "entity": 1.0}
-	if got := r.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
-		t.Errorf("RankFeature = %v, want %v", got, want)
+	for i, req := range r.requests {
+		if req.RankFeature != nil {
+			t.Errorf("request %d (%s) RankFeature = %v, want nil (search.py legs never pass rank_feature)", i, req.Query, req.RankFeature)
+		}
 	}
 
-	// Nil Tagger -> empty rank feature (Python label_question None).
+	// RAGTools.retrieve is the only leg that carries the label_question boost.
 	r2 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps2, _ := newTestSearchDeps(r2)
-	HybridSearch(context.Background(), deps2, SearchParams{Question: "unique query no rf"})
+	deps2.KBs = []*entity.Knowledgebase{{}}
+	deps2.Tagger = stubTagger{t: t}
+	deps2.UsingEmbedding = true
+	RetrieveSearch(context.Background(), deps2, SearchParams{Question: "who made it?"})
 	if len(r2.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(r2.requests))
 	}
-	if len(r2.requests[0].RankFeature) != 0 {
-		t.Errorf("RankFeature = %v, want empty for nil Tagger", r2.requests[0].RankFeature)
+	if got := r2.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
+		t.Errorf("RetrieveSearch RankFeature = %v, want %v", got, want)
+	}
+
+	// Nil Tagger -> empty rank feature even on the retrieve leg (Python
+	// label_question returning None).
+	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
+	deps3, _ := newTestSearchDeps(r3)
+	deps3.UsingEmbedding = true
+	RetrieveSearch(context.Background(), deps3, SearchParams{Question: "unique query no rf"})
+	if len(r3.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r3.requests))
+	}
+	if len(r3.requests[0].RankFeature) != 0 {
+		t.Errorf("RankFeature = %v, want empty for nil Tagger", r3.requests[0].RankFeature)
 	}
 }
 
@@ -538,7 +560,7 @@ func TestVectorSearchWeightIsOne(t *testing.T) {
 	deps.HasEmbedder = true
 	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 1.0 {
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 1.0 {
 		t.Errorf("vector search weight = %v, want 1.0", got)
 	}
 	if !req.ExcludeCompiled {
@@ -553,8 +575,12 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	deps, _ := newTestSearchDeps(r)
 	BM25Search(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 0 {
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
 		t.Errorf("bm25 search weight = %v, want 0", got)
+	}
+	// Python bm25_search passes embd_mdl=None: no dense leg at all.
+	if !req.DisableVectorLeg {
+		t.Error("bm25 search must disable the vector leg (embd_mdl=None)")
 	}
 	if got := ptrFloat(t, req.SimilarityThreshold); got != 0 {
 		t.Errorf("bm25 search threshold = %v, want 0", got)
@@ -571,8 +597,11 @@ func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	deps, _ := newTestSearchDeps(r)
 	GrepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != 0 {
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
 		t.Errorf("grep search weight = %v, want 0", got)
+	}
+	if !req.DisableVectorLeg {
+		t.Error("grep search must disable the vector leg (embd_mdl=None)")
 	}
 	if !req.ExcludeCompiled {
 		t.Error("grep search must exclude compiled rows")
@@ -692,7 +721,7 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	if want := "who made Culdcept? who made Culdcept"; req.Query != want {
 		t.Errorf("query = %q, want %q (question + derived terms)", req.Query, want)
 	}
-	if ptrFloat(t, req.KeywordsSimilarityWeight) != 0 || !req.ExcludeCompiled {
+	if ptrFloat(t, req.VectorSimilarityWeight) != 0 || !req.ExcludeCompiled {
 		t.Error("grep must stay keyword-only (weight 0) and exclude compiled rows")
 	}
 	// The derived hint also drives the narrowing stage: a prose candidate whose
@@ -747,8 +776,13 @@ func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	deps.HasEmbedder = true
 	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != HybridSearchDefaultVectorWeight {
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != HybridSearchDefaultVectorWeight {
 		t.Errorf("hybrid search weight = %v, want %v", got, HybridSearchDefaultVectorWeight)
+	}
+	// With an embedder configured Python hybrid_search passes the real
+	// embd_mdl: the dense leg RUNS at weight 0.3.
+	if req.DisableVectorLeg {
+		t.Error("hybrid search with an embedder must keep the vector leg")
 	}
 	if !req.ExcludeCompiled {
 		t.Error("hybrid search must exclude compiled rows")
@@ -767,7 +801,7 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	if req.ExcludeCompiled {
 		t.Error("retrieve search must NOT exclude compiled rows")
 	}
-	if got := ptrFloat(t, req.KeywordsSimilarityWeight); got != DefaultHybridVectorWeight {
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != DefaultHybridVectorWeight {
 		t.Errorf("retrieve search weight = %v, want %v", got, DefaultHybridVectorWeight)
 	}
 }
