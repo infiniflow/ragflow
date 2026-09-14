@@ -1,8 +1,8 @@
 ---
 sidebar_position: 4
-title: Multimodel Comparison
-sidebar_label: Multimodel_Comparison
-slug: /chat_Multimodel_Comparison
+title: Multimodel Comparison & FAQ
+sidebar_label: Multimodel_Comparison_and_FAQ
+slug: /chat_Multimodel_Comparison_and_FAQ
 sidebar_custom_props:
   categoryIcon: LucideTestTube
 ---
@@ -21,3 +21,11 @@ Select the models to compare, enter a test question, and run the comparison. Foc
 
 Use representative questions from actual business scenarios instead of selecting a model based on a single question. Multi-model comparison is primarily intended for model selection and debugging. For example, after changing a model provider or model version, use the same questions to quickly compare the practical performance of the old and new models.
 
+# FAQ
+## Do you support multiple rounds of dialogues, referencing previous dialogues as context for the current query?
+
+Yes, we support enhancing user queries based on existing context of an ongoing conversation:
+
+1. On the **Chat** page, hover over the desired assistant and select **Edit**.
+2. In the **Chat Configuration** popup, click the **Prompt engine** tab.
+3. Switch on **Multi-turn optimization** to enable this feature.

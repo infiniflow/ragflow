@@ -18,12 +18,15 @@ package harness
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/tokenizer"
 )
 
 // Dense-match parameters for compiled-row search, mirroring Python
@@ -154,11 +157,19 @@ func NewCompiledExpander(store CompiledStore, cfg CompiledScopeConfig) CompiledE
 // the three synthesis-page expansions (wiki_page / artifact_page / essence) —
 // each capped at max_chunks=5 — then re-sorts the whole kbinfos["chunks"] by
 // similarity so compiled chunks blend by relevance with the regular ones.
+//
+// A doc-tenant resolution failure aborts the expansion and is returned rather
+// than swallowed: Python's per-doc lookup raises out of _expand_with_compiled
+// (compiled_expansion.py:224) and the caller reports it (tool_search.go,
+// "compiled expansion failed") while the already-retrieved chunks stay in place.
 func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywords string, docScope []string) error {
 	if e == nil || e.store == nil || kb == nil {
 		return nil
 	}
-	before := len(kb.Chunks)
+	// Counted from what was actually pooled, not from a len(before)/len(after)
+	// delta: another session's appends land in the same pool and would be
+	// counted here as this expansion's contribution.
+	expanded := 0
 	seen := make(map[string]bool, len(kb.Chunks))
 	for _, c := range kb.Chunks {
 		if id := ChunkIDOf(c); id != "" {
@@ -170,44 +181,100 @@ func (e *compiledExpander) Expand(ctx context.Context, kb *Kbinfos, query, keywo
 		match = strings.TrimSpace(keywords)
 	}
 
+	// The hybrid hits themselves — the claim-neighbour leg keys on them (the
+	// passages hybrid_search deemed relevant), so capture them BEFORE any
+	// expansion appends its own rows (Python :60-68).
+	hitChunks := make([]hitChunk, 0, len(kb.Chunks))
+	for _, c := range kb.Chunks {
+		hitChunks = append(hitChunks, hitChunk{
+			id:    ChunkIDOf(c),
+			sim:   similarityOf(c),
+			docID: DocIDOf(c),
+		})
+	}
+
+	// Admit one expansion batch. UNCAPPED, like Python's expansion (it appends
+	// straight to kbinfos, which is what pushes the pool past _EVIDENCE_POOL_CAP),
+	// but under the pool lock and deduped against the LIVE pool — the per-call
+	// `seen` snapshot it is also gated on cannot see a concurrent session's
+	// appends. Returns how many chunks were actually new.
+	admitExpansion := func(chunks []map[string]any) int {
+		added := 0
+		kb.Admit(func(p *PoolAdmitter) {
+			for _, c := range chunks {
+				if p.Add(c) {
+					added++
+				}
+			}
+		})
+		expanded += added
+		return added
+	}
+
 	scopes := e.kgScopes(docScope)
 	for _, sc := range scopes {
 		// 1-hop entity-graph expansion, per template kind (Python L71-89):
 		// compile_kwd empty, template_kind selects the template.
 		for _, tk := range compiledEntityKinds {
-			chunks := e.expandCompiledStrategy(ctx, sc, match, seen, "", tk.kind, 5)
-			if len(chunks) > 0 {
-				kb.Chunks = append(kb.Chunks, chunks...)
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", tk.label, len(chunks))
+			chunks, err := e.expandCompiledStrategy(ctx, sc, match, seen, "", tk.kind, 5)
+			if err != nil {
+				return err
+			}
+			if n := admitExpansion(chunks); n > 0 {
+				_LOG.Printf("[Compiled expand] %s: +%d chunks", tk.label, n)
 			}
 		}
 		// Tree structure graph, selected by compile_kwd (Python L91-104):
-		// template_kind empty, compile_kwd="tree".
-		chunks := e.expandCompiledStrategy(ctx, sc, match, seen, "tree", "", 5)
-		if len(chunks) > 0 {
-			kb.Chunks = append(kb.Chunks, chunks...)
-			_LOG.Printf("[Compiled expand] tree: +%d chunks", len(chunks))
+		// template_kind empty, compile_kwd="tree". When the per-row strategy
+		// comes back empty, fall back to the LEGACY graph-blob strategy —
+		// documents compiled before the per-row migration persist ONE
+		// knowledge_graph_kwd="graph" blob per document and no raw rows
+		// (Python L110-125 _expand_tree_blob_strategy); it disappears once
+		// those docs are recompiled.
+		chunks, err := e.expandCompiledStrategy(ctx, sc, match, seen, "tree", "", 5)
+		if err != nil {
+			return err
+		}
+		if len(chunks) == 0 {
+			chunks = e.expandTreeBlobStrategy(ctx, sc, match, seen, 5)
+		}
+		if n := admitExpansion(chunks); n > 0 {
+			_LOG.Printf("[Compiled expand] tree: +%d chunks", n)
 		}
 		// Synthesis pages — standalone rendered articles, searched directly
 		// (Python L106-125).
 		for _, ck := range compiledSynthesisKinds {
-			chunks := e.expandWikiPageStrategy(ctx, sc, match, seen, ck.kind, 5)
-			if len(chunks) > 0 {
-				kb.Chunks = append(kb.Chunks, chunks...)
-				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, len(chunks))
+			chunks, err := e.expandWikiPageStrategy(ctx, sc, match, seen, ck.kind, 5)
+			if err != nil {
+				return err
 			}
+			if n := admitExpansion(chunks); n > 0 {
+				_LOG.Printf("[Compiled expand] %s: +%d chunks", ck.label, n)
+			}
+		}
+		// Claims adjacent to the passages hybrid_search just hit (Python
+		// L154-169 _expand_claim_neighbor_strategy). Non-redundant with the
+		// query-keyed claim prefetch: when the prefetch hits, the exclusive
+		// takeover means this expansion never runs; when it misses for the
+		// QUERY, chunk hits are a different key and their sibling claims may
+		// still match.
+		if n := admitExpansion(e.expandClaimNeighborStrategy(ctx, sc, hitChunks, seen, 6)); n > 0 {
+			_LOG.Printf("[Compiled expand] claim neighbours: +%d chunks", n)
 		}
 	}
 
 	// Re-sort so compiled-expansion chunks blend by similarity with regular ones
-	// (Python L127-130).
-	if len(kb.Chunks) > 0 {
-		sort.SliceStable(kb.Chunks, func(i, j int) bool {
-			return similarityOf(kb.Chunks[i]) > similarityOf(kb.Chunks[j])
-		})
-	}
+	// (Python L127-130). Under the pool lock: this PERMUTES the shared slice, so
+	// it must not run while another session reads or appends it.
+	kb.Admit(func(*PoolAdmitter) {
+		if len(kb.Chunks) > 0 {
+			sort.SliceStable(kb.Chunks, func(i, j int) bool {
+				return similarityOf(kb.Chunks[i]) > similarityOf(kb.Chunks[j])
+			})
+		}
+	})
 
-	_LOG.Printf("[Hybrid search] Compiled expansion added %d chunks.", len(kb.Chunks)-before)
+	_LOG.Printf("[Hybrid search] Compiled expansion added %d chunks.", expanded)
 	return nil
 }
 
@@ -237,6 +304,10 @@ func (e *compiledExpander) kgScopes(docScope []string) []compiledScope {
 func (e *compiledExpander) searchCompiledRows(ctx context.Context, sc compiledScope, matchText string, topN int, filters map[string][]string) []map[string]any {
 	rows, err := e.store.SearchCompiled(ctx, sc.kbID, sc.tenantID, sc.docIDs, filters, matchText, topN)
 	if err != nil {
+		// Python logs the failed search and carries on with no rows
+		// (compiled_expansion.py:211): the expansion is an enrichment, so a
+		// missing compiled leg must not fail the regular retrieval.
+		_LOG.Printf("[Compiled expand] compiled-row search failed (kb=%s tenant=%s); treating as no rows: %v", sc.kbID, sc.tenantID, err)
 		return nil
 	}
 	return rows
@@ -247,11 +318,11 @@ func (e *compiledExpander) searchCompiledRows(ctx context.Context, sc compiledSc
 // hop 1-hop through adjacent relations (forward + backward), collect neighbour
 // entity names, look up their source_chunk_ids by exact name_kwd, then load the
 // referenced source chunks, deduped and capped at maxChunks.
-func (e *compiledExpander) expandCompiledStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, compileKwd, templateKwd string, maxChunks int) []map[string]any {
+func (e *compiledExpander) expandCompiledStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, compileKwd, templateKwd string, maxChunks int) ([]map[string]any, error) {
 	// -- 1. Seed entities (embedding match, top 5) --
 	seedRows := e.searchCompiledRows(ctx, sc, match, 5, seedFilters("entity", compileKwd, templateKwd))
 	if len(seedRows) == 0 {
-		return nil
+		return nil, nil
 	}
 	seedNames := make(map[string]bool)
 	for _, r := range seedRows {
@@ -260,7 +331,7 @@ func (e *compiledExpander) expandCompiledStrategy(ctx context.Context, sc compil
 		}
 	}
 	if len(seedNames) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// -- 2. Adjacent relations (outgoing + incoming), top 50 each --
@@ -296,7 +367,7 @@ func (e *compiledExpander) expandCompiledStrategy(ctx context.Context, sc compil
 		}
 	}
 	if len(neighbourNames) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// -- 4. Neighbour entity source_chunk_ids (exact name_kwd lookup) --
@@ -330,11 +401,11 @@ func (e *compiledExpander) expandCompiledStrategy(ctx context.Context, sc compil
 // synthesis-compiled pages of one compile_kwd directly, collect their
 // source_chunk_ids, then load the referenced source chunks. Pages rank high, so
 // each loaded chunk is assigned similarity=0.9 unless it already carries one.
-func (e *compiledExpander) expandWikiPageStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, compileKwd string, maxChunks int) []map[string]any {
+func (e *compiledExpander) expandWikiPageStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, compileKwd string, maxChunks int) ([]map[string]any, error) {
 	// -- 1. Search synthesis pages (no knowledge_graph_kwd filter) --
 	rows := e.searchSynthesisPages(ctx, sc, match, compileKwd, 5)
 	if len(rows) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// -- 2. Collect source_chunk_ids from matching pages --
@@ -353,17 +424,20 @@ func (e *compiledExpander) expandWikiPageStrategy(ctx context.Context, sc compil
 		}
 	}
 	if len(order) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// -- 3. Load chunks, assign high similarity for priority ranking --
-	loaded := e.loadByDoc(ctx, sc, order, byDoc, seen, maxChunks)
+	loaded, err := e.loadByDoc(ctx, sc, order, byDoc, seen, maxChunks)
+	if err != nil {
+		return nil, err
+	}
 	for _, c := range loaded {
 		if _, has := c["similarity"]; !has {
 			c["similarity"] = 0.9 // wiki pages rank high
 		}
 	}
-	return loaded
+	return loaded, nil
 }
 
 // searchSynthesisPages mirrors Python _search_synthesis_pages: find synthesis
@@ -381,7 +455,11 @@ func (e *compiledExpander) searchSynthesisPages(ctx context.Context, sc compiled
 // global maxChunks cap and the seen-id dedup set. Returns newly added chunks in
 // doc order. Mirrors Python's per-doc _load_chunks_for_doc loop and its
 // max_chunks break/limit accounting.
-func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, order []string, byDoc map[string][]string, seen map[string]bool, maxChunks int) []map[string]any {
+//
+// A doc whose owner cannot be resolved is dropped (the documented per-row rule),
+// but a doc-tenant resolution FAILURE is returned: it is a transport/database
+// error, not "no row resolved", and Python surfaces it as an exception.
+func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, order []string, byDoc map[string][]string, seen map[string]bool, maxChunks int) ([]map[string]any, error) {
 	// Python _load_chunks_for_doc resolves EACH row's doc_id to its owning
 	// (kb, tenant) — not the searched scope — and loads nothing when that
 	// resolution fails (merged dataset rows carry a pseudo/empty doc_id). Loading
@@ -395,9 +473,16 @@ func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, orde
 				ids = append(ids, docID)
 			}
 		}
-		if resolved, err := e.cfg.DocTenantResolver.ResolveDocTenants(ctx, ids); err == nil {
-			owners = resolved
+		resolved, err := e.cfg.DocTenantResolver.ResolveDocTenants(ctx, ids)
+		if err != nil {
+			// Python resolves one doc at a time and lets a lookup failure raise out
+			// of _load_chunks_for_doc (compiled_expansion.py:224): nothing is
+			// loaded, and the failure is loud. Return it so the caller reports it
+			// instead of letting a transport error masquerade as the documented
+			// per-row drop below.
+			return nil, fmt.Errorf("doc-tenant resolution failed for %d doc(s): %w", len(ids), err)
 		}
+		owners = resolved
 	}
 	var out []map[string]any
 	for _, docID := range order {
@@ -419,6 +504,9 @@ func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, orde
 		}
 		rows, err := e.store.LoadChunks(ctx, kbID, tenantID, cids)
 		if err != nil {
+			// Python logs the failed load per doc (compiled_expansion.py:248) and
+			// drops only that doc; the remaining docs still load.
+			_LOG.Printf("[Compiled expand] failed to load chunks for doc_id=%s: %v", docID, err)
 			continue
 		}
 		for _, c := range rows {
@@ -430,7 +518,7 @@ func (e *compiledExpander) loadByDoc(ctx context.Context, sc compiledScope, orde
 			out = append(out, c)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // seedNameFromRow mirrors Python L293-300: parse content_with_weight as JSON and
@@ -555,4 +643,277 @@ func cosine(a, b []float64) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
+}
+
+// ---------------------------------------------------------------------------
+// Legacy tree-blob expansion (Python _search_tree_blobs / _score_tree_entities
+// / _expand_tree_blob_strategy, compiled_expansion.py:579-718) and the
+// claim-neighbour expansion (Python _expand_claim_neighbor_strategy, :724-829).
+// ---------------------------------------------------------------------------
+
+// hitChunk is one hybrid_search hit the claim-neighbour leg keys on
+// (Python :60-68's (chunk_id, similarity, doc_id) triples).
+type hitChunk struct {
+	id    string
+	sim   float64
+	docID string
+}
+
+// expandTreeBlobStrategy mirrors Python _expand_tree_blob_strategy: expand a
+// tree-compiled document from its pre-migration graph blob, in-process. Same
+// contract as expandCompiledStrategy — seed entities, 1-hop neighbours, and
+// the neighbours' source_chunk_ids loaded back as real chunks — except seeds,
+// relations, and addressing all come from the blob's JSON, so the walk costs
+// zero extra store round-trips. Entity payloads are compiled summaries: only
+// the loaded chunks reach the model.
+func (e *compiledExpander) expandTreeBlobStrategy(ctx context.Context, sc compiledScope, match string, seen map[string]bool, maxChunks int) []map[string]any {
+	// Python _search_tree_blobs: compile_kwd=["tree"] + knowledge_graph_kwd=
+	// ["graph"], payload-only, capped at 16 rows.
+	filters := map[string][]string{"compile_kwd": {"tree"}, "knowledge_graph_kwd": {"graph"}}
+	rows := e.searchCompiledRows(ctx, sc, "", 16, filters)
+	if len(rows) == 0 {
+		return nil
+	}
+
+	byDoc := map[string][]string{}
+	var order []string
+	add := func(docID, cid string) {
+		for _, existing := range byDoc[docID] {
+			if existing == cid {
+				return
+			}
+		}
+		byDoc[docID] = append(byDoc[docID], cid)
+		kept := false
+		for _, d := range order {
+			if d == docID {
+				kept = true
+				break
+			}
+		}
+		if !kept {
+			order = append(order, docID)
+		}
+	}
+	for _, row := range rows {
+		docID := compiledDocID(row)
+		if docID == "" {
+			continue
+		}
+		graph, ok := decodeJSONObject(asString(row["content_with_weight"]))
+		if !ok {
+			continue
+		}
+		// Seeds: query-matched entities, then 1-hop neighbours through the
+		// blob's own relations (parent/child edges) — no store round-trips.
+		scored := scoreTreeEntities(graph, match)
+		if len(scored) == 0 {
+			continue
+		}
+		if len(scored) > 5 {
+			scored = scored[:5]
+		}
+		seedNames := map[string]bool{}
+		for _, ent := range scored {
+			if name := strings.TrimSpace(asString(ent["name"])); name != "" {
+				seedNames[name] = true
+			}
+		}
+		neighbours := map[string]bool{}
+		for _, rel := range objectList(graph["relations"]) {
+			from := strings.TrimSpace(compiledRelationEndpoint(rel, "from"))
+			to := strings.TrimSpace(compiledRelationEndpoint(rel, "to"))
+			if from != "" && seedNames[from] && to != "" {
+				neighbours[to] = true
+			}
+			if to != "" && seedNames[to] && from != "" {
+				neighbours[from] = true
+			}
+		}
+		// Address chunks: every entity at or adjacent to a seed contributes
+		// its source_chunk_ids (the same contract the raw-row strategy applies
+		// to neighbour entities).
+		wanted := func(name string) bool { return seedNames[name] || neighbours[name] }
+		for _, ent := range objectList(graph["entities"]) {
+			if !wanted(strings.TrimSpace(asString(ent["name"]))) {
+				continue
+			}
+			for _, cid := range compiledSourceChunkIDs(ent) {
+				if cid != "" && !seen[cid] {
+					add(docID, cid)
+				}
+			}
+		}
+	}
+	loaded, err := e.loadByDoc(ctx, sc, order, byDoc, seen, maxChunks)
+	if err != nil {
+		// Python's blob strategy lets the store error escape into
+		// _expand_with_compiled's caller; Expand already reports it the same
+		// way for the other strategies.
+		_LOG.Printf("[Compiled expand] tree blob chunk load failed: %v", err)
+		return nil
+	}
+	return loaded
+}
+
+// scoreTreeEntities mirrors Python _score_tree_entities: rank blob entities by
+// query-term overlap over name + description. Lexical on purpose — the raw-row
+// strategy seeds the same way (BM25 over content_ltks), and the blob's vectors
+// are one shared row vector with nothing per-entity to cosine against.
+func scoreTreeEntities(graph map[string]any, query string) []map[string]any {
+	terms := treeEntityTerms(query)
+	if len(terms) == 0 {
+		return nil
+	}
+	type scored struct {
+		ent   map[string]any
+		score int
+	}
+	var out []scored
+	for _, ent := range objectList(graph["entities"]) {
+		text := strings.ToLower(asString(ent["name"]) + " " + asString(ent["description"]))
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		score := 0
+		for _, t := range terms {
+			if strings.Contains(text, t) {
+				score++
+			}
+		}
+		if score > 0 {
+			out = append(out, scored{ent: ent, score: score})
+		}
+	}
+	// Stable sort: ties keep the blob's own entity order (Python's list.sort
+	// is stable, :632).
+	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	ents := make([]map[string]any, 0, len(out))
+	for _, s := range out {
+		ents = append(ents, s.ent)
+	}
+	return ents
+}
+
+// treeEntityTerms mirrors Python `_tokenize(query).split()` — the coarse
+// RAGFlow tokenizer (knowlege_compile/dataset_nav.py:518) — lowercased for the
+// containment match.
+func treeEntityTerms(query string) []string {
+	toks, err := tokenizer.Tokenize(query)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range strings.Fields(strings.ToLower(toks)) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// expandClaimNeighborStrategy mirrors Python _expand_claim_neighbor_strategy:
+// inject claims adjacent to the passages hybrid_search just hit. A claim whose
+// source_chunk_ids intersect a hit chunk is a verified atomic statement about a
+// passage the retriever already deemed relevant — even when the QUERY never
+// matched it. Emitted as pseudo-chunks (name + verbatim quote, "[claim] "
+// prefix, ASCII " -- " description separator, no per-quote cap beyond the
+// overall 1200) with the hit chunk's similarity, so they blend into the
+// ranking. Deliberately NOT 1-hop expanded and deliberately keyed on the HIT
+// chunks, not the query (Python :742-746).
+func (e *compiledExpander) expandClaimNeighborStrategy(ctx context.Context, sc compiledScope, hits []hitChunk, seen map[string]bool, maxChunks int) []map[string]any {
+	live := make([]hitChunk, 0, len(hits))
+	for _, h := range hits {
+		if h.id != "" && !strings.HasPrefix(h.id, "claim_") {
+			live = append(live, h)
+		}
+	}
+	if len(live) == 0 {
+		return nil
+	}
+	hitIDs := make(map[string]bool, len(live))
+	hitDocs := []string{}
+	docSeen := map[string]bool{}
+	for _, h := range live {
+		hitIDs[h.id] = true
+		if h.docID != "" && !docSeen[h.docID] {
+			docSeen[h.docID] = true
+			hitDocs = append(hitDocs, h.docID)
+		}
+	}
+	sort.Strings(hitDocs)
+
+	// Python :763-780: claim rows of the hit documents, payload-only, 256 rows.
+	filters := map[string][]string{"entity_type_kwd": {"claim"}, "scope_kwd": {"doc"}}
+	if len(hitDocs) > 0 {
+		filters["doc_id"] = hitDocs
+	}
+	rows := e.searchCompiledRows(ctx, sc, "", 256, filters)
+
+	out := make([]map[string]any, 0, maxChunks)
+	for _, row := range rows {
+		payload, ok := decodeJSONObject(asString(row["content_with_weight"]))
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(asString(payload["name"]))
+		if name == "" {
+			continue
+		}
+		srcIDs := compiledSourceChunkIDs(row)
+		if len(srcIDs) == 0 {
+			srcIDs = compiledSourceChunkIDs(payload)
+		}
+		overlap := map[string]bool{}
+		for _, cid := range srcIDs {
+			if hitIDs[cid] {
+				overlap[cid] = true
+			}
+		}
+		if len(overlap) == 0 {
+			continue
+		}
+		rowDoc := compiledDocID(row)
+		cid := "claim_" + fmt.Sprintf("%x", md5.Sum([]byte(rowDoc+":"+name)))[:12]
+		if seen[cid] {
+			continue
+		}
+		description := strings.TrimSpace(asString(payload["description"]))
+		quote := ""
+		for _, ev := range objectList(payload["evidence"]) {
+			if q := strings.TrimSpace(asString(ev["quote"])); q != "" {
+				quote = q
+				break
+			}
+		}
+		content := "[claim] " + name
+		if description != "" && description != name {
+			content += " -- " + description
+		}
+		if quote != "" {
+			content += "\nEvidence (verbatim): \"" + quote + "\""
+		}
+		// Inherit the best-matching hit's similarity so the pseudo-chunk lands
+		// beside the passage that spawned it in the final ranking.
+		similarity := 0.0
+		for _, h := range live {
+			if overlap[h.id] && h.sim > similarity {
+				similarity = h.sim
+			}
+		}
+		seen[cid] = true
+		out = append(out, map[string]any{
+			"chunk_id":            cid,
+			"content_with_weight": truncateRunes(content, 1200),
+			"doc_id":              rowDoc,
+			"source_chunk_ids":    srcIDs,
+			"similarity":          similarity,
+		})
+		if len(out) >= maxChunks {
+			break
+		}
+	}
+	return out
 }

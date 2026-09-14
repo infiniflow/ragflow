@@ -179,6 +179,12 @@ def grep(tools, terms, limit: int = _GREP_MAX_CHUNKS) -> list[dict]:
             # Short chunk: keep whole (its answer may live anywhere in it).
             if _match(text):
                 hits.append({"content": text, "doc_id": c.get("doc_id"), "chunk_id": c.get("chunk_id")})
+                # This branch `continue`s past the shared cap at the bottom of the
+                # loop, so enforce the limit here too — otherwise a memory store
+                # full of matching short chunks comes back whole instead of at
+                # most ``limit`` entries.
+                if len(hits) >= limit:
+                    break
             continue
         sents = _split_sentences(text)
         kept = []
@@ -338,10 +344,7 @@ def _term_hits(text: str, terms: list[str]) -> int:
         return 0
     hits = 0
     for t in terms:
-        if _is_cjk(t):
-            if t in text:
-                hits += 1
-        elif t.isdigit():
+        if _is_cjk(t) or t.isdigit():
             if t in text:
                 hits += 1
         else:

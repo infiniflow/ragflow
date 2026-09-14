@@ -42,9 +42,11 @@ var (
 	trimToTokenLimit = realTrimToTokenLimit
 )
 
-// titleTokenCount counts tokens for text. numTokensFromString returns 0 when
-// the encoder is unavailable; in that case fall back to the rune count so the
-// cap is still enforced (mirrors Python #18455's character-count fallback).
+// titleTokenCount counts tokens for text. tokenizer.NumTokensFromString now
+// PANICS when the encoder is unavailable (mirroring Python's raise), so a 0 here
+// can only come from the counter itself (empty input, or the stubbed counter the
+// tests install); fall back to the rune count so the cap is still enforced
+// (mirrors Python #18455's character-count fallback).
 func titleTokenCount(text string) int {
 	if text == "" {
 		return 0

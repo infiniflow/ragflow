@@ -3553,21 +3553,12 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 		return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
 	}
 
-	if providerEntity.TenantID != userID {
-		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
-		if terr != nil {
-			return nil, "", nil, 0, terr
-		}
-		allowed := false
-		for _, rel := range userTenants {
-			if rel != nil && rel.TenantID == providerEntity.TenantID {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", userID, providerEntity.TenantID)
-		}
+	allowed, accessErr := m.tenantCanReachProviderTenant(ctx, userID, providerEntity.TenantID)
+	if accessErr != nil {
+		return nil, "", nil, 0, accessErr
+	}
+	if !allowed {
+		return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", userID, providerEntity.TenantID)
 	}
 
 	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
@@ -3668,35 +3659,120 @@ func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, te
 // support must skip the outer rag_agent react loop and fall back to the direct
 // graph (Python falls back to async_chat).
 //
-// Precedence mirrors Python's tenant_model_service.get_model_config_by_id
-// (:363) `"is_tools": model_extra.get("is_tools", is_tool)`: the flag persisted
+// Precedence mirrors Python's tenant_model_service
+// `"is_tools": model_extra.get("is_tools", is_tool)` (:363): the flag persisted
 // on the tenant model wins, and the provider catalog is only a default for
-// models enrolled without one. Reading the catalog first instead would send a
-// tenant-disabled model through the outer react loop — where a model that does
-// not actually call tools answers from its own knowledge and the retrieval
-// never runs.
+// models enrolled without one. That is why the tenant_model row is resolved
+// first — by UUID, or for a composite "model@instance@provider" reference
+// through the tenant's own provider/instance rows. Reading the catalog first
+// instead would send a tenant-disabled model through the outer react loop —
+// where a model that does not actually call tools answers from its own
+// knowledge and the retrieval never runs.
+//
+// The reference is validated before model_extra is read, mirroring Python's
+// get_model_config_by_id (:324-347): a missing or disabled model, a model not
+// enrolled as this type, a missing provider, or a provider the tenant cannot
+// reach returns an error rather than a definitive is_tools answer. Callers treat
+// an error as "no tool support", the same outcome as an unset flag.
 func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return false, fmt.Errorf("model ref is required")
 	}
-	// Tenant-model UUID path: the persisted extra flag first, then the catalog.
+
+	// Tenant-model UUID path. IDs are globally unique and may belong to a
+	// provider shared with a joined tenant, so the lookup itself is unscoped —
+	// tenantCanReachProviderTenant below decides access.
 	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
-		if ts, ok := extraToolSupport(modelObj.Extra); ok {
-			return ts, nil
+		if modelObj.Status != "active" {
+			return false, fmt.Errorf("tenant model id=%s is disabled", modelRef)
 		}
-		if prov, perr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID); perr == nil && prov != nil {
-			return catalogToolSupport(prov.ProviderName, modelObj.ModelName), nil
+		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
+			return false, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelRef, modelType.String())
 		}
-		return false, nil
+		provider, provErr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
+		if provErr != nil && !errors.Is(provErr, gorm.ErrRecordNotFound) {
+			return false, provErr
+		}
+		if provider == nil {
+			return false, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelRef)
+		}
+		allowed, accessErr := m.tenantCanReachProviderTenant(ctx, tenantID, provider.TenantID)
+		if accessErr != nil {
+			return false, accessErr
+		}
+		if !allowed {
+			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+		}
+		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, err
 	}
-	// Composite "model@instance@provider" path: parse and consult the catalog.
-	pureModelName, _, providerName, err := parseModelName(modelRef)
+
+	// Composite "model@instance@provider" path. The tenant's own rows are
+	// resolved so a flag persisted on the enrolled model still beats the
+	// catalog, exactly as it does on the UUID path.
+	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
 	if err != nil {
 		return false, err
 	}
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	if err != nil {
+		return false, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
+	}
+	if provider == nil {
+		return false, fmt.Errorf("provider %q not found for model %q", providerName, modelRef)
+	}
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	if err != nil {
+		return false, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+	}
+	if instance == nil {
+		return false, fmt.Errorf("instance %q not found for model %q", instanceName, modelRef)
+	}
+	modelObj, err := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
+	if err == nil {
+		if modelObj.Status != "active" {
+			return false, fmt.Errorf("model %q is disabled", modelRef)
+		}
+		return toolSupportFromTenantModel(modelObj.Extra, provider.ProviderName, modelObj.ModelName), nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
+	}
+
+	// The tenant never enrolled this model as this type: the catalog is the only
+	// source left (the instance api_key payload Python reads here is seeded from
+	// the same catalog at enrolment time).
 	return catalogToolSupport(providerName, pureModelName), nil
+}
+
+// toolSupportFromTenantModel returns the is_tools flag persisted on a tenant
+// model's extra JSON when present, otherwise the provider catalog's declaration
+// for that model. Mirrors Python's model_extra.get("is_tools", is_tool).
+func toolSupportFromTenantModel(extra, providerName, modelName string) bool {
+	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	return catalogToolSupport(providerName, modelName)
+}
+
+// tenantCanReachProviderTenant reports whether userID owns the provider's tenant
+// or is a joined member of it. Mirrors Python's tenant_model_service
+// get_model_config_by_id tenant check (:342-347).
+func (m *ModelProviderService) tenantCanReachProviderTenant(ctx context.Context, userID, ownerTenantID string) (bool, error) {
+	if userID == ownerTenantID {
+		return true, nil
+	}
+	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, rel := range userTenants {
+		if rel != nil && rel.TenantID == ownerTenantID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // extraToolSupport reads the is_tools flag persisted on a tenant model's extra

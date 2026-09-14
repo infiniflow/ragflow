@@ -249,13 +249,14 @@ func TestSCABoostAdaptsVerdict(t *testing.T) {
 // Query rewriter
 // ---------------------------------------------------------------------------
 
-func TestClampAndTruthy(t *testing.T) {
+func TestClampCoercesNumericDrift(t *testing.T) {
 	if got := clamp(float64(1.5)); got != 1.0 {
 		t.Errorf("clamp(1.5) = %v, want 1.0", got)
 	}
 	if got := clamp(float64(-0.2)); got != 0.0 {
 		t.Errorf("clamp(-0.2) = %v, want 0.0", got)
 	}
+	// Numeric drift: a string number is still parsed.
 	if got := clamp("0.4"); got != 0.4 {
 		t.Errorf("clamp(\"0.4\") = %v, want 0.4", got)
 	}
@@ -263,14 +264,164 @@ func TestClampAndTruthy(t *testing.T) {
 	if got := clamp("not a number"); got != 1.0 {
 		t.Errorf("clamp(bad) = %v, want 1.0", got)
 	}
-	for _, v := range []any{true, "true", "TRUE", "1", "yes", "false", "0", float64(1)} {
-		if !truthy(v) {
-			t.Errorf("truthy(%v) = false, want true", v)
+}
+
+// TestCoerceBoolParsesStringDrift pins that a boolean serialised as a string is
+// read by MEANING, not by raw truthiness: "false"/"0" are false, not true. An
+// empty or unrecognised value fails CLOSED (false), matching the "unusable
+// verdict is INSUFFICIENT" convention.
+func TestCoerceBoolParsesStringDrift(t *testing.T) {
+	for _, v := range []any{true, "true", "TRUE", " True ", "1", "yes", "Y", "on", float64(1)} {
+		if !coerceBool(v) {
+			t.Errorf("coerceBool(%#v) = false, want true", v)
 		}
 	}
-	for _, v := range []any{false, "", float64(0), nil} {
-		if truthy(v) {
-			t.Errorf("truthy(%v) = true, want false", v)
+	for _, v := range []any{false, "false", "FALSE", " false ", "0", "no", "N", "off", "", float64(0), nil, "maybe"} {
+		if coerceBool(v) {
+			t.Errorf("coerceBool(%#v) = true, want false", v)
 		}
+	}
+}
+
+// TestSCAParsesStringBooleans pins the drift fix end to end: a model that
+// serialises its verdict booleans as strings must not have them inverted.
+func TestSCAParsesStringBooleans(t *testing.T) {
+	mdl := &stubJSONModel{value: map[string]any{
+		"is_sufficient": "false",
+		"sub_queries": []any{
+			map[string]any{"sub_query": "revenue", "satisfied": "false",
+				"missing_fact": "2023 revenue", "search_hint": "annual report"},
+		},
+		"claims": []any{
+			map[string]any{"claim_id": "c1", "grounded": "false"},
+		},
+	}}
+	got := SufficientContextAgent(context.Background(), SCADeps{
+		KB:    &harness.Kbinfos{},
+		Model: mdl,
+	}, "q", []ClaimDraft{{ID: "c1", Draft: "d"}})
+	if got.IsSufficient {
+		t.Error(`is_sufficient:"false" must read as false, not true`)
+	}
+	if len(got.SubQueries) != 1 || got.SubQueries[0].Satisfied {
+		t.Errorf("sub_queries = %+v, want one unsatisfied", got.SubQueries)
+	}
+	if cv := got.Claims["c1"]; cv.Grounded {
+		t.Error(`grounded:"false" must read as false, not true`)
+	}
+
+	// The "true" spelling still parses.
+	mdl = &stubJSONModel{value: map[string]any{"is_sufficient": "true"}}
+	got = SufficientContextAgent(context.Background(), SCADeps{
+		KB:    &harness.Kbinfos{},
+		Model: mdl,
+	}, "q", []ClaimDraft{{ID: "c1", Draft: "d"}})
+	if !got.IsSufficient {
+		t.Error(`is_sufficient:"true" must read as true`)
+	}
+}
+
+// TestSCAIgnoresAbsentFields pins that an absent (nil) field never renders as the
+// literal "<nil>": a claim without claim_id and a sub-query without sub_query are
+// rejected, and the optional text fields stay empty instead of becoming "<nil>".
+func TestSCAIgnoresAbsentFields(t *testing.T) {
+	mdl := &stubJSONModel{value: map[string]any{
+		"sub_queries": []any{
+			map[string]any{"satisfied": false},                    // no sub_query
+			map[string]any{"sub_query": "ok", "satisfied": false}, // no missing_fact/search_hint
+		},
+		"claims": []any{
+			map[string]any{"grounded": true},                   // no claim_id
+			map[string]any{"claim_id": "c1", "grounded": true}, // no missing_information
+		},
+	}}
+	got := SufficientContextAgent(context.Background(), SCADeps{
+		KB:    &harness.Kbinfos{},
+		Model: mdl,
+	}, "q", []ClaimDraft{{ID: "c1", Draft: "d"}})
+
+	if _, ok := got.Claims["<nil>"]; ok {
+		t.Error(`a claim with no claim_id must be rejected, not keyed as "<nil>"`)
+	}
+	if _, ok := got.Claims["c1"]; !ok {
+		t.Error("the claim with a real claim_id must be kept")
+	}
+	if len(got.SubQueries) != 1 {
+		t.Fatalf("sub_queries = %+v, want only the one with a real sub_query", got.SubQueries)
+	}
+	if sq := got.SubQueries[0]; sq.SubQuery != "ok" || sq.MissingFact != "" || sq.SearchHint != "" {
+		t.Errorf("absent missing_fact/search_hint must stay empty, got %+v", sq)
+	}
+	if got.Reasoning != "" {
+		t.Errorf(`absent reasoning must stay empty, got %q`, got.Reasoning)
+	}
+}
+
+// TestSCAMissingInformationIgnoresAbsentFields pins that a missing_information
+// entry with no usable text is not fabricated from nil (which fmt.Sprint would
+// render as "<nil>").
+func TestSCAMissingInformationIgnoresAbsentFields(t *testing.T) {
+	mdl := &stubJSONModel{value: map[string]any{
+		"is_sufficient": false,
+		"claims": []any{
+			map[string]any{"claim_id": "c1", "grounded": false, "missing_information": []any{
+				map[string]any{}, // both what/search_hint absent
+				nil,              // nil element
+				map[string]any{"what": "the year"},
+			}},
+		},
+	}}
+	got := SufficientContextAgent(context.Background(), SCADeps{
+		KB:    &harness.Kbinfos{},
+		Model: mdl,
+	}, "q", []ClaimDraft{{ID: "c1", Draft: "d"}})
+	mi := got.Claims["c1"].MissingInformation
+	if len(mi) != 1 || mi[0].What != "the year" || mi[0].SearchHint != "" {
+		t.Fatalf("missing_information = %+v, want only the real entry", mi)
+	}
+}
+
+// TestRenderOverallDraftTruncatesByRune pins that the cap is applied by code
+// point (Python's str[:N]), never mid-rune: a byte slice through a CJK rune
+// would put invalid UTF-8 into the SCA prompt.
+func TestRenderOverallDraftTruncatesByRune(t *testing.T) {
+	draft := strings.Repeat("中", scaClaimsContextMax+50)
+	got := renderOverallDraft([]ClaimDraft{{ID: "c1", Draft: draft}})
+	if !utf8.ValidString(got) {
+		t.Errorf("truncated draft is not valid UTF-8: %q", got)
+	}
+	if n := utf8.RuneCountInString(got); n != scaClaimsContextMax {
+		t.Errorf("truncated draft has %d runes, want %d", n, scaClaimsContextMax)
+	}
+}
+
+// TestRenderClaimContextBudgetIsRuneBased pins that the claim-context budget is
+// counted in code points (Python's len(str)), not bytes: two CJK blocks of 20k
+// runes are ~40k runes (under the 48k cap) but ~120KB bytes (far over it), so a
+// byte budget would stop after the FIRST block and silently starve the SCA.
+func TestRenderClaimContextBudgetIsRuneBased(t *testing.T) {
+	draft := strings.Repeat("中", 20000)
+	got := renderClaimContext([]ClaimDraft{
+		{ID: "c1", Draft: draft},
+		{ID: "c2", Draft: draft},
+	}, &harness.Kbinfos{})
+	if !strings.Contains(got, "Claim c1") || !strings.Contains(got, "Claim c2") {
+		t.Errorf("rune-based budget must keep both CJK blocks; got %d runes", utf8.RuneCountInString(got))
+	}
+}
+
+// TestRenderClaimContextTrimsOversizedBlock pins that the cap bounds the RENDERED
+// context: a single claim longer than scaClaimsContextMax must be trimmed to the
+// budget instead of being appended whole (which pushed the SCA prompt past the
+// window the cap was sized for).
+func TestRenderClaimContextTrimsOversizedBlock(t *testing.T) {
+	got := renderClaimContext([]ClaimDraft{
+		{ID: "c1", Draft: strings.Repeat("中", scaClaimsContextMax+5000)},
+	}, &harness.Kbinfos{})
+	if !utf8.ValidString(got) {
+		t.Error("trimmed block is not valid UTF-8")
+	}
+	if n := utf8.RuneCountInString(got); n != scaClaimsContextMax {
+		t.Errorf("rendered context = %d runes, want it capped at %d", n, scaClaimsContextMax)
 	}
 }
