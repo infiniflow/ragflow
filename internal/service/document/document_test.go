@@ -3242,6 +3242,21 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
 
+	mockStorage := useFakeStorage(t)
+	data := []byte("artifact content")
+	if err := mockStorage.Put(ctx, sandboxArtifactBucket(), "result.png", data); err != nil {
+		t.Fatalf("seed artifact: %v", err)
+	}
+
+	// Case 0: the owner can fetch the artifact referenced by their session.
+	artifact, err := svc.GetDocumentArtifact(ctx, "result.png", "user-1")
+	if err != nil {
+		t.Fatalf("owner: want artifact, got %v", err)
+	}
+	if !bytes.Equal(artifact.Data, data) || artifact.ContentType != "image/png" || artifact.SafeFilename != "result.png" {
+		t.Errorf("owner: unexpected artifact: %+v", artifact)
+	}
+
 	// Case 1: empty user -> not allowed.
 	if _, err := svc.GetDocumentArtifact(ctx, "result.png", ""); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("empty user: want ErrArtifactNotFound, got %v", err)

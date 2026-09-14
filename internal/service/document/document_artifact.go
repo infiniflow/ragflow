@@ -118,7 +118,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 		Select("c.dialog_id").
 		Joins("JOIN api_4_conversation_message AS cm ON cm.conversation_id = c.id").
 		Where("c.user_id = ? OR c.exp_user_id = ?", userID, userID).
-		Where(`cm.message LIKE ? ESCAPE '!' OR cm.message LIKE ? ESCAPE '!'`,
+		Where(`cm.content LIKE ? ESCAPE '!' OR cm.content LIKE ? ESCAPE '!'`,
 			filenamePattern, artifactRefPattern).
 		Distinct("c.dialog_id").
 		Rows()
