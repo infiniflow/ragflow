@@ -398,8 +398,7 @@ func (s *BotService) ChatbotCompletion(
 		return nil, common.CodeDataError, errors.New("no LLM configured for this chatbot")
 	}
 
-	// 4. Build the pipeline input. The Message column on
-	// api_4_conversation is a json.RawMessage array of
+	// 4. Build the pipeline input. The hydrated Message value is a JSON array of
 	// {role, content, created_at} dicts; the pipeline expects the
 	// same filtered shape python builds in async_iframe_completion
 	// (drop system turns, drop the leading assistant prologue,
@@ -641,7 +640,7 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 }
 
 // persistChatbotTurn appends the finished user/assistant turn pair
-// and the retrieval reference to the api_4_conversation row so the
+// and the retrieval reference to the API conversation history tables so the
 // next ChatbotCompletion call with the same session_id sees this
 // turn in its history. Mirrors python
 // API4ConversationService.append_message.

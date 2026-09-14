@@ -45,21 +45,24 @@ type ConversationStatsRow struct {
 
 // Create inserts a new api_4_conversation row. The caller is responsible
 // for setting ID, DialogID, UserID and the BaseModel time fields; the
-// DAO does not assign defaults because session creation paths in the
-// Python agent API generate an uuid + tenant timestamp and rely on the
-// round-trip shape being byte-identical.
+// DAO does not assign defaults because callers own session IDs and timestamps.
 func (dao *API4ConversationDAO) Create(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
 	if conv == nil {
 		return errors.New("api4 conversation: nil row")
 	}
-	return db.WithContext(ctx).Create(conv).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(conv).Error; err != nil {
+			return err
+		}
+		if err := syncHistory(ctx, tx, apiConversationMessageTable, "message", "message", conv.ID, conv.Message); err != nil {
+			return err
+		}
+		return syncHistory(ctx, tx, apiConversationReferenceTable, "reference", "reference", conv.ID, conv.Reference)
+	})
 }
 
-// Update writes back an existing api_4_conversation row. The bot
-// completion path calls this with the updated Message JSON after each
-// turn so multi-turn chatbot sessions carry prior history into the next
-// LLM call. Matches the Python conversation_service.update pattern at
-// api/db/services/conversation_service.py:236 (async_iframe_completion).
+// Update writes back an existing api_4_conversation row and synchronizes
+// its ordered message and reference rows.
 func (dao *API4ConversationDAO) Update(ctx context.Context, db *gorm.DB, conv *entity.API4Conversation) error {
 	if conv == nil {
 		return errors.New("api4 conversation: nil row")
@@ -67,7 +70,15 @@ func (dao *API4ConversationDAO) Update(ctx context.Context, db *gorm.DB, conv *e
 	if conv.ID == "" {
 		return errors.New("api4 conversation: empty id")
 	}
-	return db.WithContext(ctx).Save(conv).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(conv).Error; err != nil {
+			return err
+		}
+		if err := syncHistory(ctx, tx, apiConversationMessageTable, "message", "message", conv.ID, conv.Message); err != nil {
+			return err
+		}
+		return syncHistory(ctx, tx, apiConversationReferenceTable, "reference", "reference", conv.ID, conv.Reference)
+	})
 }
 
 // Stats returns daily conversation aggregates for a tenant.
@@ -108,6 +119,9 @@ func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB,
 	if tx.RowsAffected == 0 {
 		return nil, nil
 	}
+	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{&result}); err != nil {
+		return nil, err
+	}
 	return &result, nil
 }
 
@@ -122,6 +136,9 @@ func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id str
 	if tx.RowsAffected == 0 {
 		return nil, nil
 	}
+	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{&result}); err != nil {
+		return nil, err
+	}
 	return &result, nil
 }
 
@@ -134,8 +151,20 @@ func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, db *gorm.D
 
 // DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
 func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (int64, error) {
-	result := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
-	return result.RowsAffected, result.Error
+	var rowsAffected int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ids []string
+		if err := tx.Model(&entity.API4Conversation{}).Where("id = ? AND dialog_id = ?", sessionID, agentID).Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable, apiConversationReferenceTable}, ids); err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	return rowsAffected, err
 }
 
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)
@@ -143,6 +172,18 @@ func (dao *API4ConversationDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
-	result := db.WithContext(ctx).Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{})
-	return result.RowsAffected, result.Error
+	var rowsAffected int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ids []string
+		if err := tx.Model(&entity.API4Conversation{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable, apiConversationReferenceTable}, ids); err != nil {
+			return err
+		}
+		result := tx.Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	return rowsAffected, err
 }

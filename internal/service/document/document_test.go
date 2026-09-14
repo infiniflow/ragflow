@@ -3211,6 +3211,8 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	if err := db.AutoMigrate(
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -3228,12 +3230,12 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 		t.Fatalf("seed canvas: %v", err)
 	}
 	// Seed an API4Conversation whose message references the filename.
-	if err := db.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), db, &entity.API4Conversation{
 		ID:       "sess-1",
 		DialogID: "agent-1",
 		UserID:   "user-1",
 		Message:  json.RawMessage(`[{"role":"assistant","content":"saved as documents/artifact/result.png"}]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("seed conv: %v", err)
 	}
 
@@ -3260,12 +3262,12 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed canvas 2: %v", err)
 	}
-	if err := db.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), db, &entity.API4Conversation{
 		ID:       "sess-2",
 		DialogID: "agent-2",
 		UserID:   "user-2",
 		Message:  json.RawMessage(`[{"role":"user","content":"hello"}]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("seed conv 2: %v", err)
 	}
 	if _, err := svc.GetDocumentArtifact(ctx, "result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {

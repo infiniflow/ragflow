@@ -37,13 +37,13 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = originalDB })
 
-	if err := testDB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
 		ID:        "session-update-failure",
 		DialogID:  "canvas-update-failure",
 		UserID:    "user-1",
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := testDB.Exec(`
@@ -126,13 +126,13 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = originalDB })
 
-	if err := testDB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
 		ID:        "session-think",
 		DialogID:  "canvas-think",
 		UserID:    "user-1",
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
@@ -141,8 +141,8 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 		t.Fatalf("persist: %v", err)
 	}
 
-	var conv entity.API4Conversation
-	if err := testDB.First(&conv, "id = ?", "session-think").Error; err != nil {
+	conv, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), testDB, "session-think")
+	if err != nil {
 		t.Fatalf("reload session: %v", err)
 	}
 	var messages []map[string]any

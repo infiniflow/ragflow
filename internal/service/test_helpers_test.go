@@ -55,6 +55,11 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
+		&entity.ChatSession{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -70,6 +75,18 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {
+	t.Helper()
+	conversation, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), db, id)
+	if err != nil {
+		t.Fatalf("failed to load API conversation %s: %v", id, err)
+	}
+	if conversation == nil {
+		t.Fatalf("API conversation %s not found", id)
+	}
+	return conversation
 }
 
 // fakeChatDocEngine is a stub engine.DocEngine used by parent-package tests.

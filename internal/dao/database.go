@@ -122,9 +122,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.Chat{},
 		&entity.ChatChannel{},
 		&entity.ChatSession{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
 		&entity.Task{},
 		&entity.APIToken{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 		&entity.Knowledgebase{},
 		&entity.InvitationCode{},
 		&entity.Document{},
@@ -184,6 +188,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
+		}
+		if err = migrateConversationHistory(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
@@ -301,6 +308,10 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

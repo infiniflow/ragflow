@@ -38,11 +38,49 @@ func setupChatSessionDAOTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.ChatSession{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.ConversationReference{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
 	return db
+}
+
+func TestMigrateConversationHistory(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+	for _, table := range []string{"conversation", "api_4_conversation"} {
+		if err := db.Exec("ALTER TABLE " + table + " ADD COLUMN message TEXT").Error; err != nil {
+			t.Fatalf("add %s.message: %v", table, err)
+		}
+		if err := db.Exec("ALTER TABLE " + table + " ADD COLUMN reference TEXT").Error; err != nil {
+			t.Fatalf("add %s.reference: %v", table, err)
+		}
+	}
+	if err := db.Table("conversation").Create(map[string]interface{}{
+		"id": "chat-session", "dialog_id": "chat-1", "message": `[{"role":"user"},{"role":"assistant"}]`, "reference": `[{"chunks":[]}]`,
+	}).Error; err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if err := db.Table("api_4_conversation").Create(map[string]interface{}{
+		"id": "api-session", "dialog_id": "agent-1", "user_id": "user-1", "message": `[{"role":"user"}]`, "reference": `{"chunks":[]}`,
+	}).Error; err != nil {
+		t.Fatalf("seed API conversation: %v", err)
+	}
+
+	if err := migrateConversationHistory(t.Context(), db); err != nil {
+		t.Fatalf("migrate history: %v", err)
+	}
+
+	counts := map[string]int64{}
+	for _, table := range []string{conversationMessageTable, conversationReferenceTable, apiConversationMessageTable, apiConversationReferenceTable} {
+		var count int64
+		if err := db.Table(table).Count(&count).Error; err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		counts[table] = count
+	}
+	if counts[conversationMessageTable] != 2 || counts[conversationReferenceTable] != 1 || counts[apiConversationMessageTable] != 1 || counts[apiConversationReferenceTable] != 1 {
+		t.Fatalf("unexpected migrated row counts: %v", counts)
+	}
 }
 
 func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID string, updateTime int64) {
@@ -62,7 +100,7 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -85,7 +123,7 @@ func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, u
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -107,7 +145,7 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewChatSessionDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create chat session %s: %v", id, err)
 	}
 }

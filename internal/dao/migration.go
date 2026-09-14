@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -30,6 +31,10 @@ import (
 // RunMigrations runs all manual database migrations
 // These are migrations that cannot be handled by AutoMigrate alone
 func RunMigrations(ctx context.Context, db *gorm.DB) error {
+	if err := migrateConversationHistory(ctx, db); err != nil {
+		return fmt.Errorf("failed to migrate conversation history: %w", err)
+	}
+
 	// Check if tenant_llm table has composite primary key and migrate to ID primary key
 	if err := migrateTenantLLMPrimaryKey(ctx, db); err != nil {
 		return fmt.Errorf("failed to migrate tenant_llm primary key: %w", err)
@@ -70,6 +75,61 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 
 	common.Info("All manual migrations completed successfully")
 	return nil
+}
+
+type legacyConversationHistory struct {
+	ID        string         `gorm:"column:id"`
+	Message   sql.NullString `gorm:"column:message"`
+	Reference sql.NullString `gorm:"column:reference"`
+}
+
+func migrateConversationHistory(ctx context.Context, db *gorm.DB) error {
+	tables := []string{conversationMessageTable, conversationReferenceTable, apiConversationMessageTable, apiConversationReferenceTable}
+	for _, table := range tables {
+		var count int64
+		if err := db.WithContext(ctx).Table(table).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := migrateConversationTableHistory(ctx, tx, "conversation", conversationMessageTable, conversationReferenceTable); err != nil {
+			return err
+		}
+		return migrateConversationTableHistory(ctx, tx, "api_4_conversation", apiConversationMessageTable, apiConversationReferenceTable)
+	})
+}
+
+func migrateConversationTableHistory(ctx context.Context, db *gorm.DB, parentTable, messageTable, referenceTable string) error {
+	if !db.Migrator().HasTable(parentTable) || !db.Migrator().HasColumn(parentTable, "message") || !db.Migrator().HasColumn(parentTable, "reference") {
+		return nil
+	}
+
+	var rows []legacyConversationHistory
+	if err := db.WithContext(ctx).Table(parentTable).Select("id", "message", "reference").Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		message := jsonArrayOrEmpty(row.Message)
+		if err := syncHistory(ctx, db, messageTable, "message", "message", row.ID, message); err != nil {
+			return fmt.Errorf("migrate %s.message for %s: %w", parentTable, row.ID, err)
+		}
+		reference := jsonArrayOrEmpty(row.Reference)
+		if err := syncHistory(ctx, db, referenceTable, "reference", "reference", row.ID, reference); err != nil {
+			return fmt.Errorf("migrate %s.reference for %s: %w", parentTable, row.ID, err)
+		}
+	}
+	return nil
+}
+
+func jsonArrayOrEmpty(value sql.NullString) []byte {
+	if !value.Valid || strings.TrimSpace(value.String) == "" {
+		return []byte("[]")
+	}
+	return []byte(value.String)
 }
 
 // migrateTenantLLMPrimaryKey migrates tenant_llm from composite primary key to ID primary key
