@@ -74,11 +74,15 @@ def _load_chunk_api(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.apps.services", _module_stub("api.apps.services", __path__=[]))
     monkeypatch.setitem(sys.modules, "api.apps.services.structure_graph_common", _module_stub("api.apps.services.structure_graph_common"))
     monkeypatch.setitem(sys.modules, "api.db.db_models", _module_stub("api.db.db_models", Document=None, Task=None))
-    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", _module_stub("api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=None, resolve_model_config=None))
+    monkeypatch.setitem(
+        sys.modules, "api.db.joint_services.tenant_model_service", _module_stub("api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=None, resolve_model_config=None)
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.doc_metadata_service", _module_stub("api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace()))
     monkeypatch.setitem(sys.modules, "api.db.services.document_counter_service", _module_stub("api.db.services.document_counter_service", release_reparse_counters=None))
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", _module_stub("api.db.services.document_service", DocumentService=document_service))
-    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", _module_stub("api.db.services.knowledgebase_service", KnowledgebaseService=kb_service, validate_dataset_embedding_models=None))
+    monkeypatch.setitem(
+        sys.modules, "api.db.services.knowledgebase_service", _module_stub("api.db.services.knowledgebase_service", KnowledgebaseService=kb_service, validate_dataset_embedding_models=None)
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", _module_stub("api.db.services.llm_service", LLMBundle=None))
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", _module_stub("api.db.services.search_service", SearchService=SimpleNamespace()))
     monkeypatch.setitem(sys.modules, "api.db.services.task_service", _module_stub("api.db.services.task_service", TaskService=SimpleNamespace(), cancel_all_task_of=None))
@@ -102,11 +106,25 @@ def _load_chunk_api(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "api.utils.pagination_utils",
-        _module_stub("api.utils.pagination_utils", DEFAULT_PAGE=1, DEFAULT_PAGE_SIZE=30, validate_rest_api_ids=None, validate_rest_api_page=lambda p: int(p), validate_rest_api_page_size=lambda s: int(s)),
+        _module_stub(
+            "api.utils.pagination_utils", DEFAULT_PAGE=1, DEFAULT_PAGE_SIZE=30, validate_rest_api_ids=None, validate_rest_api_page=lambda p: int(p), validate_rest_api_page_size=lambda s: int(s)
+        ),
     )
-    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", _module_stub("api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=None, resolve_reference_metadata_preferences=None))
+    monkeypatch.setitem(
+        sys.modules, "api.utils.reference_metadata_utils", _module_stub("api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=None, resolve_reference_metadata_preferences=None)
+    )
     monkeypatch.setitem(sys.modules, "common", _module_stub("common", settings=settings_stub))
-    monkeypatch.setitem(sys.modules, "common.constants", _module_stub("common.constants", LLMType=SimpleNamespace(EMBEDDING=SimpleNamespace(value="embedding")), ParserType=SimpleNamespace(), RetCode=SimpleNamespace(DATA_ERROR=102), TaskStatus=SimpleNamespace()))
+    monkeypatch.setitem(
+        sys.modules,
+        "common.constants",
+        _module_stub(
+            "common.constants",
+            LLMType=SimpleNamespace(EMBEDDING=SimpleNamespace(value="embedding")),
+            ParserType=SimpleNamespace(),
+            RetCode=SimpleNamespace(DATA_ERROR=102),
+            TaskStatus=SimpleNamespace(),
+        ),
+    )
     monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", _module_stub("common.doc_store.doc_store_base", OrderByExpr=None))
     monkeypatch.setitem(sys.modules, "common.metadata_utils", _module_stub("common.metadata_utils", apply_meta_data_filter=None, convert_conditions=None, filter_doc_ids_by_metadata=None))
     monkeypatch.setitem(sys.modules, "common.misc_utils", _module_stub("common.misc_utils", thread_pool_exec=None))
