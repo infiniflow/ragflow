@@ -249,12 +249,6 @@ export function ChunkMethodDialog({
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
     );
-    if (!isMineruSelected) {
-      delete parserConfig.mineru_parse_method;
-      delete parserConfig.mineru_formula_enable;
-      delete parserConfig.mineru_table_enable;
-      delete parserConfig.mineru_lang;
-    }
     const nextData = {
       ...data,
       parser_id: data.parser_id || '',

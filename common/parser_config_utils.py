@@ -17,10 +17,11 @@
 import re
 from typing import Any
 
-_MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.I)
+_MODEL_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 
 
 def is_tenant_model_id(value: Any) -> bool:
+    """Return True if value looks like a 32-hex tenant_model.id from get_uuid()."""
     return isinstance(value, str) and bool(_MODEL_ID_RE.match(value.strip()))
 
 

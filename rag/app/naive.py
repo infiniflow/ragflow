@@ -224,19 +224,13 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     # (e.g. ``qwen3.6-plus@tongyi@Tongyi-Qianwen``); those composite names must
     # keep going to by_plaintext, not be silently rerouted to MinerU.
     # Same for known keywords: ``{"layout_recognize": "Plain Text", "mineru_lang": ...}``.
-    if (
-        name not in PARSERS
-        and parser is by_plaintext
-        and has_mineru_options(parser_config)
-        and is_tenant_model_id(str(layout_recognizer).strip())
-    ):
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config) and is_tenant_model_id(str(layout_recognizer).strip()):
         logging.warning(
             "[naive] layout_recognize=%r is an unresolved tenant model id; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
         name = "mineru"
-
 
     return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
 
