@@ -732,14 +732,6 @@ func (s *ChatPipelineService) AsyncChat(
 						})
 					}
 				}
-				// The harness streams think-then-answer inside ONE compose call;
-				// if it never reached a non-think delta (reasoning-only output)
-				// close the block so no consumer sees an unpaired <think>.
-				defer func() {
-					if harnessThinking {
-						sink("", false)
-					}
-				}()
 				// Python dialog_service.py:2077 — the web provider is handed to
 				// RAGTools only when the internet flag enables web search;
 				// otherwise web_search stays off the agentic tool surface.
@@ -747,7 +739,31 @@ func (s *ChatPipelineService) AsyncChat(
 				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
 					webSearch = s.harnessWebSearchFunc(chat.PromptConfig)
 				}
-				hk, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink)
+				// Python passes system_prompt=_render_reasoning_system_prompt(
+				// dialog, prompt_config, kwargs) to RAGTools
+				// (dialog_service.py:2084): the dialog system prompt rendered
+				// with the caller kwargs, a UTC date, and {knowledge} defaulted
+				// to "" — the agentic graph supplies evidence itself.
+				harnessSystemPrompt := ""
+				if sp, ok := chat.PromptConfig["system"].(string); ok && sp != "" {
+					kws := make(map[string]interface{}, len(kwargs)+2)
+					for k, v := range kwargs {
+						kws[k] = v
+					}
+					kws["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
+					if _, ok := kws["knowledge"]; !ok {
+						kws["knowledge"] = ""
+					}
+					harnessSystemPrompt = s.formatPrompt(sp, kws)
+				}
+				hk, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt)
+				// The harness streams think-then-answer inside ONE compose call.
+				// Close the block here, once that call (and its trailing
+				// narration line) has returned: a reasoning-only run would
+				// otherwise keep it open until the goroutine exits, emitting
+				// EndToThink after the Phase 10/11 answer or the Final below.
+				// No-op when no block is open.
+				sink("", false)
 				if hErr != nil {
 					common.Warn("harness retrieval failed", zap.Error(hErr))
 				} else {
@@ -3134,10 +3150,10 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 			ref[k] = v
 		}
 		if cRaw, ok := ref["chunks"].([]map[string]interface{}); ok {
-			for _, cm := range cRaw {
-				delete(cm, "vector")
-			}
-			ref["chunks"] = cRaw
+			// chunksFormat builds the client-facing shape (content, document_name,
+			// dataset_id, ...) in NEW maps, so the engine keys and the per-chunk
+			// vector never reach the reference and the shared chunks stay intact.
+			ref["chunks"] = chunksFormat(cRaw)
 		}
 		refs = ref
 	}
@@ -4677,6 +4693,13 @@ type HarnessRequest struct {
 	// the tool from the agentic surface, mirroring Python's provider gate
 	// (action_session.py:463 discards web_search when tools.web_search is None).
 	WebSearch func(ctx context.Context, queries []string) ([]string, error)
+	// SystemPrompt is the dialog-level system prompt rendered the way Python's
+	// _render_reasoning_system_prompt (dialog_service.py:1887-1917) renders it
+	// for RAGTools(system_prompt=...): caller kwargs + a UTC date, with
+	// {knowledge} defaulted to "" (the agentic graph supplies evidence through
+	// its own evidence block). Empty when the dialog configures none — Python
+	// then composes without the "# Assistant configuration" block.
+	SystemPrompt string
 }
 
 // HarnessResult is the evidence the harness returns, normalized to the map
@@ -4743,7 +4766,7 @@ func toolLoopLine(sink func(delta string, isThink bool), line string) {
 	sink(line+thinkLineBreak, true)
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool)) (map[string]interface{}, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string) (map[string]interface{}, string, error) {
 	if harnessRetriever == nil {
 		return nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
@@ -4767,6 +4790,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		Images:          images,
 		TextAttachments: textAttachments,
 		WebSearch:       webSearch,
+		SystemPrompt:    dialogSystemPrompt,
 	})
 	if err != nil {
 		return nil, "", err

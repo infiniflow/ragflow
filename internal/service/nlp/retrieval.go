@@ -541,7 +541,7 @@ func buildRetrievalFusionExpr(docEngineType string, topn int, vectorSimilarityWe
 	return &types.FusionExpr{
 		Method:       "weighted_sum",
 		TopN:         topn,
-		FusionParams: map[string]interface{}{"weights": "0.05,0.95"},
+		FusionParams: map[string]interface{}{"weights": "0.001,1"},
 	}
 }
 

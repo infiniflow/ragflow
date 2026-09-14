@@ -111,6 +111,21 @@ def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dic
         # -preview variants (e.g. qwen3.8-max-preview) only accept
         # enable_thinking=True on their API endpoint.
         conf["enable_thinking"] = True if "-preview" in model_name else False
+    elif any(k in model_name for k in ("minimax-m", "minimax_m", "minimax m", "abab", "minimax-m3", "minimax-m1")):
+        # MiniMax-M3/M1 controls thinking via `thinking: {"type": "disabled"}`
+        # in the request body. `thinking` is NOT a standard OpenAI-compatible
+        # param and LiteLLM's drop_params=True silently drops unknown top-level
+        # kwargs, so it MUST ride in extra_body (merged verbatim into the body).
+        # Without this, MiniMax reasoning models keep chain-of-thought enabled,
+        # which makes extraction slow and can hang a batch on a long COT. The
+        # rest of this file routes through the generic `else` below only when
+        # the model name gives no hint, so the broad `minimax` guard above is
+        # enough to cover every MiniMax model this repo is configured against.
+        extra_body = conf.get("extra_body")
+        extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+        extra_body["thinking"] = {"type": "disabled"}
+        conf["extra_body"] = extra_body
+        conf.pop("reasoning_effort", None)
     else:
         # LiteLLM maps this common control for providers that support it and
         # drops it for providers that do not. Keep model-specific overrides

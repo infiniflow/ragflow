@@ -1087,7 +1087,7 @@ Released on February 6, 2025.
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
-- Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
+- Supports GPU acceleration for DeepDoc (see [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml)).
 - Supports creating and referencing a **Tag** dataset as a key milestone towards bridging the semantic gap between query and response.
 
 :::danger IMPORTANT

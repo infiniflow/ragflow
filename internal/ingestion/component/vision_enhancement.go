@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -162,10 +163,10 @@ func maybeDispatchVisionEnhancement(
 	ctx context.Context,
 	db *gorm.DB,
 	fileType utility.FileType,
-	dispatched parserDispatchResult,
+	dispatched parser.ParseResult,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parserDispatchResult, bool, error) {
+) (parser.ParseResult, bool, error) {
 	// 0. FileType allowlist guard.
 	if !isVisionEnhancementAllowed(fileType) {
 		return dispatched, false, nil

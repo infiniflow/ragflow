@@ -145,3 +145,22 @@ func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, var
 	}
 	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants, taskTypes)
 }
+
+// PublishEnabled records that a document with compiled products became
+// available again and must be merged into dataset-level products.
+func PublishEnabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+	if defaultPublisher == nil {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeEnabled), variants)
+}
+
+// PublishDisabled records that a document with compiled products became
+// unavailable. The consumer retracts only its dataset-level contributions;
+// document-level compiled rows remain available for a later re-enable.
+func PublishDisabled(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+	if defaultPublisher == nil {
+		return nil
+	}
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDisabled), variants)
+}
