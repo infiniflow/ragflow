@@ -1178,12 +1178,16 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
-	if req.DatasetIDs == nil {
+	// A saved search app (search_id) may carry the dataset ids in its
+	// search_config (kb_ids); the service resolves that. Without a
+	// search_id the request must name the datasets itself, same as the
+	// Python API's "`dataset_ids` is required" check.
+	if req.DatasetIDs == nil && req.SearchID == nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id is required")
 		return
 	}
 
-	if len(req.DatasetIDs) == 0 {
+	if req.DatasetIDs != nil && len(req.DatasetIDs) == 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id array cannot be empty")
 		return
 	}
