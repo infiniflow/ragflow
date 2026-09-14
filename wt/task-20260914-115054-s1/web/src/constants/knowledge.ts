@@ -1,0 +1,211 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+export enum KnowledgeRouteKey {
+  Dataset = 'dataset',
+  Testing = 'testing',
+  Configuration = 'configuration',
+  KnowledgeGraph = 'knowledgeGraph',
+}
+
+export const DatasetBaseKey = 'dataset';
+
+export enum RunningStatus {
+  UNSTART = 'UNSTART', // need to run
+  RUNNING = 'RUNNING', // need to cancel
+  CANCEL = 'CANCEL', // need to refresh
+  DONE = 'DONE', // need to refresh
+  FAIL = 'FAIL', // need to refresh
+  SCHEDULE = 'SCHEDULE',
+  // Go ingestion only: the task is enqueued but not started yet
+  // (ingestion_status CREATED / SCHEDULED).
+  QUEUED = 'QUEUED',
+}
+
+export enum RunningStatusOld {
+  UNSTART = '0', // need to run
+  RUNNING = '1', // need to cancel
+  CANCEL = '2', // need to refresh
+  DONE = '3', // need to refresh
+  FAIL = '4', // need to refresh
+  SCHEDULE = '5',
+}
+
+export enum IngestionTaskStatus {
+  CREATED = 'CREATED',
+  SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
+}
+
+export const RunningStatusMap = {
+  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.RUNNING]: 'Running',
+  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.DONE]: 'Success',
+  [RunningStatus.FAIL]: 'Failed',
+  [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.QUEUED]: 'Queued',
+
+  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.RUNNING]: 'Running',
+  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.DONE]: 'Success',
+  [RunningStatusOld.FAIL]: 'Failed',
+  [RunningStatusOld.SCHEDULE]: 'Schedule',
+};
+
+export enum ModelVariableType {
+  Improvise = 'Improvise',
+  Precise = 'Precise',
+  Balance = 'Balance',
+}
+
+export const settledModelVariableMap = {
+  [ModelVariableType.Improvise]: {
+    temperature: 0.8,
+    top_p: 0.9,
+    frequency_penalty: 0.1,
+    presence_penalty: 0.1,
+    max_tokens: 4096,
+  },
+  [ModelVariableType.Precise]: {
+    temperature: 0.2,
+    top_p: 0.75,
+    frequency_penalty: 0.5,
+    presence_penalty: 0.5,
+    max_tokens: 4096,
+  },
+  [ModelVariableType.Balance]: {
+    temperature: 0.5,
+    top_p: 0.85,
+    frequency_penalty: 0.3,
+    presence_penalty: 0.2,
+    max_tokens: 4096,
+  },
+};
+
+export enum LlmModelType {
+  Embedding = 'embedding',
+  Chat = 'chat',
+  Image2text = 'image2text',
+  Speech2text = 'speech2text',
+  Rerank = 'rerank',
+  TTS = 'tts',
+  Ocr = 'ocr',
+}
+
+export enum KnowledgeSearchParams {
+  DocumentId = 'doc_id',
+  KnowledgeId = 'id',
+  Type = 'type',
+}
+
+export enum DocumentType {
+  Virtual = 'virtual',
+  Visual = 'visual',
+}
+
+export enum DocumentParserType {
+  Naive = 'naive',
+  Qa = 'qa',
+  Resume = 'resume',
+  Manual = 'manual',
+  Table = 'table',
+  Paper = 'paper',
+  Book = 'book',
+  Laws = 'laws',
+  Presentation = 'presentation',
+  Picture = 'picture',
+  One = 'one',
+  Audio = 'audio',
+  Email = 'email',
+  Tag = 'tag',
+  KnowledgeGraph = 'knowledge_graph',
+}
+
+export const TagRenameId = 'tagRename';
+
+export enum ParseType {
+  BuiltIn = 1,
+  Pipeline = 2,
+}
+
+export enum ProcessingType {
+  knowledgeGraph = 'Graph',
+  raptor = 'RAPTOR',
+  artifact = 'wiki',
+  skill = 'Skill',
+  mindmap = 'Mindmap',
+  timeline = 'Timeline',
+  sessionEssence = 'Session_Essence',
+  sessionGraph = 'Session_Graph',
+}
+
+export const ProcessingTypeMap = {
+  [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
+  [ProcessingType.raptor]: 'RAPTOR',
+  [ProcessingType.artifact]: 'Artifact',
+  [ProcessingType.skill]: 'Skill',
+  [ProcessingType.mindmap]: 'Mind Map',
+  [ProcessingType.timeline]: 'Timeline',
+  [ProcessingType.sessionEssence]: 'Session Essence',
+  [ProcessingType.sessionGraph]: 'Session Graph',
+  GraphRAG: 'Knowledge Graph',
+};
+
+export enum GenerateStatus {
+  Running = 'running',
+  Completed = 'completed',
+  Start = 'start',
+  Failed = 'failed',
+}
+
+export enum GenerateType {
+  KnowledgeGraph = 'KnowledgeGraph',
+  Raptor = 'Raptor',
+  Artifact = 'Artifact',
+  ToSkills = 'ToSkills',
+  MindMap = 'MindMap',
+  Timeline = 'Timeline',
+  SessionEssence = 'SessionEssence',
+  SessionGraph = 'SessionGraph',
+}
+
+export enum TraceType {
+  Graph = 'graph',
+  Raptor = 'raptor',
+  Artifact = 'wiki',
+  Skill = 'skill',
+  MindMap = 'mindmap',
+  Timeline = 'timeline',
+  SessionEssence = 'session_essence',
+  SessionGraph = 'session_graph',
+}
+
+export const GenerateTypeMap = {
+  [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
+  [GenerateType.Raptor]: ProcessingType.raptor,
+  [GenerateType.Artifact]: ProcessingType.artifact,
+  [GenerateType.ToSkills]: ProcessingType.skill,
+  [GenerateType.MindMap]: ProcessingType.mindmap,
+  [GenerateType.Timeline]: ProcessingType.timeline,
+  [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
+  [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
+};

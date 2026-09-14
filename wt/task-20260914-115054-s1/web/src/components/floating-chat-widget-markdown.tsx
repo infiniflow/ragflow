@@ -1,0 +1,389 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Image, { AuthenticatedImg } from '@/components/image';
+import SvgIcon from '@/components/svg-icon';
+
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import {
+  useFetchDocumentThumbnailsByIds,
+  useGetDocumentUrl,
+} from '@/hooks/use-document-request';
+import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
+import {
+  currentReg,
+  parseCitationIndex,
+  preprocessLaTeX,
+  replaceRetrievingToSection,
+  replaceTextByOldReg,
+  replaceThinkToSection,
+  showImage,
+} from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
+import { getDirAttribute } from '@/utils/text-direction';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
+import classNames from 'classnames';
+import DOMPurify from 'dompurify';
+import 'katex/dist/katex.min.css';
+import { omit } from 'lodash';
+import pipe from 'lodash/fp/pipe';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import Markdown from 'react-markdown';
+import reactStringReplace from 'react-string-replace';
+import SyntaxHighlighter from 'react-syntax-highlighter';
+import {
+  oneDark,
+  oneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
+import { visitParents } from 'unist-util-visit-parents';
+import styles from './floating-chat-widget-markdown.module.less';
+import { useIsDarkTheme } from './theme-provider';
+import { Button } from './ui/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+
+const getChunkIndex = (match: string) =>
+  parseCitationIndex(match.replace(/\[|\]/g, ''));
+
+const FloatingChatWidgetMarkdown = ({
+  reference,
+  clickDocumentButton,
+  content,
+  loading,
+}: {
+  content: string;
+  loading: boolean;
+  reference: IReference;
+  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+}) => {
+  const { t } = useTranslation();
+  const { setDocumentIds, data: fileThumbnails } =
+    useFetchDocumentThumbnailsByIds();
+  const getDocumentUrl = useGetDocumentUrl();
+  const isDarkTheme = useIsDarkTheme();
+
+  const contentWithCursor = useMemo(() => {
+    const text = content === '' ? t('chat.searching') : content;
+    const nextText = replaceTextByOldReg(text);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
+  }, [content, t]);
+
+  useEffect(() => {
+    const docAggs = reference?.doc_aggs;
+    const docList = Array.isArray(docAggs)
+      ? docAggs
+      : Object.values(docAggs ?? {});
+    setDocumentIds(docList.map((x: any) => x.doc_id).filter(Boolean));
+  }, [reference, setDocumentIds]);
+
+  const handleDocumentButtonClick = useCallback(
+    (
+      documentId: string,
+      chunk: IReferenceChunk,
+      fileExtension: string,
+      documentUrl?: string,
+    ) =>
+      () => {
+        if (!documentId) return;
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
+        }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
+      },
+    [clickDocumentButton],
+  );
+
+  const rehypeWrapReference = () => (tree: any) => {
+    visitParents(tree, 'text', (node, ancestors) => {
+      const latestAncestor = ancestors[ancestors.length - 1];
+      if (
+        latestAncestor.tagName !== 'custom-typography' &&
+        latestAncestor.tagName !== 'code'
+      ) {
+        node.type = 'element';
+        node.tagName = 'custom-typography';
+        node.properties = {};
+        node.children = [{ type: 'text', value: node.value }];
+      }
+    });
+  };
+
+  const getReferenceInfo = useCallback(
+    (chunkIndex: number) => {
+      const chunkItem = reference?.chunks?.[chunkIndex];
+      if (!chunkItem) return null;
+      const docAggsArray = Array.isArray(reference?.doc_aggs)
+        ? reference.doc_aggs
+        : Object.values(reference?.doc_aggs ?? {});
+      const document = docAggsArray.find(
+        (x: any) => x?.doc_id === chunkItem?.document_id,
+      ) as any;
+      const documentId = document?.doc_id;
+      const documentUrl =
+        document?.url ?? (documentId ? getDocumentUrl(documentId) : undefined);
+      const fileThumbnail = documentId ? fileThumbnails[documentId] : '';
+      const fileExtension = documentId
+        ? getExtension(document?.doc_name ?? '')
+        : '';
+      return {
+        documentUrl,
+        fileThumbnail,
+        fileExtension,
+        imageId: chunkItem.image_id,
+        chunkItem,
+        documentId,
+        document,
+      };
+    },
+    [fileThumbnails, reference, getDocumentUrl],
+  );
+
+  const getPopoverContent = useCallback(
+    (chunkIndex: number) => {
+      const info = getReferenceInfo(chunkIndex);
+
+      if (!info) {
+        return (
+          <div className="p-2 text-xs text-red-500">
+            Error: Missing document information.
+          </div>
+        );
+      }
+
+      const {
+        documentUrl,
+        fileThumbnail,
+        fileExtension,
+        imageId,
+        chunkItem,
+        documentId,
+        document,
+      } = info;
+
+      return (
+        <div
+          key={`popover-content-${chunkItem.id}`}
+          className="flex gap-2 widget-citation-content"
+        >
+          {imageId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Image
+                  id={imageId}
+                  className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
+                />
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                <Image
+                  id={imageId}
+                  className="max-w-[80vw] max-h-[60vh] rounded"
+                />
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <div className="space-y-2 flex-1 min-w-0">
+            <div
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+              }}
+              className="max-h-[250px] overflow-y-auto text-xs leading-relaxed p-2 bg-gray-50 dark:bg-gray-800 rounded prose-sm"
+            ></div>
+            {documentId && (
+              <section className="flex gap-1 justify-center">
+                {fileThumbnail ? (
+                  <AuthenticatedImg
+                    src={fileThumbnail}
+                    alt={document?.doc_name}
+                    className="w-6 h-6 rounded"
+                  />
+                ) : (
+                  <SvgIcon name={`file-icon/${fileExtension}`} width={20} />
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size={'sm'}
+                      variant={'link'}
+                      className="p-0 text-xs break-words h-auto text-left flex-1"
+                      onClick={handleDocumentButtonClick(
+                        documentId,
+                        chunkItem,
+                        fileExtension,
+                        documentUrl,
+                      )}
+                      disabled={
+                        !documentUrl && !supportsSourceLocate(fileExtension)
+                      }
+                      style={{ whiteSpace: 'normal' }}
+                    >
+                      <span className="truncate">
+                        {document?.doc_name ?? 'Unnamed Document'}
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {!documentUrl && !supportsSourceLocate(fileExtension)
+                      ? 'Document link unavailable'
+                      : document.doc_name}
+                  </TooltipContent>
+                </Tooltip>
+              </section>
+            )}
+          </div>
+        </div>
+      );
+    },
+    [getReferenceInfo, handleDocumentButtonClick],
+  );
+
+  const renderReference = useCallback(
+    (text: string) => {
+      return reactStringReplace(text, currentReg, (match, i) => {
+        const chunkIndex = getChunkIndex(match);
+        const info = getReferenceInfo(chunkIndex);
+
+        if (!info) {
+          return (
+            <Tooltip key={`err-tooltip-${i}`}>
+              <TooltipTrigger asChild>
+                <InfoCircleOutlined className={styles.referenceIcon} />
+              </TooltipTrigger>
+              <TooltipContent>
+                {loading ? t('chat.searching') : 'Reference unavailable'}
+              </TooltipContent>
+            </Tooltip>
+          );
+        }
+
+        const { imageId, chunkItem, documentId, fileExtension, documentUrl } =
+          info;
+
+        if (showImage(chunkItem?.doc_type)) {
+          return (
+            <Image
+              key={`img-${i}`}
+              id={imageId}
+              className="block object-contain max-w-full max-h-48 rounded my-2 cursor-pointer"
+              onClick={handleDocumentButtonClick(
+                documentId,
+                chunkItem,
+                fileExtension,
+                documentUrl,
+              )}
+            />
+          );
+        }
+
+        return (
+          <HoverCard key={`hovercard-${i}`}>
+            <HoverCardTrigger asChild>
+              <InfoCircleOutlined className={styles.referenceIcon} />
+            </HoverCardTrigger>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
+          </HoverCard>
+        );
+      });
+    },
+    [
+      getPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      loading,
+      t,
+    ],
+  );
+
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
+  return (
+    <div className={styles['floating-chat-widget']} dir={dir}>
+      <Markdown
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
+        remarkPlugins={MarkdownRemarkPlugins}
+        className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
+        components={
+          {
+            p: (props: any) => {
+              const { children, node, ...rest } = props;
+              void node;
+              return <p {...rest}>{children}</p>;
+            },
+            'custom-typography': ({ children }: { children: string }) =>
+              renderReference(children),
+            code(props: any) {
+              // oxlint-disable-next-line typescript/no-unused-vars
+              const { children, className, node, ...rest } = props;
+              const match = /language-(\w+)/.exec(className || '');
+              return match ? (
+                <SyntaxHighlighter
+                  {...omit(rest, 'inline')}
+                  PreTag="div"
+                  language={match[1]}
+                  style={isDarkTheme ? oneDark : oneLight}
+                  wrapLongLines
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code
+                  {...rest}
+                  className={classNames(
+                    className,
+                    'text-wrap text-xs bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded',
+                  )}
+                >
+                  {children}
+                </code>
+              );
+            },
+          } as any
+        }
+      >
+        {contentWithCursor}
+      </Markdown>
+    </div>
+  );
+};
+
+export default FloatingChatWidgetMarkdown;
