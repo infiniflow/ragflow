@@ -225,11 +225,11 @@ def test_rag_agent_preserves_multimodal_content_parts(monkeypatch):
 def test_render_reasoning_system_prompt_substitutes_date_and_knowledge(monkeypatch):
     """The reasoning path should honor the dialog system prompt like async_chat does.
 
-    Regression lock for the first-turn empty dataset binding: {knowledge} must
-    default to the bound dataset NAMES, never an empty string — the web UI's
-    backtick-wrapped template rendered as `` `` otherwise, which the outer
-    model read as "the dataset is empty" and answered the canned
-    "not found in the dataset!" line without calling the rag tool.
+    {knowledge} is trusted-template content only: mutable runtime data (bound
+    dataset names) must NOT be injected into the reasoning system prompt
+    through it. When the caller does not supply a value it renders empty —
+    the bound dataset names are exposed through the agentic graph's untrusted
+    evidence block instead (see rag/advanced_rag/agentic_rag_graph.py).
     """
     dialog = SimpleNamespace(kb_ids=["kb-1"])
     prompt_config = {"system": "Role: pirate. Date: {date}. Context: '{knowledge}'."}
@@ -243,8 +243,8 @@ def test_render_reasoning_system_prompt_substitutes_date_and_knowledge(monkeypat
     rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
 
     assert rendered.startswith("Role: pirate. Date: 2")
-    assert "Context: 'Pirate KB'." in rendered
-    assert "''" not in rendered
+    assert "Context: ''." in rendered
+    assert "Pirate KB" not in rendered
 
 
 @pytest.mark.p2
