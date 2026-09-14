@@ -151,10 +151,10 @@ class Categorize(LLM, ABC):
         top = max(counts.values(), default=0)
         if not top:
             return None
-        # Overlapping names tie on substring counts: "Billing" also
-        # matches the answer "Billing Dispute". Prefer the longest, most
-        # specific name among the top counts.
-        return max((c for c, n in counts.items() if n == top), key=len)
+        # Prefer the more specific category only when tied names overlap.
+        # Otherwise, preserve declaration order as the previous selection did.
+        tied = [c for c, n in counts.items() if n == top]
+        return max(tied, key=lambda c: sum(other.lower() in c.lower() for other in tied))
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):

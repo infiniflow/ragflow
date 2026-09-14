@@ -127,3 +127,15 @@ def test_distinct_names_keep_count_winner(monkeypatch):
     mod = _load_categorize_module(monkeypatch)
     categories = ["Refund", "Exchange"]
     assert mod.Categorize._select_category("Refund, refund, but not exchange", categories) == "Refund"
+
+@pytest.mark.parametrize(
+    ("categories", "answer", "expected"),
+    [
+        (["Refund", "Exchange"], "Refund or Exchange", "Refund"),
+        (["Exchange", "Refund"], "Refund or Exchange", "Exchange"),
+        (["Other", "Technical"], "Other or Technical", "Other"),
+    ],
+)
+def test_distinct_name_ties_preserve_declaration_order(monkeypatch, categories, answer, expected):
+    mod = _load_categorize_module(monkeypatch)
+    assert mod.Categorize._select_category(answer, categories) == expected
