@@ -712,9 +712,9 @@ func mergeMarkdownChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep strin
 
 // mergeMarkdownImages preserves the single image field consumed by downstream
 // components while matching Python's vertical image aggregation when both
-// payloads are decodable raster data. Callers must check
-// markdownImagesMergeable before merging two non-empty payloads; a single
-// string cannot represent two opaque object-storage references safely.
+// payloads are decodable raster data. A single string cannot represent two
+// opaque object-storage references safely, so unmergeable references keep the
+// first source value and are kept in separate chunks by the caller.
 func mergeMarkdownImages(first, second string) string {
 	merged, ok := mergeMarkdownImagesChecked(first, second)
 	if !ok {
