@@ -74,7 +74,11 @@ export const azureDevOpsConstant = (t: TFunction) => [
           } catch {
             return t('setting.azureDevOpsOrganizationTip');
           }
-        } else if (org.includes('?') || org.includes('#') || org.includes('://')) {
+        } else if (
+          org.includes('?') ||
+          org.includes('#') ||
+          org.includes('://')
+        ) {
           return t('setting.azureDevOpsOrganizationTip');
         }
         return true;
