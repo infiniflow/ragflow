@@ -888,6 +888,16 @@ func TestCompletion_Success(t *testing.T) {
 	if got[2]["role"] != "assistant" || got[2]["content"] != "Hello world" || got[2]["id"] != "msg-1" {
 		t.Fatalf("stored assistant message=%#v", got[2])
 	}
+	if len(store.updateCalled) != 2 {
+		t.Fatalf("want separate question and answer writes, got %d", len(store.updateCalled))
+	}
+	pending := parseMessages(store.updateCalled[0].updates["message"].([]byte))
+	if len(pending) != 2 || pending[1]["role"] != "user" || pending[1]["created_at"] != got[1]["created_at"] {
+		t.Fatalf("first write must contain only the prologue and timestamped question: %#v", pending)
+	}
+	if got[2]["created_at"].(float64) < got[1]["created_at"].(float64) {
+		t.Fatalf("answer timestamp precedes question: %#v", got)
+	}
 }
 
 func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
@@ -1327,6 +1337,7 @@ func TestCompletionStream_Success(t *testing.T) {
 		resultChan: makeResultChan(
 			AsyncChatResult{Answer: "stream", Reference: map[string]interface{}{"chunks": []interface{}{}}},
 			AsyncChatResult{Answer: " answer", Reference: map[string]interface{}{"chunks": []interface{}{}}},
+			AsyncChatResult{Answer: "stream answer", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
 		),
 	}
 

@@ -296,6 +296,7 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 func (s *BotService) ChatbotCompletion(
 	ctx context.Context, tenantID, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	// 1. Load and authorise the dialog.
 	//
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
@@ -421,6 +422,9 @@ func (s *BotService) ChatbotCompletion(
 		kwargs["doc_ids"] = req.DocIDs
 	}
 
+	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
+		return nil, common.CodeServerError, err
+	}
 	results, err := s.pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
@@ -474,9 +478,9 @@ func (s *BotService) streamChatbotTurn(
 		// no-delta fallback.
 		var rawAnswer, fullAnswer string
 		var finalRef map[string]any
-		var errored bool
 		for res := range results {
 			if res.Final {
+				completedAt := float64(time.Now().UnixNano()) / 1e9
 				if res.Answer != "" {
 					// Decorated full answer (citations
 					// resolved). Replaces the accumulated
@@ -489,8 +493,17 @@ func (s *BotService) streamChatbotTurn(
 				if res.Reference != nil {
 					finalRef = res.Reference
 				}
-				if strings.HasPrefix(fullAnswer, "**ERROR**") {
-					errored = true
+				errored := strings.HasPrefix(fullAnswer, "**ERROR**")
+				// Save the completed answer before delivering the final SSE frame.
+				// The question was saved before generation; failures leave it intact.
+				if !errored && ctx.Err() == nil {
+					persisted := rawAnswer
+					if persisted == "" {
+						persisted = fullAnswer
+					}
+					if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
+						common.Error("bot: ChatbotCompletion session update failed", pErr, zap.String("dialog_id", session.DialogID), zap.String("session_id", session.ID))
+					}
 				}
 				finalData := ""
 				if rawAnswer == "" || errored {
@@ -561,36 +574,6 @@ func (s *BotService) streamChatbotTurn(
 			}
 		}
 
-		// 6. Persist the completed turn pair (user + assistant)
-		// plus the retrieval reference, mirroring python
-		// API4ConversationService.append_message after the stream.
-		// Persistence errors are logged but do NOT fail the SSE
-		// stream — the answer has already been produced. On a
-		// pipeline-level error ("**ERROR**" answer) nothing is
-		// persisted, matching the python exception path.
-		persisted := rawAnswer
-		if persisted == "" {
-			// No-delta finals never carry server-inserted [ID:n]
-			// citation markers: the structured-SQL path returns its
-			// markdown table (with ##N$$ source markers the frontend
-			// resolves client-side, same as python use_sql) before
-			// decorateAnswer runs, the empty_response fallback yields
-			// the user-configured text undecorated, and the streaming
-			// path always streams the full visible text as deltas
-			// before its decorated final (so rawAnswer is non-empty
-			// whenever the final was decorated). Falling back to
-			// fullAnswer here is therefore marker-free.
-			persisted = fullAnswer
-		}
-		if !errored {
-			if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef); pErr != nil {
-				common.Error("bot: ChatbotCompletion session update failed",
-					pErr,
-					zap.String("dialog_id", session.DialogID),
-					zap.String("session_id", session.ID),
-				)
-			}
-		}
 		out <- ChatbotSSEFrame{Done: true}
 	}()
 	return out
@@ -639,13 +622,32 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 	return turns
 }
 
-// persistChatbotTurn appends the finished user/assistant turn pair
-// and the retrieval reference to the API conversation history tables so the
-// next ChatbotCompletion call with the same session_id sees this
-// turn in its history. Mirrors python
-// API4ConversationService.append_message.
+func (s *BotService) persistChatbotQuestion(ctx context.Context, session *entity.API4Conversation, question, messageID string, receivedAt float64) error {
+	lock := s.persistLock(session.ID)
+	lock.Lock()
+	defer lock.Unlock()
+	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
+	if err != nil {
+		return err
+	}
+	if fresh == nil || fresh.UserID != session.UserID {
+		return errors.New("session not found")
+	}
+	turns := parseChatbotTurns(fresh.Message)
+	turns = append(turns, map[string]any{"role": "user", "content": question, "id": messageID, "created_at": receivedAt})
+	raw, err := json.Marshal(turns)
+	if err != nil {
+		return err
+	}
+	fresh.Message = raw
+	return s.api4ConversationDAO.Update(ctx, dao.DB, fresh)
+}
+
+// persistChatbotTurn completes an already-persisted user turn with its
+// assistant message and immutable retrieval reference.
 func (s *BotService) persistChatbotTurn(
 	ctx context.Context, session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
+	completedAt float64,
 ) error {
 	// Serialise the read-modify-write per session and re-read the row
 	// inside the lock: the caller's session was loaded before the
@@ -659,31 +661,33 @@ func (s *BotService) persistChatbotTurn(
 	if err != nil {
 		return err
 	}
-	if fresh != nil {
-		session = fresh
+	if fresh == nil || fresh.UserID != session.UserID {
+		return errors.New("session not found")
 	}
+	session = fresh
 
-	now := time.Now().Unix()
 	turns := parseChatbotTurns(session.Message)
 	// Both turns of the pair share messageID by design: a Q&A exchange
 	// is addressed as a unit — mirrors the in-app chat convention
 	// where the answer id is derived from the question id so the pair
 	// is deleted together (web/src/hooks/logic-hooks.ts
 	// buildMessageUuid).
-	turns = append(turns,
-		map[string]any{
-			"role":       "user",
-			"content":    question,
-			"id":         messageID,
-			"created_at": now,
-		},
-		map[string]any{
-			"role":       "assistant",
-			"content":    answer,
-			"id":         messageID,
-			"created_at": now,
-		},
-	)
+	position, referencePosition := -1, 0
+	for i, turn := range turns {
+		if turn["role"] == "user" && turn["id"] == messageID && turn["content"] == question {
+			position = i + 1
+			break
+		}
+		if turn["role"] == "assistant" && turn["id"] != nil {
+			referencePosition++
+		}
+	}
+	if position < 0 {
+		return errors.New("chatbot question not found")
+	}
+	turns = append(turns, nil)
+	copy(turns[position+1:], turns[position:])
+	turns[position] = map[string]any{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
 	rawMsg, err := json.Marshal(turns)
 	if err != nil {
 		return err
@@ -700,7 +704,12 @@ func (s *BotService) persistChatbotTurn(
 	if reference == nil {
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
-	refs = append(refs, reference)
+	if referencePosition > len(refs) {
+		referencePosition = len(refs)
+	}
+	refs = append(refs, nil)
+	copy(refs[referencePosition+1:], refs[referencePosition:])
+	refs[referencePosition] = reference
 	rawRef, err := json.Marshal(refs)
 	if err != nil {
 		return err

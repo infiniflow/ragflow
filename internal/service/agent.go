@@ -1455,6 +1455,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
 func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -1690,6 +1691,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		}
 	}
 
+	if err := s.persistAgentRunQuestion(ctx, canvasID, userID, sessionID, utility.GenerateToken(), userInput, receivedAt); err != nil {
+		return nil, fmt.Errorf("RunAgent: persist question: %w: %w", err, ErrAgentStorageError)
+	}
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
 
 	root := map[string]any{
@@ -1698,10 +1702,8 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
-	// The session row above was created by this request (first touch);
-	// if the run then fails, the run closure drops the row again so a
-	// failed exploration never shows up in the session list.
-	if !sessionFound || newSession {
+	// Drop failed first-touch sessions only when there was no user question.
+	if (!sessionFound || newSession) && stringifyAgentUserInput(agentRunQuery(userInput)) == "" {
 		root["__drop_session_on_failure__"] = true
 	}
 	// The stable run id is derived from the canvas and session. It is only a
@@ -1867,9 +1869,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		sessionID, _ := root["__session_id__"].(string)
 		userID, _ := root["user_id"].(string)
 
-		// A failed first-touch run must not leave the freshly-created
-		// empty session row behind — otherwise every failed exploration
-		// inflates the session list with a title-less conversation.
+		// A failed first-touch run with no question should not leave an empty session.
+		// Sessions with accepted user questions remain in history on failure.
 		// Interrupts (UserFillUp waits) and user-initiated cancels keep
 		// the row: both are resumable, visible states, not failures.
 		if dropOnFailure, _ := root["__drop_session_on_failure__"].(bool); dropOnFailure {
@@ -1946,6 +1947,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if versionRow == nil && len(dsl) == 0 {
 			answer := fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
 			state.RecordOutput("answer", "answer", answer)
+			if err := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, "", nil, dsl, state, true); err != nil {
+				return nil, canvas.NewInternalRunError(fmt.Errorf("persist agent session: %w: %w", err, ErrAgentStorageError))
+			}
 			// Emit a message event so the SSE surface matches the
 			// normal-completion shape (test asserts message +
 			// workflow_finished + done for the placeholder path).
@@ -2425,6 +2429,31 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
+func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, userID, sessionID, messageID string, userInput any, receivedAt float64) error {
+	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
+		return nil
+	}
+	text := stringifyAgentUserInput(agentRunQuery(userInput))
+	if text == "" {
+		return nil
+	}
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
+	if err != nil {
+		return err
+	}
+	if session == nil || session.UserID != userID {
+		return nil
+	}
+	messages := parseAgentSessionMessages(session.Message)
+	messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": messageID, "created_at": receivedAt})
+	raw, err := json.Marshal(messages)
+	if err != nil {
+		return err
+	}
+	session.Message = raw
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+}
+
 func (s *AgentService) persistAgentRunSession(
 	ctx context.Context,
 	agentID, userID, sessionID, messageID string,
@@ -2436,6 +2465,7 @@ func (s *AgentService) persistAgentRunSession(
 	state *canvas.CanvasState,
 	appendAssistantMessage bool,
 ) error {
+	now := float64(time.Now().UnixNano()) / 1e9
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
@@ -2448,10 +2478,6 @@ func (s *AgentService) persistAgentRunSession(
 		return nil
 	}
 	messages := parseAgentSessionMessages(session.Message)
-	now := time.Now().Unix()
-	if text := stringifyAgentUserInput(agentRunQuery(userInput)); text != "" {
-		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
-	}
 	if appendAssistantMessage {
 		messages = append(messages, map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now})
 	}
