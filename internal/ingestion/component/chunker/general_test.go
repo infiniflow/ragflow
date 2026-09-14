@@ -110,6 +110,12 @@ func TestGeneralChunkerParamsNormalizeConfiguration(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerRejectsNegativeTokenBudget(t *testing.T) {
+	if _, err := NewGeneralChunker(map[string]any{"chunk_token_size": -1}); err == nil {
+		t.Fatal("NewGeneralChunker accepted a negative chunk_token_size")
+	}
+}
+
 func TestGeneralChunkerNormalizesLegacyDelimiterString(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"delimiter": "\n!?;。；！？",
@@ -185,13 +191,28 @@ func TestGeneralChunkerLogsUnknownFileTypeFallback(t *testing.T) {
 	}
 }
 
-func TestGeneralChunkerRequiresFileType(t *testing.T) {
+func TestGeneralChunkerInfersFileTypeFromSourceName(t *testing.T) {
 	component, err := NewGeneralChunker(nil)
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
 	}
 	_, err = component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "document.txt",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "alpha", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke inferred file type: %v", err)
+	}
+}
+
+func TestGeneralChunkerRequiresFileTypeWhenSourceHasNoExtension(t *testing.T) {
+	component, err := NewGeneralChunker(nil)
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	_, err = component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document",
 		"output_format": "json",
 		"json":          []map[string]any{{"text": "alpha", "doc_type_kwd": "text"}},
 	})
@@ -339,6 +360,18 @@ func TestMergeMarkdownImagesAcceptsBareBase64Payloads(t *testing.T) {
 	}
 }
 
+func TestMergeMarkdownImagesRejectsOversizedCanvas(t *testing.T) {
+	if markdownImageWithinLimits(maxMarkdownImageDimension, maxMarkdownImageDimension) {
+		t.Fatal("maximum-dimension canvas should exceed the pixel safety limit")
+	}
+	if !markdownImageWithinLimits(1024, 1024) {
+		t.Fatal("normal image dimensions should remain mergeable")
+	}
+	if got := mergeMarkdownImages("s3://bucket/first.png", "s3://bucket/second.png"); got != "s3://bucket/first.png" {
+		t.Fatalf("opaque image references were changed: %q", got)
+	}
+}
+
 func TestGeneralChunkerMarkdownDoesNotDropUnmergeableImages(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
 	if err != nil {
@@ -420,8 +453,8 @@ func TestGeneralChunkerDOCXMediaDoesNotBreakTextMerge(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want merged text and image", chunks)
 	}
-	if chunks[0]["text"] != "beforeafter" {
-		t.Errorf("merged text = %q, want beforeafter", chunks[0]["text"])
+	if chunks[0]["text"] != "before\nafter" {
+		t.Errorf("merged text = %q, want before\\nafter", chunks[0]["text"])
 	}
 	if chunks[1]["doc_type_kwd"] != "image" || chunks[1]["image"] != "figure" {
 		t.Errorf("image chunk = %+v", chunks[1])
@@ -485,6 +518,35 @@ func TestGeneralChunkerDOCXCustomDelimiterDisablesTextMerge(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerDOCXAppliesTextOverlap(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   2,
+		"overlapped_percent": 50,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "alpha beta", "doc_type_kwd": "text"},
+			{"text": "gamma delta", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	if len(texts) != 2 {
+		t.Fatalf("texts = %q, want two overlapped chunks", texts)
+	}
+	if texts[1] == "gamma delta" || !strings.HasSuffix(texts[1], "\ngamma delta") {
+		t.Fatalf("DOCX overlap = %q, want previous tail plus current paragraph", texts[1])
+	}
+}
+
 func TestGeneralChunkerChildrenDelimiterKeepsDelimiter(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"children_delimiters": []string{";"},
@@ -506,7 +568,7 @@ func TestGeneralChunkerChildrenDelimiterKeepsDelimiter(t *testing.T) {
 	}
 }
 
-func TestGeneralChunkerPDFEmitsMediaBeforeMergedBody(t *testing.T) {
+func TestGeneralChunkerPDFPreservesPhysicalOrderAroundMedia(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 10})
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
@@ -525,14 +587,17 @@ func TestGeneralChunkerPDFEmitsMediaBeforeMergedBody(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := outputChunks(t, out)
-	if len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want media and body", chunks)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want text, media, text in physical order", chunks)
 	}
-	if chunks[0]["doc_type_kwd"] != "table" || chunks[0]["text"] != "<table><tr><td>A</td></tr></table>" {
-		t.Errorf("media chunk = %+v", chunks[0])
+	if chunks[0]["doc_type_kwd"] != "text" || chunks[0]["text"] != "before" {
+		t.Errorf("first chunk = %+v", chunks[0])
 	}
-	if chunks[1]["text"] != "before\nafter" {
-		t.Errorf("body chunk = %q, want merged body", chunks[1]["text"])
+	if chunks[1]["doc_type_kwd"] != "table" || chunks[1]["text"] != "<table><tr><td>A</td></tr></table>" {
+		t.Errorf("media chunk = %+v", chunks[1])
+	}
+	if chunks[2]["doc_type_kwd"] != "text" || chunks[2]["text"] != "after" {
+		t.Errorf("last chunk = %+v", chunks[2])
 	}
 }
 
@@ -561,14 +626,44 @@ func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := outputChunks(t, out)
-	if len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want media and body", chunks)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want text, media, text", chunks)
 	}
-	if chunks[0]["context_above"] != "before" || chunks[0]["context_below"] != "after" {
-		t.Errorf("table context = above:%q below:%q", chunks[0]["context_above"], chunks[0]["context_below"])
+	if chunks[1]["context_above"] != "before" || chunks[1]["context_below"] != "after" {
+		t.Errorf("table context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
 	}
-	if chunks[1]["text"] != "before\nafter" {
-		t.Errorf("position-ordered body = %q", chunks[1]["text"])
+	if chunks[0]["text"] != "before" || chunks[2]["text"] != "after" {
+		t.Errorf("position-ordered text = [%v, %v]", chunks[0]["text"], chunks[2]["text"])
+	}
+}
+
+func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
+	component, err := NewGeneralChunker(nil)
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "headers.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"text":         "Name; Amount",
+			"doc_type_kwd": "table",
+			"ck_type":      "table_header",
+			"sheet_index":  1,
+			"table_id":     "sheet-1",
+			"positions":    []any{[]any{1.0, 1.0, 1.0, 1.0, 2.0}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
+	}
+	if chunks[0]["text"] != "Name; Amount" || chunks[0]["ck_type"] != "table_header" {
+		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
 

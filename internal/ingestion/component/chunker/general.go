@@ -26,6 +26,7 @@ import (
 	"image/draw"
 	"image/png"
 	"log/slog"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -116,7 +117,17 @@ type GeneralChunkerComponent struct {
 func NewGeneralChunker(params map[string]any) (runtime.Component, error) {
 	param := generalChunkerParam{}.Defaults()
 	param.Update(params)
+	if err := param.Validate(); err != nil {
+		return nil, err
+	}
 	return &GeneralChunkerComponent{param: param}, nil
+}
+
+func (p generalChunkerParam) Validate() error {
+	if p.ChunkTokenSize < 0 {
+		return fmt.Errorf("chunk_token_size must be non-negative")
+	}
+	return nil
 }
 
 func (c *GeneralChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
@@ -128,13 +139,18 @@ func (c *GeneralChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, input
 	if err != nil {
 		return nil, fmt.Errorf("GeneralChunker: decode input: %w", err)
 	}
-	if strings.TrimSpace(upstream.FileType) == "" {
-		return nil, fmt.Errorf("GeneralChunker: file_type is required")
+	fileType := strings.ToLower(strings.TrimSpace(upstream.FileType))
+	if fileType == "" {
+		fileType = inferGeneralFileType(upstream)
+		if fileType == "" {
+			return nil, fmt.Errorf("GeneralChunker: file_type is required when source name has no extension")
+		}
+		slog.Warn("GeneralChunker: missing parser file_type; inferred from source name", "name", upstream.Name, "file_type", fileType)
 	}
 
-	strategy := generalStrategyForFileType(upstream.FileType)
-	if strategy == generalStrategyText && !isKnownGeneralFileType(upstream.FileType) {
-		slog.Debug("GeneralChunker: unknown file_type; using text fallback", "file_type", upstream.FileType)
+	strategy := generalStrategyForFileType(fileType)
+	if strategy == generalStrategyText && !isKnownGeneralFileType(fileType) {
+		slog.Debug("GeneralChunker: unknown file_type; using text fallback", "file_type", fileType)
 	}
 
 	switch strategy {
@@ -162,7 +178,7 @@ const (
 )
 
 func generalStrategyForFileType(fileType string) generalStrategy {
-	switch fileType {
+	switch strings.ToLower(strings.TrimSpace(fileType)) {
 	case "pdf":
 		return generalStrategyPDF
 	case "docx":
@@ -174,6 +190,15 @@ func generalStrategyForFileType(fileType string) generalStrategy {
 	default:
 		return generalStrategyText
 	}
+}
+
+func inferGeneralFileType(upstream schema.ChunkerFromUpstream) string {
+	name := strings.TrimSpace(upstream.Name)
+	if name == "" && upstream.File != nil {
+		name = strings.TrimSpace(upstream.File.Name)
+	}
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), ".")
+	return ext
 }
 
 func isKnownGeneralFileType(fileType string) bool {
@@ -208,17 +233,24 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 
-	media := make([]schema.ChunkDoc, 0)
+	chunks := make([]schema.ChunkDoc, 0, len(units))
 	body := make([]schema.ChunkDoc, 0, len(units))
+	flushBody := func() {
+		if len(body) == 0 {
+			return
+		}
+		chunks = append(chunks, mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")...)
+		body = body[:0]
+	}
 	for _, unit := range units {
 		if itemDocType(unit) == "text" {
 			body = append(body, unit)
 		} else {
-			media = append(media, unit)
+			flushBody()
+			chunks = append(chunks, cloneChunkDoc(unit))
 		}
 	}
-	body = mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
-	chunks := append(media, body...)
+	flushBody()
 
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
@@ -353,7 +385,8 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
-	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "")
+	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "\n")
+	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "\n")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
@@ -559,7 +592,8 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 	for _, unit := range units {
 		if itemDocType(unit) == "table" {
 			if current >= 0 && isShortMarkdownHeading(merged[current]) {
-				if !markdownImagesMergeable(merged[current].Image, unit.Image) {
+				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
+				if !imagesOK {
 					merged = append(merged, cloneChunkDoc(unit))
 					current = -1
 					currentTokens = 0
@@ -576,7 +610,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
 				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
 				mergeGeneralMetadata(&table, heading)
-				table.Image = mergeMarkdownImages(heading.Image, table.Image)
+				table.Image = mergedImage
 				table.DocType = "table"
 				table.CKType = "table"
 				merged[current] = table
@@ -612,7 +646,8 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 			continue
 		}
 		forceMerge := isShortMarkdownHeading(*previous)
-		if !markdownImagesMergeable(previous.Image, unit.Image) {
+		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
+		if !imagesOK {
 			merged = append(merged, unit)
 			current = len(merged) - 1
 			currentTokens = unitTokens
@@ -640,6 +675,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 			continue
 		}
 		mergeMarkdownChunk(previous, unit, joinSep)
+		previous.Image = mergedImage
 		previous.DocType = "text"
 		previous.CKType = "text"
 		currentTokens = projected
@@ -649,12 +685,29 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 }
 
 func isShortMarkdownHeading(unit schema.ChunkDoc) bool {
-	return unit.CKType == "heading" && tokenizeStr(strings.TrimSpace(unit.Text)) < 50
+	if unit.CKType != "heading" {
+		return false
+	}
+	return tokenizeStr(markdownHeadingContent(unit.Text)) < 50
+}
+
+func markdownHeadingContent(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) == 0 || text[0] != '#' {
+		return text
+	}
+	level := 0
+	for level < len(text) && text[level] == '#' {
+		level++
+	}
+	if level == 0 || level > 6 || level == len(text) || text[level] != ' ' {
+		return text
+	}
+	return strings.TrimSpace(text[level:])
 }
 
 func mergeMarkdownChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep string) {
 	mergeGeneralChunk(dst, src, joinSep)
-	dst.Image = mergeMarkdownImages(dst.Image, src.Image)
 }
 
 // mergeMarkdownImages preserves the single image field consumed by downstream
@@ -663,38 +716,58 @@ func mergeMarkdownChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep strin
 // markdownImagesMergeable before merging two non-empty payloads; a single
 // string cannot represent two opaque object-storage references safely.
 func mergeMarkdownImages(first, second string) string {
+	merged, ok := mergeMarkdownImagesChecked(first, second)
+	if !ok {
+		return first
+	}
+	return merged
+}
+
+const (
+	maxMarkdownImageDimension = 8192
+	maxMarkdownImagePixels    = 32 * 1024 * 1024
+)
+
+func mergeMarkdownImagesChecked(first, second string) (string, bool) {
 	if first == "" {
-		return second
+		return second, true
 	}
 	if second == "" || first == second {
-		return first
+		return first, true
 	}
 	firstImage, firstOK := decodeMarkdownImage(first)
 	secondImage, secondOK := decodeMarkdownImage(second)
 	if !firstOK || !secondOK {
-		return first
+		return first, false
 	}
 	width := firstImage.Bounds().Dx()
 	if secondImage.Bounds().Dx() > width {
 		width = secondImage.Bounds().Dx()
 	}
-	canvas := image.NewRGBA(image.Rect(0, 0, width, firstImage.Bounds().Dy()+secondImage.Bounds().Dy()))
+	height := firstImage.Bounds().Dy() + secondImage.Bounds().Dy()
+	if !markdownImageWithinLimits(width, height) {
+		return first, false
+	}
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.Draw(canvas, image.Rect(0, 0, firstImage.Bounds().Dx(), firstImage.Bounds().Dy()), firstImage, image.Point{}, draw.Src)
 	draw.Draw(canvas, image.Rect(0, firstImage.Bounds().Dy(), secondImage.Bounds().Dx(), canvas.Bounds().Dy()), secondImage, image.Point{}, draw.Src)
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, canvas); err != nil {
-		return first
+		return first, false
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), true
 }
 
 func markdownImagesMergeable(first, second string) bool {
-	if first == "" || second == "" || first == second {
-		return true
+	_, ok := mergeMarkdownImagesChecked(first, second)
+	return ok
+}
+
+func markdownImageWithinLimits(width, height int) bool {
+	if width <= 0 || height <= 0 || width > maxMarkdownImageDimension || height > maxMarkdownImageDimension {
+		return false
 	}
-	_, firstOK := decodeMarkdownImage(first)
-	_, secondOK := decodeMarkdownImage(second)
-	return firstOK && secondOK
+	return width <= maxMarkdownImagePixels/height
 }
 
 func decodeMarkdownImage(value string) (image.Image, bool) {
@@ -710,6 +783,10 @@ func decodeMarkdownImage(value string) (image.Image, bool) {
 	}
 	raw, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
+		return nil, false
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || !markdownImageWithinLimits(config.Width, config.Height) {
 		return nil, false
 	}
 	decoded, _, err := image.Decode(bytes.NewReader(raw))
@@ -732,6 +809,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	}
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	pendingRows := make([]schema.ChunkDoc, 0)
+	var pendingHeader *schema.ChunkDoc
 	flushRows := func() {
 		if len(pendingRows) == 0 {
 			return
@@ -739,19 +817,35 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 		chunks = append(chunks, mergeSpreadsheetRows(pendingRows, c.param.ChunkTokenSize)...)
 		pendingRows = pendingRows[:0]
 	}
+	flushHeader := func() {
+		if pendingHeader == nil {
+			return
+		}
+		chunks = append(chunks, cloneChunkDoc(*pendingHeader))
+		pendingHeader = nil
+	}
 	for _, unit := range units {
 		if unit.CKType == "table_header" {
 			flushRows()
+			flushHeader()
+			header := cloneChunkDoc(unit)
+			pendingHeader = &header
 			continue
 		}
 		if unit.CKType == "table_row" {
+			// A header immediately followed by row units is parser metadata for
+			// that table, not an additional data chunk. If no row follows, the
+			// deferred header is emitted as a header-only table below.
+			pendingHeader = nil
 			pendingRows = append(pendingRows, unit)
 			continue
 		}
 		flushRows()
+		flushHeader()
 		chunks = append(chunks, cloneChunkDoc(unit))
 	}
 	flushRows()
+	flushHeader()
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	if len(chunks) == 0 {

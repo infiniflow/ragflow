@@ -31,6 +31,7 @@ func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
 		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              server.URL,
 		"tcadp_api_key":                "tcadp-secret",
 		"table_result_type":            "1",
@@ -235,6 +236,7 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
 		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              "https://tcadp.example.com",
 		"tcadp_api_key":                "secret",
 		"table_result_type":            "2",
@@ -246,6 +248,9 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	if got, want := p.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
+	if got, want := p.ChunkRows, 50; got != want {
+		t.Fatalf("ChunkRows = %d, want legacy value %d for diagnostics", got, want)
+	}
 	if got, want := p.TCADPAPIServer, "https://tcadp.example.com"; got != want {
 		t.Fatalf("TCADPAPIServer = %q, want %q", got, want)
 	}
@@ -254,5 +259,22 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	}
 	if got, want := p.TCADPMarkdownImageResponseType, "2"; got != want {
 		t.Fatalf("TCADPMarkdownImageResponseType = %q, want %q", got, want)
+	}
+}
+
+func TestSpreadsheetParsersRetainLegacyChunkRowsForDiagnostics(t *testing.T) {
+	csv := NewCSVParser()
+	csv.ConfigureFromSetup(map[string]any{"chunk_rows": "32"})
+	if csv.ChunkRows != 32 {
+		t.Fatalf("CSVParser.ChunkRows = %d, want 32", csv.ChunkRows)
+	}
+
+	xls, err := NewXLSParser("")
+	if err != nil {
+		t.Fatalf("NewXLSParser: %v", err)
+	}
+	xls.ConfigureFromSetup(map[string]any{"chunk_rows": float64(16)})
+	if xls.ChunkRows != 16 {
+		t.Fatalf("XLSParser.ChunkRows = %d, want 16", xls.ChunkRows)
 	}
 }

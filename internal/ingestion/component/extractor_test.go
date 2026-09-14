@@ -994,7 +994,7 @@ func TestCleanLLMText(t *testing.T) {
 func TestExtractorComponent_callStructured(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -1004,7 +1004,7 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 
 	// Non-JSON response → (nil, nil), not an error.
 	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
-	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured on non-JSON: %v", err)
 	}
@@ -1017,12 +1017,20 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
 	if got == nil || got["a"].(float64) != 1 {
 		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
+func TestExtractorComponentRejectsEmptyLLMInput(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"unexpected": true}`})
+	c := &ExtractorComponent{}
+	if _, err := c.callRaw(t.Context(), nil, extractorInputs{llmID: "m"}, "system", " "); err == nil {
+		t.Fatal("callRaw accepted an empty chunk text")
 	}
 }
 

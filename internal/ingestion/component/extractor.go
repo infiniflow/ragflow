@@ -1102,6 +1102,9 @@ func setMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, s
 //   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
 //     returns a map — the metadata path, matching Python gen_metadata.
 func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil, fmt.Errorf("extractor: chunk text is empty")
+	}
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err

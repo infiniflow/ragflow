@@ -70,6 +70,42 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	}
 }
 
+func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 1},
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2},
+			{"text": "ID: B-1; Status: open", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want one row chunk per sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "ID: B-1; Status: open" {
+		t.Fatalf("row chunks = %#v", chunks)
+	}
+	for i, chunk := range chunks {
+		if chunk["ck_type"] != "table_row" {
+			t.Errorf("chunk[%d] ck_type = %v, want table_row", i, chunk["ck_type"])
+		}
+	}
+}
+
 // TestTokenChunker_InvokeDelimMode_BasicChunking drives the
 // delimiter-mode path with a backtick delimiter and asserts each
 // chunk carries the matched delimiter text within itself (split

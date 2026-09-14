@@ -21,6 +21,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	parserchunk "ragflow/internal/parser/chunk"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -34,6 +35,7 @@ const (
 var generalChunkerParamKeys = map[string]struct{}{
 	"children_delimiters": {},
 	"chunk_token_size":    {},
+	"delimiter":           {},
 	"delimiters":          {},
 	"image_context_size":  {},
 	"overlapped_percent":  {},
@@ -57,6 +59,14 @@ func migrateGeneralChunkerConfig(config map[string]interface{}) bool {
 	if _, exists := config[currentGeneralChunkerID]; !exists {
 		params := make(map[string]interface{}, len(legacyParams))
 		for key, value := range legacyParams {
+			if key == "delimiter" {
+				if _, exists := legacyParams["delimiters"]; !exists {
+					if delimiters, ok := normalizeLegacyDelimiter(value); ok {
+						params["delimiters"] = delimiters
+					}
+				}
+				continue
+			}
 			if _, supported := generalChunkerParamKeys[key]; supported {
 				params[key] = value
 			}
@@ -72,48 +82,22 @@ func migrateGeneralChunkerParserConfigs(ctx context.Context, db *gorm.DB) error 
 		return nil
 	}
 
-	var knowledgebases []entity.Knowledgebase
-	if db.WithContext(ctx).Migrator().HasTable("knowledgebase") {
-		if err := db.WithContext(ctx).
-			Where("parser_id IN ? AND (pipeline_id IS NULL OR pipeline_id = '')", []string{"general", "naive"}).
-			Find(&knowledgebases).Error; err != nil {
-			return fmt.Errorf("load knowledgebase parser configs: %w", err)
-		}
-	}
 	var migratedKnowledgebases int
-	for _, kb := range knowledgebases {
-		config := map[string]interface{}(kb.ParserConfig)
-		if !migrateGeneralChunkerConfig(config) {
-			continue
+	if db.WithContext(ctx).Migrator().HasTable("knowledgebase") {
+		count, err := migrateParserConfigRows(ctx, db, &entity.Knowledgebase{})
+		if err != nil {
+			return fmt.Errorf("migrate knowledgebase parser configs: %w", err)
 		}
-		if err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-			Where("id = ?", kb.ID).
-			Update("parser_config", entity.JSONMap(config)).Error; err != nil {
-			return fmt.Errorf("update knowledgebase %q parser config: %w", kb.ID, err)
-		}
-		migratedKnowledgebases++
+		migratedKnowledgebases = count
 	}
 
-	var documents []entity.Document
-	if db.WithContext(ctx).Migrator().HasTable("document") {
-		if err := db.WithContext(ctx).
-			Where("parser_id IN ? AND (pipeline_id IS NULL OR pipeline_id = '')", []string{"general", "naive"}).
-			Find(&documents).Error; err != nil {
-			return fmt.Errorf("load document parser configs: %w", err)
-		}
-	}
 	var migratedDocuments int
-	for _, doc := range documents {
-		config := map[string]interface{}(doc.ParserConfig)
-		if !migrateGeneralChunkerConfig(config) {
-			continue
+	if db.WithContext(ctx).Migrator().HasTable("document") {
+		count, err := migrateParserConfigRows(ctx, db, &entity.Document{})
+		if err != nil {
+			return fmt.Errorf("migrate document parser configs: %w", err)
 		}
-		if err := db.WithContext(ctx).Model(&entity.Document{}).
-			Where("id = ?", doc.ID).
-			Update("parser_config", entity.JSONMap(config)).Error; err != nil {
-			return fmt.Errorf("update document %q parser config: %w", doc.ID, err)
-		}
-		migratedDocuments++
+		migratedDocuments = count
 	}
 
 	if migratedKnowledgebases > 0 || migratedDocuments > 0 {
@@ -122,4 +106,63 @@ func migrateGeneralChunkerParserConfigs(ctx context.Context, db *gorm.DB) error 
 			zap.Int("documents", migratedDocuments))
 	}
 	return nil
+}
+
+const parserConfigMigrationBatchSize = 256
+
+type parserConfigMigrationRow struct {
+	ID           string         `gorm:"column:id"`
+	ParserConfig entity.JSONMap `gorm:"column:parser_config"`
+}
+
+func migrateParserConfigRows(ctx context.Context, db *gorm.DB, model any) (int, error) {
+	var migrated int
+	query := db.WithContext(ctx).
+		Model(model).
+		Select("id", "parser_config").
+		Where("parser_id IN ? AND (pipeline_id IS NULL OR pipeline_id = '')", []string{"general", "naive"}).
+		Order("id")
+	var rows []parserConfigMigrationRow
+	result := query.FindInBatches(&rows, parserConfigMigrationBatchSize, func(batchDB *gorm.DB, _ int) error {
+		return batchDB.Transaction(func(tx *gorm.DB) error {
+			for _, row := range rows {
+				config := map[string]interface{}(row.ParserConfig)
+				if !migrateGeneralChunkerConfig(config) {
+					continue
+				}
+				if err := tx.Model(model).Where("id = ?", row.ID).
+					Update("parser_config", entity.JSONMap(config)).Error; err != nil {
+					return fmt.Errorf("update parser config %q: %w", row.ID, err)
+				}
+				migrated++
+			}
+			return nil
+		})
+	})
+	if result.Error != nil {
+		return migrated, result.Error
+	}
+	return migrated, nil
+}
+
+func normalizeLegacyDelimiter(value any) (any, bool) {
+	switch value := value.(type) {
+	case string:
+		delimiters := parserchunk.ParseDelimiterField(value)
+		out := make([]interface{}, len(delimiters))
+		for i, delimiter := range delimiters {
+			out[i] = delimiter
+		}
+		return out, true
+	case []string:
+		out := make([]interface{}, len(value))
+		for i, delimiter := range value {
+			out[i] = delimiter
+		}
+		return out, true
+	case []interface{}:
+		return value, true
+	default:
+		return nil, false
+	}
 }

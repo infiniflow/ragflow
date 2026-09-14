@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strconv"
@@ -245,9 +246,31 @@ func numericItemInt(value any) (int, bool) {
 		return int(n), true
 	case float64:
 		return int(n), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
+		return parsed, err == nil
 	default:
 		return 0, false
 	}
+}
+
+// deprecatedChunkRows reports the removed parser-side chunking option while
+// retaining its value for diagnostics. Row boundaries are now emitted as
+// structured IR and GeneralChunker owns token-budget merging; silently
+// accepting chunk_rows would make an existing configuration look effective
+// when it is not.
+func deprecatedChunkRows(setup map[string]any, parserName string) (int, bool) {
+	raw, exists := setup["chunk_rows"]
+	if !exists {
+		return 0, false
+	}
+	rows, ok := numericItemInt(raw)
+	if !ok {
+		slog.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", raw)
+		return 0, true
+	}
+	slog.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", rows)
+	return rows, true
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a

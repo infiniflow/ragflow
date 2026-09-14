@@ -257,6 +257,20 @@ func TestMergeMarkdownUnitsStartsNewChunkForIncomingHeading(t *testing.T) {
 	}
 }
 
+func TestShortMarkdownHeadingBudgetIgnoresATXMarker(t *testing.T) {
+	content := strings.TrimSpace(strings.Repeat("word ", 49))
+	unit := schema.ChunkDoc{CKType: "heading", Text: "## " + content}
+	if tokenizeStr(content) >= 50 {
+		t.Fatalf("test heading content unexpectedly reached threshold: %d", tokenizeStr(content))
+	}
+	if tokenizeStr(unit.Text) < 50 {
+		t.Fatalf("test ATX heading did not cross raw threshold: %d", tokenizeStr(unit.Text))
+	}
+	if !isShortMarkdownHeading(unit) {
+		t.Fatalf("heading %q was not classified short after removing ATX marker", unit.Text)
+	}
+}
+
 func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) {
 	previousPage := 4
 	units := []schema.ChunkDoc{

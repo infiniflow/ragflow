@@ -65,6 +65,29 @@ func TestMigrateGeneralChunkerConfigKeepsExplicitNewParams(t *testing.T) {
 	}
 }
 
+func TestMigrateGeneralChunkerConfigNormalizesSingularDelimiter(t *testing.T) {
+	config := map[string]interface{}{
+		legacyGeneralChunkerID: map[string]interface{}{
+			"delimiter": "\n!?;。；！？",
+		},
+	}
+
+	if !migrateGeneralChunkerConfig(config) {
+		t.Fatal("migrateGeneralChunkerConfig reported no change")
+	}
+	params, ok := config[currentGeneralChunkerID].(map[string]interface{})
+	if !ok {
+		t.Fatalf("new component params type = %T", config[currentGeneralChunkerID])
+	}
+	want := []interface{}{"\n", "!", "?", ";", "。", "；", "！", "？"}
+	if !reflect.DeepEqual(params["delimiters"], want) {
+		t.Fatalf("migrated delimiters = %#v, want %#v", params["delimiters"], want)
+	}
+	if _, ok := params["delimiter"]; ok {
+		t.Fatalf("singular delimiter leaked into new params: %#v", params)
+	}
+}
+
 func TestMigrateGeneralChunkerConfigIgnoresOtherChunkers(t *testing.T) {
 	config := map[string]interface{}{
 		"TokenChunker:WarmBreadSmells": map[string]interface{}{"chunk_token_size": 128},

@@ -541,6 +541,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	lanes := partition(len(items), workers)
 	perItem := make([][]schema.ChunkDoc, len(items))
+	hasSpreadsheetRows := false
+	for _, item := range items {
+		if item.CKType == "table_row" {
+			hasSpreadsheetRows = true
+			break
+		}
+	}
 
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
@@ -550,6 +557,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 			defer wg.Done()
 			for i := start; i < end; i++ {
 				if err := ctx.Err(); err != nil {
+					perItem[i] = nil
+					continue
+				}
+				if hasSpreadsheetRows && items[i].CKType == "table_header" {
+					// The typed header is metadata carried by every row. It
+					// must not become an independent TokenChunker chunk when
+					// row IR is consumed by a legacy pipeline.
 					perItem[i] = nil
 					continue
 				}
@@ -653,6 +667,14 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 
 // chunkFromItem mirrors _build_json_chunks for a single item.
 func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.ChunkDoc {
+	if it.CKType == "table_row" {
+		row := cloneChunkDoc(it)
+		row.DocType = "text"
+		row.CKType = "table_row"
+		row.Text = itemTextOrFallback(it)
+		row.TKNums = intPtr(tokenizeStr(row.Text))
+		return []schema.ChunkDoc{row}
+	}
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
 	if ckType != "text" {
