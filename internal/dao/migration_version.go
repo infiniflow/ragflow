@@ -48,9 +48,9 @@ const modelMigrationBaseVersion = "v0.26.0"
 // by tools/scripts/run_migrations.sh.
 const modelMigrationTargetVersion = "v0.27.1"
 
-// getDatabaseMigrationVersion reads the stored migration version. It returns an
+// GetDatabaseMigrationVersion reads the stored migration version. It returns an
 // empty string when the marker or the system_settings table is absent.
-func getDatabaseMigrationVersion(ctx context.Context, db *gorm.DB) (string, error) {
+func GetDatabaseMigrationVersion(ctx context.Context, db *gorm.DB) (string, error) {
 	scoped := db.WithContext(ctx)
 	if !scoped.Migrator().HasTable("system_settings") {
 		common.Info("Table 'system_settings' does not exist, migration version marker is unavailable")

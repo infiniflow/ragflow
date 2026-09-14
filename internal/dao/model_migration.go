@@ -122,7 +122,7 @@ func migrateModelData(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("ensure tenant model tables: %w", err)
 	}
 
-	currentVersion, err := getDatabaseMigrationVersion(ctx, db)
+	currentVersion, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
 		return fmt.Errorf("read database migration version: %w", err)
 	}

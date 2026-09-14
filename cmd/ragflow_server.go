@@ -480,6 +480,14 @@ func main() {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
+	// Refuse to start a server against a database that a newer version already
+	// migrated: rolling the code back cannot roll the schema back. The
+	// standalone --migrate action is exempt because advancing the database is
+	// its job.
+	if err = checkDatabaseVersion(ctx); err != nil {
+		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
+	}
+
 	// Initialize doc engine
 	if err = engine.InitDocEngine(ctx); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
@@ -542,6 +550,42 @@ func main() {
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
 	}
+}
+
+// checkDatabaseVersion refuses to run a server when the running code is older
+// than the version recorded in the system_settings migration marker. Migrating
+// the database forward is a one-way operation, so an older binary would read and
+// write a schema it does not understand.
+//
+// A missing marker, or a version on either side that cannot be parsed, never
+// blocks startup: without a usable comparison there is no evidence that the
+// database is ahead of the code.
+func checkDatabaseVersion(ctx context.Context) error {
+	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
+	if err != nil {
+		return fmt.Errorf("read database version marker: %w", err)
+	}
+	if databaseVersion == "" {
+		return nil
+	}
+
+	codeVersion := common.GetRAGFlowVersion()
+	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparable {
+		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
+			zap.String("code_version", codeVersion),
+			zap.String("database_version", databaseVersion))
+		return nil
+	}
+	if older {
+		return fmt.Errorf("code version %s is older than database version %s: upgrade this deployment to %s or newer before starting",
+			codeVersion, databaseVersion, databaseVersion)
+	}
+
+	common.Info("Database version check passed",
+		zap.String("code_version", codeVersion),
+		zap.String("database_version", databaseVersion))
+	return nil
 }
 
 // runMigrate runs the database schema and data migrations and returns. It is

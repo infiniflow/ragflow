@@ -67,9 +67,9 @@ func TestGetAndSetDatabaseMigrationVersion(t *testing.T) {
 	db := setupMigrationVersionTestDB(t, true)
 	ctx := t.Context()
 
-	version, err := getDatabaseMigrationVersion(ctx, db)
+	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
-		t.Fatalf("getDatabaseMigrationVersion() error = %v", err)
+		t.Fatalf("GetDatabaseMigrationVersion() error = %v", err)
 	}
 	if version != "" {
 		t.Fatalf("initial version = %q, want empty", version)
@@ -78,9 +78,9 @@ func TestGetAndSetDatabaseMigrationVersion(t *testing.T) {
 	if err = setDatabaseMigrationVersion(ctx, db, "v0.27.1"); err != nil {
 		t.Fatalf("setDatabaseMigrationVersion() error = %v", err)
 	}
-	version, err = getDatabaseMigrationVersion(ctx, db)
+	version, err = GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
-		t.Fatalf("getDatabaseMigrationVersion() after set error = %v", err)
+		t.Fatalf("GetDatabaseMigrationVersion() after set error = %v", err)
 	}
 	if version != "v0.27.1" {
 		t.Fatalf("version = %q, want v0.27.1", version)
@@ -90,9 +90,9 @@ func TestGetAndSetDatabaseMigrationVersion(t *testing.T) {
 	if err = setDatabaseMigrationVersion(ctx, db, "v0.28.0"); err != nil {
 		t.Fatalf("setDatabaseMigrationVersion() second error = %v", err)
 	}
-	version, err = getDatabaseMigrationVersion(ctx, db)
+	version, err = GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
-		t.Fatalf("getDatabaseMigrationVersion() second error = %v", err)
+		t.Fatalf("GetDatabaseMigrationVersion() second error = %v", err)
 	}
 	if version != "v0.28.0" {
 		t.Fatalf("version = %q, want v0.28.0", version)
@@ -111,9 +111,9 @@ func TestGetDatabaseMigrationVersionWithoutTable(t *testing.T) {
 	db := setupMigrationVersionTestDB(t, false)
 	ctx := t.Context()
 
-	version, err := getDatabaseMigrationVersion(ctx, db)
+	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
-		t.Fatalf("getDatabaseMigrationVersion() error = %v", err)
+		t.Fatalf("GetDatabaseMigrationVersion() error = %v", err)
 	}
 	if version != "" {
 		t.Fatalf("version = %q, want empty", version)
@@ -147,9 +147,9 @@ func TestMigrateModelDataPersistsVersionOnFirstRun(t *testing.T) {
 	if err := migrateModelData(ctx, db); err != nil {
 		t.Fatalf("migrateModelData() error = %v", err)
 	}
-	version, err := getDatabaseMigrationVersion(ctx, db)
+	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
-		t.Fatalf("getDatabaseMigrationVersion() error = %v", err)
+		t.Fatalf("GetDatabaseMigrationVersion() error = %v", err)
 	}
 	if version != modelMigrationTargetVersion {
 		t.Fatalf("version = %q, want %q: the marker must be persisted on the first run so a populated database is never migrated twice",
