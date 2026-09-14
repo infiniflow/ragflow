@@ -2215,13 +2215,21 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerIDOrName, notExistInstances)
 	}
 
-	// Second pass: delete models and instances by IDs.
+	// Second pass: delete models and instances by IDs atomically.
 	// Mirrors Python's: delete_models_by_instance_ids(instance_ids)
 	//                   TenantModelInstanceService.delete_by_ids(instance_ids)
-	if _, err = m.modelDAO.DeleteByInstanceIDs(ctx, dao.DB, instanceIDs); err != nil {
-		return common.CodeServerError, err
-	}
-	if _, err = m.modelInstanceDAO.DeleteByIDs(ctx, dao.DB, instanceIDs); err != nil {
+	// Both deletes share one transaction so a failure of the instance delete
+	// cannot leave the tenant models already removed (partial deletion).
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		if _, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return common.CodeServerError, err
 	}
 

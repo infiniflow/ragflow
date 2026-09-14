@@ -2685,8 +2685,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseAPIListCommands()
 	case TokenImport:
 		return p.parseAPIImport()
-	case TokenInsert:
-		return p.parseDevInsertCommand()
 	case TokenRetrieve:
 		return p.parseAPIRetrieve()
 	default:
