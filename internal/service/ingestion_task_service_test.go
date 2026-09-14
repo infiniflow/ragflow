@@ -605,6 +605,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	}{
 		{name: "failed", status: common.FAILED},
 		{name: "stopped", status: common.STOPPED},
+		{name: "stopping", status: common.STOPPING},
 	}
 
 	ctx := t.Context()

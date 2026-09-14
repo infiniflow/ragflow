@@ -71,9 +71,13 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Batch pre-check for reparse with delete: use the validated doc IDs
-	// so we don't silently skip non-existent or unauthorized documents.
-	if run == string(entity.TaskStatusRunning) && req.Delete {
+	// Batch pre-check for reparse: use the validated doc IDs so we don't
+	// silently skip non-existent or unauthorized documents. Runs for every
+	// start request (with or without chunk deletion) so an actively-parsing
+	// document yields the friendly stop-first message instead of the raw
+	// "already exists" enqueue error. A STOPPING task passes: its stop was
+	// already requested and the enqueue path finalizes it.
+	if run == string(entity.TaskStatusRunning) {
 		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
 			return common.CodeDataError, err
 		}
