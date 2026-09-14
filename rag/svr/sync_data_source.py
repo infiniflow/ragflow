@@ -379,15 +379,18 @@ class SyncBase:
 
         Knowledgebase lookup and parse stay on the same worker thread so Peewee
         objects are not shared across threads. ``cancel_event`` is set when the
-        awaiting coroutine is cancelled; the worker also observes
-        ``parent_task.cancelled()`` so in-flight batches can stop between files.
-        Uploads that already started cannot be force-stopped.
+        awaiting coroutine catches ``CancelledError``. ``cancelled()`` stays false
+        until that handler runs, so the worker also observes ``cancelling()`` to
+        stop between files after ``wait_for`` times out. Uploads that already
+        started cannot be force-stopped.
         """
 
         def should_cancel() -> bool:
             if cancel_event is not None and cancel_event.is_set():
                 return True
-            return parent_task is not None and parent_task.cancelled()
+            return parent_task is not None and (
+                parent_task.cancelling() > 0 or parent_task.cancelled()
+            )
 
         if should_cancel():
             return [], []

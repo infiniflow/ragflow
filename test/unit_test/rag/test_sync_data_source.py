@@ -329,6 +329,83 @@ def test_ingest_document_batch_skips_progress_when_cancelled_during_parse(monkey
     assert dids == ["doc-1"]
 
 
+class _PendingCancelTask:
+    def cancelled(self):
+        return False
+
+    def cancelling(self):
+        return 1
+
+
+class _DeferredCancelTask:
+    def __init__(self):
+        self._cancelling = 0
+
+    def cancelled(self):
+        return False
+
+    def cancelling(self):
+        return self._cancelling
+
+
+def test_ingest_document_batch_skips_writes_when_parent_task_is_cancelling(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: pytest.fail("get_by_id should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not run after cancel"),
+    )
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        threading.Event(),
+        _PendingCancelTask(),
+    )
+    assert err == []
+    assert dids == []
+
+
+def test_ingest_document_batch_skips_progress_when_parent_task_starts_cancelling(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    parent_task = _DeferredCancelTask()
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+
+    def _duplicate_then_cancel(*_args, **_kwargs):
+        parent_task._cancelling = 1
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _duplicate_then_cancel)
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not advance after cancel"),
+    )
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        threading.Event(),
+        parent_task,
+    )
+    assert err == []
+    assert dids == ["doc-1"]
+
+
 def test_ingest_document_batch_forwards_cancel_callback(monkeypatch):
     _patch_common_dependencies(monkeypatch)
     captured = {}
