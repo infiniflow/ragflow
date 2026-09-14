@@ -1560,6 +1560,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: 'updated_at',
       tooltip: t('setting.mysqlTimestampColumnTip'),
     },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.mysqlFileExtensionTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -1633,6 +1641,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.postgresqlFileExtensionTip'),
     },
   ],
   [DataSourceKey.BIGQUERY]: [
