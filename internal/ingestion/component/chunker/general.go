@@ -147,7 +147,58 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, _ *gorm.DB, upst
 }
 
 func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
-	return c.chunkGeneral(ctx, upstream)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("GeneralChunker: %w", err)
+	}
+	units := upstream.JSONResult
+	if upstream.OutputFormat == schema.PayloadFormatChunks {
+		units = upstream.Chunks
+	}
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+	primaryPattern := compileDelimPattern(c.param.Delimiters)
+	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	units = splitGeneralUnits(units, primaryPattern)
+	units = attachMediaContext([][]schema.ChunkDoc{units}, c.param.TableContextSize, c.param.ImageContextSize)[0]
+	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "")
+	units = finalizeGeneralChunks(units, childrenPattern)
+	if len(units) == 0 {
+		return emptyOutputs(), nil
+	}
+	return chunkOutputs(units), nil
+}
+
+// mergeDOCXUnits mirrors Python naive_merge_docx: text units keep the
+// previous text merge target across intervening table/image units. This means
+// a later paragraph can extend an earlier text chunk while the media item
+// remains in its original output position.
+func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, joinSep string) []schema.ChunkDoc {
+	merged := make([]schema.ChunkDoc, 0, len(units))
+	previousText := -1
+	for _, unit := range units {
+		if itemDocType(unit) != "text" {
+			media := cloneChunkDoc(unit)
+			media.DocType = itemDocType(media)
+			media.CKType = media.DocType
+			merged = append(merged, media)
+			continue
+		}
+
+		text := cloneChunkDoc(unit)
+		text.DocType = "text"
+		text.CKType = "text"
+		text.TKNums = intPtr(generalUnitTokens(text))
+		if previousText < 0 || customDelimiter || intValue(merged[previousText].TKNums) >= target {
+			merged = append(merged, text)
+			previousText = len(merged) - 1
+			continue
+		}
+		mergeGeneralChunk(&merged[previousText], text, joinSep)
+		merged[previousText].DocType = "text"
+		merged[previousText].CKType = "text"
+	}
+	return merged
 }
 
 func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {

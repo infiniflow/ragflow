@@ -17,6 +17,7 @@
 package chunker
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -301,5 +302,92 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 	}
 	if got := chunks[0]["ck_type"]; got != "table" {
 		t.Errorf("table ck_type = %v, want table", got)
+	}
+}
+
+func TestGeneralChunkerDOCXMediaDoesNotBreakTextMerge(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 10})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "image", "image": "figure"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want merged text and image", chunks)
+	}
+	if chunks[0]["text"] != "beforeafter" {
+		t.Errorf("merged text = %q, want beforeafter", chunks[0]["text"])
+	}
+	if chunks[1]["doc_type_kwd"] != "image" || chunks[1]["image"] != "figure" {
+		t.Errorf("image chunk = %+v", chunks[1])
+	}
+}
+
+func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want merged text and table", chunks)
+	}
+	if chunks[1]["doc_type_kwd"] != "table" {
+		t.Fatalf("table chunk = %+v", chunks[1])
+	}
+	if chunks[1]["context_above"] != "before" || chunks[1]["context_below"] != "after" {
+		t.Errorf("table context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
+	}
+}
+
+func TestGeneralChunkerDOCXCustomDelimiterDisablesTextMerge(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 10,
+		"delimiters":       []string{"`|`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before|after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"before", "after"}) {
+		t.Fatalf("texts = %q, want custom-delimiter units", texts)
 	}
 }
