@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"strings"
 
-	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
@@ -305,11 +304,9 @@ type jsonMindmapNode struct {
 }
 
 func parseJSONTree(content string, batchIDs []string) (*utility.Node, bool) {
-	content = appcommon.StripThinkTrailing(content)
-	content = strings.TrimSpace(utility.StripFences(content))
-	// Accept a short prose prefix/suffix from providers that ignore JSON mode.
-	if start, end := strings.IndexByte(content, '{'), strings.LastIndexByte(content, '}'); start >= 0 && end >= start {
-		content = content[start : end+1]
+	content, err := common.RepairJSONText(content)
+	if err != nil {
+		return nil, false
 	}
 	var raw jsonMindmapNode
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
