@@ -102,7 +102,17 @@ def _load_chunk_api(monkeypatch):
             server_error_response=lambda e: {"code": 100, "message": str(e), "data": None},
         ),
     )
-    monkeypatch.setitem(sys.modules, "api.utils.image_utils", _module_stub("api.utils.image_utils", store_chunk_image=None))
+    monkeypatch.setitem(
+        sys.modules,
+        "api.utils.image_utils",
+        _module_stub(
+            "api.utils.image_utils",
+            IMAGE_UPDATE_MODE_REMOVE="remove",
+            IMAGE_UPDATE_MODES={"remove"},
+            remove_chunk_image=None,
+            store_chunk_image=None,
+        ),
+    )
     monkeypatch.setitem(
         sys.modules,
         "api.utils.pagination_utils",
