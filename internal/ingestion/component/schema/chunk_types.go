@@ -16,7 +16,11 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"unicode"
+	"unicode/utf8"
+)
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
 // wire payloads.
@@ -267,6 +271,31 @@ func ChunkDocsToMaps(in []ChunkDoc) []map[string]any {
 		out = append(out, doc.ToMap())
 	}
 	return out
+}
+
+// ContextualText joins a chunk's body with its surrounding media context in
+// the order Python materializes it (rag/flow/chunker/token_chunker.py:343):
+// context_above, text, context_below. A newline is inserted at a boundary
+// where neither side carries whitespace, so a producer that trims both sides
+// cannot fuse adjacent words.
+func ContextualText(d ChunkDoc) string {
+	text := ""
+	for _, part := range []string{d.ContextAbove, d.Text, d.ContextBelow} {
+		if part == "" {
+			continue
+		}
+		if text != "" && !hasBoundaryWhitespace(text, part) {
+			text += "\n"
+		}
+		text += part
+	}
+	return text
+}
+
+func hasBoundaryWhitespace(left, right string) bool {
+	leftRune, _ := utf8.DecodeLastRuneInString(left)
+	rightRune, _ := utf8.DecodeRuneInString(right)
+	return unicode.IsSpace(leftRune) || unicode.IsSpace(rightRune)
 }
 
 func (d *ChunkDoc) SetExtraValue(key string, value any) error {

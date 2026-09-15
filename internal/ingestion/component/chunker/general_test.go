@@ -28,9 +28,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/task/indexdoc"
 )
 
 func TestGeneralChunkerRegistered(t *testing.T) {
@@ -516,6 +519,23 @@ func TestGeneralChunkerDOCXMediaDoesNotBreakTextMerge(t *testing.T) {
 	}
 }
 
+// assertMaterializedMediaContext pins the chunker output contract for media
+// chunks: the surrounding context is folded into the chunk body and the
+// retrieval-only context fields are gone — the shape Python's chunker emits
+// (rag/flow/chunker/token_chunker.py:343-359) and the shape the persisted
+// content_with_weight and the chunk id are built from.
+func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText string) {
+	t.Helper()
+	if got := chunk["text"]; got != wantText {
+		t.Errorf("media chunk text = %q, want %q", got, wantText)
+	}
+	for _, key := range []string{"context_above", "context_below"} {
+		if _, exists := chunk[key]; exists {
+			t.Errorf("media chunk must not carry %s after materialization: %+v", key, chunk)
+		}
+	}
+}
+
 func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size":   10,
@@ -544,9 +564,7 @@ func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	if chunks[1]["doc_type_kwd"] != "table" {
 		t.Fatalf("table chunk = %+v", chunks[1])
 	}
-	if chunks[1]["context_above"] != "before" || chunks[1]["context_below"] != "after" {
-		t.Errorf("table context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
-	}
+	assertMaterializedMediaContext(t, chunks[1], "before\n<table><tr><td>A</td></tr></table>\nafter")
 }
 
 func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
@@ -701,9 +719,7 @@ func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want text, media, text", chunks)
 	}
-	if chunks[1]["context_above"] != "before" || chunks[1]["context_below"] != "after" {
-		t.Errorf("table context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
-	}
+	assertMaterializedMediaContext(t, chunks[1], "before\n<table>A</table>\nafter")
 	if chunks[0]["text"] != "before" || chunks[2]["text"] != "after" {
 		t.Errorf("position-ordered text = [%v, %v]", chunks[0]["text"], chunks[2]["text"])
 	}
@@ -783,9 +799,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	if chunks[1]["ck_type"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
-	if chunks[1]["context_above"] != "Revenue" || chunks[1]["context_below"] != "Growth" {
-		t.Fatalf("image context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
-	}
+	assertMaterializedMediaContext(t, chunks[1], "Revenue\nB2\nGrowth")
 }
 
 func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T) {
@@ -810,8 +824,58 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want row, image, row", chunks)
 	}
-	if chunks[1]["context_above"] != "Sheet one" || chunks[1]["context_below"] != nil {
-		t.Fatalf("cross-sheet image context = above:%q below:%q", chunks[1]["context_above"], chunks[1]["context_below"])
+	assertMaterializedMediaContext(t, chunks[1], "Sheet one\nB2")
+}
+
+// TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent pins the
+// downstream half of the fold: once the context is part of the chunk body, it
+// is also part of the persisted content_with_weight and of the chunk id
+// (ChunkID hashes the body). Python's chunker emits the merged body, so its
+// id and stored content already carry the context; before the fold Go hashed
+// and stored the bare media payload instead, which made the configured window
+// invisible to both the chunk list and the index.
+func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := indexdoc.NormalizeChunks(out)
+	if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "document.docx", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+
+	const wantText = "before\n<table><tr><td>A</td></tr></table>\nafter"
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["ck_type"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("no table chunk in %#v", chunks)
+	}
+	if got := table["content_with_weight"]; got != wantText {
+		t.Errorf("persisted content_with_weight = %q, want %q", got, wantText)
+	}
+	if got, want := table["id"], common.ChunkID("doc-1", wantText); got != want {
+		t.Errorf("chunk id = %v, want %v (context must drive chunk identity)", got, want)
 	}
 }
 
