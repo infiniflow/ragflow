@@ -187,6 +187,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
+	// ingestion_task.pipeline_log_id cannot be added by AutoMigrate (see the
+	// helper for why), and every ingestion_task query selects all columns, so a
+	// missing column fails the whole API with Error 1054. Ensure it on both
+	// startup paths rather than trusting AutoMigrate.
+	if err = migrateIngestionTaskPipelineLogID(ctx, DB); err != nil {
+		return err
+	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
 	// initialization.
