@@ -267,12 +267,12 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	// still applies — collect() filters these leaves.
 	if len(docs) == 0 {
 		for _, datasetID := range datasetIDs {
-			clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 100)
+			clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, "", 0, 100)
 			if err != nil {
 				continue
 			}
 			for _, c := range clusters {
-				children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 100)
+				children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, "", 0, 100)
 				if err != nil {
 					continue
 				}
