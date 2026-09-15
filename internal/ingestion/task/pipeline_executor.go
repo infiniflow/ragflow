@@ -909,11 +909,13 @@ func recordPipelineLog(
 // The row is targeted by PipelineLogID when the caller has one, so a superseded run
 // whose row was deleted with the task can never reach into the replacement
 // run's row. Only when the caller has no bound row (legacy, debug-adjacent, or
-// non-ingestion callers) does it adopt the document's newest open row, so a
-// stray open row is closed rather than left queued. RowsAffected is not used to
-// decide whether to create: once a target row is known, the write is final —
-// a lost CAS means another writer already finalized this run or the row was
-// dropped with a superseded run, and neither may produce a second entry.
+// non-ingestion callers) does it adopt the document's newest unowned open row,
+// so a stray open row is closed rather than left queued; a row a live run owns
+// is never adopted, because that run's own terminal write would then be lost.
+// RowsAffected is not used to decide whether to create: once a target row is
+// known, the write is final — a lost CAS means another writer already finalized
+// this run or the row was dropped with a superseded run, and neither may
+// produce a second entry.
 func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
 	targetID := input.PipelineLogID
 	if targetID == "" {
@@ -922,6 +924,13 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 			return false, err
 		}
 		if open == nil {
+			return false, nil
+		}
+		owned, err := dao.NewPipelineOperationLogDAO().HasLiveTaskOwner(ctx, db, open.ID)
+		if err != nil {
+			return false, err
+		}
+		if owned {
 			return false, nil
 		}
 		targetID = open.ID
@@ -955,6 +964,13 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
+	}
+	// No second entry is created for a known target, so a row that is gone or
+	// already finalized means this run's outcome is not recorded anywhere. That
+	// is the intended outcome for a run whose row was dropped with a superseded
+	// task; log it so the missing entry is not silent.
+	if result.RowsAffected == 0 {
+		common.Warn(fmt.Sprintf("pipeline log %s for document %s is gone or already terminal; %s entry dropped", targetID, input.DocumentID, operationStatus))
 	}
 	return true, nil
 }

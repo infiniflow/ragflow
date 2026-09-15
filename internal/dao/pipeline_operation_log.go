@@ -105,12 +105,19 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 // GetDatasetLogsByKBID lists dataset-level (graph/raptor/mindmap) ingestion
 // logs for a knowledge base. Pagination is only applied when both page and
 // pageSize are positive, matching peewee's paginate behavior.
-func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
+//
+// documentID is honoured for the same reason as in GetFileLogsByKBID. Dataset
+// logs belong to no single document, so a caller that names one gets an empty
+// list rather than the whole dataset history.
+func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords, documentID string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+	if documentID != "" {
+		query = query.Where("document_id = ?", documentID)
 	}
 	if len(operationStatus) > 0 {
 		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
@@ -145,12 +152,20 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 }
 
 // GetFileLogsByKBID lists per-file ingestion logs for a knowledge base.
-func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, keywords string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
+//
+// documentID narrows the list to one document exactly. The frontend needs it to
+// resolve a queued document's early row: matching by document_name is a fuzzy
+// LIKE search that can push the row out of the first page when several
+// documents share a name.
+func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ?", kbID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+	if documentID != "" {
+		query = query.Where("document_id = ?", documentID)
 	}
 	query = query.Where("document_id <> ?", graphRaptorFakeDocID)
 
@@ -325,15 +340,33 @@ func (dao *PipelineOperationLogDAO) DeleteUnownedOpenLogByID(ctx context.Context
 	if logID == "" {
 		return false, nil
 	}
-	liveStatuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
-		Where("NOT EXISTS (SELECT 1 FROM ingestion_task WHERE pipeline_log_id = ? AND status IN ?)", logID, liveStatuses).
+		Where("NOT EXISTS (SELECT 1 FROM ingestion_task WHERE pipeline_log_id = ? AND status IN ?)", logID, common.ActiveTaskStatuses).
 		Delete(&entity.PipelineOperationLog{})
 	if result.Error != nil {
 		return false, result.Error
 	}
 	return result.RowsAffected == 1, nil
+}
+
+// HasLiveTaskOwner reports whether a live ingestion task is bound to the given
+// pipeline operation log row. Adoption of an open row is gated on this: the
+// create path never takes a row a live run owns, and the terminal fallback must
+// apply the same rule, or it would finalize the live run's entry with another
+// run's status and swallow the live run's own terminal write.
+func (dao *PipelineOperationLogDAO) HasLiveTaskOwner(ctx context.Context, db *gorm.DB, logID string) (bool, error) {
+	if logID == "" {
+		return false, nil
+	}
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("pipeline_log_id = ? AND status IN ?", logID, common.ActiveTaskStatuses).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.

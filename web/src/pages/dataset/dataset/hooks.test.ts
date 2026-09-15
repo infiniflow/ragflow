@@ -142,24 +142,30 @@ describe('useShowLog — Go backend early-log fallback', () => {
     );
   });
 
-  it('ignores a fuzzy name match belonging to another document', async () => {
+  it('scopes the query to the document instead of a fuzzy name search', async () => {
     mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
-      data: {
-        data: {
-          logs: [{ document_id: 'other-doc', progress_msg: 'someone else' }],
-          total: 1,
-        },
-      },
+      data: { data: { logs: [], total: 0 } },
     } as any);
 
-    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.SCHEDULED });
+    const doc = makeDoc({
+      name: 'a.pdf',
+      ingestion_status: IngestionTaskStatus.SCHEDULED,
+    });
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
     await waitFor(() => expect(mockList).toHaveBeenCalled());
-    expect(result.current.logInfo.details).not.toBe('someone else');
+    expect(mockList).toHaveBeenCalledWith(
+      'kb-1',
+      expect.objectContaining({ document_id: 'doc-1', log_type: 'file' }),
+    );
+    // The name search would return other documents' rows and could push this
+    // document's queued row past the first page.
+    expect(mockList.mock.calls[0][1]).not.toHaveProperty('keywords');
+    // No row came back, so the document's own (empty) progress_msg stands.
+    expect(result.current.logInfo.details).toBe('');
   });
 
   it('does not query once the document is running', () => {

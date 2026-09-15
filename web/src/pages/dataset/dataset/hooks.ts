@@ -66,7 +66,10 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         {
           page: 1,
           page_size: 10,
-          keywords: sourceDoc?.name,
+          // Exact match on the document: a name search is fuzzy and can push
+          // this document's row off the first page when several documents
+          // share a name, silently losing the queued message.
+          document_id: sourceDoc?.id,
           log_type: 'file',
         },
       );
@@ -75,12 +78,10 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   });
   const queuedProgressMsg = useMemo(() => {
     const logs = queuedLog?.logs ?? [];
-    // No fallback to logs[0]: the query is a fuzzy name search, so the first
-    // row may belong to another document. A miss falls back to the document
-    // progress_msg below instead of showing someone else's log.
-    const match = logs.find((item) => item.document_id === sourceDoc?.id);
-    return match?.progress_msg;
-  }, [queuedLog, sourceDoc?.id]);
+    // The endpoint filters by document_id, so the first row is this document's
+    // newest log. A miss falls back to the document progress_msg below.
+    return logs[0]?.progress_msg;
+  }, [queuedLog]);
   // The queued fallback is only meaningful while the document is still
   // queued. Once it starts running, the query cache may still hold the stale
   // "Task is queued..." message and would shadow the live progress below.
