@@ -444,10 +444,14 @@ type SearchDeps struct {
 }
 
 // QuestionLabeler mirrors Python rag.app.tag.label_question(question, kbs)
-// (agentic_rag.py:retrieve → tag.py). Given the query and the KB objects (which
-// carry parser_config.tag_kb_ids), it returns a map of question-type tag →
-// weight the retriever uses to rank results. The production implementation is
-// internal/service.MetadataService.LabelQuestion; tests supply a stub.
+// (agentic_rag.py:retrieve → tag.py). Given the query and the KB objects, it
+// returns a map of question-type tag → weight the retriever uses to rank
+// results. The Go extractor (extractor_tag.go) writes tag_kwd (the tag-name
+// list) and tag_feas (per-tag weights) onto each chunk; the labeler aggregates
+// tag_kwd to build the vocabulary and the retriever ranks with tag_feas. It
+// does not rely on a separate Python-only tag-library dataset. The production
+// implementation is internal/service.MetadataService.LabelQuestion; tests
+// supply a stub.
 type QuestionLabeler interface {
 	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }

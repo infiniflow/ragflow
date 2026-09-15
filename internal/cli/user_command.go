@@ -4064,9 +4064,6 @@ func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, erro
 	}
 
 	// Optional flags — only emit when explicitly set
-	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
-		body["pass_all_history_messages"] = true
-	}
 	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
 		body["legacy"] = true
 	}

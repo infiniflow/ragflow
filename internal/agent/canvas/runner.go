@@ -273,8 +273,11 @@ func (r *Runner) Run(
 		return out
 	}
 
-	// Generate the message identifier the RunFunc and SSE envelope need.
-	messageID := utility.GenerateToken()
+	// Reuse a persisted question's identifier for the RunFunc and SSE envelope.
+	messageID, _ := root["__message_id__"].(string)
+	if messageID == "" {
+		messageID = utility.GenerateToken()
+	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,

@@ -122,6 +122,27 @@ func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
 	}
 }
 
+func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
+	prev := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	t.Cleanup(func() { SetRetrievalService(prev) })
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+	for _, mode := range []string{toolHybridSearch, toolVectorSearch, toolBM25Search} {
+		t.Run(mode, func(t *testing.T) {
+			_, err := NewAgenticSearchTool(mode).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+				t.Fatal("Agentic search must disable dense fallback")
+			}
+		})
+	}
+}
+
 func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}

@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -123,6 +124,7 @@ func TestFileOutputsJSONRoundTrip(t *testing.T) {
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
 		Name:         "input.pdf",
+		FileType:     "pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
 		Lang:         "English",
@@ -138,12 +140,18 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"json"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ParserOutputs
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if decoded.OutputFormat != "json" {
 		t.Errorf("OutputFormat round-trip mismatch: got %q", decoded.OutputFormat)
+	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
 	}
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
@@ -198,6 +206,7 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	md := "# title"
 	original := ChunkerFromUpstream{
 		Name:           "doc.pdf",
+		FileType:       "pdf",
 		OutputFormat:   PayloadFormatChunks,
 		Chunks:         []ChunkDoc{{Text: "alpha"}},
 		MarkdownResult: &md,
@@ -209,6 +218,9 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"chunks"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ChunkerFromUpstream
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -216,8 +228,53 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.Name != "doc.pdf" || decoded.OutputFormat != PayloadFormatChunks {
 		t.Errorf("round-trip mismatch: %+v", decoded)
 	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
+	}
 	if len(decoded.Chunks) != 1 {
 		t.Errorf("Chunks round-trip mismatch: got %d", len(decoded.Chunks))
+	}
+}
+
+func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
+	sheetIndex, rowStart, rowEnd, colStart, colEnd := 2, 42, 42, 1, 3
+	original := ChunkDoc{
+		Text:       "ID：A-100; Status：paid",
+		DocType:    "text",
+		CKType:     "table_row",
+		TableID:    "sheet-2",
+		Sheet:      "Orders",
+		SheetIndex: &sheetIndex,
+		Headers:    []string{"ID", "Status", "Note"},
+		Cells:      []string{"A-100", "paid", ""},
+		RowStart:   &rowStart,
+		RowEnd:     &rowEnd,
+		ColStart:   &colStart,
+		ColEnd:     &colEnd,
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded ChunkDoc
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.TableID != original.TableID || decoded.Sheet != original.Sheet {
+		t.Fatalf("spreadsheet identity mismatch: got table=%q sheet=%q", decoded.TableID, decoded.Sheet)
+	}
+	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
+		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
+	}
+	if decoded.RowStart == nil || *decoded.RowStart != rowStart || decoded.RowEnd == nil || *decoded.RowEnd != rowEnd {
+		t.Fatalf("row range mismatch: start=%v end=%v", decoded.RowStart, decoded.RowEnd)
+	}
+	if decoded.ColStart == nil || *decoded.ColStart != colStart || decoded.ColEnd == nil || *decoded.ColEnd != colEnd {
+		t.Fatalf("column range mismatch: start=%v end=%v", decoded.ColStart, decoded.ColEnd)
+	}
+	if !reflect.DeepEqual(decoded.Headers, original.Headers) || !reflect.DeepEqual(decoded.Cells, original.Cells) {
+		t.Fatalf("cells mismatch: headers=%v cells=%v", decoded.Headers, decoded.Cells)
 	}
 }
 
