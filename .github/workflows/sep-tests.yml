@@ -143,12 +143,6 @@ jobs:
 #            fi
 #          fi
 
-      # lefthook's web-checks hook resolves oxlint/oxfmt through
-      # tools/hooks/web_tools.sh, which needs node and npm on PATH.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
 
       - name: Run Lefthook on changed files
         run: |
