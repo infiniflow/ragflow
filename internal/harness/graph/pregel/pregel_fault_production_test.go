@@ -31,7 +31,7 @@ func TestFault_GoroutineLeakAfterCancel(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		engine := NewEngine(sg, WithRecursionLimit(100))
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
 		// Drain but don't wait for channels — cancel should clean up.
 		outputCh, errCh := engine.Run(ctx, map[string]any{"value": "leak"}, types.StreamModeValues)
 		cancel()
@@ -60,7 +60,7 @@ func TestFault_GoroutineLeakRapidCreate(t *testing.T) {
 
 	for i := 0; i < 50; i++ {
 		engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-		engine.RunSync(context.Background(), map[string]any{"value": "x"})
+		engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -86,7 +86,7 @@ func TestFault_NodeBlocksForever(t *testing.T) {
 	_ = sg.AddEdge("stuck", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "x"})
@@ -118,11 +118,11 @@ func TestFault_CheckpointAfterPanic(t *testing.T) {
 			WithConfig(cfg),
 		)
 		// Force a panic inside RunSync.
-		_, _ = engine.RunSync(context.Background(), map[string]any{"value": "x"})
+		_, _ = engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	}()
 
 	// Checkpointer should still work.
-	cp, err := ms.Get(context.Background(), map[string]interface{}{
+	cp, err := ms.Get(t.Context(), map[string]interface{}{
 		constants.ConfigKeyThreadID: tid,
 	})
 	if err != nil {
@@ -143,7 +143,7 @@ func TestFault_CorruptedCheckpoint_EngineStart(t *testing.T) {
 	cfg := map[string]interface{}{constants.ConfigKeyThreadID: tid}
 
 	// Write an invalid checkpoint that has wrong types for channel data.
-	ms.Put(context.Background(), cfg, map[string]interface{}{
+	ms.Put(t.Context(), cfg, map[string]interface{}{
 		"value":               "corrupted",
 		"__completed_tasks__": "garbage",
 		"__last_state__":      "not-json",
@@ -157,7 +157,7 @@ func TestFault_CorruptedCheckpoint_EngineStart(t *testing.T) {
 		WithCheckpointer(ms),
 		WithConfig(engineCfg),
 	)
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Logf("corrupted checkpoint handled: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestFault_TopicChannel_ConcurrentProducers(t *testing.T) {
 	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(100))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestFault_NodeConcurrentMapWrite(t *testing.T) {
 	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(30))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestFault_CancelStorm(t *testing.T) {
 // TestFault_EngineReuseStaleState reuses engine across 100 runs.
 func TestFault_EngineReuseStaleState(t *testing.T) {
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < 100; i++ {
 		result, err := engine.RunSync(ctx, map[string]any{"value": "reuse"})
@@ -300,7 +300,7 @@ func TestFault_ManyThreadsManyCheckpoints(t *testing.T) {
 					WithCheckpointer(ms),
 					WithConfig(cfg),
 				)
-				_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+				_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 				if err != nil {
 					t.Errorf("thread %d run %d: %v", idx, j, err)
 				}
@@ -331,7 +331,7 @@ func TestFault_AllNodesReturnNil(t *testing.T) {
 	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync with nil nodes: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestFault_LongChainInterruptEarly(t *testing.T) {
 		WithInterrupts("ln_5"),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected interrupt after 5 nodes")
 	}

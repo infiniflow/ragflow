@@ -86,7 +86,7 @@ func (p *userFillUpParam) Update(conf map[string]any) error {
 
 // Check performs parameter validation. UserFillUp has no required
 // fields — any config is accepted and degrades gracefully on missing
-// template data. The method is kept to satisfy the ParamBase contract.
+// template data. The method is kept to satisfy the ParamBase
 func (p *userFillUpParam) Check() error { return nil }
 
 // AsDict returns the param as a plain map for serialization / debug.

@@ -292,12 +292,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenant := v1.Group("/tenant")
 			{
 				tenant.GET("/list", r.tenantHandler.TenantList)
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                         // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                       // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)                   // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)                 // Internal API only for GO
-				tenant.POST("/dev_insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
-				tenant.POST("/dev_insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
+				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
+				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
+				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
+				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
 			}
 
 			// Document routes
@@ -340,6 +338,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
+			v1.POST("/retrieval", r.datasetsHandler.SearchDatasets)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -361,19 +360,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Knowledge-compilation wiki artifacts
 				datasets.HEAD("/:dataset_id/artifacts", r.datasetArtifactHandler.AnyArtifact)
 				datasets.GET("/:dataset_id/artifacts", r.datasetArtifactHandler.ListArtifacts)
-				datasets.DELETE("/:dataset_id/artifacts", r.datasetArtifactHandler.DeleteArtifacts)
 				datasets.GET("/:dataset_id/artifacts/topics", r.datasetArtifactHandler.ListArtifactTopics)
 				datasets.GET("/:dataset_id/artifacts/alteration", r.datasetArtifactHandler.GetArtifactAlteration)
 				datasets.GET("/:dataset_id/artifacts/graph", r.datasetArtifactHandler.GetArtifactGraph)
 				datasets.GET("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.GetArtifact)
 				datasets.PUT("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.UpdateArtifact)
 				datasets.GET("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.ListStructures)
-				datasets.DELETE("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.DeleteStructures)
 
 				// Knowledge-compilation navigation
 				datasets.GET("/:dataset_id/navigation", r.datasetArtifactHandler.ListNavigation)
-				datasets.DELETE("/:dataset_id/navigation", r.datasetArtifactHandler.DeleteNavigation)
-				datasets.DELETE("/:dataset_id/navigation/:name", r.datasetArtifactHandler.DeleteNavigationNode)
 				datasets.GET("/:dataset_id/navigation/:name/children", r.datasetArtifactHandler.ListNavigationChildren)
 
 				// Knowledge-compilation skills
@@ -423,6 +418,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
+				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)

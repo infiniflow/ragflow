@@ -55,7 +55,7 @@ export function TopSelectFormItem() {
 
   return (
     <SliderInputFormField
-      name="size"
+      name="page_size"
       label={t('chat.topN')}
       min={1}
       max={100}

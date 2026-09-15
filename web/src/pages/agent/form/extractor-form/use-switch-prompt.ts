@@ -29,7 +29,10 @@ export function useSwitchPrompt(form: SwitchPromptForm) {
       form.setValue(
         field,
         Object.hasOwn(pythonCanvasTopN, value)
-          ? prompt.replace(/\{\{\s*topn\s*\}\}/g, String(pythonCanvasTopN[value]))
+          ? prompt.replace(
+              /\{\{\s*topn\s*\}\}/g,
+              String(pythonCanvasTopN[value]),
+            )
           : prompt,
         {
           shouldDirty: true,
