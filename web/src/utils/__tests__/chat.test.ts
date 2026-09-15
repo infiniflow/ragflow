@@ -92,8 +92,14 @@ describe('replaceThinkToSection', () => {
 
 describe('replaceToolCallToSection', () => {
   it('renders tool_call blocks as collapsible details with tool name', () => {
-    const body = JSON.stringify({ name: 'search_0', args: { q: 'x' }, result: 'ok' });
-    expect(replaceToolCallToSection(`before<tool_call>${body}</tool_call>after`)).toBe(
+    const body = JSON.stringify({
+      name: 'search_0',
+      args: { q: 'x' },
+      result: 'ok',
+    });
+    expect(
+      replaceToolCallToSection(`before<tool_call>${body}</tool_call>after`),
+    ).toBe(
       `before<details class="tool_call"><summary>Tool call: search_0</summary><pre>${body}</pre></details>after`,
     );
   });
@@ -102,5 +108,13 @@ describe('replaceToolCallToSection', () => {
     expect(replaceToolCallToSection('<tool_call>not-json</tool_call>')).toBe(
       '<details class="tool_call"><summary>Tool call</summary><pre>not-json</pre></details>',
     );
+  });
+
+  it('HTML-escapes name and body so rehypeRaw cannot parse them as tags', () => {
+    const body = '{"name":"a<b>","args":{"x":"<img src=x>"},"result":"ok"}';
+    const out = replaceToolCallToSection(`<tool_call>${body}</tool_call>`);
+    expect(out).toContain('Tool call: a&#60;b&#62;');
+    expect(out).toContain('&#60;img src=x&#62;');
+    expect(out).not.toContain('<img');
   });
 });

@@ -63,3 +63,10 @@ def test_stream_forwards_tool_call_when_citation_buffers(monkeypatch):
     assert "search_0" in joined
     assert "最终回答[ID:0]" in joined
     assert cite_deltas, "citation rewrite should run for long history"
+
+
+@pytest.mark.p1
+def test_clean_formatted_answer_strips_tool_call_markup():
+    """Verbose <tool_call> must not reach structured-output JSON parsing."""
+    raw = '<tool_call>{"name":"search_0","args":{},"result":""}</tool_call>\n{"answer":"ok"}'
+    assert Agent._clean_formatted_answer(raw) == '{"answer":"ok"}'

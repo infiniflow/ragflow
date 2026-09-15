@@ -136,6 +136,9 @@ class Agent(LLM, ToolBase):
 
     @staticmethod
     def _clean_formatted_answer(ans: str) -> str:
+        # Verbose tool markup is for the stream UI only; strip it before
+        # structured-output JSON parsing.
+        ans = re.sub(r"<tool_call>.*?</tool_call>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
         ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
         return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)

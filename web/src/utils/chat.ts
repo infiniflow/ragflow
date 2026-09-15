@@ -131,6 +131,14 @@ export function replaceRetrievingToSection(text: string = '') {
   return result;
 }
 
+/** Escape for rehypeRaw; use numeric entities so preprocessLaTeX won't undo them. */
+function escapeHtmlForToolCall(value: string): string {
+  return value
+    .replace(/&/g, '&#38;')
+    .replace(/</g, '&#60;')
+    .replace(/>/g, '&#62;');
+}
+
 export function replaceToolCallToSection(text: string = '') {
   return text.replace(
     /<tool_call>([\s\S]*?)<\/tool_call>/g,
@@ -144,7 +152,9 @@ export function replaceToolCallToSection(text: string = '') {
       } catch {
         // keep default summary
       }
-      return `<details class="tool_call"><summary>${summary}</summary><pre>${body.trim()}</pre></details>`;
+      const safeSummary = escapeHtmlForToolCall(summary);
+      const safeBody = escapeHtmlForToolCall(body.trim());
+      return `<details class="tool_call"><summary>${safeSummary}</summary><pre>${safeBody}</pre></details>`;
     },
   );
 }
