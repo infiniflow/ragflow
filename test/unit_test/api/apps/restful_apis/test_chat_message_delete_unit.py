@@ -205,6 +205,7 @@ def test_delete_with_empty_reference_does_not_raise(monkeypatch):
     res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="m1"))
     assert res["data"]["message"] == []
     assert res["data"]["reference"] == []
+    assert update_calls == [("sess_1", res["data"])]
 
 
 @pytest.mark.p2
