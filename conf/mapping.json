@@ -16,6 +16,10 @@
   },
   "mappings": {
     "properties": {
+      "id": {
+        "type": "keyword",
+        "store": true
+      },
       "lat_lon": {
         "type": "geo_point",
         "store": "true"

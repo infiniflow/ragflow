@@ -289,7 +289,12 @@ class ESConnection(ESConnectionBase):
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 elif field == "id":
-                    continue  # id as "text", not a "keyword", order by it will cause error
+                    # id is a keyword field in RAGFlow index templates (see
+                    # ES_MAPPING); sorting on it is valid and REQUIRED: dropping
+                    # it silently leaves the query unsorted, which breaks the
+                    # search_after deep-pagination path (no sort values in the
+                    # response) and silently returns empty pages past 10k rows.
+                    order_info = {"order": order, "unmapped_type": "keyword"}
                 else:
                     order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
