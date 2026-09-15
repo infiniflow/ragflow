@@ -39,7 +39,6 @@ from quart import Response, jsonify, request, make_response
 from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
-from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
@@ -47,11 +46,9 @@ from api.db.services.canvas_service import (
     completion as agent_completion,
     completion_openai,
 )
-from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
+from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
