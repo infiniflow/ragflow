@@ -82,7 +82,12 @@ def _install_stubs(monkeypatch):
     DB.connection_context = _noop_connection_context
     sys.modules["api.db.db_models"].DB = DB
     sys.modules["api.db.db_models"].Document = object
-    sys.modules["api.db.db_models"].PipelineOperationLog = MagicMock()
+    # PipelineOperationLog needs concrete int returns on the count() chain
+    # so create()'s `if total > limit` branch is well-typed and the
+    # cleanup path doesn't blow up with `MagicMock > int`.
+    _PolModel = MagicMock()
+    _PolModel.select.return_value.where.return_value.count.return_value = 0
+    sys.modules["api.db.db_models"].PipelineOperationLog = _PolModel
 
     # Build class stubs with the methods the service calls, so
     # ``patch.object`` can target them without fighting ``object``'s
@@ -342,7 +347,7 @@ def test_create_persists_sanitized_dsl(pol_module, captured_log, monkeypatch):
     assert log["parser_id"] == "docling"
 
 
-def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch):
+def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch, caplog):
     """A pipeline DSL stored as a dict (peewee JSONField round-trip)
     must not crash create() and must still resolve the pipeline's
     Parser choice. Before the dict-input fix, ``json.loads(dict)``
@@ -364,9 +369,9 @@ def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch):
     }
 
     with (
+        caplog.at_level(pol_module.logging.WARNING, logger="root"),
         patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)),
         patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)),
-        pol_module.assertLogs(level="WARNING") as cm,
     ):
         pol_module.PipelineOperationLogService.create(
             document_id="doc-1",
@@ -381,7 +386,7 @@ def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch):
     assert log["parser_id"] == "docling", "dict DSL must still resolve the pipeline's parser"
     # The "Pipeline DSL is missing or malformed" WARNING must NOT fire
     # for a valid dict input.
-    assert not any("Pipeline DSL is missing or malformed" in rec.message for rec in cm.records)
+    assert not any("Pipeline DSL is missing or malformed" in rec.message for rec in caplog.records)
 
 
 def test_create_falls_back_to_empty_dsl_for_malformed_dsl(pol_module, captured_log, monkeypatch, caplog):
