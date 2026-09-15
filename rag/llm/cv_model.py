@@ -688,6 +688,17 @@ class SILICONFLOWCV(GptV4):
         super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
+class AnonRouterCV(GptV4):
+    """AnonRouter vision adapter bound to the hosted compatibility endpoint."""
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
+        super().__init__(key, model_name, lang, self._BASE_URL, **kwargs)
+
+
 class OpenRouterCV(GptV4):
     _FACTORY_NAME = "OpenRouter"
 
@@ -781,7 +792,7 @@ class OllamaCV(Base):
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         from ollama import Client
 
-        self.base_url = ensure_v1(kwargs["base_url"])
+        self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
@@ -831,6 +842,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -844,6 +856,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=vision_prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -1372,14 +1385,27 @@ class BedrockCV(Base):
         Base.__init__(self, **kwargs)
 
     def _parse_credentials(self, key):
+        from botocore.utils import validate_region_name
+
         bedrock_key = json.loads(key)
         self.auth_mode = bedrock_key.get("auth_mode", "")
-        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_region = bedrock_key.get("bedrock_region")
+        if not self.aws_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(self.aws_region)
         self.aws_ak = bedrock_key.get("bedrock_ak", "")
         self.aws_sk = bedrock_key.get("bedrock_sk", "")
         self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+        self.bedrock_api_key = bedrock_key.get("bedrock_api_key", "")
 
     def _get_aws_creds(self):
+        if self.auth_mode == "bedrock_api_key":
+            if not self.bedrock_api_key:
+                raise ValueError("Bedrock API key must be provided")
+            return {
+                "aws_region_name": self.aws_region,
+                "api_key": self.bedrock_api_key,
+            }
         if self.auth_mode == "access_key_secret":
             return {
                 "aws_region_name": self.aws_region,
@@ -1398,8 +1424,9 @@ class BedrockCV(Base):
                 "aws_secret_access_key": creds["SecretAccessKey"],
                 "aws_session_token": creds["SessionToken"],
             }
-        else:
+        elif self.auth_mode == "assume_role":
             return {"aws_region_name": self.aws_region}
+        raise ValueError(f"Unsupported Bedrock auth_mode: {self.auth_mode}")
 
     def describe_with_prompt(self, image, prompt=None):
         import litellm

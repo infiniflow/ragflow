@@ -72,6 +72,8 @@ export const SVGIconMap = {
   [Operator.BGPT]: 'bgpt',
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
+  [Operator.YouComSearch]: 'youcom',
+  [Operator.SofyaSearch]: 'sofya',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
   [Operator.QueritContents]: 'querit',

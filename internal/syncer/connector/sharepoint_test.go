@@ -509,6 +509,24 @@ func TestSharePointResumeSkipsSyncedDrives(t *testing.T) {
 	}
 }
 
+func TestSharePointResumeRejectsMissingDrive(t *testing.T) {
+	fixtures := &sharePointTestFixtures{
+		drivesBody: `{"value":[
+			{"id":"drv-A","name":"A","driveType":"documentLibrary"},
+			{"id":"drv-B","name":"B","driveType":"documentLibrary"}
+		]}`,
+	}
+	server := newTestSharePointServer(t, fixtures)
+	connector := mustSharePointConnector(t, server.URL, nil)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		Resume: &SyncCheckpoint{Cursor: "sharepoint_drive_drv-C"},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestSharePointCheckpointAdvancesAfterDriveFlush(t *testing.T) {
 	fixtures := &sharePointTestFixtures{
 		drivesBody: `{"value":[

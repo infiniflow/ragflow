@@ -247,6 +247,33 @@ func TestDBMSHybridBodyMatchesPythonSemantics(t *testing.T) {
 	}
 }
 
+func TestDBMSHybridBodyMinimumShouldMatchHalfUp(t *testing.T) {
+	plan := searchPlan{
+		text:   &types.MatchTextExpr{MatchingText: "hello", TopN: 10, ExtraOptions: map[string]interface{}{"minimum_should_match": 0.285}},
+		dense:  &types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, EmbeddingDataType: "float", TopN: 8, ExtraOptions: map[string]interface{}{"similarity": 0.42}},
+		fusion: &types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": "0.25,0.75"}},
+	}
+	body, ok := buildDBMSBody("chunk", map[string]interface{}{"kb_id": []string{"kb-1"}, "available_int": 0}, &types.SearchRequest{
+		Offset: 2, Limit: 5, RankFeature: map[string]float64{"pagerank_fea": 0.1},
+	}, plan)
+	if !ok {
+		t.Fatal("hybrid body unexpectedly required SQL fallback")
+	}
+	root := body["query"].(map[string]interface{})
+	query := root["bool"].(map[string]interface{})
+	must := query["must"].([]interface{})[0].(map[string]interface{})["query_string"].(map[string]interface{})
+	if got := must["minimum_should_match"]; got != "29%" {
+		t.Fatalf("minimum_should_match for 0.285 = %q, want 29%%", got)
+	}
+	knn, ok := body["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid knn leg = %#v", body["knn"])
+	}
+	if knn["k"] != 8 || knn["num_candidates"] != 16 || knn["similarity"] != 0.42 {
+		t.Fatalf("hybrid vector leg = %#v", knn)
+	}
+}
+
 func TestMetadataJSONPushdownOperators(t *testing.T) {
 	predicate, args, err := buildMetaPushdownPredicate([]map[string]interface{}{
 		{"key": "author", "op": "contains", "value": "Alice"},

@@ -18,11 +18,11 @@
 Unit tests for sandbox provider abstraction layer.
 """
 
-import pytest
 from unittest.mock import Mock, patch
-import requests
 
-from agent.sandbox.providers.base import SandboxProvider, SandboxInstance, ExecutionResult
+import pytest
+import requests
+from agent.sandbox.providers.base import ExecutionResult, SandboxInstance, SandboxProvider
 from agent.sandbox.providers.manager import ProviderManager
 from agent.sandbox.providers.self_managed import SelfManagedProvider
 
@@ -120,7 +120,7 @@ class TestSelfManagedProvider:
         assert provider.endpoint == "http://sandbox-executor-manager:9385"
         assert provider.timeout == 30
         assert provider.max_retries == 3
-        assert provider.pool_size == 10
+        assert provider.pool_size == 3
         assert not provider._initialized
 
     @patch("requests.get")
@@ -246,6 +246,40 @@ class TestSelfManagedProvider:
         assert result.metadata["result_type"] == "json"
 
     @patch("requests.post")
+    def test_execute_code_sends_bearer_token_when_configured(self, mock_post):
+        """Test that the shared-secret token is sent to the executor manager."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = "shared-secret"
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer shared-secret"
+
+    @patch("requests.post")
+    def test_execute_code_omits_auth_header_without_token(self, mock_post):
+        """Test that no Authorization header is sent when no token is set."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "success", "stdout": "", "stderr": "", "exit_code": 0}
+        mock_post.return_value = mock_response
+
+        provider = SelfManagedProvider()
+        provider._initialized = True
+        provider.api_token = ""
+
+        provider.execute_code(instance_id="test-123", code="def main(): return 1", language="python", timeout=10)
+
+        _, kwargs = mock_post.call_args
+        assert "Authorization" not in kwargs["headers"]
+
+    @patch("requests.post")
     def test_execute_code_timeout(self, mock_post):
         """Test code execution timeout."""
         mock_post.side_effect = requests.Timeout()
@@ -322,8 +356,9 @@ class TestSelfManagedProvider:
         assert "nodejs" in languages
         assert "javascript" in languages
 
-    def test_get_config_schema(self):
+    def test_get_config_schema(self, monkeypatch):
         """Test getting configuration schema."""
+        monkeypatch.delenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", raising=False)
         schema = SelfManagedProvider.get_config_schema()
 
         assert "endpoint" in schema
@@ -335,11 +370,31 @@ class TestSelfManagedProvider:
         assert schema["timeout"]["type"] == "integer"
         assert schema["timeout"]["default"] == 30
 
-        assert "max_retries" in schema
-        assert schema["max_retries"]["type"] == "integer"
+        # The pool size is a deployment-level fact, not a writable runtime field, so the schema
+        # exposes it read-only under its real key. The default it reports is read from this
+        # process's own environment and falls back to 3, which can disagree with the pool
+        # sandbox-executor-manager was actually started with. Asserting a writable `pool_size`
+        # pinned a shape the provider has never returned, and the assertion failed rather than
+        # guarding anything.
+        assert "executor_manager_pool_size" in schema
+        assert schema["executor_manager_pool_size"]["type"] == "integer"
+        assert schema["executor_manager_pool_size"]["scope"] == "deployment"
+        assert schema["executor_manager_pool_size"]["readonly"] is True
+        assert schema["executor_manager_pool_size"]["default"] == 3
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
+        assert "pool_size" not in schema
 
-        assert "pool_size" in schema
-        assert schema["pool_size"]["type"] == "integer"
+        # `max_retries` is documented, accepted and range-checked by the provider
+        # (`self_managed.py:58`, `:66`, `:386`) but get_config_schema() does not offer it, so the
+        # admin form cannot set it. The assertion here used to require it and had been failing;
+        # recording its absence keeps that gap visible rather than deleting the observation, and
+        # turns red the moment the schema grows the field.
+        assert "max_retries" not in schema
+
+        monkeypatch.setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
+        schema = SelfManagedProvider.get_config_schema()
+        assert schema["executor_manager_pool_size"]["default"] == 11
+        assert isinstance(schema["executor_manager_pool_size"]["default"], int)
 
     def test_normalize_language_python(self):
         """Test normalizing Python language identifier."""

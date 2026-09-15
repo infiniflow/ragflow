@@ -97,7 +97,7 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 	params, _ := dsl.ExtractComponentParams(dslMap, componentID)
 	comp, err := runtime.DefaultFactory()(name, params)
 	if err != nil {
-		return nil, fmt.Errorf("%w: component factory: %v", dsl.ErrMalformedDSL, err)
+		return nil, fmt.Errorf("%w: component factory: %w", dsl.ErrMalformedDSL, err)
 	}
 	getter, ok := comp.(interface{ GetInputForm() map[string]any })
 	if !ok {

@@ -177,7 +177,34 @@ Usage:
 
 The credentials for `Webhook` and `WebSocket` cannot be mixed. When selecting `WebSocket`, first create a smart bot in WeCom, then fill the obtained `BotID` and `Secret` into RAGFlow. When selecting `Webhook`, fill in `CorpID`, `AgentID`, `Secret`, `Token`, and `AESKey` according to the WeCom application callback configuration.
 
-After saving the channel, connect the WeCom channel to a Chat. After the connection succeeds, users can send messages to the bot in WeCom, and the bot calls the bound Chat to return replies.
+After saving the channel, connect the WeCom channel to a Chat, or bind it to a custom Agent (see below). After the connection succeeds, users can send messages to the bot in WeCom, and the bot calls the bound Chat or Agent to return replies.
+
+### Binding a custom Agent
+
+Besides a Chat, a WeCom channel can be bound to a custom Flow Agent, so inbound messages are answered by the workflow you designed on the **Agent** canvas instead of a regular Chat.
+
+Prerequisites:
+
+- Design a Flow Agent in RAGFlow (**Agent > Flow agents**) and make sure the models used by its components are configured for the tenant (for example, the LLM node must point to a valid model of the tenant that owns the channel).
+- The agent must be owned by, or shared (permission `team`) with, the tenant that owns the WeCom channel.
+- Complete the WeCom channel connection first (`Webhook` or `WebSocket`), as described above.
+
+Configuration parameters:
+
+- **Target**: The connect dialog shows a single dropdown whose entries are prefixed with their type. Entries labeled `[Chat assistant]` are the Chats of the current tenant; entries labeled `[Agent]` are the Flow Agents (canvas category `agent_canvas`) accessible to the current tenant. The stored value is the selected Chat id or Agent id, which is filled in automatically when you pick an entry, so no external credential is required. If you need the Agent id explicitly, open the Agent in **Agent > Flow agents** and copy the id from the browser URL. A channel can be bound to exactly one target at a time: picking another target replaces the previous binding, and clearing the selection disconnects the channel. If the selected agent has components without a configured model, the runtime replies with an error message.
+
+Usage:
+
+1. Open **User settings > Chat channels**, find the WeCom channel, and click the link icon to open the connect dialog.
+2. In the connect dialog, pick the `[Agent]` entry of the Flow Agent (or a `[Chat assistant]` entry to bind a Chat) from the **Select an assistant or Agent** dropdown.
+3. Click confirm; reopening the dialog shows the currently bound target.
+4. Send a test message to the bot in WeCom and verify the reply.
+
+### Thinking placeholder
+
+To keep the end user informed while a completion is still running, the WeCom channel first sends a short `🤔 开始思考...` placeholder for every accepted, non-empty inbound message, and then sends a second message with the final answer once the Chat or Agent has produced a result. Blank messages are ignored, and if a completion produces no result, no final reply is sent. This applies to both Chat and custom Agent bindings.
+
+The placeholder is only sent on the WeCom channel. The final reply is also cleaned up before it is sent: reasoning content (the `<think>` blocks produced by the model) is removed, so end users only see the final answer instead of the internal thinking process.
 
 Connection verification:
 
