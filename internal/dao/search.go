@@ -24,32 +24,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// searchOrderableColumns whitelists the columns that may appear in an ORDER BY
-// clause so an attacker cannot inject arbitrary SQL through the `orderby` query
-// parameter. It holds the scalar search columns the list rows expose plus the
-// base timestamp columns.
-var searchOrderableColumns = map[string]struct{}{
-	"id":          {},
-	"tenant_id":   {},
-	"name":        {},
-	"created_by":  {},
-	"status":      {},
-	"create_time": {},
-	"create_date": {},
-	"update_time": {},
-	"update_date": {},
-}
-
-func searchOrderClause(orderby string, desc bool) string {
-	if _, ok := searchOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
 // SearchDAO search data access object
 type SearchDAO struct{}
 

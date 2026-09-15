@@ -27,43 +27,6 @@ import (
 	"ragflow/internal/entity"
 )
 
-// chatOrderableColumns whitelists the columns that may appear in an ORDER BY
-// clause so an attacker cannot inject arbitrary SQL through the `orderby` query
-// parameter. It holds the scalar dialog columns the list rows expose plus the
-// base timestamp columns.
-var chatOrderableColumns = map[string]struct{}{
-	"id":                       {},
-	"tenant_id":                {},
-	"name":                     {},
-	"language":                 {},
-	"llm_id":                   {},
-	"tenant_llm_id":            {},
-	"prompt_type":              {},
-	"similarity_threshold":     {},
-	"vector_similarity_weight": {},
-	"top_n":                    {},
-	"rerank_candidates_count":  {},
-	"top_k":                    {},
-	"do_refer":                 {},
-	"rerank_id":                {},
-	"tenant_rerank_id":         {},
-	"status":                   {},
-	"create_time":              {},
-	"create_date":              {},
-	"update_time":              {},
-	"update_date":              {},
-}
-
-func chatOrderClause(orderby string, desc bool) string {
-	if _, ok := chatOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
 // ChatDAO chat data access object
 type ChatDAO struct{}
 

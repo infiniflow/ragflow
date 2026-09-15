@@ -27,36 +27,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// fileOrderableColumns whitelists the columns that may appear in an ORDER BY
-// clause so an attacker cannot inject arbitrary SQL through the `orderby` query
-// parameter. It holds the scalar file columns the list rows expose plus the
-// base timestamp columns.
-var fileOrderableColumns = map[string]struct{}{
-	"id":          {},
-	"parent_id":   {},
-	"tenant_id":   {},
-	"created_by":  {},
-	"name":        {},
-	"location":    {},
-	"size":        {},
-	"type":        {},
-	"source_type": {},
-	"create_time": {},
-	"create_date": {},
-	"update_time": {},
-	"update_date": {},
-}
-
-func fileOrderClause(orderBy string, desc bool) string {
-	if _, ok := fileOrderableColumns[orderBy]; !ok {
-		orderBy = "create_time"
-	}
-	if desc {
-		return orderBy + " DESC"
-	}
-	return orderBy + " ASC"
-}
-
 // FileDAO file data access object
 type FileDAO struct{}
 

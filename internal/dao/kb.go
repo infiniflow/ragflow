@@ -42,50 +42,6 @@ func GetTenantIDByKBID(ctx context.Context, db *gorm.DB, kbID string) (string, e
 	return kb.TenantID, nil
 }
 
-// knowledgebaseOrderableColumns whitelists the columns that may appear in an
-// ORDER BY clause so an attacker cannot inject arbitrary SQL through the
-// `orderby` query parameter. It holds the scalar knowledgebase columns the list
-// rows expose plus the base timestamp columns.
-var knowledgebaseOrderableColumns = map[string]struct{}{
-	"id":             {},
-	"tenant_id":      {},
-	"name":           {},
-	"language":       {},
-	"permission":     {},
-	"doc_num":        {},
-	"token_num":      {},
-	"chunk_num":      {},
-	"parser_id":      {},
-	"pagerank":       {},
-	"embd_id":        {},
-	"tenant_embd_id": {},
-	"create_time":    {},
-	"create_date":    {},
-	"update_time":    {},
-	"update_date":    {},
-}
-
-func knowledgebaseOrderClause(orderby string, desc bool) string {
-	if _, ok := knowledgebaseOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
-func knowledgebaseQualifiedOrderClause(orderby string, desc bool) string {
-	if _, ok := knowledgebaseOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	order := "knowledgebase." + orderby
-	if desc {
-		return order + " DESC"
-	}
-	return order + " ASC"
-}
-
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
 
