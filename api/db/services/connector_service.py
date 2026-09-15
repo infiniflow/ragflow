@@ -581,6 +581,7 @@ class SyncLogsService(CommonService):
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
+        wrote_meta = False
         for doc, _ in doc_blob_pairs:
             if FileService._is_sync_cancelled(should_cancel):
                 break
@@ -588,11 +589,15 @@ class SyncLogsService(CommonService):
 
             # Set metadata if available for this document
             if doc["name"] in metadata_map:
-                DocMetadataService.update_document_metadata(doc["id"], metadata_map[doc["name"]])
+                DocMetadataService.update_document_metadata(doc["id"], metadata_map[doc["name"]], refresh_now=False)
+                wrote_meta = True
 
             if not auto_parse or auto_parse == "0":
                 continue
             DocumentService.run(tenant_id, doc, kb_table_num_map)
+
+        if wrote_meta:
+            DocMetadataService.refresh_tenant_index(tenant_id)
 
         return errs, doc_ids
 

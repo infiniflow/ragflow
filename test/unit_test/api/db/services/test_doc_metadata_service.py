@@ -75,3 +75,34 @@ class TestDocMetadataServiceConnectorGetCalls:
                 [],
             )
             assert result == {"author": "alice"}
+
+
+class TestDocMetadataServiceRefreshNow:
+    def test_insert_skips_wait_for_when_refresh_now_is_false(self):
+        mock_doc_store = MagicMock()
+        mock_doc_store.index_exist.return_value = True
+        mock_doc_store.insert.return_value = []
+        mock_doc_store.refresh_idx = MagicMock(return_value=True)
+
+        mock_doc = MagicMock()
+        mock_doc.id = "doc_789"
+        mock_doc.kb_id = "kb_123"
+        mock_doc.knowledgebase.tenant_id = "tenant_456"
+
+        with (
+            patch("api.db.services.doc_metadata_service.settings") as mock_settings,
+            patch("api.db.services.doc_metadata_service.Document") as mock_document_model,
+            patch("api.db.db_models.DB.connect"),
+            patch("api.db.db_models.DB.connection_context"),
+        ):
+            mock_settings.docStoreConn = mock_doc_store
+            mock_settings.DOC_ENGINE_INFINITY = False
+            mock_document_model.select.return_value.join.return_value.where.return_value.first.return_value = mock_doc
+
+            ok = DocMetadataService.insert_document_metadata("doc_789", {"k": "v"}, refresh_now=False)
+
+            assert ok is True
+            mock_doc_store.insert.assert_called_once()
+            assert mock_doc_store.insert.call_args.kwargs["refresh"] is False
+            mock_doc_store.refresh_idx.assert_not_called()
+
