@@ -1641,7 +1641,7 @@ func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil, ""); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {

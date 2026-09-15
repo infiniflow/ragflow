@@ -4812,7 +4812,7 @@ func toolLoopLine(sink func(delta string, isThink bool), line string) {
 	sink(line+thinkLineBreak, true)
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, string, error) {
 	if harnessRetriever == nil {
 		return nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
