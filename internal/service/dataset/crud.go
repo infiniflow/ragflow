@@ -130,15 +130,19 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		if err := validateAutoMetadataConfig(req.AutoMetadataConfig); err != nil {
 			return nil, common.CodeArgumentError, err
 		}
-		dsl, err := service.LoadPipelineDSL(ctx, pipelineID != nil, parserID, pipelineID)
-		if err != nil {
-			return nil, common.CodeServerError, err
+		// Dataset creation keeps Python's flat parser_config response contract.
+		// Component-scoped defaults are used when no config was supplied.
+		flatParserID := parserID
+		if flatParserID == "general" {
+			flatParserID = "naive"
 		}
-		overrides := service.FlatParserConfigOverrides(dsl, req.ParserConfig)
-		parserConfig = pipelinepkg.BuildParserConfig(dsl, overrides)
-		if extractor, ok := parserConfig["Extractor:AutoExtractDefault"].(map[string]interface{}); ok {
-			extractor["llm_id"] = tenant.LLMID
-		}
+		flat := common.GetParserConfig(flatParserID, req.ParserConfig)
+		delete(flat, "raptor")
+		delete(flat, "graphrag")
+		flat["llm_id"] = tenant.LLMID
+		flat["parent_child"] = map[string]interface{}{"use_parent_child": false, "children_delimiter": "\n"}
+		flat["children_delimiter"] = ""
+		parserConfig = entity.JSONMap(flat)
 	}
 	if req.AutoMetadataConfig != nil {
 		if err := validateAutoMetadataConfig(req.AutoMetadataConfig); err != nil {
