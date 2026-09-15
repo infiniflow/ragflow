@@ -30,6 +30,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 
@@ -212,11 +213,7 @@ func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, i
 		}
 		selectors, _ := g["variables"].([]any)
 		for _, raw := range selectors {
-			sel, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			ref, _ := sel["value"].(string)
+			ref := normalizeSelectorRef(raw)
 			if ref == "" {
 				continue
 			}
@@ -229,6 +226,23 @@ func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, i
 		}
 	}
 	return out, nil
+}
+
+// normalizeSelectorRef accepts selector maps from the UI and plain strings
+// from SDK/API-built canvases. Invalid or empty selectors are skipped.
+func normalizeSelectorRef(raw any) string {
+	var ref string
+	switch sel := raw.(type) {
+	case string:
+		ref = sel
+	case map[string]any:
+		ref, _ = sel["value"].(string)
+	default:
+		return ""
+	}
+	ref = strings.TrimSpace(ref)
+	ref = strings.Trim(ref, "{}")
+	return strings.TrimSpace(ref)
 }
 
 // Stream mirrors Invoke; VariableAggregator is a single-shot reduce.
