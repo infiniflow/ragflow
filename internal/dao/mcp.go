@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,9 +46,9 @@ func NewMCPServerDAO() *MCPServerDAO {
 }
 
 // GetByID returns an MCP server by ID.
-func (dao *MCPServerDAO) GetByID(id string) (*entity.MCPServer, error) {
+func (dao *MCPServerDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.MCPServer, error) {
 	var server entity.MCPServer
-	if err := DB.Where("id = ?", id).First(&server).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", id).First(&server).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -57,9 +58,9 @@ func (dao *MCPServerDAO) GetByID(id string) (*entity.MCPServer, error) {
 }
 
 // ExistsByNameAndTenant returns whether an MCP server name already exists for a tenant.
-func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, error) {
+func (dao *MCPServerDAO) ExistsByNameAndTenant(ctx context.Context, db *gorm.DB, name, tenantID string) (bool, error) {
 	var count int64
-	if err := DB.Model(&entity.MCPServer{}).
+	if err := db.WithContext(ctx).Model(&entity.MCPServer{}).
 		Where("name = ? AND tenant_id = ?", name, tenantID).
 		Count(&count).Error; err != nil {
 		return false, err
@@ -68,16 +69,16 @@ func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, err
 }
 
 // CreateMCPServer creates an MCP server.
-func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
-	return DB.Create(server).Error
+func (dao *MCPServerDAO) CreateMCPServer(ctx context.Context, db *gorm.DB, server *entity.MCPServer) error {
+	return db.WithContext(ctx).Create(server).Error
 }
 
 // ListMCPServers returns MCP servers for a tenant with optional filtering.
-func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
 	var servers []*entity.MCPServer
 	var total int64
 
-	query := DB.Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+	query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
 
 	if len(ids) > 0 {
 		query = query.Where("id IN ?", ids)
@@ -111,17 +112,17 @@ func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords 
 }
 
 // GetByIDAndTenant returns an MCP server owned by a tenant.
-func (dao *MCPServerDAO) GetByIDAndTenant(id, tenantID string) (*entity.MCPServer, error) {
+func (dao *MCPServerDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenantID string) (*entity.MCPServer, error) {
 	var server entity.MCPServer
-	if err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error; err != nil {
 		return nil, err
 	}
 	return &server, nil
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.
-func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
-	result := DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.MCPServer{})
+func (dao *MCPServerDAO) DeleteMCPServer(ctx context.Context, db *gorm.DB, id, tenantID string) (bool, error) {
+	result := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.MCPServer{})
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -129,8 +130,8 @@ func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
 }
 
 // UpdateMCPServer updates an MCP server owned by a tenant.
-func (dao *MCPServerDAO) UpdateMCPServer(id, tenantID string, updates map[string]interface{}) (bool, error) {
-	result := DB.Model(&entity.MCPServer{}).
+func (dao *MCPServerDAO) UpdateMCPServer(ctx context.Context, db *gorm.DB, id, tenantID string, updates map[string]interface{}) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.MCPServer{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(updates)
 	if result.Error != nil {

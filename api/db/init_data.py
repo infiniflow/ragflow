@@ -131,6 +131,8 @@ def add_graph_templates():
 
 
 def add_compilation_templates():
+    CompilationTemplateService.ensure_table()
+    CompilationTemplateService.filter_delete([CompilationTemplateService.model.is_builtin])
     CompilationTemplateService.seed_builtins_from_files()
 
 

@@ -2,7 +2,7 @@
 //
 // Compile turns a Canvas (DSL) into a CompiledCanvas: a compiled
 // compose.Runnable plus the CheckPointID used at this compile. The
-// compile-time wiring (state pre/post handlers, checkpoint store,
+// compile-time wiring (state pre- / post-handlers, checkpoint store,
 // serializer) is configured here; the actual run path lives in
 // runner.go and the HTTP handler / SSE / RunTracker are wired in
 // internal/service and internal/handler.
@@ -59,8 +59,8 @@ type CompileOptions struct {
 	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
 	// call compose.WithCheckPointID (the option type is wrong for a
 	// GraphCompileOption), so it only records the id on the returned
-	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
-	// per-task value (e.g. taskID) so re-running the same task hits the
+	// CompiledCanvas — the caller threads it to Invoke. Use a stable value (for
+	// example a session-derived run id) so resuming hits the
 	// same Redis checkpoint (agent:cp:{id}). When empty,
 	// CompiledCanvas.CheckPointID stays empty and the caller must supply
 	// its own id (or omit it for a fresh per-run checkpoint).
@@ -78,23 +78,22 @@ type CompileOptions struct {
 	// OverrideParams is a run-level override map keyed by cpnID. Each
 	// component's `params` is merged only with its own entry
 	// (an arbitrary string-keyed map); the override wins on top-level key
-	// collision (see node_body.go mergeSetups). Components absent from the
+	// collision. Components absent from the
 	// map are left untouched. Used by the ingestion pipeline so a single
-	// Pipeline.Run can override the DSL-baked component setups without
-	// mutating the shared *Canvas (see node_body.go applyOverrideParams /
-	// mergeSetups).
+	// Pipeline.Run can override the DSL-baked component params without
+	// mutating the shared *Canvas (see node_body.go applyOverrideParams).
 	OverrideParams map[string]any
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
 type CompileOption func(*CompileOptions)
 
-// WithCheckPointStore attaches a CheckPointStore to the compile.
+// WithCheckPointStore attaches a CheckPointStore to compile.
 func WithCheckPointStore(s CheckPointStore) CompileOption {
 	return func(o *CompileOptions) { o.Store = s }
 }
 
-// WithStateSerializer attaches a StateSerializer to the compile.
+// WithStateSerializer attaches a StateSerializer to compile.
 func WithStateSerializer(s StateSerializer) CompileOption {
 	return func(o *CompileOptions) { o.Serializer = s }
 }
@@ -112,8 +111,8 @@ func WithInterruptAfter(nodes []string) CompileOption {
 // WithCheckPointID sets the stable checkpoint id recorded on the returned
 // CompiledCanvas. Unlike eino's compose.WithCheckPointID (a run-time
 // Option), this is a compile-time descriptor: Compile stores the id so the
-// caller can pass it to Workflow.Invoke. Pass a stable, per-task value
-// (e.g. taskID) so re-running the same task loads the same Redis
+// caller can pass it to Workflow.Invoke. Pass a stable, session-derived id
+// so resuming loads the same Redis
 // checkpoint (agent:cp:{id}).
 func WithCheckPointID(id string) CompileOption {
 	return func(o *CompileOptions) { o.CheckPointID = id }
@@ -130,16 +129,16 @@ func WithInterruptAfterNonTerminalCpn() CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
 }
 
-// WithOverrideParams attaches a run-level setups override map (keyed by
-// cpnID) to the compile. Each component's `params["setups"]` is merged with
+// WithOverrideParams attaches a run-level override map (keyed by
+// cpnID) to compile. Each component's params are merged with
 // its own entry at compile time (run-level wins on key collision, see
-// node_body.go mergeSetups). Passing nil is a no-op.
+// node_body.go applyOverrideParams). Passing nil is a no-op.
 func WithOverrideParams(m map[string]any) CompileOption {
 	return func(o *CompileOptions) { o.OverrideParams = m }
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
-// compiled Runnable. State pre/post handlers are wired inside BuildWorkflow
+// compiled Runnable. State pre- / post-handlers are wired inside BuildWorkflow
 // (see scheduler.go). Checkpoint store + serializer are wired here as
 // compile-time options (compose.GraphCompileOption).
 //
@@ -213,8 +212,8 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		}
 	}
 
-	// Thread the run-level setups override (if any) into ctx so each
-	// component's `params["setups"]` is merged with its own entry inside
+	// Thread the run-level override (if any) into ctx so each
+	// component's params is merged with its own entry inside
 	// buildNodeBody. The override is keyed by cpnID; the canvas package
 	// never imports ingestion.
 	if cfg.OverrideParams != nil {
@@ -315,9 +314,8 @@ func dedupeStrings(in []string) []string {
 }
 
 // checkPointAdapter drops the Delete method that compose.CheckPointStore
-// does not declare. The RedisCheckPointStore in this package has
-// Delete; eino
-// doesn't, so the adapter is a thin passthrough.
+// does not declare. The RedisCheckPointStore in this package has deleted;
+// the adapter is a thin passthrough.
 type checkPointAdapter struct{ inner CheckPointStore }
 
 func (a checkPointAdapter) Get(ctx context.Context, id string) ([]byte, bool, error) {

@@ -7,6 +7,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -36,7 +37,7 @@ func TestFaultInjection_NodePanic(t *testing.T) {
 	g.AddEdge("panic_node", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
 	if err == nil {
@@ -59,7 +60,7 @@ func TestFaultInjection_NodeError(t *testing.T) {
 	g.AddEdge("fail_node", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
 	if err == nil {
@@ -79,7 +80,7 @@ func TestFaultInjection_CheckpointCorruption(t *testing.T) {
 
 	ms := checkpoint.NewMemorySaver()
 	engine := NewEngine(g, WithRecursionLimit(10), WithCheckpointer(ms))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// First run creates a clean checkpoint.
 	_, err := engine.RunSync(ctx, map[string]any{"value": "first"})
@@ -112,7 +113,7 @@ func TestFaultInjection_CheckpointCorruption(t *testing.T) {
 // goroutines save checkpoints concurrently to the same checkpointer.
 func TestFaultInjection_CheckpointRace(t *testing.T) {
 	ms := checkpoint.NewMemorySaver()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const goroutines = 50
 	const savesPerGoroutine = 20
@@ -165,7 +166,7 @@ func TestFaultInjection_NodeTimeout(t *testing.T) {
 	g.AddEdge("slow", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
@@ -192,7 +193,7 @@ func TestFaultInjection_RetryExhaustion(t *testing.T) {
 	g.AddEdge("flaky", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
 	if err == nil {
@@ -242,7 +243,7 @@ func TestFaultInjection_ParallelFanOutWithFailures(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = cg.Invoke(ctx, State{})
 	if err == nil {
 		t.Log("all workers succeeded (some workers may be skipped)")
@@ -271,7 +272,7 @@ func TestFaultInjection_ContextCancel(t *testing.T) {
 	for range outputCh {
 	}
 	err := <-errCh
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled or nil, got: %v", err)
 	}
 }
@@ -285,7 +286,7 @@ func TestFaultInjection_ContextCancel(t *testing.T) {
 func TestFaultInjection_EngineReuse(t *testing.T) {
 	g := newSimpleGraph(t)
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < 50; i++ {
 		_, err := engine.RunSync(ctx, map[string]any{"value": fmt.Sprintf("run_%d", i)})

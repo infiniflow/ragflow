@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/service"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -35,12 +36,13 @@ type SkillSearchHandler struct {
 	docEngine      engine.DocEngine
 }
 
-// NewSkillSearchHandler creates a new skill search handler
-func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
+// NewSkillSearchHandler creates a new skill search handler.
+// spaceRemover is the document remover used by the skill space service for file deletion.
+func NewSkillSearchHandler(docEngine engine.DocEngine, spaceRemover file.DocRemover) *SkillSearchHandler {
 	return &SkillSearchHandler{
 		searchService:  service.NewSkillSearchService(),
 		indexerService: service.NewSkillIndexerService(),
-		spaceService:   service.NewSkillSpaceService(),
+		spaceService:   service.NewSkillSpaceService(spaceRemover),
 		docEngine:      docEngine,
 	}
 }
@@ -49,8 +51,6 @@ func NewSkillSearchHandler(docEngine engine.DocEngine) *SkillSearchHandler {
 // @Summary Get Skill Search Config
 // @Description Get the search configuration for skills
 // @Tags skill-search
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param embd_id query string true "Embedding Model ID"
 // @Param space_id query string false "Skill Space ID"
@@ -66,7 +66,8 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 	embdID := c.Query("embd_id")
 	spaceID := c.Query("space_id")
 
-	result, code, err := h.searchService.GetConfig(user.ID, spaceID, embdID)
+	ctx := c.Request.Context()
+	result, code, err := h.searchService.GetConfig(ctx, user.ID, spaceID, embdID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -79,8 +80,6 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 // @Summary Update Skill Search Config
 // @Description Update the search configuration for skills
 // @Tags skill-search
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body service.UpdateConfigRequest true "config info"
 // @Success 200 {object} map[string]interface{}
@@ -100,7 +99,8 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 
 	req.TenantID = user.ID
 
-	result, code, err := h.searchService.UpdateConfig(&req)
+	ctx := c.Request.Context()
+	result, code, err := h.searchService.UpdateConfig(ctx, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -113,8 +113,6 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 // @Summary Search Skills
 // @Description Search skills using configured search strategy
 // @Tags skill-search
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body service.SearchRequest true "search query"
 // @Success 200 {object} map[string]interface{}
@@ -154,8 +152,6 @@ type IndexSkillsRequest struct {
 // @Summary Index Skills
 // @Description Index skills for search. If embd_id is not provided, will use the one from skill search config.
 // @Tags skill-search
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body IndexSkillsRequest true "skills to index"
 // @Success 200 {object} map[string]interface{}
@@ -176,7 +172,8 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
+		ctx := c.Request.Context()
+		config, code, err := h.searchService.GetConfig(ctx, user.ID, req.SpaceID, "")
 		if err != nil {
 			common.ResponseWithCodeData(c, code, nil, "failed to get skill search config: "+err.Error())
 			return
@@ -229,8 +226,6 @@ type ReindexRequest struct {
 // @Summary Reindex All Skills
 // @Description Reindex all skills for a tenant. If embd_id is not provided, will use the one from skill search config.
 // @Tags skill-search
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body ReindexRequest true "skills to reindex"
 // @Success 200 {object} map[string]interface{}
@@ -251,7 +246,8 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	// If embd_id not provided, get from skill search config
 	embdID := req.EmbdID
 	if embdID == "" {
-		config, code, err := h.searchService.GetConfig(user.ID, req.SpaceID, "")
+		ctx := c.Request.Context()
+		config, code, err := h.searchService.GetConfig(ctx, user.ID, req.SpaceID, "")
 		if err != nil {
 			common.ResponseWithCodeData(c, code, nil, "failed to get skill search config: "+err.Error())
 			return
@@ -346,8 +342,6 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 // @Summary List Skill Spaces
 // @Description List all skill spaces for the current tenant
 // @Tags skill-space
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces [get]
@@ -358,7 +352,8 @@ func (h *SkillSearchHandler) ListSpaces(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.ListSpaces(user.ID)
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.ListSpaces(ctx, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -398,7 +393,8 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.CreateSpace(&service.CreateSpaceRequest{
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.CreateSpace(ctx, &service.CreateSpaceRequest{
 		TenantID:    user.ID,
 		Name:        req.Name,
 		Description: req.Description,
@@ -417,8 +413,6 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 // @Summary Get Skill Space
 // @Description Get a skill space by ID
 // @Tags skill-space
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param space_id path string true "Space ID"
 // @Success 200 {object} map[string]interface{}
@@ -436,7 +430,8 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.GetSpace(spaceID, user.ID)
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.GetSpace(ctx, spaceID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -484,7 +479,8 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.UpdateSpace(spaceID, user.ID, &service.UpdateSpaceRequest{
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.UpdateSpace(ctx, spaceID, user.ID, &service.UpdateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -522,7 +518,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 		return
 	}
 
-	code, err := h.spaceService.DeleteSpace(spaceID, user.ID, h.docEngine, c.Request.Context())
+	code, err := h.spaceService.DeleteSpace(c.Request.Context(), spaceID, user.ID, h.docEngine)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -559,7 +555,8 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.spaceService.GetSpaceByFolderID(folderID, user.ID)
+	ctx := c.Request.Context()
+	result, code, err := h.spaceService.GetSpaceByFolderID(ctx, folderID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

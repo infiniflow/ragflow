@@ -26,6 +26,7 @@ import (
 
 func TestWencai_InvokeMatchesCurrentPythonResult(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
@@ -39,7 +40,7 @@ func TestWencai_InvokeMatchesCurrentPythonResult(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			out, err := NewWencaiTool().InvokableRun(context.Background(), tc.args)
+			out, err := NewWencaiTool().InvokableRun(ctx, tc.args)
 			if err != nil {
 				t.Fatalf("InvokableRun errored: %v (out=%s)", err, out)
 			}
@@ -59,8 +60,9 @@ func TestWencai_InvokeMatchesCurrentPythonResult(t *testing.T) {
 
 func TestWencai_RejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	out, err := NewWencaiTool().InvokableRun(context.Background(), `{not json`)
+	out, err := NewWencaiTool().InvokableRun(ctx, `{not json`)
 	if err == nil {
 		t.Fatal("expected malformed JSON error")
 	}
@@ -78,8 +80,9 @@ func TestWencai_RejectsMalformedJSON(t *testing.T) {
 
 func TestWencai_RespectsCanceledContext(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 	out, err := NewWencaiTool().InvokableRun(ctx, `{"query":"商业航天"}`)
 	if !errors.Is(err, context.Canceled) {
@@ -96,8 +99,9 @@ func TestWencai_RespectsCanceledContext(t *testing.T) {
 
 func TestWencai_InfoMatchesPythonMeta(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
-	info, err := NewWencaiTool().Info(context.Background())
+	info, err := NewWencaiTool().Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

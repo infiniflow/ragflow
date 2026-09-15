@@ -21,11 +21,15 @@ import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
+import SofyaForm from '../form/sofya-form';
+import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
+import QueritContentsForm from '../form/querit-contents-form';
+import QueritForm from '../form/querit-form';
 import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -44,6 +48,7 @@ import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
+import type { INextOperatorForm } from '../interface';
 
 export const FormConfigMap = {
   [Operator.Begin]: {
@@ -75,6 +80,12 @@ export const FormConfigMap = {
   },
   [Operator.KeenableSearch]: {
     component: KeenableForm,
+  },
+  [Operator.YouComSearch]: {
+    component: YouComForm,
+  },
+  [Operator.SofyaSearch]: {
+    component: SofyaForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
@@ -145,6 +156,12 @@ export const FormConfigMap = {
   [Operator.TavilySearch]: {
     component: TavilyForm,
   },
+  [Operator.QueritContents]: {
+    component: QueritContentsForm,
+  },
+  [Operator.QueritSearch]: {
+    component: QueritForm,
+  },
   [Operator.UserFillUp]: {
     component: UserFillUpForm,
   },
@@ -167,6 +184,11 @@ export const FormConfigMap = {
   [Operator.Tokenizer]: {
     component: TokenizerForm,
   },
+  [Operator.GeneralChunker]: {
+    component: (props: INextOperatorForm) => (
+      <TokenChunkerForm {...props} isGeneralChunker />
+    ),
+  },
   [Operator.TokenChunker]: {
     component: TokenChunkerForm,
   },
@@ -176,7 +198,7 @@ export const FormConfigMap = {
   [Operator.Extractor]: {
     component: ExtractorForm,
   },
-  [Operator.Compilation]: {
+  [Operator.Compiler]: {
     component: CompilationForm,
   },
   [Operator.DataOperations]: {

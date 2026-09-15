@@ -35,7 +35,7 @@ from common.float_utils import get_float
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
-        if not binary:
+        if binary is None:
             wb = load_workbook(fnm)
         else:
             wb = load_workbook(BytesIO(binary))
@@ -50,7 +50,8 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value:
+                    # A 0, 0.0, or False answer is falsy but is real content.
+                    if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
                         q = str(cell.value)
@@ -74,7 +75,7 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
         start = timer()
@@ -177,7 +178,7 @@ class Docx(DocxParser):
         pass
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -229,6 +230,8 @@ class Docx(DocxParser):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
+                        else:
+                            break
                     i += 1
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
@@ -353,12 +356,16 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         fails = []
         question, answer = "", ""
         res = []
-        reader = csv.reader(lines, delimiter=delimiter)
+        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
+        prev_line_num = 0
 
+        # line_num tracks the physical span when quoted fields cross lines.
         for i, row in enumerate(reader):
+            raw = "\n".join(lines[prev_line_num : reader.line_num])
+            prev_line_num = reader.line_num
             if len(row) != 2:
                 if question:
-                    answer += "\n" + lines[i]
+                    answer += "\n" + raw
                 else:
                     fails.append(str(i + 1))
             elif len(row) == 2:
@@ -377,7 +384,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        qai_list, tbls = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
@@ -419,8 +426,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        qai_list, tbls = docx_parser(filename, binary,
-                                     from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
+        qai_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         res = tokenize_table(tbls, doc, eng, language=lang)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))

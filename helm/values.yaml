@@ -77,7 +77,7 @@ env:
 ragflow:
   image:
     repository: infiniflow/ragflow
-    tag: v0.26.4
+    tag: v0.27.2
     pullPolicy: IfNotPresent
     pullSecrets: []
   # Optional service configuration overrides
@@ -124,7 +124,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.7.0
+    tag: v0.7.3-x64-v3
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -193,8 +193,8 @@ opensearch:
 minio:
   enabled: true
   image:
-    repository: pgsty/minio
-    tag: RELEASE.2026-03-25T00-00-00Z
+    repository: pgsty/silo
+    tag: RELEASE.2026-08-06T00-00-00Z
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -210,7 +210,7 @@ mysql:
   enabled: true
   image:
     repository: mysql
-    tag: 8.0.39
+    tag: 8.0.40
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -222,6 +222,12 @@ mysql:
   service:
     type: ClusterIP
 
+# NOTE: The docker-compose deployment migrated from Valkey 8 to
+# apache/kvrocks:2.16.0 (see docker/kvrocks-entrypoint.sh). This Helm/Kubernetes
+# path is intentionally LEFT on Valkey: the template invokes `redis-server`
+# directly with Valkey-specific flags (helm/templates/redis.yaml), which Kvrocks
+# rejects. A Kvrocks-on-K8s migration is a separate workstream and must rewrite
+# the redis template, not just swap this image.
 redis:
   enabled: true
   image:

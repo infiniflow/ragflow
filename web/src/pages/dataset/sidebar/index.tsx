@@ -53,7 +53,7 @@ export function SideBar({ dataset: data }: PropType) {
       },
       {
         icon: <LucideBookText className="size-[1em]" />,
-        label: t(`knowledgeDetails.compilation`),
+        label: 'Artifacts',
         key: Routes.Compilation,
       },
     ];

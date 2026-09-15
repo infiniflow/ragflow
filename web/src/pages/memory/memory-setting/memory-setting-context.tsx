@@ -20,7 +20,7 @@ export const MemorySettingProvider: React.FC<{
   );
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
+// oxlint-disable-next-line react-refresh/only-export-components
 export const useMemorySettingContext = (): MemorySettingContextType => {
   const context = useContext(MemorySettingContext);
   if (context === undefined) {

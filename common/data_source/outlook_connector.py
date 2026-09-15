@@ -120,6 +120,20 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         self._access_token: str | None = None
         self._tenant_id: str | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "OutlookConnector":
+        user_ids = config.get("user_ids")
+        if isinstance(user_ids, str):
+            user_ids = [item.strip() for item in user_ids.split(",") if item.strip()]
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            batch_size=batch_size,
+            folder=config.get("folder") or _DEFAULT_FOLDER,
+            user_ids=user_ids,
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------

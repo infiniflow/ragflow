@@ -24,12 +24,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ProviderHandler provider handler
+// ModelHandler ProviderHandler provider handler
 type ModelHandler struct {
 	modelProviderService *service.ModelProviderService
 }
 
-// NewProviderHandler create provider handler
+// NewModelHandler NewProviderHandler create provider handler
 func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelHandler {
 	return &ModelHandler{
 		modelProviderService: modelProviderService,

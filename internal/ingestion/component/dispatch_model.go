@@ -20,13 +20,16 @@
 package component
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -37,9 +40,32 @@ type tenantModelExtra struct {
 
 var resolveTenantModelByType = defaultResolveTenantModelByType
 
-func defaultResolveTenantModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+// resolveModelConfig resolves a specific model reference (tenant-model ID or
+// "name@instance@provider" composite) to a driver. Exposed as a package var so
+// per-call model-selection tests can inject a fake without a live MySQL.
+var resolveModelConfig = defaultResolveModelConfig
+
+// configuredMediaModelID extracts a per-call model reference from a parser setup.
+// Image parsing stores the VLM model reference in parse_method when it is not
+// "ocr" (mirroring Python rag/flow/parser/parser.py:_image). Other media
+// families use vlm.llm_id, matching the frontend parser form.
+func configuredMediaModelID(setup schema.ParserSetup, family string) string {
+	if family == "image" {
+		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
+			return ref
+		}
+	}
+	if vlm, ok := setup["vlm"].(map[string]any); ok {
+		if ref, _ := vlm["llm_id"].(string); ref != "" {
+			return ref
+		}
+	}
+	return getStringOr(setup, "llm_id", "")
+}
+
+func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	tenantDAO := dao.NewTenantDAO()
-	tenant, err := tenantDAO.GetByID(tenantID)
+	tenant, err := tenantDAO.GetByID(ctx, db, tenantID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -66,12 +92,69 @@ func defaultResolveTenantModelByType(tenantID string, modelType entity.ModelType
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
-		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(tenantID, modelType, tenantModelID)
+		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
 			return driver, modelName, apiConfig, maxTokens, nil
 		}
 	}
-	return resolveModelConfig(tenantID, modelType, modelID)
+	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
+}
+
+// resolveTenantOCRModelByProvider resolves the tenant's first active OCR
+// model under the named provider (e.g. "PaddleOCR"), mirroring Python's
+// get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR).
+// It walks provider -> instances -> models and returns the first model whose
+// model_type includes the OCR bit, resolved through resolveModelConfigByID.
+var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
+
+func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	providerDAO := dao.NewTenantModelProviderDAO()
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	if err != nil {
+		// Some OCR providers are registered under sibling names: the cloud
+		// "PaddleOCR" provider and the local "PaddleOCR.local" provider expose
+		// the same OCR capability. Tolerate the alternate spelling before
+		// giving up so a tenant configured with either name resolves.
+		for _, alias := range paddleOCRProviderAliases() {
+			if alias == providerName {
+				continue
+			}
+			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
+				provider, err = p, nil
+				break
+			}
+		}
+		if err != nil {
+			return nil, "", nil, 0, fmt.Errorf("tenant %s has no %s provider: %w", tenantID, providerName, err)
+		}
+	}
+	instanceDAO := dao.NewTenantModelInstanceDAO()
+	instances, err := instanceDAO.GetAllInstancesByProviderID(ctx, db, provider.ID)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	modelDAO := dao.NewTenantModelDAO()
+	for _, instance := range instances {
+		models, err := modelDAO.GetModelsByInstanceID(ctx, db, instance.ID)
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		for _, model := range models {
+			if model.Status != "active" || !entity.ModelType(model.ModelType).Has(entity.ModelTypeOCR) {
+				continue
+			}
+			return resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, model.ID)
+		}
+	}
+	return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
+}
+
+// paddleOCRProviderAliases returns the registered provider names that expose
+// PaddleOCR OCR models: the cloud "PaddleOCR" provider and the local
+// "PaddleOCR.local" provider. Both carry OCR-typed models and route through
+// the PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
+func paddleOCRProviderAliases() []string {
+	return []string{"PaddleOCR", "PaddleOCR.local"}
 }
 
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
@@ -105,22 +188,22 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func resolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
-	if _, err := modelDAO.GetByID(modelRef); err == nil {
-		return resolveModelConfigByID(tenantID, modelType, modelRef)
+	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
+		return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
 	} else if !errorsIsRecordNotFound(err) {
 		return nil, "", nil, 0, err
 	}
-	return resolveModelConfigFromProviderInstance(tenantID, modelType, modelRef)
+	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
 }
 
-func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	providerDAO := dao.NewTenantModelProviderDAO()
 
-	modelObj, err := modelDAO.GetByID(modelID)
+	modelObj, err := modelDAO.GetByID(ctx, db, modelID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -130,11 +213,11 @@ func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID
 	if !entity.ModelType(modelObj.ModelType).Has(modelType) {
 		return nil, "", nil, 0, fmt.Errorf("model %q cannot be used as %s model", modelID, modelType.String())
 	}
-	instance, err := instanceDAO.GetByID(modelObj.InstanceID)
+	instance, err := instanceDAO.GetByID(ctx, db, modelObj.InstanceID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
-	provider, err := providerDAO.GetByID(modelObj.ProviderID)
+	provider, err := providerDAO.GetByID(ctx, db, modelObj.ProviderID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -157,8 +240,8 @@ func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID
 		return nil, "", nil, 0, err
 	}
 	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxTokens != nil {
-		maxTokens = *mi.MaxTokens
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxOutput != nil {
+		maxTokens = *mi.MaxOutput
 	}
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
@@ -173,7 +256,7 @@ func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID
 	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 }
 
-func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
 	if err != nil {
 		return nil, "", nil, 0, err
@@ -183,11 +266,11 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
-	instance, err := instanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
 	}
@@ -199,7 +282,7 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	baseURL := extra["base_url"]
 
 	modelObj, modelErr := modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, int(modelType), pureModelName,
+		ctx, db, provider.ID, instance.ID, int(modelType), pureModelName,
 	)
 	switch {
 	case modelErr == nil:
@@ -215,8 +298,8 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 			return nil, "", nil, 0, err
 		}
 		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxOutput != nil {
+			maxTokens = *mi.MaxOutput
 		}
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
@@ -257,8 +340,8 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
+	if llmInfo.MaxOutput != nil {
+		maxTokens = *llmInfo.MaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -296,5 +379,5 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 }
 
 func errorsIsRecordNotFound(err error) bool {
-	return err != nil && (err == gorm.ErrRecordNotFound || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
 }

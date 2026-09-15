@@ -33,6 +33,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // Component is the minimal interface the canvas builder needs at
@@ -40,7 +42,7 @@ import (
 // Component type has more methods (Name / Stream / Inputs / Outputs);
 // it satisfies this smaller interface by Go's structural typing.
 type Component interface {
-	Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error)
+	Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error)
 }
 
 // ComponentFactory builds a Component from a DSL name + params map.
@@ -61,6 +63,17 @@ type ComponentFactory func(name string, params map[string]any) (Component, error
 // errors.Is(err, ErrNotImplemented) instead of substring matching —
 // the message is for humans, the sentinel is for code.
 var ErrNotImplemented = fmt.Errorf("component: not yet implemented (placeholder)")
+
+// UserFacingError marks a validated request failure whose message is safe to
+// return directly to the Agent client without canvas execution prefixes.
+type UserFacingError struct{ Err error }
+
+func (e *UserFacingError) Error() string { return e.Err.Error() }
+func (e *UserFacingError) Unwrap() error { return e.Err }
+
+func NewUserFacingError(message string) error {
+	return &UserFacingError{Err: fmt.Errorf("%s", message)}
+}
 
 // ParamError wraps a parameter validation failure with the field name
 // for clearer error messages to the user.

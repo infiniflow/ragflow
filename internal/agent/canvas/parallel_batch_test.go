@@ -50,7 +50,7 @@ func TestBuildWorkflow_ParallelBatchStructure(t *testing.T) {
 		Path: []string{"begin", "a", "b", "final"},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	type compileResult struct {

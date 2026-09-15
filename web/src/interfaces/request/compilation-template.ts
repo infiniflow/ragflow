@@ -13,17 +13,22 @@ export interface ICompilationTemplateSectionRequest {
 export interface ICompilationTemplateRaptorConfigRequest {
   prompt?: string;
   max_token?: number;
-  threshold?: number;
+  clustering_threshold?: number;
+  clustering_ratio?: number;
   rechunk?: boolean;
+  claim_prompt?: string;
 }
 
 export interface ICompilationTemplateConfigRequest {
   kind?: string;
   llm_id?: string;
+  mode?: 'entity' | 'topic';
   entity?: ICompilationTemplateSectionRequest;
   relation?: ICompilationTemplateSectionRequest;
   raptor?: ICompilationTemplateRaptorConfigRequest;
   global_rules?: string;
+  rechunk?: boolean;
+  rechunk_rules?: string;
   [section: string]:
     | ICompilationTemplateSectionRequest
     | ICompilationTemplateRaptorConfigRequest

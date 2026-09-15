@@ -98,7 +98,7 @@ func (c *SkillUninstallCommand) uninstallSkill(ctx stdctx.Context, spaceID, skil
 	fmt.Println()
 
 	if indexErr != nil && folderErr != nil {
-		return fmt.Errorf("failed to completely uninstall skill '%s': index deletion failed (%v), folder deletion failed (%v)",
+		return fmt.Errorf("failed to completely uninstall skill '%s': index deletion failed (%w), folder deletion failed (%w)",
 			skillName, indexErr, folderErr)
 	}
 	if indexErr != nil {

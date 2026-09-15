@@ -17,6 +17,9 @@
 package dao
 
 import (
+	"context"
+	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
 
@@ -31,15 +34,15 @@ func NewDocumentDAO() *DocumentDAO {
 	return &DocumentDAO{}
 }
 
-// Create create document
-func (dao *DocumentDAO) Create(document *entity.Document) error {
-	return DB.Create(document).Error
+// Create document
+func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entity.Document) error {
+	return db.WithContext(ctx).Create(document).Error
 }
 
 // GetByID get document by ID
-func (dao *DocumentDAO) GetByID(id string) (*entity.Document, error) {
+func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
-	err := DB.First(&document, "id = ?", id).Error
+	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -47,11 +50,11 @@ func (dao *DocumentDAO) GetByID(id string) (*entity.Document, error) {
 }
 
 // GetByAuthorID get documents by author ID
-func (dao *DocumentDAO) GetByAuthorID(authorID string, offset, limit int) ([]*entity.Document, int64, error) {
+func (dao *DocumentDAO) GetByAuthorID(ctx context.Context, db *gorm.DB, authorID string, offset, limit int) ([]*entity.Document, int64, error) {
 	var documents []*entity.Document
 	var total int64
 
-	query := DB.Model(&entity.Document{}).Where("created_by = ?", authorID)
+	query := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", authorID)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -61,18 +64,18 @@ func (dao *DocumentDAO) GetByAuthorID(authorID string, offset, limit int) ([]*en
 }
 
 // Update update document
-func (dao *DocumentDAO) Update(document *entity.Document) error {
-	return DB.Save(document).Error
+func (dao *DocumentDAO) Update(ctx context.Context, db *gorm.DB, document *entity.Document) error {
+	return db.WithContext(ctx).Save(document).Error
 }
 
 // UpdateByID updates document by ID with the given fields
-func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
+func (dao *DocumentDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // IncrementCounts atomically increments chunk_num, token_num, and process_duration for a document
-func (dao *DocumentDAO) IncrementCounts(id string, kbID string, chunkNum int64, tokenNum int64, duration float64) error {
-	return DB.Model(&entity.Document{}).
+func (dao *DocumentDAO) IncrementCounts(ctx context.Context, db *gorm.DB, id string, kbID string, chunkNum int64, tokenNum int64, duration float64) error {
+	return db.WithContext(ctx).Model(&entity.Document{}).
 		Where("id = ? AND kb_id = ?", id, kbID).
 		Updates(map[string]interface{}{
 			"chunk_num":        gorm.Expr("chunk_num + ?", chunkNum),
@@ -82,21 +85,21 @@ func (dao *DocumentDAO) IncrementCounts(id string, kbID string, chunkNum int64, 
 }
 
 // Delete hard-deletes document by ID. Returns rows affected.
-func (dao *DocumentDAO) Delete(id string) (int64, error) {
-	result := DB.Where("id = ?", id).Delete(&entity.Document{})
+func (dao *DocumentDAO) Delete(ctx context.Context, db *gorm.DB, id string) (int64, error) {
+	result := db.WithContext(ctx).Where("id = ?", id).Delete(&entity.Document{})
 	return result.RowsAffected, result.Error
 }
 
-// List list documents
-func (dao *DocumentDAO) List(offset, limit int) ([]*entity.Document, int64, error) {
+// List documents
+func (dao *DocumentDAO) List(ctx context.Context, db *gorm.DB, offset, limit int) ([]*entity.Document, int64, error) {
 	var documents []*entity.Document
 	var total int64
 
-	if err := DB.Model(&entity.Document{}).Count(&total).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&entity.Document{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	err := DB.Preload("Author").Offset(offset).Limit(limit).Find(&documents).Error
+	err := db.WithContext(ctx).Preload("Author").Offset(offset).Limit(limit).Find(&documents).Error
 	return documents, total, err
 }
 
@@ -119,8 +122,8 @@ type DocumentListOptions struct {
 }
 
 // ListByKBID list documents by knowledge base ID
-func (dao *DocumentDAO) ListByKBID(kbID, keywords string, offset, limit int) ([]*entity.DocumentListItem, int64, error) {
-	return dao.ListByKBIDWithOptions(DocumentListOptions{
+func (dao *DocumentDAO) ListByKBID(ctx context.Context, db *gorm.DB, kbID, keywords string, offset, limit int) ([]*entity.DocumentListItem, int64, error) {
+	return dao.ListByKBIDWithOptions(ctx, db, DocumentListOptions{
 		KbID:     kbID,
 		Keywords: keywords,
 		OrderBy:  "create_time",
@@ -130,20 +133,45 @@ func (dao *DocumentDAO) ListByKBID(kbID, keywords string, offset, limit int) ([]
 	})
 }
 
+const latestIngestionTaskJoin = `LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id
+	AND NOT EXISTS (
+		SELECT 1
+		FROM ingestion_task newer_ingestion_task
+		WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+		  AND (
+			COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+			OR (
+				COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+				AND newer_ingestion_task.id > ingestion_task.id
+			)
+		  )
+	)`
+
 // ListByKBIDWithOptions lists documents by knowledge base ID with filters.
-func (dao *DocumentDAO) ListByKBIDWithOptions(opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
+func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
 	var documents []*entity.DocumentListItem
 	var total int64
 
-	listQuery := DB.Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname`).
+	// Historical retries can leave multiple ingestion tasks per document. Keep
+	// only the newest row, with ID as a deterministic tie-breaker for equal
+	// create times. This ordering must match IngestionTaskDAO's task lookups.
+	listQuery := db.WithContext(ctx).Table("document").
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
-		Joins("LEFT JOIN user ON document.created_by = user.id")
+		Joins("LEFT JOIN user ON document.created_by = user.id").
+		Joins(latestIngestionTaskJoin)
+
+	countQuery := db.WithContext(ctx).Table("document").
+		Joins("JOIN file2document ON file2document.document_id = document.id").
+		Joins("JOIN file ON file.id = file2document.file_id")
+	if len(opts.RunStatuses) > 0 {
+		countQuery = countQuery.Joins(latestIngestionTaskJoin)
+	}
 
 	listQuery = applyDocumentListFilters(listQuery, opts, true)
-	countQuery := applyDocumentListFilters(DB.Model(&entity.Document{}), opts, false)
+	countQuery = applyDocumentListFilters(countQuery, opts, true)
 
 	if err := countQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -165,17 +193,18 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(opts DocumentListOptions) ([]*enti
 }
 
 // GetFilterByKBID returns aggregate filter counts for documents in a dataset.
-func (dao *DocumentDAO) GetFilterByKBID(opts DocumentListOptions) (map[string]interface{}, int64, error) {
+func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts DocumentListOptions) (map[string]interface{}, int64, error) {
 	var rows []struct {
-		ID     string  `gorm:"column:id"`
-		Run    *string `gorm:"column:run"`
-		Suffix string  `gorm:"column:suffix"`
+		ID              string  `gorm:"column:id"`
+		IngestionStatus *string `gorm:"column:ingestion_status"`
+		Suffix          string  `gorm:"column:suffix"`
 	}
 
-	query := DB.Table("document").
-		Select("document.id, document.run, document.suffix").
+	query := db.WithContext(ctx).Table("document").
+		Select("document.id, ingestion_task.status as ingestion_status, document.suffix").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
-		Joins("JOIN file ON file.id = file2document.file_id")
+		Joins("JOIN file ON file.id = file2document.file_id").
+		Joins(latestIngestionTaskJoin)
 	query = applyDocumentListFilters(query, opts, true)
 
 	if err := query.Scan(&rows).Error; err != nil {
@@ -183,30 +212,35 @@ func (dao *DocumentDAO) GetFilterByKBID(opts DocumentListOptions) (map[string]in
 	}
 
 	suffixCounter := map[string]int64{}
-	runStatusCounter := map[string]int64{}
+	statusCounter := map[string]int64{}
 	for _, row := range rows {
 		if row.Suffix != "" {
 			suffixCounter[row.Suffix]++
 		}
-		if row.Run != nil {
-			runStatusCounter[*row.Run]++
+		status := "UNSTART"
+		if row.IngestionStatus != nil && *row.IngestionStatus != "" {
+			status = *row.IngestionStatus
 		}
+		statusCounter[status]++
 	}
 
 	return map[string]interface{}{
-		"suffix":     suffixCounter,
-		"run_status": runStatusCounter,
-		"metadata":   map[string]interface{}{},
+		"suffix":           suffixCounter,
+		"ingestion_status": statusCounter,
+		"metadata":         map[string]interface{}{},
 	}, int64(len(rows)), nil
 }
 
 // ListIDsByKBIDWithOptions lists matching document IDs without pagination.
-func (dao *DocumentDAO) ListIDsByKBIDWithOptions(opts DocumentListOptions) ([]string, error) {
+func (dao *DocumentDAO) ListIDsByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]string, error) {
 	var ids []string
-	query := DB.Table("document").
+	query := db.WithContext(ctx).Table("document").
 		Select("document.id").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id")
+	if len(opts.RunStatuses) > 0 {
+		query = query.Joins(latestIngestionTaskJoin)
+	}
 	query = applyDocumentListFilters(query, opts, true)
 	if err := query.Scan(&ids).Error; err != nil {
 		return nil, err
@@ -227,7 +261,22 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}
 	if len(opts.RunStatuses) > 0 {
-		query = query.Where(column("run")+" IN ?", opts.RunStatuses)
+		hasUnstart := false
+		otherStatuses := make([]string, 0, len(opts.RunStatuses))
+		for _, s := range opts.RunStatuses {
+			if strings.EqualFold(s, "UNSTART") {
+				hasUnstart = true
+			} else {
+				otherStatuses = append(otherStatuses, s)
+			}
+		}
+		if hasUnstart && len(otherStatuses) > 0 {
+			query = query.Where("(ingestion_task.status IN ? OR ingestion_task.id IS NULL OR ingestion_task.status = ?)", otherStatuses, "UNSTART")
+		} else if hasUnstart {
+			query = query.Where("(ingestion_task.id IS NULL OR ingestion_task.status = ?)", "UNSTART")
+		} else {
+			query = query.Where("ingestion_task.status IN ?", otherStatuses)
+		}
 	}
 	if len(opts.Types) > 0 {
 		query = query.Where(column("type")+" IN ?", opts.Types)
@@ -245,12 +294,9 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 			query = query.Where(column("id")+" IN ?", opts.DocIDs)
 		}
 	}
-	if opts.CreateTimeFrom > 0 {
-		query = query.Where(column("create_time")+" >= ?", opts.CreateTimeFrom)
-	}
-	if opts.CreateTimeTo > 0 {
-		query = query.Where(column("create_time")+" <= ?", opts.CreateTimeTo)
-	}
+	// Note: create_time_from / create_time_to are NOT applied at DB level.
+	// They are filtered post-query in the handler so total reflects the
+	// unfiltered count, matching the Python API contract.
 	return query
 }
 
@@ -264,19 +310,19 @@ func documentListOrderColumn(orderBy string) string {
 		return "document.size"
 	case "type":
 		return "document.type"
-	case "run":
-		return "document.run"
+	case "run", "ingestion_status":
+		return "COALESCE(ingestion_task.status, 'UNSTART')"
 	default:
 		return "document.create_time"
 	}
 }
 
 // GetByKBID retrieves all documents in a knowledge base ordered by create time.
-func (dao *DocumentDAO) GetByKBID(kbID string) ([]*entity.Document, int64, error) {
+func (dao *DocumentDAO) GetByKBID(ctx context.Context, db *gorm.DB, kbID string) ([]*entity.Document, int64, error) {
 	var documents []*entity.Document
 	var total int64
 
-	query := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID)
+	query := db.WithContext(ctx).Model(&entity.Document{}).Where("kb_id = ?", kbID)
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -287,7 +333,7 @@ func (dao *DocumentDAO) GetByKBID(kbID string) ([]*entity.Document, int64, error
 
 // GetChunkingConfig returns the document, dataset, and tenant fields used to
 // build a parsing task digest, mirroring DocumentService.get_chunking_config.
-func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{}, error) {
+func (dao *DocumentDAO) GetChunkingConfig(ctx context.Context, db *gorm.DB, docID string) (map[string]interface{}, error) {
 	var row struct {
 		ID           string         `gorm:"column:id"`
 		KbID         string         `gorm:"column:kb_id"`
@@ -303,7 +349,7 @@ func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{},
 		LLMID        string         `gorm:"column:llm_id"`
 	}
 
-	err := DB.Table("document").
+	err := db.WithContext(ctx).Table("document").
 		Select(`
 			document.id,
 			document.kb_id,
@@ -352,18 +398,18 @@ func (dao *DocumentDAO) GetChunkingConfig(docID string) (map[string]interface{},
 }
 
 // DeleteByTenantID deletes all documents by tenant ID (hard delete)
-func (dao *DocumentDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
+func (dao *DocumentDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
 	return result.RowsAffected, result.Error
 }
 
 // GetAllDocIDsByKBIDs gets all document IDs by knowledge base IDs
-func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string, error) {
+func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) ([]map[string]string, error) {
 	var docs []struct {
 		ID   string `gorm:"column:id"`
 		KbID string `gorm:"column:kb_id"`
 	}
-	err := DB.Model(&entity.Document{}).Select("id, kb_id").Where("kb_id IN ?", kbIDs).Find(&docs).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).Select("id, kb_id").Where("kb_id IN ?", kbIDs).Find(&docs).Error
 	if err != nil {
 		return nil, err
 	}
@@ -376,12 +422,12 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 }
 
 // GetByIDs retrieves documents by multiple IDs
-func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	var documents []*entity.Document
-	err := DB.Where("id IN ?", ids).Find(&documents).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}
@@ -389,12 +435,12 @@ func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
 }
 
 // GetByIDsAndTenantIDs retrieves documents by IDs scoped to knowledgebase owners.
-func (dao *DocumentDAO) GetByIDsAndTenantIDs(ids, tenantIDs []string) ([]*entity.Document, error) {
+func (dao *DocumentDAO) GetByIDsAndTenantIDs(ctx context.Context, db *gorm.DB, ids, tenantIDs []string) ([]*entity.Document, error) {
 	if len(ids) == 0 || len(tenantIDs) == 0 {
 		return nil, nil
 	}
 	var documents []*entity.Document
-	err := DB.Model(&entity.Document{}).
+	err := db.WithContext(ctx).Model(&entity.Document{}).
 		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
 		Where("document.id IN ? AND knowledgebase.tenant_id IN ? AND knowledgebase.status = ?", ids, tenantIDs, string(entity.StatusValid)).
 		Find(&documents).Error
@@ -405,23 +451,23 @@ func (dao *DocumentDAO) GetByIDsAndTenantIDs(ids, tenantIDs []string) ([]*entity
 }
 
 // GetByDocumentIDAndDatasetID retrieves a document by document ID and dataset/KB ID.
-func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(documentID, datasetID string) (*entity.Document, error) {
+func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gorm.DB, documentID, datasetID string) (*entity.Document, error) {
 	var document entity.Document
-	err := DB.Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
+	err := db.WithContext(ctx).Where("id = ? AND kb_id = ?", documentID, datasetID).First(&document).Error
 	return &document, err
 }
 
 // CountByTenantID counts documents by tenant ID
-func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
+func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
-	err := DB.Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
 	return count, err
 }
 
 // SumSizeByDatasetID returns the total document size for a dataset.
-func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
+func (dao *DocumentDAO) SumSizeByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
 	var total int64
-	err := DB.Model(&entity.Document{}).
+	err := db.WithContext(ctx).Model(&entity.Document{}).
 		Select("COALESCE(SUM(size), 0)").
 		Where("kb_id = ?", datasetID).
 		Scan(&total).Error
@@ -430,7 +476,7 @@ func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
 
 // GetParsingStatusByKBID aggregates document parsing status counts for a
 // dataset, mirroring DocumentService.get_parsing_status_by_kb_ids in Python.
-func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, error) {
+func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB, kbID string) (map[string]int64, error) {
 	result := map[string]int64{
 		"unstart_count": 0,
 		"running_count": 0,
@@ -440,47 +486,53 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, e
 	}
 
 	var rows []struct {
-		Run *string `gorm:"column:run"`
-		Cnt int64   `gorm:"column:cnt"`
+		Status *string `gorm:"column:status"`
+		Cnt    int64   `gorm:"column:cnt"`
 	}
-	err := DB.Model(&entity.Document{}).
-		Select("run, COUNT(id) as cnt").
-		Where("kb_id = ?", kbID).
-		Group("run").
+	err := db.WithContext(ctx).Table("document").
+		Select("ingestion_task.status, COUNT(document.id) as cnt").
+		Joins(latestIngestionTaskJoin).
+		Where("document.kb_id = ?", kbID).
+		Group("ingestion_task.status").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 
-	statusFieldMap := map[string]string{
-		string(entity.TaskStatusUnstart): "unstart_count",
-		string(entity.TaskStatusRunning): "running_count",
-		string(entity.TaskStatusCancel):  "cancel_count",
-		string(entity.TaskStatusDone):    "done_count",
-		string(entity.TaskStatusFail):    "fail_count",
-	}
 	for _, row := range rows {
-		if row.Run == nil {
+		if row.Status == nil || *row.Status == "" {
+			result["unstart_count"] += row.Cnt
 			continue
 		}
-		if field, ok := statusFieldMap[*row.Run]; ok {
-			result[field] = row.Cnt
+		switch *row.Status {
+		case common.CREATED, common.SCHEDULED:
+			result["unstart_count"] += row.Cnt
+		case common.RUNNING, common.STOPPING:
+			result["running_count"] += row.Cnt
+		case common.STOPPED:
+			result["cancel_count"] += row.Cnt
+		case common.COMPLETED:
+			result["done_count"] += row.Cnt
+		case common.FAILED:
+			result["fail_count"] += row.Cnt
+		default:
+			common.Warn(fmt.Sprintf("GetParsingStatusByKBID: unrecognized task status %q for dataset %s (count: %d)", *row.Status, kbID, row.Cnt))
 		}
 	}
 	return result, nil
 }
 
-func (dao *DocumentDAO) GetByNameAndKBID(name, kbID string) ([]*entity.Document, error) {
+func (dao *DocumentDAO) GetByNameAndKBID(ctx context.Context, db *gorm.DB, name, kbID string) ([]*entity.Document, error) {
 	var docs []*entity.Document
-	err := DB.Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
+	err := db.WithContext(ctx).Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
 	return docs, err
 }
 
 // ListNamesByKbID returns every document name in a dataset, used to compute a
 // non-colliding upload filename (mirrors Python duplicate_name).
-func (dao *DocumentDAO) ListNamesByKbID(kbID string) ([]string, error) {
+func (dao *DocumentDAO) ListNamesByKbID(ctx context.Context, db *gorm.DB, kbID string) ([]string, error) {
 	var names []string
-	err := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
 	if err != nil {
 		return nil, err
 	}

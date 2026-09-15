@@ -53,13 +53,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	// SQL drivers — registered via their init() side effects.
 	_ "github.com/denisenkom/go-mssqldb"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -347,7 +346,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 		defer cancel()
 	}
 
-	if err := db.PingContext(ctx); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		return exesqlErrorResult(fmt.Errorf("exesql: ping: %w", err)),
 			fmt.Errorf("exesql: ping: %w", err)
 	}

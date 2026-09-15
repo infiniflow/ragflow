@@ -63,18 +63,19 @@ func TestGetByDocID_FindsTasks(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	dao := NewTaskDAO()
+	ctx := t.Context()
 
 	// Insert tasks for two different documents
 	task1 := &entity.Task{ID: "task-1", DocID: "doc-1"}
 	task2 := &entity.Task{ID: "task-2", DocID: "doc-1"}
 	task3 := &entity.Task{ID: "task-3", DocID: "doc-2"}
 	for _, tk := range []*entity.Task{task1, task2, task3} {
-		if err := dao.Create(tk); err != nil {
+		if err := dao.Create(ctx, db, tk); err != nil {
 			t.Fatalf("failed to create task: %v", err)
 		}
 	}
 
-	tasks, err := dao.GetByDocID("doc-1")
+	tasks, err := dao.GetByDocID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("GetByDocID failed: %v", err)
 	}
@@ -99,8 +100,9 @@ func TestGetByDocID_NoTasks(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	dao := NewTaskDAO()
+	ctx := t.Context()
 
-	tasks, err := dao.GetByDocID("nonexistent")
+	tasks, err := dao.GetByDocID(ctx, db, "nonexistent")
 	if err != nil {
 		t.Fatalf("GetByDocID failed: %v", err)
 	}
@@ -116,14 +118,15 @@ func TestGetByDocID_EmptyDocID(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	dao := NewTaskDAO()
+	ctx := t.Context()
 
 	// Insert a task with empty doc_id to verify edge case
 	task := &entity.Task{ID: "task-1", DocID: ""}
-	if err := dao.Create(task); err != nil {
+	if err := dao.Create(ctx, db, task); err != nil {
 		t.Fatalf("failed to create task: %v", err)
 	}
 
-	tasks, err := dao.GetByDocID("")
+	tasks, err := dao.GetByDocID(ctx, db, "")
 	if err != nil {
 		t.Fatalf("GetByDocID failed: %v", err)
 	}
@@ -151,9 +154,10 @@ func TestDeleteIngestionTasksByDocIDs_Success(t *testing.T) {
 			t.Fatalf("failed to create ingestion task: %v", err)
 		}
 	}
+	ctx := t.Context()
 
 	// Delete tasks for doc-1
-	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"doc-1"})
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs(ctx, db, []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
 	}
@@ -181,8 +185,9 @@ func TestDeleteIngestionTasksByDocIDs_EmptyIDs(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	dao := NewTaskDAO()
+	ctx := t.Context()
 
-	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{})
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs(ctx, db, []string{})
 	if err != nil {
 		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
 	}
@@ -204,8 +209,9 @@ func TestDeleteIngestionTasksByDocIDs_Nonexistent(t *testing.T) {
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("failed to create ingestion task: %v", err)
 	}
+	ctx := t.Context()
 
-	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"nonexistent"})
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs(ctx, db, []string{"nonexistent"})
 	if err != nil {
 		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
 	}
@@ -234,9 +240,10 @@ func TestDeleteIngestionTasksByDocIDs_MultipleIDs(t *testing.T) {
 			t.Fatalf("failed to create ingestion task: %v", err)
 		}
 	}
+	ctx := t.Context()
 
 	// Delete multiple document IDs
-	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"doc-1", "doc-2", "doc-3"})
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs(ctx, db, []string{"doc-1", "doc-2", "doc-3"})
 	if err != nil {
 		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
 	}
@@ -246,7 +253,7 @@ func TestDeleteIngestionTasksByDocIDs_MultipleIDs(t *testing.T) {
 
 	// Verify only "keep" remains
 	var remaining []*entity.IngestionTask
-	if err := db.Find(&remaining).Error; err != nil {
+	if err = db.Find(&remaining).Error; err != nil {
 		t.Fatalf("failed to find remaining tasks: %v", err)
 	}
 	if len(remaining) != 1 || remaining[0].ID != "itask-4" {

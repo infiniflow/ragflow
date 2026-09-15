@@ -82,6 +82,9 @@ func TestRAGconFactory(t *testing.T) {
 }
 
 func TestRAGconChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s, want /chat/completions", r.URL.Path)
@@ -110,10 +113,11 @@ func TestRAGconChatHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	resp, err := newRAGconForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -130,11 +134,14 @@ func TestRAGconChatHappyPath(t *testing.T) {
 }
 
 func TestRAGconChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key-required error, got %v", err)
@@ -142,12 +149,15 @@ func TestRAGconChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestRAGconChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
@@ -155,6 +165,8 @@ func TestRAGconChatRequiresMessages(t *testing.T) {
 }
 
 func TestRAGconChatSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":"invalid key"}`)
@@ -163,10 +175,11 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newRAGconForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 status error, got %v", err)
@@ -174,6 +187,8 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 }
 
 func TestRAGconStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -195,9 +210,11 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newRAGconForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, r *string) error {
 			if r != nil && *r != "" {
@@ -227,11 +244,15 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 }
 
 func TestRAGconStreamRejectsNilSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	err := newRAGconForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"llama-4-maverick",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		nil,
 	)
@@ -241,6 +262,8 @@ func TestRAGconStreamRejectsNilSender(t *testing.T) {
 }
 
 func TestRAGconEmbed(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/embeddings" {
 			t.Errorf("path=%s, want /embeddings", r.URL.Path)
@@ -256,7 +279,7 @@ func TestRAGconEmbed(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newRAGconForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	embeddings, err := newRAGconForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -266,6 +289,8 @@ func TestRAGconEmbed(t *testing.T) {
 }
 
 func TestRAGconRerank(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/rerank" {
 			t.Errorf("path=%s, want /rerank", r.URL.Path)
@@ -284,7 +309,7 @@ func TestRAGconRerank(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "rerank-v1"
-	resp, err := newRAGconForTest(srv.URL).Rerank(&model, "q", []string{"doc0", "doc1"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2})
+	resp, err := newRAGconForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"doc0", "doc1"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -294,6 +319,8 @@ func TestRAGconRerank(t *testing.T) {
 }
 
 func TestRAGconListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/models" {
 			t.Errorf("path=%s, want /models", r.URL.Path)
@@ -304,19 +331,21 @@ func TestRAGconListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
-	models, err := newRAGconForTest(srv.URL).ListModels(cfg)
+	models, err := newRAGconForTest(srv.URL).ListModels(ctx, cfg)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "llama-4-maverick,gpt-oss-120b" {
 		t.Errorf("models=%v", models)
 	}
-	if err := newRAGconForTest(srv.URL).CheckConnection(cfg); err != nil {
+	if err := newRAGconForTest(srv.URL).CheckConnection(ctx, cfg); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/audio/transcriptions" {
 			t.Errorf("path=%s, want /audio/transcriptions", r.URL.Path)
@@ -350,7 +379,7 @@ func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "whisper-1"
-	resp, err := newRAGconForTest(srv.URL).TranscribeAudio(&model, &audioPath, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newRAGconForTest(srv.URL).TranscribeAudio(ctx, &model, &audioPath, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
 	}
@@ -360,6 +389,8 @@ func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
 }
 
 func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/audio/speech" {
 			t.Errorf("path=%s, want /audio/speech", r.URL.Path)
@@ -374,7 +405,7 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 	apiKey := "test-key"
 	model := "tts-1"
 	text := "hello"
-	resp, err := newRAGconForTest(srv.URL).AudioSpeech(&model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}})
+	resp, err := newRAGconForTest(srv.URL).AudioSpeech(ctx, &model, &text, &APIConfig{ApiKey: &apiKey}, &TTSConfig{Params: map[string]interface{}{"voice": "alloy"}}, nil)
 	if err != nil {
 		t.Fatalf("AudioSpeech: %v", err)
 	}
@@ -384,22 +415,24 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 }
 
 func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	r := newRAGconForTest("http://unused")
 	model := "llama-4-maverick"
 
-	if _, err := r.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := r.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.OCRFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
-	if _, err := r.ParseFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ParseFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: expected no such method, got %v", err)
 	}
-	if _, err := r.ListTasks(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ListTasks(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks: expected no such method, got %v", err)
 	}
-	if _, err := r.ShowTask("t1", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := r.ShowTask(ctx, "t1", &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: expected no such method, got %v", err)
 	}
 }

@@ -18,7 +18,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { RunningStatusMap } from '@/constants/knowledge';
+import {
+  ProcessingType,
+  ProcessingTypeMap,
+  RunningStatusMap,
+} from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
@@ -45,7 +49,7 @@ import { FC, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
-import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
+import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (

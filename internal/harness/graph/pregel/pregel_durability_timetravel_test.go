@@ -4,6 +4,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -30,7 +31,7 @@ func TestDurabilityExit_Basic(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -45,7 +46,7 @@ func TestDurabilityExit_MultiStep(t *testing.T) {
 	cfg := &types.RunnableConfig{Durability: types.DurabilityExit}
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10), WithConfig(cfg))
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestDurabilityExit_NoCheckpointer(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := engine.RunSync(ctx, map[string]any{"value": "hello"})
 	if err != nil {
 		t.Fatalf("RunSync without checkpointer: %v", err)
@@ -87,7 +88,7 @@ func TestTimeTravel_GetState_AfterExecution(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithCheckpointer(ms), WithConfig(cfg))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := engine.RunSync(ctx, map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
@@ -140,7 +141,7 @@ func TestTimeTravel_UpdateState_ThenResume(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := &types.RunnableConfig{
 		Configurable: map[string]interface{}{
 			constants.ConfigKeyThreadID: "tt-update-resume",
@@ -200,7 +201,7 @@ func TestTimeTravel_MultipleUpdates(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	tid := "tt-multi-update"
 
 	// Execute once to create checkpoint.
@@ -262,7 +263,7 @@ func TestDurabilityExit_ConcurrentEngines(t *testing.T) {
 			defer wg.Done()
 			cfg := &types.RunnableConfig{Durability: types.DurabilityExit}
 			engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err != nil {
 				errCount.Add(1)
 			}
@@ -301,7 +302,7 @@ func TestDurabilityExit_InterruptResume(t *testing.T) {
 		WithConfig(cfg),
 		WithInterrupts("process"),
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := engine.RunSync(ctx, map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt error")
@@ -334,7 +335,7 @@ func TestDurabilityExit_LargeState(t *testing.T) {
 	cfg := &types.RunnableConfig{Durability: types.DurabilityExit}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -360,7 +361,7 @@ func TestFaultInjection_DeferredCheckpointFlushRace(t *testing.T) {
 			defer wg.Done()
 			cfg := &types.RunnableConfig{Durability: types.DurabilityExit}
 			engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "race"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "race"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -394,7 +395,7 @@ func TestFaultInjection_CheckpointGetAfterInterrupt(t *testing.T) {
 		WithInterrupts("unsafe"),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt")
 	}
@@ -415,7 +416,7 @@ func TestFaultInjection_NodePanicWithCheckpointer(t *testing.T) {
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error from panicking node")
 	}
@@ -431,7 +432,7 @@ func TestFaultInjection_EngineReuse_WithDurabilityExit(t *testing.T) {
 	for i := 0; i < runs; i++ {
 		cfg := &types.RunnableConfig{Durability: types.DurabilityExit}
 		engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "reuse"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "reuse"})
 		if err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
@@ -452,7 +453,7 @@ func TestFaultInjection_ConcurrentCheckpointConflict(t *testing.T) {
 	for g := 0; g < goroutines; g++ {
 		wg.Go(func() {
 			engine := NewEngine(sg, WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err != nil {
 				t.Errorf("engine error: %v", err)
 			}
@@ -472,10 +473,10 @@ func TestFaultInjection_RapidCancel_Restart(t *testing.T) {
 	engine := NewEngine(sg, WithRecursionLimit(100))
 
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
 		_, err := engine.RunSync(ctx, map[string]any{"value": "cancel"})
 		cancel()
-		if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			t.Logf("iteration %d: %v", i, err)
 		}
 	}
@@ -524,7 +525,7 @@ func TestDurabilityExit_ConfigPropagation(t *testing.T) {
 	for _, d := range []types.Durability{types.DurabilitySync, types.DurabilityExit} {
 		cfg := &types.RunnableConfig{Durability: d}
 		engine := NewEngine(sg, WithRecursionLimit(10), WithConfig(cfg))
-		result, err := engine.RunSync(context.Background(), map[string]any{"value": "test"})
+		result, err := engine.RunSync(t.Context(), map[string]any{"value": "test"})
 		if err != nil {
 			t.Fatalf("durability %s: %v", d, err)
 		}

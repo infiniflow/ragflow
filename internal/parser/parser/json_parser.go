@@ -32,6 +32,7 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -51,7 +52,7 @@ func (p *JSONParser) String() string {
 // ParseWithResult implements ParseResultProducer. It detects the JSON
 // shape (array, single object, or line-delimited) and emits one JSON
 // item per logical record, with {text, doc_type_kwd:"text"}.
-func (p *JSONParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	text := string(bytes.TrimSpace(data))
 	if text == "" {
 		return ParseResult{

@@ -165,6 +165,7 @@ func (c *CLI) executeFilesystemInner(input string) error {
 			Path: searchPath,
 			Params: map[string]interface{}{
 				"query":     searchOpts.Query,
+				"limit":     searchOpts.TopK,
 				"top_k":     searchOpts.TopK,
 				"threshold": searchOpts.Threshold,
 				"dirs":      searchOpts.Dirs,
