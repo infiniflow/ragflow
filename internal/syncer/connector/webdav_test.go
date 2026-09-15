@@ -20,11 +20,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -170,6 +173,82 @@ func webDAVTestConnector(t *testing.T, serverURL string, allowImages bool, batch
 	return connector
 }
 
+func TestNewWebDAVConnectorPreservesDefaultHTTPTransport(t *testing.T) {
+	connector, err := NewWebDAVConnector(map[string]any{})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+	if connector.client.httpClient.Transport != nil {
+		t.Fatalf("HTTP transport = %T, want nil default transport", connector.client.httpClient.Transport)
+	}
+}
+
+func TestNewWebDAVConnectorUsesCustomCACertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	caCertPath := filepath.Join(t.TempDir(), "webdav-ca.pem")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caCertPath, caPEM, 0o600); err != nil {
+		t.Fatalf("write CA certificate: %v", err)
+	}
+
+	connector, err := NewWebDAVConnector(map[string]any{
+		"base_url":     server.URL,
+		"ca_cert_path": caCertPath,
+	})
+	if err != nil {
+		t.Fatalf("NewWebDAVConnector failed: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), webdavRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	resp, err := connector.client.httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("request with custom CA failed: %v", err)
+	}
+	defer resp.Body.Close()
+}
+
+func TestNewWebDAVConnectorRejectsInvalidCACertificate(t *testing.T) {
+	tests := []struct {
+		name       string
+		caCertPath func(t *testing.T) string
+	}{
+		{
+			name: "missing file",
+			caCertPath: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "missing.pem")
+			},
+		},
+		{
+			name: "invalid PEM",
+			caCertPath: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "invalid.pem")
+				if err := os.WriteFile(path, []byte("not a certificate"), 0o600); err != nil {
+					t.Fatalf("write invalid CA certificate: %v", err)
+				}
+				return path
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewWebDAVConnector(map[string]any{"ca_cert_path": tt.caCertPath(t)})
+			var validationErr *ConnectorValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("error = %v, want ConnectorValidationError", err)
+			}
+		})
+	}
+}
+
 func TestWebDAVConnectorValidate(t *testing.T) {
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
 
@@ -223,7 +302,7 @@ func TestWebDAVConnectorValidateConnectorSetting(t *testing.T) {
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
 
 	connector := webDAVTestConnector(t, server.URL, false, 2)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting failed: %v", err)
 	}
 
@@ -234,7 +313,7 @@ func TestWebDAVConnectorValidateConnectorSetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWebDAVConnector failed: %v", err)
 	}
-	err = missingCredentials.ValidateConnectorSetting(context.Background(), nil)
+	err = missingCredentials.ValidateConnectorSetting(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "username and password") {
 		t.Fatalf("missing credentials error = %v", err)
 	}
@@ -245,7 +324,7 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	server, authHeaders, _ := newWebDAVTestServer(t, webDAVTestTree())
 	connector := webDAVTestConnector(t, server.URL, false, 2)
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		WindowEnd:     mustTime(t, "2026-01-07T00:00:00Z"),
 	})
@@ -318,7 +397,7 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	connector := webDAVTestConnector(t, server.URL, false, 2)
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 	})
@@ -356,7 +435,7 @@ func TestWebDAVConnectorMountedUnderNonRootPath(t *testing.T) {
 		t.Fatalf("Validate failed: %v", err)
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -404,7 +483,7 @@ func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.
 	connector := webDAVTestConnector(t, server.URL, false, 10)
 
 	windowEnd := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: windowEnd})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: windowEnd})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -420,7 +499,7 @@ func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.
 		t.Fatalf("updated at = %v, want %v", batch.Documents[0].UpdatedAt, windowEnd)
 	}
 
-	unsetSession, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	unsetSession, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync with unset WindowEnd failed: %v", err)
 	}
@@ -453,7 +532,7 @@ func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
 	})
 	connector := webDAVTestConnector(t, server.URL, false, 10)
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -472,7 +551,7 @@ func TestWebDAVConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	connector := webDAVTestConnector(t, server.URL, false, 2)
 
 	windowEnd := mustTime(t, "2026-01-07T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: windowEnd})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: windowEnd})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -485,7 +564,7 @@ func TestWebDAVConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 	session.Close()
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		WindowEnd:     windowEnd,
 		Resume:        first.Checkpoint,
@@ -514,7 +593,7 @@ func TestWebDAVConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
 	connector := webDAVTestConnector(t, server.URL, false, 2)
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
 	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
@@ -525,7 +604,7 @@ func TestWebDAVConnectorOpenPrune(t *testing.T) {
 	server, _, getRequests := newWebDAVTestServer(t, webDAVTestTree())
 	connector := webDAVTestConnector(t, server.URL, false, 10)
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -554,7 +633,7 @@ func TestWebDAVConnectorFiltersAndImages(t *testing.T) {
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
 
 	withoutImages := webDAVTestConnector(t, server.URL, false, 10)
-	session, err := withoutImages.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	session, err := withoutImages.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -571,7 +650,7 @@ func TestWebDAVConnectorFiltersAndImages(t *testing.T) {
 	}
 
 	withImages := webDAVTestConnector(t, server.URL, true, 10)
-	imageSession, err := withImages.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	imageSession, err := withImages.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync with images failed: %v", err)
 	}
@@ -631,7 +710,7 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 		t.Fatalf("NewWebDAVConnector failed: %v", err)
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 //
 //	CGO_ENABLED=1 CGO_LDFLAGS="..." go test -tags=manual -run TestScanAllPDFs -v -count=1
 func TestScanAllPDFs(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	pdfDir := filepath.Join("testdata", "pdfs")
 	entries, err := os.ReadDir(pdfDir)

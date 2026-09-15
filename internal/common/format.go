@@ -19,6 +19,7 @@ package common
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -119,6 +120,16 @@ func FormatBytes(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+// FormatMinimumShouldMatchPercent converts a fractional minimum_should_match
+// value to a percentage string using half-up rounding, mirroring Python's
+// common.float_utils.format_minimum_should_match_percent.
+func FormatMinimumShouldMatchPercent(fraction float64) string {
+	// Add a tiny epsilon so values whose true product ends in .5 but are
+	// represented slightly below it (e.g. 0.285*100 == 28.499...) still
+	// round half-up instead of being truncated.
+	return fmt.Sprintf("%d%%", int(math.Floor(fraction*100+0.5+1e-9)))
 }
 
 func FormatNumber(n int64) string {

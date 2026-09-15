@@ -17,7 +17,7 @@
 // Retrieval contracts shared by the canvas agent runtime (internal/agent/tool)
 // and the smart-reasoning agent (internal/agentic_rag). Keeping these here —
 // in the engine-agnostic runtime package — means neither agent layer depends on
-// the other: both depend on this shared contract.
+// the other: both depend on this shared
 package runtime
 
 import (
@@ -46,7 +46,12 @@ type RetrievalChunk struct {
 	// a document sequentially rather than in arbitrary match order.
 	ChunkIndex int
 	// PageNum is the chunk's page number within its document (ES `page_num_int`).
-	PageNum          int
+	PageNum int
+	// MomID is the parent chunk id when this chunk is a child fragment; empty
+	// for top-level chunks. It is threaded through so the harness can run
+	// retrieval_by_children (child fragments are promoted to their parent chunk)
+	// after search, mirroring Python settings.retriever.retrieval_by_children.
+	MomID            string
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
@@ -54,12 +59,20 @@ type RetrievalChunk struct {
 
 // RetrievalRequest is the input to RetrievalService.Search.
 type RetrievalRequest struct {
-	Query                    string
-	DatasetIDs               []string
-	MemoryIDs                []string
-	TopN                     int
-	RerankCandidatesCount    int
-	TopK                     int
+	Query                 string
+	DatasetIDs            []string
+	MemoryIDs             []string
+	TopN                  int
+	RerankCandidatesCount int
+	TopK                  int
+	// VectorSimilarityWeight is the VECTOR leg's weight (Python
+	// vector_similarity_weight), forwarded verbatim by the agentic harness. The
+	// canvas path keeps using KeywordsSimilarityWeight (the keyword weight the
+	// adapter inverts); see retrievalbridge/runtime_adapter.go.
+	VectorSimilarityWeight *float64
+	// DisableVectorLeg mirrors Python passing embd_mdl=None: the backend runs
+	// the keyword-only branch with NO dense leg (not even a weight-0 one).
+	DisableVectorLeg         bool
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      *float64
@@ -72,6 +85,10 @@ type RetrievalRequest struct {
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	TenantID string
+	// RankFeature is the label_question term→weight map passed through to the
+	// engine so retrieval is biased toward the query's predicted topic class.
+	// Mirrors engine nlp.RetrievalRequest.RankFeature.
+	RankFeature map[string]float64
 	// OnlyOriginalText, when true, restricts retrieval to ordinary document
 	// text chunks (available_int=1 and no compile_kwd), excluding
 	// knowledge-compiled products.

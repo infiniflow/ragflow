@@ -135,6 +135,7 @@ export const buildConfigFromBuiltin = (
       ...sections,
       raptor: {
         prompt: builtinRaptor.prompt ?? '',
+        claim_prompt: builtinRaptor.claim_prompt ?? '',
         max_token: builtinRaptor.max_token ?? 512,
         clustering_threshold: builtinRaptor.clustering_threshold ?? 0.3,
         clustering_ratio: builtinRaptor.clustering_ratio ?? 0.5,
@@ -207,6 +208,7 @@ export const transformDetailToForm = (
         ...base,
         raptor: {
           prompt: raptor.prompt ?? '',
+          claim_prompt: raptor.claim_prompt ?? '',
           max_token: raptor.max_token ?? 512,
           clustering_threshold: raptor.clustering_threshold ?? 0.3,
           clustering_ratio: raptor.clustering_ratio ?? 0.5,

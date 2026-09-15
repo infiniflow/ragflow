@@ -67,8 +67,8 @@ func TestNvidiaRerankHappyPath(t *testing.T) {
 			t.Errorf("expected 3 passages, got %v", body["passages"])
 			return
 		}
-		if body["truncate"] != "END" {
-			t.Errorf("expected truncate=END, got %v", body["truncate"])
+		if _, ok := body["truncate"]; ok {
+			t.Errorf("expected provider-side truncation to be disabled, got %v", body["truncate"])
 		}
 		if body["top_n"] != float64(3) {
 			t.Errorf("expected top_n=3 (matching len(documents)), got %v", body["top_n"])

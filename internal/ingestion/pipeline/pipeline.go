@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
 
@@ -229,7 +230,10 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
-var defaultCheckpointTTL = 24 * time.Hour
+//
+// It matches the per-chunk cache TTL (chunkcache.TTL) so a crashed run leaves
+// both its checkpoint and the chunk cache entries to expire on the same horizon.
+var defaultCheckpointTTL = 7 * 24 * time.Hour
 
 // dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
 // checkpoint id. Both live in the same CheckPointStore as the eino payload
@@ -437,8 +441,18 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 		compileOpts = append(compileOpts,
 			canvas.WithCheckPointStore(store),
 			canvas.WithCheckPointID(p.taskID),
-			canvas.WithInterruptAfterNonTerminalCpn(),
 		)
+		// Single interrupt point: immediately after the Parser component. The
+		// Extractor / Tokenizer stages do NOT take a checkpoint of their own —
+		// a resume re-runs them, but the per-chunk cache (chunkcache) absorbs
+		// the cost by serving prior LLM/embedding results. Interruption after
+		// every non-terminal component was dropped on purpose to avoid one
+		// needless ResumeWithData round per stage.
+		if parserCpnID := ExtractParserCpnID(p.rawDSL, component.ComponentNameParser); parserCpnID != "" {
+			compileOpts = append(compileOpts, canvas.WithInterruptAfter([]string{parserCpnID}))
+		} else {
+			compileOpts = append(compileOpts, canvas.WithInterruptAfterNonTerminalCpn())
+		}
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
 	// setups at compile time (higher priority; see canvas.WithOverrideParams).
@@ -478,6 +492,11 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// component re-publishes `name` (and storage refs) as it derives
 	// them mid-run.
 	globals.SeedIngestionGlobals(runCtx, current)
+	// Expose the task id on the run context so every component can register the
+	// per-chunk cache keys it writes into the task manifest (chunkcache). Without
+	// this the manifest is never populated and PurgeTask on success becomes a
+	// no-op, leaving orphaned cache entries until TTL expiry.
+	globals.SetTaskID(runCtx, p.taskID)
 
 	if !resumable {
 		return p.runPlain(runCtx, current, compiled, tracker, runState)
@@ -524,21 +543,35 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 // runPlain executes a single Invoke with no checkpoint/resume. Used when no
 // checkpoint store is available; progress is still recorded via the sink.
 func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
+	// Terminal tracker writes must survive a run ctx that gets cancelled
+	// (the common failure/cancel path). Derive a fresh detached ctx per
+	// terminal branch, bounded so a hung Redis cannot stall — mirrors
+	// markStopped/markFailed in ingestion_service.go.
+	detached := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(runCtx), 5*time.Second)
+	}
+
 	out, err := compiled.Workflow.Invoke(runCtx, current)
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
+				stateCtx, cancel := detached()
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(stateCtx, p.taskID) })
+				cancel()
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
+			stateCtx, cancel := detached()
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(stateCtx, p.taskID, err.Error()) })
+			cancel()
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
+		stateCtx, cancel := detached()
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, p.taskID) })
+		cancel()
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -553,7 +586,6 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, store canvas.CheckPointStore, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
 	cpID := compiled.CheckPointID
 	var localInterruptID string // in-process resume fallback when tracker is nil
-	invokeInput := current
 
 	const maxResumeRounds = 1000
 	for round := 0; round < maxResumeRounds; round++ {
@@ -568,36 +600,61 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			resumeID = localInterruptID
 		}
 		if resumeID != "" {
+			// Mark the resume target. Keep passing the full original input
+			// instead of nil: when eino loads the checkpoint it ignores the
+			// passed input entirely (restoreCheckPointState only restores
+			// channels/state, restoreTasks replays cp.Inputs), and when the
+			// checkpoint is missing it silently starts a FRESH run from the
+			// entry node — so nil input would re-execute the source node
+			// (File) without doc_id / file[0].name and fail with "inputs
+			// missing". Passing `current` covers both cases with no
+			// check-then-use race.
 			runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
-			invokeInput = nil // resume restores the graph input from checkpoint
 		}
 
-		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
+		out, invokeErr := compiled.Workflow.Invoke(runCtx, current, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
+			// Terminal-state writes must survive a ctx cancelled around the
+			// Invoke boundary. Derive a fresh detached ctx here — bounded by
+			// a short timeout so a hung Redis cannot stall completion — so
+			// the 5s window covers only the cleanup, not the whole run
+			// (mirrors markStopped/markFailed in ingestion_service.go).
+			stateCtx, stateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer stateCancel()
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
-				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(stateCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, cpID) })
 			}
 			if store != nil {
-				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
-				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+dslKeySuffix) })
-				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+ovfKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID+dslKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID+ovfKeySuffix) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
 
 		// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			p.cleanupCheckpoint(ctx, store, tracker, cpID)
+			// The run ctx is already cancelled, so Redis writes with it would
+			// fail immediately. Derive a fresh detached ctx so cleanup +
+			// MarkCancelled actually land; the 5s window covers the cleanup
+			// only, regardless of how long the run itself took.
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cleanupCancel()
+			p.cleanupCheckpoint(cleanupCtx, store, tracker, cpID)
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(cleanupCtx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
+			// Same detached-ctx guarantee as the success/cancel paths: the
+			// run ctx may be cancelled by the time the failure surfaces.
+			failCtx, failCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer failCancel()
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(failCtx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}
@@ -704,7 +761,9 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 				zap.String("task_id", p.taskID),
 				zap.String("document_id", p.documentID))
 		}
-		p.sink.OnComponentProgress(ctx, ProgressEvent{
+		sinkCtx, cancel := progressSinkContext(ctx)
+		defer cancel()
+		p.sink.OnComponentProgress(sinkCtx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
 			Component:  ev.Component,
@@ -729,6 +788,15 @@ func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime
 			zap.String("task_id", p.taskID),
 			zap.String("document_id", p.documentID),
 			zap.String("message", message))
-		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
+		sinkCtx, cancel := progressSinkContext(ctx)
+		defer cancel()
+		sink.OnComponentMessage(sinkCtx, p.taskID, p.documentID, component, message)
 	}
+}
+
+func progressSinkContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }

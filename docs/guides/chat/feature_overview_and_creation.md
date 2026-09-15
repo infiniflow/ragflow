@@ -42,7 +42,7 @@ You can set the following basic information for a Chat:
 - **Avatar**: The image displayed for the Chat. Select a brand, product, or general-purpose icon according to the scenario.
 - **Description**: A brief description of the Chat's purpose, service scope, intended audience, or dataset coverage.
 
-![Basic Chat information](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/basic_information.jpg)
+![Basic Chat information](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/basic_information_chat.jpg)
 
 ## Configure a Chat
 
