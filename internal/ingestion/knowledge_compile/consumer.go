@@ -696,6 +696,13 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			}
 			return err
 		}
+		if err := c.removeNavLocked(ctx, tenant, kb, token, delIDs); err != nil {
+			if errors.Is(err, errClaimSuperseded) {
+				common.Info("knowledge_compile: batch stale before navigation removal, aborting (rewrite barrier)",
+					zap.String("dataset_id", kb))
+			}
+			return err
+		}
 	}
 	if len(completed) == 0 && len(wikiDiff.affectedKeys) == 0 {
 		if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
@@ -1798,6 +1805,28 @@ func (c *Consumer) upsertNavLocked(ctx context.Context, tenant, kb, token string
 			// batch is retried.
 			if err := ns.UpsertDoc(ctx, inputs[i]); err != nil {
 				return fmt.Errorf("knowledge_compile: nav upsert %s: %w", inputs[i].DocID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// removeNavLocked removes the retracted documents from the dataset navigation
+// tree under the same claim-fenced write lock used by navigation upserts. The
+// document-level tree/structure products remain in storage for a later enable;
+// only their dataset-level navigation projections are removed here.
+func (c *Consumer) removeNavLocked(ctx context.Context, tenant, kb, token string, docIDs []string) error {
+	if len(docIDs) == 0 {
+		return nil
+	}
+	ns := nav.GetNavService()
+	if ns == nil {
+		return fmt.Errorf("knowledge_compile: nav service unavailable while removing documents")
+	}
+	return c.withWriteLock(ctx, kb, token, func() error {
+		for _, docID := range docIDs {
+			if err := ns.RemoveDoc(ctx, tenant, kb, docID); err != nil {
+				return fmt.Errorf("knowledge_compile: nav remove %s: %w", docID, err)
 			}
 		}
 		return nil
