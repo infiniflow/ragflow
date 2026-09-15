@@ -48,13 +48,14 @@ import (
 // a URL (legacy callers) fall back to the "not yet wired"
 // sentinel so existing call sites don't break.
 type MCPToolAdapter struct {
-	mcpTool    mcpclient.Tool
-	serverType string
-	variables  map[string]string
-	serverURL  string
-	headers    map[string]string
-	timeout    time.Duration
-	httpClient *http.Client
+	mcpTool     mcpclient.Tool
+	visibleName string
+	serverType  string
+	variables   map[string]string
+	serverURL   string
+	headers     map[string]string
+	timeout     time.Duration
+	httpClient  *http.Client
 }
 
 // NewMCPToolAdapter constructs a wrapper for a single MCP tool.
@@ -97,7 +98,12 @@ func NewMCPToolAdapterWithOptions(t mcpclient.Tool, opts mcpclient.CallOptions) 
 }
 
 // Name returns the underlying MCP tool name.
-func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
+func (m *MCPToolAdapter) Name() string {
+	if m.visibleName != "" {
+		return m.visibleName
+	}
+	return m.mcpTool.Name
+}
 
 // Info returns eino-compatible tool metadata. The MCP client stores the
 // full inputSchema object ({"type":"object","properties":{...},"required":
@@ -110,7 +116,7 @@ func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 // nil so callers emit an empty object schema instead of an invalid schema.
 func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
 	info := &schema.ToolInfo{
-		Name: m.mcpTool.Name,
+		Name: m.Name(),
 		Desc: m.mcpTool.Description,
 	}
 	if len(m.mcpTool.InputSchema) == 0 {
@@ -204,3 +210,6 @@ func marshalArguments(argumentsInJSON string) (json.RawMessage, error) {
 	}
 	return json.RawMessage(argumentsInJSON), nil
 }
+
+// SetVisibleName disambiguates the model-facing name while retaining wire name.
+func (m *MCPToolAdapter) SetVisibleName(name string) { m.visibleName = name }

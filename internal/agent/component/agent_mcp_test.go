@@ -27,6 +27,7 @@ func TestAgentMCPRequiresRuntimeServer(t *testing.T) {
 }
 
 func TestAgentMCPModelDispatch(t *testing.T) {
+	// Keep this test non-parallel: it swaps the global MCP network hooks.
 	db := setupComponentTestDB(t)
 	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
 		t.Fatal(err)
@@ -92,7 +93,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 			Messages   []models.Message `json:"messages"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		if len(req.Tools) != 1 || req.Tools[0].Function.Name != "route" || req.ToolChoice != "auto" {
+		if len(req.Tools) != 1 || req.Tools[0].Function.Name != "route_0" || req.ToolChoice != "auto" {
 			t.Errorf("tools missing from model request: %+v", req)
 		}
 		if len(req.Tools) == 1 {
@@ -103,7 +104,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 		}
 		if requests.Add(1) == 1 {
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `{"choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"call1","type":"function","function":{"name":"route","arguments":"{\"origin\":\"大连路站\"}"}}]}}]}`)
+			io.WriteString(w, `{"choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"call1","type":"function","function":{"name":"route_0","arguments":"{\"origin\":\"大连路站\"}"}}]}}]}`)
 		} else {
 			raw, _ := json.Marshal(req.Messages)
 			if !strings.Contains(string(raw), "metro route") {
@@ -143,5 +144,42 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	state.Sys["tenant_id"] = "other-tenant"
 	if _, err := buildAgentTools(ctx, p); err == nil {
 		t.Fatal("cross-tenant MCP access allowed")
+	}
+}
+
+func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
+	db := setupComponentTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushComponentDB(t, db)
+	for _, id := range []string{"first", "second"} {
+		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := runtime.NewCanvasState("run", "task")
+	state.Sys["tenant_id"] = "tenant"
+	ctx := withStateForTest(t.Context(), state)
+	p := AgentParam{Tools: nil, MCP: []any{
+		map[string]any{"mcp_id": "first", "tools": map[string]any{"search": map[string]any{"name": "web_search"}}},
+		map[string]any{"mcp_id": "second", "tools": map[string]any{"search": map[string]any{"name": "web_search"}}},
+	}}
+	tools, err := buildAgentTools(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"search_0", "search_1"}
+	if len(tools) != len(want) {
+		t.Fatalf("got %d tools, want %d", len(tools), len(want))
+	}
+	for i, tool := range tools {
+		info, err := tool.Info(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Name != want[i] {
+			t.Errorf("tool %d name = %q, want %q", i, info.Name, want[i])
+		}
 	}
 }

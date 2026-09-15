@@ -34,6 +34,7 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		return nil, fmt.Errorf("decode Agent MCP configuration: %w", err)
 	}
 	var tools []einotool.BaseTool
+	toolIndex := 0
 	for _, selection := range selections {
 		if len(selection.Tools) == 0 {
 			continue
@@ -65,9 +66,12 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		for _, name := range slices.Sorted(maps.Keys(selection.Tools)) {
 			descriptor := selection.Tools[name]
 			descriptor.Name = name
-			tools = append(tools, agenttool.NewMCPToolAdapterWithOptions(descriptor, utility.CallOptions{
+			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, utility.CallOptions{
 				URL: server.URL, ServerType: server.ServerType, Headers: headers, Variables: variables, Timeout: timeout,
-			}))
+			})
+			adapter.SetVisibleName(fmt.Sprintf("%s_%d", name, toolIndex))
+			toolIndex++
+			tools = append(tools, adapter)
 		}
 	}
 	return tools, nil
