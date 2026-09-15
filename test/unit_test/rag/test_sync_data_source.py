@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import importlib
 import importlib.util
 import os
 import sys
+import threading
 import types
 import warnings
 from datetime import datetime, timezone
@@ -186,6 +188,256 @@ async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.p2
+async def test_run_task_logic_keeps_event_loop_responsive_during_parse(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    started = threading.Event()
+    release = threading.Event()
+
+    def _slow_duplicate(*_args, **_kwargs):
+        started.set()
+        if not release.wait(timeout=5):
+            pytest.fail("release was not signalled while parse was blocked")
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _slow_duplicate)
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "increase_docs", lambda *_args, **_kwargs: None)
+
+    probe_done = False
+
+    async def _probe():
+        nonlocal probe_done
+        flagged = await asyncio.to_thread(started.wait, 5)
+        assert flagged, "ingest did not start"
+        probe_done = True
+        release.set()
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            _FakeSync(iter(([_make_fake_doc()],)))._run_task_logic(_make_task()),
+            _probe(),
+        ),
+        timeout=10,
+    )
+    assert probe_done
+
+
+def _patch_successful_ingest(monkeypatch):
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: ([], ["doc-1"]),
+    )
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "increase_docs", lambda *_args, **_kwargs: None)
+
+
+async def _collect_sync_sleeps(monkeypatch, generate_output):
+    _patch_common_dependencies(monkeypatch)
+    _patch_successful_ingest(monkeypatch)
+    monkeypatch.setattr(sync_data_source, "SYNC_BATCH_PAUSE_SECONDS", 0.05)
+    sleep_calls = []
+
+    async def _track_sleep(delay, *_args, **_kwargs):
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(sync_data_source.asyncio, "sleep", _track_sleep)
+    await _FakeSync(generate_output)._run_task_logic(_make_task())
+    return sleep_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_run_task_logic_pauses_only_between_nonempty_batches(monkeypatch):
+    sleep_calls = await _collect_sync_sleeps(
+        monkeypatch,
+        iter(([_make_fake_doc("doc-1")], [], [_make_fake_doc("doc-2")])),
+    )
+    assert sleep_calls == [0.05]
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_run_task_logic_does_not_pause_after_last_batch(monkeypatch):
+    sleep_calls = await _collect_sync_sleeps(monkeypatch, iter(([_make_fake_doc()],)))
+    assert sleep_calls == []
+
+
+def test_ingest_document_batch_skips_writes_when_already_cancelled(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: pytest.fail("get_by_id should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not run after cancel"),
+    )
+    cancel_event = threading.Event()
+    cancel_event.set()
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        cancel_event,
+    )
+    assert err == []
+    assert dids == []
+
+
+def test_ingest_document_batch_skips_progress_when_cancelled_during_parse(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    cancel_event = threading.Event()
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+
+    def _duplicate_then_cancel(*_args, **_kwargs):
+        cancel_event.set()
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _duplicate_then_cancel)
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not advance after cancel"),
+    )
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        cancel_event,
+    )
+    assert err == []
+    assert dids == ["doc-1"]
+
+
+class _PendingCancelTask:
+    def cancelled(self):
+        return False
+
+    def cancelling(self):
+        return 1
+
+
+class _DeferredCancelTask:
+    def __init__(self):
+        self._cancelling = 0
+
+    def cancelled(self):
+        return False
+
+    def cancelling(self):
+        return self._cancelling
+
+
+def test_ingest_document_batch_skips_writes_when_parent_task_is_cancelling(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: pytest.fail("get_by_id should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not run after cancel"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not run after cancel"),
+    )
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        threading.Event(),
+        _PendingCancelTask(),
+    )
+    assert err == []
+    assert dids == []
+
+
+def test_ingest_document_batch_skips_progress_when_parent_task_starts_cancelling(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    parent_task = _DeferredCancelTask()
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+
+    def _duplicate_then_cancel(*_args, **_kwargs):
+        parent_task._cancelling = 1
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _duplicate_then_cancel)
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not advance after cancel"),
+    )
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        threading.Event(),
+        parent_task,
+    )
+    assert err == []
+    assert dids == ["doc-1"]
+
+
+def test_ingest_document_batch_forwards_cancel_callback(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: (True, object()),
+    )
+
+    def _duplicate(*_args, **kwargs):
+        captured["should_cancel"] = kwargs.get("should_cancel")
+        return [], ["doc-1"]
+
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "duplicate_and_parse", _duplicate)
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "increase_docs", lambda *_args, **_kwargs: None)
+    cancel_event = threading.Event()
+    err, dids = _FakeSync(iter(()))._ingest_document_batch(
+        _make_task(),
+        [{"id": "doc-1"}],
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        cancel_event,
+    )
+    assert err == []
+    assert dids == ["doc-1"]
+    assert captured["should_cancel"] is not None
+    assert captured["should_cancel"]() is False
+    cancel_event.set()
+    assert captured["should_cancel"]() is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
 async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     cleanup_calls = []
 
@@ -294,6 +546,10 @@ class _FakeRDBMSConnector:
         self.prepare_sync_state_called = False
         self.load_from_cursor_range_called = False
         self.persist_sync_state_called = False
+        self.close_connection_called = False
+        self.validate_thread_ident = None
+        self.prepare_thread_ident = None
+        self.close_thread_ident = None
         self._pending_sync_cursor_value = None
         _FakeRDBMSConnector.instance = self
 
@@ -301,11 +557,16 @@ class _FakeRDBMSConnector:
         self.credentials = credentials
 
     def validate_connector_settings(self):
-        return None
+        self.validate_thread_ident = threading.get_ident()
 
     def prepare_sync_state(self, connector_id, config):
         self.prepare_sync_state_called = True
+        self.prepare_thread_ident = threading.get_ident()
         self.prepare_sync_state_args = (connector_id, config)
+
+    def _close_connection(self):
+        self.close_connection_called = True
+        self.close_thread_ident = threading.get_ident()
 
     def get_saved_sync_cursor_value(self):
         return None
@@ -350,12 +611,18 @@ async def test_rdbms_generate_keeps_deleted_file_snapshot_without_timestamp_colu
         }
     )
 
+    main_ident = threading.get_ident()
     document_generator = await sync._generate(task)
     connector = _FakeRDBMSConnector.instance
 
     assert connector is not None
     assert connector.load_from_state_called is True
     assert connector.load_from_cursor_range_called is False
+    assert connector.prepare_sync_state_called is True
+    assert connector.close_connection_called is True
+    assert connector.validate_thread_ident != main_ident
+    assert connector.prepare_thread_ident == connector.validate_thread_ident
+    assert connector.close_thread_ident == connector.validate_thread_ident
     file_list = sync._collect_prune_snapshot(task)
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert file_list is not None
@@ -931,3 +1198,29 @@ async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
     assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert connector.poll_source_called is False
+
+
+def test_index_batch_size_env_helpers_use_defaults_for_invalid_values(monkeypatch):
+    from common.data_source import config as data_source_config
+
+    monkeypatch.delenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", raising=False)
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "32")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 32
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "0")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+    monkeypatch.setenv("RAGFLOW_TEST_INDEX_BATCH_SIZE", "nope")
+    assert data_source_config._env_int("RAGFLOW_TEST_INDEX_BATCH_SIZE", 2) == 2
+
+    monkeypatch.delenv("RAGFLOW_TEST_SYNC_PAUSE", raising=False)
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "0.05")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.05
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "-1")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "inf")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "nan")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+    monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "-inf")
+    assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0

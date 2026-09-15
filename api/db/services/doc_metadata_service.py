@@ -361,13 +361,16 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def insert_document_metadata(cls, doc_id: str, meta_fields: dict) -> bool:
+    def insert_document_metadata(cls, doc_id: str, meta_fields: dict, *, refresh_now: bool = True) -> bool:
         """
         Insert document metadata into ES/Infinity.
 
         Args:
             doc_id: Document ID
             meta_fields: Metadata dictionary
+            refresh_now: When True, wait for the index refresh so the row is
+                searchable immediately. Connector ingest passes False and
+                refreshes once per batch so agent retrieval is not blocked.
 
         Returns:
             True if successful, False otherwise
@@ -419,8 +422,9 @@ class DocMetadataService:
             else:
                 logging.debug(f"Metadata table already exists: {index_name}")
 
-            # Insert into ES/Infinity
-            result = settings.docStoreConn.insert([doc_meta], index_name, kb_id)
+            # Insert into ES/Infinity. Connector ingest skips wait_for so agent
+            # searches are not queued behind a refresh per uploaded row.
+            result = settings.docStoreConn.insert([doc_meta], index_name, kb_id, refresh="wait_for" if refresh_now else False)
 
             if result:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
@@ -428,18 +432,8 @@ class DocMetadataService:
             # Force refresh so metadata is immediately searchable.
             # Both Elasticsearch and OpenSearch backends expose refresh_idx;
             # Infinity does not need a manual refresh.
-            if not settings.DOC_ENGINE_INFINITY:
-                refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
-                if callable(refresh_idx):
-                    if refresh_idx(index_name):
-                        logging.debug(f"Refreshed metadata index: {index_name}")
-                    else:
-                        # A failed refresh can leave just-inserted metadata
-                        # invisible to subsequent reads; surface it so operators
-                        # can correlate stale-read complaints with the cause.
-                        logging.warning(f"Failed to refresh metadata index {index_name} on backend {type(settings.docStoreConn).__name__}; metadata may not be immediately searchable")
-                else:
-                    logging.debug(f"Backend {type(settings.docStoreConn).__name__} has no refresh_idx; skipping")
+            if refresh_now:
+                cls.refresh_tenant_index(tenant_id)
 
             logging.debug(f"Successfully inserted metadata for document {doc_id}")
             return True
@@ -449,8 +443,25 @@ class DocMetadataService:
             return False
 
     @classmethod
+    def refresh_tenant_index(cls, tenant_id: str) -> None:
+        """Refresh the per-tenant metadata index when the backend needs it."""
+        if settings.DOC_ENGINE_INFINITY:
+            return
+        index_name = cls._get_doc_meta_index_name(tenant_id)
+        refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
+        if not callable(refresh_idx):
+            logging.debug(f"Backend {type(settings.docStoreConn).__name__} has no refresh_idx; skipping")
+            return
+        if refresh_idx(index_name):
+            logging.debug(f"Refreshed metadata index: {index_name}")
+            return
+        logging.warning(
+            f"Failed to refresh metadata index {index_name} on backend {type(settings.docStoreConn).__name__}; metadata may not be immediately searchable"
+        )
+
+    @classmethod
     @DB.connection_context()
-    def update_document_metadata(cls, doc_id: str, meta_fields: dict) -> bool:
+    def update_document_metadata(cls, doc_id: str, meta_fields: dict, *, refresh_now: bool = True) -> bool:
         """
         Update document metadata in ES/Infinity.
 
@@ -460,6 +471,8 @@ class DocMetadataService:
         Args:
             doc_id: Document ID
             meta_fields: Metadata dictionary
+            refresh_now: When True, wait for the index refresh so the row is
+                searchable immediately. Connector ingest passes False.
 
         Returns:
             True if successful, False otherwise
@@ -494,6 +507,7 @@ class DocMetadataService:
                     [{"id": doc_id, "kb_id": kb_id, "meta_fields": processed_meta}],
                     index_name,
                     kb_id,
+                    refresh="wait_for" if refresh_now else False,
                 )
                 if insert_errors:
                     logging.error(f"Failed to update metadata for document {doc_id}: {insert_errors}")
@@ -511,7 +525,7 @@ class DocMetadataService:
                     if result is False:
                         logging.error(f"Failed to create metadata index {index_name}")
                         return False
-                    return cls.insert_document_metadata(doc_id, processed_meta)
+                    return cls.insert_document_metadata(doc_id, processed_meta, refresh_now=refresh_now)
 
                 # Index exists - check if document exists
                 try:
@@ -536,18 +550,18 @@ class DocMetadataService:
                         # replace still guarantees full overwrite semantics rather
                         # than leaking through the "document not found" branch.
                         cls.delete_document_metadata(doc_id, kb_id, tenant_id)
-                        return cls.insert_document_metadata(doc_id, processed_meta)
+                        return cls.insert_document_metadata(doc_id, processed_meta, refresh_now=refresh_now)
                 except Exception as e:
                     logging.debug(f"Document {doc_id} not found in index, will insert: {e}")
 
                 # Document doesn't exist - insert new
                 logging.debug(f"[update_document_metadata] Document {doc_id} not found, inserting new")
-                return cls.insert_document_metadata(doc_id, processed_meta)
+                return cls.insert_document_metadata(doc_id, processed_meta, refresh_now=refresh_now)
 
             # For Infinity or as fallback: use delete+insert
             logging.debug(f"[update_document_metadata] Using delete+insert method for doc_id: {doc_id}")
             cls.delete_document_metadata(doc_id, kb_id, tenant_id)
-            return cls.insert_document_metadata(doc_id, processed_meta)
+            return cls.insert_document_metadata(doc_id, processed_meta, refresh_now=refresh_now)
 
         except Exception as e:
             logging.error(f"Error updating metadata for document {doc_id}: {e}")
