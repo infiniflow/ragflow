@@ -521,6 +521,10 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 // columnExists reports whether the current database already has the column.
 // TABLE_SCHEMA is pinned to DATABASE() so that a MySQL server hosting more than
 // one RAGFlow database never matches another schema's tables.
+//
+// It replaces gorm's Migrator.HasColumn, which panics when the table is passed
+// as a string: HasColumn only fills Statement.Table for strings and then
+// dereferences the unparsed Statement.Schema.
 func columnExists(ctx context.Context, db *gorm.DB, table, column string) (bool, error) {
 	var count int64
 	if err := db.WithContext(ctx).Raw(`

@@ -46,7 +46,7 @@ const modelMigrationBaseVersion = "v0.26.0"
 // modelMigrationTargetVersion is the version the remaining tenant model data
 // migration brings the database to. It mirrors the final --database-version used
 // by tools/scripts/run_migrations.sh.
-const modelMigrationTargetVersion = "v0.27.1"
+const modelMigrationTargetVersion = "v0.27.2"
 
 // GetDatabaseMigrationVersion reads the stored migration version. It returns an
 // empty string when the marker or the system_settings table is absent.

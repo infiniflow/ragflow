@@ -317,7 +317,13 @@ if [[ "$SERVICE_SELECTED" -eq 0 ]]; then
 fi
 
 if [[ "$START_RAGFLOW" -eq 1 ]]; then
-  ensure_db_init
+  # The Go backend owns the schema when it serves the API, so skip the
+  # Python-side table creation then. A Go-only deployment may not ship the api
+  # package at all, and letting both sides create tables makes them fight over
+  # the same schema.
+  if [[ "${API_PROXY_SCHEME}" != "go" ]]; then
+    ensure_db_init
+  fi
   run_migrations
 fi
 

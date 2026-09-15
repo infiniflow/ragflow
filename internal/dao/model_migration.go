@@ -109,7 +109,7 @@ func ensureMigrationVersionTable(ctx context.Context, db *gorm.DB) error {
 //   - The follow-up step (modelMigrationTargetVersion) seeds the factory
 //     declared models, merges the tenant_model rows into the integer model_type
 //     representation and populates the tenant_*_id columns. It is needed on
-//     every database older than v0.27.1, including one already at v0.26.0.
+//     every database older than v0.27.2, including one already at v0.26.0.
 //
 // The step runs before AutoMigrate (see InitDB), so it creates the tables it
 // depends on itself: system_settings for the version marker, and, on a database
@@ -1217,7 +1217,11 @@ func normalizeStoredModelIDs(ctx context.Context, db *gorm.DB) error {
 			continue
 		}
 		for _, column := range modelIDStringColumns[table] {
-			if !scoped.Migrator().HasColumn(table, column) {
+			exists, err := columnExists(ctx, scoped, table, column)
+			if err != nil {
+				return err
+			}
+			if !exists {
 				continue
 			}
 			if err := normalizeModelIDStringColumn(ctx, scoped, table, column); err != nil {
@@ -1230,7 +1234,11 @@ func normalizeStoredModelIDs(ctx context.Context, db *gorm.DB) error {
 			continue
 		}
 		for _, column := range modelIDJSONColumns[table] {
-			if !scoped.Migrator().HasColumn(table, column) {
+			exists, err := columnExists(ctx, scoped, table, column)
+			if err != nil {
+				return err
+			}
+			if !exists {
 				continue
 			}
 			if err := normalizeModelIDJSONColumn(ctx, scoped, table, column); err != nil {
@@ -1371,7 +1379,11 @@ func populateTenantModelIDColumns(ctx context.Context, db *gorm.DB) error {
 			continue
 		}
 		for _, field := range tenantModelIDFields[table] {
-			if !scoped.Migrator().HasColumn(table, field.tenantIDColumn) {
+			exists, err := columnExists(ctx, scoped, table, field.tenantIDColumn)
+			if err != nil {
+				return err
+			}
+			if !exists {
 				if err := ensureTenantModelIDColumn(ctx, scoped, table, field.tenantIDColumn); err != nil {
 					return err
 				}
@@ -1393,7 +1405,15 @@ func populateTenantModelIDColumns(ctx context.Context, db *gorm.DB) error {
 			continue
 		}
 		for _, field := range tenantModelIDFields[table] {
-			if !scoped.Migrator().HasColumn(table, field.tenantIDColumn) || !scoped.Migrator().HasColumn(table, field.legacyColumn) {
+			tenantColumnExists, err := columnExists(ctx, scoped, table, field.tenantIDColumn)
+			if err != nil {
+				return err
+			}
+			legacyColumnExists, err := columnExists(ctx, scoped, table, field.legacyColumn)
+			if err != nil {
+				return err
+			}
+			if !tenantColumnExists || !legacyColumnExists {
 				continue
 			}
 			updated, err := populateTenantModelIDColumn(ctx, scoped, table, field, lookup)
