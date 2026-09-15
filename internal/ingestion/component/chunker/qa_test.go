@@ -171,6 +171,30 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	}
 }
 
+func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "questions.csv",
+		"output_format": "json",
+		"json": []map[string]any{{
+			"doc_type_kwd": "text",
+			"ck_type":      "table_row",
+			"cells":        []string{"question", "answer", "unexpected"},
+		}},
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 0 {
+		t.Fatalf("chunks = %#v, want malformed CSV row rejected", chunks)
+	}
+}
+
 // Non-CSV names keep the old "first two non-empty cells" rule on the HTML
 // table path. Since #18800 an .xlsx file reaches the chunker as "json", not
 // "html", so this covers the shared HTML branch and not the XLSX pipeline.
@@ -392,5 +416,34 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 		if cww != want {
 			t.Fatalf("chunk[%d] text = %q, want %q", i, cww, want)
 		}
+	}
+}
+
+func TestQAChunkerSpreadsheetRowIRTreatsFirstRowAsQAData(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "cells": []string{"ID", "Status"}},
+			{"text": "ID：A-100; Status：paid", "doc_type_kwd": "text", "ck_type": "table_row", "cells": []string{"A-100", "paid"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want both QA rows", out["chunks"])
+	}
+	if got, _ := chunks[0]["text"].(string); got != "Question: ID\tAnswer: Status" {
+		t.Fatalf("first-row QA = %q", got)
+	}
+	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
+		t.Fatalf("second-row QA = %q", got)
 	}
 }

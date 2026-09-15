@@ -1565,13 +1565,23 @@ func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 // "rag.llm.chat_model" namespace.
 func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
 	stubHarness(t, "the final cited answer")
+	var receivedHistory []map[string]interface{}
+	retriever := harnessRetriever
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		receivedHistory = req.Messages
+		return retriever(ctx, req)
+	}
+	history := []map[string]interface{}{{"role": "user", "content": "earlier question"}, {"role": "assistant", "content": "earlier answer"}, {"role": "user", "content": "q"}}
 
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	_, _, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "")
+	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if !reflect.DeepEqual(receivedHistory, history) {
+		t.Fatalf("harness history = %#v, want %#v", receivedHistory, history)
 	}
 	if answer != "the final cited answer" {
 		t.Fatalf("answer = %q", answer)
@@ -1611,7 +1621,7 @@ func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	joined := strings.Join(got, "")
@@ -1631,7 +1641,7 @@ func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {

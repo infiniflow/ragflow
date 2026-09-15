@@ -17,6 +17,7 @@
 import { Operator } from '@/constants/agent';
 import {
   initialCompilationValues,
+  initialGeneralChunkerValues,
   initialGoExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
@@ -42,6 +43,8 @@ function getOperatorFormSchema(operatorType: Operator, t: TFunction) {
       return ParserFormSchema;
     case Operator.TokenChunker:
       return TokenChunkerFormSchema;
+    case Operator.GeneralChunker:
+      return TokenChunkerFormSchema;
     case Operator.TitleChunker:
       return TitleChunkerFormSchema;
     case Operator.Extractor:
@@ -61,6 +64,8 @@ function getOperatorInitialValues(operatorType: Operator) {
       return initialParserValues;
     case Operator.TokenChunker:
       return initialTokenChunkerValues;
+    case Operator.GeneralChunker:
+      return initialGeneralChunkerValues;
     case Operator.TitleChunker:
       return initialTitleChunkerValues;
     case Operator.Extractor:

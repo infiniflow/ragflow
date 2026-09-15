@@ -367,6 +367,16 @@ export function transformTokenChunkerParams(
   };
 }
 
+export function transformGeneralChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
+  const result = transformTokenChunkerParams(params);
+  result.table_context_size = Number(params.table_context_size || 0);
+  result.image_context_size = Number(params.image_context_size || 0);
+  delete result.delimiter_mode;
+  return result;
+}
+
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -638,6 +648,10 @@ export const buildDslComponentsByGraph = (
 
         case Operator.TokenChunker:
           params = transformTokenChunkerParams(params);
+          break;
+
+        case Operator.GeneralChunker:
+          params = transformGeneralChunkerParams(params);
           break;
 
         case Operator.TitleChunker:

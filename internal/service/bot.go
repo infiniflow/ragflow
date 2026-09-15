@@ -27,8 +27,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
@@ -51,14 +49,6 @@ type BotService struct {
 	agentService        *AgentService
 	llmService          *LLMService
 	pipeline            *ChatPipelineService
-	// persistLocks serialises persistChatbotTurn's read-modify-write
-	// on a single api_4_conversation row. ChatbotCompletion fetches
-	// the session before streaming starts, so without this lock two
-	// concurrent requests on the same session_id would each append
-	// their turn to the same stale base and the last Update would
-	// silently drop the other exchange. Striped to a fixed size so
-	// the lock set does not grow with the number of sessions.
-	persistLocks [64]sync.Mutex
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
@@ -151,6 +141,11 @@ func (s *BotService) AgentbotInputs(ctx context.Context, tenantID, agentID strin
 func (s *BotService) AgentbotCompletion(
 	ctx context.Context, tenantID, agentID string, req AgentbotCompletionRequest,
 ) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	req.Question = question
 	if s.agentService == nil {
 		return nil, common.CodeServerError, fmt.Errorf("bot: agent service not wired")
 	}
@@ -202,9 +197,10 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 // accepts; the URL-bound agent_id is the authoritative canvas id
 // (matches python bot_api.py:159).
 type AgentbotCompletionRequest struct {
-	SessionID string `json:"session_id"`
-	UserID    string `json:"user_id"`
-	Stream    bool   `json:"stream"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	UserID    string                   `json:"user_id"`
+	Stream    bool                     `json:"stream"`
 	// Query is the free-text chat question. The shared/embedded chat
 	// page sends `query` (the Python completion reads it before
 	// `question`).
@@ -216,19 +212,12 @@ type AgentbotCompletionRequest struct {
 	Files     []map[string]interface{} `json:"files"`
 }
 
-// agentbotUserInput derives the single user-input value RunAgent
-// expects from an AgentbotCompletionRequest. Mirrors the Python
-// `query = kwargs.get("query", "") or kwargs.get("question", "")`
-// precedence in canvas_service.completion, and the in-app chat
-// handler's form-input fallback (handler/agent.go
-// extractUserInputFromFormInputs): when neither query field is set,
-// the begin-form `inputs` map supplies the value — a single field
-// lifts its `value` entry, multiple fields collapse to a
-// name→value map.
+// agentbotUserInput uses the resolved question, falling back to Begin form inputs.
+// A single form field lifts its value; multiple fields collapse to a name/value map.
 func agentbotUserInput(req AgentbotCompletionRequest) any {
-	query := req.Query
+	query := req.Question
 	if query == "" {
-		query = req.Question
+		query = req.Query
 	}
 	if query != "" {
 		return query
@@ -265,10 +254,12 @@ func agentbotUserInput(req AgentbotCompletionRequest) any {
 // `async_iframe_completion` body shape (session_id, question,
 // tts (unused) and a freeform dict).
 type ChatbotCompletionRequest struct {
-	SessionID string         `json:"session_id"`
-	Question  string         `json:"question"`
-	Stream    bool           `json:"stream"`
-	Inputs    map[string]any `json:"inputs"`
+	Query     string                   `json:"query,omitempty"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	Question  string                   `json:"question"`
+	Stream    bool                     `json:"stream"`
+	Inputs    map[string]any           `json:"inputs"`
 	// Quote controls citation generation. Nil means "absent" —
 	// python bot_api.py defaults it to False for chatbot
 	// completions, so the service layer mirrors that.
@@ -283,16 +274,6 @@ type ChatbotCompletionRequest struct {
 	// DocIDs is an optional comma-separated document filter,
 	// same shape as the regular chat completion kwargs.
 	DocIDs string `json:"doc_ids"`
-}
-
-// persistLock returns the striped mutex guarding one session row's
-// read-modify-write in persistChatbotTurn. The modulo runs on the
-// unsigned hash — converting to int first would go negative on
-// 32-bit architectures and panic with an out-of-bounds index.
-func (s *BotService) persistLock(sessionID string) *sync.Mutex {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(sessionID))
-	return &s.persistLocks[h.Sum32()%uint32(len(s.persistLocks))]
 }
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the

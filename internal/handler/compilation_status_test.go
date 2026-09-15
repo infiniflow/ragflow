@@ -101,6 +101,19 @@ func getCompilationStatus(t *testing.T, r *gin.Engine, datasetID string) (int, c
 	return resp.Code, body
 }
 
+func getCompilationStatusWithKind(t *testing.T, r *gin.Engine, datasetID, kind string) (int, compilationStatusResponse) {
+	t.Helper()
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/datasets/"+datasetID+"/compilation/status?kind="+url.QueryEscape(kind), nil)
+	r.ServeHTTP(resp, req)
+	var body compilationStatusResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v body=%s", err, resp.Body.String())
+	}
+	return resp.Code, body
+}
+
 // TestCompilationStatusHandler_NoRowIdle verifies a dataset with no scheduling
 // row returns idle with zero counts.
 func TestCompilationStatusHandler_NoRowIdle(t *testing.T) {
@@ -135,8 +148,8 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 	row := entity.KnowledgeCompileDataset{
 		DatasetID:      "kb-status-full",
 		TenantID:       "user-1",
-		BacklogDocIDs:  `[{"doc_id":"d2","event_type":"completed","seq":2}]`,
-		InflightDocIDs: `[{"doc_id":"d1","event_type":"completed","seq":1}]`,
+		BacklogDocIDs:  `[{"doc_id":"d2","event_type":"completed","task_types":["Graph"]}]`,
+		InflightDocIDs: `[{"doc_id":"d1","event_type":"completed","task_types":["Graph"]}]`,
 		State:          entity.DatasetStatePending,
 		ErrorMsg:       "merge failed: boom",
 	}
@@ -144,7 +157,7 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 		t.Fatalf("insert scheduling row: %v", err)
 	}
 
-	status, body := getCompilationStatus(t, newCompilationStatusHandlerRouter(), "kb-status-full")
+	status, body := getCompilationStatusWithKind(t, newCompilationStatusHandlerRouter(), "kb-status-full", "graph")
 	if status != http.StatusOK {
 		t.Fatalf("status=%d want 200", status)
 	}
@@ -153,6 +166,9 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 	}
 	if body.Data["state"] != entity.DatasetStatePending {
 		t.Fatalf("state=%v want pending", body.Data["state"])
+	}
+	if body.Data["kind"] != "graph" {
+		t.Fatalf("kind=%v want graph", body.Data["kind"])
 	}
 	if n, _ := body.Data["inflight"].(float64); n != 1 {
 		t.Fatalf("inflight=%v want 1", body.Data["inflight"])

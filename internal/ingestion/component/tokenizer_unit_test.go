@@ -240,6 +240,81 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	}
 }
 
+func TestTokenizerComponent_FullTextIncludesMediaContext(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	comp, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"name":          "report.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{
+				"text":          "table body",
+				"context_above": "above ",
+				"context_below": " below",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if got := chunks[0]["content_ltks"]; got != "above table body below" {
+		t.Fatalf("content_ltks = %q, want contextual text", got)
+	}
+	if got := chunks[0]["content_sm_ltks"]; got != "above table body below" {
+		t.Fatalf("content_sm_ltks = %q, want contextual text", got)
+	}
+}
+
+func TestTokenizerComponent_EmbeddingIncludesMediaContext(t *testing.T) {
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []any{"embedding"}},
+		func(context.Context, string, string) (Embedder, string, error) {
+			return stub, "", nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	_, err = comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"text":          "table body",
+			"context_above": "above ",
+			"context_below": " below",
+		}},
+		"kb_id": "kb-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) != 1 || len(stub.callInputs[0]) != 1 {
+		t.Fatalf("embedder calls = %#v, want one content input", stub.callInputs)
+	}
+	if got := stub.callInputs[0][0]; got != "above table body below" {
+		t.Fatalf("embedding input = %q, want contextual text", got)
+	}
+}
+
+func TestContextualChunkTextSeparatesTightMediaBoundaries(t *testing.T) {
+	ck := schema.ChunkDoc{
+		ContextAbove: "See results in table:",
+		Text:         "Revenue grew by 20%.",
+		ContextBelow: "Conclusion follows.",
+	}
+	if got, want := contextualChunkText(ck), "See results in table:\nRevenue grew by 20%.\nConclusion follows."; got != want {
+		t.Fatalf("contextual text = %q, want %q", got, want)
+	}
+}
+
 // TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero uses an
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
@@ -540,6 +615,36 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 	}
 	if chunks[0]["text"] != "valid chunk" {
 		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
+	}
+}
+
+func TestTokenizerComponent_KeepsContextOnlyMediaChunk(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	comp, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"name":          "report.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"image":         "data:image/png;base64,placeholder",
+			"context_above": "figure description",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want context-bearing media chunk retained", chunks)
+	}
+	if got := chunks[0]["content_ltks"]; got != "figure description" {
+		t.Fatalf("content_ltks = %q, want media context", got)
 	}
 }
 

@@ -245,7 +245,7 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    const parserConfig = data.parser_config;
+    const parserConfig = { ...data.parser_config };
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
     );
