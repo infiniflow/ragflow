@@ -108,6 +108,8 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
 		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+	case errors.Is(err, service.ErrInvalidRefreshFreq):
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
 		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
 	default:

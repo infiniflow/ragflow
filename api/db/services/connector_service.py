@@ -353,10 +353,11 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def list_due_sync_tasks(cls) -> List[dict]:
-        return cls._list_due_tasks_for_freq(
+        tasks = cls._list_due_tasks_for_freq(
             ConnectorTaskType.SYNC,
             "refresh_freq",
         )
+        return [task for task in tasks if task.get("reindex") == "1" or int(task.get("refresh_freq") or 0) > 0]
 
     @classmethod
     def list_due_prune_tasks(cls) -> List[dict]:
@@ -415,6 +416,8 @@ class SyncLogsService(CommonService):
             cls.model.status == TaskStatus.SCHEDULE,
             cls.model.task_type == task_type,
         )
+        if task_type == ConnectorTaskType.SYNC:
+            query = query.where((Connector.refresh_freq > 0) | (cls.model.from_beginning == "1"))
 
         if _is_gaussdb_compatible_metadata_db():
             expr = _gaussdb_poll_interval_expr(freq_field)
