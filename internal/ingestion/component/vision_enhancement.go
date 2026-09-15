@@ -188,10 +188,6 @@ func maybeDispatchVisionEnhancement(
 	}
 	var targets []target
 	for i, item := range dispatched.JSON {
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" && kd != "table" {
-			continue
-		}
 		img, _ := item["image"].(string)
 		if img == "" {
 			continue

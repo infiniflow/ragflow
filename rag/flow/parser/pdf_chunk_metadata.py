@@ -110,6 +110,56 @@ def normalize_pdf_items_metadata(items):
     return items
 
 
+def supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes, zoom=PDF_PREVIEW_ZOOM):
+    """Recover figure boxes when DeepDOC layout finds no text (image-only PDFs)."""
+    if bboxes and any(b.get("image") is not None for b in bboxes):
+        return bboxes
+
+    lock_key = "global_shared_lock_pdfplumber"
+    if lock_key not in sys.modules:
+        import threading
+
+        sys.modules[lock_key] = threading.Lock()
+
+    supplemented = []
+    with sys.modules[lock_key]:
+        with pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                if page.images:
+                    for im in page.images:
+                        x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
+                        if x1 <= x0 or bottom <= top:
+                            continue
+                        cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
+                        supplemented.append(
+                            {
+                                "page_number": page_number,
+                                "x0": float(x0),
+                                "x1": float(x1),
+                                "top": float(top),
+                                "bottom": float(bottom),
+                                "layout_type": "figure",
+                                "text": "",
+                                "image": cropped,
+                                "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
+                            }
+                        )
+                elif not page.chars:
+                    pil = page.to_image(resolution=72 * zoom, antialias=True).original
+                    width, height = pil.size
+                    supplemented.append(
+                        {
+                            "page_number": page_number,
+                            "layout_type": "figure",
+                            "text": "",
+                            "image": pil,
+                            "positions": [[page_number, 0, width, 0, height]],
+                        }
+                    )
+
+    return supplemented if supplemented else (bboxes or [])
+
+
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):
     text_boxes = [box for box in bboxes if box.get("layout_type") == "text" and all(box.get(key) is not None for key in ["x0", "x1", "page_number"])]
     if not text_boxes or not pdf_parser.page_images:
