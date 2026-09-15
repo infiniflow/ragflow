@@ -616,23 +616,41 @@ def test_get_commit_not_found(monkeypatch):
 
 @pytest.mark.p2
 def test_data_error_carries_code_and_message(monkeypatch):
-    """The refusal must answer with a RetCode and its own message.
+    """Every refusal must answer with a RetCode and its own message.
 
     ``get_data_error_result`` takes the code first, so a call that passes the
     message positionally reports the sentence as the code and leaves the
-    default placeholder as the message.
+    default placeholder as the message. One case per refusing route, because
+    a single sampled route would leave the others free to regress. The
+    "not found in workspace" branch is covered by the wrong-folder test below.
     """
     module = _load_module(monkeypatch)
+    FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
 
-    res = _run(module.get_commit("root-folder", "nonexistent"))
+    _setup_request(
+        module,
+        json_payload={
+            "message": "c1",
+            "files": [{"file_id": "f1", "file_name": "a.txt", "operation": "add", "content": "v1"}],
+        },
+        args={},
+    )
+    commit_id = _run(module.create_commit("root-folder"))["data"]["id"]
 
-    assert res["code"] == 102, f"code must stay RetCode.DATA_ERROR, got {res['code']!r}"
-    assert res["message"] == "Commit not found", f"the call site's own message must survive, got {res['message']!r}"
+    cases = [
+        ("get_commit", lambda: module.get_commit("root-folder", "absent"), "Commit not found"),
+        ("list_commit_files", lambda: module.list_commit_files("root-folder", "absent"), "Commit not found"),
+        ("get_commit_tree", lambda: module.get_commit_tree("root-folder", "absent"), "Commit not found"),
+        ("get_commit_file_content", lambda: module.get_commit_file_content("root-folder", "absent", "f1"), "Commit not found"),
+        ("get_commit_file_content, file absent", lambda: module.get_commit_file_content("root-folder", commit_id, "absent"), "File not found in this commit"),
+        ("get_file_version_history", lambda: module.get_file_version_history("absent"), "File not found"),
+        ("diff_commits, no params", lambda: module.diff_commits("root-folder"), "'from' and 'to' parameters are required"),
+    ]
 
-    module.request.args = {}
-    missing = _run(module.diff_commits("root-folder"))
-    assert missing["code"] == 102
-    assert missing["message"] == "'from' and 'to' parameters are required"
+    for label, call, expected in cases:
+        res = _run(call())
+        assert res["code"] == 102, f"{label}: code must stay RetCode.DATA_ERROR, got {res['code']!r}"
+        assert res["message"] == expected, f"{label}: the call site's own message must survive, got {res['message']!r}"
 
 
 @pytest.mark.p2
