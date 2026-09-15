@@ -113,10 +113,49 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 // tableItems returns the per-row records, preferring JSONResult and
 // falling back to Chunks. Each record becomes exactly one chunk.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
-	if len(items) > 0 {
-		return items
+	source := items
+	if len(source) == 0 {
+		source = chunks
 	}
-	return chunks
+	if len(source) == 0 {
+		return nil
+	}
+	dataTables := make(map[string]struct{})
+	for _, item := range source {
+		if item.CKType == "table_row" {
+			dataTables[spreadsheetTableKey(item)] = struct{}{}
+		}
+	}
+	filtered := make([]schema.ChunkDoc, 0, len(source))
+	for _, item := range source {
+		// Spreadsheet parsers expose the header as schema metadata. It is
+		// already represented in each table_row and must not become a data
+		// chunk of its own. A table with no data rows still needs its header
+		// as the only searchable representation.
+		if item.CKType == "table_header" {
+			if _, hasRows := dataTables[spreadsheetTableKey(item)]; hasRows {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func spreadsheetTableKey(item schema.ChunkDoc) string {
+	if item.TableID != "" {
+		return "table:" + item.TableID
+	}
+	if item.SheetIndex != nil {
+		return fmt.Sprintf("sheet-index:%d", *item.SheetIndex)
+	}
+	if item.Sheet != "" {
+		return "sheet:" + item.Sheet
+	}
+	if sheet, ok := spreadsheetPositionSheet(item); ok {
+		return fmt.Sprintf("position-sheet:%g", sheet)
+	}
+	return "unknown"
 }
 
 func init() {

@@ -75,6 +75,91 @@ func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T)
 	}
 }
 
+func TestParseResultText_SpreadsheetRowsRenderReadableHTMLTable(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{
+				"text":         "a; b",
+				"doc_type_kwd": "table",
+				"ck_type":      "table_header",
+				"table_id":     "sheet-1",
+				"sheet":        "Data",
+				"cells":        []string{"a", "b"},
+			},
+			{
+				"text":         "a：1; b：2 ——Data",
+				"doc_type_kwd": "text",
+				"ck_type":      "table_row",
+				"table_id":     "sheet-1",
+				"sheet":        "Data",
+				"headers":      []string{"a", "b"},
+				"cells":        []string{"1", "2"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	for _, want := range []string{"<table", "<caption>Data</caption>", "<th>a</th>", "<td>1</td>"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("parseResultText = %q, want %q", result, want)
+		}
+	}
+}
+
+func TestParseResultText_SpreadsheetRowsWithoutHeaderDoNotDuplicateFirstRow(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{
+				"ck_type": "table_row",
+				"headers": []string{"name", "value"},
+				"cells":   []string{"alpha", "1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if !strings.Contains(result, "<th>name</th>") {
+		t.Fatalf("row headers were not rendered: %q", result)
+	}
+	if got := strings.Count(result, "<td>alpha</td>"); got != 1 {
+		t.Fatalf("first row rendered %d times, want once: %q", got, result)
+	}
+}
+
+func TestParseResultText_SpreadsheetRowsWithoutIdentityStaySeparate(t *testing.T) {
+	result, err := parseResultText(parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{
+				"ck_type": "table_header",
+				"cells":   []string{"first"},
+			},
+			{
+				"ck_type": "table_row",
+				"cells":   []string{"one"},
+			},
+			{
+				"ck_type": "table_header",
+				"cells":   []string{"second"},
+			},
+			{
+				"ck_type": "table_row",
+				"cells":   []string{"two"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseResultText: %v", err)
+	}
+	if got := strings.Count(result, "<table>"); got != 2 {
+		t.Fatalf("unknown spreadsheet tables were merged: got %d tables in %q", got, result)
+	}
+}
+
 func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
 	raw := []byte("From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Parser contract\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nEmail body")
 	p := parser.NewEmailParser()
