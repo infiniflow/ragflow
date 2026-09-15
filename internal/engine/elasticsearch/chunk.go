@@ -658,6 +658,10 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"terms": map[string]interface{}{k: listVal},
 			})
+		} else if listVal, ok := v.([]string); ok {
+			mustClauses = append(mustClauses, map[string]interface{}{
+				"terms": map[string]interface{}{k: listVal},
+			})
 		} else if _, ok := v.(string); ok {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{k: v},
