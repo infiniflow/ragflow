@@ -81,13 +81,32 @@ class Dealer:
     # ReAct native loop hammer the same doc_ids repeatedly), which exhausts the
     # connection pool under concurrency. Doc existence is stable within seconds, so
     # a short TTL lets us skip the DB round-trip for repeats.
+    #
+    # The cache is class-level (not per-instance) so a deletion in one process can
+    # invalidate every retrieval path in that process — see #19071.
     _DOC_EXISTS_TTL = 120.0
+    _doc_exists_cache: "OrderedDict[str, tuple[float, bool]]" = OrderedDict()
+    _doc_exists_lock = threading.Lock()
 
     def __init__(self, dataStore: DocStoreConnection):
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
-        self._doc_exists_cache: OrderedDict = OrderedDict()
-        self._doc_exists_lock = threading.Lock()
+
+    @classmethod
+    def invalidate_doc_exists(cls, *doc_ids: str) -> None:
+        """Drop cached doc-existence entries for the given doc_ids.
+
+        Called from DocumentService delete paths so a freshly-deleted doc
+        does not leak through ``_prune_deleted_chunks`` for up to
+        ``_DOC_EXISTS_TTL`` seconds. The invalidation is process-local;
+        multi-process workers still rely on the TTL — a shared cache would
+        be a separate change.
+        """
+        if not doc_ids:
+            return
+        with cls._doc_exists_lock:
+            for doc_id in doc_ids:
+                cls._doc_exists_cache.pop(doc_id, None)
 
     @dataclass
     class SearchResult:
@@ -117,8 +136,8 @@ class Dealer:
         now = time.time()
 
         # Fast path: serve every doc_id from the short-lived cache if it is fresh.
-        with self._doc_exists_lock:
-            cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
+        with Dealer._doc_exists_lock:
+            cached = {d: v for d, v in Dealer._doc_exists_cache.items() if now - v[0] < Dealer._DOC_EXISTS_TTL}
             hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
             miss = [d for d in unique_doc_ids if d not in cached]
 
@@ -137,12 +156,12 @@ class Dealer:
         found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
 
         # Merge results; a missing doc is recorded as False so repeat queries skip it too.
-        with self._doc_exists_lock:
+        with Dealer._doc_exists_lock:
             for d in miss:
-                self._doc_exists_cache[d] = (now, d in found)
+                Dealer._doc_exists_cache[d] = (now, d in found)
             # Bound the cache so it cannot grow unbounded across many documents.
-            while len(self._doc_exists_cache) > 4096:
-                self._doc_exists_cache.popitem(last=False)
+            while len(Dealer._doc_exists_cache) > 4096:
+                Dealer._doc_exists_cache.popitem(last=False)
 
         return hit.union(found)
 
