@@ -147,7 +147,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}, &entity.Knowledgebase{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -1280,7 +1280,92 @@ func TestProcessOutput_StripsStaleTableMetadataOnReparse(t *testing.T) {
 	if res.Metadata["keep"] != "yes" {
 		t.Errorf("non-table metadata must survive the strip pass: %v", res.Metadata)
 	}
+	if len(res.StripKeys) == 0 {
+		t.Errorf("expected StripKeys to be populated on reparse: %+v", res.StripKeys)
+	}
 }
+
+func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	status := string(entity.StatusValid)
+	kb := &entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		Name:         "test-kb",
+		Status:       &status,
+		CreatedBy:    "tenant-1",
+		ParserConfig: entity.JSONMap{},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("seed kb: %v", err)
+	}
+
+	name := "table.csv"
+	doc := &entity.Document{
+		ID:       "doc-1",
+		KbID:     "kb-1",
+		ParserID: "table",
+		ParserConfig: entity.JSONMap{
+			"table_column_mode": "manual",
+			"table_column_roles": map[string]interface{}{
+				"order_id":     "metadata",
+				"product_name": "both",
+				"internal_seq": "indexing",
+			},
+		},
+		CreatedBy: "tenant-1",
+		Type:      "csv",
+		Suffix:    "csv",
+		Name:      &name,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc = *doc
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+
+	output := map[string]any{
+		"chunks": []map[string]any{{"text": "- product_name: Widget"}},
+		"file": map[string]any{
+			"name":               "table.csv",
+			"table_column_names": []string{"order_id", "product_name", "internal_seq"},
+		},
+	}
+	res, err := svc.processOutput(t.Context(), output, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if len(res.StripKeys) == 0 {
+		t.Errorf("expected StripKeys to be populated, got empty")
+	}
+
+	persistedKB, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), dao.DB, "kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	fm, ok := persistedKB.ParserConfig["field_map"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("field_map not found in kb.ParserConfig: %#v", persistedKB.ParserConfig)
+	}
+	if fm["order_id"] != "order id" {
+		t.Errorf("expected order_id -> 'order id', got %v", fm["order_id"])
+	}
+	if fm["product_name"] != "product name" {
+		t.Errorf("expected product_name -> 'product name', got %v", fm["product_name"])
+	}
+	if _, ok := fm["internal_seq"]; ok {
+		t.Errorf("indexing-only column internal_seq must NOT be in field_map, got %v", fm["internal_seq"])
+	}
+}
+
 
 func TestMergeKBTableColumnFallback(t *testing.T) {
 	doc := map[string]interface{}{"table_column_mode": "manual"}

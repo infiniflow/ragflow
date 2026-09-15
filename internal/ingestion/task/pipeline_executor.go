@@ -61,6 +61,7 @@ type PipelineResult struct {
 	DocName               string
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
+	StripKeys             []string
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -250,7 +251,8 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	parserConfigForStrip := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
-	for _, stripKey := range indexdoc.TableParserStripDocMetadataKeys(parserConfigForStrip) {
+	stripKeys := indexdoc.TableParserStripDocMetadataKeys(parserConfigForStrip)
+	for _, stripKey := range stripKeys {
 		delete(metadata, stripKey)
 	}
 	if tableMeta != nil {
@@ -273,6 +275,11 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
 		if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
 			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
+		}
+		if s.taskCtx.Doc.KbID != "" {
+			if err := syncTableFieldMapToKB(ctx, s.taskCtx.Doc.KbID, names, parserConfigForStrip); err != nil {
+				common.Warn(fmt.Sprintf("failed to sync table field map to KB %s: %v", s.taskCtx.Doc.KbID, err))
+			}
 		}
 	}
 
@@ -359,6 +366,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		DocID:                 s.taskCtx.Doc.ID,
 		KbID:                  s.taskCtx.Doc.KbID,
 		Metadata:              metadata,
+		StripKeys:             stripKeys,
 		ChunkCount:            chunkCount,
 		TokenConsumption:      embeddingTokenConsumption,
 		Duration:              time.Since(start).Seconds(),
@@ -1448,3 +1456,62 @@ func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
 		return nil
 	}
 }
+
+func syncTableFieldMapToKB(ctx context.Context, kbID string, names []string, parserConfig map[string]interface{}) error {
+	if len(names) == 0 || kbID == "" || dao.DB == nil {
+		return nil
+	}
+	_, roles, _ := indexdoc.ResolveTableColumnConfig(parserConfig)
+	fieldMap := make(map[string]interface{})
+	for _, col := range names {
+		col = strings.TrimSpace(col)
+		if col == "" {
+			continue
+		}
+		role := "both"
+		if roles != nil {
+			if rVal, ok := roles[col].(string); ok && strings.TrimSpace(rVal) != "" {
+				role = strings.ToLower(strings.TrimSpace(rVal))
+			}
+			if role == "vectorize" {
+				role = "indexing"
+			}
+		}
+		if role == "metadata" || role == "both" {
+			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
+		}
+	}
+	if len(fieldMap) == 0 {
+		return nil
+	}
+	return saveKBTableFieldMap(ctx, kbID, fieldMap)
+}
+
+func saveKBTableFieldMap(ctx context.Context, kbID string, newFieldMap map[string]interface{}) error {
+	if len(newFieldMap) == 0 || kbID == "" || dao.DB == nil {
+		return nil
+	}
+
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var kb entity.Knowledgebase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).
+			First(&kb).Error; err != nil {
+			return err
+		}
+
+		if kb.ParserConfig == nil {
+			kb.ParserConfig = entity.JSONMap{}
+		}
+		fm, ok := kb.ParserConfig["field_map"].(map[string]interface{})
+		if !ok || fm == nil {
+			fm = make(map[string]interface{}, len(newFieldMap))
+		}
+		for k, v := range newFieldMap {
+			fm[k] = v
+		}
+		kb.ParserConfig["field_map"] = fm
+		return tx.Model(&entity.Knowledgebase{}).Where("id = ?", kbID).Update("parser_config", kb.ParserConfig).Error
+	})
+}
+

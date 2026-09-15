@@ -150,6 +150,9 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	reader := csv.NewReader(strings.NewReader(text))
+	if strings.HasSuffix(strings.ToLower(filename), ".tsv") || (!strings.Contains(text, ",") && strings.Contains(text, "\t")) {
+		reader.Comma = '\t'
+	}
 	reader.LazyQuotes = true
 	reader.TrimLeadingSpace = true
 	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.

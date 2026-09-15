@@ -136,3 +136,36 @@ func TestCSVParserKeepsVariableRowWidths(t *testing.T) {
 		t.Fatalf("second data row width = %d, want 3", got)
 	}
 }
+
+func TestCSVParser_TSVSupport(t *testing.T) {
+	tsvData := []byte("col1\tcol2\tcol3\nval1\tval2\tval3\n")
+	p := NewCSVParser()
+	p.OutputFormat = "json"
+	p.ColumnMode = "manual"
+	p.ColumnRoles = map[string]string{
+		"col1": "indexing",
+		"col2": "metadata",
+		"col3": "both",
+	}
+
+	res := p.ParseWithResult(context.Background(), "test.tsv", tsvData)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(res.JSON))
+	}
+	chunk := res.JSON[0]
+	text := chunk["text"].(string)
+	if !strings.Contains(text, "col1: val1") || !strings.Contains(text, "col3: val3") {
+		t.Errorf("text missing expected columns: %q", text)
+	}
+	if strings.Contains(text, "col2: val2") {
+		t.Errorf("text should not contain metadata-only column col2: %q", text)
+	}
+	chunkData := chunk["chunk_data"].(map[string]any)
+	if chunkData["col2"] != "val2" || chunkData["col3"] != "val3" {
+		t.Errorf("chunk_data unexpected: %+v", chunkData)
+	}
+}
+

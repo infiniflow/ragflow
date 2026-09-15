@@ -94,8 +94,25 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 		return nil, nil
 	}
 
-	rawHeaders := make([]string, len(rows[0]))
-	for i, h := range rows[0] {
+	headerRowIdx := -1
+	for rIdx, r := range rows {
+		for _, cell := range r {
+			if strings.TrimSpace(cell) != "" {
+				headerRowIdx = rIdx
+				break
+			}
+		}
+		if headerRowIdx >= 0 {
+			break
+		}
+	}
+	if headerRowIdx == -1 {
+		return nil, nil
+	}
+
+	headerRow := rows[headerRowIdx]
+	rawHeaders := make([]string, len(headerRow))
+	for i, h := range headerRow {
 		rawHeaders[i] = strings.TrimSpace(h)
 		if rawHeaders[i] == "" {
 			rawHeaders[i] = fmt.Sprintf("Column_%d", i+1)
@@ -104,9 +121,9 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 	headers := DeduplicateColumnNames(rawHeaders)
 
 	isManual := strings.EqualFold(strings.TrimSpace(columnMode), "manual")
-	items := make([]map[string]any, 0, len(rows)-1)
+	items := make([]map[string]any, 0, len(rows)-headerRowIdx-1)
 
-	for r := 1; r < len(rows); r++ {
+	for r := headerRowIdx + 1; r < len(rows); r++ {
 		row := rows[r]
 		textLines := make([]string, 0, len(headers))
 		chunkData := make(map[string]any)

@@ -57,8 +57,8 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	if r == nil {
 		return
 	}
-	if len(r.Metadata) > 0 {
-		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata); err != nil {
+	if len(r.Metadata) > 0 || len(r.StripKeys) > 0 {
+		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata, r.StripKeys); err != nil {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
@@ -84,14 +84,21 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 // before writing the merged map back (Python doc_metadata_service.py:468
 // _split_combined_values). A read failure aborts the merge: SetDocumentMetadata
 // is a full overwrite, so writing with an empty baseline would destroy existing
-// keys.
-func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
+// keys. StripKeys (e.g. from table column mode on reparse) are removed from
+// existing prior to merge.
+func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any, stripKeys []string) error {
 	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
 	if err != nil {
 		return err
 	}
 	if existing == nil {
 		existing = map[string]any{}
+	}
+	for _, k := range stripKeys {
+		delete(existing, k)
+	}
+	if metadata == nil {
+		metadata = make(map[string]any)
 	}
 	merged := utility.UpdateMetadataTo(metadata, existing)
 	merged = common.SplitCombinedMetadataValues(merged)
