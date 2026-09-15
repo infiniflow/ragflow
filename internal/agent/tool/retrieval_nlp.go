@@ -322,15 +322,16 @@ func nlpRequestFromRetrieval(
 	excludeCompiled bool,
 ) *nlp.RetrievalRequest {
 	nlpReq := &nlp.RetrievalRequest{
-		Question:       req.Query,
-		TenantIDs:      append([]string(nil), tenantIDs...),
-		KbIDs:          append([]string(nil), req.DatasetIDs...),
-		DocIDs:         append([]string(nil), compactStrings(req.DocScope)...),
-		Page:           1,
-		PageSize:       topN,
-		EmbeddingModel: embeddingModel,
-		Aggs:           boolPtr(false),
-		Highlight:      boolPtr(false),
+		Question:           req.Query,
+		TenantIDs:          append([]string(nil), tenantIDs...),
+		KbIDs:              append([]string(nil), req.DatasetIDs...),
+		DocIDs:             append([]string(nil), compactStrings(req.DocScope)...),
+		Page:               1,
+		PageSize:           topN,
+		EmbeddingModel:     embeddingModel,
+		Aggs:               boolPtr(false),
+		Highlight:          boolPtr(false),
+		AllowDenseFallback: req.AllowDenseFallback,
 	}
 	if excludeCompiled {
 		// Python hybrid_search excludes compiled products from plain retrieval

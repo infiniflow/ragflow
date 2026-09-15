@@ -128,6 +128,7 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		TopN:                     args.TopN,
 		TopK:                     args.TopN * 4,
 		SimilarityThreshold:      &similarityThreshold,
+		AllowDenseFallback:       new(false),
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
 	}
