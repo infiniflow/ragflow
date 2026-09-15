@@ -181,8 +181,6 @@ def enhance_media_sections_with_vision(
         return sections
 
     for item in sections:
-        if item.get("doc_type_kwd") not in {"image", "table"}:
-            continue
         if item.get("image") is None:
             continue
 
