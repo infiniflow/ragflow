@@ -977,7 +977,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Add text match if question is provided
 			if hasTextMatch {
 				extraOptions := map[string]string{
-					"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+					"minimum_should_match": common.FormatMinimumShouldMatchPercent(minMatch),
 				}
 
 				if filterStr != "" {

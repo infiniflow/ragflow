@@ -241,7 +241,7 @@ func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConf
 	for _, model := range provider.Models {
 		modelList = append(modelList, ListModelResponse{
 			Name:          model.Name,
-			ContentLength: model.ContentLength,
+			ContextLength: model.ContextLength,
 			MaxOutput:     model.MaxOutput,
 			ModelTypes:    model.ModelTypes,
 			Thinking:      model.Thinking,

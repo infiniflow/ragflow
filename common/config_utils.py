@@ -137,8 +137,18 @@ def decrypt_database_password(password):
 
 
 def decrypt_database_config(database=None, passwd_key="password", name="database"):
-    if not database:
-        database = get_base_config(name, {})
+    # Only fall back to the global config when no `database` argument is passed.
+    # An explicitly supplied (possibly empty) dict must be honoured as-is so that
+    # callers can opt out of the global lookup.
+    if database is None:
+        database = get_base_config(name, {}) or {}
+
+    # Some deployments omit the password field entirely (e.g. externally managed
+    # databases or credentials injected by other means). Skip decryption instead
+    # of raising `KeyError: 'password'`, which previously crashed service start-up
+    # (#11051).
+    if passwd_key not in database:
+        return database
 
     database[passwd_key] = decrypt_database_password(database[passwd_key])
     return database

@@ -2,7 +2,6 @@
 package checkpoint
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -87,7 +86,7 @@ func TestVersionConflictError(t *testing.T) {
 }
 
 func TestCheckpointManager_SaveWithVersionConflict(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create initial checkpoint
@@ -115,7 +114,7 @@ func TestCheckpointManager_SaveWithVersionConflict(t *testing.T) {
 }
 
 func TestCheckpointManager_PutWrites(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create initial checkpoint
@@ -164,7 +163,7 @@ func TestCheckpointManager_PutWrites(t *testing.T) {
 }
 
 func TestCheckpointManager_PutWrites_Conflict(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create initial checkpoint
@@ -207,7 +206,7 @@ func TestCheckpointManager_PutWrites_Conflict(t *testing.T) {
 }
 
 func TestCheckpointManager_GetTuple(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	config := types.NewRunnableConfig()
@@ -245,7 +244,7 @@ func TestCheckpointManager_GetTuple(t *testing.T) {
 }
 
 func TestCheckpointManager_GetTupleByVersion(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create and save multiple checkpoints
@@ -307,7 +306,7 @@ func TestCheckpointManager_GetTupleByVersion(t *testing.T) {
 }
 
 func TestCheckpointManager_GetLineage(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create and save multiple checkpoints in a version chain.
@@ -358,7 +357,7 @@ func TestCheckpointManager_GetLineage(t *testing.T) {
 }
 
 func TestCheckpointManager_ConcurrentWrites(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	manager := NewCheckpointManager(10)
 
 	// Create initial checkpoint

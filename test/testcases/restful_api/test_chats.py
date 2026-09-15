@@ -1183,7 +1183,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
 
 
 @pytest.mark.p1
-def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(monkeypatch):
+def test_chat_create_omits_dataset_default_prompt_without_sources_unit(monkeypatch):
     module = _load_chat_routes_unit_module(monkeypatch)
     saved = {}
     _set_route_unit_request_json(monkeypatch, module, {"name": "chat-a"})
@@ -1201,7 +1201,9 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     res = _run(module.create.__wrapped__())
     assert res["code"] == 0
     assert saved["kb_ids"] == []
-    assert saved["prompt_config"]["system"].find("{knowledge}") >= 0
+    # Without a dataset the dataset-oriented default system prompt (including its forced
+    # "not found in the dataset" sentence) must not be seeded.
+    assert saved["prompt_config"]["system"] == ""
     assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}, {"key": "date", "optional": True}]
 
 
@@ -1580,7 +1582,7 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
                 ("prompt_config", "empty_response"): DEFAULT_CHAT_EMPTY_RESPONSE,
                 ("prompt_config", "prologue"): DEFAULT_CHAT_PROLOGUE,
                 ("prompt_config", "quote"): True,
-                ("prompt_config", "system"): DEFAULT_CHAT_SYSTEM_PROMPT,
+                ("prompt_config", "system"): "",
             },
         ),
         ("similarity_threshold zero", {"similarity_threshold": 0}, {("similarity_threshold",): 0}),

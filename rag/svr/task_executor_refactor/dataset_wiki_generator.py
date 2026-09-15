@@ -14,19 +14,12 @@
 #  limitations under the License.
 #
 
-"""KB-wide wiki / artifact compilation.
+"""KB-wide incremental wiki / artifact compilation.
 
-Extracted from ``rag.svr.task_executor_refactor.task_handler`` where the
-same pipeline previously lived as a set of ``_wiki_*`` / ``_persist_wiki_*``
-methods and one ``_run_wiki`` orchestrator. The public entry point is
-:func:`run_wiki`.
-
-The pipeline runs MAP per (doc, template) — each MAP call resumes from
-its own ``wiki_map_extract`` ES rows — then REDUCE / PLAN / REFINE
-KB-wide via ``rag.advanced_rag.knowlege_compile.wiki``. Refined pages
-land in ES as searchable ``wiki_page`` rows, one
-``wiki_page_topic`` row per topic, and ``wiki_entity`` /
-``wiki_relation`` rows for the dataset Artifact tab's canvas graph.
+The public entry point is :func:`run_wiki_incremental`. MAP extraction and
+its resume state live in ``rag.advanced_rag.knowlege_compile.wiki``; the
+incremental REDUCE / REFINE / FINALIZE stages live in
+``rag.advanced_rag.knowlege_compile.wiki_incremental``.
 
 Design notes:
 
@@ -36,9 +29,6 @@ Design notes:
   ``parser_config.compilation_template_group_id`` to a template list
   via the shared parser-config helper and
   ``CompilationTemplateGroupService.resolve_template_ids``.
-* The persistence helpers (``persist_wiki_pages`` etc.) are
-  exposed at module level for testing but are only called from
-  :func:`run_wiki` in production.
 """
 
 from __future__ import annotations
@@ -46,8 +36,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
-from typing import AsyncIterator, Callable, Dict, List, Optional
+from typing import AsyncIterator, Callable, Dict, List
 
 import xxhash
 
@@ -56,6 +45,7 @@ from common.constants import LLMType
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+from rag.advanced_rag.knowlege_compile._common import env_int
 from rag.advanced_rag.knowlege_compile.wiki import (
     WIKI_MAP_STATE_COMPILE_KWD,
     WIKI_MAP_STATE_META_COMPILE_KWD,
@@ -65,9 +55,6 @@ from rag.advanced_rag.knowlege_compile.wiki import (
     _wiki_load_map_extracts_for_state,
     _wiki_scan_current_chunk_state,
     wiki_map_from_chunks,
-    wiki_plan_from_reduction,
-    wiki_reduce_from_extracts,
-    wiki_refine_from_plan,
 )
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -80,21 +67,36 @@ from rag.svr.task_executor_refactor.task_context import TaskContext
 # room for the function's internal split_chunks packing to do real work.
 WIKI_MAP_BATCH_CHUNKS = 64
 
-# The pool limits actual MAP LLM calls rather than the surrounding batch
-# tasks. This lets the next waiting batch start as soon as a model call
-# finishes, without waiting for the previous batch's ES persistence work.
-WIKI_MAP_LLM_POOL_SIZE = 20
+# The pool limits actual LLM calls rather than the surrounding batch tasks and
+# adapts each model's admission limit when it reports rate limiting. This lets
+# high-capacity and low-concurrency models share one Wiki task safely.
+WIKI_MAP_LLM_POOL_SIZE = env_int("WIKI_MAP_LLM_POOL_SIZE", 20, minimum=1)
 
 # Global MAP admission limit: active calls plus calls waiting in the pool.
-WIKI_MAP_MAX_PENDING = 25
+WIKI_MAP_MAX_PENDING = env_int("WIKI_MAP_MAX_PENDING", 25, minimum=WIKI_MAP_LLM_POOL_SIZE)
 
-# Keep only a small number of outer batches buffered. With 20 workers this
-# bounds the in-memory MAP work to roughly 25 batches (20 active + 5 waiting).
+# Keep only a small number of outer batches buffered. Together with the
+# configured worker and pending limits, this bounds in-memory MAP work.
 WIKI_MAP_QUEUE_SIZE = 5
 
-# REFINE pages are independent. Keep enough page workers to feed the shared
-# pool; the pool itself still caps actual LLM requests at 20.
-WIKI_REFINE_WORKERS = WIKI_MAP_LLM_POOL_SIZE
+
+def _create_wiki_llm_pool(progress: Callable) -> LLMCallPool:
+    def _on_concurrency_change(old: int, new: int, reason: str) -> None:
+        progress(msg=f"LLM pool concurrency {old} -> {new} ({reason}).")
+
+    def _on_error(label: str, context: str | None, error_type: str) -> None:
+        progress(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
+    pool = LLMCallPool(
+        WIKI_MAP_LLM_POOL_SIZE,
+        max_pending=WIKI_MAP_MAX_PENDING,
+        on_concurrency_change=_on_concurrency_change,
+        on_error=_on_error,
+    )
+    logging.info("Wiki LLM pool initialized max_concurrency=%d max_pending=%d", pool.max_concurrency, pool.max_pending)
+    progress(0.0, f"LLM pool max {pool.max_concurrency}.")
+    return pool
+
 
 # Per-node cap on ``source_chunk_ids`` carried by the canvas graph blob.
 # Pages can accumulate hundreds of source chunks; the graph response is
@@ -103,23 +105,16 @@ WIKI_REFINE_WORKERS = WIKI_MAP_LLM_POOL_SIZE
 # ``wiki_page`` row the UI deep-links into.
 WIKI_GRAPH_MAX_CHUNK_IDS_PER_NODE = 64
 
-# Title + comments stamped on every ``wiki_commit`` row produced by
-# :func:`run_wiki`'s regeneration path (as opposed to the dialog-edit
-# path, which carries the user's own title/comments).
-WIKI_REGEN_COMMIT_TITLE = "Regenerated by artifact compilation"
-WIKI_REGEN_COMMIT_COMMENTS_TEMPLATE = "Auto-update via run_wiki (action={action})"
-WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
 WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
 WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
 WIKI_DRAFT_COMPILE_KWD = "wiki_page_draft"
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
-WIKI_PAGE_TOPIC_COMPILE_KWD = "wiki_page_topic"
 WIKI_DERIVED_COMPILE_KWDS = (
     WIKI_REDUCE_COMPILE_KWD,
     WIKI_PLAN_COMPILE_KWD,
     WIKI_DRAFT_COMPILE_KWD,
     WIKI_PAGE_COMPILE_KWD,
-    WIKI_PAGE_TOPIC_COMPILE_KWD,
+    "wiki_page_topic",
     "wiki_entity",
     "wiki_relation",
     "wiki_page_graph",
@@ -315,8 +310,7 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
     pipeline path is essential for docs uploaded/parsed through a pipeline, which
     carry their compilation templates on the pipeline's compiler rather than in
     ``parser_config``. Returns ``(doc, template_id)`` for the first wiki template
-    matched per doc. Shared by :func:`run_wiki` and :func:`run_wiki_incremental`
-    so their eligibility can't drift.
+    matched per doc.
     """
     from api.db.services.compilation_template_service import CompilationTemplateService
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
@@ -684,373 +678,6 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
         logging.exception("wiki: failed to reset all wiki state for kb=%s", kb_id)
 
 
-def _wiki_topic_from_page(page: Dict, fallback: str = "") -> str:
-    for key in ("topic", "title", "page_type"):
-        value = page.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return fallback.strip()
-
-
-def _wiki_topic_slug(topic: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
-    if not slug:
-        slug = xxhash.xxh64(topic.encode("utf-8", "surrogatepass")).hexdigest()[:12]
-    return f"topic/{slug[:80]}"
-
-
-async def _ensure_wiki_topic_rows(
-    ctx: TaskContext,
-    index: str,
-    kb_id_str: str,
-    topics_by_name: dict[str, str],
-    topic_doc_ids: dict[str, list[str]] | None = None,
-) -> None:
-    if not topics_by_name:
-        return
-
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp import rag_tokenizer
-
-    topic_doc_ids = topic_doc_ids or {}
-    topics = list(topics_by_name.keys())
-    existing: set[str] = set()
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["id", "topic_kwd"],
-            [],
-            {
-                "compile_kwd": [WIKI_PAGE_TOPIC_COMPILE_KWD],
-                "topic_kwd": topics,
-            },
-            [],
-            OrderByExpr(),
-            0,
-            max(len(topics), 1),
-            index,
-            [ctx.kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, ["id", "topic_kwd"])
-        for row in (field_map or {}).values():
-            raw = row.get("topic_kwd")
-            if isinstance(raw, list):
-                existing.update(t for t in raw if isinstance(t, str) and t)
-            elif isinstance(raw, str) and raw:
-                existing.add(raw)
-    except Exception:
-        logging.exception(
-            "wiki_persist: topic existence read failed for kb=%s; inserting stable topic ids",
-            kb_id_str,
-        )
-
-    rows: list[dict] = []
-    for topic, slug in topics_by_name.items():
-        if topic in existing:
-            # Topic row already present — refresh only its doc provenance so
-            # delete-time ref-counting stays accurate as new docs contribute
-            # to (or stop contributing to) the topic across recompiles.
-            doc_ids = topic_doc_ids.get(topic) or []
-            try:
-                await thread_pool_exec(
-                    settings.docStoreConn.update,
-                    {"compile_kwd": WIKI_PAGE_TOPIC_COMPILE_KWD, "topic_kwd": topic},
-                    {"source_doc_ids": list(doc_ids)},
-                    index,
-                    ctx.kb_id,
-                )
-            except Exception:
-                logging.exception(
-                    "wiki_persist: topic provenance update failed for kb=%s topic=%s",
-                    kb_id_str,
-                    topic,
-                )
-            continue
-        topic_id = xxhash.xxh64(
-            f"{kb_id_str}:{WIKI_PAGE_TOPIC_COMPILE_KWD}:{topic}".encode(
-                "utf-8",
-                "surrogatepass",
-            ),
-        ).hexdigest()
-        content_ltks = rag_tokenizer.tokenize(topic)
-        rows.append(
-            {
-                "id": topic_id,
-                "kb_id": kb_id_str,
-                "doc_id": kb_id_str,
-                "compile_kwd": WIKI_PAGE_TOPIC_COMPILE_KWD,
-                "topic_kwd": topic,
-                "title_kwd": topic,
-                "slug_kwd": slug,
-                "source_doc_ids": list(topic_doc_ids.get(topic) or []),
-                "content_with_weight": topic,
-                "content_ltks": content_ltks,
-                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
-                "available_int": 1,
-            }
-        )
-
-    if rows:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
-
-
-# ----- persistence ---------------------------------------------------
-
-
-async def persist_wiki_pages(
-    ctx: TaskContext,
-    pages: List[Dict],
-    embd_mdl,
-) -> None:
-    """Insert one doc-store row per generated artifact page using the
-    knowledge-compilation schema:
-
-      id                  xxh64(kb_id + ":" + slug)
-      compile_kwd         "wiki_page"
-      slug_kwd            page.slug
-      title_kwd           page.title
-      page_type_kwd       page.page_type
-      topic_kwd           page.topic
-      entity_names_kwd    page.entity_names
-      outlinks_kwd        page.outlinks
-      related_kb_pages_kwd page.related_kb_pages
-      source_chunk_ids    page.source_chunk_ids
-      source_doc_ids      page.source_doc_ids
-      kb_id               ctx.kb_id
-      content_with_weight rendered markdown
-      content_ltks /
-      content_sm_ltks     tokenize(content_md + summary)
-      q_<dim>_vec         embed(summary)
-
-    ``action`` is intentionally not stored — it's a planner artifact
-    and has no meaning post-write.
-    """
-    if not pages:
-        return
-
-    from rag.nlp import rag_tokenizer
-    from common.doc_store.doc_store_base import OrderByExpr
-    from api.db.services.file_commit_service import (
-        FileCommitService as WikiCommitService,
-    )
-
-    index = search.index_name(ctx.tenant_id)
-    kb_id_str = str(ctx.kb_id)
-
-    # Capture the prior rendered content for every slug we're about to
-    # overwrite, so the per-page commit row downstream has a real diff
-    # baseline. Prefer md_with_weight because that is the canonical field
-    # consumed by the Wiki page API, with content_with_weight as fallback.
-    # Single batch read by slug_kwd IN [...] — one round-trip regardless of
-    # page count. Failures here degrade gracefully.
-    target_slugs: list[str] = [(p.get("slug") or "").strip() for p in pages if isinstance(p.get("slug"), str) and p.get("slug")]
-    prior_by_slug: dict[str, str] = {}
-    if target_slugs:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
-                [],
-                {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": list(target_slugs)},
-                [],
-                OrderByExpr(),
-                0,
-                max(len(target_slugs), 1),
-                index,
-                [ctx.kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(
-                res,
-                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
-            )
-            for row in (field_map or {}).values():
-                s = row.get("slug_kwd")
-                c = row.get("md_with_weight") or row.get("content_with_weight")
-                if isinstance(s, str) and isinstance(c, str):
-                    prior_by_slug[s] = c
-        except Exception:
-            logging.exception(
-                "wiki_persist: prior-content read failed for kb=%s; commit audit will treat all pages as creations",
-                kb_id_str,
-            )
-
-    # Batch the summary embeddings in one model call. Empty strings are
-    # swapped for a single space so the encoder doesn't reject them —
-    # they still yield a vector but contribute nothing meaningful.
-    summaries = [(p.get("summary") or "").strip() for p in pages]
-    embed_inputs = [s if s else " " for s in summaries]
-    try:
-        embeddings, _ = await thread_pool_exec(embd_mdl.encode, embed_inputs)
-    except Exception:
-        logging.exception(
-            "wiki_persist: summary embedding batch failed for kb=%s",
-            kb_id_str,
-        )
-        return
-    try:
-        n_emb = len(embeddings) if embeddings is not None else 0
-    except TypeError:
-        n_emb = 0
-    if n_emb != len(pages):
-        logging.warning(
-            "wiki_persist: embedding count %d != pages %d for kb=%s; aborting",
-            n_emb,
-            len(pages),
-            kb_id_str,
-        )
-        return
-
-    rows: List[Dict] = []
-    topics_by_name: dict[str, str] = {}
-    # Per-topic union of contributing doc ids, so topic rows can be
-    # reference-counted at document-delete time like every other product.
-    topic_doc_ids: dict[str, list[str]] = {}
-    for page, vec in zip(pages, embeddings):
-        slug = page.get("slug") or ""
-        if not slug:
-            continue
-        title = page.get("title") or slug
-        topic = _wiki_topic_from_page(page, title)
-        summary = page.get("summary") or ""
-        content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
-
-        vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
-        if not vec_list:
-            logging.warning(
-                "wiki_persist: empty embedding for slug=%s; skipping",
-                slug,
-            )
-            continue
-
-        text_for_search = (content_md + "\n\n" + summary).strip()
-        content_ltks = rag_tokenizer.tokenize(text_for_search) if text_for_search else ""
-        content_sm_ltks = rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else ""
-
-        row_id = xxhash.xxh64(
-            f"{kb_id_str}:{slug}".encode("utf-8", "surrogatepass"),
-        ).hexdigest()
-
-        rows.append(
-            {
-                "id": row_id,
-                "kb_id": kb_id_str,
-                "doc_id": kb_id_str,  # sentinel; KB-scoped row, real provenance in source_doc_ids
-                "compile_kwd": WIKI_PAGE_COMPILE_KWD,
-                "slug_kwd": slug,
-                "title_kwd": title,
-                "page_type_kwd": page.get("page_type") or "concept",
-                "topic_kwd": topic,
-                "entity_names_kwd": list(page.get("entity_names") or []),
-                "outlinks_kwd": list(page.get("outlinks") or []),
-                "outlinks_int": len(list(page.get("outlinks") or [])),
-                "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
-                "source_chunk_ids": list(page.get("source_chunk_ids") or []),
-                "source_doc_ids": list(page.get("source_doc_ids") or []),
-                "md_with_weight": content_md,
-                "content_with_weight": content_md,
-                # Summary kept verbatim alongside the rendered body so the
-                # viewer can render it as a distinct (smaller) block above
-                # the main content.
-                "summary_with_weight": summary,
-                "content_ltks": content_ltks,
-                "content_sm_ltks": content_sm_ltks,
-                f"q_{len(vec_list)}_vec": vec_list,
-                "available_int": 1,
-            }
-        )
-        if topic:
-            topics_by_name.setdefault(topic, _wiki_topic_slug(topic))
-            bucket = topic_doc_ids.setdefault(topic, [])
-            seen_bucket = set(bucket)
-            for d in page.get("source_doc_ids") or []:
-                if isinstance(d, str) and d and d not in seen_bucket:
-                    seen_bucket.add(d)
-                    bucket.append(d)
-
-    if not rows:
-        return
-
-    try:
-        insert_errors = await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
-    except Exception:
-        logging.exception(
-            "wiki_persist: bulk insert failed for kb=%s (rows=%d)",
-            kb_id_str,
-            len(rows),
-        )
-        return
-
-    if insert_errors:
-        logging.warning(
-            "wiki_persist: page insert returned %d error(s) for kb=%s",
-            len(insert_errors),
-        )
-
-    # Verify the rows that are actually visible after the bulk operation. Some
-    # backends can report partial bulk failures without raising, so recording a
-    # version for every input page would create history for pages that were not
-    # persisted.
-    try:
-        persisted_res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["id", "slug_kwd"],
-            [],
-            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "id": [row["id"] for row in rows]},
-            [],
-            OrderByExpr(),
-            0,
-            len(rows),
-            index,
-            [ctx.kb_id],
-        )
-        persisted_fields = settings.docStoreConn.get_fields(persisted_res, ["id", "slug_kwd"])
-        persisted_page_slugs = {row.get("slug_kwd") for row in (persisted_fields or {}).values() if isinstance(row.get("slug_kwd"), str)}
-    except Exception:
-        logging.exception(
-            "wiki_persist: failed to verify persisted pages for kb=%s; skipping history records",
-            kb_id_str,
-        )
-        return
-
-    if topics_by_name:
-        try:
-            await _ensure_wiki_topic_rows(ctx, index, kb_id_str, topics_by_name, topic_doc_ids)
-        except Exception:
-            logging.exception(
-                "wiki_persist: topic row insert failed for kb=%s",
-                kb_id_str,
-            )
-
-    # Audit trail: one ArtifactCommit row per page whose rendered
-    # content actually changed (record_edit silently skips empty diffs).
-    # Best-effort — commit failures log but don't fail the artifact
-    # compile.
-    for page in pages:
-        slug = (page.get("slug") or "").strip()
-        if not slug or slug not in persisted_page_slugs:
-            continue
-        content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
-        action = (page.get("action") or "CREATE").upper()
-        try:
-            WikiCommitService.record_page_edit(
-                tenant_id=ctx.tenant_id,
-                kb_id=ctx.kb_id,
-                page_type=page.get("page_type") or "concept",
-                slug=slug,
-                content_before=prior_by_slug.get(slug, ""),
-                content_after=content_md,
-                title=WIKI_REGEN_COMMIT_TITLE,
-                comments=WIKI_REGEN_COMMIT_COMMENTS_TEMPLATE.format(action=action),
-                user_id=None,  # system commit — no human author
-            )
-        except Exception:
-            logging.exception(
-                "wiki_persist: commit record failed for kb=%s slug=%s",
-                kb_id_str,
-                slug,
-            )
-
-
 def build_wiki_page_graph(
     pages: List[Dict],
     kb_id: str,
@@ -1267,342 +894,6 @@ async def persist_wiki_page_graph(
     )
 
 
-# ----- main entry ----------------------------------------------------
-
-
-async def run_wiki(
-    ctx: TaskContext,
-    embedding_model,
-    load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
-) -> None:
-    """KB-wide artifact compilation task.
-
-    Runs after the user clicks the "Artifact" button in the dataset
-    generate menu. Iterates every doc in the KB whose parser_config
-    has a compilation template group resolving to an artifacts-kind
-    child, runs MAP per-doc (which uses ES-stored resume rows to skip
-    chunks already processed in a previous run), then runs REDUCE /
-    PLAN / REFINE KB-wide and persists pages.
-
-    Batching: each MAP call uses ``batch_size_cap=8`` and
-    ``window_fraction=0.5`` — i.e. roll over to a new batch when the
-    current batch reaches 8 chunks OR its accumulated token count
-    exceeds 50% of the chat model's ``max_length``.
-    """
-    # Local imports so this module doesn't drag in the API service
-    # layer at import time — that's a source of circular-import risk
-    # given how much lives under ``api.db.services``.
-    from api.db.services.document_service import DocumentService
-    from api.db.services.knowledgebase_service import KnowledgebaseService
-    from api.db.services.compilation_template_service import CompilationTemplateService
-    from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import resolve_model_config
-
-    progress = ctx.progress_cb
-    progress(0.0, "Loading documents for wiki compilation...")
-
-    # 1. Resolve KB metadata for PLAN.
-    ok, kb = KnowledgebaseService.get_by_id(ctx.kb_id)
-    if not ok:
-        progress(-1, f"KB {ctx.kb_id} not found.")
-        return
-    kb_name = kb.name
-    kb_description = kb.description
-
-    # 2. Pick docs eligible for artifact compilation (those whose
-    # configured template group resolves to at least one artifacts-kind
-    # child). The frontend Artifact button targets the KB, but the
-    # per-doc opt-in is what gates inclusion.
-    all_docs, _ = await thread_pool_exec(
-        DocumentService.get_by_kb_id,
-        kb_id=ctx.kb_id,
-        page_number=0,
-        items_per_page=0,
-        orderby="create_time",
-        desc=False,
-        keywords="",
-        run_status=[],
-        types=[],
-        suffix=[],
-    )
-    current_doc_ids = {str(d.get("id")) for d in all_docs or [] if d.get("id")}
-    existing_map_doc_ids = await _wiki_existing_map_doc_ids(ctx.tenant_id, ctx.kb_id)
-    deleted_doc_ids = existing_map_doc_ids - current_doc_ids
-    if deleted_doc_ids:
-        progress(
-            0.02,
-            f"Removing stale wiki state for {len(deleted_doc_ids)} deleted document(s)...",
-        )
-        await _wiki_delete_deleted_doc_state(
-            ctx.tenant_id,
-            ctx.kb_id,
-            deleted_doc_ids,
-        )
-
-    eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id)
-    if not eligible:
-        progress(1.0, _wiki_empty_eligible_message(all_docs))
-        return
-    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible)
-
-    # 3. Resolve chat models. MAP is per document, so each document uses
-    # its pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE are
-    # KB-wide and need exactly one model — we pick the first eligible
-    # pipeline Compiler's ``llm_id`` as the canonical KB chat model.
-    llm_bundle_cache: dict[str, LLMBundle] = {}
-
-    def _bundle_for(llm_id: str) -> LLMBundle:
-        key = llm_id.strip()
-        cached = llm_bundle_cache.get(key)
-        if cached is not None:
-            return cached
-        cfg = resolve_model_config(
-            ctx.tenant_id,
-            LLMType.CHAT,
-            key,
-        )
-        bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
-        llm_bundle_cache[key] = bundle
-        return bundle
-
-    def _stage_cb(prefix: str):
-        def _cb(*args, **kwargs):
-            try:
-                if args and isinstance(args[0], (int, float)):
-                    msg = args[1] if len(args) > 1 else kwargs.get("msg", "")
-                    progress(msg=f"{prefix} {msg}")
-                else:
-                    msg = kwargs.get("msg") or (args[0] if args else "")
-                    progress(msg=f"{prefix} {msg}")
-            except Exception:
-                logging.exception("wiki: progress callback failed")
-
-        return _cb
-
-    # 4. MAP per eligible doc. Historical extraction versions are keyed by
-    # doc_id + chunk_id + input hash, so unchanged or reverted content can
-    # reuse prior LLM output.
-    #
-    # Resolve templates before starting workers so the first eligible
-    # template remains the deterministic source for KB-wide REDUCE/PLAN/
-    # REFINE, independent of which document worker happens to finish first.
-    resolved_eligible: list[tuple[dict, str, dict]] = []
-    for doc, template_id in eligible:
-        template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-        if not template:
-            logging.warning(
-                "artifact: template %s not found for doc %s; skipping",
-                template_id,
-                doc["id"],
-            )
-            continue
-        resolved_eligible.append((doc, template_id, template.get("config") or {}))
-
-    if not resolved_eligible:
-        progress(1.0, "No valid templates resolved for wiki compilation.")
-        return
-
-    # ``kb_chat_llm_id`` is captured from the first eligible pipeline and
-    # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
-    # Writer instructions and page examples follow the same first-template-
-    # wins rule.
-    first_doc = resolved_eligible[0][0]
-    first_parser_cfg = resolved_eligible[0][2]
-    first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
-    kb_chat_llm_id = pipeline_chat_llm_ids[str(first_doc.get("id") or "")]
-    first_instruction = first_parser_cfg.get("instruction")
-    first_example = first_parser_cfg.get("example")
-    kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
-    kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
-    map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
-    n_docs = len(resolved_eligible)
-    map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
-    doc_stats = {
-        i: {
-            "doc": doc,
-            "batch_count": 0,
-            "saw_any": False,
-            "status": "ok",
-            "agg": {"entities": 0, "concepts": 0, "claims": 0, "relations": 0},
-            "map": {"requested": 0, "cache_hits": 0, "extracted": 0},
-        }
-        for i, (doc, _, _) in enumerate(resolved_eligible)
-    }
-
-    async def _produce_document(i: int, job: tuple[dict, str, dict]) -> None:
-        doc, template_id, parser_cfg = job
-        doc_id = doc["id"]
-        stats = doc_stats[i]
-        progress(0.05 + 0.6 * (i / n_docs), f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}")
-        try:
-            async for batch in load_chunks_for_doc(
-                ctx.tenant_id,
-                ctx.kb_id,
-                doc_id,
-                batch_size=WIKI_MAP_BATCH_CHUNKS,
-            ):
-                stats["saw_any"] = True
-                stats["batch_count"] += 1
-                await map_queue.put((i, doc, template_id, parser_cfg, batch, stats["batch_count"]))
-        except Exception:
-            logging.exception("wiki: loading MAP chunks failed for doc %s", doc_id)
-            stats["status"] = "error"
-
-    async def _map_worker() -> None:
-        while True:
-            item = await map_queue.get()
-            try:
-                if item is None:
-                    return
-                i, doc, template_id, parser_cfg, batch, batch_no = item
-                doc_id = doc["id"]
-                stats = doc_stats[i]
-                map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
-                phase1 = await wiki_map_from_chunks(
-                    chunks=batch,
-                    chat_mdl=map_llm_pool.wrap(
-                        _bundle_for(map_llm_id),
-                        priority=30,
-                        label=f"wiki-map:{doc_id}",
-                        context=f"{ctx.kb_id}:{doc_id}:map",
-                    ),
-                    embd_mdl=embedding_model,
-                    doc_id=doc_id,
-                    tenant_id=ctx.tenant_id,
-                    kb_id=ctx.kb_id,
-                    language=ctx.language,
-                    callback=_stage_cb(f"[wiki MAP {i + 1}/{n_docs} b{batch_no}]"),
-                    parser_config=parser_cfg,
-                    batch_size_cap=8,
-                    window_fraction=0.5,
-                    # Match the shared pool width. The pool is the single
-                    # admission/concurrency control for actual MAP LLM calls.
-                    max_workers=WIKI_MAP_LLM_POOL_SIZE,
-                )
-                for key in stats["agg"]:
-                    stats["agg"][key] += len(phase1.get(key) or [])
-                meta = phase1.get("_meta") or {}
-                if isinstance(meta, dict):
-                    for key in stats["map"]:
-                        stats["map"][key] += int(meta.get(key, 0) or 0)
-            except Exception:
-                logging.exception(
-                    "wiki: MAP failed for doc %s batch %d",
-                    doc_id,
-                    batch_no,
-                )
-                stats["status"] = "error"
-            finally:
-                map_queue.task_done()
-
-    producers = [asyncio.create_task(_produce_document(i, job)) for i, job in enumerate(resolved_eligible)]
-    workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
-    try:
-        await asyncio.gather(*producers)
-        await map_queue.join()
-    finally:
-        for task in producers + workers:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*producers, *workers, return_exceptions=True)
-
-    for i, stats in doc_stats.items():
-        doc = stats["doc"]
-        doc_id = doc["id"]
-        if not stats["saw_any"] and stats["status"] == "ok":
-            stats["status"] = "empty"
-            logging.info("wiki: no chunks for doc %s; skipping", doc_id)
-        agg = stats["agg"]
-        map_stats = stats["map"]
-        logging.info(
-            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, requested=%d cache_hits=%d extracted=%d)",
-            doc_id,
-            agg["entities"],
-            agg["concepts"],
-            agg["claims"],
-            agg["relations"],
-            stats["batch_count"],
-            map_stats["requested"],
-            map_stats["cache_hits"],
-            map_stats["extracted"],
-        )
-
-    # 5. REDUCE / PLAN / REFINE KB-wide. Each phase has its own
-    # input_hash gate (REDUCE keys off the MAP-state hash, PLAN off
-    # REDUCE's hash, REFINE off PLAN's hash) so re-runs without an
-    # upstream delta short-circuit at the cache layer.
-    kb_chat_mdl = _bundle_for(kb_chat_llm_id)
-
-    try:
-        progress(0.65, "Reducing extracts KB-wide...")
-        await wiki_reduce_from_extracts(
-            chat_mdl=map_llm_pool.wrap(
-                kb_chat_mdl,
-                priority=20,
-                label="wiki-reduce",
-                context=f"{ctx.kb_id}:reduce",
-            ),
-            embd_mdl=embedding_model,
-            tenant_id=ctx.tenant_id,
-            kb_id=ctx.kb_id,
-            callback=_stage_cb("[wiki REDUCE]"),
-        )
-
-        progress(0.75, "Planning wiki pages...")
-        await wiki_plan_from_reduction(
-            chat_mdl=map_llm_pool.wrap(
-                kb_chat_mdl,
-                priority=20,
-                label="wiki-plan",
-                context=f"{ctx.kb_id}:plan",
-            ),
-            embd_mdl=embedding_model,
-            tenant_id=ctx.tenant_id,
-            kb_id=ctx.kb_id,
-            kb_name=kb_name,
-            kb_description=kb_description,
-            callback=_stage_cb("[wiki PLAN]"),
-        )
-
-        progress(0.85, "Refining pages...")
-        pages = await wiki_refine_from_plan(
-            chat_mdl=map_llm_pool.wrap(
-                kb_chat_mdl,
-                priority=30,
-                label="wiki-refine",
-                context=f"{ctx.kb_id}:refine",
-            ),
-            embd_mdl=embedding_model,
-            tenant_id=ctx.tenant_id,
-            kb_id=ctx.kb_id,
-            max_workers=WIKI_REFINE_WORKERS,
-            callback=_stage_cb("[wiki REFINE]"),
-            instruction=kb_writer_instruction,
-            example=kb_writer_example,
-        )
-    except Exception:
-        logging.exception("wiki: REDUCE/PLAN/REFINE failed for kb %s", ctx.kb_id)
-        progress(-1, "Wiki pipeline failed during REDUCE/PLAN/REFINE.")
-        return
-
-    # 6. Persist searchable wiki_page rows.
-    try:
-        await persist_wiki_pages(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
-    except Exception:
-        logging.exception("wiki: persist failed for kb %s", ctx.kb_id)
-
-    # 7. Materialize the canvas graph from the refined pages.
-    try:
-        await persist_wiki_page_graph(ctx=ctx, pages=pages or [])
-    except Exception:
-        logging.exception("wiki: page-graph persist failed for kb %s", ctx.kb_id)
-
-    progress(1.0, f"Wiki compiled {len(pages or [])} page(s).")
-
-
-# ----- dual-mode incremental entry point ---------------------------------
-
-
 async def run_wiki_incremental(
     ctx: TaskContext,
     embedding_model,
@@ -1633,9 +924,9 @@ async def run_wiki_incremental(
     from rag.advanced_rag.knowlege_compile.wiki_incremental import (
         wiki_compile_incremental,
     )
-    from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 
     progress = ctx.progress_cb
+    map_llm_pool = _create_wiki_llm_pool(progress)
     progress(0.0, "Loading documents for wiki compilation...")
 
     # 1. Check if this is incremental (existing MAP rows present)
@@ -1764,11 +1055,10 @@ async def run_wiki_incremental(
         llm_bundle_cache[key] = bundle
         return bundle
 
-    map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
     kb_chat_llm_id = None
     first_template_found = False
 
-    # 4. MAP per doc (same as run_wiki's MAP phase)
+    # 4. MAP per eligible document.
     map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
     n_docs = len(eligible)
 
@@ -1824,6 +1114,7 @@ async def run_wiki_incremental(
                     tenant_id=ctx.tenant_id,
                     kb_id=ctx.kb_id,
                     language=ctx.language,
+                    callback=lambda p, msg: progress(p, msg),
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
@@ -1874,7 +1165,10 @@ async def run_wiki_incremental(
         # prior run stopped after MAP), fall through so the compiler can rebuild
         # pages from the stored extracts.
         has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
-        if existing_map_doc_ids and has_compiled_pages is True:
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        has_refine_failures = bool(await _wiki_load_refine_failures(ctx.tenant_id, ctx.kb_id))
+        if existing_map_doc_ids and has_compiled_pages is True and not has_refine_failures:
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,

@@ -42,7 +42,7 @@ func TestTokenizerComponent_DebugSkipsEmbedding(t *testing.T) {
 	stub := newStubEmbedder(4)
 	cIntf, err := NewTokenizerComponentWithResolver(
 		map[string]any{"search_method": []any{"embedding"}, "fields": []any{"text"}},
-		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+		func(ctx context.Context, _, _ string) (Embedder, string, error) { return stub, "", nil },
 	)
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)

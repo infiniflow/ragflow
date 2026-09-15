@@ -120,6 +120,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.File2Document{},
 		&entity.TenantLLM{},
 		&entity.Chat{},
+		&entity.ChatChannel{},
 		&entity.ChatSession{},
 		&entity.Task{},
 		&entity.APIToken{},
@@ -139,6 +140,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.SyncLogs{},
 		&entity.MCPServer{},
 		&entity.Memory{},
+		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
 		&entity.EvaluationDataset{},
@@ -179,6 +181,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to run manual migrations: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
+	} else {
+		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
+		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
+			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
+		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
@@ -287,4 +294,24 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 	}
 
 	return err
+}
+
+// autoMigrateRuntimeModels ensures Go-exclusive runtime tables exist even if
+// the server starts without --migrate.
+func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
+	goRuntimeModels := []interface{}{
+		&entity.IngestionTask{},
+		&entity.IngestionTaskLog{},
+		&entity.MemoryTask{},
+	}
+	for _, m := range goRuntimeModels {
+		if err := autoMigrateSafely(ctx, db, m); err != nil {
+			tableName := fmt.Sprintf("%T", m)
+			if named, ok := m.(interface{ TableName() string }); ok {
+				tableName = named.TableName()
+			}
+			return fmt.Errorf("failed to auto-migrate runtime table %s: %w", tableName, err)
+		}
+	}
+	return nil
 }

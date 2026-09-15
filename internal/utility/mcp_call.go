@@ -102,7 +102,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 		// Empty ServerType is treated as streamable-http because
 		// that is the default per the spec. Servers explicitly
 		// declaring the legacy SSE transport get the legacy path.
-		return callToolStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.ToolName, opts.Arguments)
+		return callToolStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.ToolName, opts.Arguments, opts.Timeout)
 	case TransportSSE:
 		return nil, errors.New("MCP tools/call on legacy SSE transport is not yet implemented in Go (Phase 3.7 deferred; use streamable-http)")
 	default:
@@ -112,15 +112,18 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 
 // callToolStreamableHTTP drives the streamable-HTTP session:
 // initialize → notifications/initialized → tools/call. The
-// session is torn down at the end (the server is free to
-// garbage-collect the session id; future calls re-initialize).
-func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, toolName string, args json.RawMessage) (*CallResult, error) {
+// session is explicitly terminated at the end; future calls
+// re-initialize.
+func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, toolName string, args json.RawMessage, cleanupTimeout time.Duration) (*CallResult, error) {
 	sessionID, initRes, err := streamableSend(ctx, client, endpoint, "", headers, jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		ID:      0,
 		Method:  "initialize",
 		Params:  initializeParams(),
 	}, true)
+	if sessionID != "" {
+		defer terminateStreamableSessionBestEffort(ctx, client, endpoint, sessionID, headers, cleanupTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}
