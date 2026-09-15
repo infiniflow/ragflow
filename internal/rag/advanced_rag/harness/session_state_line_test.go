@@ -230,9 +230,11 @@ func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
 // not assembling a set has nothing for those turns to find: measured on
 // 2026-09-15, one enumeration question was offered four extra turns while the
 // sessions still recorded nothing, and every question in the mode paid for that
-// mechanism. The gate is the TABLE (a count/number slot, or a list candidate),
-// not a mode flag, so a single-value question runs on the mode's floor exactly as
-// it did before the mechanism existed.
+// mechanism. The gate is the session ENUMERATING — the caller wrote a batch, or the
+// planner declared a count/list — not a mode flag, and not a candidate's separators:
+// measured the same day, with the gate reading a list-shaped CANDIDATE as a set, a
+// FRAMES run took 24 offers (and 8 extra rounds over its baseline) on questions
+// whose answer is one number.
 func TestOfferContinuationIsGatedOnTheQuestionsShape(t *testing.T) {
 	value := &SessionState{
 		Attempts:     4,
@@ -251,14 +253,40 @@ func TestOfferContinuationIsGatedOnTheQuestionsShape(t *testing.T) {
 		t.Fatalf("route at the floor on a value question = %v, want routeFinalize", got)
 	}
 
-	// A candidate that IS a list is the same tell as a count-typed slot.
-	set := &SessionState{
+	// A candidate that only LOOKS like a list is not a set: the measured FRAMES
+	// table held `Grace's、High、Falls、Colonial、Creek` — one waterfall's name cut at
+	// its separators — under a slot typed "dataset", and the offer built on it is
+	// what ran that benchmark eight rounds long.
+	prose := &SessionState{
 		Attempts:     4,
 		DeadlineLeft: 90,
-		ParentState:  State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}},
+		ParentState:  State{State: []Variable{{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls")}}},
 	}
-	if !set.offerContinuation() {
-		t.Fatal("a table that already holds a list must be offered the turn")
+	if prose.offerContinuation() {
+		t.Fatal("a separator-bearing candidate under a scalar type must not buy extra turns")
+	}
+
+	// A count-typed slot is the other half of the tell — the shape the 三国
+	// enumeration direction's own table carries (slot 0 [count]).
+	counting := &SessionState{
+		Attempts:     4,
+		DeadlineLeft: 90,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}},
+	}
+	if !counting.offerContinuation() {
+		t.Fatal("a count slot must be offered the turn")
+	}
+
+	// And the tell that survives contact: a caller-written batch, even on a table
+	// whose slots say nothing about a set.
+	batched := &SessionState{
+		Attempts:      4,
+		DeadlineLeft:  90,
+		SearchQueries: []string{"关羽 斩 杀 颜良 文丑 华雄 蔡阳"},
+		ParentState:   State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}},
+	}
+	if !batched.offerContinuation() {
+		t.Fatal("a session that wrote a batch is enumerating and must be offered the turn")
 	}
 }
 
@@ -337,21 +365,112 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 	}
 }
 
-// TestEnumeratesDrivesTheEnumerationProtocol pins the shape gate the protocol is
-// injected on: a slot the planner typed as a count, or a slot that already holds a
-// list. A single-value question has neither, so its seed carries no protocol and
-// its prompt is byte-for-byte what it was before the protocol existed.
-func TestEnumeratesDrivesTheEnumerationProtocol(t *testing.T) {
+// TestSetShapedFollowsThePlannersDeclaration pins the half of the gate that reads the
+// table: what the planner TYPED, never what a candidate looks like. A list-shaped
+// candidate under a scalar type is prose that happens to contain separators —
+// measured (2026-09-15, FRAMES) a slot typed "dataset" carried
+// `Grace's、High、Falls、Colonial、Creek`, ONE waterfall's name, and the permissive
+// reading of it is how a "how much shorter" record came to say "enumerated
+// members: 16" and how a `[count]` slot on a "how many times larger" question once
+// bought 24 continuation offers.
+func TestSetShapedFollowsThePlannersDeclaration(t *testing.T) {
 	value := State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}}
-	if enumerates(value) {
-		t.Error("a single-value table must not be given the enumeration protocol")
+	if SetShaped(value) {
+		t.Error("a single-value table asks for no set")
 	}
 	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}}
-	if !enumerates(counted) {
-		t.Error("a count slot is an enumeration")
+	if !SetShaped(counted) {
+		t.Error("a count slot asks for a set")
 	}
-	listed := State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}
-	if !enumerates(listed) {
-		t.Error("a slot that already holds a list is an enumeration")
+	quantity := State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("2452 feet")}}}
+	if SetShaped(quantity) {
+		t.Error("a number slot is a value, not a set")
+	}
+	prose := State{State: []Variable{{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls")}}}
+	if SetShaped(prose) {
+		t.Error("the table must not be read through a candidate's separators")
+	}
+}
+
+// TestBatchProtocolFollowsTheCallersWriting pins the gate the enumeration protocol
+// now rides: the CALLER's own batch, appended once, mid-session.
+//
+// The protocol used to ride the seed of a direction whose table looked like a set,
+// and that gate is measurably wrong: 11 of 20 FRAMES sessions were handed 1644
+// characters of set strategy for questions whose answer is one number (rounds 60 →
+// 92 against that benchmark's own baseline), while the caller's own batch is written
+// zero times by those 20 questions and fifteen times by one 三国 question.
+func TestBatchProtocolFollowsTheCallersWriting(t *testing.T) {
+	protocol := "SET / COUNT directions — the member list IS the work"
+	newSession := func(queries ...string) *SessionState {
+		return &SessionState{
+			SearchQueries:       queries,
+			EnumerationProtocol: protocol,
+			Messages:            []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
+		}
+	}
+
+	// An English question never writes a batch, so it is never handed the protocol.
+	english := newSession("What was the age difference between Mike Tyson and Trevor Berbick")
+	english.ParentState = State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1986")}}}
+	english.appendBatchProtocol(true)
+	if strings.Contains(english.Messages[0].Content, protocol) {
+		t.Fatalf("tool message = %q, want no protocol on a question that wrote no batch", english.Messages[0].Content)
+	}
+	if english.BatchProtocolShown {
+		t.Fatal("the protocol must not be marked shown when it was not appended")
+	}
+
+	// A caller-written batch IS the tell (space-separated CJK, the shape the model
+	// actually writes — see callerBatch).
+	chinese := newSession("关羽 斩 杀 颜良 文丑 华雄 蔡阳")
+	chinese.appendBatchProtocol(true)
+	if !strings.Contains(chinese.Messages[0].Content, protocol) {
+		t.Fatalf("tool message = %q, want the protocol appended", chinese.Messages[0].Content)
+	}
+	if !chinese.BatchProtocolShown {
+		t.Fatal("the protocol must be marked shown")
+	}
+	// Once per session: method repeated is prompt noise.
+	before := chinese.Messages[0].Content
+	chinese.appendBatchProtocol(true)
+	if chinese.Messages[0].Content != before {
+		t.Fatal("the protocol must be appended at most once")
+	}
+	// A turn that ran no tool call cannot carry it either.
+	quiet := newSession("关羽 斩 颜良")
+	quiet.appendBatchProtocol(false)
+	if quiet.BatchProtocolShown {
+		t.Fatal("a turn that ran no tool call must not carry the protocol")
+	}
+}
+
+// TestAppendRecordLineSkipsValueDirections pins the line's gate: it carries a set's
+// to-do list, and on a value question every field of it is empty (`members=0 |
+// probed-reached=0`) while it still costs a recomputation and a line of prompt on
+// every turn. Measured (2026-09-15, FRAMES): 214 such lines across 20 questions,
+// on a benchmark whose baseline run carried none.
+func TestAppendRecordLineSkipsValueDirections(t *testing.T) {
+	kb := &Kbinfos{}
+	kb.Admit(func(p *PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c1", "content": "prose"})
+	})
+	payload := `{"passages": []}`
+	s := &SessionState{
+		KB: kb,
+		ParentState: State{State: []Variable{
+			{ID: 0, Type: "date", Candidate: strPtr("1858")},
+			{ID: 1, Type: "number", Candidate: strPtr("2452")},
+		}},
+		Messages: []schema.Message{*schema.ToolMessage(payload, "call_1")},
+	}
+	s.appendRecordLine(true)
+	if got := s.Messages[len(s.Messages)-1].Content; got != payload {
+		t.Fatalf("tool message = %q, want it untouched on a value direction", got)
+	}
+	// The record itself is still computed and kept: the continuation ask reads it,
+	// and only the model-facing line is skipped.
+	if s.Record.Pool != 1 {
+		t.Fatalf("record pool = %d, want the record still computed", s.Record.Pool)
 	}
 }

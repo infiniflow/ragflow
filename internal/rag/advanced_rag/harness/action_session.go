@@ -927,9 +927,8 @@ var (
 			Name: "retrieve",
 			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets.` +
 				`DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document.` +
-				`PATTERNS: a query may be a regular expression — "A|B|C" asks about several exact terms in ONE call (never one call per name); "A.*B" requires that written order, which is how to reach a relation whose object (or subject) you cannot name. The words are what reach the index and the expression is matched locally, so neither form is syntax the index must understand. One missing alternative does not hide the others: the result names the terms it reached.` +
-				`ARGUMENTS: query — array of 1-3 strings (natural-language queries, or patterns as above). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
-				`OUTPUT: short exact-term snippets with doc_id and chunk id. ok = new evidence pooled; redundant = already there.` +
+				`ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
+				`OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there.` +
 				`IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch.`,
 			Parameters: arrayParam("", 1, 3),
 		},
@@ -1724,6 +1723,14 @@ type SessionState struct {
 	// ContinuationAsked is the Attempts value the continuation offer was appended
 	// for, so one turn never carries the offer twice.
 	ContinuationAsked int
+	// EnumerationProtocol is the SET-direction protocol this session MAY be handed,
+	// once it has shown that it is enumerating (see appendBatchProtocol). The text,
+	// not a loader: it is resolved at seed time, and appending one paragraph must not
+	// need the prompt loader.
+	EnumerationProtocol string
+	// BatchProtocolShown is whether that paragraph has been appended. Once per
+	// session: the protocol is method, and method repeated is prompt noise.
+	BatchProtocolShown bool
 
 	Direction  string
 	RoutedDocs []string
@@ -2053,8 +2060,41 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	s.SearchQueries = seenQueries
 	s.SkippedDup += skipped
 	s.ToolStrikes = strikes
+	s.appendBatchProtocol(ranAny)
 	s.appendRecordLine(ranAny)
 	return nil
+}
+
+// appendBatchProtocol hands the enumeration protocol to a session that has SHOWN it
+// is enumerating, and only then.
+//
+// The protocol used to ride the SEED of every direction whose table looked like a
+// set, and that gate cannot be made to work: measured (2026-09-15) 11 of 20 FRAMES
+// sessions were handed it — 1644 characters each, budget exception included — for
+// questions whose answer is one number, and that run's rounds went 60 → 92 against
+// its own baseline. What survives contact instead is the caller's own writing: the
+// model writes a batch of names exactly when the direction is a set (measured the
+// same day, same server: 0 batches over 20 FRAMES questions, 15 over ONE 三国
+// question) and never on an English question.
+//
+// It rides the tool result the model is about to read, like the record line, and is
+// appended at most once per session — the protocol is method, and method repeated is
+// prompt noise.
+func (s *SessionState) appendBatchProtocol(ranAny bool) {
+	if s.BatchProtocolShown || !ranAny || s.EnumerationProtocol == "" || len(s.Messages) == 0 {
+		return
+	}
+	if !s.wroteBatch() {
+		return
+	}
+	last := &s.Messages[len(s.Messages)-1]
+	if last.Role != schema.Tool {
+		return
+	}
+	s.BatchProtocolShown = true
+	last.Content = strings.TrimRight(last.Content, "\n") + "\n\n" + s.EnumerationProtocol
+	_LOG.Printf("[Action Session] the caller wrote a batch — set-direction protocol appended to the turn (%d char(s))",
+		len(s.EnumerationProtocol))
 }
 
 // appendRecordLine appends the per-turn RECORD line to the last tool result.
@@ -2078,6 +2118,19 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	rec := s.sessionRecordNow()
 	grew := rec.grewFrom(s.Record)
 	s.Record = rec
+	// A session that is not ENUMERATING gets no line at all (see enumerating).
+	//
+	// The line reports members, probed names and reached names — the set's to-do
+	// list. On a single-value question every field of it is empty or meaningless
+	// (`members=0 | probed-reached=0`), it is recomputed and appended on every turn,
+	// and the model then spends turns on it: measured (2026-09-15, FRAMES) 214
+	// lines across 20 questions while the same benchmark without them scored
+	// 0/1/2 zeros and had 60 rounds against this run's 68. The record itself is
+	// still kept on the session (the continuation ask reads it), only the line the
+	// model sees is skipped.
+	if !s.enumerating() {
+		return
+	}
 	// The line the model steers by is message content, so the log could not show
 	// whether a mechanism fired at all: three rounds of analysis here ended up
 	// inferring it from side effects. One truncated line per turn ends that.
@@ -2095,7 +2148,7 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	// already paid for that text, unread text is where unnoticed members live, and a
 	// session that is still finding things does not need rescuing. Gated on the
 	// shape so no other question pays for it at all, and one excerpt per turn.
-	if s.parentEnumerates() && !grew {
+	if s.enumerating() && !grew {
 		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
 			// Logged as well as delivered: whether the mechanism fired is otherwise
 			// only visible inside the message content.
@@ -2128,13 +2181,16 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 // above (so an eager model cannot run away) and the session clock (below which no
 // further turn is offered, because the finalize/salvage step must still fit).
 //
-// The offer itself is gated on the SHAPE of the question (parentEnumerates): an
-// extra turn is an extra model call plus up to turnRunExtra more turns, and a
-// question that is not assembling a set has nothing for those turns to find. The
-// gate is the table, not a mode flag, so a single-value question runs on the
-// mode's floor exactly as it did before this mechanism existed.
+// The offer is gated on this session ENUMERATING (see enumerating): an extra turn is
+// an extra model call plus up to turnRunExtra more turns, and a question that is not
+// assembling a set has nothing for those turns to find.
+//
+// Measured (2026-09-15): while the gate read the shape of the planner's table, 24
+// offers went to FRAMES questions doing arithmetic over two values — 68 rounds
+// against that benchmark's own baseline of 60 — while the caller's own batch, which
+// this reads, was written ZERO times by the same 20 questions.
 func (s *SessionState) offerContinuation() bool {
-	if !s.parentEnumerates() {
+	if !s.enumerating() {
 		return false
 	}
 	if s.Attempts >= s.turnRunCap() || s.DeadlineLeft <= turnAskFloorS {
@@ -2151,35 +2207,68 @@ func (s *SessionState) offerContinuation() bool {
 	return true
 }
 
-// parentEnumerates reports whether the direction this session was sent on is an
-// ENUMERATION — a set the answer has to list or count.
-//
-// The tell is the table the session was handed, and it is the framework's own
-// vocabulary, not the corpus's: a slot the planner typed as a count/number, or a
-// slot whose candidate is a LIST of two or more items. A question about one value
-// has neither, so nothing about it changes when this mechanism exists.
-func (s *SessionState) parentEnumerates() bool { return enumerates(s.ParentState) }
+// parentSetShaped reports whether the direction this session was sent on ASKS FOR
+// A SET — what the planner DECLARED, never what a candidate looks like (see
+// SetShaped).
+func (s *SessionState) parentSetShaped() bool { return SetShaped(s.ParentState) }
 
-// enumerates reports whether a slot table describes a SET — a question whose
-// answer is a list or a count of named things.
-func enumerates(table State) bool {
-	for _, v := range table.State {
-		switch strings.ToLower(strings.TrimSpace(v.Type)) {
-		case "count", "number", "quantity", "set", "list":
-			return true
-		}
-		if v.Candidate == nil || *v.Candidate == "" {
-			continue
-		}
-		if IsCountValue(*v.Candidate) {
-			continue
-		}
-		if len(SplitCandidateNames(*v.Candidate)) >= 2 {
+// wroteBatch reports whether the CALLER wrote a batch of terms in one query — the
+// signal that it is enumerating rather than asking a question.
+//
+// The gate is the caller's own writing, not a guess about the question, because the
+// guess is measurably wrong: measured (2026-09-15, one server session, two workloads)
+// a 20-question FRAMES run wrote ZERO batches while ONE 三国 question wrote fifteen,
+// and the shape test misfired on eleven FRAMES sessions — a slot TYPE cannot tell
+// "how many people did X kill" from "how many times larger is A than B", and a single
+// phrase's commas make it look like two members.
+func (s *SessionState) wroteBatch() bool {
+	for _, q := range s.SearchQueries {
+		if callerBatch(q) {
 			return true
 		}
 	}
 	return false
 }
+
+// enumerating reports whether this session is assembling a SET: the caller wrote a
+// batch (the tell that survives contact), or the direction's own table asks for a
+// count/list.
+//
+// The table stays as the second half on purpose: a session may enumerate without ever
+// writing a two-name batch (one probe per member), and then the record line is
+// exactly what it needs. That half's false positives are bounded and counted — over
+// one 20-question FRAMES run it opened once (a sentence written into a count-typed
+// slot); the batch half opened zero times.
+func (s *SessionState) enumerating() bool {
+	return s.wroteBatch() || s.parentSetShaped()
+}
+
+// SetShaped reports whether the table ASKS FOR A SET, and nothing broader: a slot
+// the planner typed count / set / list.
+//
+// This — not enumerates — is what the RUNTIME gates on (the per-turn line, the pool
+// excerpt, the continuation offer). A question can hold a list-shaped CANDIDATE
+// without asking for a set: measured (2026-09-15, FRAMES) a slot typed "dataset"
+// carried `Grace's、High、Falls、Colonial、Creek` — ONE waterfall's name cut at its
+// separators — and the permissive test read that as five members, rendering
+// "enumerated members across the slots above: 16" into the answer's record of a
+// "how much shorter" question. A false positive here is paid on every turn of every
+// session on that question, so the runtime asks only what the planner declared.
+func SetShaped(table State) bool {
+	for _, v := range table.State {
+		switch strings.ToLower(strings.TrimSpace(v.Type)) {
+		case "count", "set", "list":
+			return true
+		}
+	}
+	return false
+}
+
+// enumerates is gone: the protocol's gate is the caller's own batch now (see
+// appendBatchProtocol). It read a slot table for a count/set/list type or a
+// list-shaped candidate, and both halves were measured wrong on FRAMES — the type
+// fired on "how much shorter is A than B" (a `[count]` slot), and the candidate half
+// fired on `San Antonio, Texas` (a comma, not a member list).
 
 // continuationAsk is the offer the model decides on: it names the hard bound, the
 // remaining turns, and the ONLY grounds on which another turn is granted — what
@@ -3334,23 +3423,14 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
-	// A SET direction gets the enumeration protocol IN ITS SEED, and only there.
-	//
-	// The protocol is what turned this question's answer from ten-thirteen members
-	// into sixteen (see the measured note in the template), and it is method, not
-	// corpus knowledge: guess more names than you expect, probe them in batches,
-	// read the returned passages for members the batch did not name, stop only
-	// after two flat batches. But strategy text that is ALWAYS in the prompt is
-	// paid for by every question — including the single-value ones it cannot help,
-	// which is exactly how an earlier attempt at this slowed a whole benchmark
-	// down. So it rides the seed, gated on the shape the runtime can see for
-	// itself: a slot the planner typed as count/number, or a slot that already
-	// holds a list (see enumerates).
-	if enumerates(parent) {
-		if set := loadOptionalPrompt(deps.Prompts, "action_set"); set != "" {
-			seedUser += "\n\n" + set
-		}
-	}
+	// The enumeration protocol is NOT part of the seed — see appendBatchProtocol,
+	// which hands it to a session that has written a batch of names. Seeding it here
+	// could only be gated on the shape of the DIRECTION, and that gate cannot be made
+	// to work: measured (2026-09-15) 11 of 20 FRAMES sessions were handed 1644
+	// characters of set strategy for questions whose answer is one number, and that
+	// run's rounds went 60 → 92 against its own baseline. The protocol text is
+	// resolved here and carried by the session (EnumerationProtocol) so the decision
+	// to spend it is made where the evidence for it exists.
 
 	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
 	// surface the evidence already in the shared pool so the model fills slots
@@ -3398,6 +3478,9 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ToolStrikes:          map[string]int{},
 		ToolOutcomes:         nil,
 		Direction:            direction,
+		// Resolved once, spent only if the session shows it is enumerating
+		// (see appendBatchProtocol). Empty when the loader carries no action_set.
+		EnumerationProtocol: loadOptionalPrompt(deps.Prompts, "action_set"),
 	}
 	if st.ToolCache == nil {
 		st.ToolCache = NewToolCache()

@@ -2429,6 +2429,27 @@ func RenderSlotDraft(slotTable harness.State, collectedAnswer string, slotEviden
 // tells it not to copy the lines (see answerPromptWithEvidence).
 func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	var lines []string
+	// Is this record about a SET at all? Everything this function does beyond the
+	// slots themselves — the enumerated size, the count/members warning, the
+	// demotion of the session's own prose — is about reconciling a list with a
+	// count, and a single-value question has neither.
+	//
+	// Measured (2026-09-15, FRAMES): rendered ungated, the enumerated line appeared
+	// in 21 of 20 questions' records and the prose demotion in 9, on questions whose
+	// answer is one date or one number. One of them is worth quoting because it is
+	// the shape of the mistake: a "how much shorter is A than B" record carried
+	// `- slot 1 [number]: 133 feet` beside `- enumerated members across the slots
+	// above: 16`, where the 16 was `Grace's、High、Falls、Colonial、Creek` — one
+	// waterfall's name, cut at its separators by whoever wrote it into the slot.
+	// The session's draft answer was then labelled UNVERIFIED and demoted below it.
+	setShaped := harness.SetShaped(slotTable)
+	if !setShaped && collectedAnswer != "" {
+		// A value record leads with the session's own answer, exactly as it did
+		// before any of this existed (see the note on the demotion below for why the
+		// SET case is different).
+		lines = append(lines, "Candidate answer: "+collectedAnswer)
+		lines = append(lines, "")
+	}
 	for _, v := range slotTable.State {
 		vtype := v.Type
 		if vtype == "" {
@@ -2455,7 +2476,7 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// one session's claim written before the other sessions' findings were merged.
 	// The members are here in the table either way, so their union is the number
 	// the record can stand behind.
-	if n := enumeratedSize(slotTable); n > 0 {
+	if n := enumeratedSize(slotTable); setShaped && n > 0 {
 		lines = append(lines, fmt.Sprintf("- enumerated members across the slots above: %d", n))
 		// A count larger than the members it counts is a claim about members that
 		// are NOT in the record, and the answer has to be told that rather than left
@@ -2483,7 +2504,12 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// session's own prose. The prose is one session's recollection, written before
 	// the other sessions' findings were merged into the table above; it is a claim
 	// to reconcile with the members, not the record.
-	if collectedAnswer != "" {
+	//
+	// On a VALUE record there are no members to reconcile against — the prose is the
+	// only candidate answer the record has, so it leads the record instead (see the
+	// top of this function), which is also what every run before the demotion scored
+	// on.
+	if collectedAnswer != "" && setShaped {
 		lines = append(lines, "")
 		lines = append(lines, "One session's own draft answer (UNVERIFIED, written before the other sessions were merged — reconcile it with the slots above, and where it disagrees with the enumerated members, the members stand): "+collectedAnswer)
 	}

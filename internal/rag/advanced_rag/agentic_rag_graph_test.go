@@ -2820,14 +2820,15 @@ func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
 	}
 
 	record := RenderSlotRecord(st, "the collected answer")
-	// The slots come first and the session's own draft comes LAST, labelled as the
-	// claim it is — see TestSlotRecordLeadsWithFactsNotWithASessionsProse for why.
-	if !strings.HasPrefix(record, "- slot 0 [aspect]: answer A\n- slot 1 [aspect]: NOT RESOLVED") {
-		t.Fatalf("record = %q, want the slot facts first", record)
+	// A table that asks for no SET leads with the session's own answer, exactly as
+	// it did before the answer-layer demotion existed — see
+	// TestSlotRecordLeadsWithFactsNotWithASessionsProse for the SET case, and
+	// TestValueRecordCarriesNoEnumeratedMembers for why the two differ.
+	if !strings.HasPrefix(record, "Candidate answer: the collected answer\n\n- slot 0 [aspect]: answer A\n- slot 1 [aspect]: NOT RESOLVED") {
+		t.Fatalf("record = %q, want the session's answer first on a value table", record)
 	}
-	at := strings.Index(record, "the collected answer")
-	if at < 0 || !strings.Contains(record[:at], "UNVERIFIED") {
-		t.Fatalf("record = %q, want the draft last and labelled", record)
+	if strings.Contains(record, "enumerated members") {
+		t.Fatalf("record = %q, want no enumerated line on a value table", record)
 	}
 	for _, banned := range []string{"strength=", "terminal=", "evidence_ids", "c1"} {
 		if strings.Contains(record, banned) {
@@ -3166,5 +3167,40 @@ func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
 	}
 	if !strings.Contains(rec, "UNVERIFIED") {
 		t.Fatalf("record = %q, want the draft labelled as a claim", rec)
+	}
+}
+
+// TestValueRecordCarriesNoEnumeratedMembers pins the other half of the gate: the
+// enumerated size, the count-vs-members warning and the demotion of the session's
+// prose are SET-question machinery, and a record whose answer is one date or one
+// number must render exactly as it did before any of it existed.
+//
+// The table is the measured case. A "how much shorter is A than B" question's
+// record carried `- slot 1 [number]: 133 feet` beside `- enumerated members across
+// the slots above: 16`, where the 16 was `Grace's、High、Falls、Colonial、Creek` —
+// one waterfall's name cut at its separators by whoever wrote it into the slot —
+// and the session's draft answer was labelled UNVERIFIED below it. Rendered
+// ungated, those two lines appeared in 21 of a 20-question FRAMES run's records.
+func TestValueRecordCarriesNoEnumeratedMembers(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls、Colonial、Creek")},
+		{ID: 1, Type: "number", Candidate: strPtr("133 feet")},
+		{ID: 2, Type: "web", Candidate: strPtr("Colonial Creek Falls, Washington — 788 m (2,585 ft)")},
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "Alabama's tallest waterfall is 133 feet tall.")
+
+	if strings.Contains(rec, "enumerated members") {
+		t.Fatalf("record = %q, want no enumerated line on a value table", rec)
+	}
+	if strings.Contains(rec, "UNVERIFIED") {
+		t.Fatalf("record = %q, want the session's answer NOT demoted on a value table", rec)
+	}
+	if !strings.HasPrefix(rec, "Candidate answer: Alabama's tallest waterfall is 133 feet tall.") {
+		t.Fatalf("record = %q, want the session's answer first on a value table", rec)
+	}
+	for _, want := range []string{"- slot 0 [dataset]:", "- slot 1 [number]: 133 feet", "788 m (2,585 ft)"} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("record %q missing the slot fact %q", rec, want)
+		}
 	}
 }
