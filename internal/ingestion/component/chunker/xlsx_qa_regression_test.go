@@ -65,17 +65,19 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	return chunks
 }
 
-// TestXLSXQARegression is the end-to-end smoke test: the typed header is
-// parser metadata and only data rows become QA chunks.
-func TestXLSXQARegression(t *testing.T) {
+// TestXLSXQAFirstRowIsData protects the QA spreadsheet contract: workbooks
+// contain question/answer rows without a header, so the parser's structural
+// table_header item is still the first QA pair.
+func TestXLSXQAFirstRowIsData(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
-		{"question", "answer"},
-		{"What is RAGFlow?", "A RAG engine."},
-		{"Where are the docs?", "On the website."},
+		{"q1", "a1"},
+		{"q2", "a2"},
 	}))
-	t.Logf("QA chunks=%d", len(chunks))
 	if len(chunks) != 2 {
-		t.Fatalf("expected 2 data-row chunks, got %d", len(chunks))
+		t.Fatalf("expected both QA rows, got %d chunks: %#v", len(chunks), chunks)
+	}
+	if got := chunkTexts(chunks); !strings.Contains(got[0], "q1") || !strings.Contains(got[0], "a1") {
+		t.Fatalf("first row was not emitted as QA data: %#v", got)
 	}
 }
 
@@ -89,7 +91,6 @@ func TestXLSXQAMultilineCells(t *testing.T) {
 	const multilineAnswer = "跨行的答案\n第二行\n第三行"
 
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
-		{"question", "answer"},
 		{multilineQ, multilineA},
 		{"跨行的问句\n第二行", multilineAnswer},
 	}))

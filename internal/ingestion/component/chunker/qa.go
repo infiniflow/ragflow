@@ -327,6 +327,9 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	for _, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
+			if len(pairs) > 0 {
+				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")
+			}
 			continue
 		}
 		var texts []string
@@ -537,15 +540,19 @@ func detectDelimiter(lines []string) string {
 
 func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
+	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
-		// The typed spreadsheet header describes columns; it is not a QA
-		// record. Data rows carry the header labels when needed for context.
-		if item.CKType == "table_header" {
-			continue
-		}
 		var tmp []qaPair
-		if item.CKType == "table_row" {
-			tmp = extractQARowCells(item.Cells, strings.EqualFold(fileType, "csv"), item.RowStart)
+		if item.CKType == "table_header" || item.CKType == "table_row" {
+			// QA spreadsheets have no header row: the parser's structural
+			// table_header is still the first question/answer record.
+			if strictCSV && len(item.Cells) != 2 {
+				if len(pairs) > 0 {
+					pairs[len(pairs)-1].Answer += "\n" + strings.Join(item.Cells, ",")
+				}
+				continue
+			}
+			tmp = extractQARowCells(item.Cells, strictCSV, item.RowStart)
 		} else {
 			txt, _ := itemText(item)
 			if txt == "" {
@@ -554,7 +561,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			// Non-spreadsheet table items may still carry HTML markup. Keep
 			// the HTML fallback for parsers that do not expose typed cells.
 			if itemDocType(item) == "table" {
-				tmp = extractQATable(txt, false)
+				tmp = extractQATable(txt, strictCSV)
 			} else {
 				tmp = extractQAText(txt)
 			}
