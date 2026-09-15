@@ -203,16 +203,6 @@ func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, lo
 	return &log, nil
 }
 
-// UpdateDSL replaces the DSL stored on a pipeline operation log. Used by the
-// dataflow rerun endpoint to persist the front-end's edited component
-// configuration plus the rerun entry point (dsl.path = [component_id]),
-// mirroring Python's PipelineOperationLogService.update_by_id(id, {"dsl": dsl}).
-func (dao *PipelineOperationLogDAO) UpdateDSL(ctx context.Context, db *gorm.DB, logID string, dsl entity.JSONMap) error {
-	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ?", logID).
-		Update("dsl", dsl).Error
-}
-
 // Create inserts a new pipeline operation log.
 func (dao *PipelineOperationLogDAO) Create(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 	return db.WithContext(ctx).Create(log).Error

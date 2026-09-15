@@ -622,3 +622,64 @@ func TestBuildDebugResultDSL_IncludeOutputs(t *testing.T) {
 		t.Errorf("preview outputs._elapsed_time=%#v want {value:0.35}", aOutputs["_elapsed_time"])
 	}
 }
+
+// TestBuildDebugResultDSL_StripsPreExistingOutputs locks the defense-in-depth
+// guard for the persisted (includeOutputs=false) path: if the INPUT canvas DSL
+// ALREADY carries runtime outputs under obj.params.outputs (e.g. a stale
+// pipeline_operation_log row loaded back as a canvas, or any output-bearing
+// copy), the persisted builder must NOT forward those outputs into the new log
+// DSL. The persist path never constructs outputs (includeOutputs=false), and it
+// must also drop any pre-existing outputs in the static params so business data
+// cannot round-trip back into the persisted row (CWE-200).
+func TestBuildDebugResultDSL_StripsPreExistingOutputs(t *testing.T) {
+	const compA = "my.Parser"
+	// The input params already embed business data under outputs — this is the
+	// dangerous shape the persist path must refuse to carry forward.
+	dsl := `{
+		"dsl": {
+			"components": {
+				"a": {"obj": {"component_name": "` + compA + `", "params": {
+					"setups": {"pdf": {"parse_method": "general"}},
+					"outputs": {"chunks": {"value": [{"text": "LEAKED-BUSINESS-DATA"}], "type": "list"}}
+				}}, "downstream": []}
+			},
+			"path": ["a"],
+			"task_id": "task-42"
+		}
+	}`
+	output := map[string]any{
+		"a": map[string]any{"chunks": []any{map[string]any{"text": "fresh"}}},
+	}
+
+	// Persisted path: includeOutputs=false — must produce the DSL DEFINITION
+	// only, with no obj.params.outputs at all.
+	noBiz, err := BuildDebugResultDSL(dsl, output, false)
+	if err != nil {
+		t.Fatalf("BuildDebugResultDSL(includeOutputs=false): %v", err)
+	}
+	comps, ok := noBiz["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("components missing: %#v", noBiz["components"])
+	}
+	aObj, _ := comps["a"].(map[string]any)["obj"].(map[string]any)
+	aParams, _ := aObj["params"].(map[string]any)
+	if _, exists := aParams["outputs"]; exists {
+		t.Errorf("REGRESSION: pre-existing obj.params.outputs leaked into persisted DSL: %#v", aParams["outputs"])
+	}
+	// Static params must still survive (definition, not business data).
+	if aParams["setups"] == nil {
+		t.Error("static params.setups dropped by the outputs-strip guard")
+	}
+
+	// Sanity: the preview path (includeOutputs=true) still attaches the fresh
+	// runtime outputs — the guard only affects the persisted copy.
+	withBiz, err := BuildDebugResultDSL(dsl, output, true)
+	if err != nil {
+		t.Fatalf("BuildDebugResultDSL(includeOutputs=true): %v", err)
+	}
+	wcomps := withBiz["components"].(map[string]any)
+	waParams := wcomps["a"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if _, ok := waParams["outputs"].(map[string]any); !ok {
+		t.Error("includeOutputs=true must still attach fresh runtime outputs")
+	}
+}

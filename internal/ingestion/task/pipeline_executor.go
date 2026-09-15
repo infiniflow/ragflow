@@ -1100,6 +1100,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // The sink probe stays an optional capability: non-debug (DB-backed) sinks
 // ignore it and the ProgressSink contract is unchanged.
 func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
+	// Start from the static dsl: log recording must never fail a run, so on any
+	// build error we fall back to the static dsl unchanged rather than a
+	// half-written payload. The input dsl is the canvas DEFINITION (no runtime
+	// outputs), so the fallback is not a business-data leak (CWE-200) — the
+	// persisted copy stays definition-only and the log row is preserved for
+	// observability.
 	logDSL := dsl
 	// Persisted log DSL: DSL definition ONLY. Business data is never
 	// constructed for the persisted copy (includeOutputs=false). Real parses

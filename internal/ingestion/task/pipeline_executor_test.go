@@ -1076,7 +1076,10 @@ func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
 // TestBuildLogDSL_FallbackToStaticDSL pins the guarantee that log recording
 // never fails a run: when the run-result DSL cannot be built (a malformed
 // canvas), buildLogDSL must return the static dsl unchanged rather than a
-// half-written payload.
+// half-written payload. The input dsl is the canvas definition (no runtime
+// outputs), so the fallback is not a business-data leak and the log row is
+// preserved for observability (recordPipelineLog still receives a valid,
+// definition-only DSL).
 //
 // Note: business-data payloads (e.g. NaN inside a chunk value) no longer reach
 // the persisted copy at all — the persist path passes includeOutputs=false, so
@@ -1086,7 +1089,7 @@ func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl-fallback", 0)
 
 	// Build failure: a DSL without a components map cannot produce a
-	// run-result DSL at all.
+	// run-result DSL at all. The static dsl is returned unchanged.
 	badDSL := `{"dsl":{"path":["a"]}}`
 	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
 		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)

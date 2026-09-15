@@ -133,6 +133,13 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 		for k, v := range staticParams {
 			mergedParams[k] = deepCopy(v, false)
 		}
+		// Never forward a pre-existing outputs wrapper from the input DSL into
+		// the rebuilt params: the input can be an output-bearing copy (e.g. a
+		// stale pipeline_operation_log row loaded back as a canvas), and the
+		// persisted log must carry the DSL definition ONLY. The preview path
+		// re-attaches the fresh runtime outputs below when includeOutputs is
+		// true, so deleting here does not affect that branch.
+		delete(mergedParams, "outputs")
 		if includeOutputs {
 			// Build the runtime outputs wrapper (business data) only when the
 			// caller needs it — the dry-run live preview (ResultSink/Redis). The
