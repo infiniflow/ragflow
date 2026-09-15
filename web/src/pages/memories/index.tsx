@@ -70,7 +70,7 @@ export default function MemoryList() {
   });
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
-  const { filters } = useSelectFilters();
+  const { filters } = useSelectFilters(list?.data?.memory_list ?? []);
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {
