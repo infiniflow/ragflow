@@ -21,6 +21,8 @@ var llmRuntimeParamKeys = map[string]struct{}{
 	"presence_penalty":        {},
 	"frequency_penalty":       {},
 	"outputs":                 {},
+	"parameter":               {},
+	"thinking":                {},
 	"temperatureEnabled":      {},
 	"topPEnabled":             {},
 	"presencePenaltyEnabled":  {},
@@ -73,10 +75,22 @@ func isExtractorComponent(cpnID, componentName string) bool {
 		strings.HasPrefix(lowerID, "extractor_")
 }
 
+// isCompilerComponent returns true if the component ID indicates a Compiler
+// component, whose LLM-backed runtime parameters follow the same surface as
+// the Extractor's.
+func isCompilerComponent(cpnID string) bool {
+	lowerID := strings.ToLower(cpnID)
+	return strings.HasPrefix(lowerID, "compiler:") ||
+		strings.HasPrefix(lowerID, "compiler_")
+}
+
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	if isExtractorComponent(cpnID, "") {
 		return extractorValidParamKeys, true
+	}
+	if isCompilerComponent(cpnID) {
+		return llmRuntimeParamKeys, true
 	}
 	return nil, false
 }
@@ -121,7 +135,7 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 			continue
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
-		if hasDynamic {
+		if isExtractorComponent(key, "") {
 			params = NormalizeExtractorParams(params)
 		}
 		cleaned := make(map[string]any, len(params))
