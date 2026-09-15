@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Test cases for env_flag in common.settings."""
+"""Test cases for env_flag in common.misc_utils."""
 
 import pytest
 
