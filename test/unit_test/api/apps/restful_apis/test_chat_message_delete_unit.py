@@ -59,7 +59,7 @@ def _envelope(data=None, message="", code=0):
 
 
 def _load_chat_api(monkeypatch, conv):
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[5]
     updated = {}
 
     monkeypatch.setitem(sys.modules, "quart", _module_stub("quart", Response=None, request=SimpleNamespace(args={})))

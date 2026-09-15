@@ -1007,11 +1007,8 @@ async def delete_session_message(chat_id, session_id, msg_id):
         if not ok or conv.dialog_id != chat_id:
             return get_data_error_result(message="Session not found!")
         conv = conv.to_dict()
-        # A conversation may open with an assistant prologue, which keeps one
-        # message slot and the first reference slot. QA pairs share a message
-        # id across the user/assistant entries, and reference entries follow
-        # QA pairs only.
-        has_prologue = bool(conv["message"]) and conv["message"][0]["role"] == "assistant"
+        # QA pairs share a message id across user/assistant entries, and
+        # reference entries follow QA pairs only.
         for i, msg in enumerate(conv["message"]):
             if msg_id != msg.get("id", ""):
                 continue
@@ -1019,7 +1016,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
                 return get_data_error_result(message="Message not found!")
             conv["message"].pop(i)
             conv["message"].pop(i)
-            ref_index = (i - 1) // 2 if has_prologue else i // 2
+            ref_index = i // 2
             if 0 <= ref_index < len(conv["reference"]):
                 conv["reference"].pop(ref_index)
             break
