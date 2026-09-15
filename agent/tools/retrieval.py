@@ -313,6 +313,10 @@ class Retrieval(ToolBase, ABC):
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
+        if self._param.cross_languages:
+            tenant_id = self._canvas.get_tenant_id()
+            query = await cross_languages(tenant_id, None, query, self._param.cross_languages)
+
         # query message
         filter_dict: dict = {"memory_id": memory_ids}
         if user_id:
