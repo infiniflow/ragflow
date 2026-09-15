@@ -273,8 +273,12 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(ctx context.Context, db *gorm.DB, id 
 		OwnerName *string `gorm:"column:owner_name"`
 	}
 
-	if err := db.WithContext(ctx).Raw(querySQL, id).Scan(&rawResult).Error; err != nil {
-		return nil, err
+	result := db.WithContext(ctx).Raw(querySQL, id).Scan(&rawResult)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	return &entity.MemoryListItem{

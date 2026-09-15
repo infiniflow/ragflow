@@ -138,6 +138,27 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 	}
 }
 
+func TestExtractArtifactsFromToolMessageAcceptsSandboxContent(t *testing.T) {
+	msg := &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`}
+	got := extractArtifactsFromToolMessage(msg)
+	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
+		t.Fatalf("got %#v, want sandbox data URL", got)
+	}
+}
+
+func TestArtifactCollectorPreparedByInvokeReceivesRunnerFuture(t *testing.T) {
+	ctx := prepareArtifactCollector(t.Context())
+	ctx = setArtifactCollector(ctx, newSliceFuture(nil))
+	if getArtifactCollector(ctx) == nil {
+		t.Fatal("runner future was not visible to Agent.Invoke")
+	}
+	recordArtifactsFromToolMessage(ctx, &schema.Message{Role: schema.Tool, Content: `{"_ARTIFACTS":[{"name":"chart.png","mime_type":"image/png","content_b64":"aW1hZ2U="}]}`})
+	got := collectArtifactsFromToolCalls(ctx, nil)
+	if len(got) != 1 || got[0].URL != "data:image/png;base64,aW1hZ2U=" {
+		t.Fatalf("got %#v, want streamed sandbox artifact", got)
+	}
+}
+
 func drainFutureMessages(t *testing.T, future react.MessageFuture) []*schema.Message {
 	t.Helper()
 	var out []*schema.Message

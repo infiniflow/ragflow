@@ -4,9 +4,40 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { TagTabs } from './tag-tabs';
 import { DescriptionKeyMap, ImageMap } from './utils';
+
+const ChunkMethodScreenshot = ({ src }: { src: string }) => {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  const handleError = useCallback(() => setFailed(true), []);
+
+  if (failed) {
+    return (
+      <div className="flex h-40 w-full items-center justify-center rounded-md border border-border-button bg-bg-card">
+        <span className="text-sm text-text-secondary">
+          {t('imageLoadFailed')}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      width={'100%'}
+      className="w-full max-w-full"
+      onError={handleError}
+    />
+  );
+};
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -55,14 +86,18 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
                 {t('methodExamplesDescription')}
               </span>
               <div className="grid grid-cols-2 gap-2.5 mt-4">
-                {imageList.map((x) => (
-                  <SvgIcon
-                    name={x}
-                    width={'100%'}
-                    className="w-full"
-                    key={x}
-                  ></SvgIcon>
-                ))}
+                {imageList.map((x) =>
+                  /^https?:\/\//.test(x) ? (
+                    <ChunkMethodScreenshot key={x} src={x} />
+                  ) : (
+                    <SvgIcon
+                      key={x}
+                      name={x}
+                      width={'100%'}
+                      className="w-full"
+                    ></SvgIcon>
+                  ),
+                )}
               </div>
               <h5 className="font-semibold text-base mt-4 mb-1">
                 {item.title} {t('dialogueExamplesTitle')}

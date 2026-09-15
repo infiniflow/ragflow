@@ -38,6 +38,7 @@ export const enum ParseDocumentType {
   Docling = 'Docling',
   OpenDataLoader = 'OpenDataLoader',
   TCADPParser = 'TCADP Parser',
+  MonkeyOCRv2 = 'MonkeyOCRv2',
 }
 
 export function LayoutRecognizeFormField({
@@ -77,6 +78,7 @@ export function LayoutRecognizeFormField({
           ParseDocumentType.Docling,
           ParseDocumentType.OpenDataLoader,
           ParseDocumentType.TCADPParser,
+          ParseDocumentType.MonkeyOCRv2,
         ].map((x) => ({
           label: x === ParseDocumentType.PlainText ? t(camelCase(x)) : x,
           value: x,
@@ -89,7 +91,7 @@ export function LayoutRecognizeFormField({
 
     const modelTree = buildModelTree(
       allAddedModels,
-      ['image2text', 'ocr'],
+      ['image2text', 'ocr', 'vision'],
       (node) => (
         <div className="flex justify-between items-center gap-2 w-full">
           <span className="flex items-center gap-1.5 truncate">

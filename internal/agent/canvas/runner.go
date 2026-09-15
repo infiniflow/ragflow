@@ -119,10 +119,13 @@ type MessageEvent struct {
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
+// Attachment mirrors Python's _build_message_end: the {doc_id, format,
+// file_name} descriptor of a Message-component file export, present
+// only when one was produced.
 type MessageEndEvent struct {
-	Status     *string       `json:"status,omitempty"`
-	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  interface{}   `json:"reference,omitempty"`
+	Status     *string        `json:"status,omitempty"`
+	Attachment map[string]any `json:"attachment,omitempty"`
+	Reference  interface{}    `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"

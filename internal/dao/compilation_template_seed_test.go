@@ -141,4 +141,33 @@ func TestSeedBuiltinCompilationTemplatesForTenant(t *testing.T) {
 	if len(resolved) != len(builtinCompilationTemplateKinds) {
 		t.Fatalf("resolved %d template ids, want %d", len(resolved), len(builtinCompilationTemplateKinds))
 	}
+
+	got, err := NewCompilationTemplateDAO().GetTemplate(ctx, db, "some-other-tenant", builtinTemplateID("tree"))
+	if err != nil {
+		t.Fatalf("resolve global built-in template: %v", err)
+	}
+	if got.Kind != "tree" {
+		t.Fatalf("resolved built-in kind = %q, want tree", got.Kind)
+	}
+}
+
+func TestGetTemplateKeepsTenantScopeForCustomTemplates(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&entity.CompilationTemplate{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	tenantID := "tenant-1"
+	status := string(entity.StatusValid)
+	if err = db.Create(&entity.CompilationTemplate{
+		ID: "custom-template", TenantID: &tenantID, Name: "Custom", Kind: "tree",
+		Config: entity.JSONMap{"kind": "tree"}, Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("insert custom template: %v", err)
+	}
+	if _, err = NewCompilationTemplateDAO().GetTemplate(t.Context(), db, "tenant-2", "custom-template"); err == nil {
+		t.Fatal("custom template resolved for the wrong tenant")
+	}
 }

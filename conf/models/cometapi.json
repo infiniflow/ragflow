@@ -15,7 +15,7 @@
   "models": [
     {
       "name": "gpt-5.5",
-      "content_length": 1050000,
+      "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -31,7 +31,7 @@
     },
     {
       "name": "gpt-5.4-mini",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -47,7 +47,7 @@
     },
     {
       "name": "gpt-5",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -63,7 +63,7 @@
     },
     {
       "name": "gpt-4o",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat",
@@ -75,7 +75,7 @@
     },
     {
       "name": "claude-sonnet-4-6",
-      "content_length": 1000000,
+      "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -87,7 +87,7 @@
     },
     {
       "name": "gemini-3-pro-preview",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
         "chat",
@@ -99,7 +99,7 @@
     },
     {
       "name": "deepseek-v3.2",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -110,7 +110,7 @@
     },
     {
       "name": "qwen3-235b-a22b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"

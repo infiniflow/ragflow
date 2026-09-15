@@ -39,6 +39,12 @@ type NavNode struct {
 	HasChildren bool   `json:"has_children"`
 }
 
+// Nav row types as stored in the compiled nav index (type_kwd).
+const (
+	TypeNavDoc     = "nav_doc"
+	TypeNavCluster = "nav_cluster"
+)
+
 // NavHit is one KNN hit on a nav row.
 type NavHit struct {
 	Type   string // "nav_doc" | "nav_cluster"
@@ -84,11 +90,23 @@ type NavService interface {
 	RemoveDoc(ctx context.Context, tenantID, kbID, docID string) error
 
 	// Search runs query KNN over nav rows and returns the routed doc ids.
-	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, topK int) ([]NavHit, error)
+	//
+	// docScope restricts the result to the given documents (nil/empty = the whole
+	// dataset), mirroring search_dataset_nav's doc_scope: a nav_doc leaf matches
+	// on its doc_id, a nav_cluster row on coverage (doc_ids_kwd), and a cluster's
+	// returned coverage is trimmed to the scope so no out-of-scope document
+	// surfaces under a cluster that merely overlaps it.
+	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]NavHit, error)
 	// ListClusters returns the depth-0 clusters (parent_kwd=root).
 	ListClusters(ctx context.Context, tenantID, kbID string, page, pageSize int) ([]NavNode, int64, error)
 	// ListChildren returns the direct children of a cluster (parent_kwd=name).
 	ListChildren(ctx context.Context, tenantID, kbID, name string, page, pageSize int) ([]NavNode, int64, error)
+	// SummariesByDocIDs returns the nav_doc summary (preferred readable name, else
+	// the payload description) keyed by doc_id for the given documents. It mirrors
+	// Python dataset_api_service._nav_doc_summaries and backs the chunk_agg
+	// navigation-tree router's document labels. A doc without a nav_doc row is
+	// absent from the result.
+	SummariesByDocIDs(ctx context.Context, tenantID, kbID string, docIDs []string) map[string]string
 }
 
 var (
