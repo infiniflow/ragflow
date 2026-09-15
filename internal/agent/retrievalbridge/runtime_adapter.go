@@ -73,6 +73,7 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		UseKG:                    req.UseKG,
 		SimilarityThreshold:      req.SimilarityThreshold,
+		AllowDenseFallback:       new(false),
 		CrossLanguages:           req.CrossLanguages,
 		RetrievalFrom:            req.RetrievalFrom,
 		DocScope:                 req.DocScope,

@@ -926,8 +926,11 @@ func startServer(ctx context.Context) {
 
 		// Load the KB objects (mirroring Python RAGTools' self.kbs via
 		// KnowledgebaseService.get_by_ids(kb_ids)) so the agentic tool can
-		// derive rank features from parser_config.tag_kb_ids. Best-effort: a
-		// load failure leaves KBs empty and the adapter resolves them itself.
+		// derive rank features. The Go tag extractor (extractor_tag.go) writes
+		// both tag_kwd (the list of tag names) and tag_feas (per-tag weights)
+		// onto each chunk at parse time; the labeler aggregates tag_kwd to build
+		// the tag vocabulary and the retriever ranks with tag_feas. Best-effort:
+		// a load failure leaves KBs empty and the adapter resolves them itself.
 		var kbs []*entity.Knowledgebase
 		if len(req.DatasetIDs) > 0 {
 			if loaded, lErr := dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, req.DatasetIDs); lErr == nil {
