@@ -19,6 +19,7 @@ package harness
 import (
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -122,6 +123,11 @@ func TermsToPatterns(terms []string) []*regexp.Regexp {
 // GrepTermsMax caps the terms extracted from a query (Python _GREP_TERMS_MAX).
 const GrepTermsMax = 10
 
+// cjkPhraseRunes is the length at which a CJK token stops being a term and
+// becomes a clause: see GrepTermsFromQuery. Four is the longest Chinese proper
+// name that is still read as one token (成吉思汗), so a longer run is prose.
+const cjkPhraseRunes = 4
+
 // GrepOutCharsPerChunk is the grep narrow's per-chunk output cap (Python
 // _GREP_OUT_CHARS_PER_CHUNK).
 const GrepOutCharsPerChunk = 700
@@ -130,9 +136,29 @@ const GrepOutCharsPerChunk = 700
 // _GREP_OUT_TOTAL_CHARS).
 const GrepOutTotalChars = 8000
 
-// GrepTermsFromQuery mirrors Python _grep_terms_from_query:
-// extract compact grep terms from a query — bare alnum words of length>=2,
-// deduped (order-preserving) and capped. Numbers/ids are preserved as-is.
+// GrepTermsFromQuery mirrors Python _grep_terms_from_query — bare alnum words of
+// length>=2, deduped (order-preserving) and capped — and extends it to CJK.
+//
+// The Python original is ALNUM-ONLY, so a Chinese query yields no term at all and
+// GrepSearch's own guard (`if not chunks or not terms: return res`) returns whole
+// chunks instead of located windows. Measured on a Chinese question: the
+// "Keyword-first locate" line was logged, a narrowed line never was, and every
+// hit was a ~1200-char chunk. That is expensive (a name lives in one clause of
+// those 1200 chars) and it is what made an enumeration unreadable to the model,
+// which cannot see WHICH clause a name sits in.
+//
+// The derivation keeps Python's shape and adds CJK, with no regex:
+//
+//   - an ALTERNATION is the caller's own term list — "颜良|文丑|荀正" is how the
+//     count protocol tells a session to batch its probes — so it is split on "|"
+//     and its pieces are kept at any length ("关羽|斩": the predicate is a term);
+//   - otherwise the query is split on whitespace and punctuation, Latin tokens
+//     keep Python's two-character floor, and CJK tokens keep a two-CJK-rune
+//     floor (a lone Chinese character is a particle, not a term);
+//   - an unbroken CJK clause (a question written without separators) yields no
+//     token either way, so its two-rune windows are used, left to right: the
+//     names in the clause still locate, and a window that occurs nowhere costs
+//     one failed lookup inside the narrowing pass and nothing else.
 func GrepTermsFromQuery(query string) []string {
 	q := strings.TrimSpace(query)
 	if q == "" {
@@ -140,23 +166,142 @@ func GrepTermsFromQuery(query string) []string {
 	}
 	terms := make([]string, 0, GrepTermsMax)
 	seen := make(map[string]struct{}, GrepTermsMax)
-	re := regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9_.\-]{1,}`)
-	for _, m := range re.FindAllString(q, -1) {
-		t := strings.Trim(m, "._-")
-		if len(t) < 2 {
-			continue
+	add := func(t string) (full bool) {
+		if t == "" {
+			return len(terms) >= GrepTermsMax
 		}
 		low := strings.ToLower(t)
-		if _, ok := seen[low]; ok {
-			continue
+		if _, dup := seen[low]; dup {
+			return len(terms) >= GrepTermsMax
 		}
 		seen[low] = struct{}{}
 		terms = append(terms, t)
-		if len(terms) >= GrepTermsMax {
+		return len(terms) >= GrepTermsMax
+	}
+
+	if strings.Contains(q, "|") {
+		for _, part := range strings.Split(q, "|") {
+			if add(trimTermEdges(part)) {
+				break
+			}
+		}
+		return terms
+	}
+
+	for _, token := range strings.FieldsFunc(q, isTermSeparator) {
+		token = trimTermEdges(token)
+		if token == "" {
+			continue
+		}
+		if hasCJK(token) {
+			runes := utf8.RuneCountInString(token)
+			if runes < 2 {
+				continue
+			}
+			// A long CJK token is a CLAUSE, not a term: its literal form rarely
+			// occurs in the corpus, so it locates nothing. Decompose it into the
+			// two-rune windows a name can actually be found in.
+			if runes >= cjkPhraseRunes {
+				full := len(terms) >= GrepTermsMax
+				for _, window := range cjkWindowsOf(token, GrepTermsMax) {
+					if add(window) {
+						full = true
+						break
+					}
+				}
+				if full {
+					break
+				}
+				continue
+			}
+		} else if len(token) < 2 {
+			continue
+		}
+		if add(token) {
 			break
 		}
 	}
-	return terms
+	if len(terms) > 0 {
+		return terms
+	}
+	return cjkWindowsOf(q, GrepTermsMax)
+}
+
+// trimTermEdges strips the punctuation a token can carry instead of the regex
+// Python uses for the same job (reTermEdgePunct).
+func trimTermEdges(t string) string {
+	return strings.Trim(t, " \t\r\n.,:;!?'\"()[]{}<>“”‘’（）【】《》「」〈〉—…·_-")
+}
+
+// isTermSeparator reports whether a rune separates terms. "." and "," do;
+// "-", "_" and "." INSIDE a Latin token do not (Python keeps
+// [A-Za-z0-9_.-] as token material), so they are not listed here.
+func isTermSeparator(r rune) bool {
+	switch r {
+	case ' ', '\t', '\r', '\n', '\v', '\f',
+		',', ';', ':', '!', '?', '/', '\\', '(', ')', '[', ']', '{', '}', '<', '>', '"', '\'', '|',
+		'，', '。', '、', '；', '：', '！', '？', '（', '）', '【', '】', '《', '》', '「', '」', '〈', '〉',
+		'“', '”', '‘', '’', '—', '…', '·':
+		return true
+	}
+	return false
+}
+
+// hasCJK reports whether a token contains a CJK / kana / hangul rune — the same
+// classes EscapeTerm refuses to wrap in \b, because no word boundary exists
+// between them.
+func hasCJK(s string) bool {
+	for _, r := range s {
+		if isCJKRune(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCJKRune reports whether a rune belongs to a script whose text has no word
+// boundaries.
+func isCJKRune(r rune) bool {
+	return unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
+		unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r)
+}
+
+// cjkWindowsOf returns the two-rune windows of a string's CJK runs, in order,
+// deduped and capped. It is the last-resort term derivation for a query that is
+// one unbroken clause (see GrepTermsFromQuery).
+func cjkWindowsOf(query string, limit int) []string {
+	out := make([]string, 0, limit)
+	run := make([]rune, 0, 16)
+	flush := func() {
+		if len(run) >= 2 {
+			for i := 0; i+2 <= len(run) && len(out) < limit; i++ {
+				window := string(run[i : i+2])
+				dup := false
+				for _, o := range out {
+					if o == window {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					out = append(out, window)
+				}
+			}
+		}
+		run = run[:0]
+	}
+	for _, r := range query {
+		if isCJKRune(r) {
+			run = append(run, r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // lineSpans returns line (start,end) spans, boundaries at "\n" (grep semantics).
@@ -253,10 +398,16 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		lo = max(0, lo-before)
 		hi = min(len(lines)-1, hi+after)
 		fragS, fragE := lines[lo][0], lines[hi][1]
-		// Per-side character budget fallback.
-		if fragE-fragS > contextCharBudget*2 && (fragE-fragS) > (r[1]-r[0]) {
-			fragS = max(0, r[0]-contextCharBudget)
-			fragE = min(len(content), r[1]+contextCharBudget)
+		// A line window is unusable when the LINE IS THE WHOLE CHUNK, and that is
+		// the CJK case by default: a Chinese chunk carries no newlines, so its
+		// one line is the entire passage and the window hands back all of it. The
+		// length test catches the same thing for a chunk that does have a few
+		// very long lines. Either way, fall back to the SENTENCES the hit sits
+		// in — same per-side budget, cut at 。！？； instead of mid-clause.
+		if len(lines) <= 1 || (fragE-fragS > contextCharBudget*2 && (fragE-fragS) > (r[1]-r[0])) {
+			if window := sentenceWindow(content, r, contextCharBudget); window[1]-window[0] < fragE-fragS {
+				fragS, fragE = window[0], window[1]
+			}
 		}
 		expanded = append(expanded, [2]int{fragS, fragE})
 	}
@@ -284,6 +435,44 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		return truncHead(content, headFallbackChars), true
 	}
 	return narrowed, true
+}
+
+// sentenceWindow expands a hit to the sentence it sits in, bounded by budget
+// bytes on each side.
+//
+// It exists for text with no line structure. A CJK chunk is one long line, so
+// the line-window path returns the whole chunk for a hit that needs one clause of
+// it; cutting at sentence punctuation instead keeps the window bounded AND keeps
+// the clause intact, which is what makes the result readable to the model (a
+// name is read off the clause around the verb). Terminators are the sentence
+// punctuation of both scripts; no regex is involved.
+func sentenceWindow(content string, hit [2]int, budget int) [2]int {
+	lo := hit[0]
+	for lo > 0 && hit[0]-lo < budget {
+		r, size := utf8.DecodeLastRuneInString(content[:lo])
+		if isSentenceTerminator(r) {
+			break
+		}
+		lo -= size
+	}
+	hi := hit[1]
+	for hi < len(content) && hi-hit[1] < budget {
+		r, size := utf8.DecodeRuneInString(content[hi:])
+		hi += size
+		if isSentenceTerminator(r) {
+			break
+		}
+	}
+	return [2]int{lo, hi}
+}
+
+// isSentenceTerminator reports whether a rune ends a sentence in either script.
+func isSentenceTerminator(r rune) bool {
+	switch r {
+	case '。', '！', '？', '；', '\n', '!', '?', ';', '.':
+		return true
+	}
+	return false
 }
 
 // NarrowStats carries the accounting Python narrow_by_terms returns in its
