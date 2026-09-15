@@ -315,7 +315,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
-    &entity.MemoryTask{},
+		&entity.MemoryTask{},
 		&entity.ConversationMessage{},
 		&entity.ConversationReference{},
 		&entity.API4ConversationMessage{},
