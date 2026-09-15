@@ -2295,6 +2295,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      delimitersTip:
+        '每行一个分隔符，多字符分隔符可直接填写（如 ##）。加反引号（如 `##`）：强制切分，每个分隔符处独立成块，不再按 token 大小合并；不加反引号：只作为切分点，切出的段落仍会按 chunk_token_size 合并，因此短文本可能看不出效果。',
+      delimitersTipPython:
+        '每行一个分隔符。只有用反引号包裹的条目（如 `##`）生效：每个分隔符处独立成块，不再按 token 大小合并；不加反引号的条目会被忽略。',
+      childrenDelimitersTip:
+        '子块切分：每个父块会再按这些分隔符切成子块（子块用于检索），不受 chunk_token_size 影响。',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
