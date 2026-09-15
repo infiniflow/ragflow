@@ -656,7 +656,12 @@ func normalizePDFDocType(item map[string]any) {
 	if item == nil {
 		return
 	}
-	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
+	docType, _ := item["doc_type_kwd"].(string)
+	if img, _ := item["image"].(string); img != "" && docType != "table" {
+		item["doc_type_kwd"] = "image"
+		return
+	}
+	if docType != "" {
 		return
 	}
 	layoutType, _ := item["layout_type"].(string)
@@ -666,10 +671,6 @@ func normalizePDFDocType(item map[string]any) {
 	case "figure", "image":
 		item["doc_type_kwd"] = "image"
 	default:
-		if img, _ := item["image"].(string); img != "" {
-			item["doc_type_kwd"] = "image"
-			return
-		}
 		item["doc_type_kwd"] = "text"
 	}
 }
