@@ -25,7 +25,11 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -319,5 +323,89 @@ func TestImageUploadDecorator_DebugSkipsUpload(t *testing.T) {
 	}
 	if id, _ := ck["img_id"].(string); id != "" {
 		t.Errorf("img_id should not be set in debug run, got %q", id)
+	}
+}
+
+// stubChunker is a deterministic fake runtime.Component used to exercise the
+// imageUploadDecorator without depending on a real chunker variant's slicing
+// behaviour. It returns exactly the chunks it was constructed with.
+type stubChunker struct {
+	chunks []map[string]any
+}
+
+func (s *stubChunker) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	return map[string]any{"chunks": s.chunks}, nil
+}
+
+// TestImageUploadDecorator_DebugCapsChunks pins the canvas-debug chunk cap:
+// when CanvasState.Globals carries debug_chunk_cap (>=1), the decorator
+// truncates the chunker output to the leading N chunks for preview. This is
+// the single choke point that every chunker variant flows through, so the cap
+// applies regardless of which chunker variant produced the chunks. The test
+// drives a stub chunker (deterministic output) through the decorator with a
+// ctx that has the cap set, and asserts only the first N chunks survive.
+func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
+	const capN = 3
+	src := make([]map[string]any, 0, 6)
+	for i := 0; i < 6; i++ {
+		src = append(src, map[string]any{
+			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+		})
+	}
+	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}
+
+	inputs := map[string]any{
+		"name":   "doc.pdf",
+		"kb_id":  "", // debug run
+		"doc_id": testDocID,
+	}
+
+	st := &runtime.CanvasState{Globals: map[string]any{globals.DebugChunkCapKey: capN}}
+	ctx := runtime.WithState(context.Background(), st)
+
+	out, err := decorated.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks missing or wrong type: %#v", out["chunks"])
+	}
+	if len(chunks) != capN {
+		t.Fatalf("len(chunks) = %d, want %d (debug chunk cap not applied)", len(chunks), capN)
+	}
+	for i, ck := range chunks {
+		want := fmt.Sprintf("chunk-%d", i)
+		if got, _ := ck["content_with_weight"].(string); got != want {
+			t.Errorf("chunks[%d].content_with_weight = %q, want %q (wrong chunk kept after truncation)", i, got, want)
+		}
+	}
+}
+
+// TestImageUploadDecorator_NoCapKeepsAll asserts that without debug_chunk_cap
+// in globals the decorator leaves every chunk intact — the cap is opt-in via
+// the global, so persist runs and chunker-less debug runs are untouched.
+func TestImageUploadDecorator_NoCapKeepsAll(t *testing.T) {
+	src := make([]map[string]any, 0, 5)
+	for i := 0; i < 5; i++ {
+		src = append(src, map[string]any{
+			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+		})
+	}
+	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}
+
+	inputs := map[string]any{
+		"name":   "doc.pdf",
+		"kb_id":  "",
+		"doc_id": testDocID,
+	}
+	// No CanvasState in ctx → DebugChunkCap returns 0 → no truncation.
+	out, err := decorated.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 5 {
+		t.Fatalf("len(chunks) = %d, want 5 (no cap should keep all)", len(chunks))
 	}
 }

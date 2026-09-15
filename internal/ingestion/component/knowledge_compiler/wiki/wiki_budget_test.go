@@ -32,11 +32,11 @@ func TestWikiTargetPageCount_Clamp(t *testing.T) {
 
 // TestDeriveWikiPlanBudget_MaxReflectsOutputCapacity locks the corrected P0
 // contract: Max is the unbreakable output-capacity bound and is NOT raised back
-// up to Target. A small-window model must never be asked for more pages than its
-// output capacity permits.
+// up to Target. A model with a small configured output limit must never be
+// asked for more pages than that limit permits.
 func TestDeriveWikiPlanBudget_MaxReflectsOutputCapacity(t *testing.T) {
-	// Tiny window (modelLen=1024): output_tokens = max(1024, 1024*0.4=409) =
-	// 1024; capacity = (1024-256)//48 = 16. For a large item count
+	// A 1024-token configured output limit gives capacity
+	// (1024-256)//48 = 16. For a large item count
 	// (target=60), Max must stay at 16 (capacity-bound), NOT be raised to 60.
 	b := deriveWikiPlanBudget(1024, 1000)
 	if b.Target != 60 {
@@ -45,31 +45,39 @@ func TestDeriveWikiPlanBudget_MaxReflectsOutputCapacity(t *testing.T) {
 	if b.Max != 16 {
 		t.Fatalf("Max = %d, want 16 (capacity-bound, must not re-raise to Target 60)", b.Max)
 	}
-	// A tiny item count with the same window: target = 8, max = min(16, 16, 16)
+	// A tiny item count with the same output limit: target = 8,
+	// max = min(16, 16, 16)
 	// = 16.
 	b = deriveWikiPlanBudget(1024, 1)
 	if b.Max != 16 {
 		t.Fatalf("Max = %d, want 16", b.Max)
 	}
-	// A roomy window: Max = min(capacity, target+8, target*2). For total=1000
-	// (target 60) and window 8192: output=3276, capacity=62 -> max=min(62,68,120)=62.
+	// A roomy output limit: Max = min(capacity, target+8, target*2). For
+	// total=1000 (target 60) and max_output=8192: capacity=165, so
+	// max=min(165,68,120)=68.
 	b = deriveWikiPlanBudget(8192, 1000)
-	if b.Max != 62 {
-		t.Fatalf("Max = %d, want 62", b.Max)
+	if b.Max != 68 {
+		t.Fatalf("Max = %d, want 68", b.Max)
 	}
 }
 
 func TestDeriveWikiPlanBudget_OutputCapacityBounds(t *testing.T) {
-	// With a 8192 model: output_tokens = min(4096, max(1024, 8192*0.4=3276))
-	// = 3276; capacity = (3276-256)//48 = 62. For total=1000 target=60,
-	// max = min(62, max(68, 120)) = 62. Max must equal 62 and be >= target 60.
+	// With max_output=8192, capacity = (8192-256)//48 = 165. For
+	// total=1000 target=60, max = min(165, 68, 120) = 68.
 	b := deriveWikiPlanBudget(8192, 1000)
 	if b.Target != 60 {
 		t.Fatalf("Target = %d, want 60", b.Target)
 	}
-	want := 62
+	want := 68
 	if b.Max != want {
 		t.Fatalf("Max = %d, want %d (output-token capacity)", b.Max, want)
+	}
+}
+
+func TestDeriveWikiPlanBudget_UsesDefaultWhenModelOutputUnknown(t *testing.T) {
+	b := deriveWikiPlanBudget(0, 1000)
+	if b.Target != 60 || b.Max != 68 {
+		t.Fatalf("budget = %#v, want target=60 max=68", b)
 	}
 }
 

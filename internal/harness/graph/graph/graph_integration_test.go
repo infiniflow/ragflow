@@ -320,7 +320,7 @@ func TestGraphIntegration_RecursionLimit(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{"step": 0})
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{"step": 0})
 	if err == nil {
 		t.Fatal("expected recursion limit error")
 	}
@@ -357,7 +357,7 @@ func TestGraphIntegration_ConcurrentInvocations(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			_, err := cg.Invoke(context.Background(), map[string]interface{}{"counter": id})
+			_, err := cg.Invoke(t.Context(), map[string]interface{}{"counter": id})
 			errs <- err
 		}(i)
 	}
@@ -386,7 +386,7 @@ func TestGraphIntegration_NodeError(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{})
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{})
 	if err == nil {
 		t.Fatal("expected error from failing node")
 	}
@@ -407,7 +407,7 @@ func TestGraphIntegration_NoOpNode(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{"a": 1})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{"a": 1})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestGraphIntegration_BranchFanOut(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestGraphIntegration_GetState(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{"value": ""})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{"value": ""})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

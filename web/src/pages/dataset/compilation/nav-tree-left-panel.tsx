@@ -8,6 +8,7 @@ import {
   DatasetNavNode,
 } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { FileText, Folder, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,7 @@ function NavNodeDeleteAction({
   onDelete,
 }: NavNodeDeleteActionProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const handleTriggerClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -40,6 +42,9 @@ function NavNodeDeleteAction({
   const handleConfirmDelete = useCallback(() => {
     onDelete(name, parentName);
   }, [name, parentName, onDelete]);
+
+  // The Go backend does not support deleting nav nodes; don't mount the action.
+  if (isGo) return null;
 
   return (
     <ConfirmDeleteDialog
@@ -68,6 +73,12 @@ type NavTreeLeftPanelProps = {
   navLoading: boolean;
   navError?: boolean;
   keywords: string;
+  // The debounced filter applied to the nav/children/graph requests. Used as
+  // the TreeView key so a filter change remounts the tree: expansion state is
+  // uncontrolled per node and onExpand only fires on opening, so without a
+  // remount an already-open node whose cached children were dropped would sit
+  // on the loading placeholder forever.
+  activeKeywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
   childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
@@ -86,6 +97,7 @@ export function NavTreeLeftPanel({
   navLoading,
   navError = false,
   keywords,
+  activeKeywords,
   childrenMap,
   childrenErrorParents = {},
   structureMap,
@@ -99,6 +111,7 @@ export function NavTreeLeftPanel({
   onDeleteNode,
 }: NavTreeLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const renderNavActions = useCallback(
     (node: DatasetNavNode, parentName: string | null) => (
@@ -144,7 +157,7 @@ export function NavTreeLeftPanel({
         <span className="text-sm font-medium text-text-primary">
           {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
-        {treeData.length > 0 && (
+        {!isGo && treeData.length > 0 && (
           <ConfirmDeleteDialog
             title={t('knowledgeCompilation.navDeleteAllTitle')}
             content={{
@@ -189,6 +202,7 @@ export function NavTreeLeftPanel({
               </div>
             ) : null}
             <TreeView
+              key={activeKeywords}
               data={treeData}
               expandOnRowClick={false}
               defaultNodeIcon={Folder}

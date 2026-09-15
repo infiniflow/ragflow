@@ -105,25 +105,19 @@ export function FilesTable({
   // Skills are only served by the Go backend
   const isSkillsEnabled = useIsGoBackend();
 
-  // Sort files with skills folder first, then by time
-  // Filter out the skills folder on the Python backend
+  // Sort files with the Go skills folder first, then by time
   const sortedFiles = useMemo(() => {
     if (!files) return [];
 
-    // Filter out skills folder if feature is disabled
-    const filteredFiles = isSkillsEnabled
-      ? files
-      : files.filter((file) => {
-          const isSkills =
-            isFolderType(file.type) && file.name.toLowerCase() === 'skills';
-          return !isSkills;
-        });
-
-    return [...filteredFiles].sort((a, b) => {
+    return [...files].sort((a, b) => {
       const aIsSkills =
-        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
+        isSkillsEnabled &&
+        isFolderType(a.type) &&
+        a.name.toLowerCase() === 'skills';
       const bIsSkills =
-        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
+        isSkillsEnabled &&
+        isFolderType(b.type) &&
+        b.name.toLowerCase() === 'skills';
 
       // Skills folder always comes first
       if (aIsSkills && !bIsSkills) return -1;
@@ -182,7 +176,8 @@ export function FilesTable({
         const type = row.original.type;
         const id = row.original.id;
         const isFolder = isFolderType(type);
-        const isSkillsFolder = isFolder && name.toLowerCase() === 'skills';
+        const isSkillsFolder =
+          isSkillsEnabled && isFolder && name.toLowerCase() === 'skills';
 
         const handleNameClick = () => {
           if (isSkillsFolder) {
@@ -311,9 +306,10 @@ export function FilesTable({
       const name = row.original.name;
       const type = row.original.type;
       const isSkillsFolder =
-        isFolderType(type) && name.toLowerCase() === 'skills';
-      // Skills folder is not selectable when enabled (it's a special entry)
-      // When disabled, it's already filtered out
+        isSkillsEnabled &&
+        isFolderType(type) &&
+        name.toLowerCase() === 'skills';
+      // The Go skills folder is not selectable because it's a special entry.
       return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },
     state: {

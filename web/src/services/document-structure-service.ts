@@ -26,6 +26,20 @@ export const getDocumentStructureGraph = (
     params: keywords ? { keywords } : undefined,
   });
 
+export const getDocumentStructureClaims = (
+  datasetId: string,
+  documentId: string,
+  params: {
+    chunk_ids?: string;
+    template_id?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+) =>
+  request.get(api.documentStructureClaims(datasetId, documentId), {
+    params,
+  });
+
 export const deleteDocumentStructureGraph = (
   datasetId: string,
   documentId: string,
@@ -37,6 +51,7 @@ export const deleteDocumentStructureGraph = (
 
 const documentStructureService = {
   getDocumentStructureGraph,
+  getDocumentStructureClaims,
   deleteDocumentStructureGraph,
 };
 

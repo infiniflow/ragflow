@@ -20,6 +20,8 @@ import { $createParagraphNode, $getRoot } from 'lexical';
 import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
 
+import type { WikiPageType } from '@/utils/wiki-link-util';
+
 import ContentEditable from './content-editable';
 import theme from './editor-theme';
 import {
@@ -33,6 +35,10 @@ import nodes from './nodes';
 // Direct CSS import (more reliable than @import in App.css)
 import './editor-theme.css';
 
+// Updates that import externally-provided content carry this tag so
+// ChangeListener can skip them — onChange should only fire for user edits.
+const ExternalContentSyncTag = 'external-content-sync';
+
 interface Props {
   content: string;
   onChange?: (markdown: string) => void;
@@ -40,7 +46,7 @@ interface Props {
   placeholder?: string;
   onToggleSource?: () => void;
   showSource?: boolean;
-  onWikiLinkClick?: (pageType: 'concept' | 'entity', slug: string) => void;
+  onWikiLinkClick?: (pageType: WikiPageType, slug: string) => void;
 }
 
 function InitialContentPlugin({
@@ -58,15 +64,18 @@ function InitialContentPlugin({
     if (seeded.current) return;
     seeded.current = true;
 
-    editor.update(() => {
-      const root = $getRoot();
-      root.clear();
-      if (content && content.trim()) {
-        $convertFromEnhancedMarkdownString(content, transformers);
-      } else {
-        root.append($createParagraphNode());
-      }
-    });
+    editor.update(
+      () => {
+        const root = $getRoot();
+        root.clear();
+        if (content && content.trim()) {
+          $convertFromEnhancedMarkdownString(content, transformers);
+        } else {
+          root.append($createParagraphNode());
+        }
+      },
+      { tag: ExternalContentSyncTag },
+    );
     // oxlint-disable-next-line react/exhaustive-deps
   }, [editor]);
 
@@ -83,18 +92,21 @@ function ContentSyncPlugin({
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    editor.update(() => {
-      const currentMarkdown = $convertToEnhancedMarkdownString(transformers);
-      if (currentMarkdown === content) return;
+    editor.update(
+      () => {
+        const currentMarkdown = $convertToEnhancedMarkdownString(transformers);
+        if (currentMarkdown === content) return;
 
-      const root = $getRoot();
-      root.clear();
-      if (content && content.trim()) {
-        $convertFromEnhancedMarkdownString(content, transformers);
-      } else {
-        root.append($createParagraphNode());
-      }
-    });
+        const root = $getRoot();
+        root.clear();
+        if (content && content.trim()) {
+          $convertFromEnhancedMarkdownString(content, transformers);
+        } else {
+          root.append($createParagraphNode());
+        }
+      },
+      { tag: ExternalContentSyncTag },
+    );
   }, [content, editor, transformers]);
 
   return null;
@@ -108,16 +120,12 @@ function ChangeListener({
   transformers: Transformer[];
 }) {
   const [editor] = useLexicalComposerContext();
-  const initRef = useRef(false);
 
   useEffect(() => {
     if (!onChange) return;
     const removeListener = editor.registerUpdateListener(
-      ({ dirtyElements, dirtyLeaves }) => {
-        if (!initRef.current) {
-          initRef.current = true;
-          return;
-        }
+      ({ dirtyElements, dirtyLeaves, tags }) => {
+        if (tags.has(ExternalContentSyncTag)) return;
         if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
         const markdown = editor.read(() =>
           $convertToEnhancedMarkdownString(transformers),

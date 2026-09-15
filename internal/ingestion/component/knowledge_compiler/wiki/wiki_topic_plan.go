@@ -201,7 +201,7 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 	for _, community := range communities {
 		totalItems += wikiExtractItemCount(community)
 	}
-	p.planBudget = deriveWikiPlanBudget(p.deps.ModelContextLen, totalItems)
+	p.planBudget = deriveWikiPlanBudget(p.deps.ModelMaxOutput, totalItems)
 	quotas := allocatePlanQuotas(communities, p.planBudget.Cap())
 	approved := wikiExtract{}
 	plans := make([]wikiPlan, len(communities))
@@ -221,7 +221,7 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 			if err := p.ctx.Err(); err != nil {
 				return err
 			}
-			plan, err := p.runPlanBatch(community, i+1, len(communities), quota, p.planBudget.MaxTokens)
+			plan, err := p.runPlanBatch(community, i+1, len(communities), quota)
 			if err != nil {
 				return err
 			}

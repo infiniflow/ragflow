@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -114,6 +115,130 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	}
 	if chunks[0]["tag_kwd"] != nil {
 		t.Fatal("tag_kwd should not be set without tag_file_id")
+	}
+}
+
+func TestTagVocabularyFromBytes(t *testing.T) {
+	// Each line is [content, tags]; the tags column may hold a comma-separated
+	// list, which requires quoting (or a tab delimiter) to survive CSV parsing.
+	csv := []byte("\"some content\",\"finance,urgent\"\n\"other content\",\"finance\"\n\"just a line\",\"legal\"")
+	vocab, err := TagVocabularyFromBytes(csv, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"finance": 2, "urgent": 1, "legal": 1}
+	if len(vocab) != len(want) {
+		t.Fatalf("vocab=%v want=%v", vocab, want)
+	}
+	for tag, c := range want {
+		if vocab[tag] != c {
+			t.Fatalf("tag %q count=%d want=%d", tag, vocab[tag], c)
+		}
+	}
+
+	// Dots in tags are normalized to underscores, matching the extractor.
+	csv2 := []byte("\"x\",\"Alpha.Beta\"\n\"y\",\"Alpha.Beta\"")
+	vocab2, err := TagVocabularyFromBytes(csv2, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vocab2["Alpha_Beta"] != 2 {
+		t.Fatalf("expected Alpha_Beta=2, got %v", vocab2)
+	}
+
+	// A tag repeated inside one source example counts once: the count is the
+	// number of source examples mentioning the tag, consistent with
+	// buildMemoryTagIndex's per-sample deduplication.
+	csv3 := []byte("\"dup content\",\"finance,finance,urgent\"\n\"other content\",\"finance\"")
+	vocab3, err := TagVocabularyFromBytes(csv3, "tags.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vocab3["finance"] != 2 { // two examples, not three occurrences
+		t.Fatalf("expected finance=2 (per source example), got %v", vocab3)
+	}
+	if vocab3["urgent"] != 1 {
+		t.Fatalf("expected urgent=1, got %v", vocab3)
+	}
+	if len(vocab3) != 2 {
+		t.Fatalf("expected 2 distinct tags, got %v", vocab3)
+	}
+
+	// Unsupported extension is rejected.
+	if _, err := TagVocabularyFromBytes([]byte("x"), "tags.pdf"); err == nil {
+		t.Fatal("expected error for unsupported extension")
+	}
+}
+
+// TestTagVocabularyFromTagFileID_RejectsForeignTenantFile pins the IDOR guard.
+// parser_config.tags.tag_file_id is user-controlled (the dataset update API
+// accepts parser_config), so the file it names must belong to the caller's
+// tenant before its bytes are read. The tag source bytes are deliberately
+// seeded in storage: without the ownership check the loader would happily
+// return them to the other tenant.
+func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
+	db := withFileComponentTestDB(t)
+	ms := withMemoryStorage(t)
+
+	const (
+		ownerTenant    = "tenant-owner"
+		attackerTenant = "tenant-attacker"
+		fileID         = "tag-file-foreign"
+		bucket         = "kb-bucket-1"
+		location       = "tags/tags.csv"
+	)
+
+	csv := []byte("\"some content\",\"finance,urgent\"\n\"other content\",\"finance\"")
+	loc := location
+	if err := db.Create(&entity.File{
+		ID:        fileID,
+		ParentID:  bucket,
+		TenantID:  ownerTenant,
+		CreatedBy: ownerTenant,
+		Name:      "tags.csv",
+		Type:      "doc",
+		Location:  &loc,
+	}).Error; err != nil {
+		t.Fatalf("seed file row: %v", err)
+	}
+	if err := ms.Put(t.Context(), bucket, location, csv); err != nil {
+		t.Fatalf("seed storage: %v", err)
+	}
+
+	// A dataset whose tenant does not own the file must be denied, and must not
+	// get the bytes.
+	vocab, err := TagVocabularyFromTagFileID(t.Context(), fileID, attackerTenant)
+	if err == nil {
+		t.Fatalf("IDOR: foreign tenant read the tag source file, vocab=%v", vocab)
+	}
+	if vocab != nil {
+		t.Fatalf("IDOR: expected no vocabulary for foreign tenant, got %v", vocab)
+	}
+
+	// An empty owner tenant fails closed as well.
+	if _, err := TagVocabularyFromTagFileID(t.Context(), fileID, ""); err == nil {
+		t.Fatal("empty owner tenant must fail closed")
+	}
+
+	// The owning tenant still gets the vocabulary.
+	vocab, err = TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	if err != nil {
+		t.Fatalf("owner tenant load failed: %v", err)
+	}
+	if vocab["finance"] != 2 || vocab["urgent"] != 1 {
+		t.Fatalf("owner vocab = %v, want finance=2 urgent=1", vocab)
+	}
+
+	// Sharing is intentional: the guard is tenant-scoped, not dataset-scoped (the
+	// file's ParentID is never compared against the referencing dataset), so any
+	// number of datasets in ownerTenant can point at this same tag source file —
+	// each passes its own dataset tenant (kb.TenantID) here.
+	shared, err := TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	if err != nil {
+		t.Fatalf("a second dataset in the same tenant must resolve the shared file: %v", err)
+	}
+	if shared["finance"] != 2 {
+		t.Fatalf("shared vocab = %v, want finance=2", shared)
 	}
 }
 
@@ -279,7 +404,7 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -302,7 +427,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -324,7 +449,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 	}
 
 	chunk := map[string]any{"content_with_weight": "some content"}
-	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -721,7 +846,7 @@ func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	tagKwd, ok := chunk["tag_kwd"].([]string)
 	if !ok {
@@ -1166,10 +1291,10 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 		{Content: "sample one", TagWeights: map[string]int{"TagA": 5}},
 	}
 
-	k1 := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
-	k2 := taggerCacheKey("llm-1", "test text", allTags, ex2, 3)
-	k3 := taggerCacheKey("llm-1", "test text", allTags, ex3, 3)
-	kEmpty := taggerCacheKey("llm-1", "test text", allTags, nil, 3)
+	k1 := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
+	k2 := taggerCacheKey("llm-1", "test text", "body", allTags, ex2, 3)
+	k3 := taggerCacheKey("llm-1", "test text", "body", allTags, ex3, 3)
+	kEmpty := taggerCacheKey("llm-1", "test text", "body", allTags, nil, 3)
 
 	if k1 == k2 {
 		t.Fatalf("expected different cache keys for different few-shot examples: %s vs %s", k1, k2)
@@ -1182,7 +1307,7 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 	}
 
 	// Identical few-shot examples produce identical key
-	k1Dup := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
+	k1Dup := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
 	if k1 != k1Dup {
 		t.Fatalf("expected identical cache keys for same few-shot examples: %s vs %s", k1, k1Dup)
 	}

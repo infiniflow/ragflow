@@ -34,13 +34,14 @@ from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, 
 from common.doc_store.ob_conn_base import (
     OBConnectionBase,
     get_value_str,
+    validate_column_name,
     vector_search_template,
     vector_column_pattern,
     fulltext_index_name_template,
     doc_meta_column_names,
     doc_meta_column_types,
 )
-from common.float_utils import get_float
+from common.float_utils import format_minimum_should_match_percent, get_float
 from rag.nlp import rag_tokenizer
 
 logger = logging.getLogger("ragflow.ob_conn")
@@ -635,7 +636,7 @@ class OBConnection(OBConnectionBase):
                 if isinstance(m, MatchTextExpr):
                     minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                     if isinstance(minimum_should_match, float):
-                        minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                        minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                     bqry.must.append(Q("query_string", fields=FTS_COLUMNS_TKS, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                     bqry.boost = 1.0 - vector_similarity_weight
 
@@ -1201,6 +1202,7 @@ class OBConnection(OBConnectionBase):
         for k, v in new_value.items():
             if k == "remove":
                 if isinstance(v, str):
+                    validate_column_name(v, _VALID_FILTER_COLUMNS, vector_column_pattern)
                     set_values.append(f"{v} = NULL")
                 else:
                     if not isinstance(v, dict):
@@ -1230,6 +1232,7 @@ class OBConnection(OBConnectionBase):
                     if title:
                         set_values.append(f"docnm_kwd = {get_value_str(title)}")
             else:
+                validate_column_name(k, _VALID_FILTER_COLUMNS, vector_column_pattern)
                 set_values.append(f"{k} = {get_value_str(v)}")
 
         if not set_values:
