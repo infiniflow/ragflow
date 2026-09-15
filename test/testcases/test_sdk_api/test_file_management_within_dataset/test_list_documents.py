@@ -220,7 +220,7 @@ class TestDocumentsList:
         assert len(documents) == 5, str(documents)
         assert {document.id for document in documents} == expected_ids, str(documents)
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_id_and_ids_raise_value_error(self, add_documents):
         dataset, documents = add_documents
 

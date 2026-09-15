@@ -1,3 +1,4 @@
+import { addParserConfigIssues } from '@/components/pipeline-operator-tabs/parser-config-validation';
 import { DESCRIPTION_MAX_LENGTH } from '@/constants/common';
 import { ParseType } from '@/constants/knowledge';
 import { t } from 'i18next';
@@ -47,4 +48,5 @@ export const formSchema = z
         code: 'custom',
       });
     }
+    addParserConfigIssues(data.parser_config, ctx, t);
   });

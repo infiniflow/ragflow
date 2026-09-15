@@ -25,7 +25,7 @@ export const DataflowEmptyDsl = {
         data: {
           form: initialParserValues,
           label: 'Parser',
-          name: 'Parser_0',
+          name: 'Parser',
         },
         dragging: false,
         id: 'Parser:HipSignsRhyme',

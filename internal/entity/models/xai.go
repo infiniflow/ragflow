@@ -33,9 +33,9 @@ import (
 )
 
 var (
-	nonStreamCallTimeout = 300 * time.Second
-	streamCallTimeout    = 10 * time.Minute
-	longOpCallTimeout    = 10 * time.Minute
+	nonStreamCallTimeout = 20 * time.Minute
+	streamCallTimeout    = 20 * time.Minute
+	longOpCallTimeout    = 20 * time.Minute
 )
 
 // XAIModel implements ModelDriver for xAI (Grok models)

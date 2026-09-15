@@ -120,7 +120,7 @@ export default {
         '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 0.2，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
+        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 20，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
       vectorSimilarityWeight: '矢量相似度權重',
       vectorSimilarityWeightTip:
         '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
@@ -140,6 +140,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '排隊中',
       pageRanges: '頁碼範圍',
       pageRangesTip:
         '頁碼範圍：定義需要解析的頁面範圍。不包含在這些範圍內的頁面將被忽略。',
@@ -149,7 +150,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -172,12 +173,16 @@ export default {
       delimiter: `文字分段標識符`,
       delimiterTip:
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
+      enableChildrenDelimiter: '子文本塊用於檢索',
+      childrenDelimiter: '文字分段標識符',
+      childrenDelimiterTip:
+        '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建議文字塊大小」設定的大小進行拼裝。在設定文字分段標識符前請確保理解上述文字分段切片機制。',
       html4excel: '表格轉HTML',
-      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自動關鍵字',
-      autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自動問題',
-      autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。 `,
+      autoQuestionsTip: `為了提高排名分數，請使用「系統模型設定」中定義的聊天模型，為每個知識庫區塊提取 N 個問題。 請注意：這會消耗額外的 token。 結果可在區塊列表中查看和編輯。 問題提取錯誤不會阻止分塊過程； 空結果將被添加到原始區塊。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。 `,
       redo: '是否清空已有 {{chunkNum}}個 chunk？',
       setMetaData: '設定元數據',
       pleaseInputJson: '請輸入JSON',
@@ -338,7 +343,7 @@ export default {
 `,
       useRaptor: '使用 RAPTOR 文件增強策略',
       useRaptorTip:
-        '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
+        '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree',
       prompt: '提示詞',
       promptMessage: '提示詞是必填項',
       promptText: `请請總結以下段落。 小心數字，不要編造。 段落如下：
@@ -360,7 +365,7 @@ export default {
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
       pageRank: '頁面排名',
-      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
       searchTags: '搜尋標籤',
@@ -378,7 +383,7 @@ export default {
         <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
         <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
       </ul>
-      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
+      <p>詳情請參閱 https://ragflow.io/docs/dataset_configuration#basic-information。</p>
  `,
       tags: '標籤',
       addTag: '增加標籤',
@@ -396,7 +401,7 @@ export default {
       paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
-        '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
+        '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph。',
       graphRagMethod: '方法',
       graphRagMethodTip: `Light：實體和關係提取提示來自 GitHub - HKUDS/LightRAG：“LightRAG：簡單快速的檢索增強生成”<br>
  一般：實體和關係擷取提示來自 GitHub - microsoft/graphrag：基於模組化圖形的檢索增強生成 (RAG) 系統，<br>
@@ -478,7 +483,7 @@ export default {
       variable: '變量',
       variableTip: `你可以透過對話 API，並配合變數設定來動態調整大模型的系統提示詞。
       {knowledge}為系統預留變數，代表從指定知識庫召回的文本塊。
-     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/dev/set_chat_variables。`,
+     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -779,6 +784,22 @@ export default {
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
       dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
+      sitemapDescription:
+        '連接公開的 sitemap.xml，將其中列出的網頁和 PDF 文件同步到知識庫。',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL 篩選（正規表示式）',
+      dataSourceFieldFollowPdfLinks: '跟隨 PDF 連結',
+      dataSourceFieldRestrictPdfToDomain: '僅限 sitemap 所在網域的 PDF',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapUrlTip:
+        '要擷取的 sitemap.xml 或 sitemap 索引的 URL，例如 https://example.com/sitemap.xml。sitemap 索引會被遞迴跟隨（最多 5 層）。',
+      sitemapUrlFilterTip:
+        '選填的正規表示式。僅索引與之符合的 URL，例如 ^https://example\\.com/docs/ 可將同步限制在網站的某個區塊。',
+      sitemapFollowPdfLinksTip: '同時索引已擷取 HTML 頁面中連結的 PDF 檔案。',
+      sitemapRestrictPdfToDomainTip: '僅跟隨與 sitemap 同網域下的 PDF 連結。',
+      sitemapUserAgentTip:
+        '每次請求送出的 User-Agent 標頭。留空則使用 RAGFlow-SitemapConnector/1.0。',
+      sitemapBatchSizeTip: '每批擷取並送到 RAGFlow 的頁面數量。',
       azure_devopsDescription: '連接 Azure DevOps 以同步儲存庫檔案和拉取請求。',
       bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
       zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',

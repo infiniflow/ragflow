@@ -12,8 +12,11 @@ func TestValidateTransitionAllowsExpectedEdges(t *testing.T) {
 		from string
 		to   string
 	}{
+		{from: common.CREATED, to: common.SCHEDULED},
 		{from: common.CREATED, to: common.RUNNING},
 		{from: common.CREATED, to: common.STOPPED},
+		{from: common.SCHEDULED, to: common.RUNNING},
+		{from: common.SCHEDULED, to: common.STOPPED},
 		{from: common.RUNNING, to: common.STOPPING},
 		{from: common.RUNNING, to: common.COMPLETED},
 		{from: common.RUNNING, to: common.FAILED},

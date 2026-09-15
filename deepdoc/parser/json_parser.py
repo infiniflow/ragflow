@@ -21,7 +21,7 @@
 import json
 from typing import Any
 
-from rag.nlp import find_codec
+from rag.nlp import decode_text
 
 
 class RAGFlowJsonParser:
@@ -31,8 +31,7 @@ class RAGFlowJsonParser:
         self.min_chunk_size = min_chunk_size if min_chunk_size is not None else max(max_chunk_size - 200, 50)
 
     def __call__(self, binary):
-        encoding = find_codec(binary)
-        txt = binary.decode(encoding, errors="ignore")
+        txt, _ = decode_text(binary, document_type="JSON document")
 
         if self.is_jsonl_format(txt):
             sections = self._parse_jsonl(txt)
