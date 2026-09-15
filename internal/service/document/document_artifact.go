@@ -8,7 +8,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -115,12 +114,13 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
-		Select("dialog_id").
-		Where("user_id = ? OR exp_user_id = ?", userID, userID).
-		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
+	rows, err := dao.DB.WithContext(ctx).Table("api_4_conversation AS c").
+		Select("c.dialog_id").
+		Joins("JOIN api_4_conversation_message AS cm ON cm.conversation_id = c.id").
+		Where("c.user_id = ? OR c.exp_user_id = ?", userID, userID).
+		Where(`cm.content LIKE ? ESCAPE '!' OR cm.content LIKE ? ESCAPE '!'`,
 			filenamePattern, artifactRefPattern).
-		Distinct("dialog_id").
+		Distinct("c.dialog_id").
 		Rows()
 	if err != nil {
 		return nil
@@ -194,15 +194,25 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil {
-		return nil, err
+	if err != nil || doc == nil {
+		return nil, ErrPreviewDocumentNotFound
+	}
+
+	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
+	// the same page uses — so the two panels can never disagree: the owning
+	// tenant always, and tenant members only when the dataset's permission
+	// is TEAM. A denial stays indistinguishable from a missing document so
+	// an unauthorized caller cannot probe document IDs (mirrors Python
+	// DocumentService.accessible in the preview path).
+	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+		return nil, ErrPreviewDocumentNotFound
 	}
 
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -212,10 +222,10 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 
 	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read document object %s/%s: %w", bucket, name, err)
 	}
 	if len(data) == 0 {
-		return nil, ErrArtifactNotFound
+		return nil, ErrPreviewFileEmpty
 	}
 
 	fileName := ""

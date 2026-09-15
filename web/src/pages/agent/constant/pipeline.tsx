@@ -195,7 +195,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Html,
+      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
@@ -270,8 +270,39 @@ export const initialTokenChunkerValues = {
   delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
-  delimiters: [{ value: '\n' }],
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
+};
+
+export const initialGeneralChunkerValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
+  table_context_size: 0,
+  image_context_size: 0,
   enable_children: false,
   children_delimiters: [],
 };
@@ -409,7 +440,6 @@ export function getInitialExtractorValues() {
 export const initialCompilationValues = {
   compilation_template_group_id: '',
   llm_id: '',
-  mode: 'entity',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
@@ -465,6 +495,7 @@ export const FileTypeSuffixMap = {
 
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Parser,

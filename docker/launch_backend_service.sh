@@ -5,17 +5,21 @@ set -e
 
 usage() {
     local exit_code=${1:-1}
-    echo "Usage: $0 [ragflow|task_executor|admin|data_sync]..."
+    echo "Usage: $0 [OPTIONS] [ragflow|task_executor|admin|data_sync]..."
     echo
     echo "Without arguments, starts ragflow and task_executor."
+    echo "Options:"
+    echo "  --debug         Enable debug mode and debug-level logging"
+    echo
     echo "Available service types:"
     echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
     echo "  task_executor   Start task workers based on API_PROXY_SCHEME"
     echo "  admin           Start Admin server based on API_PROXY_SCHEME"
-    echo "  data_sync       Start rag/svr/sync_data_source.py"
+    echo "  data_sync       Start the data source syncer based on API_PROXY_SCHEME"
     echo
     echo "Examples:"
     echo "  $0"
+    echo "  $0 --debug"
     echo "  $0 ragflow"
     echo "  $0 task_executor"
     echo "  $0 admin"
@@ -99,10 +103,13 @@ task_exe(){
         prepare_for_go
         task_name="ragflow_server --ingestor"
         task_cmd=("bin/ragflow_server" "--ingestor")
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            task_cmd+=("--debug")
+        fi
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting $task_name (Attempt $((retry_count+1)))"
+        echo "Starting ${task_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
         if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
             "${task_cmd[@]}" || EXIT_CODE=$?
@@ -134,9 +141,12 @@ run_server(){
         server_name="ragflow_server"
         server_cmd=("bin/ragflow_server" "--api")
     fi
+    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        server_cmd+=("--debug")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        echo "Starting ${server_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
         "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
@@ -163,10 +173,13 @@ run_admin_server(){
         prepare_for_go
         server_name="admin_server"
         server_cmd=("bin/ragflow_server" "--admin")
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            server_cmd+=("--debug")
+        fi
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting $server_name (Attempt $((retry_count+1)))"
+        echo "Starting ${server_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
         "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
@@ -186,23 +199,33 @@ run_admin_server(){
 
 # Function to execute sync_data_source with retry logic
 run_data_sync(){
+    local server_name="sync_data_source.py"
+    local -a sync_cmd=("$PY" "rag/svr/sync_data_source.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        server_name="ragflow_server --syncer"
+        sync_cmd=("bin/ragflow_server" "--syncer")
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            sync_cmd+=("--debug")
+        fi
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
+        echo "Starting ${sync_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
-        $PY rag/svr/sync_data_source.py || EXIT_CODE=$?
+        "${sync_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "sync_data_source.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "sync_data_source.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "sync_data_source.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
@@ -213,17 +236,25 @@ ensure_db_init() {
     echo "Database tables initialized."
 }
 
-run_mysql_migrations() {
+run_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
+        # The migrations contain MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
 
-    tools/scripts/run_migrations.sh
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        # The Go backend owns the model provider tables. --migrate is a
+        # standalone action: it runs the migrations and exits, so it is
+        # independent of any server actually starting.
+        echo "Running model provider table migrations (go)..."
+        bin/ragflow_server --migrate
+    else
+        tools/scripts/run_migrations.sh
+    fi
 }
 
 prepare_for_go() {
@@ -245,31 +276,36 @@ START_RAGFLOW=0
 START_TASK_EXECUTOR=0
 START_ADMIN=0
 START_DATA_SYNC=0
-
-if [ $# -eq 0 ]; then
-  START_RAGFLOW=1
-  START_TASK_EXECUTOR=1
-fi
+DEBUG_MODE=0
+SERVICE_SELECTED=0
 
 for arg in "$@"; do
   case $arg in
     ragflow|server|webserver)
       START_RAGFLOW=1
+      SERVICE_SELECTED=1
       ;;
     task_executor|task-executor|taskexecutor|ingestor)
       START_TASK_EXECUTOR=1
+      SERVICE_SELECTED=1
       ;;
     admin|admin_server|admin-server)
       START_ADMIN=1
+      SERVICE_SELECTED=1
       ;;
     data_sync|data-sync|datasync)
       START_DATA_SYNC=1
+      SERVICE_SELECTED=1
       ;;
     all)
       START_RAGFLOW=1
       START_TASK_EXECUTOR=1
       START_ADMIN=1
       START_DATA_SYNC=1
+      SERVICE_SELECTED=1
+      ;;
+    --debug)
+      DEBUG_MODE=1
       ;;
     -h|--help)
       usage 0
@@ -281,9 +317,24 @@ for arg in "$@"; do
   esac
 done
 
+if [[ "$DEBUG_MODE" -eq 1 && "${API_PROXY_SCHEME}" != "go" ]]; then
+  export LOG_LEVELS="root=DEBUG"
+fi
+
+if [[ "$SERVICE_SELECTED" -eq 0 ]]; then
+  START_RAGFLOW=1
+  START_TASK_EXECUTOR=1
+fi
+
 if [[ "$START_RAGFLOW" -eq 1 ]]; then
-  ensure_db_init
-  run_mysql_migrations
+  # The Go backend owns the schema when it serves the API, so skip the
+  # Python-side table creation then. A Go-only deployment may not ship the api
+  # package at all, and letting both sides create tables makes them fight over
+  # the same schema.
+  if [[ "${API_PROXY_SCHEME}" != "go" ]]; then
+    ensure_db_init
+  fi
+  run_migrations
 fi
 
 # Start task executors

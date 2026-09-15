@@ -15,12 +15,14 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"github.com/spf13/viper"
+)
 
 type IngestorConfig struct {
 	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
-	// parallel (the task channel width and dataset-level compile worker count
-	// default to this value). 0/negative falls back to runtime.NumCPU().
+	// parallel (and dataset-level compile worker count defaults to this value).
+	// 0/negative falls back to runtime.NumCPU().
 	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
 	// CompilerPoolSize bounds the process-wide knowledge-compilation worker
 	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative

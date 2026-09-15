@@ -88,6 +88,8 @@ type AgentParam struct {
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
+	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
+	ToolTimeout              time.Duration
 	MaxRounds                int
 	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
 	OptimizeMultiTurn        bool
@@ -174,6 +176,11 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
 	maxSteps := p.MaxRounds*2 + 1
+	if hasCodeExecTool(p.Tools) {
+		// CodeExec user-code failures return a non-zero tool result, allowing
+		// one repair attempt without changing other agents' step budget.
+		maxSteps += 2
+	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
@@ -367,6 +374,10 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 					break
 				}
 				if msg == nil {
+					continue
+				}
+				if msg.Role == schema.Tool {
+					recordArtifactsFromToolMessage(ctx, msg)
 					continue
 				}
 				if msg.Role != "" && msg.Role != schema.Assistant {
@@ -640,11 +651,26 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 	return strings.TrimSpace(resp.Content), nil
 }
 
+func hasCodeExecTool(names []string) bool {
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "codeexec", "code_exec", "execute_code":
+			return true
+		}
+	}
+	return false
+}
+
 func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {
 	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
 	if err != nil {
 		return nil, err
 	}
+	mcpTools, err := buildAgentMCPTools(ctx, dao.DB, p.MCP, p.ToolTimeout)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
@@ -841,6 +867,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
@@ -869,6 +896,11 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			if rerr != nil {
 				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
 			}
+		}
+	}
+	if state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
 		}
 	}
 	if hasRuntimeUserPrompt {
@@ -905,6 +937,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 
+	ctx = prepareArtifactCollector(ctx)
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
@@ -1109,29 +1142,38 @@ type artifactEntry struct {
 	URL  string `json:"url"`
 }
 
-// artifactCollectorKey is the context key used to stash the
-// MessageFuture from react.WithMessageFuture() so the AgentComponent
-// can collect artifacts after the ReAct loop finishes. The collector
-// is created per-invocation in runEinoReActAgent.
+// artifactCollectorKey is the context key used to share the
+// MessageFuture between Agent.Invoke and runEinoReActAgent.
 type artifactCollectorKey struct{}
 
-// setArtifactCollector registers the MessageFuture for this agent run
-// in the context. It is called from runEinoReActAgent after
-// react.WithMessageFuture() returns a future.
+type artifactCollector struct {
+	future    react.MessageFuture
+	artifacts []artifactEntry
+}
+
+func prepareArtifactCollector(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{})
+}
+
+// setArtifactCollector registers the MessageFuture for this agent run.
+// Invoke creates the holder before entering the runner so the runner can
+// publish its future without replacing the caller's immutable context.
 func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
-	return context.WithValue(ctx, artifactCollectorKey{}, future)
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		collector.future = future
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{future: future})
 }
 
 // getArtifactCollector retrieves the MessageFuture registered for the
-// current agent run. Returns nil when no collector was registered
-// (e.g., tests that stub agentRunner).
+// current agent run. Returns nil when no collector was registered.
 func getArtifactCollector(ctx context.Context) react.MessageFuture {
-	v := ctx.Value(artifactCollectorKey{})
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(react.MessageFuture); ok {
-		return f
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return collector.future
 	}
 	return nil
 }
@@ -1147,6 +1189,10 @@ func getArtifactCollector(ctx context.Context) react.MessageFuture {
 //
 //	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
 func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
+	collector, _ := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if collector != nil && len(collector.artifacts) > 0 {
+		return append([]artifactEntry(nil), collector.artifacts...)
+	}
 	future := getArtifactCollector(ctx)
 	if future == nil {
 		return nil
@@ -1183,6 +1229,28 @@ func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []art
 	return out
 }
 
+func recordArtifactsFromToolMessage(ctx context.Context, msg *schema.Message) {
+	collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if !ok {
+		return
+	}
+	for _, artifact := range extractArtifactsFromToolMessage(msg) {
+		if artifact.Name == "" || artifact.URL == "" {
+			continue
+		}
+		seen := false
+		for _, existing := range collector.artifacts {
+			if existing.URL == artifact.URL {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			collector.artifacts = append(collector.artifacts, artifact)
+		}
+	}
+}
+
 // extractArtifactsFromToolMessage parses the JSON payload of a tool
 // response message and returns the `_ARTIFACTS` list. The payload is
 // read from msg.Content when it is non-empty; otherwise the first text
@@ -1215,6 +1283,15 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		}
 		name, _ := m["name"].(string)
 		url, _ := m["url"].(string)
+		if url == "" {
+			if content, ok := m["content_b64"].(string); ok && content != "" {
+				mime, _ := m["mime_type"].(string)
+				if mime == "" {
+					mime = "application/octet-stream"
+				}
+				url = "data:" + mime + ";base64," + content
+			}
+		}
 		if name == "" || url == "" {
 			continue
 		}
@@ -1414,6 +1491,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.MaxTokens = &f
 	}
+	if enabled, ok := boolFrom(inputs, "maxTokensEnabled"); ok && !enabled {
+		p.MaxTokens = nil
+	}
 	if v, ok := floatFrom(inputs, "temperature"); ok {
 		f := v
 		p.Temperature = &f
@@ -1435,6 +1515,12 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
+	}
+	if v, ok := inputs["mcp"]; ok {
+		p.MCP = v
+	}
+	if v, ok := intFrom(inputs, "tool_timeout"); ok {
+		p.ToolTimeout = time.Duration(v) * time.Second
 	}
 	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools

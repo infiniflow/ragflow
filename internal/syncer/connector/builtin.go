@@ -27,7 +27,9 @@ import (
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
+	registerBuiltIn(registry, "feishu_wiki", NewFeishuWikiConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
+	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)

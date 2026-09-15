@@ -213,10 +213,9 @@ func cropBox(src image.Image, b deepdoctype.OCRBox) image.Image {
 // The tests below prove the NativeAnalyzer (the DocAnalyzer the PDF parser
 // actually consumes) produces output equivalent to the Python deepdoc
 // reference, reusing the SAME Python-reference goldens as the native
-// integration suite. This closes the gap noted in deepdoc_go_alignment_report.md
-// (Equivalence proof section): the in-
-// process backend previously only had a smoke test (non-empty, in-bounds);
-// these tests assert value-level parity through the analyzer's public API.
+// integration suite. Before these tests the in-process backend only had a smoke
+// test (non-empty, in-bounds); these tests assert value-level parity through
+// the analyzer's public API.
 
 // goldenPath resolves a native testdata fixture from this package's test
 // directory (internal/deepdoc/parser/pdf/inference/native_analyzer). Four ".." climb to

@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import {
   IFetchFileListResult,
@@ -28,6 +29,7 @@ import {
 import fileManagerService from '@/services/file-manager-service';
 import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import request from '@/utils/request';
 import {
   useMutation,
@@ -198,7 +200,8 @@ export interface IListResult {
 }
 
 export const useFetchFileList = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const id = useGetFolderId();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
@@ -237,6 +240,7 @@ export const useFetchFileList = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
@@ -261,6 +265,7 @@ export const useDeleteFile = () => {
         });
         if (data.code === 0) {
           message.success(t('message.deleted'));
+          markListItemsDeleted(ListDeletionKey.FileList);
         }
         queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
@@ -332,10 +337,9 @@ const areDatasetsLinked = (
   fileIds: string[],
   kbIds: string[],
 ) => {
-  const cached =
-    queryClient.getQueriesData<IFetchFileListResult>({
-      queryKey: [FileApiAction.FetchFileList],
-    })[0]?.[1] ?? { files: [] };
+  const cached = queryClient.getQueriesData<IFetchFileListResult>({
+    queryKey: [FileApiAction.FetchFileList],
+  })[0]?.[1] ?? { files: [] };
   const verifiableFiles = (cached.files ?? []).filter(
     (file) => fileIds.includes(file.id) && file.type !== 'folder',
   );

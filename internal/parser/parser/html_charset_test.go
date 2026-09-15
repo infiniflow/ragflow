@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -30,14 +31,14 @@ func gbkHTML(t *testing.T, withMeta bool) []byte {
 		"<tr><td>应收账款</td><td>1200000000.00</td></tr></table>" +
 		"<p>单位：元</p></body></html>"
 	src := head + body
-	if !utf8Valid([]byte(src)) {
+	if !utf8.Valid([]byte(src)) {
 		t.Fatal("test source must be valid UTF-8 before re-encoding")
 	}
 	out, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(src))
 	if err != nil {
 		t.Fatalf("GBK encode: %v", err)
 	}
-	if utf8Valid(out) {
+	if utf8.Valid(out) {
 		t.Fatal("GBK fixture unexpectedly decodes as UTF-8; fixture is ineffective")
 	}
 	return out
@@ -52,7 +53,7 @@ func htmlEncodedFixture(t *testing.T, src string, enc encoding.Encoding) []byte 
 	if err != nil {
 		t.Fatalf("fixture encode: %v", err)
 	}
-	if utf8Valid(raw) {
+	if utf8.Valid(raw) {
 		t.Fatal("fixture unexpectedly decodes as UTF-8; fixture is ineffective")
 	}
 	return raw
@@ -116,7 +117,7 @@ func TestHTMLParser_DecodesBig5MetaDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Big5 encode: %v", err)
 	}
-	if utf8Valid(raw) {
+	if utf8.Valid(raw) {
 		t.Fatal("Big5 fixture unexpectedly decodes as UTF-8; fixture is ineffective")
 	}
 	res := NewHTMLParser().ParseWithResult(context.Background(), "tw.html", raw)

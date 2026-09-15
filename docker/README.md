@@ -90,7 +90,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.1`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2`. The RAGFlow Docker image does not include embedding models.
 
 
 > [!TIP]
@@ -250,7 +250,7 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `userinfo_url`: URL for obtaining user information (username, email, etc.).
     - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
     - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-    - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+    - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
 - `user_default_llm`
   The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.

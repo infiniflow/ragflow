@@ -46,7 +46,7 @@ func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error)
 	blob, sf := tsrPreprocess(img)
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the TSR Run path).
-	sess, release, err := getModelSession(filepath.Join(modelDir, "tsr.onnx"), "images",
+	sess, release, err := getModelSession(filepath.Join(modelDir, "tsr.ort"), "images",
 		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0",
 		[]int64{1, 11, tsrCandidates}, 0)
 	if err != nil {

@@ -64,6 +64,17 @@ type ComponentFactory func(name string, params map[string]any) (Component, error
 // the message is for humans, the sentinel is for code.
 var ErrNotImplemented = fmt.Errorf("component: not yet implemented (placeholder)")
 
+// UserFacingError marks a validated request failure whose message is safe to
+// return directly to the Agent client without canvas execution prefixes.
+type UserFacingError struct{ Err error }
+
+func (e *UserFacingError) Error() string { return e.Err.Error() }
+func (e *UserFacingError) Unwrap() error { return e.Err }
+
+func NewUserFacingError(message string) error {
+	return &UserFacingError{Err: fmt.Errorf("%s", message)}
+}
+
 // ParamError wraps a parameter validation failure with the field name
 // for clearer error messages to the user.
 type ParamError struct {

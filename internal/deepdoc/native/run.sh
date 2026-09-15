@@ -8,11 +8,17 @@
 #   bash run.sh            # uses default MODEL_DIR below
 #   MODEL_DIR=... bash run.sh
 set -euo pipefail
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # ONNX Runtime is statically linked (libonnxruntime.a) and resolved via
 # dlopen(NULL); no ORT_LIB is needed.
-MODEL_DIR="${MODEL_DIR:?Set MODEL_DIR to the deepdoc model directory (e.g. .../rag/res/deepdoc)}"
+#
+# Default MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so running
+# `download_go_deps.py` is enough — no MODEL_DIR export is required for local
+# Go DeepDoc runs. Override with `MODEL_DIR=... bash run.sh` if needed.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
 export MODEL_DIR
 
 run_task() {

@@ -21,7 +21,7 @@ interface TextareaProps extends Omit<
   resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, autoSize, resize = 'none', ...props }, ref) => {
+  ({ className, autoSize, resize = 'vertical', ...props }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualHeightRef = useRef<number | null>(null);
     const isAdjustingRef = useRef(false);

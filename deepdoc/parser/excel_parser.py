@@ -14,12 +14,12 @@
 import logging
 import re
 import sys
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 
-from rag.nlp import find_codec
+from rag.nlp import decode_text, find_codec
 from rag.utils.lazy_image import LazyImage
 
 # copied from `/openpyxl/cell/cell.py`
@@ -27,6 +27,17 @@ ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 
 
 class RAGFlowExcelParser:
+    @staticmethod
+    def _read_csv(file_like_object):
+        if isinstance(file_like_object, str):
+            with open(file_like_object, "rb") as file:
+                binary = file.read()
+        else:
+            file_like_object.seek(0)
+            binary = file_like_object.read()
+        text, _ = decode_text(binary, document_type="CSV document")
+        return pd.read_csv(StringIO(text), on_bad_lines="skip")
+
     @staticmethod
     def _load_excel_to_workbook(file_like_object):
         if isinstance(file_like_object, bytes):
@@ -41,8 +52,7 @@ class RAGFlowExcelParser:
             logging.info("Not an Excel file, converting CSV to Excel Workbook")
 
             try:
-                file_like_object.seek(0)
-                df = pd.read_csv(file_like_object, on_bad_lines="skip")
+                df = RAGFlowExcelParser._read_csv(file_like_object)
                 return RAGFlowExcelParser._dataframe_to_workbook(df)
 
             except Exception as e_csv:
@@ -162,37 +172,23 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
 
-        def row_has_data(row_idx):
-            for col_idx in range(1, max_col + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                if cell.value is not None and str(cell.value).strip():
-                    return True
-            return False
+        # max_row is often inflated by styling far below real data. Scan only
+        # materialized cells so we do not call ws.cell() on every empty row.
+        highest = 0
+        for (row_idx, col_idx), cell in ws._cells.items():
+            if col_idx > max_col:
+                continue
+            if cell.value is not None and str(cell.value).strip():
+                highest = max(highest, row_idx)
 
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
-
-        return last_data_row
+        if highest:
+            logging.debug(
+                "Excel row scan: max_row=%s max_col=%s detected_highest_data_row=%s",
+                max_row,
+                max_col,
+                highest,
+            )
+        return highest
 
     @staticmethod
     def _get_rows_limited(ws):
@@ -235,6 +231,14 @@ class RAGFlowExcelParser:
             # when the data-row count is an exact multiple of chunk_rows and emits
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
+            if n_data_rows <= 0:
+                # A template sheet holds only its header row. Emit it as a
+                # captioned table instead of dropping the sheet, which is what
+                # Go does (recordsToHTMLTableChunkList, nData == 0). Without
+                # this the column schema of a blank template is lost.
+                tb = f"<table><caption>{sheetname}</caption>" + tb_rows_0 + "</table>"
+                tb_chunks.append((tb, (sheet_idx, 1, 1, 1, col_max)))
+                continue
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
                 row_start = 2 + chunk_i * chunk_rows
                 row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))
@@ -265,8 +269,7 @@ class RAGFlowExcelParser:
             df = pd.read_excel(file_like_object)
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
-            file_like_object.seek(0)
-            df = pd.read_csv(file_like_object, on_bad_lines="skip")
+            df = RAGFlowExcelParser._read_csv(file_like_object)
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
 
@@ -294,7 +297,9 @@ class RAGFlowExcelParser:
                     col = i + 1
                     col_min = col if col_min is None else min(col_min, col)
                     col_max = col if col_max is None else max(col_max, col)
-                    t = str(ti[i].value) if i < len(ti) else ""
+                    # A blank header cell is not a label: str(None) is "None", which is truthy,
+                    # so it defeats the separator guard below and lands "None：" in the chunk text.
+                    t = str(ti[i].value) if i < len(ti) and ti[i].value is not None else ""
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
                 if not fields:

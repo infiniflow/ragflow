@@ -4,14 +4,13 @@ package infnative
 
 // End-to-end raster alignment tests (reviewer gap #1 and #2).
 //
-// The native proof establishes "given the same raster image bytes, Go == Python"
-// (deepdoc_go_alignment_report.md → Equivalence proof / "Boundary of this proof"). But in production neither
-// side receives a pre-rendered PNG: the Go server rasterizes PDF pages with
-// pdfium (pdfium.RenderPage @ 216 DPI) and the Python deepdoc pipeline
-// rasterizes with pdfplumber (page.to_image(resolution=72*zoomin, antialias=True),
-// zoomin=3 => 216 DPI). These tests close the remaining gap by rasterizing the
-// SAME PDF page with BOTH paths and comparing the resulting boxes in source-
-// pixel coordinates:
+// The native proof establishes "given the same raster image bytes, Go == Python".
+// But in production neither side receives a pre-rendered PNG: the Go server
+// rasterizes PDF pages with pdfium (pdfium.RenderPage @ 216 DPI) and the Python
+// deepdoc pipeline rasterizes with pdfplumber
+// (page.to_image(resolution=72*zoomin, antialias=True), zoomin=3 => 216 DPI).
+// These tests close the remaining gap by rasterizing the SAME PDF page with BOTH
+// paths and comparing the resulting boxes in source-pixel coordinates:
 //
 //   Go side : pdfium.RenderPage(pdf, page, 216) -> a.DLA / a.OCRDetect / a.TSR
 //   Py side : ref_raster.py renders the same page at 216 DPI via deepdoc's own

@@ -56,6 +56,11 @@ def validate_template_payload(req: dict, require_all: bool = True) -> str:
                     return f"{section.capitalize()} field description is too long."
                 if len(str((field or {}).get("rule") or "")) > 1024:
                     return f"{section.capitalize()} field rule is too long."
+        if config.get("kind") == "tree" or req.get("kind") == "tree":
+            raptor_cfg = config.get("raptor") or {}
+            claim_prompt = str((raptor_cfg or {}).get("claim_prompt") or "")
+            if claim_prompt and len(claim_prompt) > 8192:
+                return "Claim extraction prompt is too long."
         if config.get("kind") == "wiki" or req.get("kind") == "wiki":
             if config.get("mode") not in ("entity", "topic"):
                 return "Wiki mode must be either 'entity' or 'topic'."

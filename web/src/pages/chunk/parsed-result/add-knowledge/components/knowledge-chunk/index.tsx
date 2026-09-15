@@ -2,7 +2,8 @@ import {
   useFetchNextChunkList,
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
@@ -20,15 +21,18 @@ import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentViewSwitch from './components/document-view-switch';
 // import DocumentHeader from './components/document-preview/document-header';
 
+import {
+  ClaimsPanel,
+  type ClaimsPanelState,
+  type EvidencePanelState,
+  NodeDetailPanel,
+} from '@/pages/chunk/representation/components/claim-list';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import message from '@/components/ui/message';
-import {
-  RAGFlowPagination,
-  RAGFlowPaginationType,
-} from '@/components/ui/ragflow-pagination';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -39,12 +43,20 @@ import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { getExtension } from '@/utils/document-util';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
   const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
+  // The artifact tree publishes its claims / evidence content upward; the page
+  // renders it as a resizable column between the tree and the chunk list, and
+  // shows only two columns while nothing is open.
+  const [claimsPanel, setClaimsPanel] = useState<ClaimsPanelState | null>(null);
+  const [evidencePanel, setEvidencePanel] = useState<EvidencePanelState | null>(
+    null,
+  );
   const { removeChunk } = useDeleteChunkByIds();
   const {
     data: { documentInfo, data = [], total },
@@ -76,13 +88,23 @@ function Chunk() {
   useEffect(() => {
     setChunkList(data);
   }, [data]);
-  const onPaginationChange: RAGFlowPaginationType['onChange'] = (
-    page,
-    size,
-  ) => {
+
+  const clearSelectedChunkIds = useCallback(() => {
     setSelectedChunkIds([]);
-    pagination.onChange?.(page, size);
-  };
+  }, []);
+
+  // Stable identities: the artifact tree republishes its panel content whenever
+  // the claims request settles, so an unstable callback would loop that effect.
+  const handleClaimsPanelChange = useCallback(
+    (panel: ClaimsPanelState | null) => setClaimsPanel(panel),
+    [],
+  );
+  const handleEvidencePanelChange = useCallback(
+    (panel: EvidencePanelState | null) => setEvidencePanel(panel),
+    [],
+  );
+
+  useClearSelectionOnPageChange(pagination, clearSelectedChunkIds);
 
   const selectAllChunk = useCallback(
     (checked: boolean) => {
@@ -125,12 +147,18 @@ function Chunk() {
     if (selectedChunkIds.length > 0) {
       const resCode: number = await removeChunk(selectedChunkIds, documentId);
       if (resCode === 0) {
-        setSelectedChunkIds([]);
+        clearSelectedChunkIds();
       }
     } else {
       showSelectedChunkWarning();
     }
-  }, [selectedChunkIds, documentId, removeChunk, showSelectedChunkWarning]);
+  }, [
+    selectedChunkIds,
+    documentId,
+    removeChunk,
+    showSelectedChunkWarning,
+    clearSelectedChunkIds,
+  ]);
 
   const handleSwitchChunk = useCallback(
     async (available?: number, chunkIds?: string[]) => {
@@ -173,6 +201,10 @@ function Chunk() {
     ? selectedChunk.positions
     : [];
 
+  // Two columns until the artifact tree opens a claims / evidence panel: the
+  // middle column only exists while there is something to show in it.
+  const showArtifactDetail = Boolean(claimsPanel || evidencePanel);
+
   const fileType = useMemo(() => {
     const name = documentInfo?.name || '';
     if (name.includes('.')) {
@@ -192,6 +224,15 @@ function Chunk() {
     return 'unknown';
   }, [documentInfo]);
 
+  // Virtual list setup for chunk cards
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: chunkList.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 120, // Estimated card height
+    overscan: 5, // Render 5 extra items above/below viewport
+  });
+
   return (
     <main className="h-dvh flex flex-col">
       <PageHeader>
@@ -209,7 +250,16 @@ function Chunk() {
       <Card className="mx-5 mb-5 flex-1 h-0 p-0 bg-transparent shadow-none">
         <CardContent className="p-0 h-full flex flex-row divide-x-0.5 rtl:divide-x-reverse">
           <ResizablePanelGroup direction="horizontal" className="flex-1">
-            <ResizablePanel defaultSize={40} minSize={30}>
+            {/* id + order must be explicit: the middle column mounts after the
+                first render, and without them react-resizable-panels orders
+                panels by registration, so it would sit AFTER the chunk list
+                and its resize handles would drag in the wrong direction. */}
+            <ResizablePanel
+              id="artifact-tree"
+              order={1}
+              defaultSize={40}
+              minSize={20}
+            >
               <article className="h-full flex flex-col">
                 <DocumentViewSwitch
                   documentInfo={documentInfo}
@@ -219,6 +269,8 @@ function Chunk() {
                   url={fileUrl}
                   positions={positions}
                   onChunkIdsChange={handleChunkIdsChange}
+                  onClaimsPanelChange={handleClaimsPanelChange}
+                  onEvidencePanelChange={handleEvidencePanelChange}
                 />
               </article>
             </ResizablePanel>
@@ -228,7 +280,44 @@ function Chunk() {
               className="bg-border-button w-[0.5px]"
             />
 
-            <ResizablePanel defaultSize={60} minSize={30}>
+            {/* Separate conditionals rather than a fragment: PanelGroup pairs
+                each handle with the panels adjacent to it in registration
+                order, and a fragment would hide these children from it. */}
+            {showArtifactDetail && (
+              <ResizablePanel
+                id="artifact-detail"
+                order={2}
+                defaultSize={30}
+                minSize={20}
+              >
+                <article className="h-full flex flex-col">
+                  {claimsPanel && (
+                    <div className="flex-1 min-h-0">
+                      <ClaimsPanel {...claimsPanel} />
+                    </div>
+                  )}
+                  {evidencePanel && (
+                    <div className="flex-1 min-h-0">
+                      <NodeDetailPanel {...evidencePanel} />
+                    </div>
+                  )}
+                </article>
+              </ResizablePanel>
+            )}
+
+            {showArtifactDetail && (
+              <ResizableHandle
+                withHandle
+                className="bg-border-button w-[0.5px]"
+              />
+            )}
+
+            <ResizablePanel
+              id="chunk-list"
+              order={showArtifactDetail ? 3 : 2}
+              defaultSize={60}
+              minSize={30}
+            >
               <article className="h-full flex flex-col">
                 <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
                   <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
@@ -268,23 +357,50 @@ function Chunk() {
                       />
                     </div>
 
-                    <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
-                      {chunkList.map((item) => (
-                        <ChunkCard
-                          item={item}
-                          key={item.chunk_id}
-                          editChunk={showChunkUpdatingModal}
-                          checked={selectedChunkIds.some(
-                            (x) => x === item.chunk_id,
-                          )}
-                          handleCheckboxClick={handleSingleCheckboxClick}
-                          switchChunk={handleSwitchChunk}
-                          clickChunkCard={handleChunkCardClick}
-                          selected={item.chunk_id === selectedChunkId}
-                          textMode={textMode}
-                          t={dataUpdatedAt}
-                        />
-                      ))}
+                    <div
+                      ref={scrollContainerRef}
+                      className="flex-1 overflow-y-auto min-h-0"
+                    >
+                      <div
+                        style={{
+                          height: `${virtualizer.getTotalSize()}px`,
+                          width: '100%',
+                          position: 'relative',
+                        }}
+                      >
+                        {virtualizer.getVirtualItems().map((virtualItem) => {
+                          const item = chunkList[virtualItem.index];
+                          return (
+                            <div
+                              key={item.chunk_id}
+                              data-index={virtualItem.index}
+                              ref={virtualizer.measureElement}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${virtualItem.start}px)`,
+                              }}
+                              className="pb-4"
+                            >
+                              <ChunkCard
+                                item={item}
+                                editChunk={showChunkUpdatingModal}
+                                checked={selectedChunkIds.some(
+                                  (x) => x === item.chunk_id,
+                                )}
+                                handleCheckboxClick={handleSingleCheckboxClick}
+                                switchChunk={handleSwitchChunk}
+                                clickChunkCard={handleChunkCardClick}
+                                selected={item.chunk_id === selectedChunkId}
+                                textMode={textMode}
+                                t={dataUpdatedAt}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <footer className="mt-5">
@@ -292,9 +408,7 @@ function Chunk() {
                         pageSize={pagination.pageSize}
                         current={pagination.current}
                         total={total}
-                        onChange={(page, pageSize) => {
-                          onPaginationChange(page, pageSize);
-                        }}
+                        onChange={pagination.onChange}
                       />
                     </footer>
                   </div>

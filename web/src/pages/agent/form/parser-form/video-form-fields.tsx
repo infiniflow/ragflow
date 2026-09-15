@@ -20,7 +20,6 @@ export function AudioFormFields({ prefix }: OutputFormatFormFieldProps) {
         modelTypes={ModelTypeMap.asr_id}
         allowClear
         ownerTenantId={ownerTenantId}
-        required
       />
     </>
   );
@@ -39,7 +38,6 @@ export function VideoFormFields({ prefix }: OutputFormatFormFieldProps) {
         modelTypes={ModelTypeMap.img2txt_id}
         allowClear
         ownerTenantId={ownerTenantId}
-        required
       />
     </>
   );

@@ -69,9 +69,10 @@ class GitHub(ToolBase, ABC):
                 return
 
             try:
-                url = "https://api.github.com/search/repositories?q=" + kwargs["query"] + "&sort=stars&order=desc&per_page=" + str(self._param.top_n)
+                url = "https://api.github.com/search/repositories"
+                params = {"q": kwargs["query"], "sort": "stars", "order": "desc", "per_page": self._param.top_n}
                 headers = {"Content-Type": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
-                response = requests.get(url=url, headers=headers, timeout=DEFAULT_TIMEOUT).json()
+                response = requests.get(url=url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT).json()
 
                 if self.check_if_canceled("GitHub processing"):
                     return

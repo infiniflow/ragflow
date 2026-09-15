@@ -19,6 +19,7 @@ import { memo } from 'react';
 import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
+import { EpubPreviewer } from './epub-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
@@ -102,13 +103,18 @@ const DocumentPreview = function ({
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (
-        <section>
+        <section className="h-full">
           <CSVFileViewer className={className} url={url} />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
+        </section>
+      )}
+      {['epub'].indexOf(fileType) > -1 && (
+        <section>
+          <EpubPreviewer className={className} url={url} />
         </section>
       )}
     </>

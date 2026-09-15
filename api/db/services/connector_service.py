@@ -26,6 +26,7 @@ from api.db.db_models import DB, Connector, SyncLogs, Connector2Kb, Knowledgebas
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.document_service import DocMetadataService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.common import hash128
 from common import settings
 from common.misc_utils import get_uuid
@@ -34,6 +35,14 @@ from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 LOGGER = logging.getLogger(__name__)
+
+
+class ConnectorAuthorizationError(Exception):
+    """Raised when a caller is not authorized to run a connector operation.
+
+    Carries a user-facing message so handlers can map the denial to an
+    authentication/authorization error without inspecting internals.
+    """
 
 
 def _is_gaussdb_compatible_metadata_db() -> bool:
@@ -194,7 +203,32 @@ class ConnectorService(CommonService):
 
     @classmethod
     def rebuild(cls, kb_id: str, connector_id: str, tenant_id: str):
+        """Delete the connector's documents in *kb_id* and schedule a re-sync.
+
+        Authorization is owned by the service (not the HTTP layer) because this
+        operation deletes documents and schedules sync tasks against the
+        caller-supplied kb. The caller must be able to access the kb and the
+        connector must actually be bound to it; the binding check mirrors
+        ``cleanup_stale_documents_for_task``.
+        """
         from api.db.services.file_service import FileService
+
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            LOGGER.warning(
+                "rebuild denied: kb not accessible connector_id=%s kb_id=%s user_id=%s",
+                connector_id,
+                kb_id,
+                tenant_id,
+            )
+            raise ConnectorAuthorizationError("no authorization")
+        if not Connector2KbService.query(connector_id=connector_id, kb_id=kb_id):
+            LOGGER.warning(
+                "rebuild denied: connector not bound to kb connector_id=%s kb_id=%s user_id=%s",
+                connector_id,
+                kb_id,
+                tenant_id,
+            )
+            raise ConnectorAuthorizationError("Connector is not bound to this knowledge base.")
 
         e, conn = cls.get_by_id(connector_id)
         if not e:
