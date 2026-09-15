@@ -87,6 +87,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
+	case "daoxe":
+		return NewDaoxeModel(baseURL, urlSuffix), nil
 	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
