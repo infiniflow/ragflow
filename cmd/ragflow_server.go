@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -89,6 +90,9 @@ type serverArgs struct {
 	mcpPort       int
 	mcpMode       string
 	mcpAPIKey     string
+	mcpSSE        bool
+	mcpStreamable bool
+	mcpJSON       bool
 }
 
 // engineDocEngine is the small slice of the engine surface the doc-chunk pager
@@ -180,22 +184,14 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequ
 }
 
 func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{mcpHost: "127.0.0.1", mcpPort: 9382, mcpMode: "self-host"}
-	if value := os.Getenv("RAGFLOW_MCP_HOST"); value != "" {
-		args.mcpHost = value
+	args := &serverArgs{
+		mcpHost:       "127.0.0.1",
+		mcpPort:       9382,
+		mcpMode:       "self-host",
+		mcpSSE:        true,
+		mcpStreamable: true,
+		mcpJSON:       true,
 	}
-	if value := os.Getenv("RAGFLOW_MCP_PORT"); value != "" {
-		port, err := strconv.Atoi(value)
-		if err != nil || port <= 0 || port > 65535 {
-			return nil, fmt.Errorf("invalid MCP port: %s", value)
-		}
-		args.mcpPort = port
-	}
-	if value := os.Getenv("RAGFLOW_MCP_LAUNCH_MODE"); value != "" {
-		args.mcpMode = value
-	}
-	args.mcpAPIKey = os.Getenv("RAGFLOW_MCP_HOST_API_KEY")
-	args.mcpEnabled = strings.EqualFold(os.Getenv("RAGFLOW_MCP_ENABLED"), "true") || os.Getenv("RAGFLOW_MCP_ENABLED") == "1"
 
 	var serverMode string
 	var configPath string
@@ -207,16 +203,13 @@ func parseArgs() (*serverArgs, error) {
 				args.mcpHost = value
 				continue
 			case "--mcp-port":
-				port, err := strconv.Atoi(value)
-				if err != nil || port <= 0 || port > 65535 {
-					return nil, fmt.Errorf("invalid MCP port: %s", value)
+				port, err := parsePort(value, "MCP")
+				if err != nil {
+					return nil, err
 				}
 				args.mcpPort = port
 				continue
 			case "--mcp-mode":
-				if value != "self-host" && value != "host" {
-					return nil, fmt.Errorf("invalid MCP mode: %s", value)
-				}
 				args.mcpMode = value
 				continue
 			case "--mcp-host-api-key":
@@ -238,6 +231,18 @@ func parseArgs() (*serverArgs, error) {
 			args.mode = &serverMode
 		case "--enable-mcpserver":
 			args.mcpEnabled = true
+		case "--transport-sse-enabled":
+			args.mcpSSE = true
+		case "--no-transport-sse-enabled":
+			args.mcpSSE = false
+		case "--transport-streamable-http-enabled":
+			args.mcpStreamable = true
+		case "--no-transport-streamable-http-enabled":
+			args.mcpStreamable = false
+		case "--json-response":
+			args.mcpJSON = true
+		case "--no-json-response":
+			args.mcpJSON = false
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
@@ -295,10 +300,79 @@ func parseArgs() (*serverArgs, error) {
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
-	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
-		return nil, errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
+
+	if err := applyMCPEnv(args); err != nil {
+		return nil, err
+	}
+	if err := validateMCPArgs(args); err != nil {
+		return nil, err
 	}
 	return args, nil
+}
+
+func applyMCPEnv(args *serverArgs) error {
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST"); ok {
+		args.mcpHost = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_PORT"); ok {
+		port, err := parsePort(value, "MCP")
+		if err != nil {
+			return err
+		}
+		args.mcpPort = port
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_LAUNCH_MODE"); ok {
+		args.mcpMode = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_HOST_API_KEY"); ok {
+		args.mcpAPIKey = value
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_ENABLED"); ok {
+		args.mcpEnabled = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_SSE_ENABLED"); ok {
+		args.mcpSSE = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED"); ok {
+		args.mcpStreamable = parseMCPBool(value)
+	}
+	if value, ok := os.LookupEnv("RAGFLOW_MCP_JSON_RESPONSE"); ok {
+		args.mcpJSON = parseMCPBool(value)
+	}
+	return nil
+}
+
+func validateMCPArgs(args *serverArgs) error {
+	if args.mcpMode != "self-host" && args.mcpMode != "host" {
+		return fmt.Errorf("invalid MCP mode: %s", args.mcpMode)
+	}
+	if !args.mcpStreamable && args.mcpJSON {
+		args.mcpJSON = false
+	}
+	if !args.mcpSSE && !args.mcpStreamable {
+		args.mcpStreamable = true
+	}
+	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
+		return errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
+	}
+	return nil
+}
+
+func parseMCPBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func parsePort(value, name string) (int, error) {
+	port, err := strconv.Atoi(value)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, fmt.Errorf("invalid %s port: %s", name, value)
+	}
+	return port, nil
 }
 
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
@@ -861,14 +935,16 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	startServer(ctx, args)
+	if err := startServer(ctx, args); err != nil {
+		return err
+	}
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(ctx context.Context, args *serverArgs) {
+func startServer(ctx context.Context, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1291,7 +1367,7 @@ func startServer(ctx context.Context, args *serverArgs) {
 
 	_, err := channels.Start(ctx)
 	if err != nil {
-		common.Fatal("Fail to start chat-channel", zap.Error(err))
+		return fmt.Errorf("start chat-channel: %w", err)
 	}
 
 	apiServerConfig := globalConfig.GetAPIServerConfig()
@@ -1301,12 +1377,28 @@ func startServer(ctx context.Context, args *serverArgs) {
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	apiListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen API server on %s: %w", addr, err)
+	}
+	defer apiListener.Close()
+
+	serveErr := make(chan error, 2)
+	serve := func(name string, srv *http.Server, listener net.Listener) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- fmt.Errorf("%s server failed: %w", name, err)
+		}
+	}
+
 	var mcpSrv *http.Server
+	var mcpCloser interface{ Close() error }
+	var mcpListener net.Listener
 	if args != nil && args.mcpEnabled {
 		resolveUser := func(ctx context.Context, authorization string) (string, error) {
 			if args.mcpMode == "self-host" {
@@ -1318,7 +1410,15 @@ func startServer(ctx context.Context, args *serverArgs) {
 			}
 			return user.ID, nil
 		}
-		mcpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort), Handler: handler.NewStandaloneMCPHandler(
+		if args.mcpMode == "self-host" {
+			authCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			_, err := resolveUser(authCtx, "")
+			cancel()
+			if err != nil {
+				return errors.New("invalid configured MCP API key")
+			}
+		}
+		mcpHandler := handler.NewStandaloneMCPHandler(
 			resolveUser,
 			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 				return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderby, desc)
@@ -1329,12 +1429,28 @@ func startServer(ctx context.Context, args *serverArgs) {
 			func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
 				return handler.MCPRetrieval(ctx, datasetsService, userID, req)
 			},
-		)}
+			mcp.Options{SSE: args.mcpSSE, StreamableHTTP: args.mcpStreamable, JSONResponse: args.mcpJSON},
+		)
+		mcpCloser = mcpHandler
+		defer mcpHandler.Close()
+		mcpAddr := fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort)
+		mcpListener, err = net.Listen("tcp", mcpAddr)
+		if err != nil {
+			return fmt.Errorf("listen MCP server on %s: %w", mcpAddr, err)
+		}
+		defer mcpListener.Close()
+		mcpSrv = &http.Server{
+			Addr:              mcpAddr,
+			Handler:           mcpHandler,
+			BaseContext:       func(net.Listener) context.Context { return ctx },
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
+			WriteTimeout:      0, // SSE streams outlive individual tool deadlines
+			IdleTimeout:       120 * time.Second,
+		}
 		go func() {
 			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
-			if err := mcpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				common.Error("MCP server failed", err)
-			}
+			serve("MCP", mcpSrv, mcpListener)
 		}()
 	}
 
@@ -1349,9 +1465,7 @@ func startServer(ctx context.Context, args *serverArgs) {
 		)
 		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 		common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.Fatal("Failed to start server", zap.Error(err))
-		}
+		serve("API", srv, apiListener)
 	}()
 
 	// Start heartbeat reporter to admin server
@@ -1364,25 +1478,42 @@ func startServer(ctx context.Context, args *serverArgs) {
 		defer hb.Stop()
 	}
 
-	// Wait for shutdown signal from main's signal.NotifyContext
-	<-ctx.Done()
-
-	common.Info(fmt.Sprintf("Received shutdown signal"))
+	// Wait for either shutdown signal or serving failure.
+	var runErr error
+	select {
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
+	case err := <-serveErr:
+		runErr = err
+		common.Error("Server failed; shutting down", err)
+	}
 	common.Info("Shutting down server...")
 
-	// Create context with timeout for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// Shutdown server
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		common.Fatal("Server forced to shutdown", zap.Error(err))
-	}
-	if mcpSrv != nil {
-		if err := mcpSrv.Shutdown(shutdownCtx); err != nil {
-			common.Fatal("MCP server forced to shutdown", zap.Error(err))
+	if mcpCloser != nil {
+		if err := mcpCloser.Close(); err != nil {
+			common.Warn("Failed to close MCP handler", zap.Error(err))
 		}
 	}
+	if err := shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+		return err
+	}
+	if mcpSrv != nil {
+		if err := shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+			return err
+		}
+	}
+	return runErr
+}
+
+func shutdownHTTPServer(ctx context.Context, name string, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		_ = srv.Close()
+		return fmt.Errorf("shutdown %s server: %w", name, err)
+	}
+	return nil
 }
 
 // agentRunOptions bundles the three optional injection slots the

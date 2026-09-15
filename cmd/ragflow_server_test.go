@@ -3,12 +3,130 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func withArgsAndEnv(t *testing.T, args []string, env map[string]string, fn func()) {
+	t.Helper()
+	oldArgs := os.Args
+	os.Args = append([]string{"ragflow_server"}, args...)
+	t.Cleanup(func() { os.Args = oldArgs })
+	keys := []string{
+		"RAGFLOW_MCP_HOST",
+		"RAGFLOW_MCP_PORT",
+		"RAGFLOW_MCP_LAUNCH_MODE",
+		"RAGFLOW_MCP_HOST_API_KEY",
+		"RAGFLOW_MCP_ENABLED",
+		"RAGFLOW_MCP_TRANSPORT_SSE_ENABLED",
+		"RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED",
+		"RAGFLOW_MCP_JSON_RESPONSE",
+	}
+	oldEnv := make(map[string]*string, len(keys))
+	for _, key := range keys {
+		if value, ok := os.LookupEnv(key); ok {
+			v := value
+			oldEnv[key] = &v
+		} else {
+			oldEnv[key] = nil
+		}
+		os.Unsetenv(key)
+	}
+	t.Cleanup(func() {
+		for key, value := range oldEnv {
+			if value == nil {
+				os.Unsetenv(key)
+				continue
+			}
+			os.Setenv(key, *value)
+		}
+	})
+	for key, value := range env {
+		os.Setenv(key, value)
+	}
+	fn()
+}
+
+func TestParseArgsMCPEnvOverridesCLI(t *testing.T) {
+	withArgsAndEnv(t,
+		[]string{"--api", "--enable-mcpserver", "--mcp-host=cli", "--mcp-port=10001", "--mcp-mode=host", "--mcp-host-api-key=cli-key", "--no-transport-sse-enabled", "--no-transport-streamable-http-enabled", "--no-json-response"},
+		map[string]string{
+			"RAGFLOW_MCP_HOST":                         "env-host",
+			"RAGFLOW_MCP_PORT":                         "10002",
+			"RAGFLOW_MCP_LAUNCH_MODE":                  "self-host",
+			"RAGFLOW_MCP_HOST_API_KEY":                 "env-key",
+			"RAGFLOW_MCP_ENABLED":                      "yes",
+			"RAGFLOW_MCP_TRANSPORT_SSE_ENABLED":        "true",
+			"RAGFLOW_MCP_TRANSPORT_STREAMABLE_ENABLED": "true",
+			"RAGFLOW_MCP_JSON_RESPONSE":                "true",
+		}, func() {
+			args, err := parseArgs()
+			if err != nil {
+				t.Fatalf("parseArgs: %v", err)
+			}
+			if args.mcpHost != "env-host" || args.mcpPort != 10002 || args.mcpMode != "self-host" || args.mcpAPIKey != "env-key" {
+				t.Fatalf("env did not override CLI: %#v", args)
+			}
+			if !args.mcpEnabled || !args.mcpSSE || !args.mcpStreamable || !args.mcpJSON {
+				t.Fatalf("env bools did not resolve true: %#v", args)
+			}
+		})
+}
+
+func TestParseArgsMCPTransportFallbackMatchesPython(t *testing.T) {
+	withArgsAndEnv(t,
+		[]string{"--api", "--enable-mcpserver", "--mcp-mode=host", "--no-transport-sse-enabled", "--no-transport-streamable-http-enabled"},
+		nil, func() {
+			args, err := parseArgs()
+			if err != nil {
+				t.Fatalf("parseArgs: %v", err)
+			}
+			if args.mcpSSE {
+				t.Fatal("SSE should stay disabled")
+			}
+			if !args.mcpStreamable {
+				t.Fatal("streamable HTTP should be re-enabled when both transports are disabled")
+			}
+			if args.mcpJSON {
+				t.Fatal("JSON response should be false because Python disables JSON before both-disabled fallback")
+			}
+		})
+}
+
+func TestParseArgsMCPValidation(t *testing.T) {
+	t.Run("invalid mode", func(t *testing.T) {
+		withArgsAndEnv(t, []string{"--api", "--mcp-mode=bogus"}, nil, func() {
+			if _, err := parseArgs(); err == nil {
+				t.Fatal("expected invalid mode error")
+			}
+		})
+	})
+	t.Run("invalid port", func(t *testing.T) {
+		withArgsAndEnv(t, []string{"--api", "--mcp-port=0"}, nil, func() {
+			if _, err := parseArgs(); err == nil {
+				t.Fatal("expected invalid port error")
+			}
+		})
+	})
+	t.Run("missing self-host key only when enabled", func(t *testing.T) {
+		withArgsAndEnv(t, []string{"--api", "--enable-mcpserver"}, nil, func() {
+			if _, err := parseArgs(); err == nil {
+				t.Fatal("expected missing self-host key error")
+			}
+		})
+	})
+	t.Run("self-host key not required while disabled", func(t *testing.T) {
+		withArgsAndEnv(t, []string{"--api"}, nil, func() {
+			if _, err := parseArgs(); err != nil {
+				t.Fatalf("parseArgs: %v", err)
+			}
+		})
+	})
+}
 
 func kb(embdID string, tenantEmbdID string) *entity.Knowledgebase {
 	kb := &entity.Knowledgebase{EmbdID: embdID}

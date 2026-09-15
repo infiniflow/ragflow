@@ -24,8 +24,6 @@ function usage() {
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
     echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
     echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
-    echo "  --mcp-base-url=<string>                 RAGFlow base URL the MCP server calls (default: http://127.0.0.1:9380)."
-    echo "  --mcp-script-path=<path>                MCP server entry script (default: /ragflow/mcp/server/server.py)."
     echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
     echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
     echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
@@ -57,13 +55,20 @@ WORKERS=1
 
 MCP_HOST="127.0.0.1"
 MCP_PORT=9382
-MCP_BASE_URL="http://127.0.0.1:9380"
-MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
 MCP_MODE="self-host"
 MCP_HOST_API_KEY=""
 MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
 MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
 MCP_JSON_RESPONSE_FLAG="--json-response"
+
+shutdown_children() {
+    echo "Stopping RAGFlow Go processes..."
+    trap - INT TERM QUIT
+    kill -TERM $(jobs -pr) 2>/dev/null || true
+    wait || true
+    exit 0
+}
+trap shutdown_children INT TERM QUIT
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -118,10 +123,6 @@ for arg in "$@"; do
       MCP_PORT="${arg#*=}"
       shift
       ;;
-    --mcp-base-url=*)
-      MCP_BASE_URL="${arg#*=}"
-      shift
-      ;;
     --mcp-mode=*)
       MCP_MODE="${arg#*=}"
       shift
@@ -130,20 +131,16 @@ for arg in "$@"; do
       MCP_HOST_API_KEY="${arg#*=}"
       shift
       ;;
-    --mcp-script-path=*)
-      MCP_SCRIPT_PATH="${arg#*=}"
+    --transport-sse-enabled|--no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="$arg"
       shift
       ;;
-    --no-transport-sse-enabled)
-      MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
+    --transport-streamable-http-enabled|--no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="$arg"
       shift
       ;;
-    --no-transport-streamable-http-enabled)
-      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
-      shift
-      ;;
-    --no-json-response)
-      MCP_JSON_RESPONSE_FLAG="--no-json-response"
+    --json-response|--no-json-response)
+      MCP_JSON_RESPONSE_FLAG="$arg"
       shift
       ;;
     --consumer-no-beg=*)
@@ -233,19 +230,6 @@ function task_exe() {
     done
 }
 
-function start_mcp_server() {
-    echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    "$PY" "${MCP_SCRIPT_PATH}" \
-        --host="${MCP_HOST}" \
-        --port="${MCP_PORT}" \
-        --base-url="${MCP_BASE_URL}" \
-        --mode="${MCP_MODE}" \
-        --api-key="${MCP_HOST_API_KEY}" \
-        "${MCP_TRANSPORT_SSE_FLAG}" \
-        "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}" \
-        "${MCP_JSON_RESPONSE_FLAG}" &
-}
-
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
     DOCLING_PIN="${DOCLING_VERSION:-==2.71.0}"
@@ -269,11 +253,16 @@ run_with_restart() {
   local process_name="$1"
   shift
 
+  local child_pid=""
+  trap 'if [[ -n "$child_pid" ]]; then kill -TERM "$child_pid" 2>/dev/null || true; wait "$child_pid" || true; fi; exit 0' INT TERM QUIT
   while true; do
     echo "Attempt to start ${process_name}..."
     set +e
-    "$@"
+    "$@" &
+    child_pid=$!
+    wait "$child_pid"
     local exit_code=$?
+    child_pid=""
     set -e
     echo "${process_name} exited with code ${exit_code}. Restarting in 1 second..."
     sleep 1
@@ -326,7 +315,16 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
         echo "Starting RAGFlow go server..."
         MCP_ARGS=()
         if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
-            MCP_ARGS=(--enable-mcpserver --mcp-host="${MCP_HOST}" --mcp-port="${MCP_PORT}" --mcp-mode="${MCP_MODE}" --mcp-host-api-key="${MCP_HOST_API_KEY}")
+            MCP_ARGS=(
+                --enable-mcpserver
+                --mcp-host="${MCP_HOST}"
+                --mcp-port="${MCP_PORT}"
+                --mcp-mode="${MCP_MODE}"
+                --mcp-host-api-key="${MCP_HOST_API_KEY}"
+                "${MCP_TRANSPORT_SSE_FLAG}"
+                "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}"
+                "${MCP_JSON_RESPONSE_FLAG}"
+            )
         fi
         run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate "${MCP_ARGS[@]}" &
     fi
