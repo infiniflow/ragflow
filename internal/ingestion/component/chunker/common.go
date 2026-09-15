@@ -225,11 +225,15 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 
 // materializeMediaContext folds a media chunk's surrounding context into its
 // body and clears the two fields that carried it. Python's chunker emits the
-// same shape — its finalize builds context_above + text + context_below and
-// drops the fields (rag/flow/chunker/token_chunker.py:343-359) — which is why
-// Python persists the context inside content_with_weight. Folding here also
-// puts the context into the chunk id (ChunkID hashes the body), matching
-// Python's id, which hashes the context-bearing content.
+// same shape — its finalize builds remove_tag(context_above + text +
+// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
+// 359) — which is why Python persists the context inside the chunk body.
+// Folding here also puts the context into the chunk id (ChunkID hashes the
+// body), matching Python's id, which hashes the context-bearing body.
+//
+// Tag stripping runs after the merge, as in Python: the payload was already
+// stripped by the chunker, so this only covers the context, which is collected
+// from neighbouring units.
 //
 // Only media chunks carry context (attachMediaContext and
 // attachGeneralMediaContext write it), so text chunks pass through untouched.
@@ -237,7 +241,7 @@ func materializeMediaContext(ck schema.ChunkDoc) schema.ChunkDoc {
 	if ck.ContextAbove == "" && ck.ContextBelow == "" {
 		return ck
 	}
-	ck.Text = schema.ContextualText(ck)
+	ck.Text = removeTag(schema.ContextualText(ck))
 	ck.ContextAbove = ""
 	ck.ContextBelow = ""
 	return ck

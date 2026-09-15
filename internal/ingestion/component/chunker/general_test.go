@@ -564,7 +564,7 @@ func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	if chunks[1]["doc_type_kwd"] != "table" {
 		t.Fatalf("table chunk = %+v", chunks[1])
 	}
-	assertMaterializedMediaContext(t, chunks[1], "before\n<table><tr><td>A</td></tr></table>\nafter")
+	assertMaterializedMediaContext(t, chunks[1], "before<table><tr><td>A</td></tr></table>after")
 }
 
 func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
@@ -719,7 +719,7 @@ func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want text, media, text", chunks)
 	}
-	assertMaterializedMediaContext(t, chunks[1], "before\n<table>A</table>\nafter")
+	assertMaterializedMediaContext(t, chunks[1], "before<table>A</table>after")
 	if chunks[0]["text"] != "before" || chunks[2]["text"] != "after" {
 		t.Errorf("position-ordered text = [%v, %v]", chunks[0]["text"], chunks[2]["text"])
 	}
@@ -799,7 +799,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	if chunks[1]["ck_type"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
-	assertMaterializedMediaContext(t, chunks[1], "Revenue\nB2\nGrowth")
+	assertMaterializedMediaContext(t, chunks[1], "RevenueB2Growth")
 }
 
 func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T) {
@@ -824,7 +824,7 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want row, image, row", chunks)
 	}
-	assertMaterializedMediaContext(t, chunks[1], "Sheet one\nB2")
+	assertMaterializedMediaContext(t, chunks[1], "Sheet oneB2")
 }
 
 // TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent pins the
@@ -860,7 +860,7 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
 
-	const wantText = "before\n<table><tr><td>A</td></tr></table>\nafter"
+	const wantText = "before<table><tr><td>A</td></tr></table>after"
 	var table map[string]any
 	for _, ck := range chunks {
 		if ck["ck_type"] == "table" {
@@ -877,6 +877,42 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 	if got, want := table["id"], common.ChunkID("doc-1", wantText); got != want {
 		t.Errorf("chunk id = %v, want %v (context must drive chunk identity)", got, want)
 	}
+}
+
+// TestGeneralChunkerMediaContextStripsPositionTags pins the tag-stripping
+// order Python uses: remove_tag runs on the merged body, so a position tag
+// carried by a neighbouring text unit never reaches the stored media chunk.
+// (The parser keeps boxes in the positions field, so this is a guard, not a
+// re-strip of the media payload.)
+func TestGeneralChunkerMediaContextStripsPositionTags(t *testing.T) {
+	position := func(top float64) []any {
+		return []any{[]any{1.0, 0.0, 10.0, top, top + 5}}
+	}
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   512,
+		"table_context_size": 20,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text", "positions": position(10)},
+			{"text": "<table>A</table>", "doc_type_kwd": "table", "positions": position(20)},
+			{"text": "after@@1\t0.0\t10.0\t10.0\t30.0\t35.0##", "doc_type_kwd": "text", "positions": position(30)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want text, media, text", chunks)
+	}
+	assertMaterializedMediaContext(t, chunks[1], "before<table>A</table>after")
 }
 
 func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {

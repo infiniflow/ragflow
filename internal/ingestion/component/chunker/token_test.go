@@ -443,14 +443,14 @@ func TestTokenChunkerMediaContextSpansUpstreamItems(t *testing.T) {
 			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "image_context_size": 20},
 			mediaItem: map[string]any{"text": "", "image": "figure-bytes", "doc_type_kwd": "image"},
 			mediaType: "image",
-			wantText:  "above\nbelow",
+			wantText:  "abovebelow",
 		},
 		{
 			name:      "table",
 			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "table_context_size": 20},
 			mediaItem: map[string]any{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 			mediaType: "table",
-			wantText:  "above\n<table><tr><td>A</td></tr></table>\nbelow",
+			wantText:  "above<table><tr><td>A</td></tr></table>below",
 		},
 	}
 	for _, tc := range cases {
