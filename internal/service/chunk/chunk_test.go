@@ -3,6 +3,7 @@ package chunk
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
@@ -680,11 +681,8 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+		storeChunkImageFunc: func(context.Context, string, string, []byte, string) error {
 			storeCalls++
-			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
-				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
-			}
 			return nil
 		},
 	}
@@ -786,12 +784,27 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	}
 }
 
+func TestValidateChunkImageBytesRejectsTruncatedImage(t *testing.T) {
+	valid := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	truncated := valid[:len(valid)-2]
+	if err := validateChunkImageBytes(truncated); err == nil {
+		t.Fatal("expected truncated image to be rejected")
+	}
+}
+
+func TestParseChunkImageUpdateModeRejectsEmptyString(t *testing.T) {
+	empty := "   "
+	if _, err := parseChunkImageUpdateMode(&empty); err == nil {
+		t.Fatal("expected error for empty image_update_mode")
+	}
+}
+
 func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
 	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
 	mockStorage := &chunkImageStorage{
-		exists:    true,
-		oldBinary: oldImage,
+		exists: true,
+		data:   append([]byte(nil), oldImage...),
 	}
 	ctx := t.Context()
 
@@ -803,12 +816,168 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, chunkImageUpdateModeAppend); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
 	}
+}
+
+func TestStoreChunkImageReplaceOverwritesExisting(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 3, 4))
+	mockStorage := &chunkImageStorage{
+		exists: true,
+		data:   append([]byte(nil), oldImage...),
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, chunkImageUpdateModeReplace); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
+	}
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if !bytes.Equal(mockStorage.data, newImage) {
+		t.Fatalf("replace did not write new image bytes")
+	}
+}
+
+func TestRemoveChunkImageDeletesExistingObject(t *testing.T) {
+	mockStorage := &chunkImageStorage{exists: true, data: []byte("image")}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.removeChunkImage(ctx, "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", mockStorage.removeCalls)
+	}
+}
+
+func TestUpdateChunkRestoresImageWhenIndexUpdateFails(t *testing.T) {
+	originalImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	replacement := mustEncodePNG(t, image.Rect(0, 0, 3, 4))
+	mockStorage := &chunkImageStorage{
+		exists: true,
+		data:   append([]byte(nil), originalImage...),
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	engine := &updateChunkFailTestEngine{
+		updateChunkTestEngine: updateChunkTestEngine{
+			existingChunk: map[string]interface{}{
+				"doc_id":              "doc-1",
+				"content_with_weight": "body",
+			},
+		},
+		failUpdate: true,
+	}
+	svc := newUpdateChunkTestService(t, &engine.updateChunkTestEngine, nil)
+	svc.docEngine = engine
+
+	mode := chunkImageUpdateModeReplace
+	imageB64 := base64.StdEncoding.EncodeToString(replacement)
+	err := svc.UpdateChunk(ctx, &service.UpdateChunkRequest{
+		DatasetID:             "kb-1",
+		DocumentID:            "doc-1",
+		ChunkID:               "chunk-1",
+		TouchChunkImageFields: true,
+		ImageUpdateMode:       &mode,
+		ImageBase64:           &imageB64,
+	}, "user-1")
+	if err == nil || !strings.Contains(err.Error(), "failed to update chunk") {
+		t.Fatalf("UpdateChunk() error = %v, want index failure", err)
+	}
+	if !bytes.Equal(mockStorage.data, originalImage) {
+		t.Fatalf("stored image was not restored after failed index update")
+	}
+}
+
+func TestUpdateChunkRemoveImageClearsFieldsAfterIndexUpdate(t *testing.T) {
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-1",
+			"content_with_weight": "body",
+			"img_id":              "kb-1-chunk-1",
+			"doc_type_kwd":        "image",
+		},
+	}
+	removeCalls := 0
+	svc := newUpdateChunkTestService(t, engine, func(ctx context.Context, bucket, chunkID string) error {
+		removeCalls++
+		if bucket != "kb-1" || chunkID != "chunk-1" {
+			t.Fatalf("unexpected remove target bucket=%q chunk=%q", bucket, chunkID)
+		}
+		return nil
+	})
+
+	mode := chunkImageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:             "kb-1",
+		DocumentID:            "doc-1",
+		ChunkID:               "chunk-1",
+		TouchChunkImageFields: true,
+		ImageUpdateMode:       &mode,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	update := engine.updateCalls[0].newValue
+	if update["img_id"] != "" {
+		t.Fatalf("img_id = %#v, want empty", update["img_id"])
+	}
+	if update["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", update["doc_type_kwd"])
+	}
+	if removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", removeCalls)
+	}
+}
+
+func newUpdateChunkTestService(t *testing.T, engine *updateChunkTestEngine, removeFn func(context.Context, string, string) error) *ChunkService {
+	t.Helper()
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	if removeFn != nil {
+		svc.removeChunkImageFunc = removeFn
+	}
+	return svc
 }
 
 func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
@@ -1302,22 +1471,38 @@ func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newVa
 	return nil
 }
 
+type updateChunkFailTestEngine struct {
+	updateChunkTestEngine
+	failUpdate bool
+}
+
+func (e *updateChunkFailTestEngine) UpdateChunks(ctx context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	if e.failUpdate {
+		return errors.New("index update failed")
+	}
+	return e.updateChunkTestEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
+}
+
 type chunkImageStorage struct {
-	exists    bool
-	oldBinary []byte
-	putCalls  int
+	exists      bool
+	data        []byte
+	putCalls    int
+	removeCalls int
 }
 
 func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
 func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
 func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
+	s.data = append([]byte(nil), binary...)
+	s.exists = true
 	return nil
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
-	return s.oldBinary, nil
+	return append([]byte(nil), s.data...), nil
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	s.removeCalls++
 	return nil
 }
 func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {

@@ -61,6 +61,14 @@ type chunkImageMergeLock struct {
 	refs int
 }
 
+const (
+	chunkImageUpdateModeAppend  = "append"
+	chunkImageUpdateModeReplace = "replace"
+	chunkImageUpdateModeRemove  = "remove"
+	maxChunkImageBytes          = 10 * 1024 * 1024
+	maxChunkImageDimension      = 8192
+)
+
 func searchConfigMap(value interface{}) (map[string]interface{}, bool) {
 	switch typed := value.(type) {
 	case entity.JSONMap:
@@ -97,7 +105,8 @@ type ChunkService struct {
 	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
 	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
-	storeChunkImageFunc     func(string, string, []byte) error
+	storeChunkImageFunc     func(context.Context, string, string, []byte, string) error
+	removeChunkImageFunc    func(context.Context, string, string) error
 	tokenizeFunc            func(string) (string, error)
 	fineGrainedTokenizeFunc func(string) (string, error)
 	numTokensFunc           func(string) int
@@ -1220,6 +1229,74 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["tag_feas"] = tagFeas
 	}
 
+	if req.TouchChunkImageFields {
+		err = s.withChunkImageLock(req.DatasetID, req.ChunkID, func() error {
+			imageMode, parseErr := parseChunkImageUpdateMode(req.ImageUpdateMode)
+			if parseErr != nil {
+				return updateChunkError{code: common.CodeArgumentError, message: parseErr.Error()}
+			}
+			switch imageMode {
+			case chunkImageUpdateModeRemove:
+				d["img_id"] = ""
+				d["doc_type_kwd"] = "text"
+				if updateErr := s.updateChunkIndexAfterImageMutation(ctx, req, indexName, d); updateErr != nil {
+					return updateErr
+				}
+				if remErr := s.removeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID); remErr != nil {
+					return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
+				}
+				return nil
+			case chunkImageUpdateModeAppend, chunkImageUpdateModeReplace:
+				if req.ImageBase64 == nil {
+					return updateChunkError{
+						code:    common.CodeArgumentError,
+						message: "`image_base64` is required when `image_update_mode` is `append` or `replace`",
+					}
+				}
+				imageBinary, decErr := decodeChunkImageBase64(*req.ImageBase64)
+				if decErr != nil {
+					return updateChunkError{code: common.CodeDataError, message: decErr.Error()}
+				}
+				var rollback chunkImageRollbackSnapshot
+				var rollbackEnabled bool
+				if s.storeChunkImageFunc == nil {
+					var snapErr error
+					rollback, snapErr = s.snapshotChunkImageForRollback(ctx, req.DatasetID, req.ChunkID)
+					if snapErr != nil {
+						return updateChunkError{code: common.CodeDataError, message: "Failed to read chunk image"}
+					}
+					rollbackEnabled = true
+				}
+				if storeErr := s.storeChunkImageUnlocked(ctx, req.DatasetID, req.ChunkID, imageBinary, imageMode); storeErr != nil {
+					return updateChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
+				}
+				d["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, req.ChunkID)
+				d["doc_type_kwd"] = "image"
+				if updateErr := s.updateChunkIndexAfterImageMutation(ctx, req, indexName, d); updateErr != nil {
+					if rollbackEnabled {
+						if restoreErr := s.restoreChunkImageRollback(ctx, req.DatasetID, req.ChunkID, rollback); restoreErr != nil {
+							return fmt.Errorf("failed to update chunk: %w (failed to restore chunk image: %v)", updateErr, restoreErr)
+						}
+					}
+					return updateErr
+				}
+				return nil
+			default:
+				return updateChunkError{
+					code:    common.CodeArgumentError,
+					message: "`image_update_mode` must be one of: append, replace, remove",
+				}
+			}
+		})
+		if err != nil {
+			return err
+		}
+		if req.Content != nil || req.Available != nil {
+			s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+		}
+		return nil
+	}
+
 	// Always include id
 	d["id"] = req.ChunkID
 
@@ -1406,7 +1483,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		if err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: err.Error()}
 		}
-		if err = s.storeChunkImage(ctx, req.DatasetID, chunkID, imageBinary); err != nil {
+		if err = s.storeChunkImage(ctx, req.DatasetID, chunkID, imageBinary, chunkImageUpdateModeAppend); err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
 		}
 		chunkData["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, chunkID)
@@ -1567,7 +1644,40 @@ func decodeChunkImageBase64(raw string) ([]byte, error) {
 	if len(imageBinary) == 0 {
 		return nil, fmt.Errorf("`image_base64` is empty")
 	}
+	if len(imageBinary) > maxChunkImageBytes {
+		return nil, fmt.Errorf("`image_base64` exceeds maximum size")
+	}
 	return imageBinary, nil
+}
+
+func parseChunkImageUpdateMode(mode *string) (string, error) {
+	if mode == nil {
+		return chunkImageUpdateModeAppend, nil
+	}
+	trimmed := strings.TrimSpace(strings.ToLower(*mode))
+	switch trimmed {
+	case chunkImageUpdateModeAppend, chunkImageUpdateModeReplace, chunkImageUpdateModeRemove:
+		return trimmed, nil
+	default:
+		return "", fmt.Errorf("`image_update_mode` must be one of: append, replace, remove")
+	}
+}
+
+func validateChunkImageBytes(imageBinary []byte) error {
+	if _, _, err := image.DecodeConfig(bytes.NewReader(imageBinary)); err != nil {
+		return fmt.Errorf("invalid image data")
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(imageBinary))
+	if err != nil {
+		return fmt.Errorf("invalid image data")
+	}
+	bounds := decoded.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 || width > maxChunkImageDimension || height > maxChunkImageDimension {
+		return fmt.Errorf("invalid image dimensions")
+	}
+	return nil
 }
 
 func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
@@ -1690,14 +1800,7 @@ func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNu
 	})
 }
 
-func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID string, imageBinary []byte) error {
-	if s.storeChunkImageFunc != nil {
-		return s.storeChunkImageFunc(bucket, chunkID, imageBinary)
-	}
-	storageImpl := storage.GetStorageFactory().GetStorage()
-	if storageImpl == nil {
-		return fmt.Errorf("storage not initialized")
-	}
+func (s *ChunkService) withChunkImageLock(bucket, chunkID string, fn func() error) error {
 	lockKey := bucket + "/" + chunkID
 	lock := acquireChunkImageMergeLock(lockKey)
 	lock.mu.Lock()
@@ -1705,8 +1808,84 @@ func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID stri
 		lock.mu.Unlock()
 		releaseChunkImageMergeLock(lockKey)
 	}()
+	return fn()
+}
 
+type chunkImageRollbackSnapshot struct {
+	hadObject bool
+	data      []byte
+}
+
+func (s *ChunkService) updateChunkIndexAfterImageMutation(ctx context.Context, req *service.UpdateChunkRequest, indexName string, d map[string]interface{}) error {
+	d["id"] = req.ChunkID
+	condition := map[string]interface{}{
+		"id":     req.ChunkID,
+		"doc_id": req.DocumentID,
+	}
+	if err := s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID); err != nil {
+		return fmt.Errorf("failed to update chunk: %w", err)
+	}
+	return nil
+}
+
+func (s *ChunkService) snapshotChunkImageForRollback(ctx context.Context, bucket, chunkID string) (chunkImageRollbackSnapshot, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return chunkImageRollbackSnapshot{}, fmt.Errorf("storage not initialized")
+	}
 	if !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return chunkImageRollbackSnapshot{hadObject: false}, nil
+	}
+	data, err := storageImpl.Get(ctx, bucket, chunkID)
+	if err != nil {
+		return chunkImageRollbackSnapshot{}, err
+	}
+	return chunkImageRollbackSnapshot{hadObject: true, data: append([]byte(nil), data...)}, nil
+}
+
+func (s *ChunkService) restoreChunkImageRollback(ctx context.Context, bucket, chunkID string, snap chunkImageRollbackSnapshot) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	if snap.hadObject {
+		return storageImpl.Put(ctx, bucket, chunkID, snap.data)
+	}
+	if storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return storageImpl.Remove(ctx, bucket, chunkID)
+	}
+	return nil
+}
+
+func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID string, imageBinary []byte, mode string) error {
+	if s.storeChunkImageFunc != nil {
+		return s.withChunkImageLock(bucket, chunkID, func() error {
+			return s.storeChunkImageFunc(ctx, bucket, chunkID, imageBinary, mode)
+		})
+	}
+	return s.withChunkImageLock(bucket, chunkID, func() error {
+		return s.storeChunkImageUnlocked(ctx, bucket, chunkID, imageBinary, mode)
+	})
+}
+
+func (s *ChunkService) storeChunkImageUnlocked(ctx context.Context, bucket, chunkID string, imageBinary []byte, mode string) error {
+	if s.storeChunkImageFunc != nil {
+		return s.storeChunkImageFunc(ctx, bucket, chunkID, imageBinary, mode)
+	}
+	if mode != chunkImageUpdateModeAppend && mode != chunkImageUpdateModeReplace {
+		return fmt.Errorf("unsupported image update mode for store: %s", mode)
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+
+	if mode == chunkImageUpdateModeReplace || !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		if mode == chunkImageUpdateModeReplace {
+			if err := validateChunkImageBytes(imageBinary); err != nil {
+				return err
+			}
+		}
 		return storageImpl.Put(ctx, bucket, chunkID, imageBinary)
 	}
 
@@ -1738,6 +1917,31 @@ func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID stri
 		return err
 	}
 	return storageImpl.Put(ctx, bucket, chunkID, buf.Bytes())
+}
+
+func (s *ChunkService) removeChunkImage(ctx context.Context, bucket, chunkID string) error {
+	if s.removeChunkImageFunc != nil {
+		return s.withChunkImageLock(bucket, chunkID, func() error {
+			return s.removeChunkImageFunc(ctx, bucket, chunkID)
+		})
+	}
+	return s.withChunkImageLock(bucket, chunkID, func() error {
+		return s.removeChunkImageUnlocked(ctx, bucket, chunkID)
+	})
+}
+
+func (s *ChunkService) removeChunkImageUnlocked(ctx context.Context, bucket, chunkID string) error {
+	if s.removeChunkImageFunc != nil {
+		return s.removeChunkImageFunc(ctx, bucket, chunkID)
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage not initialized")
+	}
+	if !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return nil
+	}
+	return storageImpl.Remove(ctx, bucket, chunkID)
 }
 
 func acquireChunkImageMergeLock(key string) *chunkImageMergeLock {

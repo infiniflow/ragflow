@@ -551,10 +551,12 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"positions":          true,
 		"tag_kwd":            true,
 		"tag_feas":           true,
+		"image_base64":       true,
+		"image_update_mode":  true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_kwd, tag_feas")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_kwd, tag_feas, image_base64, image_update_mode")
 			return
 		}
 	}
@@ -595,6 +597,28 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		}
 	}
 	req.TagFeas = rawBody["tag_feas"]
+	if _, ok := rawBody["image_base64"]; ok {
+		req.TouchChunkImageFields = true
+		if imageBase64, ok := rawBody["image_base64"].(string); ok {
+			req.ImageBase64 = &imageBase64
+		} else if rawBody["image_base64"] != nil {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_base64` must be a string")
+			return
+		}
+	}
+	if _, ok := rawBody["image_update_mode"]; ok {
+		req.TouchChunkImageFields = true
+		if imageMode, ok := rawBody["image_update_mode"].(string); ok {
+			if strings.TrimSpace(imageMode) == "" {
+				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_update_mode` must be one of: append, replace, remove")
+				return
+			}
+			req.ImageUpdateMode = &imageMode
+		} else {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_update_mode` must be a string")
+			return
+		}
+	}
 
 	// Set path parameters
 	req.DatasetID = datasetID
