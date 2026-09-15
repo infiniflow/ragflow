@@ -1355,7 +1355,7 @@ class RAGconCV(GptV4):
     RAGcon CV Provider - routes through LiteLLM proxy
 
     Supports vision models through LiteLLM.
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
