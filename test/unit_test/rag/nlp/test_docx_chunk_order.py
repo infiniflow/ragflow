@@ -45,7 +45,7 @@ def _build(sections, delimiter=DELIMITER):
     return cks, tables, images
 
 
-def test_table_chunk_precedes_the_caption_paragraph_buffered_before_it():
+def test_caption_paragraph_precedes_table_chunk_when_buffered_before_it():
     cks, tables, _ = _build(
         [
             ("table caption", None, None),
@@ -71,7 +71,7 @@ def test_table_context_above_and_below_follow_document_order():
     assert cks[tables[0]]["context_below"] == "following paragraph"
 
 
-def test_image_chunk_precedes_the_caption_paragraph_buffered_before_it():
+def test_caption_paragraph_precedes_image_chunk_when_buffered_before_it():
     cks, _, images = _build(
         [
             ("figure caption", None, None),
