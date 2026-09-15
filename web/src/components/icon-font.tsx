@@ -17,8 +17,9 @@
 import { FileIconMap } from '@/constants/file';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
+import { File as LucideFile } from 'lucide-react';
 import { CSSProperties } from 'react';
-import SvgIcon from './svg-icon';
+import SvgIcon, { hasSvgIcon } from './svg-icon';
 
 type IconFontType = {
   name: string;
@@ -54,6 +55,9 @@ export function FileIcon({
 }: IconFontType & { type?: string }) {
   const isFolder = type === 'folder';
   const isSkills = type === 'skills';
+  const extension = getExtension(name);
+  const spriteIcon = FileIconMap[extension as keyof typeof FileIconMap];
+  const assetIcon = `file-icon/${extension}`;
   if (isSkills) {
     return (
       <span className={cn('size-4', className)}>
@@ -63,9 +67,15 @@ export function FileIcon({
   }
   return (
     <span className={cn('size-4', className)}>
-      <IconFont
-        name={isFolder ? 'file-sub' : FileIconMap[getExtension(name)]}
-      ></IconFont>
+      {isFolder ? (
+        <IconFont name="file-sub"></IconFont>
+      ) : spriteIcon ? (
+        <IconFont name={spriteIcon}></IconFont>
+      ) : hasSvgIcon(assetIcon) ? (
+        <SvgIcon name={assetIcon} width={16}></SvgIcon>
+      ) : (
+        <LucideFile className="size-4"></LucideFile>
+      )}
     </span>
   );
 }

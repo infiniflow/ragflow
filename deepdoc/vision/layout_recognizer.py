@@ -93,8 +93,7 @@ class LayoutRecognizer(Recognizer):
                     "bottom": b["bbox"][-1] / scale_factor,
                     "page_number": pn,
                 }
-                for b in lts
-                if float(b["score"]) >= 0.4 or b["type"] not in self.garbage_layouts
+                for b in self._filter_garbage_layouts(lts)
             ]
             lts = self.sort_Y_firstly(lts, np.mean([lt["bottom"] - lt["top"] for lt in lts]) / 2)
             lts = self.layouts_cleanup(bxs, lts)
@@ -168,8 +167,23 @@ class LayoutRecognizer(Recognizer):
         ocr_res = [b for b in ocr_res if b["text"].strip() not in garbag_set]
         return ocr_res, page_layout
 
+    def _filter_garbage_layouts(self, boxes, score_thr=0.4):
+        """Drop garbage-layout boxes (footer/header/reference) below ``score_thr``.
+
+        Mirrors the gate applied in ``__call__`` (layout_recognizer.py:97 and
+        :379) so that every consumer of ``forward`` — notably the
+        ``/predict/dla`` HTTP endpoint served by ``DLAAdapter`` — receives
+        Python-production-aligned output instead of raw low-confidence garbage
+        boxes. Non-garbage boxes are always kept regardless of score.
+        """
+        return [b for b in boxes if float(b["score"]) >= score_thr or b["type"] not in self.garbage_layouts]
+
     def forward(self, image_list, thr=0.7, batch_size=16):
-        return super().__call__(image_list, thr, batch_size)
+        layouts = super().__call__(image_list, thr, batch_size)
+        # Apply the 0.4 garbage gate so forward output matches __call__; the
+        # /predict/dla endpoint otherwise returns unfiltered low-confidence
+        # garbage (see _filter_garbage_layouts).
+        return [self._filter_garbage_layouts(page_boxes) for page_boxes in layouts]
 
 
 class LayoutRecognizer4YOLOv10(LayoutRecognizer):

@@ -36,7 +36,7 @@ from api.utils.validation_utils import (
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_download_file_response_headers
 from common import settings
 from common.misc_utils import thread_pool_exec
 from api.apps.services import file_api_service
@@ -307,7 +307,7 @@ async def download(tenant_id: str = None, file_id: str = None):
         if ext:
             fallback_prefix = "image" if file.type == FileType.VISUAL.value else "application"
             content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
-        apply_safe_file_response_headers(response, content_type, ext)
+        apply_download_file_response_headers(response, content_type, ext, file.name)
         return response
     except Exception as e:
         logging.exception(e)

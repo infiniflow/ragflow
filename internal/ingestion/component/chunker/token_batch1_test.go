@@ -59,23 +59,23 @@ func TestSentenceDelimiterMatchesBangAndQuestion(t *testing.T) {
 // join exceeds the budget — so the first unit must already sit near the
 // budget and the second unit must not fit alongside it.
 func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
-	// OVER_CAP (Python's canonical default) merges an overflowing unit into
-	// the previous chunk and then closes it, so a chunk can exceed budget by
-	// at most one unit. To exercise the overlap path we use three units:
+	// The hard-cap merge (UNDER_CAP) starts a fresh chunk when the projected
+	// join would exceed the budget. Three units:
 	//   - a carries a parser tag and fits the budget alone,
-	//   - b makes a+b overflow, so a+b merge-then-close into chunk0,
-	//   - c starts a fresh chunk (prevClosed) with an overlap prefix from
-	//     chunk0, which is where the tag-stripping must hold.
+	//   - b does not fit alongside a (a+b exceeds the budget), so b starts a
+	//     fresh chunk carrying an overlap prefix carved from a,
+	//   - c fits alongside b and merges into the same chunk; the tag-stripping
+	//     must hold in the overlap prefix on that chunk.
 	aText := strings.Repeat("word ", 18) + "@@1\t2.3## tail"
 	bText := strings.Repeat("word ", 18)
 	cText := strings.Repeat("word ", 6)
 	aN, bN, cN := tokenizeStr(aText), tokenizeStr(bText), tokenizeStr(cText)
-	// The merge decision is now the running sum of per-unit token counts
-	// (aN + bN), faithful to Python's _merge_text_chunks_by_token_size, NOT the
+	// The merge decision is the running sum of per-unit token counts (aN+bN),
+	// faithful to Python's _merge_text_chunks_by_token_size, NOT the
 	// re-tokenized a+b join. Budget just below the a+b running sum so a and b
-	// cannot merge without overflowing (forcing mergeThenClose on chunk0), but
-	// a alone and c alone fit, and an overlap prefix carved from chunk0 fits
-	// ahead of c (overlap path is exercised on chunk 1).
+	// cannot merge (b starts a fresh chunk), while a alone, c alone, and b+c
+	// all fit, and an overlap prefix carved from a fits ahead of b (the overlap
+	// path is exercised on chunk 1).
 	budget := aN + bN - 1
 	if budget < aN {
 		budget = aN
@@ -93,13 +93,13 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 30.0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 30.0)
 	merged := got[0]
 	if len(merged) != 2 {
-		t.Fatalf("want 2 chunks (overflow-closed + overlap chunk), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
+		t.Fatalf("want 2 chunks (a + overlap-prefixed b+c), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
 	}
 	// The overlap prefix must actually be prepended to chunk 1; otherwise the
-	// test would pass even if prevClosed started c without any overlap.
+	// test would pass even if b started without any overlap.
 	overlap, _ := computeOverlapPrefix(merged[0].Text, 30.0)
 	if overlap == "" {
 		t.Fatal("expected a non-empty overlap prefix")
@@ -118,36 +118,34 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	}
 }
 
-// TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed is a TDD
-// regression test for the OVER_CAP boundary-overflow flag (prevClosed) leaking
-// across a non-text chunk. mergeByTokenSizeFromJSON must reset prevClosed when
-// the previous merged chunk is non-text; otherwise the first text chunk after a
-// non-text chunk carries the stale flag and forces the NEXT text chunk to start
-// a fresh chunk even though it should merge with its predecessor.
+// TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun is a regression
+// test for the merge run leaking across a non-text chunk. mergeUnits must
+// reset the running state when the previous merged chunk is non-text;
+// otherwise the first text chunk after a non-text chunk carries the stale
+// state and the next text chunk fails to merge with its predecessor.
 //
-// Sequence: T1, T2 (overflow-merge-close into chunk0), N (non-text), T3, T4.
-// With a correct reset, T3 is the first text after N (new chunk) and T4 merges
-// back into T3 -> 3 chunks total. With the bug, prevClosed survives the N
-// boundary and T4 is wrongly forced into its own chunk -> 4 chunks.
-func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) {
-	t1 := strings.Repeat("word ", 18)
-	t2 := strings.Repeat("word ", 18)
-	t3 := strings.Repeat("word ", 9)
-	t4 := strings.Repeat("word ", 9)
+// Sequence: T1, T2 (merged into chunk0), N (non-text), T3, T4. With a correct
+// reset, T3 is the first text after N (new chunk) and T4 merges back into T3
+// -> 3 chunks total. With the bug, T3 wrongly carries the stale run and T4 is
+// forced into its own chunk -> 4 chunks.
+func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun(t *testing.T) {
+	t1 := strings.Repeat("word ", 9)
+	t2 := strings.Repeat("word ", 9)
+	t3 := strings.Repeat("word ", 4)
+	t4 := strings.Repeat("word ", 4)
 	t1N, t2N := tokenizeStr(t1), tokenizeStr(t2)
-	joined12 := tokenizeStr(t1 + "\n" + t2)
-	// Budget just below the T1+T2 join so T1 and T2 cannot merge without
-	// overflowing, forcing mergeThenClose on chunk0 (prevClosed=true).
-	budget := joined12 - 1
-	if budget < t1N {
-		budget = t1N
+	t3N, t4N := tokenizeStr(t3), tokenizeStr(t4)
+	// Budget: T1+T2 fit exactly (merge into chunk0); T3+T4 must also fit so
+	// they merge into chunk2 only if the run reset correctly.
+	budget := t1N + t2N
+	if budget < t3N {
+		budget = t3N
 	}
-	t34 := tokenizeStr(t3 + "\n" + t4)
-	if t34 > budget {
-		t.Fatalf("T3+T4 must fit budget to exercise the merge; t34=%d budget=%d", t34, budget)
+	if t3N+t4N > budget {
+		t.Fatalf("T3+T4 must fit budget to exercise the merge; t3=%d t4=%d sum=%d budget=%d", t3N, t4N, t3N+t4N, budget)
 	}
-	if joined12 <= budget {
-		t.Fatalf("could not derive tight budget (t1=%d t2=%d joined=%d budget=%d)", t1N, t2N, joined12, budget)
+	if t1N+t2N > budget {
+		t.Fatalf("T1+T2 must fit budget; t1=%d t2=%d sum=%d budget=%d", t1N, t2N, t1N+t2N, budget)
 	}
 
 	items := [][]schema.ChunkDoc{
@@ -155,25 +153,24 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) 
 			{Text: t1, DocType: "text", CKType: "text", TKNums: intPtr(t1N)},
 			{Text: t2, DocType: "text", CKType: "text", TKNums: intPtr(t2N)},
 			{Text: "[image]", DocType: "image", CKType: "image", TKNums: intPtr(1)},
-			{Text: t3, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(t3))},
-			{Text: t4, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(t4))},
+			{Text: t3, DocType: "text", CKType: "text", TKNums: intPtr(t3N)},
+			{Text: t4, DocType: "text", CKType: "text", TKNums: intPtr(t4N)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 0.0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 0.0)
 	merged := got[0]
-	// Expect: chunk0 (T1+T2, overflow-closed), N (non-text), chunk1 (T3+T4 merged).
+	// Expect: chunk0 (T1+T2 merged), N (non-text), chunk1 (T3+T4 merged).
 	if len(merged) != 3 {
 		var texts []string
 		for _, c := range merged {
 			texts = append(texts, c.CKType+":"+c.Text)
 		}
-		t.Fatalf("want 3 chunks (overflow-closed + non-text + merged), got %d: %v", len(merged), texts)
+		t.Fatalf("want 3 chunks (merged + non-text + merged), got %d: %v", len(merged), texts)
 	}
-	// Lock the overflow-closed precondition: T1+T2 must have merged into
-	// chunk0 with prevClosed set, otherwise the later assertions could pass
-	// without exercising the boundary-overflow path at all.
+	// Lock the merge precondition: T1+T2 must have merged into chunk0,
+	// otherwise the later assertions could pass without exercising the merge.
 	if merged[0].Text != t1+"\n"+t2 {
-		t.Errorf("chunk[0] should be the overflow-closed T1+T2 chunk: got %q", merged[0].Text)
+		t.Errorf("chunk[0] should be the merged T1+T2 chunk: got %q", merged[0].Text)
 	}
 	if merged[1].CKType != "image" {
 		t.Errorf("chunk[1] should be the non-text image chunk, got CKType=%q text=%q", merged[1].CKType, merged[1].Text)
@@ -184,12 +181,10 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) 
 	}
 }
 
-// TestMergeByTokenSizeFromJSON_UnderCapNoOverflow exercises the UNDER_CAP
-// strategy (schema.MergeUnderCap): a projected join that would exceed
-// the target must start a fresh chunk instead of merging-then-closing. This is
-// the seam that lets Go follow Python's no-overflow (UNDER_CAP) strategy. Under
-// OVER_CAP the same input merges a+b and overflows chunk0; here a, b, c must
-// stay as three separate chunks, each within budget.
+// TestMergeByTokenSizeFromJSON_UnderCapNoOverflow exercises the hard-cap merge
+// contract (UNDER_CAP): a projected join that would exceed the target must
+// start a fresh chunk instead of merging-then-closing. a, b, c must stay as
+// three separate chunks, each within budget.
 func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 	aText := strings.Repeat("word ", 18)
 	bText := strings.Repeat("word ", 18)
@@ -215,7 +210,7 @@ func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 0.0, schema.MergeUnderCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 0.0)
 	merged := got[0]
 	if len(merged) != 3 {
 		t.Fatalf("UNDER_CAP want 3 chunks (a, b, c separate), got %d", len(merged))
@@ -257,12 +252,12 @@ func clampOverlapFixture() [][]schema.ChunkDoc {
 }
 
 func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
-	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100, schema.MergeOverCap)
-	if at100 == nil || len(at100) == 0 {
+	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100)
+	if len(at100) == 0 {
 		t.Fatalf("overlappedPct=100: nil/empty result")
 	}
-	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150, schema.MergeOverCap)
-	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300, schema.MergeOverCap)
+	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150)
+	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300)
 	if !reflect.DeepEqual(at100, at150) {
 		t.Errorf("overlappedPct=150 should clamp to 100; output differs from 100")
 	}
@@ -270,12 +265,12 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 		t.Errorf("overlappedPct=1e300 should clamp to 100; output differs from 100")
 	}
 
-	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0, schema.MergeOverCap)
-	if at0 == nil || len(at0) == 0 {
+	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0)
+	if len(at0) == 0 {
 		t.Fatalf("overlappedPct=0: nil/empty result")
 	}
-	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5, schema.MergeOverCap)
-	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300, schema.MergeOverCap)
+	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5)
+	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300)
 	if !reflect.DeepEqual(at0, atNeg) {
 		t.Errorf("overlappedPct=-5 should clamp to 0; output differs from 0")
 	}
@@ -296,7 +291,7 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 			{Text: "keepme", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
 	merged := got[0]
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))

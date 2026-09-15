@@ -18,11 +18,12 @@ package dao
 
 import (
 	"context"
-	"strconv"
+	"errors"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -41,6 +42,7 @@ type ListAgentSessionsParams struct {
 	UserID     string
 	TenantID   string
 	IncludeDSL bool
+	NoHistory  bool
 	Keywords   string
 	FromDate   *time.Time
 	ToDate     *time.Time
@@ -55,8 +57,11 @@ func NewChatSessionDAO() *ChatSessionDAO {
 // GetByID gets chat session by ID
 func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := db.WithContext(ctx).Where("id = ?", id).First(&conv).Error
+	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ?", id).First(&conv).Error
 	if err != nil {
+		return nil, err
+	}
+	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}); err != nil {
 		return nil, err
 	}
 	return &conv, nil
@@ -65,8 +70,11 @@ func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) 
 // GetBySessionIDAndChatID gets a chat session by session ID and chat ID.
 func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
+	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
 	if err != nil {
+		return nil, err
+	}
+	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}); err != nil {
 		return nil, err
 	}
 	return &conv, nil
@@ -74,7 +82,15 @@ func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm
 
 // Create creates a new chat session
 func (dao *ChatSessionDAO) Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error {
-	return db.WithContext(ctx).Create(conv).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(conv).Error; err != nil {
+			return err
+		}
+		if err := createHistory(ctx, tx, conversationMessageTable, "message", conv.ID, conv.Message); err != nil {
+			return err
+		}
+		return createHistory(ctx, tx, conversationReferenceTable, "reference", conv.ID, conv.Reference)
+	})
 }
 
 // UpdateByID updates a chat session by ID
@@ -83,35 +99,58 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 		updates = make(map[string]interface{})
 	}
 
+	historyUpdate, targeted := updates["history_update"].(ConversationHistoryUpdate)
+	delete(updates, "history_update")
+	for key := range updates {
+		switch key {
+		case "message", "Message", "messages", "Messages", "reference", "Reference":
+			return errors.New("does not support")
+		}
+	}
+
 	now := time.Now().Local()
 	updates["update_time"] = now.UnixMilli()
 	updates["update_date"] = now.Truncate(time.Second)
 
-	result := db.WithContext(ctx).Session(&gorm.Session{SkipHooks: true}).Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		var count int64
-		if err := db.WithContext(ctx).Model(&entity.ChatSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
-			return err
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Session(&gorm.Session{SkipHooks: true}).Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
+		if result.Error != nil {
+			return result.Error
 		}
-		if count == 0 {
-			return gorm.ErrRecordNotFound
+		if result.RowsAffected == 0 {
+			var count int64
+			if err := tx.Model(&entity.ChatSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return gorm.ErrRecordNotFound
+			}
 		}
-	}
-	return nil
+		if targeted {
+			return updateConversationHistory(ctx, tx, conversationMessageTable, conversationReferenceTable, id, historyUpdate)
+		}
+		return nil
+	})
 }
 
 // DeleteByID deletes a chat session by ID (hard delete)
 func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.ChatSession{}).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent entity.ChatSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", id).Take(&parent).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, []string{id}); err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&entity.ChatSession{}).Error
+	})
 }
 
 // ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Where("dialog_id = ?", chatID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ?", chatID)
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
 	}
@@ -133,7 +172,15 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
 	err := query.Find(&chatSessions).Error
-	return chatSessions, err
+	if err != nil {
+		return nil, err
+	}
+	if len(includeHistory) == 0 || includeHistory[0] {
+		if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
+			return nil, err
+		}
+	}
+	return chatSessions, nil
 }
 
 // CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id
@@ -163,8 +210,20 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, d
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
-	result := db.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
-	return result.RowsAffected, result.Error
+	var rowsAffected int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ids []string
+		if err := tx.Model(&entity.ChatSession{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("dialog_id IN ?", dialogIDs).Order("id").Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, ids); err != nil {
+			return err
+		}
+		result := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	return rowsAffected, err
 }
 
 func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string) ([]map[string]interface{}, error) {
@@ -205,7 +264,7 @@ func normalizeAgentSessionOrderBy(orderBy string) string {
 }
 
 func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, params ListAgentSessionsParams) (int64, []*entity.API4Conversation, error) {
-	query := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
 	if !params.IncludeDSL {
 		query = query.Omit("dsl")
 	}
@@ -220,12 +279,9 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 
 	if params.Keywords != "" {
 		keywords := strings.ToLower(params.Keywords)
-		escapedKeywords := strings.Trim(strconv.QuoteToASCII(keywords), `"`)
-		if escapedKeywords == keywords {
-			query = query.Where("LOWER(message) LIKE ?", "%"+keywords+"%")
-		} else {
-			query = query.Where("(LOWER(message) LIKE ? OR LOWER(message) LIKE ?)", "%"+keywords+"%", "%"+escapedKeywords+"%")
-		}
+		keywordPattern := "%" + keywords + "%"
+		messageMatch := "EXISTS (SELECT 1 FROM " + apiConversationMessageTable + " AS cm WHERE cm.conversation_id = api_4_conversation.id AND LOWER(cm.content) LIKE ?)"
+		query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR "+messageMatch+")", keywordPattern, keywordPattern, keywordPattern)
 	}
 
 	dateColumn := "create_date"
@@ -273,6 +329,14 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&sessions).Error
+	if err != nil {
+		return 0, nil, err
+	}
+	if !params.NoHistory {
+		if err = hydrateAPIConversations(ctx, db, sessions); err != nil {
+			return 0, nil, err
+		}
+	}
 
-	return total, sessions, err
+	return total, sessions, nil
 }

@@ -65,8 +65,8 @@ export default function EditNextCompilationTemplate() {
         <BackButton to={agentsUrl} />
         <h2 className="font-medium text-text-secondary">
           {isCreate
-            ? t('setting.addTemplateGroup')
-            : group?.name || t('setting.editTemplateGroup')}
+            ? t('knowledgeCompilation.addTemplateGroup')
+            : group?.name || t('knowledgeCompilation.editTemplateGroup')}
         </h2>
       </header>
 

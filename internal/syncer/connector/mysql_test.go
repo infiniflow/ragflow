@@ -48,7 +48,7 @@ func newFixtureMySQLConnector(t *testing.T, config map[string]any, expect func(m
 	if err != nil {
 		t.Fatalf("NewMySQLConnector failed: %v", err)
 	}
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestMySQLConnectorOpenSyncCustomQuery(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestMySQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 
 	start := mustTime(t, "2026-01-01T00:00:00Z")
 	end := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestMySQLConnectorOpenSyncAllTables(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestMySQLConnectorOpenPrune(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestMySQLConnectorMD5FallbackID(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -288,12 +288,10 @@ func TestMySQLConnectorMD5FallbackID(t *testing.T) {
 	}
 }
 
-// TestMySQLConnectorValidate verifies the SELECT 1 probe and failure paths.
+// TestMySQLConnectorValidate verifies the connection probe and failure paths.
 func TestMySQLConnectorValidate(t *testing.T) {
 	connector := newFixtureMySQLConnector(t, nil, func(mock sqlmock.Sqlmock) {
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
-			sqlmock.NewRows([]string{"1"}).AddRow(1),
-		)
+		mock.ExpectPing()
 	})
 	if err := connector.Validate(context.Background()); err != nil {
 		t.Fatalf("Validate failed: %v", err)
@@ -347,5 +345,73 @@ func TestMySQLConnectorStripOrderBy(t *testing.T) {
 		if got := connector.stripOrderBy(tc.in); got != tc.want {
 			t.Fatalf("stripOrderBy(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestMySQLConnectorFileExtension verifies file_extension parsing and its
+// ".txt" default.
+func TestMySQLConnectorFileExtension(t *testing.T) {
+	cases := []struct {
+		name   string
+		config any
+		want   string
+	}{
+		{"default", nil, ".txt"},
+		{"with dot", ".html", ".html"},
+		{"no dot", "md", "md"},
+		{"blank", "   ", ".txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			connector, err := NewMySQLConnector(map[string]any{"file_extension": tc.config})
+			if err != nil {
+				t.Fatalf("NewMySQLConnector failed: %v", err)
+			}
+			if connector.fileExtension != tc.want {
+				t.Fatalf("fileExtension = %q, want %q", connector.fileExtension, tc.want)
+			}
+		})
+	}
+}
+
+// TestMySQLConnectorOpenSyncCustomFileExtension verifies a configured file
+// extension is applied to produced documents.
+func TestMySQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
+	query := "SELECT * FROM products WHERE status = 'active'"
+	connector := newFixtureMySQLConnector(t, map[string]any{
+		"host":            "127.0.0.1",
+		"port":            "3306",
+		"database":        "mydb",
+		"query":           query,
+		"content_columns": "title,description",
+		"id_column":       "id",
+		"file_extension":  ".html",
+		"credentials": map[string]any{
+			"username": "root",
+			"password": "secret",
+		},
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "title", "description"}).
+				AddRow(7, "Hello", "World"),
+		)
+	})
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(batch.Documents))
+	}
+	if doc := batch.Documents[0]; doc.Extension != ".html" {
+		t.Fatalf("extension = %q, want %q", doc.Extension, ".html")
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
 	}
 }

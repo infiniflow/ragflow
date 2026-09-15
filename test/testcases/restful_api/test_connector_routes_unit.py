@@ -18,6 +18,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -221,8 +222,12 @@ def _load_connector_app(monkeypatch):
         def list_sync_tasks(*_args, **_kwargs):
             return [], 0
 
+    class _StubConnectorAuthorizationError(Exception):
+        pass
+
     connector_service_mod.ConnectorService = _StubConnectorService
     connector_service_mod.SyncLogsService = _StubSyncLogsService
+    connector_service_mod.ConnectorAuthorizationError = _StubConnectorAuthorizationError
     monkeypatch.setitem(sys.modules, "api.db.services.connector_service", connector_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
@@ -257,6 +262,12 @@ def _load_connector_app(monkeypatch):
         SCHEDULE="schedule",
         CANCEL="cancel",
     )
+
+    class _FileSource(StrEnum):
+        LOCAL = ""
+        RSS = "rss"
+
+    constants_mod.FileSource = _FileSource
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     config_mod = ModuleType("common.data_source.config")
@@ -275,6 +286,26 @@ def _load_connector_app(monkeypatch):
         config_mod.DocumentSource.GOOGLE_DRIVE: ["scope-drive"],
     }
     monkeypatch.setitem(sys.modules, "common.data_source.google_util.constant", google_constants_mod)
+
+    data_source_mod = ModuleType("common.data_source")
+
+    def _stub_build_connector_for_source(_source, _config):
+        raise NotImplementedError("patch build_connector_for_source in test")
+
+    data_source_mod.build_connector_for_source = _stub_build_connector_for_source
+    monkeypatch.setitem(sys.modules, "common.data_source", data_source_mod)
+
+    data_source_exceptions_mod = ModuleType("common.data_source.exceptions")
+
+    class _ConnectorMissingCredentialError(Exception):
+        pass
+
+    class _ConnectorValidationError(Exception):
+        pass
+
+    data_source_exceptions_mod.ConnectorMissingCredentialError = _ConnectorMissingCredentialError
+    data_source_exceptions_mod.ConnectorValidationError = _ConnectorValidationError
+    monkeypatch.setitem(sys.modules, "common.data_source.exceptions", data_source_exceptions_mod)
 
     misc_mod = ModuleType("common.misc_utils")
     misc_mod.get_uuid = lambda: "uuid-from-helper"
@@ -454,6 +485,76 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     assert all(res["message"] == "no authorization" for res in responses)
     assert all(res["data"] is False for res in responses)
     assert touched == []
+
+    class _FakeConnector:
+        def validate_connector_settings(self):
+            return None
+
+    monkeypatch.setattr(
+        sys.modules["common.data_source"],
+        "build_connector_for_source",
+        lambda source, config: _FakeConnector(),
+    )
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _connector_id: (False, None))
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": {"feed_url": "https://example.com"}}),
+    )
+    ok_res = _run(module.test_connector("rss"))
+    assert ok_res["data"] is True
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": "bad"}),
+    )
+    bad_config_res = _run(module.test_connector("rss"))
+    assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
+
+
+@pytest.mark.p2
+def test_connector_rebuild_maps_service_auth_denials(monkeypatch):
+    """The route lets the service own kb authorization and only maps the
+    service's ConnectorAuthorizationError to an auth response. This keeps the
+    destructive service operation protected regardless of the HTTP caller.
+    """
+    module = _load_connector_app(monkeypatch)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
+
+    def _deny(message):
+        def _rebuild(*_args, **_kwargs):
+            raise module.ConnectorAuthorizationError(message)
+
+        return _rebuild
+
+    monkeypatch.setattr(module.ConnectorService, "rebuild", _deny("no authorization"))
+    denied_kb = _run(module.rebuild("conn-rb"))
+    assert denied_kb["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert denied_kb["message"] == "no authorization"
+    assert denied_kb["data"] is False
+
+    monkeypatch.setattr(
+        module.ConnectorService,
+        "rebuild",
+        _deny("Connector is not bound to this knowledge base."),
+    )
+    denied_unbound = _run(module.rebuild("conn-rb"))
+    assert denied_unbound["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert denied_unbound["message"] == "Connector is not bound to this knowledge base."
+    assert denied_unbound["data"] is False
+
+    # A non-authorization service failure still maps to a server error.
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: "rebuild-failed")
+    failed = _run(module.rebuild("conn-rb"))
+    assert failed["code"] == module.RetCode.SERVER_ERROR
+    assert failed["message"] == "rebuild-failed"
+
+    # Success path returns data True.
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: None)
+    ok = _run(module.rebuild("conn-rb"))
+    assert ok["data"] is True
 
 
 @pytest.mark.p2

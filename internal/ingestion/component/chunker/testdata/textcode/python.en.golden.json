@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "generator": "deepdoc.parser.txt_parser.RAGFlowTxtParser (parser._code)",
+    "sample": "internal/parser/parser/testdata/textcode.sample.en.txt",
+    "delimiter": "\n!?;。；！？",
+    "chunk_token_size": 128,
+    "keep_delimiters": true,
+    "comparison": "content-equivalent after delimiter removal and whitespace collapse"
+  },
+  "chunks": [
+    {
+      "text": "RAGFlow parses plain text and source code through the text&code family. This is the first English sentence. Here is a second sentence with more detail!\n Is this a question that the parser should handle?\nA blank line separates paragraphs. Semicolons also act as delimiters;\n this clause stays attached to the previous one. The parser keeps the trailing punctuation so sentence boundaries survive the split.\n\ndef greet(name):\n\n    return f\"hello, {name}\"\n\ndef main():\n\n    print(greet(\"world\"))\n\nLong code lines are kept as their own segments. The parser does not perform the token merge;\n the downstream chunker owns chunking per PARSER_ALIGNMENT_HANDOFF.md section 2.3.\n",
+      "doc_type_kwd": "text"
+    }
+  ]
+}

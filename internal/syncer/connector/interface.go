@@ -16,7 +16,12 @@
 
 package connector
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+const connectorSettingValidationTimeout = 7 * time.Second
 
 // SyncSession streams source documents for one fixed sync window.
 type SyncSession interface {
@@ -30,6 +35,11 @@ type SyncSession interface {
 type Fetcher interface {
 	// Fetch downloads a delayed source document body.
 	Fetch(ctx context.Context, ref FetchReference) ([]byte, error)
+}
+
+// SettingValidator validates connector settings from an unsaved config.
+type SettingValidator interface {
+	ValidateConnectorSetting(ctx context.Context, request map[string]any) error
 }
 
 // PruneSession streams a complete slim source snapshot.

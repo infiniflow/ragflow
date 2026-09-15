@@ -10,7 +10,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { StructureKinds, ViewMode, ViewModeLabelKeyMap } from './constants';
+import {
+  StructureKinds,
+  ViewMode,
+  ViewModeLabelKeyMap,
+  VisibleViewModes,
+} from './constants';
 import { DatasetStructureView } from './dataset-structure-view';
 import { LlmWikiView } from './llm-wiki-view';
 import { NavTreeView } from './nav-tree-view';
@@ -24,7 +29,7 @@ export default function Compilation() {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
 
   const viewOptions = useMemo<SelectWithSearchFlagOptionType[]>(() => {
-    return Object.values(ViewMode).map((mode) => ({
+    return VisibleViewModes.map((mode) => ({
       value: mode,
       label: t(ViewModeLabelKeyMap[mode]),
     }));
@@ -52,7 +57,7 @@ export default function Compilation() {
             />
             <h2 className="text-xl font-medium text-text-primary">
               {knowledgeBase?.name}
-              {t('knowledgeDetails.compilationTitleSuffix')}
+              {t('knowledgeCompilation.compilationTitleSuffix')}
             </h2>
           </div>
 

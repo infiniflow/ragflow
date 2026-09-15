@@ -4,5 +4,13 @@
     "doc_parse": "file_parse",
     "task": "tasks"
   },
-  "class": "local"
+  "class": "local",
+  "models": [
+    {
+      "name": "MinerU-model",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
 }

@@ -36,23 +36,31 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
+		// The DSL contract (shared by the web UI and the Python runtime)
+		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
+		// in Go that behaviour lives in the OneChunker component.
+		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
+			return NewOneChunker(params)
+		}
 		return NewTokenChunker(params)
 	case ComponentNameTitleChunker:
 		return NewTitleChunker(params)
 	case ComponentNameGroupTitleChunker:
 		return NewGroupTitleChunker(params)
+	case ComponentNameManualChunker:
+		return NewManualChunker(params)
 	case ComponentNameHierarchyTitleChunker:
 		return NewHierarchyTitleChunker(params)
 	case ComponentNameQAChunker:
 		return NewQAChunker(params)
 	case ComponentNameOneChunker:
 		return NewOneChunker(params)
-	case ComponentNameTagChunker:
-		return NewTagChunker(params)
 	case ComponentNameTableChunker:
 		return NewTableChunker(params)
-	case ComponentNamePresentationChunker:
-		return NewPresentationChunker(params)
+	case ComponentNamePageChunker:
+		return NewPageChunker(params)
+	case ComponentNameGeneralChunker:
+		return NewGeneralChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
@@ -83,7 +91,9 @@ func stringListFromAny(in []any) []string {
 // content. invokeTextPayload decides whether an active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
-// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Legacy single-string parsing is performed by GeneralChunker at its
+// configuration boundary; the shared regex helper only consumes canonical
+// delimiter lists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
@@ -92,9 +102,10 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
 // glued to a segment: re.split with a captured group keeps delimiters at odd
 // indices, and only the even-index (text) parts are kept. This is the
-// behavior every delimiter path (primary and children, text/markdown/html
-// and JSON) must reproduce so a split chunk reads "first sentence here"
-// without the trailing delimiter.
+// behavior shared TokenChunker paths and General's primary/Markdown splits
+// reproduce so a split chunk reads "first sentence here" without the trailing
+// delimiter. General's legacy-compatible children split is implemented
+// separately because that path keeps the delimiter attached to its parent.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
@@ -124,14 +135,24 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 // chunk-doc helpers
 // ---------------------------------------------------------------------------
 
-// itemText returns the text payload from a JSON-style chunk item,
-// preferring "text", then "content_with_weight".
+// requireChunkText enforces the pre-index wire contract before chunk-id
+// generation or image upload.
+func requireChunkText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
+}
+
+// itemText returns the canonical pre-index text payload from a chunk item.
 func itemText(it schema.ChunkDoc) (string, bool) {
 	if it.Text != "" {
 		return it.Text, true
-	}
-	if it.ContentWithWeight != "" {
-		return it.ContentWithWeight, true
 	}
 	return "", false
 }

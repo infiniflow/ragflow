@@ -20,6 +20,7 @@ import { SafeImg } from '@/components/safe-img';
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import DOMPurify from 'dompurify';
@@ -28,6 +29,7 @@ import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { RehypeSanitizeAssistantMarkdown } from '@/constants/markdown-rehype-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -229,15 +231,15 @@ function MarkdownContent({
       documentUrl?: string,
     ) =>
       () => {
-        if (fileExtension !== 'pdf') {
-          if (!documentUrl) {
-            return;
-          }
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else {
-          clickDocumentButton?.(documentId, chunk);
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -369,7 +371,7 @@ function MarkdownContent({
           <HoverCard key={i}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
+                {t('common.figure')} {chunkIndex + 1}
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
@@ -381,7 +383,7 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [renderPopoverContent, t],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
@@ -390,7 +392,12 @@ function MarkdownContent({
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          RehypeSanitizeAssistantMarkdown,
+          rehypeWrapReference,
+          rehypeKatex,
+        ]}
         remarkPlugins={MarkdownRemarkPlugins}
         urlTransform={(url, key) => {
           if (

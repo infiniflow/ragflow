@@ -67,6 +67,35 @@ The Google Drive data source is used to synchronize files or folders in Google D
 
 ![Google Drive](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Google_Drive.jpg)
 
+## Feishu Wiki
+
+The Feishu Wiki data source is available with the Python backend. It recursively scans a configured Wiki subtree and imports matching downloadable `file` nodes. Native Feishu Docs, Sheets, Slides, and Bitable records are not imported directly, although the connector traverses non-file nodes to discover downloadable files below them.
+
+The Feishu custom app needs read-only Wiki and Drive permissions. Add the app to the target Wiki with permission to list nodes and download files.
+
+The connector supports this file subset: `csv`, `doc`, `docx`, `eml`, `gif`, `html`, `jpeg`, `jpg`, `json`, `md`, `mdx`, `pdf`, `png`, `ppt`, `pptx`, `tif`, `txt`, `xls`, and `xlsx`.
+
+Configure the following fields:
+
+- **Name**: A descriptive name for the connection in RAGFlow.
+- **Feishu app ID** and **Feishu app secret**: Credentials for the Feishu custom app. The secret is masked in the form.
+- **Wiki space ID**: The ID of the target Wiki space.
+- **Wiki root node token**: The node whose descendants are scanned recursively.
+- **Allowed file extensions**: An optional allow-list from the supported subset above. Leave it empty to allow the complete subset.
+- **Required filename keywords**: An optional list. A filename must contain at least one configured keyword.
+- **Excluded filename keywords**: An optional list. A matching filename is excluded.
+- **Maximum file size (bytes)**: The largest file body the connector will accept. The default is `52428800` bytes (50 MiB). Both the declared content length and the streamed byte count are enforced.
+- **Batch size**: The number of files sent to the ingestion pipeline per batch. The default is `2`; valid values are `1` through `10`.
+- **Refresh interval**: The interval between periodic scans.
+
+Extension and filename filters are applied before a file body is downloaded. Every periodic sync scans node metadata in the subtree, but downloads only matching files whose edit time falls within the completed sync window. An empty completed scan advances that window, so the same time interval is not treated as pending again.
+
+File downloads retry HTTP 429 responses up to three times. The connector honors the relative delay in seconds from Feishu's `x-ogw-ratelimit-reset` response header, with a minimum wait of one second. If the header is missing or invalid, retries wait one, two, then four seconds. A requested delay above 60 seconds stops the download instead of retrying before the server's reset. See [Feishu's rate-limit guide](https://open.feishu.cn/document/server-docs/api-call-guide/frequency-control).
+
+Unsuccessful downloads raise a connector validation error with the HTTP status and, when available, Feishu's error code, message, and request log ID. Error-body parsing is limited to 8 KiB; diagnostic fields are length-limited and credentials are redacted. Successful file bodies, including JSON files, are imported unchanged. After retries are exhausted, the sync fails without advancing its successful window.
+
+Normal periodic sync does not propagate source deletions: deleting a file in Feishu does not immediately delete the imported RAGFlow document. A manual rebuild follows the existing delete-then-import behavior, so previously imported files that are no longer present or no longer match the filters can be removed during the rebuild.
+
 ## OneDrive
 
 The OneDrive data source is used to synchronize files in OneDrive or OneDrive for Business to a RAGFlow knowledge base. After configuration, personal or department cloud files can be queried in a unified way.
@@ -390,6 +419,33 @@ The Bitbucket data source is used to synchronize Bitbucket repository content, i
 
 ![Bitbucket](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Bitbucket.jpg)
 
+## Azure DevOps
+
+The Azure DevOps data source is used to synchronize Azure Repos source files and pull requests to a RAGFlow knowledge base. After configuration, repository content and code review history can be queried.
+
+**Permission requirements**: The personal access token (PAT) must have the **Code (Read)** scope for the target organization.
+
+**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide the full collection URL as the organization, for example `https://tfs.contoso.com/DefaultCollection`. The URL must use HTTPS, because the personal access token is sent in the `Authorization` header.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
+- **Azure DevOps Personal Access Token**: The PAT used to access the organization.
+- **Azure DevOps Organization**: The organization name, or the collection URL of a self-hosted server.
+- **Index Mode**: Choose whether to index every repository in the organization, only selected team projects, or only selected repositories.
+- **Projects**: Comma separated team project names, used when indexing by project.
+- **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
+- **Content Types**: Choose whether to index source files, pull requests, or both.
+
+Pull request descriptions are re-fetched individually when they reach the 400
+character limit the list endpoint truncates at, so long descriptions are indexed
+in full. Completed and abandoned pull requests are filtered by their close date;
+active ones are always re-indexed, because Azure DevOps exposes no dependable
+"last updated" timestamp for them.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+Build output and vendored directories such as `node_modules`, `bin`, `obj`, `dist`, and `vendor` are skipped, along with binary files and files larger than 1 MB.
+
 ## Jira
 
 The Jira data source is used to synchronize issues, comments, and project records in Jira to a RAGFlow knowledge base. After configuration, project tasks, requirements, bugs, and handling records can be queried.
@@ -636,6 +692,26 @@ The REST API data source is used to synchronize data returned by custom business
 
 ![REST API](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/REST_API.jpg)
 
+## Xquik
+
+The Xquik data source searches public X posts and syncs each matching post into a RAGFlow knowledge base. Use it to retrieve posts by keyword, hashtag, author, language, or another supported X search operator.
+
+**Permission requirements**: Create an [Xquik API key](https://docs.xquik.com/api-reference/authentication). The key needs access to the Search Tweets API.
+
+**Usage requirements**: Each returned post uses 1 Xquik credit. The page size and maximum page count bound each sync. Xquik is an independent third-party service.
+
+**Configuration parameters**:
+
+- **Name**: Choose a name for this connection.
+- **Xquik API key**: Enter the key in the password field.
+- **X search query**: Enter keywords, hashtags, or operators such as `from:username`.
+- **Result order**: Select **Latest** for chronological results or **Top** for ranked results.
+- **Posts per page**: Set the maximum posts requested per API page.
+- **Max pages**: Stop each sync after this many pages.
+- **Batch size**: Set the number of posts sent to RAGFlow per batch.
+
+RAGFlow sends each incremental sync window to Xquik as inclusive `sinceTime` and exclusive `untilTime` bounds. Cursor pagination continues until no page remains or the configured maximum is reached.
+
 ## RSS
 
 The RSS data source is used to subscribe public websites, blogs, announcements, or product updates to a RAGFlow knowledge base. After configuration, the knowledge base can continuously obtain new content from the subscription source, making it convenient for users to view and ask questions in a unified way.
@@ -652,3 +728,26 @@ The RSS data source is used to subscribe public websites, blogs, announcements, 
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
 
 ![RSS](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/RSS.jpg)
+
+## Sitemap
+
+The Sitemap data source is used to synchronize the web pages listed in a public `sitemap.xml` to a RAGFlow knowledge base. It is the simplest way to index a documentation site, a corporate website, or a blog without writing a crawler: the site itself declares which pages exist and when they were last modified.
+
+**Permission requirements**: The sitemap and the pages it lists must be reachable over HTTP or HTTPS from the RAGFlow server. No credentials are used. Every request is checked by the SSRF guard, so private or loopback addresses are rejected.
+
+**Account version requirements**: None. Sitemaps are a public XML standard ([sitemaps.org](https://www.sitemaps.org/protocol.html)); both plain `urlset` files and `sitemapindex` files (followed recursively, up to 5 levels) are supported.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Sitemap connection.
+- **Sitemap URL**: The URL of the `sitemap.xml` or sitemap index to crawl, for example `https://example.com/sitemap.xml`.
+- **URL filter (regex)**: Optional regular expression. Only URLs matching it are indexed, for example `^https://example\.com/docs/` to restrict the sync to one section of the site. The connection test fails when no URL matches. The pattern is limited to 512 characters, nested quantifiers such as `(a+)+` are refused, and it is evaluated with a 1-second timeout against the first 4,096 characters of each URL.
+- **Follow PDF links**: When enabled, PDF files linked from the crawled HTML pages are indexed as well. Each PDF is indexed once even when several pages link to it.
+- **Restrict PDFs to sitemap domain**: When enabled (default), only PDF links hosted on the same domain as the sitemap are followed.
+- **User-Agent**: The `User-Agent` header sent with every request. Leave empty to use `RAGFlow-SitemapConnector/1.0`. Set it when the target site filters unknown crawlers.
+- **Batch size**: The number of pages fetched and sent to RAGFlow per batch.
+- **Sync deleted files**: After this is enabled, pages removed from the sitemap are removed from the knowledge base index.
+
+Every request goes through the SSRF guard with the resolved address pinned for the duration of the request, response bodies are capped at 64 MB, and at most 1000 sitemap documents are fetched per sync (each sitemap URL once). HTML pages are converted to Markdown with the same boilerplate removal as the other web connectors (`WEB_CONNECTOR_IGNORED_ELEMENTS`: navigation, footer, aside, scripts and styles by default) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
+
+Incremental syncs rely on the `<lastmod>` element: only pages whose `lastmod` falls inside the sync window are fetched again, and pages without `lastmod` are only fetched by a full sync. Every document also carries a content fingerprint, so a page that is fetched again but has not changed is skipped instead of being re-indexed.

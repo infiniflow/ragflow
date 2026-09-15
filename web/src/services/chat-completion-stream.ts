@@ -11,7 +11,7 @@
  */
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
-import { IMessage } from '@/interfaces/database/chat';
+import { IMessage, Variable } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -22,6 +22,7 @@ export type ChatCompletionStreamParams = {
   messages: IMessage[];
   enableThinking?: string;
   enableInternet?: boolean;
+  llmSetting?: Variable;
 };
 
 export type CompletionChunk = {
@@ -32,10 +33,32 @@ export type CompletionChunk = {
   [key: string]: any;
 };
 
+function normalizeThinkingForRequest(thinking?: Variable['thinking']) {
+  if (thinking === 'enabled' || thinking === 'disabled') return thinking;
+  return undefined;
+}
+
 export function requestChatCompletionStream(
-  { chatId, sessionId, messages, enableThinking, enableInternet }: ChatCompletionStreamParams,
+  {
+    chatId,
+    sessionId,
+    messages,
+    enableThinking,
+    enableInternet,
+    llmSetting,
+  }: ChatCompletionStreamParams,
   signal: AbortSignal,
 ) {
+  const {
+    temperature,
+    top_p,
+    frequency_penalty,
+    presence_penalty,
+    max_tokens,
+    thinking,
+  } = llmSetting ?? {};
+  const requestThinking = normalizeThinkingForRequest(thinking);
+
   return fetch(api.completionUrl, {
     method: 'POST',
     headers: {
@@ -49,6 +72,12 @@ export function requestChatCompletionStream(
       pass_all_history_messages: true,
       reasoning: Number(enableThinking),
       internet: enableInternet,
+      ...(temperature === undefined ? {} : { temperature }),
+      ...(top_p === undefined ? {} : { top_p }),
+      ...(frequency_penalty === undefined ? {} : { frequency_penalty }),
+      ...(presence_penalty === undefined ? {} : { presence_penalty }),
+      ...(max_tokens === undefined ? {} : { max_tokens }),
+      ...(requestThinking === undefined ? {} : { thinking: requestThinking }),
     }),
     signal,
   });

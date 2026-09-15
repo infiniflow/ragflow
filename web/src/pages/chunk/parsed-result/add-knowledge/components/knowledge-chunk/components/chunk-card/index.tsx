@@ -128,11 +128,10 @@ const ChunkCard = ({
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: sanitizeHtmlWithImagesAsText(item.content_with_weight).trim(),
+              __html: sanitizeHtmlWithImagesAsText(item.content_with_weight),
             }}
             className={classNames(
-              // Keep whitespaces?
-              'text-wrap break-words whitespace-pre',
+              'whitespace-pre-wrap break-words',
               textMode === ChunkTextMode.Ellipse && 'line-clamp-3',
             )}
           />

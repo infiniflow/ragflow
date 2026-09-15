@@ -446,6 +446,12 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 
 	// Build filter string from condition
 	filter := buildFilterFromCondition(condition, clmns)
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		// Every condition key was dropped (blank value, empty list, unknown
+		// column). table.Update("1=1", ...) would rewrite every row of the
+		// dataset, so refuse instead — mirrors DeleteChunks/DeleteMetadata.
+		return fmt.Errorf("INFINITY update aborted: non-empty condition yielded unconstrained filter on table %s", tableName)
+	}
 
 	// Process remove operation first
 	removeValue := make(map[string]interface{})
@@ -685,6 +691,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 	// Build filter from condition
 	filter := buildFilterFromCondition(condition, clmns)
+
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		return 0, fmt.Errorf("INFINITY delete aborted: non-empty condition yielded unconstrained filter on table %s", tableName)
+	}
 
 	delResp, err := table.Delete(filter)
 	if err != nil {
@@ -973,7 +983,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Add text match if question is provided
 			if hasTextMatch {
 				extraOptions := map[string]string{
-					"minimum_should_match": fmt.Sprintf("%d%%", int(minMatch*100)),
+					"minimum_should_match": common.FormatMinimumShouldMatchPercent(minMatch),
 				}
 
 				if filterStr != "" {
@@ -1814,7 +1824,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 			var tags []string
 			// Split by "###" for tag_kwd field
 			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
-				for _, tag := range strings.Split(valueStr, "###") {
+				for tag := range strings.SplitSeq(valueStr, "###") {
 					tag = strings.TrimSpace(tag)
 					if tag != "" {
 						tags = append(tags, tag)
@@ -1822,7 +1832,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 				}
 			} else {
 				// Fallback to comma separation
-				for _, tag := range strings.Split(valueStr, ",") {
+				for tag := range strings.SplitSeq(valueStr, ",") {
 					tag = strings.TrimSpace(tag)
 					if tag != "" {
 						tags = append(tags, tag)

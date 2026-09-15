@@ -20,7 +20,7 @@ from email.parser import BytesParser
 from rag.app.naive import chunk as naive_chunk
 from common.constants import MAXIMUM_PAGE_NUMBER
 import re
-from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
+from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks, DEFAULT_DELIMITER
 from deepdoc.parser import HtmlParser, TxtParser
 from timeit import default_timer as timer
 import io
@@ -41,7 +41,7 @@ def chunk(
     eng = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config",
-        {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"},
+        {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"},
     )
     doc = {
         "docnm_kwd": filename,
@@ -51,7 +51,7 @@ def chunk(
     main_res = []
     attachment_res = []
 
-    if binary:
+    if binary is not None:
         with io.BytesIO(binary) as buffer:
             msg = BytesParser(policy=policy.default).parse(buffer)
     else:
@@ -99,7 +99,7 @@ def chunk(
     chunks = naive_merge(
         sections,
         int(parser_config.get("chunk_token_num", 128)),
-        parser_config.get("delimiter", "\n!?。；！？"),
+        parser_config.get("delimiter", DEFAULT_DELIMITER),
     )
 
     main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))

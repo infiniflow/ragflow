@@ -11,7 +11,7 @@
   "models": [
     {
       "name": "LongCat-2.0",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 131072,
       "model_types": [
         "chat"

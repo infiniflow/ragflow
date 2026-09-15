@@ -29,6 +29,7 @@ type XLSXParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -60,6 +61,10 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
+	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -95,8 +100,8 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLSX",
+		return parseWithTCADP(
+			ctx, filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -110,40 +115,71 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
+	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
+	if err == nil {
+		return xlsxParseResult(filename, items, warnings, sheets)
+	}
+
+	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
+	if normalizeErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
+	}
+	if !changed {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
+	}
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, p.HTML4Excel)
+	if retryErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+	}
+	warnings = append(normalizeWarnings, warnings...)
+	return xlsxParseResult(filename, items, warnings, sheets)
+}
+
+func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xlsx open: %w", err)}
+		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
 	}
 	defer f.Close()
 
 	sheets := f.GetSheetList()
-	var html strings.Builder
-	html.WriteString("<html><body>")
-	for _, sheet := range sheets {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
-		rows, err := f.GetRows(sheet)
+	items := make([]map[string]any, 0)
+	warnings := make([]string, 0)
+	for sheetIdx, sheet := range sheets {
+		records, dataRows, headerRow, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
 		if err != nil {
-			continue
+			return nil, warnings, len(sheets), err
 		}
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
+		warnings = append(warnings, sheetWarnings...)
+		var sheetItems []map[string]any
+		if html4excel {
+			if table := recordsToHTMLTableItem(records, sheet, sheetIdx+1, headerRow, dataRows); table != nil {
+				sheetItems = []map[string]any{table}
 			}
-			html.WriteString("</tr>")
+		} else {
+			sheetItems = recordsToSpreadsheetItems(records, sheet, sheetIdx+1, headerRow, dataRows)
 		}
-		html.WriteString("</table>")
+		images, imageWarnings := extractXLSXImages(f, sheet)
+		for _, image := range images {
+			row, _ := numericItemInt(image["row_start"])
+			col, _ := numericItemInt(image["col_start"])
+			image["sheet_index"] = sheetIdx + 1
+			image["table_id"] = fmt.Sprintf("sheet-%d", sheetIdx+1)
+			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
+		}
+		sheetItems = append(sheetItems, images...)
+		sortSpreadsheetItems(sheetItems)
+		items = append(items, sheetItems...)
+		warnings = append(warnings, imageWarnings...)
 	}
-	html.WriteString("</body></html>")
+	return items, warnings, len(sheets), nil
+}
 
+func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
-		OutputFormat: "html",
-		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": len(sheets)},
-		HTML:         html.String(),
+		OutputFormat: spreadsheetOutputFormat,
+		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
+		JSON:         items,
+		Warnings:     warnings,
 	}
 }

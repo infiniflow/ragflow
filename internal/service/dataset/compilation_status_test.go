@@ -16,7 +16,6 @@
 package dataset
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -94,7 +93,7 @@ func TestGetDatasetCompilationStatus_NoRowIsIdle(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-no-row", "user-1")
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-1", "kb-no-row")
+		t.Context(), "user-1", "kb-no-row", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,6 +102,9 @@ func TestGetDatasetCompilationStatus_NoRowIsIdle(t *testing.T) {
 	}
 	if st.State != entity.DatasetStateIdle {
 		t.Fatalf("state=%q want idle", st.State)
+	}
+	if st.Kind != "graph" {
+		t.Fatalf("kind=%q want graph", st.Kind)
 	}
 	if st.Inflight != 0 || st.Backlog != 0 {
 		t.Fatalf("expected zero counts for idle, got inflight=%d backlog=%d", st.Inflight, st.Backlog)
@@ -125,10 +127,13 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	row := entity.KnowledgeCompileDataset{
 		DatasetID:       "kb-full",
 		TenantID:        "user-1",
-		BacklogDocIDs:   `[{"doc_id":"d3","event_type":"completed","seq":3}]`,
-		InflightDocIDs:  `[{"doc_id":"d1","event_type":"completed","seq":1},{"doc_id":"d2","event_type":"completed","seq":2}]`,
+		BacklogDocIDs:   `[{"doc_id":"d3","event_type":"completed","task_types":["Timeline"]}]`,
+		InflightDocIDs:  `[{"doc_id":"d1","event_type":"completed","task_types":["Graph"]},{"doc_id":"d2","event_type":"completed","task_types":["Graph"]}]`,
 		State:           entity.DatasetStateRunning,
 		ErrorMsg:        "merge failed: boom",
+		Progress:        0.72,
+		CurrentPhase:    "routing_pages",
+		ProgressMsg:     "Routing 55 Wiki pages",
 		LastCompletedAt: &lastDone,
 	}
 	if err := db.Create(&row).Error; err != nil {
@@ -136,7 +141,7 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-1", "kb-full")
+		t.Context(), "user-1", "kb-full", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,11 +151,17 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	if st.State != entity.DatasetStateRunning {
 		t.Fatalf("state=%q want running", st.State)
 	}
-	if st.Inflight != 2 || st.Backlog != 1 {
-		t.Fatalf("want inflight=2 backlog=1, got inflight=%d backlog=%d", st.Inflight, st.Backlog)
+	if st.Kind != "graph" {
+		t.Fatalf("kind=%q want graph", st.Kind)
+	}
+	if st.Inflight != 2 || st.Backlog != 0 {
+		t.Fatalf("want inflight=2 backlog=0, got inflight=%d backlog=%d", st.Inflight, st.Backlog)
 	}
 	if st.Error != "merge failed: boom" {
 		t.Fatalf("error=%q want %q", st.Error, "merge failed: boom")
+	}
+	if st.Progress != 0.72 || st.CurrentPhase != "routing_pages" || st.ProgressMsg != "Routing 55 Wiki pages" {
+		t.Fatalf("progress fields not mapped: progress=%v phase=%q msg=%q", st.Progress, st.CurrentPhase, st.ProgressMsg)
 	}
 	if st.LastCompletedAt == nil || !st.LastCompletedAt.Equal(lastDone) {
 		t.Fatalf("last_completed_at=%v want %v", st.LastCompletedAt, lastDone)
@@ -174,7 +185,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-2", "kb-other")
+		t.Context(), "user-2", "kb-other", "graph")
 	if err == nil {
 		t.Fatalf("expected authorization error, got nil (status=%+v)", st)
 	}
@@ -187,7 +198,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 func TestGetDatasetCompilationStatus_EmptyID(t *testing.T) {
 	setupCompilationStatusTestDB(t)
 	_, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		context.Background(), "user-1", "")
+		t.Context(), "user-1", "", "graph")
 	if err == nil {
 		t.Fatal("expected error for empty dataset_id")
 	}

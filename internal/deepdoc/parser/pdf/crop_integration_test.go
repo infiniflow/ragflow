@@ -4,7 +4,6 @@ package pdf
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"image/png"
 	"os"
@@ -28,7 +27,7 @@ func TestParse_CropSectionImages(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+	result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -80,7 +79,7 @@ func TestCrop_Regression_SnapshotPDFs(t *testing.T) {
 			defer eng.Close()
 
 			p := NewParser(pdf.DefaultParserConfig())
-			result, err := p.ParseRaw(context.Background(), eng, &MockDocAnalyzer{Healthy: true})
+			result, err := p.ParseRaw(t.Context(), eng, &MockDocAnalyzer{Healthy: true})
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

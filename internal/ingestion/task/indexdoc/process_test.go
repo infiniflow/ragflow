@@ -23,8 +23,8 @@ func TestRenameTextToContentWithWeight_Basic(t *testing.T) {
 func TestRenameTextToContentWithWeight_PreservesExisting(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "already set", "text": "hello"}
 	RenameTextToContentWithWeight(chunk)
-	if chunk["content_with_weight"] != "already set" {
-		t.Errorf("preserved value should not be overwritten")
+	if chunk["content_with_weight"] != "hello" {
+		t.Errorf("text must be authoritative at the storage boundary, got %q", chunk["content_with_weight"])
 	}
 	if _, exists := chunk["text"]; exists {
 		t.Error("text should still be removed")
@@ -108,19 +108,13 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	}
 }
 
-// TestProcessChunksForPipeline_GeneratesIDOnNonStringText pins the id fallback:
-// when ck["id"] is absent and ck["text"] is a non-string (e.g. from a
-// malformed input), the type assertion silently yields "" and
-// component.ChunkID computes a valid id from empty text, rather than erroring.
-func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
+// TestProcessChunksForPipeline_RejectsNonStringText pins the strict contract:
+// non-string text must fail before chunk-id generation.
+func TestProcessChunksForPipeline_RejectsNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
-	if err != nil {
-		t.Fatalf("ProcessChunksForPipeline: %v", err)
-	}
-	id, ok := chunks[0]["id"].(string)
-	if !ok || id == "" {
-		t.Errorf("id should be generated even for non-string text, got %v", chunks[0]["id"])
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject non-string text")
 	}
 }
 
@@ -175,6 +169,58 @@ func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	}
 	if _, ok := chunks[0]["question_tks"]; ok {
 		t.Errorf("question_tks must NOT be produced by executor (owned by Tokenizer), got %T", chunks[0]["question_tks"])
+	}
+}
+
+// TestProcessChunksForPipeline_MetadataMapAggregated pins the normal contract:
+// ck["metadata"] produced by the Extractor (the merge of enable_metadata +
+// field_name="metadata") is a map[string]any and is aggregated into the
+// returned doc-level metadata.
+func TestProcessChunksForPipeline_MetadataMapAggregated(t *testing.T) {
+	chunks := []map[string]any{
+		{"text": "hello", "metadata": map[string]any{"category": "finance", "region": "east"}},
+	}
+	metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	if metadata["category"] != "finance" {
+		t.Errorf("category = %v, want finance", metadata["category"])
+	}
+	if metadata["region"] != "east" {
+		t.Errorf("region = %v, want east", metadata["region"])
+	}
+	// The consumed metadata key must not leak onto the persisted chunk.
+	if _, exists := chunks[0]["metadata"]; exists {
+		t.Error("metadata key should be removed from the chunk after aggregation")
+	}
+}
+
+// TestProcessChunksForPipeline_MetadataNonMapDropped pins the strict contract:
+// ck["metadata"] is Extractor-owned and always a map[string]any. A non-map
+// value (e.g. a JSON string, as field_name="metadata" used to emit before the
+// extractor unified to map) is a contract violation — it is dropped with a
+// warning, never guess-parsed, so an upstream bug surfaces instead of silently
+// producing document metadata.
+func TestProcessChunksForPipeline_MetadataNonMapDropped(t *testing.T) {
+	for name, value := range map[string]any{
+		"json_string": `{"category":"finance","region":"east"}`,
+		"fenced":      "```json\n{\"category\":\"law\"}\n```",
+		"not_json":    "this is not json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			chunks := []map[string]any{{"text": "hello", "metadata": value}}
+			metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+			if err != nil {
+				t.Fatalf("ProcessChunksForPipeline: %v", err)
+			}
+			if len(metadata) != 0 {
+				t.Errorf("metadata = %v, want empty (non-map metadata dropped)", metadata)
+			}
+			if _, exists := chunks[0]["metadata"]; exists {
+				t.Error("metadata key should be removed from the chunk after aggregation")
+			}
+		})
 	}
 }
 
@@ -281,14 +327,22 @@ func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
+func TestProcessChunksForPipeline_TextAuthoritativeAtRename(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
-	if chunks[0]["content_with_weight"] != "already set" {
-		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
+	if chunks[0]["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %q, want %q", chunks[0]["content_with_weight"], "hello")
+	}
+}
+
+func TestProcessChunksForPipeline_RejectsMissingText(t *testing.T) {
+	chunks := []map[string]any{{"content_with_weight": "already set"}}
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject chunks without text")
 	}
 }
 

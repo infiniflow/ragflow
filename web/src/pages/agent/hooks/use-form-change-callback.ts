@@ -9,7 +9,7 @@ export function useFormChangeCallback(
 
   useEffect(() => {
     if (onValuesChange) {
-      onValuesChange(values);
+      onValuesChange(form.getValues());
     }
-  }, [onValuesChange, values]);
+  }, [form, onValuesChange, values]);
 }

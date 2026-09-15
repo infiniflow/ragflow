@@ -48,7 +48,7 @@ func newFixturePostgresConnector(t *testing.T, config map[string]any, expect fun
 	if err != nil {
 		t.Fatalf("NewPostgreSQLConnector failed: %v", err)
 	}
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestPostgreSQLConnectorOpenSyncCustomQuery(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPostgreSQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 
 	start := mustTime(t, "2026-01-01T00:00:00Z")
 	end := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestPostgreSQLConnectorOpenPrune(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -319,9 +319,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 // TestPostgreSQLConnectorValidate verifies the probe and dialect-specific error message.
 func TestPostgreSQLConnectorValidate(t *testing.T) {
 	connector := newFixturePostgresConnector(t, nil, func(mock sqlmock.Sqlmock) {
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
-			sqlmock.NewRows([]string{"1"}).AddRow(1),
-		)
+		mock.ExpectPing()
 	})
 	if err := connector.Validate(context.Background()); err != nil {
 		t.Fatalf("Validate failed: %v", err)
@@ -338,5 +336,73 @@ func TestPostgreSQLConnectorValidate(t *testing.T) {
 	}, nil)
 	if err := missing.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "postgresql") {
 		t.Fatalf("Validate error = %v", err)
+	}
+}
+
+// TestPostgreSQLConnectorFileExtension verifies file_extension parsing and its
+// ".txt" default.
+func TestPostgreSQLConnectorFileExtension(t *testing.T) {
+	cases := []struct {
+		name   string
+		config any
+		want   string
+	}{
+		{"default", nil, ".txt"},
+		{"with dot", ".html", ".html"},
+		{"no dot", "md", "md"},
+		{"blank", "   ", ".txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			connector, err := NewPostgreSQLConnector(map[string]any{"file_extension": tc.config})
+			if err != nil {
+				t.Fatalf("NewPostgreSQLConnector failed: %v", err)
+			}
+			if connector.fileExtension != tc.want {
+				t.Fatalf("fileExtension = %q, want %q", connector.fileExtension, tc.want)
+			}
+		})
+	}
+}
+
+// TestPostgreSQLConnectorOpenSyncCustomFileExtension verifies a configured file
+// extension is applied to produced documents.
+func TestPostgreSQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
+	query := "SELECT * FROM products WHERE status = 'active'"
+	connector := newFixturePostgresConnector(t, map[string]any{
+		"host":            "127.0.0.1",
+		"port":            "5432",
+		"database":        "mydb",
+		"query":           query,
+		"content_columns": "title,description",
+		"id_column":       "id",
+		"file_extension":  ".md",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "secret",
+		},
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "title", "description"}).
+				AddRow(7, "Hello", "World"),
+		)
+	})
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(batch.Documents))
+	}
+	if doc := batch.Documents[0]; doc.Extension != ".md" {
+		t.Fatalf("extension = %q, want %q", doc.Extension, ".md")
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
 	}
 }

@@ -17,18 +17,15 @@
 package parser
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strings"
-
-	"github.com/xuri/excelize/v2"
 )
 
 type XLSParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -60,6 +57,10 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
+	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -78,8 +79,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLS",
+		return parseWithTCADP(
+			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -92,36 +93,15 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	f, err := excelize.OpenReader(bytes.NewReader(data))
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xls open: %w", err)}
+		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
-	defer f.Close()
-
-	var html strings.Builder
-	html.WriteString("<html><body>")
-	for _, sheet := range f.GetSheetList() {
-		html.WriteString("<h3>")
-		html.WriteString(sheet)
-		html.WriteString("</h3>")
-		rows, _ := f.GetRows(sheet)
-		html.WriteString("<table>")
-		for _, row := range rows {
-			html.WriteString("<tr>")
-			for _, cell := range row {
-				html.WriteString("<td>")
-				html.WriteString(htmlEscape(cell))
-				html.WriteString("</td>")
-			}
-			html.WriteString("</tr>")
-		}
-		html.WriteString("</table>")
-	}
-	html.WriteString("</body></html>")
 
 	return ParseResult{
-		OutputFormat: "html",
-		File:         map[string]any{"name": filename, "format": "xls"},
-		HTML:         html.String(),
+		OutputFormat: spreadsheetOutputFormat,
+		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON:         items,
+		Warnings:     warnings,
 	}
 }

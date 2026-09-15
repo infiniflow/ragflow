@@ -55,6 +55,7 @@ type PostgreSQLConnector struct {
 	metadataColumns []string
 	idColumn        string
 	timestampColumn string
+	fileExtension   string
 	batchSize       int
 	username        string
 	password        string
@@ -73,6 +74,7 @@ func NewPostgreSQLConnector(config map[string]any) (*PostgreSQLConnector, error)
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
+		fileExtension:   fileExtensionFromConfig(config["file_extension"]),
 		batchSize:       configInt(config["batch_size"], defaultPostgresBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
@@ -113,11 +115,17 @@ func (c *PostgreSQLConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	defer db.Close()
-	var one int
-	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("Failed to connect to PostgreSQL: %w", err)
 	}
 	return nil
+}
+
+// ValidateConnectorSetting validates PostgreSQL settings from an unsaved config.
+func (c *PostgreSQLConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one PostgreSQL sync session.
@@ -407,7 +415,7 @@ func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedCol
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: semanticID,
-		Extension:          ".txt",
+		Extension:          c.fileExtension,
 		Blob:               blob,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),

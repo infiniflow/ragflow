@@ -49,6 +49,7 @@ type MySQLConnector struct {
 	metadataColumns []string
 	idColumn        string
 	timestampColumn string
+	fileExtension   string
 	batchSize       int
 	username        string
 	password        string
@@ -65,6 +66,7 @@ func NewMySQLConnector(config map[string]any) (*MySQLConnector, error) {
 		database:        strings.TrimSpace(stringConfig(config["database"])),
 		idColumn:        strings.TrimSpace(stringConfig(config["id_column"])),
 		timestampColumn: strings.TrimSpace(stringConfig(config["timestamp_column"])),
+		fileExtension:   fileExtensionFromConfig(config["file_extension"]),
 		batchSize:       configInt(config["batch_size"], defaultMySQLBatchSize),
 		username:        strings.TrimSpace(stringConfig(credentials["username"])),
 		password:        stringConfig(credentials["password"]),
@@ -100,11 +102,17 @@ func (c *MySQLConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("Failed to connect to MySQL: %w", err)
 	}
 	defer db.Close()
-	var one int
-	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("Failed to connect to MySQL: %w", err)
 	}
 	return nil
+}
+
+// ValidateConnectorSetting validates MySQL settings from an unsaved config.
+func (c *MySQLConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	return c.Validate(ctx)
 }
 
 // OpenSync opens one MySQL sync session.
@@ -380,7 +388,7 @@ func (c *MySQLConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 	return SourceDocument{
 		SourceID:           sourceID,
 		SemanticIdentifier: semanticID,
-		Extension:          ".txt",
+		Extension:          c.fileExtension,
 		Blob:               blob,
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),

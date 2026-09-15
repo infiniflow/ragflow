@@ -8,6 +8,7 @@ import {
   useDeleteDatasetSkillTree,
   useFetchDatasetSkillTree,
 } from '@/hooks/use-dataset-skill-request';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useDebounce } from 'ahooks';
 import { FileText, Folder, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -41,6 +42,7 @@ function SkillDeleteAction({
   onDelete,
 }: SkillDeleteActionProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const handleTriggerClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -55,10 +57,13 @@ function SkillDeleteAction({
     onDelete(skillKwd);
   }, [skillKwd, onDelete]);
 
+  // The Go backend does not support deleting skill pages; don't mount the action.
+  if (isGo) return null;
+
   return (
     <ConfirmDeleteDialog
-      title={t('datasetSkill.deleteSkillTitle')}
-      content={{ title: t('datasetSkill.deleteSkillDescription') }}
+      title={t('knowledgeCompilation.skillDeleteTitle')}
+      content={{ title: t('knowledgeCompilation.skillDeleteDescription') }}
       onOk={handleConfirmDelete}
     >
       <Button
@@ -82,6 +87,7 @@ export function SkillsLeftPanel({
   onSelectSkill,
 }: SkillsLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const { data: tree, loading } = useFetchDatasetSkillTree();
   const { deleteSkillTree, loading: deleteTreeLoading } =
     useDeleteDatasetSkillTree();
@@ -151,22 +157,26 @@ export function SkillsLeftPanel({
     <aside className="size-full flex flex-col">
       <section className="flex items-center justify-between px-3 pt-3">
         <span className="text-sm font-medium text-text-primary">
-          {t('datasetSkill.folders')} ({totalCount})
+          {t('knowledgeCompilation.skillFolders')} ({totalCount})
         </span>
-        <ConfirmDeleteDialog
-          title={t('datasetSkill.deleteAllTitle')}
-          content={{ title: t('datasetSkill.deleteAllDescription') }}
-          onOk={handleDeleteAll}
-        >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            disabled={deleteTreeLoading}
-            data-testid="skills-clear-trigger"
+        {!isGo && (
+          <ConfirmDeleteDialog
+            title={t('knowledgeCompilation.skillDeleteAllTitle')}
+            content={{
+              title: t('knowledgeCompilation.skillDeleteAllDescription'),
+            }}
+            onOk={handleDeleteAll}
           >
-            <Trash2 />
-          </Button>
-        </ConfirmDeleteDialog>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={deleteTreeLoading}
+              data-testid="skills-clear-trigger"
+            >
+              <Trash2 />
+            </Button>
+          </ConfirmDeleteDialog>
+        )}
       </section>
 
       <div className="px-3 py-2">
@@ -186,7 +196,7 @@ export function SkillsLeftPanel({
           <div className="py-8 text-center text-sm text-text-secondary">
             {debouncedSearchString
               ? t('common.noData')
-              : t('datasetSkill.empty')}
+              : t('knowledgeCompilation.skillEmpty')}
           </div>
         ) : (
           <TreeView

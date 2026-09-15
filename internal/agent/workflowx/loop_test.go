@@ -86,6 +86,7 @@ func buildSubIncrement(t *testing.T) *compose.Workflow[int, int] {
 // increment, and shouldQuit returns true once the value reaches 4,
 // so the loop runs 3 times.
 func TestLoop_IterationNumbering(t *testing.T) {
+	ctx := t.Context()
 	var iterations []int
 	shouldQuit := func(_ context.Context, iter, prev, next int) (bool, error) {
 		iterations = append(iterations, iter)
@@ -93,7 +94,7 @@ func TestLoop_IterationNumbering(t *testing.T) {
 	}
 
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop",
+	loopNode, err := AddLoopNode(ctx, outer, "loop",
 		buildSubIncrement(t), shouldQuit,
 		WithLoopMaxIterations(10),
 	)
@@ -102,11 +103,11 @@ func TestLoop_IterationNumbering(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	out, err := compiled.Invoke(context.Background(), 1)
+	out, err := compiled.Invoke(ctx, 1)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -129,13 +130,14 @@ func TestLoop_IterationNumbering(t *testing.T) {
 // do-while: shouldQuit is called once with iter=1 and the loop
 // exits.
 func TestLoop_DoWhileContract(t *testing.T) {
+	ctx := t.Context()
 	var seen int
 	shouldQuit := func(_ context.Context, iter, prev, next int) (bool, error) {
 		seen = iter
 		return true, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop",
+	loopNode, err := AddLoopNode(ctx, outer, "loop",
 		buildSubIncrement(t), shouldQuit,
 		WithLoopMaxIterations(1),
 	)
@@ -144,11 +146,11 @@ func TestLoop_DoWhileContract(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	out, err := compiled.Invoke(context.Background(), 7)
+	out, err := compiled.Invoke(ctx, 7)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -164,11 +166,12 @@ func TestLoop_DoWhileContract(t *testing.T) {
 // explicitly configured cap returns the final iteration output. Canvas
 // maximum_loop_count uses this as normal termination.
 func TestLoop_ExplicitMaxIterationsStops(t *testing.T) {
+	ctx := t.Context()
 	shouldQuit := func(_ context.Context, _ int, _, _ int) (bool, error) {
 		return false, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop",
+	loopNode, err := AddLoopNode(ctx, outer, "loop",
 		buildSubIncrement(t), shouldQuit,
 		WithLoopMaxIterations(3),
 	)
@@ -177,11 +180,11 @@ func TestLoop_ExplicitMaxIterationsStops(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	out, err := compiled.Invoke(context.Background(), 0)
+	out, err := compiled.Invoke(ctx, 0)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -194,10 +197,11 @@ func TestLoop_ExplicitMaxIterationsStops(t *testing.T) {
 // safety cap remains an error. The test lowers the internal cap to keep the
 // case small while preserving the "not user configured" option state.
 func TestLoop_DefaultSafetyMaxIterationsExceeded(t *testing.T) {
+	ctx := t.Context()
 	shouldQuit := func(_ context.Context, _ int, _, _ int) (bool, error) {
 		return false, nil
 	}
-	compiledSub, err := buildSubIncrement(t).Compile(context.Background())
+	compiledSub, err := buildSubIncrement(t).Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile sub: %v", err)
 	}
@@ -205,7 +209,7 @@ func TestLoop_DefaultSafetyMaxIterationsExceeded(t *testing.T) {
 	options.maxIterations = 3
 	options.enableSubCheckpoint = false
 
-	_, err = runLoopInvoke(context.Background(), "loop", compiledSub, 0, shouldQuit, options)
+	_, err = runLoopInvoke(ctx, "loop", compiledSub, 0, shouldQuit, options)
 	if !errors.Is(err, ErrLoopMaxIterationsExceeded) {
 		t.Fatalf("runLoopInvoke: got %v, want ErrLoopMaxIterationsExceeded", err)
 	}
@@ -214,11 +218,12 @@ func TestLoop_DefaultSafetyMaxIterationsExceeded(t *testing.T) {
 // TestLoop_QuitConditionError asserts that a non-nil error from
 // shouldQuit is wrapped in ErrLoopQuitConditionFailed.
 func TestLoop_QuitConditionError(t *testing.T) {
+	ctx := t.Context()
 	shouldQuit := func(_ context.Context, _ int, _, _ int) (bool, error) {
 		return false, errors.New("boom")
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop",
+	loopNode, err := AddLoopNode(ctx, outer, "loop",
 		buildSubIncrement(t), shouldQuit,
 		WithLoopMaxIterations(5),
 	)
@@ -227,11 +232,11 @@ func TestLoop_QuitConditionError(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), 0)
+	_, err = compiled.Invoke(ctx, 0)
 	if !errors.Is(err, ErrLoopQuitConditionFailed) {
 		t.Fatalf("invoke: got %v, want ErrLoopQuitConditionFailed", err)
 	}
@@ -242,11 +247,12 @@ func TestLoop_QuitConditionError(t *testing.T) {
 
 // TestLoop_NormalConvergence asserts the basic happy path.
 func TestLoop_NormalConvergence(t *testing.T) {
+	ctx := t.Context()
 	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop",
+	loopNode, err := AddLoopNode(ctx, outer, "loop",
 		buildSubIncrement(t), shouldQuit,
 		WithLoopMaxIterations(10),
 	)
@@ -255,11 +261,11 @@ func TestLoop_NormalConvergence(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	out, err := compiled.Invoke(context.Background(), 0)
+	out, err := compiled.Invoke(ctx, 0)
 	if err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
@@ -273,6 +279,7 @@ func TestLoop_NormalConvergence(t *testing.T) {
 // ErrLoopSubGraphInterrupted wrap) and that shouldQuit is not
 // called.
 func TestLoop_SubErrorStopsLoop(t *testing.T) {
+	ctx := t.Context()
 	sub := compose.NewWorkflow[int, int]()
 	lambda := compose.InvokableLambda(func(_ context.Context, _ int) (int, error) {
 		return 0, errors.New("sub-fail")
@@ -285,17 +292,17 @@ func TestLoop_SubErrorStopsLoop(t *testing.T) {
 		return false, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit)
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit)
 	if err != nil {
 		t.Fatalf("AddLoopNode: %v", err)
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), 0)
+	_, err = compiled.Invoke(ctx, 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -312,6 +319,7 @@ func TestLoop_SubErrorStopsLoop(t *testing.T) {
 // counterLambda() which bumps the global loopCounter. Three
 // iterations → counter == 3.
 func TestLoop_CounterIncrementedPerIteration(t *testing.T) {
+	ctx := t.Context()
 	loopCounter.Store(0)
 
 	sub := compose.NewWorkflow[int, int]()
@@ -323,7 +331,7 @@ func TestLoop_CounterIncrementedPerIteration(t *testing.T) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 	)
 	if err != nil {
@@ -331,11 +339,11 @@ func TestLoop_CounterIncrementedPerIteration(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
+	if _, err := compiled.Invoke(ctx, 0); err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
 	if got := loopCounter.Load(); got != 3 {

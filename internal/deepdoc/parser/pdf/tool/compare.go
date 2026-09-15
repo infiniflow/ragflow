@@ -47,6 +47,9 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 
 	var diffs []Diff
 	matched, mismatched := 0, 0
+	// suppressedAny tracks whether any PDF hit the Py stage-metric phase
+	// gap (see the guard below) so we can warn once in the summary.
+	suppressedAny := false
 
 	for _, r := range goResults {
 		py, ok := pyMap[r.File]
@@ -74,6 +77,23 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 		if py.Sections > 0 {
 			d.SectionsDiffPct = math.Abs(float64(r.Sections-py.Sections)) / float64(py.Sections) * 100
 		}
+
+		// Phase-consistency guard: the Python harness cannot report
+		// post-merge pipeline stages (boxes_text_merge / boxes_vertical_merge
+		// / sections) because the production parser does not expose them, so
+		// its #@meta falls back to the raw final box count for all three.
+		// Comparing those against Go's real merged stages would emit
+		// misleading percentages (e.g. 67% on "sections"). Mark them N/A.
+		if py.BoxesInitial > 0 &&
+			py.BoxesTextMerge == py.BoxesInitial &&
+			py.BoxesVertMerge == py.BoxesInitial &&
+			py.Sections == py.BoxesInitial {
+			d.BoxesTMDiffPct = -1
+			d.BoxesVMDiffPct = -1
+			d.SectionsDiffPct = -1
+			suppressedAny = true
+		}
+
 		if py.TextLen > 0 {
 			d.TextLenDiffPct = math.Abs(float64(r.TextLen-py.TextLen)) / float64(py.TextLen) * 100
 		}
@@ -103,7 +123,18 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 			len(diffs), len(goResults), r.File, 100-d.CharSim, 100-d.LcsSim, 100-d.RawCharSim, 100-d.RawLcsSim)
 	}
 
-	sort.Slice(diffs, func(i, j int) bool { return diffs[i].SectionsDiffPct < diffs[j].SectionsDiffPct })
+	// Sort worst-first by SectionsDiffPct, but push N/A (-1) rows to the
+	// bottom so the per-PDF table reads cleanly.
+	sort.Slice(diffs, func(i, j int) bool {
+		a, b := diffs[i].SectionsDiffPct, diffs[j].SectionsDiffPct
+		if a < 0 {
+			a = math.MaxFloat64
+		}
+		if b < 0 {
+			b = math.MaxFloat64
+		}
+		return a < b
+	})
 
 	log.Logf("\n=== Go vs Python (%d PDFs) ===", len(diffs))
 	log.Logf("Pages match: %d/%d", matched, matched+mismatched)
@@ -117,10 +148,10 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 		gr := goMap[d.File]
 		goStages := fmt.Sprintf("%3d->%3d->%3d->%3d", gr.BoxesInitial, gr.BoxesTextMerg, gr.BoxesVertMerg, gr.Sections)
 		pyStages := fmt.Sprintf("%3d->%3d->%3d->%3d", py.BoxesInitial, py.BoxesTextMerge, py.BoxesVertMerge, py.Sections)
-		log.Logf("%-40s %-18s %-18s %4.0f%% %4.0f%% %4.0f%% %4.0f%% %4.0f%% %+4d %.0f%% %.0f%% %.0f%% %.0f%%",
+		log.Logf("%-40s %-18s %-18s %5s %5s %5s %5s %5.0f%% %+4d %.0f%% %.0f%% %.0f%% %.0f%%",
 			d.File, goStages, pyStages,
-			d.BoxesInitDiffPct, d.BoxesTMDiffPct, d.BoxesVMDiffPct,
-			d.SectionsDiffPct, d.TextLenDiffPct, d.TablesDiff,
+			pctStr(d.BoxesInitDiffPct), pctStr(d.BoxesTMDiffPct), pctStr(d.BoxesVMDiffPct),
+			pctStr(d.SectionsDiffPct), d.TextLenDiffPct, d.TablesDiff,
 			100-d.CharSim, 100-d.LcsSim,
 			100-d.RawCharSim, 100-d.RawLcsSim)
 	}
@@ -134,17 +165,31 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 		median, mean, max, min float64
 		over5, over10          int
 	}
-	computeStats := func(get func(Diff) float64) stats {
-		sort.Slice(diffs, func(i, j int) bool { return get(diffs[i]) < get(diffs[j]) })
-		s := stats{min: 1e9}
-		if n%2 == 0 {
-			s.median = (get(diffs[n/2-1]) + get(diffs[n/2])) / 2
-		} else {
-			s.median = get(diffs[n/2])
-		}
-		var sum float64
+	// computeStats returns summary statistics over the valid (>=0) samples.
+	// It returns ok=false when every sample is N/A, so the caller can print
+	// "N/A" instead of bogus numbers.
+	computeStats := func(get func(Diff) float64) (s stats, ok bool) {
+		s.min = math.MaxFloat64
+		var vals []float64
 		for _, d := range diffs {
 			v := get(d)
+			if v < 0 {
+				continue
+			}
+			vals = append(vals, v)
+		}
+		if len(vals) == 0 {
+			return s, false
+		}
+		sort.Float64s(vals)
+		m := len(vals)
+		if m%2 == 0 {
+			s.median = (vals[m/2-1] + vals[m/2]) / 2
+		} else {
+			s.median = vals[m/2]
+		}
+		var sum float64
+		for _, v := range vals {
 			sum += v
 			if v > s.max {
 				s.max = v
@@ -159,8 +204,8 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 				s.over10++
 			}
 		}
-		s.mean = sum / float64(n)
-		return s
+		s.mean = sum / float64(m)
+		return s, true
 	}
 
 	label := func(name string, s stats) string {
@@ -169,15 +214,59 @@ func CompareWithPython(log TLogger, goResults []BatchResult, pyResults []PyResul
 	}
 
 	log.Logf("\nSummary (n=%d):", n)
-	log.Logf("  %s", label("BoxesInit ", computeStats(func(d Diff) float64 { return d.BoxesInitDiffPct })))
-	log.Logf("  %s", label("TextMerge", computeStats(func(d Diff) float64 { return d.BoxesTMDiffPct })))
-	log.Logf("  %s", label("VertMerge", computeStats(func(d Diff) float64 { return d.BoxesVMDiffPct })))
-	log.Logf("  %s", label("Sections ", computeStats(func(d Diff) float64 { return d.SectionsDiffPct })))
-	log.Logf("  %s", label("TextLen  ", computeStats(func(d Diff) float64 { return d.TextLenDiffPct })))
-	log.Logf("  %s", label("CharDiff  ", computeStats(func(d Diff) float64 { return 100 - d.CharSim })))
-	log.Logf("  %s", label("LcsDiff   ", computeStats(func(d Diff) float64 { return 100 - d.LcsSim })))
-	log.Logf("  %s", label("RawCharDiff", computeStats(func(d Diff) float64 { return 100 - d.RawCharSim })))
-	log.Logf("  %s", label("RawLcsDiff ", computeStats(func(d Diff) float64 { return 100 - d.RawLcsSim })))
+	if s, ok := computeStats(func(d Diff) float64 { return d.BoxesInitDiffPct }); ok {
+		log.Logf("  %s", label("BoxesInit ", s))
+	} else {
+		log.Logf("  BoxesInit  N/A")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return d.BoxesTMDiffPct }); ok {
+		log.Logf("  %s", label("TextMerge", s))
+	} else {
+		log.Logf("  TextMerge N/A (Python harness does not expose post-merge stage)")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return d.BoxesVMDiffPct }); ok {
+		log.Logf("  %s", label("VertMerge", s))
+	} else {
+		log.Logf("  VertMerge N/A (Python harness does not expose post-merge stage)")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return d.SectionsDiffPct }); ok {
+		log.Logf("  %s", label("Sections ", s))
+	} else {
+		log.Logf("  Sections  N/A (Python harness does not expose post-merge stage)")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return d.TextLenDiffPct }); ok {
+		log.Logf("  %s", label("TextLen  ", s))
+	} else {
+		log.Logf("  TextLen   N/A")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return 100 - d.CharSim }); ok {
+		log.Logf("  %s", label("CharDiff  ", s))
+	} else {
+		log.Logf("  CharDiff   N/A")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return 100 - d.LcsSim }); ok {
+		log.Logf("  %s", label("LcsDiff   ", s))
+	} else {
+		log.Logf("  LcsDiff    N/A")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return 100 - d.RawCharSim }); ok {
+		log.Logf("  %s", label("RawCharDiff", s))
+	} else {
+		log.Logf("  RawCharDiff N/A")
+	}
+	if s, ok := computeStats(func(d Diff) float64 { return 100 - d.RawLcsSim }); ok {
+		log.Logf("  %s", label("RawLcsDiff ", s))
+	} else {
+		log.Logf("  RawLcsDiff  N/A")
+	}
+
+	if suppressedAny {
+		log.Logf("\nNOTE: 'N/A' in TM%%/VM%%/Sec%% means the Python harness could not")
+		log.Logf("expose post-merge pipeline stage counts (the production parser does")
+		log.Logf("not record boxes_text_merge / boxes_vertical_merge / sections), so its")
+		log.Logf("#@meta falls back to the raw final box count. Those columns are not")
+		log.Logf("comparable and were excluded from the summary statistics.")
+	}
 
 	// Auto-generate xlsx report with timestamp.
 	mode := filepath.Base(filepath.Dir(goTextDir)) // "ocr"
@@ -289,11 +378,15 @@ func WriteExcel(path string, diffs []Diff) error {
 		for col := 2; col <= 9; col++ {
 			cell := cellName(col, r)
 			v := vals[col-1]
-			f.SetCellValue(sheet, cell, v)
-			// Color: green <5, yellow 5-20, red >=20.
 			if col == 7 { // TabsD is a count, not percentage
+				f.SetCellValue(sheet, cell, v)
 				continue
 			}
+			if v < 0 { // N/A: leave the cell blank, no color.
+				continue
+			}
+			f.SetCellValue(sheet, cell, v)
+			// Color: green <5, yellow 5-20, red >=20.
 			abs := math.Abs(v)
 			switch {
 			case abs < 5:
@@ -645,4 +738,13 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// pctStr renders a diff-percentage for table output. Negative values encode
+// "N/A" (e.g. a Python stage metric that could not be reported).
+func pctStr(v float64) string {
+	if v < 0 {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.0f%%", v)
 }

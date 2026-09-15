@@ -1161,12 +1161,7 @@ func (e *Engine) executeTasksAsync(
 				return t.Func(ctx, convertedInput)
 			}
 
-			// Use task's retry policy or default
-			retryPolicy := t.RetryPolicy
-			if retryPolicy == nil {
-				defaultPolicy := types.DefaultRetryPolicy()
-				retryPolicy = &defaultPolicy
-			}
+			retryPolicy := e.resolveRetryPolicy(t)
 
 			// Execute with async pipeline
 			resultCh := asyncPipeline.ExecuteNode(ctx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
@@ -1239,13 +1234,7 @@ func (e *Engine) executeTask(
 	input = e.mapToStateSchema(input)
 
 	// Use RetryExecutor for retry logic
-	retryPolicy := task.RetryPolicy
-	if retryPolicy == nil {
-		defaultPolicy := types.DefaultRetryPolicy()
-		retryPolicy = &defaultPolicy
-	}
-
-	retryExecutor := NewRetryExecutor(retryPolicy)
+	retryExecutor := NewRetryExecutor(e.resolveRetryPolicy(task))
 
 	// Define the function to execute
 	executeFn := func(ctx context.Context) (any, error) {
@@ -1546,12 +1535,24 @@ func (e *Engine) getTriggers(node *types.Node) []string {
 	return node.Triggers
 }
 
+func (e *Engine) resolveRetryPolicy(task *Task) *types.RetryPolicy {
+	if task.RetryPolicy != nil {
+		return task.RetryPolicy
+	}
+	if e.retryPolicy != nil {
+		return e.retryPolicy
+	}
+	defaultPolicy := types.DefaultRetryPolicy()
+	return &defaultPolicy
+}
+
 func (e *Engine) createTask(node *types.Node, state any, channels []string, triggers []string) *Task {
 	task := &Task{
-		ID:       uuid.New().String(),
-		Name:     node.Name,
-		Channels: channels,
-		Triggers: make(map[string]struct{}),
+		ID:          uuid.New().String(),
+		Name:        node.Name,
+		Channels:    channels,
+		Triggers:    make(map[string]struct{}),
+		RetryPolicy: node.RetryPolicy,
 	}
 	if node.Function != nil {
 		task.Func = node.Function
@@ -1566,11 +1567,12 @@ func (e *Engine) createTask(node *types.Node, state any, channels []string, trig
 // This is similar to Python's prepare_next_tasks with for_execution=False.
 func (e *Engine) createTaskInfo(node *types.Node, state any, channels []string, triggers []string) *Task {
 	task := &Task{
-		ID:       uuid.New().String(),
-		Name:     node.Name,
-		Channels: channels,
-		Triggers: make(map[string]struct{}),
-		Func:     nil,
+		ID:          uuid.New().String(),
+		Name:        node.Name,
+		Channels:    channels,
+		Triggers:    make(map[string]struct{}),
+		RetryPolicy: node.RetryPolicy,
+		Func:        nil,
 	}
 	for _, trigger := range triggers {
 		task.Triggers[trigger] = struct{}{}

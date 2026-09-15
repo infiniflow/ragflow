@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
@@ -16,6 +17,32 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		valid   bool
+	}{
+		{name: "missing", payload: `{}`, valid: false},
+		{name: "empty", payload: `{"instances":[]}`, valid: false},
+		{name: "empty element", payload: `{"instances":[""]}`, valid: false},
+		{name: "instance", payload: `{"instances":["instance-a"]}`, valid: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req DropProviderInstanceRequest
+			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
+				t.Fatal(err)
+			}
+			err := binding.Validator.ValidateStruct(&req)
+			if (err == nil) != tt.valid {
+				t.Fatalf("validation error = %v, valid = %v", err, tt.valid)
+			}
+		})
+	}
+}
 
 func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

@@ -55,14 +55,14 @@ export function JsonPreviewSheet({
             </Button>
           </SheetTrigger>
         </TooltipTrigger>
-        <TooltipContent>{t('setting.jsonPreview')}</TooltipContent>
+        <TooltipContent>{t('knowledgeCompilation.jsonPreview')}</TooltipContent>
       </Tooltip>
       <SheetContent
         className="w-1/2 max-w-[700px] flex flex-col"
         onInteractOutside={(e) => e.preventDefault()}
       >
         <SheetHeader>
-          <SheetTitle>{t('setting.jsonPreview')}</SheetTitle>
+          <SheetTitle>{t('knowledgeCompilation.jsonPreview')}</SheetTitle>
         </SheetHeader>
         <div className="flex-1 min-h-0 mt-4">
           <JsonEditor
