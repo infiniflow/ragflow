@@ -14,8 +14,8 @@
 //  limitations under the License.
 //
 
-// Parser dispatch validates the requested output format, resolves the
-// parser backend, and returns the structured ParseWithResult payload.
+// Parser dispatch resolves the parser backend and returns the structured
+// ParseWithResult payload for component-boundary normalization.
 //
 // `parse_method` is carried through file metadata for downstream
 // consumers, while the actual backend work stays in
@@ -26,37 +26,15 @@ package component
 import (
 	"context"
 	"fmt"
-	"maps"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
-)
 
-// parserDispatchResult is the typed outcome of dispatchParse. The
-// component's Invoke translates it into the runtime output map.
-//
-// OutputFormat is the wire format the parser actually emitted. It
-// always matches setups[fileType].output_format on success; on a
-// format-mismatch failure (the whitelist rejects it) OutputFormat is
-// empty and Err is non-nil.
-//
-// File is the per-parser file metadata and may be nil.
-//
-// Payload holds exactly one populated field per the ParseResult
-// contract (see internal/parser/parser/parse_result.go).
-type parserDispatchResult struct {
-	OutputFormat string
-	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
-	File         map[string]any
-	JSON         []map[string]any
-	Markdown     string
-	Text         string
-	HTML         string
-	Warnings     []string
-	Err          error
-}
+	"go.uber.org/zap"
+)
 
 type parserSetupConfigurer interface {
 	ConfigureFromSetup(setup map[string]any)
@@ -82,90 +60,6 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 	cfg.ConfigureFromSetup(map[string]any(setup))
 }
 
-// resolveOutputFormat picks the wire format for this run. The
-// Python side asks the setup, then checks the value is in
-// allowed_output_format[fileType]. We mirror that exact sequence:
-//
-//  1. setups[fileType].output_format (or "" when absent),
-//  2. if absent and the family has an allowed_output_format entry,
-//     use the Python per-family default (mirrors ParserParam.__init__
-//     setups, e.g. "image" → "json", "pdf" → "json", "spreadsheet" →
-//     "html"), falling back to allowed[0] only when no explicit default
-//     is known,
-//  3. if absent and the family has no allowed_output_format entry,
-//     return "" (the component falls back to text-page mode
-//     without validating).
-//
-// The whitelist check returns "" + Err when the requested format is
-// not in the allowed set; this is the validation Python raises
-// via check_empty / check_valid_value, surfaced as an error so the
-// component short-circuits with _ERROR rather than emitting a
-// payload the downstream chunker cannot consume.
-//
-// Strict mode: explicit image:text is rejected by the whitelist.
-func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, allowed map[string][]string) (string, error) {
-	setup, ok := setups[family]
-	if !ok {
-		// Family not configured — text-page mode; no validation.
-		return "", nil
-	}
-	format, _ := setup["output_format"].(string)
-	allowedList, ok := allowed[family]
-	if !ok || len(allowedList) == 0 {
-		// No whitelist entry — accept what the setup asked for, or
-		// fall back to "text" for families without a whitelist.
-		if format == "" {
-			format = "text"
-		}
-		return format, nil
-	}
-	if format == "" {
-		// No explicit format: use the Python per-family default declared
-		// in ParserParam.__init__ / defaultSetups(). This is not always
-		// allowed[0] (e.g. spreadsheet default is "html" but allowed[0]
-		// is "json"; markdown default is "json" but allowed[0] is "text").
-		if def, ok := defaultOutputFormatForFamily(family); ok {
-			return def, nil
-		}
-		return allowedList[0], nil
-	}
-	for _, candidate := range allowedList {
-		if strings.EqualFold(candidate, format) {
-			return format, nil
-		}
-	}
-	return "", fmt.Errorf(
-		"parser: output_format %q for %q is not in allowed_output_format %v",
-		format, family, allowedList,
-	)
-}
-
-// defaultOutputFormatForFamily returns the per-family default
-// output_format used when setups[family] exists but output_format is
-// empty. For most families it is the value in defaultSetups()
-// (which mirrors rag/flow/parser/parser.py ParserParam.setups).
-// Two families diverge intentionally and are overridden here:
-//   - email: defaultSetups is "json" (Python), but dispatch defaults
-//     to "text" to match frontend InitialOutputFormatMap, EmailParser
-//     text fallback, and ingestion_pipeline_email.json.
-//   - audio: defaultSetups is "text" (Python), but dispatch defaults
-//     to "json" to match media_dispatch json fallback and Python
-//     whitelist [json] (audio:text would be rejected if validated).
-func defaultOutputFormatForFamily(family string) (string, bool) {
-	if family == "email" {
-		return "text", true
-	}
-	if family == "audio" {
-		return "json", true
-	}
-	if s, ok := defaultSetups()[family]; ok {
-		if v, ok := s["output_format"].(string); ok && v != "" {
-			return v, true
-		}
-	}
-	return "", false
-}
-
 // dispatchParse resolves the parser for the given fileType and invokes
 // its structured ParseWithResult contract.
 //
@@ -182,12 +76,12 @@ func defaultOutputFormatForFamily(family string) (string, bool) {
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
 		// result here so the caller routes to that path.
-		return parserDispatchResult{}
+		return parser.ParseResult{}
 	}
 
 	var parseMethod string
@@ -199,13 +93,13 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 
 	p, err := parser.GetParser(fileType)
 	if err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
+		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
+		return parser.ParseResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.
@@ -215,15 +109,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		}
 		res.File["parse_method"] = parseMethod
 	}
-	return parserDispatchResult{
-		OutputFormat: res.OutputFormat,
-		File:         res.File,
-		JSON:         res.JSON,
-		Markdown:     res.Markdown,
-		Text:         res.Text,
-		HTML:         res.HTML,
-		Warnings:     res.Warnings,
-	}
+	return res
 }
 
 // fileTypeFromInputs derives the parser-library extension form
@@ -238,9 +124,9 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 //     or the python family name ("markdown"); both are normalized
 //     to the extension form via the pythonFamilyName / familyToExt
 //     lookup tables below.
-//  2. inputs["file"].name — fall back to the filename so a caller
-//     that only supplies the path is still routed correctly.
-//  3. inputs["name"] — last-resort filename.
+//  2. inputs["name"] — the resolved source filename.
+//  3. inputs["file"].name — fallback for callers that only supply a
+//     file descriptor.
 //  4. utility.FileTypeOTHER — text-page mode.
 //
 // The function never errors; unknown / absent filenames degrade to
@@ -270,13 +156,13 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 			return ft
 		}
 	}
+	if name, ok := inputs["name"].(string); ok && name != "" {
+		return utility.GetFileType(name)
+	}
 	if m, ok := inputs["file"].(map[string]any); ok {
 		if name, ok := m["name"].(string); ok && name != "" {
 			return utility.GetFileType(name)
 		}
-	}
-	if name, ok := inputs["name"].(string); ok && name != "" {
-		return utility.GetFileType(name)
 	}
 	return utility.FileTypeOTHER
 }
@@ -321,7 +207,7 @@ func familyToExt(family string) utility.FileType {
 }
 
 // pythonFamilyName normalises a free-form file-type hint to the
-// python family identifier used by schema.ParserParam.Setups.
+// Python family identifier used by ParserComponent setups.
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
 	switch raw {
@@ -374,134 +260,77 @@ func ParserFileFamily(ext string) string {
 	return pythonFamilyName(ext)
 }
 
-// jsonItemsToPages reshapes a parsed JSON payload into the
-// schema.Page layout the chunker side consumes. Each JSON item
-// becomes one page carrying `text`, `doc_type_kwd`, and any
-// ck_type / image / positions fields the parser attached. The page
-// number is assigned sequentially so the deterministic-merge
-// contract in plan §8 R8 holds.
-func jsonItemsToPages(items []map[string]any) []schema.Page {
-	out := make([]schema.Page, 0, len(items))
-	for i, it := range items {
-		page := schema.Page{}
-		maps.Copy(page, it)
-		// page_number anchors the deterministic-merge sort; the
-		// parser-supplied number (if any) takes precedence so
-		// PDF / DOCX outputs that already carry `page_number`
-		// survive the round-trip.
-		if _, ok := page["page_number"]; !ok {
-			page["page_number"] = i
-		}
-		if _, ok := page["doc_type_kwd"]; !ok {
-			page["doc_type_kwd"] = "text"
-		}
-		out = append(out, page)
-	}
-	return out
-}
-
-// pagesFromDispatch extracts the per-page bytes from a parsed
-// schema.Page slice so the page builder can reshape them into the
-// schema.Page layout the chunker consumes. Pages without a `text`
-// field emit an empty buffer (treated as a zero-length page).
-func pagesFromDispatch(pages []schema.Page) [][]byte {
-	out := make([][]byte, 0, len(pages))
-	for _, p := range pages {
-		var buf []byte
-		if s, ok := p["text"].(string); ok {
-			buf = []byte(s)
-		}
-		out = append(out, buf)
-	}
-	return out
-}
-
 // buildParserOutputs assembles the runtime output map from the
-// merged pages slice AND the dispatch result (when the dispatch
-// succeeded). The output shape:
+// dispatch result (when the dispatch succeeded) or raw binary fallback.
+// The output shape:
 //
-//   - pages          []schema.Page — sorted by PageNumber
 //   - name           string        — from the upstream file/document name
 //     (or doc_id when no filename is available)
-//   - output_format  string        — the dispatch's OutputFormat,
-//     or "text" for the raw-text
-//     fallback
-//   - json | Markdown | text | html — the dispatched payload on
-//     the matching family key (only
-//     populated on a structured
-//     dispatch)
+//   - output_format  string        — always "json"
+//   - json           []map[string]any — normalized parser items
 //   - file           map[string]any — the parser-enriched file
 //     metadata, when present
-//
-// This mirrors the Python Parser component's `set_output()` calls
-// at rag/flow/parser/parser.py:_invoke — the downstream chunker
-// / tokenizer / extractor components read the matching family
-// key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
+func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name string, rawBinary []byte, lang string) map[string]any {
 	out := map[string]any{
-		"pages": toAnyPages(parsed),
-		"name":  name,
+		"name": name,
 	}
 	if lang != "" {
 		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
-		out["output_format"] = dispatched.OutputFormat
-		switch dispatched.OutputFormat {
-		case "json":
-			out["json"] = dispatched.JSON
-		case "markdown":
-			out["markdown"] = dispatched.Markdown
-		case "html":
-			out["html"] = dispatched.HTML
-		case "text":
-			out["text"] = dispatched.Text
-		}
+		out["output_format"] = "json"
+		out["json"] = normalizeParserJSON(ctx, name, dispatched)
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
 		}
 		return out
 	}
-	// Raw-text fallback path: emit output_format = "text" so a
-	// chunker branching on the format key still sees a sane value.
-	out["output_format"] = "text"
-	_ = fileType // reserved for a future "raw_text per-family" extension
+	// Raw-text fallback path: emit one JSON item per page.
+	rawPages := splitIntoPages(rawBinary)
+	if len(rawPages) == 0 {
+		rawPages = [][]byte{nil}
+	}
+	fallbackItems := make([]map[string]any, 0, len(rawPages))
+	for _, pageBytes := range rawPages {
+		txt := string(pageBytes)
+		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
+	}
+	out["output_format"] = "json"
+	out["json"] = fallbackItems
 	return out
 }
 
-func hydrateEmptyDispatchPayload(dispatched parserDispatchResult, binary []byte) parserDispatchResult {
-	if dispatched.Err != nil || len(binary) == 0 {
-		return dispatched
+func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []map[string]any {
+	if len(dispatched.JSON) > 0 {
+		return dispatched.JSON
 	}
-	switch dispatched.OutputFormat {
-	case "json":
-		if len(dispatched.JSON) == 0 {
-			dispatched.JSON = pagesToJSONItems(splitIntoPages(binary))
-		}
-	case "text":
-		if dispatched.Text == "" {
-			dispatched.Text = string(binary)
-		}
+	if dispatched.Markdown != "" {
+		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
-	return dispatched
+	if dispatched.HTML != "" {
+		res := parser.NewHTMLParser().ParseWithResult(ctx, filename, []byte(dispatched.HTML))
+		if res.Err == nil && len(res.JSON) > 0 {
+			return res.JSON
+		}
+		if res.Err != nil {
+			warnParserNormalizationFallback(filename, "html", res.Err)
+		} else {
+			warnParserNormalizationFallback(filename, "html", fmt.Errorf("parser returned no JSON items"))
+		}
+		return []map[string]any{parser.NewTextJSONItem(dispatched.HTML)}
+	}
+	if dispatched.Text != "" {
+		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
+	}
+	return []map[string]any{}
 }
 
-func pagesToJSONItems(pages [][]byte) []map[string]any {
-	if len(pages) == 0 {
-		pages = splitIntoPages(nil)
-	}
-	out := make([]map[string]any, 0, len(pages))
-	for _, page := range pages {
-		text := string(page)
-		if text == "" {
-			continue
-		}
-		out = append(out, map[string]any{
-			"text":         text,
-			"doc_type_kwd": "text",
-		})
-	}
-	return out
+func warnParserNormalizationFallback(filename, source string, err error) {
+	common.Warn("parser normalization fell back to text",
+		zap.String("filename", filename),
+		zap.String("normalized_from", source),
+		zap.Error(err),
+	)
 }
 
 func parserInputName(inputs map[string]any, docID string) string {

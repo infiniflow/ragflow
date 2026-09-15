@@ -29,7 +29,7 @@
 // minimal: a single font, a single style, and a flat list of
 // paragraphs. Tables / images / lists are future polish items; the
 // test suite (see docx_writer_test.go) verifies the ZIP magic, the
-// embedded document.xml content, and the XML-escape contract.
+// embedded document.xml content, and the XML-escape
 package io
 
 import (

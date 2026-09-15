@@ -47,7 +47,7 @@ function FilePreview({ file }: FilePreviewProps) {
   }
 
   return (
-    <FileText className="size-10 text-muted-foreground" aria-hidden="true" />
+    <FileText strokeWidth={1} className="size-10 text-muted-foreground" aria-hidden="true" />
   );
 }
 

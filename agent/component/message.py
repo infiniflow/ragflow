@@ -42,6 +42,8 @@ from common import settings
 
 from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
+_logger = logging.getLogger(__name__)
+
 
 def _valid_message_content(content: Any) -> list[str]:
     if not isinstance(content, list):
@@ -233,6 +235,13 @@ class Message(ComponentBase):
                         all_content += t
                         cnt += t
                         yield t
+                if "@" in exp:
+                    source_component_id = exp.split("@", 1)[0]
+                    source_component = self._canvas.get_component_obj(source_component_id)
+                    if source_error := source_component.error():
+                        _logger.warning("Message stream stopped after source component error: %s", source_component_id)
+                        self.set_output("_ERROR", source_error)
+                        return
                 self.set_input_value(exp, cnt)
                 continue
             elif inspect.isawaitable(v):

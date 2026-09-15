@@ -202,6 +202,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                           }}
                           maxFileCount={1}
                           hideDropzoneOnMaxFileCount
+                          showFolderTab={false}
                           title={t('chunk.imageUploaderTitle')}
                           description={<></>}
                         />
