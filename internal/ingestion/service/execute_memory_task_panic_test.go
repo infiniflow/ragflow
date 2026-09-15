@@ -24,7 +24,7 @@ import (
 // so it does not depend on a live DB or a real MemoryMessageService. The contract
 // asserted:
 //   - executeMemoryTask returns normally (no panic propagates to the caller/worker)
-//   - the MQ message is Nacked so the broker redelivers it (never silently dropped)
+//   - the MQ message is left unsettled for durable recovery
 func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	_ = testutil.SetupTestDB(t) // ensure DB helpers are initialized; not exercised here
 
@@ -34,15 +34,12 @@ func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
 	// Inject a panicking memory runner through the same seam used in production
 	// (defaultRunMemoryTask calls memorySvc.HandleSaveToMemoryTask).
-	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
+	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
 		panic("simulated memory extraction panic")
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-panic-1", TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-1", map[string]any{
-		"memory_id": "mem-p", "source_id": 1,
-		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
-	}, handle)
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-1", handle)
 
 	// If the panic is not recovered, this call itself will panic and the test
 	// fails. We also guard with a recover here only to convert a propagated
@@ -56,8 +53,8 @@ func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 		ingestor.executeMemoryTask(context.Background(), taskCtx)
 	}()
 
-	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
-		t.Fatalf("panicking memory task: expected 0 Ack/1 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	if handle.nacks.Load() != 0 || handle.acks.Load() != 0 {
+		t.Fatalf("panicking memory task: expected unsettled handle, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 
@@ -73,7 +70,7 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
-	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
+	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
 		panic("simulated memory extraction panic")
 	}
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
@@ -83,7 +80,6 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 	memHandle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "mem-panic-2",
 		TaskType: common.TaskTypeMemory,
-		Payload:  []byte(`{"memory_id":"mem-p2","source_id":1,"message_dict":{"user_id":"u","agent_id":"a","session_id":"s"}}`),
 	}}
 
 	ingestor.handleAndExecute(memHandle)
@@ -91,8 +87,8 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 	docHandle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
 	ingestor.handleAndExecute(docHandle)
 
-	if memHandle.nacks.Load() != 1 || memHandle.acks.Load() != 0 {
-		t.Fatalf("poison memory task: expected 0 Ack/1 Nack, got acks=%d nacks=%d", memHandle.acks.Load(), memHandle.nacks.Load())
+	if memHandle.nacks.Load() != 0 || memHandle.acks.Load() != 0 {
+		t.Fatalf("poison memory task: expected unsettled handle, got acks=%d nacks=%d", memHandle.acks.Load(), memHandle.nacks.Load())
 	}
 	if docHandle.acks.Load() != 1 || docHandle.nacks.Load() != 0 {
 		t.Fatalf("document task after memory panic: expected 1 Ack/0 Nack (worker survived), got acks=%d nacks=%d", docHandle.acks.Load(), docHandle.nacks.Load())

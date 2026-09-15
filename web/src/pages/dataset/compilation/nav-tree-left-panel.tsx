@@ -8,6 +8,7 @@ import {
   DatasetNavNode,
 } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { FileText, Folder, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,7 @@ function NavNodeDeleteAction({
   onDelete,
 }: NavNodeDeleteActionProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const handleTriggerClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -40,6 +42,9 @@ function NavNodeDeleteAction({
   const handleConfirmDelete = useCallback(() => {
     onDelete(name, parentName);
   }, [name, parentName, onDelete]);
+
+  // The Go backend does not support deleting nav nodes; don't mount the action.
+  if (isGo) return null;
 
   return (
     <ConfirmDeleteDialog
@@ -99,6 +104,7 @@ export function NavTreeLeftPanel({
   onDeleteNode,
 }: NavTreeLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const renderNavActions = useCallback(
     (node: DatasetNavNode, parentName: string | null) => (
@@ -144,7 +150,7 @@ export function NavTreeLeftPanel({
         <span className="text-sm font-medium text-text-primary">
           {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
-        {treeData.length > 0 && (
+        {!isGo && treeData.length > 0 && (
           <ConfirmDeleteDialog
             title={t('knowledgeCompilation.navDeleteAllTitle')}
             content={{
