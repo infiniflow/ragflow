@@ -168,9 +168,19 @@ type RAGTools struct {
 	// Finalize runs the terminal composition (Python _compose_answer_from_evidence).
 	// It is wired by Rag so the graph can invoke it FROM INSIDE its last node —
 	// Python's agentic and low graphs both end in a formalize_answer node that
-	// composes and streams the answer. Nil means "the caller
-	// composes afterwards", which is only correct for the naive path.
-	Finalize func(ctx context.Context)
+	// composes and streams the answer. The graph forwards the node's state
+	// values the compose prompt reads: partialAnswer and emptyResult (Python
+	// agentic_rag_graph.py:1397-1400 / orchestrator/direct.py) plus question —
+	// the graph state's FORMALIZED question (Python :834
+	// `question = state.get("question")`), which the formalize_question node
+	// wrote. The compose prompt must be built from the formalized question,
+	// not the outer tool argument: the graph researched the formalized
+	// multi-hop question, so composing from the compressed outer argument
+	// collapses the final answer to the first completed sub-answer. Empty
+	// question means "the caller composes afterwards" (post-graph fallback) —
+	// composeFinalAnswer then falls back to req.Question. Nil Finalize means
+	// the caller composes afterwards, which is only correct for the naive path.
+	Finalize func(ctx context.Context, partialAnswer, emptyResult bool, question string)
 	// Messages is the conversation history used by Formalize to resolve
 	// pronouns/ellipses into a standalone question. The agentic and low graphs
 	// formalize it as their first node (Python build_agentic_graph and
@@ -562,6 +572,12 @@ type RunResponse struct {
 	// Kbinfos carries the full accumulated state (including the lossless
 	// memory store) for callers that need more than the summary above.
 	Kbinfos *harness.Kbinfos
+	// SlotCitations maps a slot-table id ("0", "1", ...) to the evidence
+	// chunk ids that filled the slot. The chat pipeline's citation decoration
+	// uses it to rewrite leaked "[ID:Slot N]" markers into citations of the
+	// chunk the slot was filled from (those markers index the internal slot
+	// table — nothing the user can open).
+	SlotCitations map[string][]string
 }
 
 // AnswerSink forwards a partially produced answer while the model is still
@@ -854,7 +870,7 @@ type RAGCache struct {
 	mu          sync.Mutex
 	entries     map[string]ragCacheEntry
 	lastVerdict string
-	// ConsecutiveUnanswerable mirrors Python RAGTools._consecutive_unanswerable
+	// consecutiveUnanswerable mirrors Python RAGTools._consecutive_unanswerable
 	// (agentic_rag.py:818): how many consecutive rag() calls ended without a
 	// satisfying verdict. After two in a row, RAGTools.rag appends a
 	// "[Research status] … STOP calling rag again" note to the answer so the
@@ -862,7 +878,36 @@ type RAGCache struct {
 	// (rebuilt per turn), so it counts consecutive insufficient rounds within a
 	// single request; it is not persisted across turns unless a caller injects a
 	// long-lived *RAGCache via RAGTools.Cache.
-	ConsecutiveUnanswerable int
+	//
+	// Private and guarded by mu: a turn's concurrent rag() calls share ONE
+	// *RAGCache (Rag builds/stores it on deps.Cache before the outer react
+	// loop), so an unsynchronized counter would race.
+	consecutiveUnanswerable int
+}
+
+// NoteUnanswerable records one research round's verdict on the shared cache.
+func (c *RAGCache) NoteUnanswerable(verdict string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if verdict == VerdictSufficient {
+		c.consecutiveUnanswerable = 0
+	} else {
+		c.consecutiveUnanswerable++
+	}
+}
+
+// ConsecutiveUnanswerable reports how many consecutive rag() rounds ended
+// without a satisfying verdict.
+func (c *RAGCache) ConsecutiveUnanswerable() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.consecutiveUnanswerable
 }
 
 type ragCacheEntry struct {
@@ -921,17 +966,18 @@ func (c *RAGCache) noteVerdict(verdict string) {
 
 // researchStatusTrailer mirrors Python rag (:902-929): for every non-SUFFICIENT
 // verdict it returns the trailing sentence folded into the "[Research status]"
-// note. After two consecutive unsatisfying rag() calls (ConsecutiveUnanswerable
-// >= 2 on the shared *RAGCache) it tells the outer agent to STOP calling rag
-// again; otherwise it invites a focused re-ask. It returns "" when there is
-// nothing to annotate — a SUFFICIENT verdict, an empty answer, or no SCA
-// feedback.
+// note — worded exactly as agentic_rag.py:927/:929. After two consecutive
+// unsatisfying rag() calls (ConsecutiveUnanswerable >= 2 on the shared
+// *RAGCache, Python _consecutive_unanswerable >= _GUA=2) it tells the outer
+// agent to STOP calling rag again; otherwise it invites a focused re-ask. It
+// returns "" when there is nothing to annotate — a SUFFICIENT verdict, an empty
+// answer, or no SCA feedback.
 func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
 	if resp.Verdict != VerdictInsufficient || resp.SCAFeedback == "" || resp.Answer == "" {
 		return ""
 	}
-	if cache != nil && cache.ConsecutiveUnanswerable >= 2 {
-		return " STOP calling rag again: the same gaps remain."
+	if cache != nil && cache.ConsecutiveUnanswerable() >= 2 {
+		return fmt.Sprintf(" STOP calling rag again: %d consecutive research rounds returned insufficient evidence. The sources likely lack the required data. Give your best answer from the evidence already gathered; do not re-run rag.", cache.ConsecutiveUnanswerable())
 	}
 	return " If these gaps are material, call rag again with a question focused on them."
 }
@@ -1233,12 +1279,12 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// which Python composes under naiveAnswerSystem instead) still gets an
 	// answer here.
 	composed := false
-	compose := func(ctx context.Context) {
+	compose := func(ctx context.Context, partialAnswer, emptyResult bool, question string) {
 		if composed {
 			return
 		}
 		composed = true
-		composeFinalAnswer(ctx, deps, req, kb, resp, logger)
+		composeFinalAnswer(ctx, deps, req, kb, resp, logger, partialAnswer, emptyResult, question)
 	}
 	deps.Finalize = compose
 
@@ -1261,7 +1307,12 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// evidence, so composing here would replace that with the
 	// FinalAnswerSystem / kb_prompt answer.
 	if spec.Label != "naive" {
-		compose(ctx)
+		// A run that never reached the graph's last node produced neither a
+		// partial answer nor empty-result state flags (Python's fallback
+		// compose reads the same defaults: no partial preamble, no-evidence
+		// hedge only when the pool is actually empty). The question is empty —
+		// the graph never formalized, so compose falls back to req.Question.
+		compose(ctx, false, false, "")
 	}
 
 	// Python rag (:902-929) appends a "[Research status]" note for EVERY
@@ -1272,7 +1323,9 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// the SCA verdict was known. Skip the naive/sufficient paths: an empty
 	// answer or a SUFFICIENT verdict has nothing to annotate.
 	if t := researchStatusTrailer(deps.Cache, resp); t != "" {
-		resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + t
+		// Python: f"...[Research status] {status_hint}{...}. {trailer}" — the
+		// period closes the hint clause before the trailer sentence.
+		resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
 	}
 
 	// Cache the freshly produced answer for later near-identical questions, and
@@ -1291,9 +1344,28 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 // When no model is configured this is a no-op: the caller still receives the
 // evidence and can answer with it, matching Python's behaviour of returning an
 // empty kbinfos rather than failing.
-func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunRequest, kb *harness.Kbinfos, resp *RunResponse, logger *log.Logger) {
+//
+// partialAnswer / emptyResult are the compose prompt inputs Python reads off
+// the graph state (_compose_answer_from_evidence: `partial_answer` drives the
+// partial-information preamble, `empty_result` is the always-true-in-graph
+// term of `no_evidence = abstain or empty_result or not chunks`). question is
+// the graph state's FORMALIZED question the last node forwarded (Python :834
+// `question = state.get("question")`); empty falls back to req.Question —
+// only the post-graph fallback composes after a run that never formalized.
+// The graph's Finalize forwards the formalize_answer node's own state values;
+// the Go-only post-graph fallback passes the response flags instead.
+func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunRequest, kb *harness.Kbinfos, resp *RunResponse, logger *log.Logger, partialAnswer, emptyResult bool, question string) {
 	if deps.Model == nil {
 		return
+	}
+	// Python composes from the graph state's formalized question
+	// (agentic_rag_graph.py:834): the graph researched the full multi-hop
+	// question, so the compose prompt must carry it — not the outer tool
+	// argument, which compresses multi-hop questions to their first hop and
+	// collapses the final answer to the first completed sub-answer.
+	composeQuestion := question
+	if composeQuestion == "" {
+		composeQuestion = req.Question
 	}
 	// Python tags the terminal node @in_phase("finalize")
 	// (formalize_answer); without it every call made here is
@@ -1322,7 +1394,7 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 	if deps.AnswerSink != nil {
 		if streamer, ok := deps.Model.(harness.StreamingSessionModel); ok {
 			deps.AnswerSink.reset()
-			streamed, err := ComposeAnswerStream(ctx, adeps, streamer, kb, req.Question, resp.Partial, func(delta string, isThink bool) error {
+			streamed, err := ComposeAnswerStream(ctx, adeps, streamer, kb, composeQuestion, partialAnswer, emptyResult, func(delta string, isThink bool) error {
 				deps.AnswerSink.deliver(delta, isThink)
 				return nil
 			})
@@ -1343,12 +1415,15 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req harness.RunReque
 	// by the wrapped invoker above (Python relies on @in_phase alone).
 	// empty_result is Python's third no-evidence term (_compose_answer_from_evidence) — the loop's own
 	// "nothing was found" signal, distinct from abstain and from an empty pool.
-	res := ComposeAnswerWith(ctx, adeps, kb, req.Question, resp.Partial, false, resp.EmptyResult)
+	res := ComposeAnswerWith(ctx, adeps, kb, composeQuestion, partialAnswer, false, emptyResult)
 	if deps.Stats != nil && res.Failed {
 		deps.Stats.RecordFailed(harness.PhaseFinalize)
 	}
 	resp.Answer = res.Answer
-	if res.Partial {
+	if res.Partial || partialAnswer {
+		// Reflect the graph state's partial flag back on the response even when
+		// the composed text itself predates the flag (Python reads
+		// partial_answer straight from the compose-time state).
 		resp.Partial = true
 	}
 	if deps.AnswerSink != nil {
@@ -1650,11 +1725,27 @@ func runOuterReact(ctx context.Context, deps RAGTools, req harness.RunRequest, l
 	answer, _, err := outer.ChatWithTools(ctx, p.system, p.history, &models.ChatConfig{})
 	if err != nil {
 		logger.Printf("[Agentic RAG] outer react failed: %v; falling back to direct graph", err)
-		// Fall back to the inner graph directly so the user still gets an answer.
+		// Fall back to the inner graph directly so the user still gets an
+		// answer. The graph composes inside its last node with the FORMALIZED
+		// question (Python formalize_answer reads state["question"]); the
+		// guarded direct call below only fires when the graph never composed.
+		composed := false
+		deps.Finalize = func(fctx context.Context, partial, empty bool, question string) {
+			if composed {
+				return
+			}
+			composed = true
+			composeFinalAnswer(fctx, deps, req, p.kb, p.resp, logger, partial, empty, question)
+		}
 		RunAgenticRAG(ctx, deps, req, p.sd, p.kb, p.resp, logger, p.spec)
-		composeFinalAnswer(ctx, deps, req, p.kb, p.resp, logger)
+		if !composed {
+			composeFinalAnswer(ctx, deps, req, p.kb, p.resp, logger, p.resp.Partial, true, "")
+		}
 		return p.resp
 	}
+	// The fold returned the LOWEST-INDEX terminal rag call's answer: keep that
+	// call's evidence so the answer's [ID:n] markers line up with the chunks.
+	session.selectEvidence(answer)
 	p.resp.Answer = answer
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
@@ -1705,8 +1796,21 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	if err != nil {
 		logger.Printf("[Agentic RAG] outer react stream failed: %v; falling back to direct graph", err)
 		// Fall back with the caller's own sink so the answer still streams out.
+		// Same guarded compose as runOuterReact: the graph composes inside its
+		// last node with the FORMALIZED question; the direct call only fires
+		// when the graph never reached it.
+		composed := false
+		deps.Finalize = func(fctx context.Context, partial, empty bool, question string) {
+			if composed {
+				return
+			}
+			composed = true
+			composeFinalAnswer(fctx, deps, req, p.kb, p.resp, logger, partial, empty, question)
+		}
 		RunAgenticRAG(ctx, deps, req, p.sd, p.kb, p.resp, logger, p.spec)
-		composeFinalAnswer(ctx, deps, req, p.kb, p.resp, logger)
+		if !composed {
+			composeFinalAnswer(ctx, deps, req, p.kb, p.resp, logger, p.resp.Partial, true, "")
+		}
 		return p.resp
 	}
 	// A tool-less reply is the answer (Python rag_agent returns the model's
@@ -1718,6 +1822,9 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req harness.RunRequ
 	if p.resp.Answer == "" && !mux.terminalFired {
 		p.resp.Answer = strings.TrimSpace(mux.outerText.String())
 	}
+	// Keep only the evidence of the call that owns the answer (selectEvidence
+	// no-ops when the answer came from the outer model instead of a rag call).
+	session.selectEvidence(p.resp.Answer)
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
@@ -1737,50 +1844,268 @@ type outerReactSession struct {
 	// mux is set only on the streaming path; it merges the inner run's output
 	// into the caller's sink.
 	mux *outerStreamMux
+	// mu guards the per-call result merge (publish) and the recorded per-call
+	// outcomes (calls): appendToolResults invokes this session's tool calls
+	// concurrently.
+	mu sync.Mutex
+	// calls records each rag call's answer + evidence pool in completion order so
+	// selectEvidence can match the terminal fold's winning answer back to its own
+	// pool. Guarded by mu.
+	calls []ragCallResult
+
+	// flightMu guards inflight, the single-flight registry for CONCURRENT
+	// IDENTICAL rag calls.
+	flightMu sync.Mutex
+	// inflight maps the rag question argument to its in-progress flight.
+	// Guarded by flightMu.
+	inflight map[string]*ragFlight
+}
+
+// ragFlight is ONE in-progress rag execution shared by every concurrent
+// identical tool call. Go-only robustness (Python has no single-flight): the
+// outer model sometimes emits the SAME rag call 2-3 times in one round
+// (observed with MiniMax-M3 in frame_benchmark 20260912_091520 — two graph
+// runs started at the same millisecond, three planner runs for one question),
+// and both Python (asyncio.gather, chat_model.py:682) and Go
+// (models.appendToolResults) execute them all concurrently while the terminal
+// fold keeps only the FIRST result. The duplicates each burn a full graph run
+// (double provider load → the SCA deadline overruns in the same log) and
+// their — sometimes better — answers are discarded. The first caller executes
+// and publishes; the rest block on done and return the same answer.
+type ragFlight struct {
+	done   chan struct{}
+	answer string
+}
+
+// beginRagFlight registers the caller as the OWNER of question's execution, or
+// returns the existing flight to wait on (owner=nil, wait!=nil). The key is
+// the literal question argument — Python's own cache key
+// (agentic_rag.py:889); near-identical NON-identical re-asks stay on the
+// RAGCache similarity path (Rag's Lookup), exactly as in Python.
+func (s *outerReactSession) beginRagFlight(question string) (owner, wait *ragFlight) {
+	s.flightMu.Lock()
+	defer s.flightMu.Unlock()
+	if existing, ok := s.inflight[question]; ok {
+		return nil, existing
+	}
+	flight := &ragFlight{done: make(chan struct{})}
+	if s.inflight == nil {
+		s.inflight = make(map[string]*ragFlight)
+	}
+	s.inflight[question] = flight
+	return flight, nil
+}
+
+// endRagFlight removes the flight and releases its waiters. The answer MUST be
+// stored on the flight before endRagFlight runs: closing done happens-before
+// every waiter's receive, so their subsequent read of answer sees the write
+// (Go memory model, channel close).
+func (s *outerReactSession) endRagFlight(question string, flight *ragFlight) {
+	s.flightMu.Lock()
+	delete(s.inflight, question)
+	s.flightMu.Unlock()
+	close(flight.done)
 }
 
 // ToolCall routes the two outer tools to their Go implementations.
+//
+// A round's tool calls arrive CONCURRENTLY — models.appendToolResults runs one
+// goroutine per call — exactly as Python gathers them (asyncio.gather over the
+// round's tool_calls, chat_model.py:670/:2555). Each rag call therefore runs on
+// its own request/evidence/response and publishes the outcome under mu; sharing
+// the session's would let two calls mix questions, evidence and answers.
 func (s *outerReactSession) ToolCall(name string, arguments map[string]interface{}) (string, error) {
 	switch name {
 	case "rag":
+		// Work on a COPY of the request: this call must not rewrite the
+		// session's question/images, which a concurrent call is reading.
+		req := s.req
 		if q, ok := arguments["question"].(string); ok && q != "" {
-			s.req.Question = q
+			req.Question = q
+		}
+		// Python agentic_rag.py:865 — prefer the user's ORIGINAL, complete
+		// question over the outer model's rewritten `question` argument when
+		// both clearly describe the same turn. The outer rewrite often drops
+		// the final target of a multi-hop question, and no later stage can
+		// recover a deleted answer-attribute. This is the Python defense line's
+		// position: inside the `rag` tool itself, i.e. per outer tool call.
+		if effective := resolveEffectiveQuestion(req.Question, s.deps.OriginalQuestion); effective != req.Question {
+			s.logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
+				trunc(s.deps.OriginalQuestion, 80), trunc(req.Question, 80))
+			req.Question = effective
 		}
 		// Python's inner _compose_answer_from_evidence is text-only: the outer
 		// model already saw the images via multimodal history, and the rephrased
 		// question carries no images. Drop the original images so the inner
 		// compose model (ComposeAnswerWith via composeFinalAnswer) does not
 		// receive them — matching Python's inner compose.
-		s.req.Images = nil
+		req.Images = nil
+
+		// Single-flight (see ragFlight): the FIRST caller owns the execution;
+		// identical concurrent calls block until it finishes and return the
+		// same answer instead of re-running the whole graph.
+		flight, wait := s.beginRagFlight(req.Question)
+		if wait != nil {
+			<-wait.done
+			return wait.answer, nil
+		}
+		defer s.endRagFlight(req.Question, flight)
+
+		// Per-call evidence, response and the projections that point at them:
+		// Python gives every rag() invocation its own graph state and shares only
+		// the tools object (agentic_rag.py:877 run_agentic_rag(self, messages)).
+		kb := &harness.Kbinfos{}
+		resp := &RunResponse{Mode: s.spec, Kbinfos: kb}
+		sd := s.sd
+		sd.KB = kb
+		inner := s.deps
+		inner.KB = kb
+
+		// Python composes INSIDE the graph with the formalize_answer state
+		// (partial_answer from the node, empty_result always true there, and
+		// question = state["question"], the FORMALIZED multi-hop question —
+		// agentic_rag_graph.py:834). Wire the per-call Finalize so the graph's
+		// last node composes itself; the guarded direct call below only fires
+		// when the graph never reached that node.
+		composed := false
+		inner.Finalize = func(fctx context.Context, partial, empty bool, question string) {
+			if composed {
+				return
+			}
+			composed = true
+			composeFinalAnswer(fctx, inner, req, kb, resp, s.logger, partial, empty, question)
+		}
+
 		if s.mux != nil {
 			// Streaming: s.deps already routes the inner research log and the
 			// composed answer into the caller's sink, so return "" — the
 			// terminal short-circuit stops the loop and sendTerminal stays
 			// silent, so the answer is not streamed twice.
 			s.mux.markTerminal()
-			RunAgenticRAG(s.ctx, s.deps, s.req, s.sd, s.kb, s.resp, s.logger, s.spec)
-			composeFinalAnswer(s.ctx, s.deps, s.req, s.kb, s.resp, s.logger)
+		} else {
+			// Non-streaming: disable the sink so the answer is not emitted
+			// twice, and hand this call's own answer back for the terminal
+			// short-circuit.
+			inner.AnswerSink = nil
+		}
+		RunAgenticRAG(s.ctx, inner, req, sd, kb, resp, s.logger, s.spec)
+		if !composed {
+			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger, resp.Partial, true, "")
+		}
+		// Python rag (:902-929) appends a "[Research status]" note to the TOOL
+		// RESULT for every non-SUFFICIENT verdict, so the outer model can
+		// decide whether to re-run `rag` from the reported gaps. It does NOT
+		// change the streamed answer (the compose already streamed); after two
+		// consecutive unsatisfying rounds it tells the outer agent to STOP.
+		if t := researchStatusTrailer(s.deps.Cache, resp); t != "" {
+			// Same fold as Rag's direct path: the period closes the hint
+			// clause before the trailer sentence.
+			resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
+		}
+		s.publish(resp, kb)
+		if s.mux != nil {
+			// The answer already streamed through the shared mux; waiters
+			// return "" too — sendTerminal's empty guard keeps the fold from
+			// re-streaming it (markTerminal already fired on this call).
+			flight.answer = ""
 			return "", nil
 		}
-		// Non-streaming: disable the sink so the answer is not emitted twice,
-		// and hand it back for the terminal short-circuit to return as final.
-		inner := s.deps
-		inner.AnswerSink = nil
-		RunAgenticRAG(s.ctx, inner, s.req, s.sd, s.kb, s.resp, s.logger, s.spec)
-		composeFinalAnswer(s.ctx, inner, s.req, s.kb, s.resp, s.logger)
-		return s.resp.Answer, nil
+		// Waiters replay this exact answer; publish already ran once above, so
+		// the evidence pool is not unioned twice and selectEvidence keeps a
+		// single unambiguous call record.
+		flight.answer = resp.Answer
+		return resp.Answer, nil
 	case "summarize_document":
 		docID, _ := arguments["doc_id"].(string)
 		if docID == "" {
 			return "Error: missing doc_id argument.", nil
 		}
-		blocks := harness.SummarizeDocument(s.ctx, s.sd, docID, s.deps.EvidenceMaxTokens)
+		// Python budgets the document read and its kb_prompt at
+		// chat_mdl.max_length — the FULL window, not a fixed cap
+		// (agentic_rag.py:952). No citation header: Python's dialog path
+		// constructs RAGTools with do_refer=False (dialog_service.py:2081), so
+		// summarize_document returns bare blocks there.
+		blocks := harness.SummarizeDocument(s.ctx, s.sd, docID, s.deps.MaxLength)
 		if len(blocks) == 0 {
 			return "The document is unavailable or has no readable chunks.", nil
 		}
 		return strings.Join(blocks, "\n\n"), nil
 	}
 	return fmt.Sprintf("unknown tool %q", name), nil
+}
+
+// publish merges one rag call's outcome into the session state. The inner run
+// used to write that state directly, before each call got its own; the merge
+// reproduces what a single call contributed, and for concurrent calls it keeps
+// the FIRST non-empty answer/verdict (appendToolResults folds the first terminal
+// hit in call order) while the evidence is unioned, so the caller still sees the
+// chunks the answer was composed from.
+func (s *outerReactSession) publish(call *RunResponse, kb *harness.Kbinfos) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Remember this call's own answer + evidence so selectEvidence can restore
+	// the pool the winning answer was composed from.
+	s.calls = append(s.calls, ragCallResult{answer: call.Answer, kb: kb})
+	if s.resp.Answer == "" {
+		s.resp.Answer = call.Answer
+	}
+	if s.resp.Verdict == "" {
+		s.resp.Verdict = call.Verdict
+	}
+	if s.resp.SCAFeedback == "" {
+		s.resp.SCAFeedback = call.SCAFeedback
+	}
+	if s.resp.CollectedAnswer == "" {
+		s.resp.CollectedAnswer = call.CollectedAnswer
+	}
+	if len(s.resp.Slots) == 0 {
+		s.resp.Slots = call.Slots
+	}
+	s.resp.Partial = s.resp.Partial || call.Partial
+	s.kb.Chunks = append(s.kb.Chunks, kb.Chunks...)
+	s.kb.DocAggs = append(s.kb.DocAggs, kb.DocAggs...)
+	s.kb.Memory = append(s.kb.Memory, kb.Memory...)
+	if s.kb.PreSummary == "" {
+		s.kb.PreSummary = kb.PreSummary
+	}
+}
+
+// ragCallResult is one rag call's outcome: the answer it composed and the
+// evidence pool that produced it.
+type ragCallResult struct {
+	answer string
+	kb     *harness.Kbinfos
+}
+
+// selectEvidence leaves only the evidence of the rag call whose answer the
+// terminal fold returned. The fold picks the LOWEST-INDEX terminal call while
+// publish sees completion order, so the union alone can leave that answer's
+// [ID:n] markers pointing into another call's chunks — the answer and the
+// reference list would disagree. No-op when no recorded call matches (the
+// terminal tool was summarize_document, or the answer did not come from a rag
+// call), in which case the union stands.
+//
+// Matching is by exact answer text, so two calls that produce byte-identical
+// answers are indistinguishable and the FIRST recorded (first to finish) one
+// wins. That collision is accepted: plumbing the tool-call index through
+// ToolCallSession is not worth it for a case that cannot happen with distinct
+// questions.
+func (s *outerReactSession) selectEvidence(answer string) {
+	if answer == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.calls {
+		if r.answer != answer {
+			continue
+		}
+		s.kb.Chunks = append([]map[string]any(nil), r.kb.Chunks...)
+		s.kb.DocAggs = append([]map[string]any(nil), r.kb.DocAggs...)
+		s.kb.Memory = append([]map[string]any(nil), r.kb.Memory...)
+		s.kb.PreSummary = r.kb.PreSummary
+		return
+	}
 }
 
 // runDirect is the low/naive path: one hybrid search, no tool loop.

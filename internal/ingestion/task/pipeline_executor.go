@@ -200,7 +200,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone))
 	}
 
 	return result, nil
@@ -278,7 +278,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	applyDocumentAvailability(chunks, docStatus)
 
-	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
+	oldCompiledProductIDs, oldCompiledVariants, oldCompiledTaskTypes, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +310,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
 	// consumer retract stale merged products when a template is removed.
 	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	eventTaskTypes := mergeTaskTypes(oldCompiledTaskTypes, compiledTaskTypes(chunks))
 	if len(eventVariants) > 0 {
-		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants, eventTaskTypes); err != nil {
 			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 		}
 	}
@@ -437,30 +438,36 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-// markCompiledProductsHidden sets available_int=0 on the per-document compiled
-// knowledge products so they are hidden from the retriever until the dataset-level
-// post-processing consumer merges them into available_int=1 products (§11). A
-// chunk is a compiled product iff it carries the compile_kwd discriminator the
-// KnowledgeCompiler component stamps; ordinary source chunks (no compile_kwd)
-// keep the index default available_int=1 and remain immediately searchable.
-// Merged dataset-level products are written by the consumer, never here, so they are
-// never double-marked.
+// markCompiledProductsHidden stages wiki per-document page rows as
+// available_int=0. Only the wiki variant is hidden: its per-document page rows
+// are intermediate state for the consumer's merged pages (available_int=1) and
+// every wiki read path selects merged rows only.
+//
+// Tree / structure (page_index) / mindmap rows are the FINAL per-document
+// products — Python writes them visible at compile time
+// (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
+// claim recall / hybrid retrieval filter on available_int=1, so they stay
+// searchable here too. Merged dataset-level products are written by the
+// consumer, never here, so they are never double-marked.
 func markCompiledProductsHidden(chunks []map[string]any) {
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; !ok {
+		kwd := asCompiledKwd(ck)
+		if kwd == "" {
 			continue
 		}
-		ck["available_int"] = 0
+		if v, err := knowledge_compile.KwdToVariant(kwd); err == nil && v == kccommon.VariantWiki {
+			ck["available_int"] = 0
+		}
 	}
 }
 
 // loadDocumentCompiledState snapshots the previous successful document
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
-func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, []string, error) {
 	docEngine := engine.Get()
 	if docEngine == nil || s == nil || s.taskCtx == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
@@ -476,7 +483,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
+			return nil, nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -494,7 +501,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			break
 		}
 	}
-	return oldIDs, compiledVariants(oldProducts), nil
+	return oldIDs, compiledVariants(oldProducts), compiledTaskTypes(oldProducts), nil
 }
 
 // reconcileDocumentCompiledProducts advances the document-level compiler
@@ -536,18 +543,19 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	return nil
 }
 
-// applyDocumentAvailability stamps ordinary source chunks with available_int=0
-// when Document.status is "0" (disabled). Disabling before any chunks exist only
-// updates MySQL; without this, later parsing would still write searchable
-// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+// applyDocumentAvailability stamps every chunk — ordinary source chunks and
+// compiled products alike — with available_int=0 when Document.status is "0"
+// (disabled). Disabling before any chunks exist only updates MySQL; without
+// this, later parsing would still write searchable available_int=1 rows.
+// Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
+// so the stamp is a no-op for them; tree / structure rows become hidden
+// together with their document, matching Python's doc_id-scoped availability
+// toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
 		return
 	}
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; ok {
-			continue
-		}
 		ck["available_int"] = 0
 	}
 }
@@ -594,6 +602,54 @@ func compiledVariants(chunks []map[string]any) []string {
 	out := make([]string, 0, len(seen))
 	for k := range seen {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// compiledTaskTypes returns the sorted, de-duplicated frontend categories of
+// the compiled products in chunks. The raw template kind is preferred because
+// several kinds intentionally share the structure execution variant.
+func compiledTaskTypes(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		taskType := ""
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && strings.TrimSpace(kind) != "" {
+			if mapped, err := kccommon.KindToTaskType(kind); err == nil {
+				taskType = mapped
+			}
+		}
+		if taskType == "" {
+			if mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck)); err == nil {
+				taskType = kccommon.VariantToTaskType(mapped)
+			}
+		}
+		if taskType != "" {
+			seen[taskType] = struct{}{}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func mergeTaskTypes(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, taskType := range group {
+			if taskType = strings.TrimSpace(taskType); taskType != "" {
+				seen[taskType] = struct{}{}
+			}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func sortedTaskTypes(seen map[string]struct{}) []string {
+	out := make([]string, 0, len(seen))
+	for taskType := range seen {
+		out = append(out, taskType)
 	}
 	sort.Strings(out)
 	return out
@@ -722,8 +778,7 @@ type PipelineLogInput struct {
 }
 
 // RecordPipelineLog persists a pipeline operation log without requiring
-// executor setup. Callers that already know a terminal state should pass it in
-// Status; otherwise the writer falls back to the latest document.run value.
+// executor setup. Callers should pass the status in Status.
 //
 // When the run created a queued row (CREATED/SCHEDULED), the terminal write
 // advances that same row so the dataset detail page shows one entry per run.
@@ -802,9 +857,6 @@ func recordPipelineLog(
 	}
 
 	operationStatus := input.Status
-	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
-		operationStatus = *doc.Run
-	}
 	statusValue := "1"
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status

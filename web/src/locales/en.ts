@@ -396,6 +396,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
+      continueUpload: 'Continue upload',
+      goToConfiguration: 'Go to configuration',
+      uploadMissingModelsTitle: 'Some files lack a required model',
+      fileModelMissing:
+        '{{name}} ({{fileType}}) requires a configured {{model}} model',
+      missingModelAsr: 'audio (ASR)',
+      missingModelVision: 'vision',
+      configureInDatasetSettingHint:
+        'You can configure it in the dataset Configuration page (Parser operator), or continue anyway.',
+      parseBlockedTitle: 'Cannot parse',
+      parseBlockedPartialTitle: 'Some files cannot be parsed',
+      parseBlockedHint:
+        'Configure the model in the dataset Configuration page (Parser operator), then try again.',
+      parseValidFiles: 'Parse valid files',
+      parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {
         fields: 'fields',
         selectFiles: 'Selected {{count}} files',
@@ -1293,6 +1308,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Folder Path (optional)',
       dataSourceFieldBatchSize: 'Batch Size',
+      dataSourceFieldFeishuAppId: 'Feishu app ID',
+      dataSourceFieldFeishuAppSecret: 'Feishu app secret',
+      dataSourceFieldWikiSpaceId: 'Wiki space ID',
+      dataSourceFieldRootNodeToken: 'Wiki root node token',
+      dataSourceFieldIncludeExtensions: 'Allowed file extensions',
+      dataSourceFieldIncludeKeywords: 'Required filename keywords',
+      dataSourceFieldExcludeKeywords: 'Excluded filename keywords',
+      dataSourceFieldMaxFileSizeBytes: 'Maximum file size (bytes)',
+      dataSourceValidationFeishuBatchSize:
+        'Batch size must be between 1 and 10',
       dataSourceFieldMailFolder: 'Mail Folder',
       dataSourceFieldMailboxUserIds: 'Mailbox User IDs (optional)',
       dataSourceFieldInstanceUrl: 'Instance URL',
@@ -1566,6 +1591,8 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      feishu_wikiDescription:
+        'Sync downloadable file nodes from a Feishu Wiki subtree.',
       gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
@@ -1748,6 +1775,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       mysqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      mysqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       postgresqlDescription:
         'Connect to PostgreSQL database to sync data from tables using SQL queries.',
       postgresqlQueryTip:
@@ -1760,6 +1789,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      postgresqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       bigqueryDescription:
         'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
       bigqueryProjectIdTip:
@@ -2362,6 +2393,9 @@ Example: Virtual Hosted Style`,
         'Entity mode: one Wiki page per entity or concept. Topic mode: let the LLM group related entities or concepts into the same Wiki page by topic.',
       raptorTreeSettings: 'RAPTOR tree settings',
       summarizationPrompt: 'Summarization prompt',
+      claimExtractionPrompt: 'Claim extraction prompt',
+      claimExtractionPromptTip:
+        'System prompt for harvesting atomic claims with verbatim evidence from the leaf chunks before clustering. Leave empty to use the built-in contract.',
       maxToken: 'Max token',
       maxTokenRequired: 'Please input max token',
       clusteringThreshold: 'Clustering threshold',
@@ -2455,6 +2489,14 @@ Example: Virtual Hosted Style`,
       representationEmpty: 'No artifact templates available.',
       representationUnsupported:
         'This representation type is not supported yet.',
+      claimsPanelTitle: 'Claims · {{name}}',
+      claimsTotal: '{{count}} total',
+      claimsLoading: 'Loading claims…',
+      claimsEmpty: 'No claims were extracted for this cluster.',
+      claimsLoadMore: 'Load more ({{remaining}} remaining)',
+      claimsMoreEvidence: '+{{count}} more evidence',
+      claimsCollapseEvidence: 'Show less',
+      claimsNodeDetail: 'Details',
     },
     message: {
       registered: 'Registered!',
@@ -3300,6 +3342,9 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
+      documentIds: 'Document IDs',
+      documentIdsTip:
+        'Optional list of document IDs to restrict retrieval scope. Supports upstream variable references.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',
@@ -3442,6 +3487,8 @@ This process aggregates variables from multiple branches into a single variable 
         audio: 'Audio',
         video: 'Video',
       },
+      addFileType: 'Add file type',
+      atLeastOneFileType: 'At least one file type is required',
       fields: 'Field',
       rule: 'Rule',
       addRule: 'Add rule',

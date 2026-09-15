@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ragflow/internal/engine"
@@ -291,25 +292,67 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 		vec = embeddings[0]
 	}
 	f64 := f32ToF64Slice(vec)
-	// A scoped read enforces the scope in memory (this read is untyped — it mixes
-	// nav_doc leaves and nav_cluster rows, so no single query-time key expresses
-	// both; Python only pushes the scope into the query when type_kwd pins one
-	// type, dataset_nav.py:1371-1383), so the engine budget must not let
-	// out-of-scope rows crowd the scope out before the filter runs
-	// (dataset_nav.py:1384-1387).
-	scanTop := topK
-	if len(allowed) > 0 {
-		scanTop = navScopedScanTopN
+	// An unscoped read takes one mixed KNN read: every row is already in scope,
+	// so the engine's own topK budget cannot starve the result.
+	if len(allowed) == 0 {
+		return s.navScan(ctx, tenantID, kbID, navFilter(nil), f64, topK, nil)
 	}
+	// A scoped read pushes the scope into the query as two type-pinned legs —
+	// nav_doc leaves filter on doc_id, nav_cluster rows on doc_ids_kwd — so the
+	// ENGINE decides what is in scope, not an in-memory pass over a fixed pool.
+	// A fixed pool cannot honor the scope-before-topK contract: a pool of any
+	// size N is exhausted by N higher-ranked out-of-scope rows, which silently
+	// drops in-scope rows that exist (Python hits the same wall — its mixed read
+	// re-checks the scope in memory after a `top_k or 10000` pool, so its typed
+	// leg is the only one that actually pushes the scope: dataset_nav.py:1371-1383,
+	// 1400, 1444-1447).
+	//
+	// Two legs are needed because a single mixed condition cannot express both
+	// keys at once: `_matches_condition` ANDs across fields, so one condition
+	// cannot mean "doc_id IN scope" for leaves and "doc_ids_kwd intersects
+	// scope" for clusters (dataset_nav.py:1374-1383 says exactly this).
+	scope := navScopeList(allowed)
+	leaves, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd": []string{nav.TypeNavDoc},
+		"doc_id":   scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	clusters, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd":    []string{nav.TypeNavCluster},
+		"doc_ids_kwd": scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	// Both legs score the same vector with the same cosine metric, so their
+	// _score values are directly comparable. Taking each leg's top topK and
+	// merging by score yields the global topK of the union: a row ranked below
+	// its own leg's cap is already outranked by topK in-scope rows of that leg.
+	merged := append(leaves, clusters...)
+	sort.SliceStable(merged, func(i, j int) bool { return merged[i].Score > merged[j].Score })
+	if len(merged) > topK {
+		merged = merged[:topK]
+	}
+	return merged, nil
+}
+
+// navScan runs one KNN nav read behind filter, maps the rows to NavHits, and
+// re-checks the scope in memory the way Python does unconditionally
+// (dataset_nav.py:1444). The re-check is belt-and-braces on top of a pushed
+// scope filter, and trims a cluster's coverage to the scoped set. allowed may
+// be nil for an unscoped read.
+func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter map[string]interface{}, f64 []float64, limit int, allowed map[string]struct{}) ([]nav.NavHit, error) {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(nil),
-		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, scanTop,
+		filter,
+		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
-			TopN:              scanTop,
+			TopN:              limit,
 			ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 		}})
 	if err != nil {
@@ -339,17 +382,21 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 			h.DocIDs = navIntersectScope(h.DocIDs, allowed)
 		}
 		hits = append(hits, h)
-		if len(hits) >= topK {
-			break
-		}
 	}
 	return hits, nil
 }
 
-// navScopedScanTopN is the engine budget for a doc-scoped nav read. It exists so
-// the in-memory scope filter runs over a pool wide enough to fill topK with
-// in-scope rows even when out-of-scope rows rank higher.
-const navScopedScanTopN = 1000
+// navScopeList renders a scope set as a sorted list for an engine filter, so the
+// term order is deterministic run to run (Python sorts its scope the same way:
+// dataset_nav.py:1381-1383).
+func navScopeList(allowed map[string]struct{}) []string {
+	out := make([]string, 0, len(allowed))
+	for d := range allowed {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // navScopeSet normalizes a caller's doc scope the way search_dataset_nav does
 // (dataset_nav.py:1364): trimmed, non-empty, deduped. A nil result means "no

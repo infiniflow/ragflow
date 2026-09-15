@@ -19,8 +19,13 @@ package advanced_rag
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 	"ragflow/internal/rag/advanced_rag/harness"
@@ -284,7 +289,7 @@ func TestResolveEffectiveQuestionHandlesEmpty(t *testing.T) {
 // rag() calls.
 func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 2
+	cache.consecutiveUnanswerable = 2
 	resp := &RunResponse{
 		Verdict:     VerdictInsufficient,
 		SCAFeedback: "evidence is not yet sufficient",
@@ -305,7 +310,7 @@ func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 // re-ask rather than tell the agent to stop.
 func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 1
+	cache.consecutiveUnanswerable = 1
 	resp := &RunResponse{
 		Verdict:     VerdictInsufficient,
 		SCAFeedback: "evidence is not yet sufficient",
@@ -329,7 +334,7 @@ func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 // missing SCA feedback all yield "".
 func TestResearchStatusTrailerSkipsSufficientOrEmpty(t *testing.T) {
 	cache := NewRAGCache()
-	cache.ConsecutiveUnanswerable = 2
+	cache.consecutiveUnanswerable = 2
 
 	cases := []struct {
 		name string
@@ -382,7 +387,7 @@ func (m *streamingModel) StreamComplete(_ context.Context, _ []schema.Message, _
 func TestComposeAnswerStreamForwardsDeltas(t *testing.T) {
 	m := &streamingModel{pieces: []string{"Hello ", "world"}}
 	var got []string
-	res, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false,
+	res, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, false,
 		func(delta string, _ bool) error {
 			got = append(got, delta)
 			return nil
@@ -402,7 +407,7 @@ func TestComposeAnswerStreamForwardsDeltas(t *testing.T) {
 func TestComposeAnswerStreamReturnsErrorOnFailure(t *testing.T) {
 	m := &streamingModel{fail: true}
 
-	if _, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, nil); err == nil {
+	if _, err := ComposeAnswerStream(context.Background(), AnswerDeps{Model: m}, m, nil, "q", false, false, nil); err == nil {
 		t.Fatal("want an error so the caller can fall back to one-shot")
 	}
 }
@@ -446,10 +451,15 @@ func TestGetCitationGuidelinesUsesDefaultWithoutOverride(t *testing.T) {
 }
 
 func TestGetCitationGuidelinesHonoursOverride(t *testing.T) {
-	// Python renders the user's template; Go takes the rendered result verbatim.
+	// Python renders the user's template and STILL appends the
+	// illustrative-IDs caveat after it (generator.py:227-228 concatenates the
+	// suffix onto whatever template rendered).
 	got := GetCitationGuidelines("Cite as [n].")
-	if got != "Cite as [n]." {
-		t.Fatalf("got %q, want the override", got)
+	if !strings.HasPrefix(got, "Cite as [n].") {
+		t.Fatalf("got %q, want the override first", got)
+	}
+	if !strings.Contains(got, "IMPORTANT: The example IDs above") {
+		t.Fatalf("got %q, want the illustrative-IDs caveat appended", got)
 	}
 }
 
@@ -499,5 +509,284 @@ func TestFitEvidenceTrimsOversizedEvidence(t *testing.T) {
 	}
 	if got == "" {
 		t.Fatal("evidence must not be trimmed to nothing")
+	}
+}
+
+// TestOuterReactSessionPublishMergesPerCallResults pins the locked merge: a
+// round's rag calls run concurrently, so each publishes its own evidence and
+// answer and none may be lost. Run with -race.
+func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	const calls = 4
+
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			session.publish(
+				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), Verdict: fmt.Sprintf("verdict-%d", i)},
+				&harness.Kbinfos{
+					Chunks:  []map[string]any{{"chunk_id": fmt.Sprintf("c%d", i)}},
+					DocAggs: []map[string]any{{"doc_id": fmt.Sprintf("d%d", i)}},
+					Memory:  []map[string]any{{"id": fmt.Sprintf("m%d", i)}},
+				})
+		}(i)
+	}
+	wg.Wait()
+
+	if len(session.kb.Chunks) != calls || len(session.kb.DocAggs) != calls || len(session.kb.Memory) != calls {
+		t.Fatalf("merged evidence = %d chunks / %d doc_aggs / %d memory, want %d each",
+			len(session.kb.Chunks), len(session.kb.DocAggs), len(session.kb.Memory), calls)
+	}
+	seen := map[string]bool{}
+	for _, c := range session.kb.Chunks {
+		id, _ := c["chunk_id"].(string)
+		seen[id] = true
+	}
+	for i := 0; i < calls; i++ {
+		if !seen[fmt.Sprintf("c%d", i)] {
+			t.Errorf("merged chunks lost c%d: %v", i, seen)
+		}
+	}
+	if !strings.HasPrefix(session.resp.Answer, "answer-") {
+		t.Errorf("answer = %q, want one call's answer", session.resp.Answer)
+	}
+	if !strings.HasPrefix(session.resp.Verdict, "verdict-") {
+		t.Errorf("verdict = %q, want one call's verdict", session.resp.Verdict)
+	}
+}
+
+// TestOuterReactSessionToolCallKeepsSharedRequestIntact pins the per-call
+// isolation: models.appendToolResults runs a round's rag calls concurrently
+// (chat_tools.go), so a call must apply its rewritten question and its cleared
+// images to a COPY — never to the request a concurrent call is reading.
+// Run with -race.
+func TestOuterReactSessionToolCallKeepsSharedRequestIntact(t *testing.T) {
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx:    context.Background(),
+		spec:   spec,
+		kb:     &harness.Kbinfos{},
+		resp:   &RunResponse{Mode: spec},
+		logger: log.New(io.Discard, "", 0),
+		req: harness.RunRequest{
+			Question: "original question",
+			Images:   []string{"data:image/png;base64,AAAA"},
+		},
+	}
+
+	var wg sync.WaitGroup
+	for _, q := range []string{"first question", "second question"} {
+		wg.Add(1)
+		go func(q string) {
+			defer wg.Done()
+			if _, err := session.ToolCall("rag", map[string]interface{}{"question": q}); err != nil {
+				t.Errorf("ToolCall(%q): %v", q, err)
+			}
+		}(q)
+	}
+	wg.Wait()
+
+	if session.req.Question != "original question" {
+		t.Errorf("shared request question = %q, want it untouched (each call works on a copy)", session.req.Question)
+	}
+	if len(session.req.Images) != 1 {
+		t.Errorf("shared request images = %v, want them untouched", session.req.Images)
+	}
+}
+
+// TestRagFlightSharesConcurrentIdenticalCalls pins the single-flight contract:
+// a caller arriving while the flight is open waits on it and replays its
+// answer; a caller arriving AFTER the window closed owns a fresh execution
+// (window-only dedup) and — like production's defer — must end it. The main
+// goroutine holds the window open long enough that the waiters normally take
+// the wait path, but the assertions tolerate both arrivals. Run with -race.
+func TestRagFlightSharesConcurrentIdenticalCalls(t *testing.T) {
+	session := &outerReactSession{}
+
+	owner, wait := session.beginRagFlight("same question")
+	if owner == nil || wait != nil {
+		t.Fatalf("first caller: owner=%v wait=%v, want (flight, nil)", owner, wait)
+	}
+
+	const waiters = 3
+	var wg sync.WaitGroup
+	got := make([]string, waiters)
+	for i := 0; i < waiters; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			o, w := session.beginRagFlight("same question")
+			if o != nil {
+				// Arrived after the window closed: this caller owns a fresh
+				// execution and must end it (production's ToolCall defers
+				// endRagFlight), or later callers would block forever.
+				session.endRagFlight("same question", o)
+				return
+			}
+			<-w.done
+			got[i] = w.answer
+		}(i)
+	}
+
+	// Hold the window open so the waiters observe it (scheduling latency is
+	// microseconds; the tolerant assertions above cover the pathological case).
+	time.Sleep(50 * time.Millisecond)
+	owner.answer = "shared answer"
+	session.endRagFlight("same question", owner)
+	wg.Wait()
+
+	for i, g := range got {
+		if g != "shared answer" && g != "" {
+			t.Errorf("waiter %d replayed %q, want %q or the owner path (\"\")", i, g, "shared answer")
+		}
+	}
+
+	// After the flight ends a NEW call owns a fresh execution (window-only
+	// dedup: a later round must genuinely re-run).
+	owner2, wait2 := session.beginRagFlight("same question")
+	if owner2 == nil || wait2 != nil {
+		t.Fatalf("post-window caller: owner=%v wait=%v, want (flight, nil)", owner2, wait2)
+	}
+	session.endRagFlight("same question", owner2)
+
+	// A different question never shares a flight.
+	other, otherWait := session.beginRagFlight("different question")
+	if other == nil || otherWait != nil {
+		t.Fatalf("different question: owner=%v wait=%v, want (flight, nil)", other, otherWait)
+	}
+	session.endRagFlight("different question", other)
+}
+
+// TestOuterReactSessionToolCallWaitsOnInFlightRag pins the ToolCall-level
+// behavior: a rag call whose question already has an in-progress execution
+// blocks and replays that execution's answer WITHOUT running its own graph —
+// no second publish, no second call record (Python's asyncio.gather runs both
+// duplicates fully and the terminal fold discards the loser; this wait is the
+// approved Go-side single-flight, see ragFlight).
+func TestOuterReactSessionToolCallWaitsOnInFlightRag(t *testing.T) {
+	spec := harness.GetMode("naive")
+	session := &outerReactSession{
+		ctx:    context.Background(),
+		spec:   spec,
+		kb:     &harness.Kbinfos{},
+		resp:   &RunResponse{Mode: spec},
+		logger: log.New(io.Discard, "", 0),
+		req:    harness.RunRequest{Question: "original question"},
+	}
+
+	owner, wait := session.beginRagFlight("the question")
+	if owner == nil || wait != nil {
+		t.Fatalf("pre-registered flight: owner=%v wait=%v, want (flight, nil)", owner, wait)
+	}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		owner.answer = "shared answer"
+		session.endRagFlight("the question", owner)
+	}()
+
+	start := time.Now()
+	got, err := session.ToolCall("rag", map[string]interface{}{"question": "the question"})
+	if err != nil {
+		t.Fatalf("ToolCall: %v", err)
+	}
+	if got != "shared answer" {
+		t.Errorf("ToolCall replayed %q, want %q", got, "shared answer")
+	}
+	if elapsed := time.Since(start); elapsed < 15*time.Millisecond {
+		t.Errorf("ToolCall returned after %v — it did NOT wait for the in-flight execution", elapsed)
+	}
+	// The waiter must not have published or recorded its own call result.
+	if len(session.calls) != 0 {
+		t.Errorf("calls = %d, want 0 (a waiting call must not publish)", len(session.calls))
+	}
+}
+
+// ragTestChunkIDs lists a chunk pool's ids in order.
+func ragTestChunkIDs(chunks []map[string]any) []string {
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		id, _ := c["chunk_id"].(string)
+		out = append(out, id)
+	}
+	return out
+}
+
+// TestRAGCacheConsecutiveUnanswerableIsSerialized pins that the counter lives
+// behind the cache's lock: a round's concurrent rag() calls bump the SAME shared
+// cache, so an unsynchronized increment would race and lose updates.
+// Run with -race.
+func TestRAGCacheConsecutiveUnanswerableIsSerialized(t *testing.T) {
+	cache := NewRAGCache()
+	const calls = 8
+
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache.NoteUnanswerable(VerdictInsufficient)
+		}()
+	}
+	wg.Wait()
+
+	if got := cache.ConsecutiveUnanswerable(); got != calls {
+		t.Errorf("ConsecutiveUnanswerable = %d, want %d (increments must not be lost)", got, calls)
+	}
+	cache.NoteUnanswerable(VerdictSufficient)
+	if got := cache.ConsecutiveUnanswerable(); got != 0 {
+		t.Errorf("after a SUFFICIENT verdict = %d, want 0", got)
+	}
+	if got := (*RAGCache)(nil).ConsecutiveUnanswerable(); got != 0 {
+		t.Errorf("nil cache = %d, want 0", got)
+	}
+	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient) // must not panic
+}
+
+// TestOuterReactSessionSelectsWinningCallEvidence pins the citation fix: the
+// terminal fold returns the LOWEST-INDEX terminal rag call's answer while
+// publish() records completion order, so the session must hand back THAT call's
+// evidence — otherwise the answer's [ID:n] markers address another call's chunks.
+func TestOuterReactSessionSelectsWinningCallEvidence(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	winner := &harness.Kbinfos{
+		Chunks:     []map[string]any{{"chunk_id": "w0"}, {"chunk_id": "w1"}},
+		DocAggs:    []map[string]any{{"doc_id": "dw"}},
+		Memory:     []map[string]any{{"id": "mw"}},
+		PreSummary: "winner summary",
+	}
+	loser := &harness.Kbinfos{Chunks: []map[string]any{{"chunk_id": "l0"}}}
+
+	// The losing call finishes FIRST, i.e. completion order ≠ index order.
+	session.publish(&RunResponse{Answer: "answer-loser"}, loser)
+	session.publish(&RunResponse{Answer: "answer-winner"}, winner)
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 3 || got[0] != "l0" {
+		t.Fatalf("unselected union = %v, want the loser's chunk first (that is the misalignment)", got)
+	}
+
+	session.selectEvidence("answer-winner")
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 2 || got[0] != "w0" || got[1] != "w1" {
+		t.Errorf("chunks after selection = %v, want the winner's [w0 w1] in its own order", got)
+	}
+	if len(session.kb.DocAggs) != 1 || len(session.kb.Memory) != 1 || session.kb.PreSummary != "winner summary" {
+		t.Errorf("winner's evidence fields not restored: %+v", session.kb)
+	}
+}
+
+// TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch keeps the fallback:
+// an answer no rag call produced (the terminal tool was summarize_document, or
+// the outer model answered itself) leaves the union in place.
+func TestOuterReactSessionSelectEvidenceKeepsUnionWithoutAMatch(t *testing.T) {
+	session := &outerReactSession{kb: &harness.Kbinfos{}, resp: &RunResponse{}}
+	session.publish(&RunResponse{Answer: "answer-a"}, &harness.Kbinfos{Chunks: []map[string]any{{"chunk_id": "a0"}}})
+
+	session.selectEvidence("a summarize_document result")
+	session.selectEvidence("")
+
+	if got := ragTestChunkIDs(session.kb.Chunks); len(got) != 1 || got[0] != "a0" {
+		t.Errorf("chunks = %v, want the union kept when no call matches", got)
 	}
 }

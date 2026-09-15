@@ -338,3 +338,71 @@ func TestPostgreSQLConnectorValidate(t *testing.T) {
 		t.Fatalf("Validate error = %v", err)
 	}
 }
+
+// TestPostgreSQLConnectorFileExtension verifies file_extension parsing and its
+// ".txt" default.
+func TestPostgreSQLConnectorFileExtension(t *testing.T) {
+	cases := []struct {
+		name   string
+		config any
+		want   string
+	}{
+		{"default", nil, ".txt"},
+		{"with dot", ".html", ".html"},
+		{"no dot", "md", "md"},
+		{"blank", "   ", ".txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			connector, err := NewPostgreSQLConnector(map[string]any{"file_extension": tc.config})
+			if err != nil {
+				t.Fatalf("NewPostgreSQLConnector failed: %v", err)
+			}
+			if connector.fileExtension != tc.want {
+				t.Fatalf("fileExtension = %q, want %q", connector.fileExtension, tc.want)
+			}
+		})
+	}
+}
+
+// TestPostgreSQLConnectorOpenSyncCustomFileExtension verifies a configured file
+// extension is applied to produced documents.
+func TestPostgreSQLConnectorOpenSyncCustomFileExtension(t *testing.T) {
+	query := "SELECT * FROM products WHERE status = 'active'"
+	connector := newFixturePostgresConnector(t, map[string]any{
+		"host":            "127.0.0.1",
+		"port":            "5432",
+		"database":        "mydb",
+		"query":           query,
+		"content_columns": "title,description",
+		"id_column":       "id",
+		"file_extension":  ".md",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "secret",
+		},
+	}, func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(regexp.QuoteMeta(query)).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "title", "description"}).
+				AddRow(7, "Hello", "World"),
+		)
+	})
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents len = %d, want 1", len(batch.Documents))
+	}
+	if doc := batch.Documents[0]; doc.Extension != ".md" {
+		t.Fatalf("extension = %q, want %q", doc.Extension, ".md")
+	}
+	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch EOF = %v", err)
+	}
+}

@@ -36,7 +36,7 @@ func TestRemoveEntriesMatchesByDocAndEventType(t *testing.T) {
 
 func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
 	f := NewFakeScheduler()
-	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}, []string{"Wiki"}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	first, ok, err := f.Claim(t.Context(), "kb1")
@@ -58,7 +58,7 @@ func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
 
 func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
 	f := NewFakeScheduler()
-	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil); err != nil {
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil, nil); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	claim, ok, err := f.Claim(t.Context(), "kb1")
@@ -81,7 +81,7 @@ func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
 
 func TestWithWriteLockRejectsSupersededClaim(t *testing.T) {
 	f := NewFakeScheduler()
-	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}, []string{"Wiki"}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	claim, ok, err := f.Claim(t.Context(), "kb1")
@@ -131,13 +131,16 @@ func TestBacklogEntryJSONBackwardCompat(t *testing.T) {
 		t.Fatalf("legacy backlog should unmarshal Variants as nil, got %v", e.Variants)
 	}
 
-	// A completed event with variants round-trips intact.
-	withVariants := []byte(`{"doc_id":"d1","event_type":"doc_completed","variants":["tree","wiki"]}`)
+	// A completed event with variants and frontend task types round-trips intact.
+	withVariants := []byte(`{"doc_id":"d1","event_type":"doc_completed","variants":["tree","wiki"],"task_types":["Tree","Wiki"]}`)
 	if err := json.Unmarshal(withVariants, &e); err != nil {
 		t.Fatalf("unmarshal variants backlog: %v", err)
 	}
 	if !reflect.DeepEqual(e.Variants, []string{"tree", "wiki"}) {
 		t.Fatalf("variants not restored: %+v", e.Variants)
+	}
+	if !reflect.DeepEqual(e.TaskTypes, []string{"Tree", "Wiki"}) {
+		t.Fatalf("task types not restored: %+v", e.TaskTypes)
 	}
 	// omitempty: a nil Variants serializes without the key (matches legacy format).
 	enc, err := json.Marshal(BacklogEntry{DocID: "d2", EventType: "doc_deleted"})
@@ -151,16 +154,19 @@ func TestBacklogEntryJSONBackwardCompat(t *testing.T) {
 	if _, hasVariants := decoded["variants"]; hasVariants {
 		t.Fatalf("nil Variants should be omitted, got %s", enc)
 	}
+	if _, hasTaskTypes := decoded["task_types"]; hasTaskTypes {
+		t.Fatalf("nil TaskTypes should be omitted, got %s", enc)
+	}
 }
 
 // TestFakeSchedulerPublishCarriesVariants locks the A0-2 contract: FakeScheduler
 // records the variants on the backlog entry, so the consumer sees them.
 func TestFakeSchedulerPublishCarriesVariants(t *testing.T) {
 	f := NewFakeScheduler()
-	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"tree", "structure"}); err != nil {
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"tree", "structure"}, []string{"Tree", "Graph"}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if err := f.Publish(t.Context(), "t1", "kb1", "d2", string(EventTypeDeleted), nil); err != nil {
+	if err := f.Publish(t.Context(), "t1", "kb1", "d2", string(EventTypeDeleted), nil, nil); err != nil {
 		t.Fatalf("publish deleted: %v", err)
 	}
 	res, ok, err := f.Claim(t.Context(), "kb1")
@@ -172,6 +178,9 @@ func TestFakeSchedulerPublishCarriesVariants(t *testing.T) {
 	}
 	if !reflect.DeepEqual(res.Entries[0].Variants, []string{"tree", "structure"}) {
 		t.Fatalf("completed variants not carried: %+v", res.Entries[0])
+	}
+	if !reflect.DeepEqual(res.Entries[0].TaskTypes, []string{"Tree", "Graph"}) {
+		t.Fatalf("completed task types not carried: %+v", res.Entries[0])
 	}
 	if res.Entries[1].Variants != nil {
 		t.Fatalf("deleted event should carry nil variants, got %+v", res.Entries[1])

@@ -1,7 +1,8 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { pickByBackend, useIsGoBackend } from '@/utils/backend-variant';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
@@ -10,8 +11,10 @@ import { useParams } from 'react-router';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
 import { RunningStatus } from './constant';
-import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
-import { isDocumentQueued } from './utils';
+import {
+  getDocumentRunningStatus,
+  ingestionStatusToRunningStatus,
+} from './utils';
 import type { IFileLogList } from '../dataset-overview/interface';
 
 const PollIntervalMs = 5000;
@@ -42,7 +45,11 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     liveDoc ??
     documents.find((item: IDocumentInfo) => item.id === record?.id) ??
     record;
-  const queued = isGoBackend && !!sourceDoc && isDocumentQueued(sourceDoc);
+  const queued =
+    isGoBackend &&
+    !!sourceDoc &&
+    ingestionStatusToRunningStatus(sourceDoc.ingestion_status) ===
+      RunningStatus.QUEUED;
 
   // The Go backend reports a queued document via ingestion_status while the
   // legacy document.progress_msg stays empty until the worker starts. Fall
@@ -96,14 +103,9 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         processBeginAt: formatDate(source.process_begin_at),
         chunkNumber: source.chunk_count,
         duration: formatSecondsToHumanReadable(source.process_duration || 0),
-        status: pickByBackend({
-          // The Go backend reports a queued document via ingestion_status
-          // while the legacy run field stays UNSTART; surface it as QUEUED.
-          go: isDocumentQueued(source)
-            ? RunningStatus.QUEUED
-            : (source.run as RunningStatus),
-          python: source.run as RunningStatus,
-        }),
+        // Go derives status from ingestion_status (queued included);
+        // Python reads the legacy run field.
+        status: getDocumentRunningStatus(source),
         details: effectiveQueuedProgressMsg || source.progress_msg,
       };
     }

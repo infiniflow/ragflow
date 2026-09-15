@@ -16,7 +16,12 @@
 
 package models
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"ragflow/internal/tokenizer"
+)
 
 // stubSession returns a canned result per tool name.
 type stubSession struct {
@@ -48,7 +53,7 @@ func TestAppendToolResultsTerminalHit(t *testing.T) {
 
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "summarize_document", `{"doc_id":"abc"}`),
-	}, sess, term)
+	}, sess, term, false)
 
 	if !hit {
 		t.Fatal("terminal tool success must short-circuit")
@@ -70,7 +75,7 @@ func TestAppendToolResultsTerminalErrorDoesNotShortCircuit(t *testing.T) {
 
 	_, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "nonterminal", `{}`),
-	}, &stubSession{}, term)
+	}, &stubSession{}, term, false)
 	if hit || answer != "" {
 		t.Fatal("non-terminal call must not short-circuit")
 	}
@@ -81,7 +86,7 @@ func TestAppendToolResultsNoTerminalConfigured(t *testing.T) {
 	history := []Message{{Role: "user", Content: "q"}}
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "rag", `{}`),
-	}, &stubSession{}, nil)
+	}, &stubSession{}, nil, false)
 	if hit || answer != "" {
 		t.Fatal("no terminal set must never short-circuit")
 	}
@@ -96,7 +101,7 @@ func TestAppendToolResultsNonTerminalIgnoresSet(t *testing.T) {
 	term := map[string]struct{}{"rag": {}}
 	_, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "retrieve", `{}`),
-	}, &stubSession{}, term)
+	}, &stubSession{}, term, false)
 	if hit || answer != "" {
 		t.Fatal("non-terminal tool must not short-circuit even with a terminal set present")
 	}
@@ -130,8 +135,11 @@ func TestSetTerminalToolsWithoutToolsIsNoop(t *testing.T) {
 }
 
 // A terminal tool that already streamed its answer returns "" to say "nothing
-// more to emit". It must still short-circuit, so the loop stops instead of
-// asking the model again.
+// more to emit". On the STREAMING path (emptyTerminalIsHit=true) it must still
+// short-circuit, so the loop stops instead of asking the model again — the Go
+// streaming tool's "" means "already delivered", unlike Python's rag tool,
+// which returns the full text and whose all-empty fold falls through
+// (chat_model.py:692-704).
 func TestAppendToolResultsTerminalHitWithEmptyResult(t *testing.T) {
 	history := []Message{{Role: "user", Content: "q"}}
 	sess := &stubSession{results: map[string]string{"rag": ""}}
@@ -139,14 +147,81 @@ func TestAppendToolResultsTerminalHitWithEmptyResult(t *testing.T) {
 
 	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
 		toolCallMsg("call-1", "rag", `{"question":"q"}`),
-	}, sess, term)
+	}, sess, term, true)
 
 	if !hit {
-		t.Fatal("a successful terminal tool must short-circuit even with an empty result")
+		t.Fatal("a successful terminal tool must short-circuit even with an empty result (streaming contract)")
 	}
 	if answer != "" {
 		t.Fatalf("answer = %q, want empty", answer)
 	}
+	if len(hist) != 3 {
+		t.Fatalf("history length = %d, want 3 (user + assistant + tool)", len(hist))
+	}
+}
+
+// questionKeyedSession returns a canned result per question argument, so two
+// same-name tool calls can be told apart regardless of the goroutine order
+// appendToolResults executes them in.
+type questionKeyedSession struct {
+	results map[string]string
+}
+
+func (s *questionKeyedSession) ToolCall(_ string, args map[string]interface{}) (string, error) {
+	if q, ok := args["question"].(string); ok {
+		if r, ok := s.results[q]; ok {
+			return r, nil
+		}
+	}
+	return "", nil
+}
+
+// TestAppendToolResultsSkipsEmptyTerminalForNonEmptySibling pins the fold
+// alignment with Python chat_model.py:696 (`if out:`): an EMPTY (or
+// whitespace-only) terminal result never ships while a later non-empty
+// sibling exists — the second call's answer is the final one.
+func TestAppendToolResultsSkipsEmptyTerminalForNonEmptySibling(t *testing.T) {
+	history := []Message{{Role: "user", Content: "q"}}
+	sess := &questionKeyedSession{results: map[string]string{
+		"first":  "",
+		"second": "  \n\t",
+		"third":  "103 years",
+	}}
+	term := map[string]struct{}{"rag": {}}
+
+	_, answer, hit := appendToolResults(history, []map[string]interface{}{
+		toolCallMsg("call-1", "rag", `{"question":"first"}`),
+		toolCallMsg("call-2", "rag", `{"question":"second"}`),
+		toolCallMsg("call-3", "rag", `{"question":"third"}`),
+	}, sess, term, false)
+
+	if !hit {
+		t.Fatal("the non-empty terminal sibling must short-circuit")
+	}
+	if answer != "103 years" {
+		t.Fatalf("answer = %q, want the non-empty sibling's result", answer)
+	}
+}
+
+// TestAppendToolResultsAllEmptyTerminalFallsThrough pins the non-streaming
+// all-empty case against Python chat_model.py:692-704 (no else branch: an
+// unqualified terminal result is skipped, the tool responses land in history
+// and the loop runs another model round): hit=false so the caller re-invokes
+// the model instead of shipping a blank answer.
+func TestAppendToolResultsAllEmptyTerminalFallsThrough(t *testing.T) {
+	history := []Message{{Role: "user", Content: "q"}}
+	sess := &stubSession{results: map[string]string{"rag": ""}}
+	term := map[string]struct{}{"rag": {}}
+
+	hist, answer, hit := appendToolResults(history, []map[string]interface{}{
+		toolCallMsg("call-1", "rag", `{"question":"q"}`),
+	}, sess, term, false)
+
+	if hit || answer != "" {
+		t.Fatal("all-empty terminal results must fall through to the next model round")
+	}
+	// History still carries the assistant tool_calls + tool result, well-formed
+	// for the next round.
 	if len(hist) != 3 {
 		t.Fatalf("history length = %d, want 3 (user + assistant + tool)", len(hist))
 	}
@@ -168,5 +243,42 @@ func TestSendTerminalEmptyAnswerIsSilent(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("streamed %v, want nothing for an empty terminal answer", got)
+	}
+}
+
+// TestChatWithToolsCountsTerminalRoundUsageOnce pins that a terminal-tool round
+// contributes its tokens exactly once, in both the returned total and the
+// run-usage sink (whose Add accumulates): runToolLoop folds the round in before
+// the short-circuit decides.
+func TestChatWithToolsCountsTerminalRoundUsageOnce(t *testing.T) {
+	const (
+		answer = "[SUMMARY]"
+		total  = 15
+	)
+	driver := &captureToolDriver{resp: &ChatResponse{
+		ToolCalls: []map[string]interface{}{toolCallMsg("call-1", "summarize_document", `{"doc_id":"abc"}`)},
+		Usage:     &TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: total},
+	}}
+	modelName, apiKey := "m", "k"
+	cm := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	cm.ToolConfig = &ToolConfig{
+		Tools:           `[{"type":"function","function":{"name":"summarize_document"}}]`,
+		ToolCallSession: &stubSession{results: map[string]string{"summarize_document": answer}},
+		TerminalTools:   map[string]struct{}{"summarize_document": {}},
+	}
+
+	ctx := tokenizer.WithRunUsage(context.Background())
+	got, tokens, err := cm.ChatWithTools(ctx, "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{})
+	if err != nil {
+		t.Fatalf("ChatWithTools: %v", err)
+	}
+	if got != answer {
+		t.Fatalf("answer = %q, want the terminal result %q", got, answer)
+	}
+	if tokens != total {
+		t.Errorf("totalTokens = %d, want %d (the terminal round must be counted once)", tokens, total)
+	}
+	if _, _, runTotal, calls := tokenizer.GetRunUsage(ctx).Snapshot(); runTotal != total || calls != 1 {
+		t.Errorf("run usage total=%d calls=%d, want total=%d calls=1", runTotal, calls, total)
 	}
 }

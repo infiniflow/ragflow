@@ -286,6 +286,17 @@ def _apply_model_family_policies(
         elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
+        elif provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax reasoning models (MiniMax-M1/M3) read `thinking` in the
+            # request body and ignore `reasoning_effort`. `thinking` is NOT a
+            # standard OpenAI-compatible param, so LiteLLM's drop_params=True
+            # would drop a top-level key; it must ride in extra_body (merged
+            # verbatim into the body). Without this, MiniMax keeps
+            # chain-of-thought on, which slows extraction and can hang a batch
+            # on a long COT.
+            if thinking_type:
+                _pop_thinking_controls()
+                _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type}})
 
         return sanitized_gen_conf, sanitized_kwargs
 
@@ -298,6 +309,7 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
         SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
         SupportedLiteLLMProvider.Moonshot: {"thinking"},
         SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+        SupportedLiteLLMProvider.MiniMax: {"thinking"},
     }.get(provider, set())
 
     body = completion_args.get("extra_body")
@@ -2072,6 +2084,41 @@ class SynthoraiChat(Base):
     _BASE_URL = "https://synthorai.io/v1"
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
+class AnonRouterChat(Base):
+    """AnonRouter OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. AnonRouter is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the AnonRouter API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
+class ApiRouteChat(Base):
+    """API-Route OpenAI-compatible chat adapter.
+
+    The endpoint is fixed to global.api-route.com rather than configurable.
+    API-Route is a hosted aggregation platform, so a tenant-supplied
+    ``base_url`` would have no legitimate use and would send the API-Route
+    key elsewhere.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Initialize the API-Route chat model."""
         super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 

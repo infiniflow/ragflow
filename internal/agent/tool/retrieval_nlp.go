@@ -322,15 +322,16 @@ func nlpRequestFromRetrieval(
 	excludeCompiled bool,
 ) *nlp.RetrievalRequest {
 	nlpReq := &nlp.RetrievalRequest{
-		Question:       req.Query,
-		TenantIDs:      append([]string(nil), tenantIDs...),
-		KbIDs:          append([]string(nil), req.DatasetIDs...),
-		DocIDs:         append([]string(nil), compactStrings(req.DocScope)...),
-		Page:           1,
-		PageSize:       topN,
-		EmbeddingModel: embeddingModel,
-		Aggs:           boolPtr(false),
-		Highlight:      boolPtr(false),
+		Question:           req.Query,
+		TenantIDs:          append([]string(nil), tenantIDs...),
+		KbIDs:              append([]string(nil), req.DatasetIDs...),
+		DocIDs:             append([]string(nil), compactStrings(req.DocScope)...),
+		Page:               1,
+		PageSize:           topN,
+		EmbeddingModel:     embeddingModel,
+		Aggs:               boolPtr(false),
+		Highlight:          boolPtr(false),
+		AllowDenseFallback: req.AllowDenseFallback,
 	}
 	if excludeCompiled {
 		// Python hybrid_search excludes compiled products from plain retrieval
@@ -353,7 +354,20 @@ func nlpRequestFromRetrieval(
 	if req.SimilarityThreshold != nil {
 		nlpReq.SimilarityThreshold = req.SimilarityThreshold
 	}
-	if req.KeywordsSimilarityWeight != nil {
+	if req.DisableVectorLeg {
+		// Python embd_mdl=None (bm25_search / grep_search / retrieve with
+		// using_embedding=False): keyword-only search, NO dense leg at all —
+		// not even a weight-0 one, which would still constrain the candidate
+		// pool through the KNN similarity option.
+		nlpReq.EmbeddingModel = nil
+	}
+	if req.VectorSimilarityWeight != nil {
+		// Agentic harness path: the vector weight arrives already in vector
+		// semantics (Python vector_similarity_weight) — forward verbatim.
+		nlpReq.VectorSimilarityWeight = req.VectorSimilarityWeight
+	} else if req.KeywordsSimilarityWeight != nil {
+		// Canvas path: keywords_similarity_weight is the KEYWORD weight
+		// (user-facing config); the vector weight is its complement.
 		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight
 		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
 	}

@@ -27,6 +27,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/entity"
 )
@@ -107,32 +108,91 @@ func TestHybridSearchBuildsEffectiveQuery(t *testing.T) {
 	}
 }
 
-func TestHybridSearchPassesRankFeature(t *testing.T) {
-	// label_question -> rank_feature must flow into the underlying retrieve
-	// request (Python retrieve: rank_feature=label_question(question, self.kbs),
-	// agentic_rag.py:retrieve). A nil Tagger must leave RankFeature empty.
+// TestHybridSearchEffectiveQueryCapsCodePoints pins the expanded-query cap to
+// code points, not bytes.  Python slices a str with `[:400]` (search.py:129/216/254),
+// so the cap counts code points: a byte slice both splits a multi-byte rune —
+// handing the retriever invalid UTF-8 — and caps a CJK query at ~133 characters,
+// dropping expansion terms the fan-out leg weighs on.  The ASCII case above
+// cannot tell the two apart (bytes == runes there).
+func TestHybridSearchEffectiveQueryCapsCodePoints(t *testing.T) {
+	// "who made it" + " " is 12 bytes, so byte 400 lands one byte inside a CJK
+	// rune (400-12 = 388 = 3*129 + 1): the byte slice is not even valid UTF-8.
+	expansion := strings.Repeat("知识", 300) // 600 runes, 1800 bytes
+	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
+	deps, _ := newTestSearchDeps(r)
+	HybridSearch(context.Background(), deps, SearchParams{
+		Question: "who made it", RetrievalQuery: expansion,
+	})
+
+	if len(r.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r.requests))
+	}
+	q := r.requests[0].Query
+	if !utf8.ValidString(q) {
+		t.Fatalf("query is not valid UTF-8 — a byte slice cut a rune in half: %q", q)
+	}
+	if got := utf8.RuneCountInString(q); got != maxEffectiveQueryChars {
+		t.Errorf("query runes = %d, want the cap at %d code points (%d bytes)", got, maxEffectiveQueryChars, len(q))
+	}
+	full := "who made it " + expansion
+	if want := string([]rune(full)[:maxEffectiveQueryChars]); q != want {
+		t.Errorf("query = %q, want the first %d code points %q", q, maxEffectiveQueryChars, want)
+	}
+	// 400 code points of mostly-CJK text is far more than 400 bytes: the cap is a
+	// character budget, not a byte budget.
+	if len(q) <= maxEffectiveQueryChars {
+		t.Errorf("query bytes = %d, want > %d (the cap counts code points)", len(q), maxEffectiveQueryChars)
+	}
+}
+
+func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
+	// Python passes rank_feature ONLY from RAGTools.retrieve
+	// (agentic_rag.py:668 rank_feature=label_question(question, self.kbs)).
+	// search.py's three legs call retriever.retrieval WITHOUT rank_feature
+	// (:158-173 hybrid, :223-238 vector, :260-275 bm25; grep_search delegates to
+	// bm25_search, :428), so those requests must stay nil even with a Tagger.
 	r := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps, _ := newTestSearchDeps(r)
 	deps.KBs = []*entity.Knowledgebase{{}}
 	deps.Tagger = stubTagger{t: t}
+
 	HybridSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
-	if len(r.requests) != 1 {
-		t.Fatalf("requests = %d, want 1", len(r.requests))
-	}
+	VectorSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+	BM25Search(context.Background(), deps, SearchParams{Question: "who made it?"})
+	GrepSearch(context.Background(), deps, SearchParams{Question: "who made it?"})
+
 	want := map[string]float64{"definition": 1.0, "entity": 1.0}
-	if got := r.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
-		t.Errorf("RankFeature = %v, want %v", got, want)
+	for i, req := range r.requests {
+		if req.RankFeature != nil {
+			t.Errorf("request %d (%s) RankFeature = %v, want nil (search.py legs never pass rank_feature)", i, req.Query, req.RankFeature)
+		}
 	}
 
-	// Nil Tagger -> empty rank feature (Python label_question None).
+	// RAGTools.retrieve is the only leg that carries the label_question boost.
 	r2 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps2, _ := newTestSearchDeps(r2)
-	HybridSearch(context.Background(), deps2, SearchParams{Question: "unique query no rf"})
+	deps2.KBs = []*entity.Knowledgebase{{}}
+	deps2.Tagger = stubTagger{t: t}
+	deps2.UsingEmbedding = true
+	RetrieveSearch(context.Background(), deps2, SearchParams{Question: "who made it?"})
 	if len(r2.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(r2.requests))
 	}
-	if len(r2.requests[0].RankFeature) != 0 {
-		t.Errorf("RankFeature = %v, want empty for nil Tagger", r2.requests[0].RankFeature)
+	if got := r2.requests[0].RankFeature; !reflect.DeepEqual(got, want) {
+		t.Errorf("RetrieveSearch RankFeature = %v, want %v", got, want)
+	}
+
+	// Nil Tagger -> empty rank feature even on the retrieve leg (Python
+	// label_question returning None).
+	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
+	deps3, _ := newTestSearchDeps(r3)
+	deps3.UsingEmbedding = true
+	RetrieveSearch(context.Background(), deps3, SearchParams{Question: "unique query no rf"})
+	if len(r3.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r3.requests))
+	}
+	if len(r3.requests[0].RankFeature) != 0 {
+		t.Errorf("RankFeature = %v, want empty for nil Tagger", r3.requests[0].RankFeature)
 	}
 }
 
@@ -193,7 +253,7 @@ func TestHybridSearchStoresMemoryBeforeNarrowing(t *testing.T) {
 	if MemorySize(kb) != 1 {
 		t.Fatalf("memory size = %d, want 1", MemorySize(kb))
 	}
-	if strings.Contains(ChunkTextOf(kb.Memory[0]), "<em>") {
+	if strings.Contains(ChunkTextOf(kb.Memory[0]), "*Culdcept*") {
 		t.Error("memory must hold the RAW chunk, not the narrowed/highlighted copy")
 	}
 }
@@ -241,7 +301,7 @@ func TestNarrowContentKeepsNeighboursAndHighlights(t *testing.T) {
 	if !ok {
 		t.Fatal("NarrowContent must match")
 	}
-	if !strings.Contains(got, "<em>Culdcept</em>") {
+	if !strings.Contains(got, "*Culdcept*") {
 		t.Errorf("keyword not highlighted: %q", got)
 	}
 	// +/-1 neighbour window: Alpha and Omega should be present.
@@ -275,11 +335,87 @@ func TestSplitKeywordsFallsBackToBigrams(t *testing.T) {
 func TestHighlightKeywordsPrefersLongestTerm(t *testing.T) {
 	// "new york" must win over "york" so the shorter term cannot split it.
 	got := HighlightKeywords("welcome to New York city", []string{"york", "new york"})
-	if !strings.Contains(got, "<em>New York</em>") {
+	// Python's star marker, and ONE span for the multi-word entity
+	// (text_processing.py:391-394) — never "*New* *York*".
+	if !strings.Contains(got, "*New York*") {
 		t.Errorf("highlight = %q, want the longest term applied", got)
 	}
-	if strings.Contains(got, "<em>york</em>") {
+	if strings.Contains(got, "*york*") {
 		t.Errorf("shorter term must not win: %q", got)
+	}
+}
+
+// TestHighlightKeywordsFoldsWithoutByteOffsets pins the matching to rune space.
+// `strings.ToLower` is not byte-length-preserving: "İ" (U+0130) is 2 bytes and
+// folds to the 1-byte "i" (Go applies the simple 1:1 case mapping, the opposite
+// direction from Python's full fold, which expands it to 3 bytes). So a byte
+// offset taken from the original indexes the folded string at a different
+// position: the loop then runs past its end (panic: slice bounds out of range
+// [10:9]) or cuts a rune in half (invalid UTF-8). Corpus text reaches this via
+// NarrowContent, e.g. a Turkish document.
+func TestHighlightKeywordsFoldsWithoutByteOffsets(t *testing.T) {
+	// "İstanbul" is 9 bytes but folds to the 8-byte "istanbul", so the old byte
+	// loop wrote text[0:8] — one byte short, ending mid-word ("İstanbu").
+	if got := HighlightKeywords("İstanbul is here", []string{"istanbul"}); got != "*İstanbul* is here" {
+		t.Errorf("highlight = %q, want the whole word wrapped", got)
+	}
+
+	// Two shrunken runes push the byte index one past the end of the folded
+	// string while the original still has a byte left: the old loop panicked.
+	got := HighlightKeywords("İİstanbul", []string{"istanbul"})
+	if !utf8.ValidString(got) {
+		t.Fatalf("highlight is not valid UTF-8 — a span split a rune: %q", got)
+	}
+	if !strings.Contains(got, "*İstanbul*") {
+		t.Errorf("highlight = %q, want the fold-matched runes wrapped in place", got)
+	}
+}
+
+// TestHighlightKeywordsFoldsUppercaseKeywords pins that a keyword's OWN casing is
+// folded the way the haystack is: terms are matched against the lowercased text
+// (`lows`), and Python builds its phrase list with `(kw or "").strip().lower()`
+// (text_processing.py:396) plus re.IGNORECASE (:411). A caller-supplied "Rocket"
+// used to be compared verbatim, so a capitalised keyword never matched and the
+// span was silently left unstarred.
+func TestHighlightKeywordsFoldsUppercaseKeywords(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		kwds []string
+		want string
+	}{
+		{"single word", "the Rocket launched", []string{"Rocket"}, "the *Rocket* launched"},
+		{"multi-word phrase stays one span", "welcome to New York city", []string{"New York"}, "welcome to *New York* city"},
+		{"source casing is preserved", "ROCKET is loud", []string{"Rocket"}, "*ROCKET* is loud"},
+		{"surrounding spaces are trimmed", "the Rocket launched", []string{"  Rocket  "}, "the *Rocket* launched"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HighlightKeywords(tc.text, tc.kwds); got != tc.want {
+				t.Errorf("HighlightKeywords(%q, %v) = %q, want %q", tc.text, tc.kwds, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHighlightKeywordsKeepsPhrasePartsWhole pins Python's phrase guard
+// (text_processing.py:405): a stem-matched word that already occurs inside a
+// keyword phrase is NOT added as a term of its own, so a standalone "Braves" is
+// left alone and only the "Atlanta Braves" span is starred.
+func TestHighlightKeywordsKeepsPhrasePartsWhole(t *testing.T) {
+	got := HighlightKeywords("Braves lost. Atlanta Braves won.", []string{"Atlanta Braves"})
+	if want := "Braves lost. *Atlanta Braves* won."; got != want {
+		t.Errorf("highlight = %q, want %q", got, want)
+	}
+}
+
+// TestHighlightKeywordsStemMatchesCapitalisedWords pins the word scan: Python
+// stems every `[A-Za-z]+` word (:403), so a capitalised inflected word still
+// contributes its stem term. The shared lowercase pattern matched only the
+// fragment after the capital ("Nominated" -> "ominated"), so nothing was starred.
+func TestHighlightKeywordsStemMatchesCapitalisedWords(t *testing.T) {
+	got := HighlightKeywords("Nominated twice.", []string{"nominations"})
+	if want := "*Nominated* twice."; got != want {
+		t.Errorf("highlight = %q, want %q", got, want)
 	}
 }
 
@@ -391,6 +527,17 @@ func (r *stubRetriever) lastReq(t *testing.T) RetrieveRequest {
 	return r.requests[len(r.requests)-1]
 }
 
+// ptrFloat dereferences a control pointer. nil means "the caller supplied
+// nothing, so the retriever keeps its own default"; the search-leg tests below
+// assert the opposite (an explicit value is passed), so nil is a failure here.
+func ptrFloat(t *testing.T, p *float64) float64 {
+	t.Helper()
+	if p == nil {
+		t.Fatal("control pointer = nil, want an explicit value")
+	}
+	return *p
+}
+
 // TestVectorSearchBailsWithoutEmbedder mirrors Python vector_search: with no
 // embedder configured it returns nothing (Python bails when embd_mdl is unset),
 // and must NOT even hit the backend.
@@ -413,8 +560,8 @@ func TestVectorSearchWeightIsOne(t *testing.T) {
 	deps.HasEmbedder = true
 	VectorSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if req.KeywordsSimilarityWeight != 1.0 {
-		t.Errorf("vector search weight = %v, want 1.0", req.KeywordsSimilarityWeight)
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 1.0 {
+		t.Errorf("vector search weight = %v, want 1.0", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("vector search must exclude compiled rows")
@@ -428,11 +575,15 @@ func TestBM25SearchUsesZeroWeight(t *testing.T) {
 	deps, _ := newTestSearchDeps(r)
 	BM25Search(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if req.KeywordsSimilarityWeight != 0 {
-		t.Errorf("bm25 search weight = %v, want 0", req.KeywordsSimilarityWeight)
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
+		t.Errorf("bm25 search weight = %v, want 0", got)
 	}
-	if req.SimilarityThreshold != 0 {
-		t.Errorf("bm25 search threshold = %v, want 0", req.SimilarityThreshold)
+	// Python bm25_search passes embd_mdl=None: no dense leg at all.
+	if !req.DisableVectorLeg {
+		t.Error("bm25 search must disable the vector leg (embd_mdl=None)")
+	}
+	if got := ptrFloat(t, req.SimilarityThreshold); got != 0 {
+		t.Errorf("bm25 search threshold = %v, want 0", got)
 	}
 	if !req.ExcludeCompiled {
 		t.Error("bm25 search must exclude compiled rows")
@@ -446,8 +597,11 @@ func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	deps, _ := newTestSearchDeps(r)
 	GrepSearch(context.Background(), deps, SearchParams{Question: "q", Keywords: "kw"})
 	req := r.lastReq(t)
-	if req.KeywordsSimilarityWeight != 0 {
-		t.Errorf("grep search weight = %v, want 0", req.KeywordsSimilarityWeight)
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != 0 {
+		t.Errorf("grep search weight = %v, want 0", got)
+	}
+	if !req.DisableVectorLeg {
+		t.Error("grep search must disable the vector leg (embd_mdl=None)")
 	}
 	if !req.ExcludeCompiled {
 		t.Error("grep search must exclude compiled rows")
@@ -567,7 +721,7 @@ func TestGrepSearchDerivesKeywordsHint(t *testing.T) {
 	if want := "who made Culdcept? who made Culdcept"; req.Query != want {
 		t.Errorf("query = %q, want %q (question + derived terms)", req.Query, want)
 	}
-	if req.KeywordsSimilarityWeight != 0 || !req.ExcludeCompiled {
+	if ptrFloat(t, req.VectorSimilarityWeight) != 0 || !req.ExcludeCompiled {
 		t.Error("grep must stay keyword-only (weight 0) and exclude compiled rows")
 	}
 	// The derived hint also drives the narrowing stage: a prose candidate whose
@@ -622,8 +776,13 @@ func TestHybridSearchExcludesCompiledAndWeightsThreeTenths(t *testing.T) {
 	deps.HasEmbedder = true
 	HybridSearch(context.Background(), deps, SearchParams{Question: "q"})
 	req := r.lastReq(t)
-	if req.KeywordsSimilarityWeight != HybridSearchDefaultVectorWeight {
-		t.Errorf("hybrid search weight = %v, want %v", req.KeywordsSimilarityWeight, HybridSearchDefaultVectorWeight)
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != HybridSearchDefaultVectorWeight {
+		t.Errorf("hybrid search weight = %v, want %v", got, HybridSearchDefaultVectorWeight)
+	}
+	// With an embedder configured Python hybrid_search passes the real
+	// embd_mdl: the dense leg RUNS at weight 0.3.
+	if req.DisableVectorLeg {
+		t.Error("hybrid search with an embedder must keep the vector leg")
 	}
 	if !req.ExcludeCompiled {
 		t.Error("hybrid search must exclude compiled rows")
@@ -642,8 +801,8 @@ func TestRetrieveSearchDoesNotExcludeCompiled(t *testing.T) {
 	if req.ExcludeCompiled {
 		t.Error("retrieve search must NOT exclude compiled rows")
 	}
-	if req.KeywordsSimilarityWeight != DefaultHybridVectorWeight {
-		t.Errorf("retrieve search weight = %v, want %v", req.KeywordsSimilarityWeight, DefaultHybridVectorWeight)
+	if got := ptrFloat(t, req.VectorSimilarityWeight); got != DefaultHybridVectorWeight {
+		t.Errorf("retrieve search weight = %v, want %v", got, DefaultHybridVectorWeight)
 	}
 }
 
