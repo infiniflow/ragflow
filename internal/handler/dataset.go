@@ -548,10 +548,13 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	createDateTo := c.Query("create_date_to")
 	logType := c.DefaultQuery("log_type", "dataset")
 	keywords := c.Query("keywords")
+	// Exact per-document filter for the file-log list. Python's endpoint has no
+	// equivalent; the frontend only sends it on the Go backend.
+	documentID := c.Query("document_id")
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

@@ -264,9 +264,11 @@ type ChatbotCompletionRequest struct {
 	// python bot_api.py defaults it to False for chatbot
 	// completions, so the service layer mirrors that.
 	Quote *bool `json:"quote"`
-	// Reasoning / Internet arrive as bool OR 0/1 number depending
-	// on the widget; the service layer normalises them before
-	// handing them to the chat pipeline.
+	// Reasoning / Internet arrive as bool OR 0/1 number depending on the
+	// widget. Internet is normalised by normalizeInternetFlag before reaching
+	// the pipeline (chat_pipeline.go); Reasoning is passed through verbatim as
+	// the 0..4 agentic-RAG level so medium/high/ultra levels are not collapsed
+	// to a bool — resolveReasoningLevel reads it directly.
 	Reasoning any `json:"reasoning"`
 	Internet  any `json:"internet"`
 	// DocIDs is an optional comma-separated document filter,

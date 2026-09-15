@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import json
 import logging
 import re
@@ -303,7 +304,8 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                dense_template = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                matchDense = copy.deepcopy(dense_template)
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
@@ -333,13 +335,34 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
-                # If result is empty, try again with lower min_match
+                # If result is empty, try again with lower min_match or, for
+                # dense-only queries, a lower vector threshold.
                 if total == 0:
-                    if filters.get("doc_id"):
+                    if not matchText:
+                        if req.get("allow_dense_fallback", True):
+                            matchDense = copy.deepcopy(dense_template)
+                            matchDense.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only fallback after empty initial search")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                highlightFields,
+                                filters,
+                                [matchDense],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
+                    elif filters.get("doc_id"):
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
+                        matchDense = copy.deepcopy(dense_template)
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
                             self.dataStore.search,
@@ -355,6 +378,25 @@ class Dealer:
                             rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
+                        # Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
+                        if total == 0 and matchText and req.get("allow_dense_fallback", True):
+                            matchDense = copy.deepcopy(dense_template)
+                            matchDense.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only fallback after empty hybrid retries")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                [],
+                                filters,
+                                [matchDense],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
@@ -683,6 +725,7 @@ class Dealer:
         rerank_candidates_count=64,
         knn_top_k=1024,  # Advanced knn parameter
         knn_num_candidates=2048,  # Advanced knn parameter
+        allow_dense_fallback=True,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -717,6 +760,7 @@ class Dealer:
             "vector_similarity_weight": vector_similarity_weight,
             "knn_top_k": knn_top_k,
             "knn_num_candidates": knn_num_candidates,
+            "allow_dense_fallback": allow_dense_fallback,
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
