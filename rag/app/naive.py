@@ -732,9 +732,9 @@ class Docx(DocxParser):
                         # Skip table-of-contents entries: they are navigation
                         # noise that pollutes retrieval (see _is_toc_paragraph).
                         if _is_toc_paragraph(text, style_name):
-                            continue
+                            pass
 
-                        if style_name == "Caption":
+                        elif style_name == "Caption":
                             former_image = None
 
                             if lines and lines[-1].get("image") and lines[-1].get("style") != "Caption":
