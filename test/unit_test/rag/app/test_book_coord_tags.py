@@ -135,6 +135,14 @@ def _env(monkeypatch):
         if name == "deepdoc" or name.startswith("deepdoc."):
             sys.modules.pop(name, None)
     sys.modules.update(saved)
+    # `rag.app.book` above was imported against the stubbed `deepdoc` tree, so
+    # its classes carry stub bases. Drop it as well, otherwise later tests in
+    # the same session reuse that copy instead of the real module. The import
+    # system also bound `book` as an attribute of the `rag.app` package, and
+    # `from rag.app import book` resolves through that attribute without
+    # consulting sys.modules, so both halves have to go.
+    sys.modules.pop("rag.app.book", None)
+    getattr(sys.modules.get("rag.app"), "__dict__", {}).pop("book", None)
 
 
 def _chunk(book, sections, fake_pdf, monkeypatch):

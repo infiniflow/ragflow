@@ -144,7 +144,10 @@ func (c *IMAPConnector) OpenSync(ctx context.Context, request SyncRequest) (Sync
 		windowEnd:   request.WindowEnd,
 		hasMore:     true,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -170,11 +173,12 @@ type imapSyncSession struct {
 	windowStart *time.Time
 	windowEnd   time.Time
 
-	todoMailboxes  []string
-	currentMailbox string
-	todoEmailIDs   []string
-	selected       string
-	hasMore        bool
+	todoMailboxes   []string
+	currentMailbox  string
+	todoEmailIDs    []string
+	selected        string
+	hasMore         bool
+	resumeValidated bool
 }
 
 // NextBatch returns the next IMAP document batch.
@@ -225,6 +229,9 @@ func (s *imapSyncSession) Close() error {
 // ensureCurrentEmail makes sure the session has a list of mailboxes and a
 // current mailbox with remaining email IDs, advancing as needed.
 func (s *imapSyncSession) ensureCurrentEmail(ctx context.Context) error {
+	if err := s.validateResume(ctx); err != nil {
+		return err
+	}
 	if s.todoMailboxes == nil {
 		mailboxes, err := s.listMailboxes(ctx)
 		if err != nil {
@@ -262,6 +269,52 @@ func (s *imapSyncSession) ensureCurrentEmail(ctx context.Context) error {
 		s.selected = s.currentMailbox
 		return nil
 	}
+}
+
+func (s *imapSyncSession) validateResume(ctx context.Context) error {
+	if s.resumeValidated || s.todoMailboxes == nil {
+		return nil
+	}
+	mailboxes, err := s.listMailboxes(ctx)
+	if err != nil {
+		return err
+	}
+	current := make(map[string]struct{}, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		current[mailbox] = struct{}{}
+	}
+	for _, mailbox := range s.todoMailboxes {
+		if _, ok := current[mailbox]; !ok {
+			return fmt.Errorf("imap resume mailbox %q was not found in the current listing: %w", mailbox, ErrSyncResumeInvalid)
+		}
+	}
+	if s.currentMailbox != "" {
+		if _, ok := current[s.currentMailbox]; !ok {
+			return fmt.Errorf("imap resume mailbox %q was not found in the current listing: %w", s.currentMailbox, ErrSyncResumeInvalid)
+		}
+		emailIDs, err := s.searchMailbox(ctx, s.currentMailbox)
+		if err != nil {
+			return err
+		}
+		if !imapTodoEmailsMatch(s.todoEmailIDs, emailIDs) {
+			return fmt.Errorf("imap resume email state no longer matches mailbox %q: %w", s.currentMailbox, ErrSyncResumeInvalid)
+		}
+	}
+	s.resumeValidated = true
+	return nil
+}
+
+func imapTodoEmailsMatch(todo, current []string) bool {
+	if len(todo) > len(current) {
+		return false
+	}
+	start := len(current) - len(todo)
+	for index, emailID := range todo {
+		if emailID != current[start+index] {
+			return false
+		}
+	}
+	return true
 }
 
 // listMailboxes returns configured mailboxes or discovers all mailboxes.
@@ -331,13 +384,27 @@ func (s *imapSyncSession) checkpoint(lastDoc *SourceDocument) *SyncCheckpoint {
 }
 
 // applyResume restores a sync session from a previously committed checkpoint.
-func (s *imapSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *imapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("imap sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor imapCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("imap sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	if !cursor.HasMore {
+		return fmt.Errorf("imap sync checkpoint has no remaining work: %w", ErrSyncResumeInvalid)
+	}
+	if len(cursor.TodoMailboxes) == 0 && cursor.CurrentMailbox == nil {
+		return fmt.Errorf("imap sync checkpoint has no mailbox anchor: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.CurrentMailbox != nil {
+		if cursor.CurrentMailbox.Mailbox == "" || len(cursor.CurrentMailbox.TodoEmailIDs) == 0 {
+			return fmt.Errorf("imap sync checkpoint has no email anchor: %w", ErrSyncResumeInvalid)
+		}
 	}
 	s.todoMailboxes = cursor.TodoMailboxes
 	s.hasMore = cursor.HasMore
@@ -345,6 +412,8 @@ func (s *imapSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.currentMailbox = cursor.CurrentMailbox.Mailbox
 		s.todoEmailIDs = cursor.CurrentMailbox.TodoEmailIDs
 	}
+	s.resumeValidated = false
+	return nil
 }
 
 type imapCursor struct {

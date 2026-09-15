@@ -71,6 +71,106 @@ func TestJiraConnectorOpenSyncCloud(t *testing.T) {
 	}
 }
 
+func TestJiraConnectorOpenSyncResumeSkipsCommittedSource(t *testing.T) {
+	server := jiraResumeFixtureServer(t, []map[string]any{
+		{"id": "10000", "key": "RAG-7"},
+		{"id": "10001", "key": "RAG-8"},
+	})
+	defer server.Close()
+
+	connector, err := NewJiraConnector(map[string]any{
+		"base_url":        server.URL,
+		"project_key":     "RAG",
+		"batch_size":      10,
+		"timezone_offset": 0,
+		"credentials": map[string]any{
+			"jira_api_token":   "token",
+			"rest_api_version": "3",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewJiraConnector failed: %v", err)
+	}
+	cursorData, err := json.Marshal(jiraSyncCursor{
+		StartAt:  0,
+		SourceID: server.URL + "/browse/RAG-7",
+	})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   string(cursorData),
+			SourceID: server.URL + "/browse/RAG-7",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resumed OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("resumed NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-8" {
+		t.Fatalf("resumed documents = %+v, want RAG-8 only", batch.Documents)
+	}
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("resumed final NextBatch = %v, want io.EOF", err)
+	}
+}
+
+func TestJiraConnectorOpenSyncResumeRejectsInvalidCheckpoint(t *testing.T) {
+	server := jiraFixtureServer(t)
+	defer server.Close()
+	connector := mustJiraResumeConnector(t, server.URL)
+	cases := map[string]*SyncCheckpoint{
+		"missing":   {},
+		"malformed": {Cursor: "not-json"},
+		"no-anchor": {Cursor: `{"start_at":1}`},
+		"foreign":   {Cursor: `{"start_at":1,"source_id":"https://other.example/browse/RAG-7"}`},
+	}
+	for name, checkpoint := range cases {
+		t.Run(name, func(t *testing.T) {
+			session, err := connector.OpenSync(context.Background(), SyncRequest{
+				FromBeginning: true,
+				Resume:        checkpoint,
+			})
+			if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+				t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+			}
+		})
+	}
+}
+
+func TestJiraConnectorOpenSyncResumeRejectsMissingIssue(t *testing.T) {
+	server := jiraResumeFixtureServer(t, []map[string]any{})
+	defer server.Close()
+	connector := mustJiraResumeConnector(t, server.URL)
+	cursorData, err := json.Marshal(jiraSyncCursor{
+		StartAt:  0,
+		SourceID: server.URL + "/browse/RAG-999",
+	})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   string(cursorData),
+			SourceID: server.URL + "/browse/RAG-999",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
 func TestJiraConnectorOpenPrune(t *testing.T) {
 	server := jiraFixtureServer(t)
 	defer server.Close()
@@ -271,6 +371,48 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 	})
 	server = httptest.NewServer(mux)
 	return server
+}
+
+func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Server {
+	t.Helper()
+	var server *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/api/3/project/RAG", func(w http.ResponseWriter, r *http.Request) {
+		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
+	})
+	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
+		jiraWriteJSON(t, w, map[string]any{"issues": keys})
+	})
+	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
+		issues := make([]map[string]any, 0, len(keys))
+		for _, meta := range keys {
+			issue := jiraFixtureIssue(server.URL)
+			issue["id"] = meta["id"]
+			issue["key"] = meta["key"]
+			issues = append(issues, issue)
+		}
+		jiraWriteJSON(t, w, map[string]any{"issues": issues})
+	})
+	server = httptest.NewServer(mux)
+	return server
+}
+
+func mustJiraResumeConnector(t *testing.T, baseURL string) *JiraConnector {
+	t.Helper()
+	connector, err := NewJiraConnector(map[string]any{
+		"base_url":        baseURL,
+		"project_key":     "RAG",
+		"batch_size":      10,
+		"timezone_offset": 0,
+		"credentials": map[string]any{
+			"jira_api_token":   "token",
+			"rest_api_version": "3",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewJiraConnector failed: %v", err)
+	}
+	return connector
 }
 
 func jiraFixtureIssue(baseURL string) map[string]any {

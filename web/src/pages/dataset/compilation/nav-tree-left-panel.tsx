@@ -8,6 +8,7 @@ import {
   DatasetNavNode,
 } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { FileText, Folder, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,7 @@ function NavNodeDeleteAction({
   onDelete,
 }: NavNodeDeleteActionProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const handleTriggerClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -40,6 +42,9 @@ function NavNodeDeleteAction({
   const handleConfirmDelete = useCallback(() => {
     onDelete(name, parentName);
   }, [name, parentName, onDelete]);
+
+  // The Go backend does not support deleting nav nodes; don't mount the action.
+  if (isGo) return null;
 
   return (
     <ConfirmDeleteDialog
@@ -66,8 +71,10 @@ function NavNodeDeleteAction({
 type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
+  navError?: boolean;
   keywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
+  childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
@@ -82,8 +89,10 @@ type NavTreeLeftPanelProps = {
 export function NavTreeLeftPanel({
   navList,
   navLoading,
+  navError = false,
   keywords,
   childrenMap,
+  childrenErrorParents = {},
   structureMap,
   deleteNavLoading,
   deleteNodeLoading,
@@ -95,6 +104,7 @@ export function NavTreeLeftPanel({
   onDeleteNode,
 }: NavTreeLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const renderNavActions = useCallback(
     (node: DatasetNavNode, parentName: string | null) => (
@@ -112,16 +122,19 @@ export function NavTreeLeftPanel({
     () =>
       buildNavTreeData(navList?.items, {
         childrenMap,
+        childrenErrorParents,
         structureMap,
         getActions: renderNavActions,
         onNodeClick,
         onNodeExpand,
         onEntityClick,
         loadingPlaceholder: t('knowledgeCompilation.navLoading'),
+        errorPlaceholder: t('knowledgeCompilation.navChildLoadFailed'),
       }),
     [
       navList?.items,
       childrenMap,
+      childrenErrorParents,
       structureMap,
       renderNavActions,
       onNodeClick,
@@ -137,10 +150,12 @@ export function NavTreeLeftPanel({
         <span className="text-sm font-medium text-text-primary">
           {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
-        {treeData.length > 0 && (
+        {!isGo && treeData.length > 0 && (
           <ConfirmDeleteDialog
             title={t('knowledgeCompilation.navDeleteAllTitle')}
-            content={{ title: t('knowledgeCompilation.navDeleteAllDescription') }}
+            content={{
+              title: t('knowledgeCompilation.navDeleteAllDescription'),
+            }}
             onOk={onDeleteAll}
           >
             <Button
@@ -166,15 +181,26 @@ export function NavTreeLeftPanel({
           </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">
-            {t('knowledgeCompilation.navEmpty')}
+            {t(
+              navError
+                ? 'knowledgeCompilation.navLoadFailed'
+                : 'knowledgeCompilation.navEmpty',
+            )}
           </div>
         ) : (
-          <TreeView
-            data={treeData}
-            expandOnRowClick={false}
-            defaultNodeIcon={Folder}
-            defaultLeafIcon={FileText}
-          />
+          <>
+            {navError ? (
+              <div className="px-2 pb-2 text-center text-sm text-text-secondary">
+                {t('knowledgeCompilation.navLoadFailed')}
+              </div>
+            ) : null}
+            <TreeView
+              data={treeData}
+              expandOnRowClick={false}
+              defaultNodeIcon={Folder}
+              defaultLeafIcon={FileText}
+            />
+          </>
         )}
       </div>
     </aside>

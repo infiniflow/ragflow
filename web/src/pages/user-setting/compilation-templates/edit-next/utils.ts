@@ -29,7 +29,6 @@ import { CompilationTemplateKind } from '@/constants/compilation';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
 import {
-  DefaultFieldKeys,
   DefaultTemplateValues,
   FieldKeyOrders,
   SectionPriority,
@@ -66,14 +65,11 @@ export const normalizeSection = (
   const fields = section?.fields ?? [];
   return {
     description: section?.description ?? '',
-    fields:
-      fields.length > 0
-        ? fields.map((field) =>
-            Object.fromEntries(
-              Object.entries(field).map(([key, value]) => [key, value ?? '']),
-            ),
-          )
-        : [createEmptyField(DefaultFieldKeys)],
+    fields: fields.map((field) =>
+      Object.fromEntries(
+        Object.entries(field).map(([key, value]) => [key, value ?? '']),
+      ),
+    ),
   };
 };
 
@@ -139,6 +135,7 @@ export const buildConfigFromBuiltin = (
       ...sections,
       raptor: {
         prompt: builtinRaptor.prompt ?? '',
+        claim_prompt: builtinRaptor.claim_prompt ?? '',
         max_token: builtinRaptor.max_token ?? 512,
         clustering_threshold: builtinRaptor.clustering_threshold ?? 0.3,
         clustering_ratio: builtinRaptor.clustering_ratio ?? 0.5,
@@ -211,6 +208,7 @@ export const transformDetailToForm = (
         ...base,
         raptor: {
           prompt: raptor.prompt ?? '',
+          claim_prompt: raptor.claim_prompt ?? '',
           max_token: raptor.max_token ?? 512,
           clustering_threshold: raptor.clustering_threshold ?? 0.3,
           clustering_ratio: raptor.clustering_ratio ?? 0.5,
@@ -264,7 +262,7 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       return;
     }
     if (key === 'mode') {
-      config[key] = value as ICompilationTemplateConfigRequest[string];
+      config.mode = value as ICompilationTemplateConfigRequest['mode'];
       return;
     }
     if (isConfigMetaKey(key)) {

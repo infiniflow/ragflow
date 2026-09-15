@@ -265,14 +265,13 @@ class TestEmbeddingUtilsCombineVectors:
         np.testing.assert_array_equal(result, content_vecs)
 
     def test_combine_vectors_with_zero_weight(self):
-        """Test combining when weight is 0 uses default 0.1."""
+        """Test combining when weight is 0 excludes title vectors."""
         title_vecs = np.array([[1.0, 2.0]])
         content_vecs = np.array([[5.0, 6.0]])
 
         result = EmbeddingUtils.combine_title_content_vectors(title_vecs, content_vecs, title_weight=0)
 
-        # Should use default weight of 0.1
-        expected = 0.1 * title_vecs + 0.9 * content_vecs
+        expected = content_vecs
         np.testing.assert_array_almost_equal(result, expected)
 
 

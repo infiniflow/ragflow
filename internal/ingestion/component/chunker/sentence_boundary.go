@@ -26,7 +26,7 @@ import "regexp"
 //
 // The token chunker's TEXT path (naive_merge port) uses a different delimiter
 // — sentenceDelimiter in token.go, mirroring Python naive_merge's production
-// delimiter "\n!?。；！？" (no ". "). The two constants mirror two distinct
-// Python constants and differ only in that English boundary, so they are
-// intentionally NOT merged into one.
+// default DEFAULT_DELIMITER ("\n!?;。；！？", no ". "). The two constants mirror
+// two distinct Python constants and differ only in that English boundary, so
+// they are intentionally NOT merged into one.
 var sentenceBoundaryRe = regexp.MustCompile(`([。!?？；！\n]|\. )`)

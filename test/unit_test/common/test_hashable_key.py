@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 """Tests for ``hashable_key``, the set-backed dedup key used by the RAG merge
-paths (dataset_structure_merger, tree_structured_query_decomposition_retrieval).
+paths (dataset_structure_merger).
 Malformed provenance values (lists/dicts where a string was expected) must be
 usable as set members without raising, and without merging values that aren't
 actually equal."""

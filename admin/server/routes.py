@@ -23,7 +23,7 @@ from datetime import datetime
 from flask import Blueprint, Response, request
 from flask_login import current_user, login_required, logout_user
 
-from auth import login_verify, login_admin, check_admin_auth
+from auth import login_admin, check_admin_auth
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr, SandboxMgr
 from roles import RoleMgr
@@ -60,15 +60,6 @@ def logout():
         current_user.save()
         logout_user()
         return success_response(True)
-    except Exception as e:
-        return error_response(str(e), 500)
-
-
-@admin_bp.route("/auth", methods=["GET"])
-@login_verify
-def auth_admin():
-    try:
-        return success_response(None, "Admin is authorized", 0)
     except Exception as e:
         return error_response(str(e), 500)
 

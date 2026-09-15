@@ -94,7 +94,9 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 }
 
 // GetFileContents fetches file contents (text + image) from storage
-// for the given file dicts.
+// for the given file dicts. Images are always returned as MIME-preserving
+// base64 data URIs so the multimodal conversion layer (parseDataURIOrB64)
+// accepts them.
 //
 // File dicts are the descriptors returned by the upload_info endpoint
 // (UploadInfos / storeUploadInfoBlob). They contain:
@@ -107,10 +109,7 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 // Blobs are stored directly in "{created_by}-downloads/{id}" in object
 // storage WITHOUT a corresponding File entity row in the database.
 // Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
-//
-//   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
-//   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
-func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -139,16 +138,12 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 
 		ft := utility.FilenameType(name)
 		if ft == utility.FileTypeVISUAL {
-			if raw {
-				images = append(images, string(data))
-			} else {
-				mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
-				if mediaType == "" {
-					ext := utility.GetFileExtension(name)
-					mediaType = utility.GetContentType(ext, string(ft))
-				}
-				images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
+			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+			if mediaType == "" {
+				ext := utility.GetFileExtension(name)
+				mediaType = utility.GetContentType(ext, string(ft))
 			}
+			images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 		} else {
 			texts = append(texts, parseFileContent(ctx, name, data))
 		}
@@ -215,14 +210,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 		if res.Err != nil {
 			return "", res.Err
 		}
-		switch res.OutputFormat {
-		case "text":
-			content = res.Text
-		case "markdown":
-			content = res.Markdown
-		case "html":
-			content = res.HTML
-		case "json":
+		parsed, err := parseResultText(res)
+		if err != nil {
+			return "", err
+		}
+		content = parsed
+	}
+	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+// parseResultText converts a parser result into the readable text expected by
+// sys.files. JSON results are flattened in item order, preferring each item's
+// text field and serializing items without one as a final fallback.
+func parseResultText(res parser.ParseResult) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
+	case "text":
+		return res.Text, nil
+	case "markdown":
+		return res.Markdown, nil
+	case "html":
+		return res.HTML, nil
+	case "json":
+		if len(res.JSON) > 0 {
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
@@ -235,10 +244,20 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 				}
 				parts = append(parts, string(raw))
 			}
-			content = strings.Join(parts, "\n")
+			return strings.Join(parts, "\n"), nil
 		}
+		// Some legacy parsers mark the result as JSON while only populating a
+		// rendered companion field. Preserve that content instead of returning
+		// an empty sys.files value.
+		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+			if fallback != "" {
+				return fallback, nil
+			}
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
 	}
-	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -256,16 +275,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if res.Err != nil {
 		return string(data)
 	}
-	switch res.OutputFormat {
-	case "text":
-		return res.Text
-	case "markdown":
-		return res.Markdown
-	case "html":
-		return res.HTML
-	case "json":
-		return string(data)
-	default:
+	content, err := parseResultText(res)
+	if err != nil {
 		return string(data)
 	}
+	return content
 }

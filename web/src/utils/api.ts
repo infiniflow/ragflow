@@ -231,7 +231,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
-  // Go scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid).
+  // Go scheduler compile-status contract.
   compilationStatus: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/compilation/status`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
@@ -261,6 +261,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   documentStructureGraph: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
+  documentStructureClaims: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document

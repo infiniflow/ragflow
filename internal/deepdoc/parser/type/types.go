@@ -95,10 +95,17 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
-	LayoutType  string
-	LayoutNo    string
-	ColID       int
-	R           int
+	// Pages carries the full set of page numbers a box spans, when it is a
+	// single logical region split across consecutive pages (e.g. a table
+	// merged across pages by MergeTablesAcrossPages). When non-empty it
+	// overrides PageNumber for page-span computation in BoxesToSections, so a
+	// cross-page merged table records every page it occupies (not just the
+	// anchor page).
+	Pages      []int
+	LayoutType string
+	LayoutNo   string
+	ColID      int
+	R          int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
@@ -287,6 +294,22 @@ type DocAnalyzer interface {
 	OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error)
 	OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error)
 	Health() bool
+}
+
+// NativeDocAnalyzerFactory, when set, supplies the local in-process DeepDoc
+// backend. The native backend (internal/deepdoc/parser/pdf/inference/
+// native_analyzer) registers itself here from its Register at process start;
+// the parser package then reads it without ever importing onnxruntime. It is
+// nil in builds/tests that do not opt into the native backend. The setter lives
+// in this dependency-free type package (rather than in the parser) so the
+// native backend implementation can register itself without importing the
+// parser, which would otherwise create a parser -> pdf -> native_analyzer ->
+// parser import cycle.
+var NativeDocAnalyzerFactory func() (DocAnalyzer, bool)
+
+// SetNativeDocAnalyzerFactory registers the in-process DeepDoc analyzer.
+func SetNativeDocAnalyzerFactory(f func() (DocAnalyzer, bool)) {
+	NativeDocAnalyzerFactory = f
 }
 
 // ── Outline ────────────────────────────────────────────────────────────

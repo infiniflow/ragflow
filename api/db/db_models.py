@@ -1475,6 +1475,7 @@ class Dialog(DataBaseModel):
     vector_similarity_weight = FloatField(default=0.3)
 
     top_n = IntegerField(default=6)
+    rerank_candidates_count = IntegerField(default=64)
 
     top_k = IntegerField(default=1024)
 
@@ -1738,6 +1739,7 @@ class ChatChannel(DataBaseModel):
     channel = CharField(max_length=128, null=False, help_text="Chat channel type", index=True)
     config = JSONField(null=False, default={}, help_text="Channel credential & settings")
     chat_id = CharField(max_length=32, null=True, default=None, help_text="connected chat id", index=True)
+    agent_id = CharField(max_length=32, null=True, default=None, help_text="connected agent id", index=True)
     status = IntegerField(default=1, index=True)
 
     def __str__(self):
@@ -2412,6 +2414,7 @@ def migrate_db():
     alter_db_add_column(migrator, "document", "suffix", EmptyStringCharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))
     alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))
+    alter_db_add_column(migrator, "dialog", "rerank_candidates_count", IntegerField(default=64))
     alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
@@ -2467,6 +2470,7 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
+    alter_db_add_column(migrator, "chat_channel", "agent_id", CharField(max_length=32, null=True, help_text="connected agent id", index=True))
     # ---- FileCommit / FileCommitItem: artifact-page commit extension ----
     alter_db_add_column(migrator, "file_commit", "title", CharField(max_length=255, null=True))
     alter_db_add_column(migrator, "file_commit", "comments", TextField(null=True))
