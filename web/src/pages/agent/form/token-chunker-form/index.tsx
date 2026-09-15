@@ -1,9 +1,10 @@
 import { DelimiterInput } from '@/components/delimiter-form-field';
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
@@ -47,6 +48,7 @@ const TokenChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
+  externalErrors,
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialTokenChunkerValues, node);
   const { t } = useTranslation();
@@ -66,7 +68,10 @@ const TokenChunkerForm = ({
   const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
 
   const delimiterMode = form.watch('delimiter_mode');
   const name = 'delimiters';
@@ -173,21 +178,14 @@ const TokenChunkerForm = ({
             <div className="mb-2 flex justify-between items-center gap-1">
               <span>{t('flow.enableChildrenDelimiters')}</span>
 
-              <FormField
-                control={form.control}
-                name="enable_children"
-                render={({ field: { value, onChange, ...restProps } }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Switch
-                        checked={value}
-                        onCheckedChange={onChange}
-                        {...restProps}
-                      />
-                    </FormControl>
-                  </FormItem>
+              <RAGFlowFormItem name="enable_children">
+                {(field) => (
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
                 )}
-              />
+              </RAGFlowFormItem>
             </div>
 
             {form.getValues('enable_children') && (

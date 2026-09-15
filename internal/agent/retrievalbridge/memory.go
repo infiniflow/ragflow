@@ -59,10 +59,14 @@ func (a *MemoryAdapter) Search(
 	if req.KeywordsSimilarityWeight != nil {
 		keywordWeight = *req.KeywordsSimilarityWeight
 	}
+	filter := map[string]any{"memory_id": memoryIDs}
+	if user := strings.TrimSpace(req.UserID); user != "" {
+		filter["user_id"] = user
+	}
 	messages, _, err := a.svc.SearchMessage(
 		ctx,
 		req.TenantID,
-		map[string]any{"memory_id": memoryIDs},
+		filter,
 		map[string]any{
 			"query":                      req.Query,
 			"similarity_threshold":       req.SimilarityThreshold,

@@ -53,7 +53,13 @@ class ListOperations(ComponentBase, ABC):
         self.input_objects = []
         inputs = getattr(self._param, "query", None)
         self.inputs = self._canvas.get_variable_value(inputs)
-        if not isinstance(self.inputs, list):
+        if self.inputs is None:
+            # A missing/unset variable (e.g. the upstream node was routed
+            # around by a conditional branch) means "no variable passed in":
+            # operate on an empty list instead of failing the whole run.
+            # Non-list values are still a misconfiguration and keep raising.
+            self.inputs = []
+        elif not isinstance(self.inputs, list):
             raise TypeError("The input of List Operations should be an array.")
         self.set_input_value(inputs, self.inputs)
         if self._param.operations == "nth":

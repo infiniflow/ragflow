@@ -70,6 +70,7 @@ class _FakeRetriever:
         self._raise_exc = raise_exc
         self.retrieval_calls = []
         self.last_kwargs = None
+        self.by_children_tenant_ids = None
 
     async def retrieval(self, question, embd_mdl, tenant_id, kb_ids, **kwargs):
         if self._raise_exc is not None:
@@ -78,15 +79,18 @@ class _FakeRetriever:
         self.last_kwargs = kwargs
         return {"chunks": list(self._chunks)}
 
-    def retrieval_by_children(self, chunks, _tenant_ids):
+    def retrieval_by_children(self, chunks, tenant_ids):
+        self.by_children_tenant_ids = list(tenant_ids)
         return chunks
 
 
 class _FakeKGRetriever:
     def __init__(self, content=""):
         self._content = content
+        self.tenant_ids = None
 
-    async def retrieval(self, *_a, **_k):
+    async def retrieval(self, _question, tenant_ids, *_a, **_k):
+        self.tenant_ids = list(tenant_ids)
         if not self._content:
             return {"content_with_weight": ""}
         return {
@@ -180,11 +184,13 @@ def _load_dify_retrieval(
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: {})
 
     fake_retriever = _FakeRetriever(chunks=chunks)
+
+    fake_kg = _FakeKGRetriever(kg_content)
     _stub(
         monkeypatch,
         "common.settings",
         retriever=fake_retriever,
-        kg_retriever=_FakeKGRetriever(kg_content),
+        kg_retriever=fake_kg,
     )
 
     quart_stub = ModuleType("quart")
@@ -200,6 +206,7 @@ def _load_dify_retrieval(
     monkeypatch.setitem(sys.modules, "test_dify_retrieval_module", module)
     spec.loader.exec_module(module)
     module._fake_retriever = fake_retriever
+    module._fake_kg = fake_kg
     return module
 
 
@@ -276,6 +283,37 @@ class TestDifyRetrievalTenantCheck:
         assert len(result["records"]) == 1
         assert result["records"][0]["content"] == "hello world"
         assert module._fake_retriever.retrieval_calls, "retriever was not called on legitimate request"
+
+    @pytest.mark.p1
+    def test_team_member_searches_the_owner_index_not_their_own(self, monkeypatch):
+        """A permitted cross-tenant caller must search the KB owner's index.
+
+        ``KnowledgebaseService.accessible`` admits the owning tenant and, for a
+        ``TEAM`` KB, a member of that tenant. In the second case the caller's tenant
+        is not the KB's, so an index named after the caller holds none of its chunks.
+        """
+        team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, team_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-shared",
+                "query": "shared question",
+                "use_kg": True,
+                "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
+            },
+            tenant_id="tenant-member",
+            chunks=[{"doc_id": "d1", "content_with_weight": "chunk", "similarity": 0.9, "docnm_kwd": "doc.txt"}],
+            kg_content="graph answer",
+        )
+
+        asyncio.run(module.retrieval())
+
+        assert module._fake_retriever.retrieval_calls, "retriever was not called"
+        assert module._fake_retriever.retrieval_calls[0]["tenant_id"] == "tenant-owner"
+        assert module._fake_retriever.by_children_tenant_ids == ["tenant-owner"], "retrieval_by_children searched the caller's tenant instead of the KB owner's"
+        assert module._fake_kg.tenant_ids == ["tenant-owner"], "kg_retriever searched the caller's tenant instead of the KB owner's"
 
     @pytest.mark.p1
     def test_missing_knowledge_base_returns_not_found(self, monkeypatch):

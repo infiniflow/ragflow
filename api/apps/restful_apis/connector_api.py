@@ -25,7 +25,7 @@ from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorAuthorizationError, ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from common.constants import FileSource, RetCode, TaskStatus
@@ -160,7 +160,11 @@ async def rebuild(connector_id):
     if "kb_id" not in req:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
 
-    err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
+    kb_id = req["kb_id"]
+    try:
+        err = ConnectorService.rebuild(kb_id, connector_id, current_user.id)
+    except ConnectorAuthorizationError as exc:
+        return get_json_result(data=False, message=str(exc), code=RetCode.AUTHENTICATION_ERROR)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)

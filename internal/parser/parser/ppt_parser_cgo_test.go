@@ -50,6 +50,88 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	}
 }
 
+// TestPPTXParser_ParseWithResult_MultiSlide_CGO is the regression test
+// for the one-chunk-per-slide contract: a multi-slide deck must emit
+// one JSON item per slide, each carrying that slide's text only.
+// office_oxide's PlainText concatenates slides without a delimiter, so
+// splitting must come from the structured IR sections.
+func TestPPTXParser_ParseWithResult_MultiSlide_CGO(t *testing.T) {
+	ctx := t.Context()
+	p := NewPPTXParser()
+
+	w := officeOxide.NewPptxWriter()
+	s1 := w.AddSlide()
+	w.SetSlideTitle(s1, "Slide One Title")
+	w.AddSlideText(s1, "First slide body about the Alpha topic.")
+	s2 := w.AddSlide()
+	w.SetSlideTitle(s2, "Slide Two Title")
+	w.AddSlideText(s2, "Second slide body about the Beta topic.")
+	data, err := w.ToBytes()
+	if err != nil {
+		t.Fatalf("PptxWriter.ToBytes: %v", err)
+	}
+
+	res := p.ParseWithResult(ctx, "deck.pptx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("JSON items = %d, want 2 (one per slide): %#v", len(res.JSON), res.JSON)
+	}
+	for i, want := range []struct {
+		text     string
+		slideNum int
+	}{
+		{"Slide One Title\nFirst slide body about the Alpha topic.", 1},
+		{"Slide Two Title\nSecond slide body about the Beta topic.", 2},
+	} {
+		it := res.JSON[i]
+		if got := it["text"]; got != want.text {
+			t.Errorf("item %d text = %q, want %q", i, got, want.text)
+		}
+		if got := it["slide_number"]; got != want.slideNum {
+			t.Errorf("item %d slide_number = %v, want %d", i, got, want.slideNum)
+		}
+		if got := it["doc_type_kwd"]; got != "text" {
+			t.Errorf("item %d doc_type_kwd = %v, want text", i, got)
+		}
+	}
+}
+
+// TestPPTXParser_ParseWithResult_EmptySlide_CGO verifies that a slide
+// without extractable text still yields its own JSON item with an
+// empty text field, so slide numbering stays aligned with the deck.
+func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
+	ctx := t.Context()
+	p := NewPPTXParser()
+
+	w := officeOxide.NewPptxWriter()
+	s1 := w.AddSlide()
+	w.SetSlideTitle(s1, "Only Title")
+	w.AddSlide() // empty slide
+	s3 := w.AddSlide()
+	w.SetSlideTitle(s3, "Third Title")
+	w.AddSlideText(s3, "Third body.")
+	data, err := w.ToBytes()
+	if err != nil {
+		t.Fatalf("PptxWriter.ToBytes: %v", err)
+	}
+
+	res := p.ParseWithResult(ctx, "deck.pptx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("JSON items = %d, want 3 (one per slide): %#v", len(res.JSON), res.JSON)
+	}
+	if got := res.JSON[1]["text"]; got != "" {
+		t.Errorf("empty slide text = %q, want empty", got)
+	}
+	if got := res.JSON[1]["slide_number"]; got != 2 {
+		t.Errorf("empty slide slide_number = %v, want 2", got)
+	}
+}
+
 // TestPPTParser_ParseWithResult_CGO verifies that PPTParser
 // delegates correctly to PPTXParser{format:"ppt"} and, via the
 // bidirectional magic-byte fallback, correctly opens OOXML content

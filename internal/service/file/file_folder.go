@@ -222,7 +222,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get parent folder
@@ -244,7 +244,7 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get all parent folders

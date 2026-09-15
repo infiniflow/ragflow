@@ -168,3 +168,72 @@ func TestSplitFileAttachmentsRawImagesFeedMultimodalConversion(t *testing.T) {
 		t.Fatalf("no image part in converted content: %v", rendered)
 	}
 }
+
+// Regression (KB chat path, "chat"-typed model config): a text-only chat
+// model must not receive image content parts — providers reject them (e.g.
+// Zhipu GLM error 1210: messages.content.type only allows 'text'). The
+// vision gate drops the images after the split, so the multimodal
+// conversion never runs and the user gets a graceful text-only answer
+// instead of a provider-side rejection.
+func TestGateImageAttachmentsDropsImagesForTextOnlyChatModel(t *testing.T) {
+	seedChatImageStorage(t)
+
+	texts, images := splitFileAttachments(t.Context(), "user-1", []interface{}{chatImageFileDict}, false)
+	if len(images) != 1 {
+		t.Fatalf("split still resolves file-dict images with raw=false, got %v", images)
+	}
+	kept, attached := gateImageAttachments("glm-4-flash@Zhipu", "chat", images)
+	if len(kept) != 0 {
+		t.Fatalf("text-only chat model must not keep images, got %v", kept)
+	}
+	if !attached {
+		t.Fatal("attachment flag must report the pre-drop image so the empty-response fallback stays out of the way")
+	}
+	if len(texts) != 0 {
+		t.Fatalf("expected no text attachments for an image-only upload, got %v", texts)
+	}
+}
+
+// Vision-capable (image2text) models keep every split image, and both
+// split modes resolve file-dict attachments to jpeg data URIs that feed
+// ConvertLastUserMsgToMultimodal.
+func TestGateImageAttachmentsKeepsImagesForVisionModel(t *testing.T) {
+	seedChatImageStorage(t)
+
+	for _, raw := range []bool{false, true} {
+		texts, images := splitFileAttachments(t.Context(), "user-1", []interface{}{chatImageFileDict}, raw)
+		kept, attached := gateImageAttachments("qwen3-vl-plus@Tongyi-Qianwen", "image2text", images)
+		if !attached || len(kept) != 1 {
+			t.Fatalf("raw=%v: vision model must keep the image (kept=%v attached=%v)", raw, kept, attached)
+		}
+		if !strings.HasPrefix(kept[0], "data:image/jpeg;base64,") {
+			t.Fatalf("raw=%v: image not a jpeg data URI: %q", raw, kept[0])
+		}
+		if len(texts) != 0 {
+			t.Fatalf("raw=%v: expected no text attachments, got %v", raw, texts)
+		}
+	}
+}
+
+// The empty-response fallback must not short-circuit image-only requests:
+// the model is the only consumer of the image, so the canned response
+// would swallow it before the multimodal conversion.
+func TestEmptyResponseAppliesRequiresNoAttachments(t *testing.T) {
+	if !emptyResponseApplies(0, "", false) {
+		t.Fatal("no knowledge and no attachments: the fallback applies")
+	}
+	for _, tc := range []struct {
+		name        string
+		knowledges  int
+		attachments string
+		images      bool
+	}{
+		{"retrieval found something", 1, "", false},
+		{"text attachments present", 0, "doc text", false},
+		{"image-only request", 0, "", true},
+	} {
+		if emptyResponseApplies(tc.knowledges, tc.attachments, tc.images) {
+			t.Fatalf("%s: fallback must not apply", tc.name)
+		}
+	}
+}

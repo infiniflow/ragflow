@@ -15,7 +15,7 @@
   "models": [
     {
       "name": "hy3",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -26,7 +26,7 @@
     },
     {
       "name": "hy3-preview",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -37,7 +37,7 @@
     },
     {
       "name": "kimi-k3",
-      "content_length": 1000000,
+      "context_length": 1000000,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -48,7 +48,7 @@
     },
     {
       "name": "kimi-k2.7-code-highspeed",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -59,7 +59,7 @@
     },
     {
       "name": "kimi-k2.7-code",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -70,7 +70,7 @@
     },
     {
       "name": "glm-5.2",
-      "content_length": 1000000,
+      "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -81,7 +81,7 @@
     },
     {
       "name": "minimax-m3",
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -92,7 +92,7 @@
     },
     {
       "name": "deepseek-v4-flash-202605",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -103,7 +103,7 @@
     },
     {
       "name": "deepseek-v4-pro-202606",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -114,7 +114,7 @@
     },
     {
       "name": "deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -125,7 +125,7 @@
     },
     {
       "name": "deepseek-v4-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -136,7 +136,7 @@
     },
     {
       "name": "hy-mt2-pro",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -147,7 +147,7 @@
     },
     {
       "name": "hy-mt2-plus",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -158,7 +158,7 @@
     },
     {
       "name": "hy-mt2-lite",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -169,7 +169,7 @@
     },
     {
       "name": "hy-role",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -180,7 +180,7 @@
     },
     {
       "name": "hunyuan-role-latest",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -191,7 +191,7 @@
     },
     {
       "name": "qwen3.5-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
         "chat"
@@ -202,7 +202,7 @@
     },
     {
       "name": "qwen3.5-plus",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
         "chat"
@@ -213,7 +213,7 @@
     },
     {
       "name": "glm-5.1",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -224,7 +224,7 @@
     },
     {
       "name": "glm-5",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -235,7 +235,7 @@
     },
     {
       "name": "glm-5-turbo",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -246,7 +246,7 @@
     },
     {
       "name": "kimi-k2.6",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -257,7 +257,7 @@
     },
     {
       "name": "kimi-k2.5",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -268,7 +268,7 @@
     },
     {
       "name": "minimax-m2.7",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -279,7 +279,7 @@
     },
     {
       "name": "minimax-m2.5",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -290,7 +290,7 @@
     },
     {
       "name": "deepseek-v3.2",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -301,7 +301,7 @@
     },
     {
       "name": "glm-5v-turbo",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -313,7 +313,7 @@
     },
     {
       "name": "hy-vision-2.0-instruct",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -325,7 +325,7 @@
     },
     {
       "name": "youtu-vita",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -337,7 +337,7 @@
     },
     {
       "name": "hunyuan-t1-vision-20250916",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -349,7 +349,7 @@
     },
     {
       "name": "hunyuan-turbos-vision-video-20250728",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat",

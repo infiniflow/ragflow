@@ -309,6 +309,12 @@ class SereneDBConnection(DocStoreConnection):
     def _get_filters(self, condition: dict) -> list[str]:
         filters = []
         for k, v in condition.items():
+            if k == "available_int":
+                # Handled before the falsy skip below: 0 is the "disabled only" filter, and
+                # skipping it drops the predicate entirely rather than narrowing the result.
+                # NULL counts as available, matching DEFAULTS and the other backends.
+                filters.append(f"COALESCE(available_int, 1) {'< 1' if v == 0 else '>= 1'}")
+                continue
             if not v:
                 continue
             if k == "exists":
