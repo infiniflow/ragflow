@@ -7,6 +7,7 @@ import {
   useSendAgentMessage,
 } from '@/pages/agent/chat/use-send-agent-message';
 import { BeginQuery } from '@/pages/agent/interface';
+import { withAppBasePath } from '@/utils/base-path';
 import { isEmpty } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -59,7 +60,9 @@ export const useSendNextSharedMessage = (
   } = useGetSharedChatSearchParams();
   const botType = from === SharedFrom.Agent ? 'agentbots' : 'chatbots';
   const releaseQuery = release ? `?release=${encodeURIComponent(release)}` : '';
-  const url = `/api/v1/${botType}/${conversationId}/completions${releaseQuery}`;
+  const url = withAppBasePath(
+    `/api/v1/${botType}/${conversationId}/completions${releaseQuery}`,
+  );
   const { data: inputsData } = useFetchExternalAgentInputs();
 
   const [params, setParams] = useState<BeginQuery[]>([]);

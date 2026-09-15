@@ -22,6 +22,7 @@ import {
   type RouteObject,
 } from 'react-router';
 import FallbackComponent from './components/fallback-component';
+import { getRouterBasename } from '@/utils/base-path';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 import authorizationUtil from './utils/authorization-util';
 
@@ -460,7 +461,7 @@ const wrapRoutes = (routes: LazyRouteConfig[]): RouteObject[] =>
 const routeConfig = wrapRoutes(routeConfigOptions);
 
 const routers = createBrowserRouter(routeConfig, {
-  basename: import.meta.env.VITE_BASE_URL || '/',
+  basename: getRouterBasename(),
 });
 
 export { routers };

@@ -16,6 +16,7 @@
 
 import { Authorization } from '@/constants/authorization';
 import { restAPIv1 } from '@/utils/api';
+import { withAppBasePath } from '@/utils/base-path';
 import { getAuthorization } from '@/utils/authorization-util';
 import classNames from 'classnames';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -106,7 +107,7 @@ const isAuthRequiredUrl = (url: string): boolean => {
       return false;
     }
     return (
-      parsedUrl.pathname.startsWith('/api/v1/') ||
+      parsedUrl.pathname.startsWith(withAppBasePath('/api/v1/')) ||
       parsedUrl.pathname.includes('/documents/images/')
     );
   } catch {

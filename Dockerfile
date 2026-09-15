@@ -238,8 +238,9 @@ RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
 # Copy full web source and docs for the frontend build.
 COPY web web
 COPY docs docs
+ARG VITE_BASE_URL=/
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild VITE_BASE_URL="${VITE_BASE_URL}" npm run build
 
 RUN --mount=type=bind,source=.git,target=/ragflow/.git \
     version_info=$(git describe --tags --match=v* --first-parent --always) && \
@@ -269,7 +270,11 @@ COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
 COPY docker/nginx/ragflow.conf.golang \
      docker/nginx/ragflow.conf.python \
      docker/nginx/ragflow.conf.hybrid \
+     docker/nginx/apply_web_base_path.sh \
      /etc/nginx/conf.d/
+RUN chmod +x /etc/nginx/conf.d/apply_web_base_path.sh && \
+    mkdir -p /ragflow/docker/nginx && \
+    cp /etc/nginx/conf.d/apply_web_base_path.sh /ragflow/docker/nginx/apply_web_base_path.sh
 
 RUN rm -f /etc/nginx/sites-enabled/default
 
