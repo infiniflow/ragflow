@@ -69,6 +69,10 @@ class FileCommitTestModel(BaseTestModel):
     folder_id = CharField(max_length=32, index=True)
     parent_id = CharField(max_length=32, null=True, index=True)
     message = CharField(max_length=512, default="")
+    # Mirrors api.db.db_models.FileCommit, which declares ``title`` for
+    # artifact-page edits. Without it the route's artifact branch is
+    # unreachable here, because it discriminates on a truthy title.
+    title = CharField(max_length=255, null=True)
     author_id = CharField(max_length=32, index=True)
     file_count = IntegerField(default=0)
     tree_state = TextField(null=True)
@@ -171,11 +175,15 @@ def _load_module(monkeypatch):
         return {"code": code, "data": data, "message": message}
 
     def get_data_error_result(code=102, message="Sorry! Data missing!"):
-        # Mirrors api.utils.api_utils.get_data_error_result, whose first
-        # positional parameter is the code. A double that takes the message
-        # first turns every positional call site green here while production
-        # answers with the message as its code.
-        return {"code": code, "data": None, "message": message}
+        # Mirrors api.utils.api_utils.get_data_error_result: the code comes
+        # first, the response carries no data key, and a None message is
+        # dropped. A double that takes the message first turns every
+        # positional call site green here while production answers with the
+        # message as its code.
+        response = {"code": code}
+        if message is not None:
+            response["message"] = message
+        return response
 
     async def get_request_json():
         return _request_payload[0]
@@ -620,9 +628,9 @@ def test_data_error_carries_code_and_message(monkeypatch):
 
     ``get_data_error_result`` takes the code first, so a call that passes the
     message positionally reports the sentence as the code and leaves the
-    default placeholder as the message. One case per refusing route, because
-    a single sampled route would leave the others free to regress. The
-    "not found in workspace" branch is covered by the wrong-folder test below.
+    default placeholder as the message. One case per refusal in the module
+    rather than one per route, because a sampled branch leaves its neighbours
+    free to regress on their own.
     """
     module = _load_module(monkeypatch)
     FileTestModel.create(id="f1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="a.txt", type="txt")
@@ -637,17 +645,31 @@ def test_data_error_carries_code_and_message(monkeypatch):
     )
     commit_id = _run(module.create_commit("root-folder"))["data"]["id"]
 
+    # A commit that resolves but sits in another workspace, and an artifact commit
+    # whose detail lookup finds no item. Both reach refusals the absent-id cases miss.
+    FileCommitTestModel.create(id="c-elsewhere", folder_id="folder-a", parent_id=None, message="elsewhere", author_id="test-user", file_count=1)
+    FileCommitTestModel.create(id="c-artifact", folder_id="root-folder", parent_id=None, message="artifact", title="Page edit", author_id="test-user", file_count=0)
+
     cases = [
-        ("get_commit", lambda: module.get_commit("root-folder", "absent"), "Commit not found"),
-        ("list_commit_files", lambda: module.list_commit_files("root-folder", "absent"), "Commit not found"),
-        ("get_commit_tree", lambda: module.get_commit_tree("root-folder", "absent"), "Commit not found"),
-        ("get_commit_file_content", lambda: module.get_commit_file_content("root-folder", "absent", "f1"), "Commit not found"),
-        ("get_commit_file_content, file absent", lambda: module.get_commit_file_content("root-folder", commit_id, "absent"), "File not found in this commit"),
-        ("get_file_version_history", lambda: module.get_file_version_history("absent"), "File not found"),
-        ("diff_commits, no params", lambda: module.diff_commits("root-folder"), "'from' and 'to' parameters are required"),
+        ("get_commit", None, lambda: module.get_commit("root-folder", "absent"), "Commit not found"),
+        ("get_commit, elsewhere", None, lambda: module.get_commit("root-folder", "c-elsewhere"), "Commit not found in workspace"),
+        ("get_commit, artifact detail absent", None, lambda: module.get_commit("root-folder", "c-artifact"), "Commit not found"),
+        ("list_commit_files", None, lambda: module.list_commit_files("root-folder", "absent"), "Commit not found"),
+        ("list_commit_files, elsewhere", None, lambda: module.list_commit_files("root-folder", "c-elsewhere"), "Commit not found in workspace"),
+        ("get_commit_tree", None, lambda: module.get_commit_tree("root-folder", "absent"), "Commit not found"),
+        ("get_commit_tree, elsewhere", None, lambda: module.get_commit_tree("root-folder", "c-elsewhere"), "Commit not found in workspace"),
+        ("get_commit_file_content", None, lambda: module.get_commit_file_content("root-folder", "absent", "f1"), "Commit not found"),
+        ("get_commit_file_content, elsewhere", None, lambda: module.get_commit_file_content("root-folder", "c-elsewhere", "f1"), "Commit not found in workspace"),
+        ("get_commit_file_content, file absent", None, lambda: module.get_commit_file_content("root-folder", commit_id, "absent"), "File not found in this commit"),
+        ("get_file_version_history", None, lambda: module.get_file_version_history("absent"), "File not found"),
+        ("diff_commits, no params", {}, lambda: module.diff_commits("root-folder"), "'from' and 'to' parameters are required"),
+        ("diff_commits, absent commits", {"from": "absent-a", "to": "absent-b"}, lambda: module.diff_commits("root-folder"), "Commit not found"),
+        ("diff_commits, elsewhere", {"from": "c-elsewhere", "to": "c-elsewhere"}, lambda: module.diff_commits("root-folder"), "Commit not found in workspace"),
     ]
 
-    for label, call, expected in cases:
+    for label, args, call, expected in cases:
+        if args is not None:
+            _setup_request(module, args=args)
         res = _run(call())
         assert res["code"] == 102, f"{label}: code must stay RetCode.DATA_ERROR, got {res['code']!r}"
         assert res["message"] == expected, f"{label}: the call site's own message must survive, got {res['message']!r}"
