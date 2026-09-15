@@ -66,8 +66,8 @@ def test_zotero_connector_poll_filters_by_modified_time():
 
         batches = list(
             connector.poll_source(
-                start=1735689600,  # 2025-01-01
-                end=1893456000,  # 2030-01-01
+                start=1735689600,
+                end=1893456000,
             )
         )
 

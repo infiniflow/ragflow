@@ -32,16 +32,17 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/utility"
 )
 
 const (
-	zoteroAPIBaseURL            = "https://api.zotero.org"
-	defaultZoteroBatchSize      = 4
-	zoteroRequestTimeout        = 120 * time.Second
-	zoteroDefaultPageSize       = 100
-	zoteroMaxAttachmentBytes    = 100 * 1024 * 1024
-	zoteroStorageModeZotero     = "zotero_storage"
-	zoteroStorageModeWebDAV     = "webdav"
+	zoteroAPIBaseURL         = "https://api.zotero.org"
+	defaultZoteroBatchSize   = 4
+	zoteroRequestTimeout     = 120 * time.Second
+	zoteroDefaultPageSize    = 100
+	zoteroMaxAttachmentBytes = 100 * 1024 * 1024
+	zoteroStorageModeZotero  = "zotero_storage"
+	zoteroStorageModeWebDAV  = "webdav"
 )
 
 // ZoteroConnector syncs PDF attachments from a Zotero library.
@@ -115,6 +116,11 @@ func (c *ZoteroConnector) Validate(ctx context.Context) error {
 	if _, _, err := c.listItems(ctx, 0); err != nil {
 		return classifyZoteroError(err)
 	}
+	if c.storageMode == zoteroStorageModeWebDAV {
+		if err := c.probeWebDAV(ctx); err != nil {
+			return classifyZoteroError(err)
+		}
+	}
 	return nil
 }
 
@@ -139,19 +145,10 @@ func (c *ZoteroConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	if err != nil {
 		return nil, classifyZoteroError(err)
 	}
-	documents := make([]SourceDocument, 0, len(records))
-	for _, record := range records {
-		blob, filename, err := c.downloadPDF(ctx, record.attachment)
-		if err != nil || len(blob) == 0 {
-			continue
-		}
-		if int64(len(blob)) > zoteroMaxAttachmentBytes {
-			continue
-		}
-		documents = append(documents, c.buildDocument(record, blob, filename))
-	}
-	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
-	session := &zoteroSyncSession{documents: documents, batchSize: c.batchSize}
+	sort.Slice(records, func(i, j int) bool {
+		return c.sourceID(records[i].attachment.Key) < c.sourceID(records[j].attachment.Key)
+	})
+	session := &zoteroSyncSession{connector: c, records: records, batchSize: c.batchSize}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -191,6 +188,9 @@ func (c *ZoteroConnector) validateStatic() error {
 		}
 		if c.webdavPass == "" {
 			return &ConnectorMissingCredentialError{Message: "WebDAV password is required when storage_mode is webdav"}
+		}
+		if err := c.validateWebDAVURL(); err != nil {
+			return err
 		}
 	}
 	if c.batchSize <= 0 {
@@ -395,7 +395,13 @@ func (c *ZoteroConnector) downloadAuthedURL(ctx context.Context, rawURL string) 
 }
 
 func (c *ZoteroConnector) downloadPDFViaWebDAV(ctx context.Context, attachmentKey, filename string) ([]byte, string, error) {
+	if err := c.validateWebDAVURL(); err != nil {
+		return nil, "", err
+	}
 	zipURL := c.webdavURL + "/" + attachmentKey + ".zip"
+	if _, _, err := utility.AssertURLSafe(zipURL); err != nil {
+		return nil, "", &ConnectorValidationError{Message: fmt.Sprintf("WebDAV URL is not allowed: %v", err)}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, zipURL, nil)
 	if err != nil {
 		return nil, "", err
@@ -432,14 +438,23 @@ func extractPDFFromZip(zipBytes []byte, fallbackName string) ([]byte, string, er
 		if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
 			continue
 		}
+		if file.UncompressedSize64 > uint64(zoteroMaxAttachmentBytes) {
+			return nil, "", fmt.Errorf("Zotero WebDAV PDF exceeds maximum size")
+		}
+		if file.CompressedSize64 > 0 && file.UncompressedSize64/file.CompressedSize64 > 100 {
+			return nil, "", fmt.Errorf("Zotero WebDAV archive compression ratio is too high")
+		}
 		rc, err := file.Open()
 		if err != nil {
 			return nil, "", err
 		}
-		data, err := io.ReadAll(io.LimitReader(rc, zoteroMaxAttachmentBytes))
+		data, err := io.ReadAll(io.LimitReader(rc, zoteroMaxAttachmentBytes+1))
 		rc.Close()
 		if err != nil {
 			return nil, "", err
+		}
+		if int64(len(data)) > zoteroMaxAttachmentBytes {
+			return nil, "", fmt.Errorf("Zotero WebDAV PDF exceeds maximum size")
 		}
 		if len(data) == 0 {
 			continue
@@ -459,6 +474,47 @@ func (c *ZoteroConnector) apiBaseURL() string {
 		return strings.TrimRight(c.apiBase, "/")
 	}
 	return zoteroAPIBaseURL
+}
+
+func (c *ZoteroConnector) validateWebDAVURL() error {
+	parsed, err := url.Parse(c.webdavURL)
+	if err != nil || parsed.Host == "" {
+		return &ConnectorValidationError{Message: "invalid WebDAV URL"}
+	}
+	if !utility.AllowAnyHostForTest && parsed.Scheme != "https" {
+		return &ConnectorValidationError{Message: "WebDAV URL must use HTTPS"}
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return &ConnectorValidationError{Message: "WebDAV URL must use HTTP or HTTPS"}
+	}
+	if _, _, err := utility.AssertURLSafe(c.webdavURL); err != nil {
+		return &ConnectorValidationError{Message: fmt.Sprintf("WebDAV URL is not allowed: %v", err)}
+	}
+	return nil
+}
+
+func (c *ZoteroConnector) probeWebDAV(ctx context.Context) error {
+	if err := c.validateWebDAVURL(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.webdavURL, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.userID, c.webdavPass)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return &ConnectorMissingCredentialError{Message: "WebDAV authentication failed"}
+	}
+	if resp.StatusCode >= 500 {
+		return &zoteroHTTPError{Status: resp.StatusCode, Body: "WebDAV probe failed", URL: c.webdavURL}
+	}
+	return nil
 }
 
 func zoteroIsPDFAttachment(item zoteroAPIItem) bool {
@@ -531,21 +587,35 @@ func classifyZoteroError(err error) error {
 }
 
 type zoteroSyncSession struct {
-	documents []SourceDocument
+	connector *ZoteroConnector
+	records   []zoteroPDFRecord
 	batchSize int
 	index     int
 }
 
 func (s *zoteroSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.index >= len(s.documents) {
+	if s.index >= len(s.records) {
 		return SyncBatch{}, io.EOF
 	}
 	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
+	if end > len(s.records) {
+		end = len(s.records)
 	}
-	batchDocuments := s.documents[s.index:end]
-	batch := SyncBatch{Documents: batchDocuments, Checkpoint: zoteroSyncCheckpoint(batchDocuments[len(batchDocuments)-1])}
+	documents := make([]SourceDocument, 0, end-s.index)
+	for _, record := range s.records[s.index:end] {
+		blob, filename, err := s.connector.downloadPDF(ctx, record.attachment)
+		if err != nil {
+			return SyncBatch{}, classifyZoteroError(err)
+		}
+		if len(blob) == 0 {
+			return SyncBatch{}, &ConnectorValidationError{Message: "Zotero attachment download returned no content"}
+		}
+		if int64(len(blob)) > zoteroMaxAttachmentBytes {
+			return SyncBatch{}, &ConnectorValidationError{Message: "Zotero attachment exceeds maximum size"}
+		}
+		documents = append(documents, s.connector.buildDocument(record, blob, filename))
+	}
+	batch := SyncBatch{Documents: documents, Checkpoint: zoteroSyncCheckpoint(documents[len(documents)-1])}
 	s.index = end
 	return batch, nil
 }
@@ -560,8 +630,8 @@ func (s *zoteroSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if sourceID == "" {
 		return fmt.Errorf("zotero sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
-	for index, doc := range s.documents {
-		if doc.SourceID == sourceID {
+	for index, record := range s.records {
+		if s.connector.sourceID(record.attachment.Key) == sourceID {
 			s.index = index + 1
 			return nil
 		}

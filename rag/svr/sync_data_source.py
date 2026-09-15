@@ -2084,13 +2084,8 @@ class Zotero(SyncBase):
         if batch_size <= 0:
             batch_size = INDEX_BATCH_SIZE
 
-        self.connector = ZoteroConnector(
-            zotero_user_id=conf.get("zotero_user_id") or (conf.get("credentials") or {}).get("zotero_user_id") or "",
-            storage_mode=conf.get("storage_mode", "zotero_storage"),
-            webdav_url=conf.get("webdav_url") or "",
-            batch_size=batch_size,
-        )
-        self.connector.load_credentials(conf["credentials"])
+        connector_conf = {**conf, "batch_size": batch_size}
+        self.connector = ZoteroConnector.build_connector(connector_conf)
 
         poll_start = task.get("poll_range_start")
         if task["reindex"] == "1" or poll_start is None:

@@ -10,12 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"ragflow/internal/utility"
 )
 
 func TestZoteroConnectorOpenSyncDownloadsPDFOverHTTP(t *testing.T) {
 	server := newZoteroHTTPServer(t)
 	connector := newHTTPZoteroConnector(t, server, zoteroStorageModeZotero, 1)
-
 	start := mustTime(t, "2025-12-01T00:00:00Z")
 	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-02-01T00:00:00Z")})
 	if err != nil {
@@ -25,15 +26,11 @@ func TestZoteroConnectorOpenSyncDownloadsPDFOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch: %v", err)
 	}
-	if len(first.Documents) != 1 {
-		t.Fatalf("batch len = %d", len(first.Documents))
+	if len(first.Documents) != 1 || first.Documents[0].SourceID != "zotero:12345678:ATTACH1" {
+		t.Fatalf("unexpected batch: %+v", first.Documents)
 	}
-	doc := first.Documents[0]
-	if doc.SourceID != "zotero:12345678:ATTACH1" {
-		t.Fatalf("source id = %s", doc.SourceID)
-	}
-	if string(doc.Blob) != "%PDF-1.4 test" {
-		t.Fatalf("blob = %q", string(doc.Blob))
+	if string(first.Documents[0].Blob) != "%PDF-1.4 test" {
+		t.Fatalf("blob = %q", string(first.Documents[0].Blob))
 	}
 	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
@@ -43,7 +40,6 @@ func TestZoteroConnectorOpenSyncDownloadsPDFOverHTTP(t *testing.T) {
 func TestZoteroConnectorOpenSyncIncrementalWindow(t *testing.T) {
 	server := newZoteroHTTPServer(t)
 	connector := newHTTPZoteroConnector(t, server, zoteroStorageModeZotero, 10)
-
 	start := mustTime(t, "2025-12-01T00:00:00Z")
 	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
@@ -68,13 +64,18 @@ func TestZoteroConnectorSkipsLinkedAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
-	batch, err := session.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("NextBatch: %v", err)
-	}
-	for _, doc := range batch.Documents {
-		if doc.SourceID == "zotero:12345678:LINKED1" {
-			t.Fatalf("linked attachment was ingested")
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		if err != nil {
+			t.Fatalf("NextBatch: %v", err)
+		}
+		for _, doc := range batch.Documents {
+			if doc.SourceID == "zotero:12345678:LINKED1" {
+				t.Fatal("linked attachment was ingested")
+			}
 		}
 	}
 }
@@ -97,6 +98,8 @@ func TestZoteroConnectorValidateRequiresWebDAVURL(t *testing.T) {
 }
 
 func TestZoteroConnectorWebDAVExtractsPDF(t *testing.T) {
+	utility.AllowAnyHostForTest = true
+	t.Cleanup(func() { utility.AllowAnyHostForTest = false })
 	server := newZoteroHTTPServer(t)
 	connector, err := NewZoteroConnector(map[string]any{
 		"zotero_user_id": "12345678",
@@ -117,7 +120,8 @@ func TestZoteroConnectorWebDAVExtractsPDF(t *testing.T) {
 	}
 	connector.httpClient = client
 	connector.apiBase = server.URL
-	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-02-01T00:00:00Z")})
+	start := mustTime(t, "2025-12-01T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-02-01T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -219,6 +223,8 @@ func newZoteroHTTPServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte("%PDF-1.4 test"))
 		case r.URL.Path == "/users/12345678/items/ATTACH2/file":
 			_, _ = w.Write([]byte("%PDF-1.4 old"))
+		case r.URL.Path == "/dav" || r.URL.Path == "/dav/":
+			w.WriteHeader(http.StatusOK)
 		case r.URL.Path == "/dav/ATTACH1.zip":
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "12345678" || pass != "dav-pass" {

@@ -19,7 +19,8 @@ from common.data_source.exceptions import (
 )
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument
-from common.data_source.utils import batch_generator, rl_requests
+from common.data_source.utils import rl_requests
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,15 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorMissingCredentialError("Zotero user ID is required")
         if not self.api_key:
             raise ConnectorMissingCredentialError("Zotero API key is required")
+        if self.storage_mode not in {STORAGE_MODE_ZOTERO, STORAGE_MODE_WEBDAV}:
+            raise ConnectorValidationError("storage_mode must be 'zotero_storage' or 'webdav'")
         if self.storage_mode == STORAGE_MODE_WEBDAV:
             if not self.webdav_url:
                 raise ConnectorValidationError("webdav_url is required when storage_mode is webdav")
             if not self.webdav_password:
                 raise ConnectorMissingCredentialError("WebDAV password is required when storage_mode is webdav")
-        if self.storage_mode not in {STORAGE_MODE_ZOTERO, STORAGE_MODE_WEBDAV}:
-            raise ConnectorValidationError("storage_mode must be 'zotero_storage' or 'webdav'")
+            self._assert_webdav_url(self.webdav_url)
+            self._probe_webdav()
         self._list_attachment_items(start=0)
 
     def load_from_state(self) -> GenerateDocumentsOutput:
@@ -104,7 +107,7 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start_dt: datetime | None = None,
         end_dt: datetime | None = None,
     ) -> GenerateDocumentsOutput:
-        documents: list[Document] = []
+        batch: list[Document] = []
         for item in self._iter_pdf_attachments():
             modified = self._parse_time(item["data"].get("dateModified"))
             if start_dt and modified <= start_dt:
@@ -112,10 +115,11 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             if end_dt and modified > end_dt:
                 continue
             blob, filename = self._download_pdf(item)
-            if not blob:
-                continue
-            documents.append(self._build_document(item, blob, filename, modified))
-        for batch in batch_generator(iter(documents), self.batch_size):
+            batch.append(self._build_document(item, blob, filename, modified))
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
+        if batch:
             yield batch
 
     def _build_document(self, item: dict[str, Any], blob: bytes, filename: str, modified: datetime) -> Document:
@@ -189,38 +193,76 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         url = f"{ZOTERO_API_BASE}/users/{self.user_id}/items/{attachment_key}/file"
         response = rl_requests.get(url, headers=self._headers(), timeout=120, allow_redirects=True)
         if response.status_code >= 400:
-            logger.warning("Failed to download Zotero attachment %s: HTTP %s", attachment_key, response.status_code)
-            return b"", filename
+            raise ConnectorValidationError(f"Failed to download Zotero attachment {attachment_key}: HTTP {response.status_code}")
         blob = response.content
         if len(blob) > self.size_threshold:
-            logger.warning("Skipping oversized Zotero attachment %s", attachment_key)
-            return b"", filename
+            raise ConnectorValidationError(f"Zotero attachment {attachment_key} exceeds maximum size")
+        if not blob:
+            raise ConnectorValidationError(f"Zotero attachment {attachment_key} returned no content")
         return blob, filename
 
     def _download_via_webdav(self, attachment_key: str, filename: str) -> tuple[bytes, str]:
         zip_url = urljoin(self.webdav_url + "/", f"{attachment_key}.zip")
-        response = rl_requests.get(
-            zip_url,
-            auth=(self.user_id, self.webdav_password or ""),
-            timeout=120,
-        )
+        hostname, resolved_ip = self._assert_webdav_url(zip_url)
+        with pin_dns(hostname, resolved_ip):
+            response = rl_requests.get(
+                zip_url,
+                auth=(self.user_id, self.webdav_password or ""),
+                timeout=120,
+            )
         if response.status_code >= 400:
-            logger.warning("Failed to download Zotero WebDAV archive %s: HTTP %s", attachment_key, response.status_code)
-            return b"", filename
+            raise ConnectorValidationError(f"Failed to download Zotero WebDAV archive {attachment_key}: HTTP {response.status_code}")
         return self._extract_pdf_from_zip(response.content, filename)
 
-    @staticmethod
-    def _extract_pdf_from_zip(zip_bytes: bytes, fallback_name: str) -> tuple[bytes, str]:
+    def _assert_webdav_url(self, raw_url: str) -> tuple[str, str]:
+        parsed_scheme = (raw_url.split(":", 1)[0] or "").lower()
+        if parsed_scheme != "https":
+            raise ConnectorValidationError("WebDAV URL must use HTTPS")
+        try:
+            return assert_url_is_safe(raw_url, allowed_schemes=frozenset({"https"}))
+        except ValueError as exc:
+            raise ConnectorValidationError(f"WebDAV URL is not allowed: {exc}") from exc
+
+    def _probe_webdav(self) -> None:
+        hostname, resolved_ip = self._assert_webdav_url(self.webdav_url)
+        with pin_dns(hostname, resolved_ip):
+            response = rl_requests.get(
+                self.webdav_url,
+                auth=(self.user_id, self.webdav_password or ""),
+                timeout=30,
+            )
+        if response.status_code in {401, 403}:
+            raise ConnectorMissingCredentialError("WebDAV authentication failed")
+        if response.status_code >= 500:
+            raise ConnectorValidationError(f"WebDAV probe failed: HTTP {response.status_code}")
+
+    def _extract_pdf_from_zip(self, zip_bytes: bytes, fallback_name: str) -> tuple[bytes, str]:
+        if len(zip_bytes) > self.size_threshold:
+            raise ConnectorValidationError("Zotero WebDAV archive exceeds maximum size")
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
-            for name in archive.namelist():
+            for info in archive.infolist():
+                name = info.filename
                 if name.endswith("/") or not name.lower().endswith(".pdf"):
                     continue
-                with archive.open(name) as handle:
-                    blob = handle.read()
+                if info.file_size > self.size_threshold:
+                    raise ConnectorValidationError("Zotero WebDAV PDF exceeds maximum size")
+                if info.compress_size and info.file_size // max(info.compress_size, 1) > 100:
+                    raise ConnectorValidationError("Zotero WebDAV archive compression ratio is too high")
+                with archive.open(info) as handle:
+                    chunks: list[bytes] = []
+                    total = 0
+                    while True:
+                        chunk = handle.read(64 * 1024)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > self.size_threshold:
+                            raise ConnectorValidationError("Zotero WebDAV PDF exceeds maximum size")
+                        chunks.append(chunk)
+                blob = b"".join(chunks)
                 if blob:
                     return blob, name.split("/")[-1]
-        logger.warning("No PDF found in Zotero WebDAV archive for %s", fallback_name)
-        return b"", fallback_name
+        raise ConnectorValidationError(f"No PDF found in Zotero WebDAV archive for {fallback_name}")
 
     def _headers(self) -> dict[str, str]:
         return {"Zotero-API-Key": self.api_key or "", "Zotero-API-Version": "3"}
