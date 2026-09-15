@@ -170,8 +170,12 @@ def _load_module(monkeypatch):
     def get_json_result(data=None, message="success", code=0):
         return {"code": code, "data": data, "message": message}
 
-    def get_data_error_result(message=""):
-        return {"code": 102, "data": None, "message": message}
+    def get_data_error_result(code=102, message="Sorry! Data missing!"):
+        # Mirrors api.utils.api_utils.get_data_error_result, whose first
+        # positional parameter is the code. A double that takes the message
+        # first turns every positional call site green here while production
+        # answers with the message as its code.
+        return {"code": code, "data": None, "message": message}
 
     async def get_request_json():
         return _request_payload[0]
@@ -608,6 +612,27 @@ def test_get_commit_not_found(monkeypatch):
     res = _run(module.get_commit("root-folder", "nonexistent"))
     assert res["code"] == 102
     assert "not found" in res["message"].lower()
+
+
+@pytest.mark.p2
+def test_data_error_carries_code_and_message(monkeypatch):
+    """The refusal must answer with a RetCode and its own message.
+
+    ``get_data_error_result`` takes the code first, so a call that passes the
+    message positionally reports the sentence as the code and leaves the
+    default placeholder as the message.
+    """
+    module = _load_module(monkeypatch)
+
+    res = _run(module.get_commit("root-folder", "nonexistent"))
+
+    assert res["code"] == 102, f"code must stay RetCode.DATA_ERROR, got {res['code']!r}"
+    assert res["message"] == "Commit not found", f"the call site's own message must survive, got {res['message']!r}"
+
+    module.request.args = {}
+    missing = _run(module.diff_commits("root-folder"))
+    assert missing["code"] == 102
+    assert missing["message"] == "'from' and 'to' parameters are required"
 
 
 @pytest.mark.p2
