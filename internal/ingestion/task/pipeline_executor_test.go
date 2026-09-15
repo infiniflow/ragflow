@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
 	"reflect"
 	"sync"
 	"testing"
@@ -1379,24 +1378,22 @@ func TestMergeCompiledVariants(t *testing.T) {
 	}
 }
 
-// TestRunPipelineWithDSL_LogDSLCarriesOutputs locks the dataset-parse
-// "View result" contract: the DSL runPipelineWithDSL returns for the pipeline
-// operation log (Execute passes it straight to recordPipelineLog) must carry
-// each component's runtime outputs under obj.params.outputs, mirroring
-// Python's dsl=str(pipeline)
-// (rag/svr/task_executor_refactor/dataflow_service.py). Before this, the log
-// stored the raw static DSL, so the dataset log "View result" page rendered
-// blank panels and "0s" elapsed times even though the chunks were indexed —
-// the front-end renders those panels exclusively from
-// dsl.components[<id>].obj.params.outputs
-// (web/src/pages/dataflow-result/parser.tsx, hooks.ts).
+// TestRunPipelineWithDSL_LogDSLStripsOutputs locks the "no business data in
+// the pipeline operation log" contract: the DSL runPipelineWithDSL returns for
+// the log (Execute passes it straight to recordPipelineLog) must NOT carry any
+// component's runtime outputs under obj.params.outputs. The log keeps the DSL
+// DEFINITION only (component structure, static params, downstream, graph,
+// path) so a historical run can be reconstructed and the dataset "View result"
+// / rerun UI no longer renders chunk business data. Dry-run previews still
+// carry outputs via ResultSink; only the persisted log is kept output-free
+// (buildLogDSL passes includeOutputs=false before recordPipelineLog).
 //
 // It drives the REAL runPipelineWithDSL with stub ingestion components, so
 // the log DSL is built from an actual run output (nested under
 // output["state"][<id>] by finalizeResult), not a hand-built one, and the
 // enveloped {"dsl": {...}} input is unwrapped to the front-end shape
 // (top-level components).
-func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
+func TestRunPipelineWithDSL_LogDSLStripsOutputs(t *testing.T) {
 	const (
 		compC = "logdsl.RealStubChunks"
 		compD = "logdsl.RealStubD"
@@ -1431,46 +1428,22 @@ func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
 		t.Fatalf("log DSL must carry top-level components (unwrapped canvas envelope): %s", logDSL)
 	}
 
-	// Chunk-emitting component: params.outputs.chunks + output_format.
+	// Chunk-emitting component: the persisted log must carry the DSL DEFINITION
+	// only — NO runtime outputs under obj.params.outputs (the "no business data
+	// in the log" contract, Req 1). The dry-run preview (ResultSink/Redis) still
+	// carries full outputs for the dataset "View result" page; the persisted row
+	// must not. Static params survive so the rerun/canvas flow can reconstruct
+	// the component.
 	cParams, ok := components["c"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
 	if !ok {
 		t.Fatalf("log DSL components.c.obj.params missing: %s", logDSL)
 	}
-	cOutputs, ok := cParams["outputs"].(map[string]any)
-	if !ok {
-		t.Fatalf("REGRESSION: log DSL has no params.outputs for chunk component c; "+
-			"the dataset log 'View result' page would render a blank panel. params=%#v", cParams)
+	if _, ok := cParams["outputs"]; ok {
+		t.Errorf("REGRESSION: persisted log DSL must NOT carry business data (obj.params.outputs) "+
+			"for chunk component c, got %#v", cParams["outputs"])
 	}
-	if of, _ := cOutputs["output_format"].(map[string]any); of["value"] != "chunks" {
-		t.Errorf("c output_format=%#v want {value:\"chunks\"}", cOutputs["output_format"])
-	}
-	chunksVal, _ := cOutputs["chunks"].(map[string]any)["value"].([]any)
-	if len(chunksVal) != 1 {
-		t.Fatalf("c chunks.value len=%d want 1", len(chunksVal))
-	}
-	// TrackElapsed bookkeeping must ride along so the timeline shows real
-	// per-node elapsed times (hooks.ts reads outputs._elapsed_time.value).
-	et, ok := cOutputs["_elapsed_time"].(map[string]any)
-	if !ok {
-		t.Fatalf("c outputs._elapsed_time missing: %#v", cOutputs)
-	}
-	if _, ok := et["value"].(float64); !ok {
-		t.Errorf("c outputs._elapsed_time.value=%#v want float64", et["value"])
-	}
-	// TrackElapsed stamps _created_time as an RFC3339Nano wall-clock string;
-	// the outputs wrapper carries it verbatim with its type string.
-	if cct, ok := cOutputs["_created_time"].(map[string]any); ok {
-		cs, ok := cct["value"].(string)
-		if !ok || cs == "" {
-			t.Errorf("c outputs._created_time.value=%#v want non-empty string", cct["value"])
-		} else if _, err := time.Parse(time.RFC3339Nano, cs); err != nil {
-			t.Errorf("c outputs._created_time.value %q is not RFC3339Nano: %v", cs, err)
-		}
-		if cct["type"] != "<class 'str'>" {
-			t.Errorf("c outputs._created_time.type=%#v want <class 'str'>", cct["type"])
-		}
-	} else {
-		t.Errorf("c outputs._created_time missing: %#v", cOutputs)
+	if _, ok := cParams["setups"]; !ok {
+		t.Errorf("persisted log DSL must keep static params.setups for c, got %#v", cParams)
 	}
 	// Non-components top-level keys are carried verbatim; this fixture's DSL
 	// declares "path" — the round-tripped log must keep it for rerun-flow
@@ -1481,25 +1454,125 @@ func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
 }
 
 // TestBuildLogDSL_FallbackToStaticDSL pins the guarantee that log recording
-// never fails a run: when the run-result DSL cannot be built or cannot be
-// marshaled, buildLogDSL must return the static dsl unchanged rather than a
-// half-written payload.
+// never fails a run: when the run-result DSL cannot be built (a malformed
+// canvas), buildLogDSL must return the static dsl unchanged rather than a
+// half-written payload. The input dsl is the canvas definition (no runtime
+// outputs), so the fallback is not a business-data leak and the log row is
+// preserved for observability (recordPipelineLog still receives a valid,
+// definition-only DSL).
+//
+// Note: business-data payloads (e.g. NaN inside a chunk value) no longer reach
+// the persisted copy at all — the persist path passes includeOutputs=false, so
+// the outputs wrapper is never constructed and cannot break marshaling. The
+// realistic fallback trigger is therefore a malformed DSL, tested below.
 func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl-fallback", 0)
 
-	// Marshal failure: NaN is a valid float64 payload, so the run-result DSL
-	// builds fine but json.Marshal rejects it.
-	dsl := `{"dsl":{"components":{"a":{"obj":{"component_name":"X","params":{}}}}}}`
-	if got := svc.buildLogDSL(dsl, map[string]any{
-		"a": map[string]any{"text": math.NaN()},
-	}); got != dsl {
-		t.Errorf("marshal failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, dsl)
-	}
-
 	// Build failure: a DSL without a components map cannot produce a
-	// run-result DSL at all.
+	// run-result DSL at all. The static dsl is returned unchanged.
 	badDSL := `{"dsl":{"path":["a"]}}`
 	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
 		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)
+	}
+}
+
+// persistOnlySink simulates the real-parse (DB-backed) sink: it implements
+// pipeline.ProgressSink but NOT task.ResultSink, so buildLogDSL must NOT call
+// SetResult and the persisted DSL must carry no business data.
+type persistOnlySink struct{}
+
+func (persistOnlySink) OnComponentTotal(context.Context, string, int)                  {}
+func (persistOnlySink) OnComponentProgress(context.Context, pipelinepkg.ProgressEvent) {}
+
+// capturingSink simulates the dry-run (DebugLogSink) sink: it implements BOTH
+// ProgressSink and ResultSink, so buildLogDSL hands it the full result DSL
+// (business data) via SetResult for the Redis END marker.
+type capturingSink struct {
+	got    map[string]any
+	gotOut map[string]any
+}
+
+func (c *capturingSink) OnComponentTotal(context.Context, string, int)                  {}
+func (c *capturingSink) OnComponentProgress(context.Context, pipelinepkg.ProgressEvent) {}
+func (c *capturingSink) SetResult(dsl map[string]any, output map[string]any) {
+	c.got = dsl
+	c.gotOut = output
+}
+
+// TestBuildLogDSL_PersistStripsOutputs locks the core contract of the change:
+// the DSL string buildLogDSL returns for a NON-ResultSink (real-parse) sink
+// carries the DSL definition only — no component has obj.params.outputs, while
+// static params / graph / path survive. This is exactly what recordPipelineLog
+// persists to pipeline_operation_log.
+func TestBuildLogDSL_PersistStripsOutputs(t *testing.T) {
+	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {"setups": {"pdf": {"parse_method": "general"}}}}, "downstream": ["b"]}}, "graph": {"nodes": [{"id": "a"}]}, "path": ["a"]}`
+	output := map[string]any{
+		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+	}
+
+	exec := &PipelineExecutor{progressSink: persistOnlySink{}}
+	logDSL := exec.buildLogDSL(dsl, output)
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
+		t.Fatalf("persisted log DSL must be valid JSON: %v (raw=%s)", err, logDSL)
+	}
+	comps, _ := parsed["components"].(map[string]any)
+	a, _ := comps["a"].(map[string]any)
+	aObj, _ := a["obj"].(map[string]any)
+	aParams, _ := aObj["params"].(map[string]any)
+	if _, ok := aParams["outputs"]; ok {
+		t.Errorf("persisted log DSL must NOT carry business data (obj.params.outputs), got %#v", aParams["outputs"])
+	}
+	// DSL definition preserved.
+	if _, ok := aParams["setups"]; !ok {
+		t.Error("persisted log DSL must keep static params.setups")
+	}
+	if _, ok := parsed["graph"]; !ok {
+		t.Error("persisted log DSL must keep graph")
+	}
+	if _, ok := parsed["path"]; !ok {
+		t.Error("persisted log DSL must keep path")
+	}
+}
+
+// TestBuildLogDSL_PreviewKeepsOutputs locks the dry-run (ResultSink) branch:
+// buildLogDSL calls ResultSink.SetResult with the FULL result DSL (business
+// data in obj.params.outputs), while the DSL it returns for persistence still
+// carries no business data. Dry-run never persists (IsDebug() early-return),
+// so the outputs only travel to Redis via SetResult.
+func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
+	const dsl = `{"components": {"a": {"obj": {"component_name": "my.Parser", "params": {}}, "downstream": ["b"]}}}`
+	output := map[string]any{
+		"a": map[string]any{"chunks": []any{map[string]any{"text": "hello"}}, "_elapsed_time": 0.35},
+	}
+
+	cap := &capturingSink{}
+	exec := &PipelineExecutor{progressSink: cap}
+	logDSL := exec.buildLogDSL(dsl, output)
+
+	// The ResultSink preview must carry the full outputs (business data).
+	if cap.got == nil {
+		t.Fatal("buildLogDSL must call ResultSink.SetResult for a dry-run (ResultSink) sink")
+	}
+	caps, _ := cap.got["components"].(map[string]any)
+	ca, _ := caps["a"].(map[string]any)
+	caObj, _ := ca["obj"].(map[string]any)
+	caParams, _ := caObj["params"].(map[string]any)
+	if _, ok := caParams["outputs"]; !ok {
+		t.Error("dry-run preview DSL must carry obj.params.outputs (business data)")
+	}
+
+	// Persisted copy returned by buildLogDSL still must NOT carry business data.
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &parsed); err != nil {
+		t.Fatalf("persisted log DSL must be valid JSON: %v", err)
+	}
+	pc, _ := parsed["components"].(map[string]any)
+	pa, _ := pc["a"].(map[string]any)
+	paObj, _ := pa["obj"].(map[string]any)
+	paParams, _ := paObj["params"].(map[string]any)
+	if _, ok := paParams["outputs"]; ok {
+		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
 	}
 }
