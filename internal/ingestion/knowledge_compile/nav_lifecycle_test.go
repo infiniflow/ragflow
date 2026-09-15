@@ -46,11 +46,11 @@ func (f *recordingNavService) Search(context.Context, string, string, string, []
 	return nil, nil
 }
 
-func (f *recordingNavService) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
+func (f *recordingNavService) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return nil, 0, nil
 }
 
-func (f *recordingNavService) ListChildren(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
+func (f *recordingNavService) ListChildren(context.Context, string, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return nil, 0, nil
 }
 
