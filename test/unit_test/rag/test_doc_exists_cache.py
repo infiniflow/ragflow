@@ -16,9 +16,7 @@
 """Unit tests for the doc-existence cache behind Dealer._prune_deleted_chunks."""
 
 import sys
-import threading
 import types
-from collections import OrderedDict
 
 import pytest
 
@@ -56,15 +54,37 @@ finally:
             del sys.modules[_name]
 
 
+@pytest.fixture(autouse=True)
+def _reset_doc_exists_cache():
+    """Dealer._doc_exists_cache is class-level (so invalidations reach every
+    retrieval path in the process); reset it between tests so each one starts
+    from a clean slate."""
+    Dealer._doc_exists_cache.clear()
+    yield
+    Dealer._doc_exists_cache.clear()
+
+
 def _dealer():
-    dealer = Dealer.__new__(Dealer)
-    dealer._doc_exists_cache = OrderedDict()
-    dealer._doc_exists_lock = threading.Lock()
-    return dealer
+    return Dealer.__new__(Dealer)
 
 
-def _stub_document_service(monkeypatch, existing_ids):
-    """Stand in for DocumentService.get_by_ids(...).dicts(), which the method imports lazily."""
+def _stub_document_service(monkeypatch, existing_ids_or_callable):
+    """Stand in for DocumentService.get_by_ids(...).dicts(), which the method imports lazily.
+
+    Pass either a static set of ids or a callable that returns the current
+    set on each call — invalidation tests need the second form so they can
+    mutate "MySQL state" between cache fills.
+    """
+    if callable(existing_ids_or_callable):
+
+        def _resolve():
+            return existing_ids_or_callable()
+
+    else:
+
+        def _resolve():
+            return existing_ids_or_callable
+
     calls = []
 
     class _Rows:
@@ -78,7 +98,7 @@ def _stub_document_service(monkeypatch, existing_ids):
         @staticmethod
         def get_by_ids(doc_ids):
             calls.append(list(doc_ids))
-            return _Rows([d for d in doc_ids if d in existing_ids])
+            return _Rows([d for d in doc_ids if d in _resolve()])
 
     module = types.ModuleType("api.db.services.document_service")
     module.DocumentService = _DocumentService
@@ -90,7 +110,7 @@ def _stub_document_service(monkeypatch, existing_ids):
 async def test_deleted_doc_stays_absent_on_the_cached_second_call(monkeypatch):
     """A doc proven deleted must not come back as existing while the cache is warm."""
     dealer = _dealer()
-    calls = _stub_document_service(monkeypatch, existing_ids=set())
+    calls = _stub_document_service(monkeypatch, set())
 
     first = await dealer._existing_doc_ids(["deleted-doc"])
     second = await dealer._existing_doc_ids(["deleted-doc"])
@@ -104,7 +124,7 @@ async def test_deleted_doc_stays_absent_on_the_cached_second_call(monkeypatch):
 @pytest.mark.asyncio
 async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypatch):
     dealer = _dealer()
-    calls = _stub_document_service(monkeypatch, existing_ids={"live-doc"})
+    calls = _stub_document_service(monkeypatch, {"live-doc"})
 
     first = await dealer._existing_doc_ids(["live-doc"])
     second = await dealer._existing_doc_ids(["live-doc"])
@@ -117,7 +137,7 @@ async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypa
 @pytest.mark.asyncio
 async def test_mixed_batch_keeps_only_the_live_doc_when_cached(monkeypatch):
     dealer = _dealer()
-    calls = _stub_document_service(monkeypatch, existing_ids={"live-doc"})
+    calls = _stub_document_service(monkeypatch, {"live-doc"})
 
     await dealer._existing_doc_ids(["live-doc", "deleted-doc"])
     second = await dealer._existing_doc_ids(["live-doc", "deleted-doc"])
@@ -126,3 +146,57 @@ async def test_mixed_batch_keeps_only_the_live_doc_when_cached(monkeypatch):
     # A regression that re-queries would still return {"live-doc"}, so pin the
     # round-trip count too.
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_invalidate_doc_exists_drops_a_positive_cached_entry(monkeypatch):
+    """Regression for #19071: a doc cached as 'exists' must be evictable
+    synchronously so a delete does not leak through _prune_deleted_chunks
+    for the remaining TTL window."""
+    dealer = _dealer()
+    # Use a mutable fixture so the delete can flip the doc to "missing"
+    # between the two cache lookups.
+    existing = {"live-doc"}
+    calls = _stub_document_service(monkeypatch, lambda: existing)
+
+    first = await dealer._existing_doc_ids(["live-doc"])
+    assert first == {"live-doc"}
+    assert len(calls) == 1
+
+    # DocumentService.remove_document calls invalidate_doc_exists right
+    # after the MySQL row delete. The doc is now also gone from MySQL.
+    existing.discard("live-doc")
+    Dealer.invalidate_doc_exists("live-doc")
+
+    second = await dealer._existing_doc_ids(["live-doc"])
+    assert second == set()
+    assert len(calls) == 2
+    assert calls[-1] == ["live-doc"]
+
+
+@pytest.mark.asyncio
+async def test_invalidate_doc_exists_drops_a_negative_cached_entry_too(monkeypatch):
+    """A delete-then-recache race must not preserve a stale negative result.
+    Invalidate, then upsert the doc — the next retrieval should hit MySQL
+    and report it as existing again."""
+    dealer = _dealer()
+    existing = set()
+    calls = _stub_document_service(monkeypatch, lambda: existing)
+
+    # Warm the cache with a negative result.
+    await dealer._existing_doc_ids(["live-doc"])
+    assert Dealer._doc_exists_cache["live-doc"][1] is False
+    assert len(calls) == 1
+
+    # The delete path invalidates AND a separate write path re-creates the doc.
+    existing.add("live-doc")
+    Dealer.invalidate_doc_exists("live-doc")
+
+    second = await dealer._existing_doc_ids(["live-doc"])
+    assert second == {"live-doc"}
+    assert len(calls) == 2
+
+
+def test_invalidate_doc_exists_handles_an_empty_call_silently():
+    Dealer.invalidate_doc_exists()  # must not raise
+    assert Dealer._doc_exists_cache == {}
