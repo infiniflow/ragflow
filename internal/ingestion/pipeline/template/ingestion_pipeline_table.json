@@ -51,7 +51,7 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
+                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -190,12 +190,15 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
+                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
                                     ],
-                                    "vlm": {}
+                                    "vlm": {},
+                                    "column_mode": "auto",
+                                    "column_roles": {},
+                                    "column_names": []
                                 },
                                 {
                                     "fileFormat": "text&code",

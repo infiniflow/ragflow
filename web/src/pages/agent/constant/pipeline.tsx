@@ -199,6 +199,9 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
+      column_mode: 'auto',
+      column_roles: {},
+      column_names: [],
     },
     {
       fileFormat: FileType.Image,

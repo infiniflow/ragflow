@@ -251,6 +251,22 @@ export function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
+            // The Go backend reads column_* (flat form keys); the Python
+            // backend reads table_column_* (dataset parser_config keys).
+            // Emit both so one save serves either backend, mirroring how
+            // pages is emitted go-only via pickByBackend while pdf keeps
+            // shared keys untouched.
+            column_mode: cur.column_mode,
+            column_roles: cur.column_roles,
+            column_names: cur.column_names,
+            ...pickByBackend({
+              go: {},
+              python: {
+                table_column_mode: cur.column_mode,
+                table_column_roles: cur.column_roles,
+                table_column_names: cur.column_names,
+              },
+            }),
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {

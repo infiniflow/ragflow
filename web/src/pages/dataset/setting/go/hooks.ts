@@ -111,6 +111,7 @@ export const useSaveDatasetSetting = () => {
       if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
         let extractorMetadataGroup: Record<string, any> | undefined;
+        let spreadsheetConfig: Record<string, any> | undefined;
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
         )) {
@@ -126,6 +127,13 @@ export const useSaveDatasetSetting = () => {
           ) {
             extractorMetadataGroup = transformed?.metadata;
           }
+          if (
+            operatorType === Operator.Parser &&
+            transformed?.spreadsheet &&
+            spreadsheetConfig === undefined
+          ) {
+            spreadsheetConfig = transformed.spreadsheet;
+          }
         }
         // parser_config.metadata is the dataset-level object the backend
         // preserves and re-scopes into every Extractor node. The extractor
@@ -134,6 +142,20 @@ export const useSaveDatasetSetting = () => {
         // form would silently revert the toggle the user just set.
         if (extractorMetadataGroup) {
           transformedConfig.metadata = extractorMetadataGroup;
+        }
+        if (spreadsheetConfig) {
+          if (spreadsheetConfig.column_mode) {
+            transformedConfig.table_column_mode = spreadsheetConfig.column_mode;
+          }
+          // Column roles default to "both" per column (Python table chunker
+          // convention). Send an explicit map — never undefined — so the
+          // backend cannot mistake "absent" for "indexing-only".
+          transformedConfig.table_column_roles =
+            spreadsheetConfig.column_roles ?? {};
+          if (spreadsheetConfig.column_names) {
+            transformedConfig.table_column_names =
+              spreadsheetConfig.column_names;
+          }
         }
         payload.parser_config = transformedConfig;
       }
