@@ -84,6 +84,11 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	defer hdl.Close()
 	request := c.Request.Clone(c.Request.Context())
 	request.URL.Path = "/mcp"
+	// Preserve the legacy REST contract: callers historically sent ordinary
+	// JSON without Streamable HTTP's dual Accept header.
+	if accept := request.Header.Get("Accept"); accept == "" || accept == "application/json" {
+		request.Header.Set("Accept", "application/json, text/event-stream")
+	}
 	hdl.ServeHTTP(c.Writer, request)
 }
 
