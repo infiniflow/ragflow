@@ -184,7 +184,6 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		}
 		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
 			DatasetID:  datasetID,
-			DocID:      pageType + "/" + slug,
 			Slug:       slug,
 			PageType:   pageType,
 			Title:      title,
