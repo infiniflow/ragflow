@@ -238,7 +238,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		if engine != nil {
 			defer engine.Close()
 		}
-		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine), nil
+		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine, upstream.FileType), nil
 	}
 }
 
@@ -531,7 +531,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 
 // invokeJSONPayload handles structured upstream input. Items fan
 // across 4 goroutines; merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine) map[string]any {
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine, fileType string) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
@@ -544,6 +544,12 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	lanes := partition(len(items), workers)
 	perItem := make([][]schema.ChunkDoc, len(items))
+	dataTables := make(map[string]struct{})
+	for _, item := range items {
+		if item.CKType == "table_row" {
+			dataTables[spreadsheetTableKey(item)] = struct{}{}
+		}
+	}
 
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
@@ -556,7 +562,20 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 					perItem[i] = nil
 					continue
 				}
-				perItem[i] = chunkFromItem(items[i], delimPattern)
+				if items[i].CKType == "table_header" {
+					if _, hasRows := dataTables[spreadsheetTableKey(items[i])]; hasRows {
+						// The typed header is metadata carried by every row. It
+						// must not become an independent TokenChunker chunk when
+						// row IR is consumed by a legacy pipeline.
+						perItem[i] = nil
+						continue
+					}
+				}
+				if isTextParserSentenceFallback(fileType, c.param.Delimiters, items[i]) {
+					perItem[i] = splitTextParserSentences(items[i])
+				} else {
+					perItem[i] = chunkFromItem(items[i], delimPattern)
+				}
 			}
 		}(lane.start, lane.end)
 	}
@@ -610,12 +629,56 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	return chunkOutputs(out)
 }
 
+// isTextParserSentenceFallback restores the semantic sentence units that the
+// shared TextParser used to emit. Parser boundaries remain owned by the
+// chunker: this only applies the text/code parser's default sentence grammar
+// before TokenChunker merges units by its configured token budget.
+func isTextParserSentenceFallback(fileType string, delimiters []string, item schema.ChunkDoc) bool {
+	if itemDocType(item) != "text" || len(delimiters) != 1 || delimiters[0] != "\n" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fileType)) {
+	case "txt", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt", "sql":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
+	text := itemTextOrFallback(item)
+	if !sentenceDelimiter.MatchString(text) {
+		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
+	}
+	parts := splitSentencesLossless(text)
+	out := make([]schema.ChunkDoc, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || strings.TrimSpace(sentenceDelimiter.ReplaceAllString(part, "")) == "" {
+			continue
+		}
+		out = append(out, buildChunkDoc(item, "text", part, "", ""))
+	}
+	if len(out) == 0 {
+		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // JSON-payload internals
 // ---------------------------------------------------------------------------
 
 // chunkFromItem mirrors _build_json_chunks for a single item.
 func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.ChunkDoc {
+	if it.CKType == "table_row" {
+		row := cloneChunkDoc(it)
+		row.DocType = "text"
+		row.CKType = "table_row"
+		row.Text = itemTextOrFallback(it)
+		row.TKNums = intPtr(tokenizeStr(row.Text))
+		return []schema.ChunkDoc{row}
+	}
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
 	if ckType != "text" {

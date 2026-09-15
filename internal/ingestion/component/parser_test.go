@@ -90,13 +90,65 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if _, ok := out["json"]; !ok {
 		t.Errorf("Outputs() missing key %q", "json")
 	}
-	for _, key := range []string{"name", "lang", "file", "doc_id", "bucket", "path"} {
+	for _, key := range []string{"name", "file_type", "lang", "file", "doc_id", "bucket", "path"} {
 		if _, ok := out[key]; !ok {
 			t.Errorf("Outputs() missing runtime output key %q", key)
 		}
 	}
 	if _, ok := out["_ERROR"]; ok {
 		t.Error("Outputs() must not advertise _ERROR; Parser failures return Go errors")
+	}
+}
+
+func TestParserComponentInvokeOutputsResolvedFileType(t *testing.T) {
+	tests := []struct {
+		name   string
+		inputs map[string]any
+		want   string
+	}{
+		{
+			name: "explicit family hint wins over filename",
+			inputs: map[string]any{
+				"binary":    "package main",
+				"file_type": "text&code",
+				"name":      "misleading.pdf",
+			},
+			want: "txt",
+		},
+		{
+			name:   "top-level name",
+			inputs: map[string]any{"binary": "hello", "name": "notes.txt"},
+			want:   "txt",
+		},
+		{
+			name: "file descriptor name",
+			inputs: map[string]any{
+				"binary": "hello",
+				"file":   map[string]any{"name": "notes.txt"},
+			},
+			want: "txt",
+		},
+		{
+			name:   "unknown input",
+			inputs: map[string]any{"binary": "hello", "name": "notes.unknown"},
+			want:   "other",
+		},
+	}
+
+	component := &ParserComponent{setups: defaultSetups()}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if routed := string(fileTypeFromInputs(test.inputs)); routed != test.want {
+				t.Fatalf("routing file type = %q, want %q", routed, test.want)
+			}
+			out, err := component.Invoke(t.Context(), nil, test.inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if got := out["file_type"]; got != test.want {
+				t.Errorf("file_type = %v, want %q", got, test.want)
+			}
+		})
 	}
 }
 

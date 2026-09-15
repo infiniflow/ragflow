@@ -231,7 +231,7 @@ func pythonFamilyName(raw string) string {
 		return "epub"
 	case "json", "jsonl", "ldjson":
 		return "json"
-	case "txt", "py", "js", "java", "c", "cpp", "h", "php",
+	case "text&code", "txt", "py", "js", "java", "c", "cpp", "h", "php",
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
 	case "mp4", "avi", "mkv", "mov", "webm", "flv",

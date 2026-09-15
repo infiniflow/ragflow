@@ -543,14 +543,23 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 	return addrs[0].IP, nil
 }
 
-// headingText returns the inline-text of a heading node by
-// concatenating every Leaf / Text child. Empty headings emit "".
+// headingText returns a canonical ATX heading (marker plus inline text).
+// Keeping the marker in the parser payload preserves the Markdown structure
+// for GeneralChunker and downstream LLM prompts; ck_type alone does not carry
+// the heading level.
 func headingText(h *ast.Heading) string {
 	var buf bytes.Buffer
 	for _, c := range h.GetChildren() {
 		buf.WriteString(leafText(c))
 	}
-	return strings.TrimSpace(buf.String())
+	text := strings.TrimSpace(buf.String())
+	if h.Level <= 0 {
+		return text
+	}
+	if text == "" {
+		return strings.Repeat("#", h.Level)
+	}
+	return strings.Repeat("#", h.Level) + " " + text
 }
 
 // leafText mirrors gomarkdown's leaf walker: walks every descendant

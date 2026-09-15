@@ -142,8 +142,8 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 				if got := items[0]["ck_type"]; got != "heading" {
 					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
 				}
-				if got := items[0]["text"]; got != "Title" {
-					t.Errorf("markdown item[0].text = %v, want Title", got)
+				if got := items[0]["text"]; got != "# Title" {
+					t.Errorf("markdown item[0].text = %v, want # Title", got)
 				}
 				if got := items[1]["text"]; got != "Body" {
 					t.Errorf("markdown item[1].text = %v, want Body", got)
@@ -166,6 +166,29 @@ func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
 	}, "sample.md", nil, "")
 
 	requireJSONText(t, out, "Recovered title")
+}
+
+func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
+	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "page_number": 1}}
+	out := buildParserOutputs(t.Context(), parser.ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":    "report.pdf",
+			"outline": wantOutline,
+		},
+		JSON: []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+	}, "report.pdf", nil, "")
+	file, ok := out["file"].(map[string]any)
+	if !ok {
+		t.Fatalf("file = %T/%v, want parser file metadata", out["file"], out["file"])
+	}
+	gotOutline, ok := file["outline"].([]map[string]any)
+	if !ok {
+		t.Fatalf("file.outline = %T/%v, want []map[string]any", file["outline"], file["outline"])
+	}
+	if !reflect.DeepEqual(gotOutline, wantOutline) {
+		t.Fatalf("file.outline = %#v, want %#v", gotOutline, wantOutline)
+	}
 }
 
 func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
