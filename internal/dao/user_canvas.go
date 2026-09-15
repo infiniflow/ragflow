@@ -32,44 +32,6 @@ import (
 // distinguish "missing" from "forbidden" so the response cannot be used
 // to enumerate other users' canvas ids — see plan §4.8 (IDOR mitigation).
 
-// userCanvasOrderableColumns whitelists the columns that may appear in an
-// ORDER BY clause. Keeps user-supplied `orderby` query params from being
-// spliced straight into SQL.
-var userCanvasOrderableColumns = map[string]struct{}{
-	"id":              {},
-	"user_id":         {},
-	"title":           {},
-	"permission":      {},
-	"canvas_type":     {},
-	"canvas_category": {},
-	"tags":            {},
-	"create_time":     {},
-	"create_date":     {},
-	"update_time":     {},
-	"update_date":     {},
-}
-
-func userCanvasOrderClause(orderby string, desc bool) string {
-	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
-func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
-	if _, ok := userCanvasOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	order := "user_canvas." + orderby
-	if desc {
-		return order + " DESC"
-	}
-	return order + " ASC"
-}
-
 func splitUserCanvasTags(raw string) []string {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))

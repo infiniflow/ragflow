@@ -57,43 +57,6 @@ func normalizePipelineOperationStatuses(statuses []string) []string {
 // api/db/services/task_service.py.
 const graphRaptorFakeDocID = "graph_raptor_x"
 
-// pipelineLogOrderableColumns whitelists the columns that may appear in an
-// ORDER BY clause so an attacker cannot inject arbitrary SQL through the
-// `orderby` query parameter.
-var pipelineLogOrderableColumns = map[string]struct{}{
-	"id":               {},
-	"document_id":      {},
-	"tenant_id":        {},
-	"kb_id":            {},
-	"pipeline_id":      {},
-	"pipeline_title":   {},
-	"parser_id":        {},
-	"document_name":    {},
-	"document_suffix":  {},
-	"document_type":    {},
-	"source_from":      {},
-	"progress":         {},
-	"process_begin_at": {},
-	"process_duration": {},
-	"task_type":        {},
-	"operation_status": {},
-	"status":           {},
-	"create_time":      {},
-	"create_date":      {},
-	"update_time":      {},
-	"update_date":      {},
-}
-
-func pipelineLogOrderClause(orderby string, desc bool) string {
-	if _, ok := pipelineLogOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
 // PipelineOperationLogDAO data access object for pipeline_operation_log.
 type PipelineOperationLogDAO struct{}
 

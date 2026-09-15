@@ -93,12 +93,12 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 		return nil, 0, err
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderBy + " " + orderDirection)
+	// Apply ordering. Route orderBy through fileOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against fileOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: fileOrderClause
+	query = query.Order(fileOrderClause(orderBy, desc))
 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
