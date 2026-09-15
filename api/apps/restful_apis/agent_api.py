@@ -23,6 +23,7 @@ import inspect
 import ipaddress
 import json
 import logging
+import math
 import time
 from functools import partial, wraps
 from typing import Set
@@ -70,9 +71,50 @@ from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
+from valkey.exceptions import WatchError
 
 # Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
 _background_tasks: Set[asyncio.Task] = set()
+
+_WEBHOOK_TRACE_MAX_RETRIES = 3
+_WEBHOOK_TRACE_TTL_SECONDS = 600
+
+
+def _append_webhook_trace(redis_client, agent_id: str, start_ts: float, event: dict, ttl: int = _WEBHOOK_TRACE_TTL_SECONDS) -> None:
+    """Atomically append one event to a webhook trace."""
+    key = f"webhook-trace-{agent_id}-logs"
+    run_id = str(start_ts)
+
+    for _ in range(_WEBHOOK_TRACE_MAX_RETRIES):
+        with redis_client.pipeline() as pipeline:
+            try:
+                pipeline.watch(key)
+                raw = pipeline.get(key)
+                obj = json.loads(raw) if raw else {"webhooks": {}}
+                webhooks = obj.setdefault("webhooks", {})
+                run = webhooks.setdefault(run_id, {"start_ts": start_ts, "events": []})
+                events = run.setdefault("events", [])
+
+                event_ts = time.time()
+                latest_ts = max(
+                    (stored.get("ts", 0) for stored in events if isinstance(stored, dict) and isinstance(stored.get("ts"), (int, float))),
+                    default=0,
+                )
+                if event_ts <= latest_ts:
+                    event_ts = math.nextafter(latest_ts, math.inf)
+
+                record = dict(event)
+                record["ts"] = event_ts
+                events.append(record)
+
+                pipeline.multi()
+                pipeline.set(key, json.dumps(obj, ensure_ascii=False), ex=ttl)
+                pipeline.execute()
+                return
+            except WatchError:
+                continue
+
+    raise RuntimeError(f"Failed to update webhook trace after {_WEBHOOK_TRACE_MAX_RETRIES} retries")
 
 
 def _canvas_json_default(obj):
@@ -1599,8 +1641,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
-        # Keep the original workflow execution path, but assign a session_id so the
-        # response shape stays closer to the older agent completion contract.
+        # Load the caller's runtime replica as the workflow template. Session-owned
+        # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
@@ -1691,7 +1733,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
-            canvas.clear_history()
+            canvas.start_new_session()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()
@@ -2348,19 +2390,14 @@ async def _webhook_impl(agent_id: str, is_test: bool):
     execution_mode = webhook_cfg.get("execution_mode", "Immediately")
     response_cfg = webhook_cfg.get("response", {})
 
-    def append_webhook_trace(agent_id: str, start_ts: float, event: dict, ttl=600):
+    def append_webhook_trace(agent_id: str, start_ts: float, event: dict, ttl: int = _WEBHOOK_TRACE_TTL_SECONDS) -> None:
         from rag.utils.redis_conn import REDIS_CONN
 
-        key = f"webhook-trace-{agent_id}-logs"
-
-        raw = REDIS_CONN.get(key)
-        obj = json.loads(raw) if raw else {"webhooks": {}}
-
-        ws = obj["webhooks"].setdefault(str(start_ts), {"start_ts": start_ts, "events": []})
-
-        ws["events"].append({"ts": time.time(), **event})
-
-        REDIS_CONN.set_obj(key, obj, ttl)
+        try:
+            _append_webhook_trace(REDIS_CONN.REDIS, agent_id, start_ts, event, ttl)
+        except Exception:
+            # Trace persistence is best-effort and must not fail the Agent run.
+            logging.exception("Failed to append webhook trace")
 
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
@@ -2641,7 +2678,15 @@ def _attachment_request_metadata():
 async def _stream_agent_attachment(tenant_id, attachment_id, *, inline: bool):
     attachment_id = attachment_id or request.view_args.get("attachment_id")
     content_type, ext, filename = _attachment_request_metadata()
-    data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+    # Chat uploads are written to the per-user downloads bucket (FileService.put_blob),
+    # while agent-generated attachments are written under the bare tenant id. Probe
+    # both so this endpoint serves either; attachment ids are UUIDs, so the two
+    # buckets cannot both hold a given id.
+    data = None
+    for bucket in (f"{tenant_id}-downloads", tenant_id):
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, attachment_id)
+        if data:
+            break
     if not data:
         return get_data_error_result(message="document not found")
     response = await make_response(data)

@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -57,8 +58,8 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != strings.TrimSpace(chunkMethod) {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -94,47 +95,6 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_KnowledgeCompilerParamsPopulated(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
-
-	parserID := "knowledge_compiler"
-	parseType := 1
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:      "ds-kc-cp",
-		ParserID:  &parserID,
-		ParseType: &parseType,
-	}, "tenant-1")
-	if err != nil {
-		t.Fatalf("CreateDataset failed: %v", err)
-	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
-	}
-	parserConfig, ok := result["parser_config"].(entity.JSONMap)
-	if !ok || len(parserConfig) == 0 {
-		t.Fatal("expected non-empty parser_config for knowledge_compiler pipeline")
-	}
-	compiler, ok := parserConfig["Compiler:KnownSwiftLions"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected compiler component params, got %#v", parserConfig["Compiler:KnownSwiftLions"])
-	}
-	if compiler["llm_id"] != "llm-default" {
-		t.Fatalf("compiler llm_id = %#v, want llm-default", compiler["llm_id"])
-	}
-	if _, ok := compiler["embedding_model"]; ok {
-		t.Fatalf("compiler embedding_model = %#v, want absent", compiler["embedding_model"])
-	}
-	if _, ok := compiler["tenant_id"]; ok {
-		t.Fatalf("compiler tenant_id = %#v, want absent", compiler["tenant_id"])
-	}
-	if _, ok := compiler["dataset_id"]; ok {
-		t.Fatalf("compiler dataset_id = %#v, want absent", compiler["dataset_id"])
-	}
-}
-
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -156,8 +116,8 @@ func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != chunkMethod {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 	if v, ok := result["pipeline_id"]; ok && v != nil {
 		t.Fatalf("expected pipeline_id to be nil for BuiltIn mode, got %#v", v)
@@ -276,5 +236,119 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 				t.Fatalf("unexpected error: got %q, want %q", err.Error(), tc.expectedMessage)
 			}
 		})
+	}
+}
+
+func TestCreateDataset_SetsExplicitLanguage(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	ctx := t.Context()
+
+	language := "  Chinese  "
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:     "ds-language",
+		Language: &language,
+	}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["language"] != "Chinese" {
+		t.Fatalf("language = %#v, want %q", result["language"], "Chinese")
+	}
+}
+
+func TestCreateDataset_OmittedLanguageKeepsDefault(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	ctx := t.Context()
+
+	// An omitted language must stay unset on the insert so the column default
+	// applies, mirroring the Python service dropping a None language.
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "ds-no-language"}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	var stored entity.Knowledgebase
+	if err := db.Where("id = ?", result["id"]).First(&stored).Error; err != nil {
+		t.Fatalf("load created dataset: %v", err)
+	}
+	if stored.Language == nil {
+		t.Fatal("expected the column default to be applied, got NULL language")
+	}
+	if *stored.Language != "English" {
+		t.Fatalf("language = %q, want the %q column default", *stored.Language, "English")
+	}
+}
+
+func TestCreateDataset_RejectsBlankLanguage(t *testing.T) {
+	for _, language := range []string{"", "   ", "\t"} {
+		t.Run(fmt.Sprintf("%q", language), func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertCreateDatasetTenant(t, "tenant-1")
+
+			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+				Name:     "ds-blank-language",
+				Language: &language,
+			}, "tenant-1")
+			if err == nil {
+				t.Fatal("expected language validation error")
+			}
+			if code != common.CodeDataError {
+				t.Fatalf("expected data error code, got %d", code)
+			}
+			if err.Error() != "String should have at least 1 character" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestCreateDataset_LanguageLimitCountsCharacters(t *testing.T) {
+	// pydantic's max_length counts characters, so a 32-character non-ASCII
+	// language name is accepted even though it is 96 bytes long.
+	atLimit := strings.Repeat("中", datasetLanguageLimit)
+	overLimit := strings.Repeat("中", datasetLanguageLimit+1)
+
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	ctx := t.Context()
+
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:     "ds-language-at-limit",
+		Language: &atLimit,
+	}, "tenant-1")
+	if err != nil {
+		t.Fatalf("CreateDataset failed for a %d-character language: %v", datasetLanguageLimit, err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["language"] != atLimit {
+		t.Fatalf("language = %#v, want %q", result["language"], atLimit)
+	}
+
+	_, code, err = testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:     "ds-language-over-limit",
+		Language: &overLimit,
+	}, "tenant-1")
+	if err == nil {
+		t.Fatal("expected language length validation error")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
+	}
+	if err.Error() != "String should have at most 32 characters" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

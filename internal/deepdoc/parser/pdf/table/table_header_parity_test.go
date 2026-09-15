@@ -20,11 +20,11 @@ import (
 // header if ANY signal flags it.
 // =============================================================================
 
-// TestHeaderDetection_GeometricPathVsProductionPathDiverge verifies the
+// TestHeaderDetection_GeometricPathAndProductionPathAgree verifies the
 // production TSR-grid path (HeaderSetWithBlockType) and the box-geometric path
 // (BoxHeaderSet) agree on the same table: a non-numeric, unlabeled header row
 // whose boxes overlap the header region must be detected by both.
-func TestHeaderDetection_GeometricPathVsProductionPathDiverge(t *testing.T) {
+func TestHeaderDetection_GeometricPathAndProductionPathAgree(t *testing.T) {
 	// Same 2-row, 2-col table, two views:
 	//  - TSR grid: row 0 cells have NO "header" label (TSR missed them).
 	//  - boxes: row 0 boxes carry H>0 (they geometrically overlap the header

@@ -115,7 +115,9 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	if hasPdfPositions(records) {
 		sortRecordsByPosition(records)
 	}
-	return chunkFromRecords(ctx, db, inputs, &c.param, records)
+	// ManualChunker is exempt from the title-family token cap (#18455): it
+	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
+	return chunkFromRecords(ctx, db, inputs, &c.param, records, 0)
 }
 
 // hasPdfPositions reports whether any record carries a PDF coordinate matrix

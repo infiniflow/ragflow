@@ -1041,6 +1041,7 @@ class GaussDBSearchBuilder:
         offset: int,
         limit: int,
         similarity_threshold: float | None = None,
+        minimum_should_match: float | str | None = None,
         topn: int | None = None,
         highlight_fields: list[str] | None = None,
         order_by: OrderByExpr | None = None,
@@ -1064,6 +1065,7 @@ class GaussDBSearchBuilder:
                 vector_dim=vector_dim,
                 vector_weight=vector_weight,
                 similarity_threshold=similarity_threshold,
+                minimum_should_match=minimum_should_match,
                 candidate_limit=candidate_limit,
                 offset=effective_offset,
                 limit=page_limit,
@@ -1089,6 +1091,7 @@ class GaussDBSearchBuilder:
                 select_fields=select_fields,
                 condition=condition,
                 keywords=query_keywords,
+                minimum_should_match=minimum_should_match,
                 offset=effective_offset,
                 limit=page_limit,
                 highlight_fields=highlight_fields,
@@ -1158,10 +1161,15 @@ class GaussDBSearchBuilder:
             params.append(value)
         return " AND ".join(fragments), params
 
-    def build_text_score_expr(self, keywords: list[str]) -> tuple[str, list[Any]]:
+    def build_text_score_expr(
+        self,
+        keywords: list[str],
+        minimum_should_match: float | str | None = None,
+    ) -> tuple[str, list[Any]]:
         score_exprs: list[str] = []
         params: list[Any] = []
-        for config, query_text in self._text_queries(keywords):
+        text_queries = self._text_queries(keywords) if minimum_should_match is None else self._text_query_terms(keywords)
+        for config, query_text in text_queries:
             weighted_score = " + ".join(
                 f"{weight} * COALESCE(ts_rank(to_tsvector('{config}', coalesce({column}, ' ')), plainto_tsquery('{config}', %s)), 0)" for column, weight in self.FTS_WEIGHTS.items()
             )
@@ -1273,6 +1281,7 @@ class GaussDBSearchBuilder:
         select_fields: list[str],
         condition: dict,
         keywords: list[str],
+        minimum_should_match: float | str | None,
         offset: int,
         limit: int,
         highlight_fields: list[str] | None,
@@ -1280,9 +1289,9 @@ class GaussDBSearchBuilder:
     ) -> tuple[str, list[Any]]:
         table_name = self.ddl.qualified_name(table)
         columns = self.normalize_select_fields(select_fields)
-        score_expr, score_params = self.build_text_score_expr(keywords)
+        score_expr, score_params = self.build_text_score_expr(keywords, minimum_should_match)
         score_expr, pagerank_params = self._score_with_pagerank(score_expr, pagerank_weight)
-        match_expr, match_params = self._build_text_match_expr(keywords)
+        match_expr, match_params = self._build_text_match_expr(keywords, minimum_should_match)
         where_sql, where_params = self.build_condition_where(condition)
         where_parts = [part for part in (where_sql, match_expr) if part]
         select_exprs = [*self._select_exprs(columns), f"{score_expr} AS _score", "COUNT(*) OVER() AS __total"]
@@ -1344,6 +1353,7 @@ class GaussDBSearchBuilder:
         vector_dim: int,
         vector_weight: float,
         similarity_threshold: float | None,
+        minimum_should_match: float | str | None,
         candidate_limit: int,
         offset: int,
         limit: int,
@@ -1356,8 +1366,8 @@ class GaussDBSearchBuilder:
         dim = self.ddl.validate_vector_dim(vector_dim)
         vector_col = self.ddl.vector_column_name(dim)
         valid_col = self.ddl.vector_valid_column_name(dim)
-        text_score_expr, text_score_params = self.build_text_score_expr(keywords)
-        match_expr, match_params = self._build_text_match_expr(keywords)
+        text_score_expr, text_score_params = self.build_text_score_expr(keywords, minimum_should_match)
+        match_expr, match_params = self._build_text_match_expr(keywords, minimum_should_match)
         where_sql, where_params = self.build_condition_where(condition)
         base_where = where_sql or "TRUE"
         fts_where = " AND ".join([base_where, match_expr])
@@ -1413,7 +1423,26 @@ class GaussDBSearchBuilder:
             offset,
         ]
 
-    def _build_text_match_expr(self, keywords: list[str]) -> tuple[str, list[Any]]:
+    def _build_text_match_expr(
+        self,
+        keywords: list[str],
+        minimum_should_match: float | str | None = None,
+    ) -> tuple[str, list[Any]]:
+        if minimum_should_match is not None:
+            text_query_terms = self._text_query_terms(keywords)
+            predicates = [f"{self.build_fts_vector_expr(config)} @@ plainto_tsquery('{config}', %s)" for config, _query_text in text_query_terms]
+            params = [query_text for _config, query_text in text_query_terms]
+            required = self._minimum_should_match_count(minimum_should_match, len(predicates))
+            if not predicates:
+                return "FALSE", []
+            if required <= 1:
+                return "(" + " OR ".join(predicates) + ")", params
+            if required >= len(predicates):
+                return "(" + " AND ".join(predicates) + ")", params
+            any_match = " OR ".join(predicates)
+            match_count = " + ".join(f"CASE WHEN {predicate} THEN 1 ELSE 0 END" for predicate in predicates)
+            return f"(({any_match}) AND ({match_count}) >= {required})", [*params, *params]
+
         match_exprs: list[str] = []
         params: list[Any] = []
         for config, query_text in self._text_queries(keywords):
@@ -1527,6 +1556,41 @@ class GaussDBSearchBuilder:
         if ngram_terms:
             queries.append(("ngram", self._text_query_param(ngram_terms)))
         return queries
+
+    def _text_query_terms(self, keywords: list[str]) -> list[tuple[str, str]]:
+        simple_terms, ngram_terms = self.split_text_query_terms(keywords)
+        terms: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for config, values in (("simple", simple_terms), ("ngram", ngram_terms)):
+            for value in values:
+                key = (config, value.casefold())
+                if key in seen:
+                    continue
+                seen.add(key)
+                terms.append((config, value))
+        return terms
+
+    @staticmethod
+    def _minimum_should_match_count(minimum_should_match: float | str, term_count: int) -> int:
+        if term_count <= 0:
+            return 0
+
+        value: float | str = minimum_should_match
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                if text.endswith("%"):
+                    value = float(text[:-1]) / 100.0
+                else:
+                    value = float(text)
+            except ValueError:
+                return 1
+
+        if isinstance(value, float) and 0.0 <= value <= 1.0:
+            required = int(term_count * value)
+        else:
+            required = int(value)
+        return min(term_count, max(1, required))
 
     def _vector_param(self, vector: list[float] | tuple[float, ...], vector_dim: int | None) -> str:
         if vector_dim is None:

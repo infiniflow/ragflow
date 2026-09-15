@@ -207,25 +207,39 @@ async def apply_meta_data_filter(
 
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
-        if conditions and kb_ids:
-            try:
-                from api.db.services.doc_metadata_service import DocMetadataService
+        return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
-                doc_ids = DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-                logging.debug(f"Doc ids filtered by metadata: {doc_ids}")
-                if doc_ids is not None:
-                    return doc_ids
-            except Exception as e:
-                logging.error(f"Metadata filter push down errored: {e}")
+    def _constrain(filtered: list[str]) -> list[str]:
+        """Intersect metadata-filter hits with the caller-scoped base doc ids.
 
-        # In-memory fallback
-        logging.debug("Metadata filter falls back to in-memory filter")
-        return meta_filter(_get_metas(), conditions, logic)
+        ``base_doc_ids`` is the retrieval scope the caller already narrowed to
+        (explicit ``document_ids``, a dialog-scoped doc set, ...). The metadata
+        filter must *narrow* that scope, not widen it: a doc outside the base
+        scope, or inside it but not matching the filter, must not be searched.
+        Mirrors ``constrainDocIDs`` in internal/service/metadata_filter.go.
+        """
+        filtered = dedupe_list(filtered)
+        base_count = len(base_doc_ids or [])
+        if not base_doc_ids:
+            constrained = filtered
+        elif not filtered:
+            constrained = []
+        else:
+            allowed = set(filtered)
+            constrained = dedupe_list([doc_id for doc_id in base_doc_ids if doc_id in allowed])
+        logging.debug(
+            "Metadata filter scope constraint: base_count=%d, filter_hit_count=%d, constrained_count=%d, removed_all_filter_hits=%s",
+            base_count,
+            len(filtered),
+            len(constrained),
+            bool(filtered) and bool(base_doc_ids) and not constrained,
+        )
+        return constrained
 
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+        doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
     elif method == "semi_auto":
@@ -247,7 +261,7 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+                doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None
     elif method == "manual":
@@ -255,7 +269,7 @@ async def apply_meta_data_filter(
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
         logging.debug(f"Metadata filter(manual): {filters}")
-        doc_ids.extend(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
+        doc_ids = _constrain(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
         if filters and not doc_ids:
             doc_ids = ["-999"]
 
@@ -268,7 +282,7 @@ def _try_meta_pushdown(
     conditions: list[dict],
     logic: str,
 ) -> list[str] | None:
-    """Attempt the ES push-down path; return ``None`` to fall back in-memory.
+    """Attempt metadata-index push-down; return ``None`` to fall back in memory.
 
     Lazy-imports ``DocMetadataService`` so this module stays usable in
     environments where the API/db layer hasn't been wired up (e.g. unit tests
@@ -276,14 +290,34 @@ def _try_meta_pushdown(
     """
     try:
         from api.db.services.doc_metadata_service import DocMetadataService
-    except Exception as e:
-        logging.debug(f"[apply_meta_data_filter] push-down disabled, import failed: {e}")
+    except ImportError as e:
+        logging.debug(f"Metadata filter push-down disabled because the service import failed: {e}")
         return None
-    try:
-        return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
-    except Exception as e:
-        logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
-        return None
+    return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
+
+
+def filter_doc_ids_by_metadata(
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
+    metas_loader: Callable[[], dict],
+) -> list[str]:
+    """Filter document IDs through the metadata index with a lazy exact fallback."""
+    doc_ids = _try_meta_pushdown(kb_ids, conditions, logic) if conditions and kb_ids else None
+    if doc_ids is not None:
+        logging.debug(
+            "Metadata filter used push-down: kb_count=%d condition_count=%d matched_doc_count=%d",
+            len(kb_ids),
+            len(conditions),
+            len(doc_ids),
+        )
+        return doc_ids
+    logging.debug(
+        "Metadata filter uses in-memory fallback: kb_count=%d condition_count=%d",
+        len(kb_ids),
+        len(conditions),
+    )
+    return meta_filter(metas_loader(), conditions, logic)
 
 
 def dedupe_list(values: list) -> list:
@@ -299,6 +333,14 @@ def dedupe_list(values: list) -> list:
 
 
 def update_metadata_to(metadata, meta):
+    """Merge ``meta`` into ``metadata``.
+
+    String / list[str] values keep the previous multi-value merge + dedupe
+    behavior (used by LLM-extracted metadata). Scalars (bool / int / float /
+    None) and structured values (list[dict], dict, ...) are preserved so that
+    document system fields such as ``_isCurrent`` / ``_version`` and PDF
+    ``outline`` survive merges that later fully replace ``meta_fields``.
+    """
     if not meta:
         return metadata
     if isinstance(meta, str):
@@ -312,22 +354,78 @@ def update_metadata_to(metadata, meta):
 
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
-            if not v:
+            if all(isinstance(vv, str) for vv in v):
+                if not v:
+                    continue
+                v = dedupe_list(v)
+            else:
+                # Structured list (e.g. outline [{title, depth}, ...]).
+                if k not in metadata:
+                    logging.debug(
+                        "update_metadata_to preserve structured list key=%s src=%s",
+                        k,
+                        type(v).__name__,
+                    )
+                    metadata[k] = v
+                else:
+                    logging.debug(
+                        "update_metadata_to skip structured list key=%s src=%s dst=%s",
+                        k,
+                        type(v).__name__,
+                        type(metadata[k]).__name__,
+                    )
                 continue
-            v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        elif isinstance(v, (str, bool, int, float)) or v is None:
+            pass
+        else:
+            # dict / other structured values: keep if absent.
+            if k not in metadata:
+                logging.debug(
+                    "update_metadata_to preserve structured value key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
+                metadata[k] = v
+            else:
+                logging.debug(
+                    "update_metadata_to skip structured value key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             continue
+
         if k not in metadata:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to preserve scalar key=%s src=%s",
+                    k,
+                    type(v).__name__,
+                )
             metadata[k] = v
             continue
-        if isinstance(metadata[k], list):
+        if isinstance(metadata[k], list) and isinstance(v, (list, str)):
+            if not all(isinstance(x, str) for x in metadata[k]):
+                logging.debug(
+                    "update_metadata_to skip merge into structured list key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
+                continue
             if isinstance(v, list):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
             metadata[k] = dedupe_list(metadata[k])
         else:
+            if not isinstance(v, (list, str)):
+                logging.debug(
+                    "update_metadata_to replace scalar key=%s src=%s dst=%s",
+                    k,
+                    type(v).__name__,
+                    type(metadata[k]).__name__,
+                )
             metadata[k] = v
 
     return metadata

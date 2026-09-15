@@ -11,6 +11,17 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
+// ocrBoxToPts converts a detected OCR quad (8 coords, DBNet corner order
+// TL,TR,BR,BL) into the [4]util.Pt corner order util.WarpCrop expects.
+func ocrBoxToPts(b pdf.OCRBox) [4]util.Pt {
+	return [4]util.Pt{
+		{X: b.X0, Y: b.Y0}, // top-left
+		{X: b.X1, Y: b.Y1}, // top-right
+		{X: b.X2, Y: b.Y2}, // bottom-right
+		{X: b.X3, Y: b.Y3}, // bottom-left
+	}
+}
+
 // EvaluateTableOrientation tests 4 rotation angles (0/90/180/270) and picks
 // the best orientation based on OCR recognition confidence, matching Python's
 // pdf_parser.py:367 _evaluate_table_orientation().
@@ -55,18 +66,47 @@ func EvaluateTableOrientation(ctx context.Context, tableImg image.Image, doc pdf
 
 		// Score by recognition confidence (legibility), matching Python's
 		// _evaluate_table_orientation: avg_conf * (1 + 0.1*min(regions,50)/50).
-		texts, err := doc.OCRRecognize(ctx, rotated)
-		if err != nil || len(texts) == 0 {
+		//
+		// Python's OCR.__call__ runs DETECTION first and then recognizes each
+		// detected text line, so regions = number of lines and avg_conf is the
+		// mean over lines. We must mirror that: call OCRDetect to find the
+		// table's text lines, warp-crop each line, and recognize it
+		// individually. Sending the whole table image to a single rec call
+		// (as the previous implementation did) treats the entire table as one
+		// line, collapsing regions to 1 and yielding a degenerate score.
+		boxes, derr := doc.OCRDetect(ctx, rotated)
+		if derr != nil || len(boxes) == 0 {
 			scores[rot.angle] = 0
 			continue
 		}
 
 		var confSum float64
-		for _, t := range texts {
-			confSum += t.Confidence
+		regions := 0
+		for _, box := range boxes {
+			line := util.WarpCrop(rotated, ocrBoxToPts(box))
+			texts, rerr := doc.OCRRecognize(ctx, line)
+			if rerr != nil || len(texts) == 0 {
+				continue
+			}
+			// Average the line's recognized texts first, then count the line
+			// as one region. This keeps regions == number of detected lines
+			// (matching Python's len(texts) in the normal one-text-per-line
+			// case) and avoids inflating the bonus term if a single warped
+			// line is recognized as multiple text fragments.
+			var lineConf float64
+			for _, t := range texts {
+				lineConf += t.Confidence
+			}
+			lineConf /= float64(len(texts))
+			confSum += lineConf
+			regions++
 		}
-		avgConf := confSum / float64(len(texts))
-		regions := len(texts)
+		if regions == 0 {
+			scores[rot.angle] = 0
+			continue
+		}
+
+		avgConf := confSum / float64(regions)
 		combined := avgConf * (1 + 0.1*math.Min(float64(regions), 50)/50)
 		scores[rot.angle] = combined
 

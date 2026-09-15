@@ -48,6 +48,48 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 	t.Logf("HTML:\n%s", html)
 }
 
+// TestConstructTable_DropsAllEmptyRow pins Python parity: when the
+// TSR-derived grid carries a row that no text box landed in
+// (e.g. an extra "table row" detected next to a "table projected row
+// header" on a cross-page table's continuation page), Python's
+// construct_table builds rows from box.R grouping and never emits that
+// row, while Go's grid carries every TSR row and previously kept the
+// empty row — leaking it into item.Rows and the HTML table.
+//
+// Repro fixture from 13_crosspage_table.pdf page 2: the first
+// "table row" (y0=885) sits on top of a "table projected row header"
+// with no OCR box overlap. Go's GroupCells keeps it as a 5-cell
+// row, all empty; this test pins the drop.
+func TestConstructTable_DropsAllEmptyRow(t *testing.T) {
+	mkRow := func(y0 float64, texts ...string) []pdf.TSRCell {
+		row := make([]pdf.TSRCell, 5)
+		for c := range row {
+			row[c] = pdf.TSRCell{X0: float64(c * 100), Y0: y0, X1: float64(c*100 + 100), Y1: y0 + 20}
+		}
+		for c, t := range texts {
+			row[c].Text = t
+		}
+		return row
+	}
+	item := &pdf.TableItem{
+		Grid: [][]pdf.TSRCell{
+			mkRow(0, "r0c0", "r0c1", "r0c2", "r0c3", "r0c4"),
+			mkRow(20), // all empty: TSR-detected row with no OCR box
+			mkRow(40, "r2c0", "r2c1", "r2c2", "r2c3", "r2c4"),
+		},
+	}
+	_ = ConstructTable(nil, nil, "", item)
+	if len(item.Rows) != 2 {
+		t.Fatalf("expected 2 rows after dropping all-empty row, got %d:\n%v", len(item.Rows), item.Rows)
+	}
+	if item.Rows[0][0] != "r0c0" || item.Rows[1][0] != "r2c0" {
+		t.Errorf("row content wrong: %v", item.Rows)
+	}
+	if len(item.Grid) != 2 {
+		t.Errorf("expected item.Grid also to drop the empty row, got len=%d", len(item.Grid))
+	}
+}
+
 func TestConstructTable_EmptyCells(t *testing.T) {
 	html := ConstructTable(nil, nil, "", nil)
 	if html != "" {

@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"ragflow/internal/tokenizer"
 
@@ -87,13 +88,39 @@ func initStopWords() map[string]struct{} {
 	return stopWords
 }
 
+// alphabeticOOVFrequency estimates frequency for an alphabetic out-of-vocabulary
+// term. It preserves the previous frequency of 300 for short words, then halves
+// it every two letters, with a floor of 10. Latin, Greek, and Cyrillic scripts
+// are supported while logographic terms keep their existing tokenizer path.
+func alphabeticOOVFrequency(term string) (float64, bool) {
+	letterCount := 0
+	for _, r := range term {
+		if unicode.IsLetter(r) && unicode.In(r, unicode.Latin, unicode.Greek, unicode.Cyrillic) {
+			letterCount++
+			continue
+		}
+		if r != ' ' && r != '.' && r != '-' {
+			return 0, false
+		}
+	}
+	if letterCount == 0 {
+		return 0, false
+	}
+
+	exponent := float64(max(0, letterCount-3)) / 2
+	frequency := math.Round(300 / math.Pow(2, exponent))
+	return math.Max(10, frequency), true
+}
+
 // loadDict loads a dictionary file
 // Format: term\tfreq or just term
 func loadDict(fnm string) map[string]int {
 	res := make(map[string]int)
 	data, err := os.ReadFile(fnm)
 	if err != nil {
-		common.Warn("Failed to load dictionary", zap.String("file", fnm), zap.Error(err))
+		if !os.IsNotExist(err) {
+			common.Warn("Failed to load dictionary", zap.String("file", fnm), zap.Error(err))
+		}
 		return res
 	}
 
@@ -285,7 +312,6 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	numPattern := regexp.MustCompile("^[0-9,.]{2,}$")
 	shortLetterPattern := regexp.MustCompile("^[a-z]{1,2}$")
 	numSpacePattern := regexp.MustCompile("^[0-9. -]{2,}$")
-	letterPattern := regexp.MustCompile("^[a-z. -]+$")
 
 	// ner weight function
 	nerWeight := func(t string) float64 {
@@ -338,8 +364,10 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		}
 		// Use tokenizer's freq function
 		s := tokenizer.GetTermFreq(t)
-		if s == 0 && letterPattern.MatchString(t) {
-			return 300
+		if s == 0 {
+			if oovFrequency, ok := alphabeticOOVFrequency(t); ok {
+				return oovFrequency
+			}
 		}
 		if s == 0 && len([]rune(t)) >= 4 {
 			// Try fine-grained tokenization
@@ -385,8 +413,8 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		if v, ok := d.df[t]; ok {
 			return float64(v) + 3
 		}
-		if letterPattern.MatchString(t) {
-			return 300
+		if oovFrequency, ok := alphabeticOOVFrequency(t); ok {
+			return oovFrequency
 		}
 		if len([]rune(t)) >= 4 {
 			// Use fine-grained tokenization

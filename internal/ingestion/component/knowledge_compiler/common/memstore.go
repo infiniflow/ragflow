@@ -123,6 +123,46 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 	}
 }
 
+// DedupeAddByID applies a deduplication decision against a specific stored
+// product. Callers use this when a domain identity (such as an entity name)
+// must take precedence over vector similarity.
+func (m *MemStore) DedupeAddByID(row Product, candidateID string, cb DedupCallback) (KeepAction, error) {
+	m.mu.RLock()
+	idx, ok := m.byID[candidateID]
+	var best Product
+	if ok && idx >= 0 && idx < len(m.items) {
+		best = m.items[idx]
+	}
+	m.mu.RUnlock()
+	if best.ID == "" {
+		return m.DedupeAdd(row, 0, cb)
+	}
+	action, replacement, err := cb(best, 1)
+	if err != nil {
+		return 0, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	resolvedIdx, ok := m.byID[best.ID]
+	if !ok || resolvedIdx < 0 || resolvedIdx >= len(m.items) || m.items[resolvedIdx].ID != best.ID {
+		m.addLocked(row)
+		return KeepAdd, nil
+	}
+	switch action {
+	case KeepDrop:
+		return KeepDrop, nil
+	case KeepMerge:
+		replacement.ID = best.ID
+		m.items[resolvedIdx] = replacement
+		m.replaceMatLocked(resolvedIdx, replacement.Vector)
+		m.norms[resolvedIdx] = l2Norm(replacement.Vector)
+		return KeepMerge, nil
+	default:
+		m.addLocked(row)
+		return KeepAdd, nil
+	}
+}
+
 func (m *MemStore) addLocked(p Product) {
 	m.items = append(m.items, p)
 	m.appendMatLocked(p.Vector)

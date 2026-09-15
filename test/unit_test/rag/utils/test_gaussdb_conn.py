@@ -2822,7 +2822,7 @@ def test_tc_ret_805_parse_fusion_vector_weight_returns_none_for_missing_or_bad_w
 def test_tc_ret_806_parse_match_expressions_applies_gaussdb_vector_weight_defaults(monkeypatch):
     monkeypatch.setattr(gaussdb_conn_module, "_tokenize_query_terms", lambda query: str(query).split())
     conn = make_conn(RecordingCursor())
-    text = MatchTextExpr(["content_with_weight"], "hello", 10, {"original_query": "hello"})
+    text = MatchTextExpr(["content_with_weight"], "hello", 10, {"original_query": "hello", "minimum_should_match": 0.3})
     dense = MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", 10, {"similarity": 0.0})
     fusion = FusionExpr("weighted_sum", 6, {"weights": "0.7,0.3"})
 
@@ -2832,7 +2832,9 @@ def test_tc_ret_806_parse_match_expressions_applies_gaussdb_vector_weight_defaul
     hybrid_explicit = conn._parse_match_expressions([text, dense, fusion], rank_feature={"pagerank_fea": 7})
 
     assert text_only["vector_weight"] == 0.0
+    assert text_only["minimum_should_match"] == 0.3
     assert vector_only["vector_weight"] == 1.0
+    assert vector_only["minimum_should_match"] is None
     assert hybrid_default["vector_weight"] == 0.5
     assert {text_only["pagerank_weight"], vector_only["pagerank_weight"], hybrid_default["pagerank_weight"]} == {10.0}
     assert hybrid_explicit["vector_weight"] == 0.3

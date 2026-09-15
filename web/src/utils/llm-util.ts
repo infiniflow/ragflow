@@ -201,17 +201,26 @@ export function addTenantParams(data: any, url?: string): any {
     return data;
   }
 
-  const llmList = getCachedLlmList();
-  if (!llmList) return data;
-
   // Handle arrays
   if (Array.isArray(data)) {
     return data.map((item) => addTenantParams(item, url));
   }
 
   const newData = { ...data };
+  const llmList = getCachedLlmList();
 
-  // Iterate through model parameters and add corresponding tenant parameters
+  // Clear the paired tenant ID when a model selection is explicitly cleared.
+  for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
+    if (
+      Object.hasOwn(newData, paramName) &&
+      (newData[paramName] === '' || newData[paramName] == null)
+    ) {
+      newData[tenantParamName] = null;
+    }
+  }
+
+  if (!llmList) return newData;
+
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
     if (newData[paramName]) {
       try {

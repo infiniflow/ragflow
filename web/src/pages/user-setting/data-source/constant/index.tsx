@@ -18,23 +18,30 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import {
+  feishuWikiConstant,
+  feishuWikiDefaultValues,
+} from './feishu-wiki-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
+import { sitemapConstant } from './sitemap-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   NOTION = 'notion',
   GOOGLE_DRIVE = 'google_drive',
+  FEISHU_WIKI = 'feishu_wiki',
   GMAIL = 'gmail',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   OCI_STORAGE = 'oci_storage',
@@ -44,10 +51,12 @@ export enum DataSourceKey {
   BOX = 'box',
   DROPBOX = 'dropbox',
   BITBUCKET = 'bitbucket',
+  AZURE_DEVOPS = 'azure_devops',
   GITLAB = 'gitlab',
   GITHUB = 'github',
   MOODLE = 'moodle',
   DISCORD = 'discord',
+  XQUIK = 'xquik',
   ZENDESK = 'zendesk',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
@@ -60,6 +69,7 @@ export enum DataSourceKey {
   BIGQUERY = 'bigquery',
   REST_API = 'rest_api',
   RSS = 'rss',
+  SITEMAP = 'sitemap',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
@@ -126,6 +136,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.BITBUCKET]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.AZURE_DEVOPS]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.AIRTABLE]: {
     syncDeletedFiles: true,
   },
@@ -145,6 +158,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.RSS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SITEMAP]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MOODLE]: {
@@ -200,6 +216,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.RSS}Description`),
       icon: <Rss className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.SITEMAP]: {
+      name: 'Sitemap',
+      description: t(`setting.${DataSourceKey.SITEMAP}Description`),
+      icon: <Globe className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
       description: t(
@@ -232,6 +253,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.DISCORD}Description`),
       icon: <SvgIcon name={'data-source/discord'} width={38} />,
     },
+    [DataSourceKey.XQUIK]: {
+      name: 'Xquik',
+      description: t(`setting.${DataSourceKey.XQUIK}Description`),
+      icon: <Search className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.CONFLUENCE]: {
       name: 'Confluence',
       description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
@@ -241,6 +267,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Google Drive',
       description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
       icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
+    },
+    [DataSourceKey.FEISHU_WIKI]: {
+      name: 'Feishu Wiki',
+      description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
+      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -332,6 +363,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
+    [DataSourceKey.AZURE_DEVOPS]: {
+      name: 'Azure DevOps',
+      description: t(`setting.${DataSourceKey.AZURE_DEVOPS}Description`),
+      icon: <SvgIcon name={'data-source/azure-devops'} width={38} />,
     },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
@@ -462,6 +498,7 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
+  [DataSourceKey.FEISHU_WIKI]: feishuWikiConstant(t),
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -767,6 +804,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       },
     },
   ],
+  [DataSourceKey.SITEMAP]: sitemapConstant(t),
   [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
       label: t('setting.dataSourceFieldGcsAccessKeyId'),
@@ -878,6 +916,73 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.channels',
       type: FormFieldType.Tag,
       required: false,
+    },
+  ],
+  [DataSourceKey.XQUIK]: [
+    {
+      label: t('setting.dataSourceFieldXquikApiKey'),
+      name: 'config.credentials.xquik_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.xquikApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQuery'),
+      name: 'config.query',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'ragflow lang:en',
+      tooltip: t('setting.xquikQueryTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldXquikQueryType'),
+      name: 'config.query_type',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Latest', value: 'Latest' },
+        { label: 'Top', value: 'Top' },
+      ],
+      defaultValue: 'Latest',
+    },
+    {
+      label: t('setting.dataSourceFieldXquikPageSize'),
+      name: 'config.page_size',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 100,
+      tooltip: t('setting.xquikPageSizeTip'),
+      validation: {
+        min: 1,
+        max: 10000,
+        message: t('setting.xquikPageSizeValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldMaxPages'),
+      name: 'config.max_pages',
+      type: FormFieldType.Number,
+      required: true,
+      defaultValue: 10,
+      tooltip: t('setting.xquikMaxPagesTip'),
+      validation: {
+        min: 1,
+        max: 1000,
+        message: t('setting.xquikMaxPagesValidation'),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      defaultValue: 32,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
     },
   ],
 
@@ -1116,6 +1221,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: '/',
       tooltip: t('setting.webdavRemotePathTip'),
     },
+    {
+      label: 'Custom CA Certificate Path',
+      name: 'config.ca_cert_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/etc/ssl/certs/webdav-ca.pem',
+      tooltip: t('setting.webdavCaCertPathTip'),
+    },
   ],
   [DataSourceKey.DROPBOX]: [
     {
@@ -1342,6 +1455,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.AZURE_DEVOPS]: azureDevOpsConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
       label: t('setting.dataSourceFieldZendeskDomain'),
@@ -1446,6 +1560,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: 'updated_at',
       tooltip: t('setting.mysqlTimestampColumnTip'),
     },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.mysqlFileExtensionTip'),
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -1519,6 +1641,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.postgresqlFileExtensionTip'),
     },
   ],
   [DataSourceKey.BIGQUERY]: [
@@ -1975,12 +2105,25 @@ const generateDataSourceFormFields = (t: TFunction) => ({
 });
 
 export const DataSourceFormDefaultValues = {
+  [DataSourceKey.FEISHU_WIKI]: feishuWikiDefaultValues,
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,
     config: {
       feed_url: '',
       batch_size: 2,
+    },
+  },
+  [DataSourceKey.SITEMAP]: {
+    name: '',
+    source: DataSourceKey.SITEMAP,
+    config: {
+      sitemap_url: '',
+      url_filter: '',
+      follow_pdf_links: false,
+      restrict_pdf_to_domain: true,
+      user_agent: '',
+      batch_size: 10,
     },
   },
   [DataSourceKey.S3]: {
@@ -2031,6 +2174,21 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         discord_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.XQUIK]: {
+    name: '',
+    source: DataSourceKey.XQUIK,
+    config: {
+      query: '',
+      query_type: 'Latest',
+      page_size: 100,
+      max_pages: 10,
+      batch_size: 32,
+      request_delay: 0.5,
+      credentials: {
+        xquik_api_key: '',
       },
     },
   },
@@ -2278,6 +2436,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_DEVOPS]: {
+    name: '',
+    source: DataSourceKey.AZURE_DEVOPS,
+    config: {
+      organization: '',
+      index_mode: 'organization',
+      projects: '',
+      repositories: '',
+      content_types: 'both',
+      credentials: {
+        azure_devops_pat: '',
       },
     },
   },

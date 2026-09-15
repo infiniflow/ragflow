@@ -17,49 +17,154 @@ package knowledge_compile
 
 import (
 	"context"
+	"strings"
 
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// wikiReplace folds a wiki page candidate into its existing dataset-level merged
-// row using a REPLACE-ONLY strategy. Wiki pages are Markdown, so the generic
-// structure.LLMMergeDecider JSON merge (which concatenates/merges arbitrary JSON
-// payloads) would mangle the page body — it must never run on wiki content.
-//
-// The existing row keeps its identity (id / doc_id / creation time) and provenance
-// is unioned (source_doc_ids + source_chunk_ids of existing ∪ candidate). The
-// page body is replaced by the candidate's Markdown verbatim. This mirrors
-// Python's wiki incremental mode where a page re-compiled from a newer document
-// simply supersedes the stored page of the same slug, rather than being merged.
-func wikiReplace(existing, candidate kccommon.Product) kccommon.Product {
+const maxMergedWikiMarkdownBytes = 256 * 1024
+
+// wikiEntityMerge combines evidence for the same stable page without
+// using a page replacement consumer. Existing and incoming Markdown blocks are
+// retained deterministically; source provenance is unioned.
+func wikiEntityMerge(existing, incoming kccommon.Product) kccommon.Product {
+	if existing.ID == "" {
+		incoming.Merged = true
+		return incoming
+	}
 	merged := existing
-
-	// Body: the newer (incoming) Markdown wins verbatim.
-	merged.Content = candidate.Content
-	// The embedding must match the replacement Markdown. WriteMerged persists
-	// p.Vector without re-embedding, so keeping existing.Vector would leave a
-	// stale embedding for the old page body and break KNN similarity searches.
-	merged.Vector = candidate.Vector
-
-	// Identity preserved: keep existing id, doc_id (== kb), and the original
-	// creation timestamp (carried via Meta.created_at_unix by the Reader).
+	merged.Content = unionWikiMarkdown(existing.Content, incoming.Content)
+	merged.Vector = incoming.Vector
+	merged.Meta = unionWikiProvenance(existing.Meta, incoming.Meta)
 	merged.ID = existing.ID
 	merged.DocID = existing.DocID
-
-	// Provenance union (deduped) so the merged page references every source doc
-	// and chunk that contributed to it across runs.
-	merged.Meta = unionWikiProvenance(existing.Meta, candidate.Meta)
-
-	// Re-stamp the resolver/run id from the incoming candidate so the row is
-	// attributed to the latest batch, but the created_at_unix stays with existing.
-	if v, ok := candidate.Meta["run_id"]; ok {
-		merged.Meta["run_id"] = v
-	}
+	merged.Merged = true
 	return merged
 }
 
+// selectMergedWikiTopicPath chooses the materialized path with the strongest
+// source support when document pages with the same canonical slug disagree.
+// No additional metadata is persisted: the selected path remains the page's
+// single topic value.
+func selectMergedWikiTopicPath(products []kccommon.Product) string {
+	type support struct {
+		topic    string
+		docs     map[string]struct{}
+		chunks   map[string]struct{}
+		products int
+	}
+	byKey := make(map[string]*support)
+	for _, product := range products {
+		topic := productTopic(product)
+		key := topicKey(topic)
+		if key == "" {
+			continue
+		}
+		current := byKey[key]
+		if current == nil {
+			current = &support{topic: topic, docs: make(map[string]struct{}), chunks: make(map[string]struct{})}
+			byKey[key] = current
+		}
+		current.products++
+		docIDs := metaStringSliceAny(product.Meta, "source_doc_ids")
+		if len(docIDs) == 0 && product.DocID != "" {
+			docIDs = []string{product.DocID}
+		}
+		for _, docID := range docIDs {
+			if docID = strings.TrimSpace(docID); docID != "" {
+				current.docs[docID] = struct{}{}
+			}
+		}
+		for _, chunkID := range metaStringSliceAny(product.Meta, "source_chunk_ids") {
+			if chunkID = strings.TrimSpace(chunkID); chunkID != "" {
+				current.chunks[chunkID] = struct{}{}
+			}
+		}
+	}
+
+	var best *support
+	for _, candidate := range byKey {
+		if best == nil || len(candidate.docs) > len(best.docs) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) > len(best.chunks)) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products > best.products) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products == best.products && topicKey(candidate.topic) < topicKey(best.topic)) {
+			best = candidate
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.topic
+}
+
+func unionWikiMarkdown(left, right string) string {
+	left, right = strings.TrimSpace(left), strings.TrimSpace(right)
+	if left == "" {
+		return right
+	}
+	if right == "" || left == right || strings.Contains(left, right) {
+		return left
+	}
+	if strings.Contains(right, left) {
+		return right
+	}
+	blocks := append(splitMarkdownBlocks(left), splitMarkdownBlocks(right)...)
+	seen := map[string]struct{}{}
+	unique := make([]string, 0, len(blocks))
+	length := 0
+	for _, block := range blocks {
+		key := strings.TrimSpace(block)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		if length+len(block)+2 > maxMergedWikiMarkdownBytes {
+			break
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, key)
+		length += len(block) + 2
+	}
+	return strings.Join(unique, "\n\n")
+}
+
+func splitMarkdownBlocks(markdown string) []string {
+	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
+	blocks := make([]string, 0)
+	var current strings.Builder
+	inFence := false
+	flush := func() {
+		if block := strings.TrimSpace(current.String()); block != "" {
+			blocks = append(blocks, block)
+		}
+		current.Reset()
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+		}
+		if trimmed == "" && !inFence {
+			flush()
+			continue
+		}
+		if current.Len() > 0 {
+			current.WriteByte('\n')
+		}
+		current.WriteString(line)
+	}
+	flush()
+	return blocks
+}
+
 // unionWikiProvenance returns a new Meta map based on a (the existing row). The
-// candidate b overwrites kind / slug / page_type / title / summary /
+// candidate b contributes content metadata, while the existing page identity
+// (slug/title/page_type) remains authoritative because pages are merged only
+// when their canonical slug is equal. This prevents a retry or another
+// document's equivalent page from renaming the dataset-level page.
+// The candidate b overwrites kind / summary /
 // entity_names / related_kb_pages / outlinks. Identity and creation time
 // (created_at_unix, created_at) stay from a. Source provenance arrays
 // (source_doc_ids, source_chunk_ids) are unioned and deduped.
@@ -70,7 +175,7 @@ func unionWikiProvenance(a, b map[string]any) map[string]any {
 	}
 	// The incoming page replaces current page metadata. Identity and creation
 	// time remain from the existing row.
-	for _, key := range []string{"slug", "page_type", "title", "summary", "kind"} {
+	for _, key := range []string{"summary", "kind"} {
 		if v, ok := b[key]; ok {
 			out[key] = v
 		}
@@ -126,26 +231,25 @@ func metaStringSliceAny(m map[string]any, key string) []string {
 	return nil
 }
 
-// isWikiGroup reports whether a merge group targets the wiki variant and must use
-// replace-only (never the JSON-merge decider).
+// isWikiGroup reports whether a merge group targets the wiki variant and needs
+// the page-specific Markdown merge instead of the generic JSON decider.
 func isWikiGroup(g MergeGroup) bool {
 	return g.Existing.Variant == kccommon.VariantWiki
 }
 
-// wikiDecideBatch folds every wiki-group candidate into its existing row using
-// replace-only semantics, WITHOUT any LLM call. It mutates the passed groups in
-// place and returns them.
-func wikiDecideBatch(_ context.Context, groups []MergeGroup) []MergeGroup {
+// wikiMergeBatch folds every wiki-group candidate into its existing row while
+// retaining Markdown evidence and source provenance.
+func wikiMergeBatch(_ context.Context, groups []MergeGroup) []MergeGroup {
 	for gi := range groups {
 		existing := groups[gi].Existing
 		var distinct []kccommon.Product
 		duplicated := false
 		for _, cand := range groups[gi].Candidates {
-			// A wiki page candidate is always a replacement of the existing row
-			// (same slug, newer content). It is never kept as an additional distinct
-			// row — distinctness for wiki is decided by KNN (different slug -> different
-			// existing row -> different group).
-			existing = wikiReplace(existing, cand)
+			if isTopicPage(existing) && isTopicPage(cand) {
+				existing = mergeTopicPage(existing, cand)
+			} else {
+				existing = wikiEntityMerge(existing, cand)
+			}
 			duplicated = true
 		}
 		groups[gi].Merged = existing

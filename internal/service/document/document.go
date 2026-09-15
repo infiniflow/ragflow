@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -34,6 +35,7 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	pipelineLogDAO      *dao.PipelineOperationLogDAO
 	ingestionTaskSvc    *service.IngestionTaskService
 	docEngine           engine.DocEngine
 	metadataSvc         *service.MetadataService
@@ -49,10 +51,15 @@ func NewDocumentService() *DocumentService {
 	publisher := service.NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := service.NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Document deletion is handled by the API process, while the dataset-level
+	// consumer is owned by the ingestor. Register the shared publisher here so
+	// knowledge_compile.PublishDeleted is effective in API processes as well.
+	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
@@ -68,7 +75,6 @@ func NewDocumentService() *DocumentService {
 // UpdateDocumentRequest update document request
 type UpdateDocumentRequest struct {
 	Name        *string  `json:"name"`
-	Run         *string  `json:"run"`
 	TokenNum    *int64   `json:"token_num"`
 	ChunkNum    *int64   `json:"chunk_num"`
 	Progress    *float64 `json:"progress"`
@@ -94,7 +100,7 @@ type DocumentResponse struct {
 	ProcessBeginAt  *time.Time `json:"process_begin_at,omitempty"`
 	ProcessDuration float64    `json:"process_duration"`
 	Suffix          string     `json:"suffix"`
-	Run             *string    `json:"run,omitempty"`
+	IngestionStatus string     `json:"ingestion_status"`
 	Status          *string    `json:"status,omitempty"`
 	CreatedAt       string     `json:"created_at"`
 	UpdatedAt       string     `json:"updated_at"`
@@ -154,7 +160,7 @@ type UpdateDatasetDocumentResponse struct {
 	ContentHash     *string                `json:"content_hash,omitempty"`
 	MetaFields      map[string]interface{} `json:"meta_fields,omitempty"`
 	Suffix          string                 `json:"suffix"`
-	Run             string                 `json:"run"`
+	IngestionStatus string                 `json:"ingestion_status"`
 	Status          *string                `json:"status,omitempty"`
 	CreateTime      *int64                 `json:"create_time,omitempty"`
 	CreateDate      *time.Time             `json:"create_date,omitempty"`
@@ -166,6 +172,16 @@ var (
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")
+
+	// ErrPreviewDocumentNotFound covers both "document row missing" and
+	// "caller may not read this document" so the preview endpoint cannot be
+	// used to probe foreign document IDs. Mirrors the Python preview route.
+	ErrPreviewDocumentNotFound = errors.New("document not found")
+	// ErrPreviewFileEmpty marks a document whose backing object has zero
+	// bytes; the handler maps it to Python's "This file is empty."
+	// preview response, so the sentinel text itself is never sent to
+	// clients.
+	ErrPreviewFileEmpty = errors.New("preview file empty")
 )
 
 var artifactContentTypes = map[string]string{

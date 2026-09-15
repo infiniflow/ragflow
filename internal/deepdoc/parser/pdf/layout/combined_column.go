@@ -43,6 +43,45 @@ func AssignColumn(boxes []pdf.TextBox) []pdf.TextBox {
 	pageGroups, sortedPages := groupBoxesByPage(boxes)
 	result := make([]pdf.TextBox, len(boxes))
 	copy(result, boxes)
+
+	// Document-wide column majority, mirroring Python's _assign_column
+	// (pdf_parser.py:942 global_cols): per-page detectors (gap voting / balance
+	// gate / 2D rescue) can mis-read indent-heavy single-column pages — e.g.
+	// 刑法's TOC and code-like pages, whose lines share a full-width right edge
+	// but start at staggered x0 (footnote 79, body 111, indents 144/176/270) —
+	// as 2-3 columns, which scrambles the reading order. Python sidesteps this
+	// by re-clustering EVERY page with the majority column count. Mirror that
+	// for the single-column majority: if most pages read as one column, the
+	// whole document reads as one column (ColID 0), so a few indent-staggered
+	// pages cannot break the flow. A multi-column majority keeps the per-page
+	// detector result (those documents are genuinely multi-column throughout).
+	// Deterministic majority matching Python's _assign_column global_cols
+	// (Counter(page_cols.values()).most_common(1)): the most frequent per-page
+	// column count wins; on a tie the FIRST page's count wins (Python keeps
+	// dict insertion order). Iterate in page order so the result never depends
+	// on Go map iteration order.
+	colCount := map[int]int{}
+	var firstK []int
+	for _, pg := range sortedPages {
+		k, _ := detectColumnCount(boxes, pageGroups[pg])
+		if colCount[k] == 0 {
+			firstK = append(firstK, k)
+		}
+		colCount[k]++
+	}
+	modeK, modeN := firstK[0], colCount[firstK[0]]
+	for _, k := range firstK {
+		if colCount[k] > modeN {
+			modeK, modeN = k, colCount[k]
+		}
+	}
+	if modeK == 1 {
+		for i := range result {
+			result[i].ColID = 0
+		}
+		return result
+	}
+
 	for _, pg := range sortedPages {
 		indices := pageGroups[pg]
 		k, cents := detectColumnCount(boxes, indices)

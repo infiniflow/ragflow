@@ -22,16 +22,19 @@
 package service
 
 import (
-	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // TestQueueSaveToMemoryTask_NilService: a nil receiver surfaces
 // a clear error rather than panicking.
 func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 	var s *MemoryMessageService
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
 	if err == nil {
 		t.Fatal("expected error from nil service")
 	}
@@ -44,7 +47,7 @@ func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 // short-circuits to an empty result with no error.
 func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 	s := &MemoryMessageService{memories: nil} // no lookups happen
-	res, err := s.QueueSaveToMemoryTask(context.Background(), nil, MemoryMessage{AgentID: "a1"})
+	res, err := s.QueueSaveToMemoryTask(t.Context(), nil, MemoryMessage{AgentID: "a1"})
 	if err != nil {
 		t.Fatalf("QueueSaveToMemoryTask: %v", err)
 	}
@@ -58,12 +61,125 @@ func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 // up front.
 func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	s := &MemoryMessageService{}
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{})
 	if err == nil {
 		t.Fatal("expected error for missing AgentID")
 	}
 	if !strings.Contains(err.Error(), "AgentID") {
 		t.Errorf("error = %v, want AgentID-required error", err)
+	}
+}
+
+// TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors keeps confirmed missing
+// memories separate from transient database failures.
+func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
+	t.Run("missing memory", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Memory{}, &entity.User{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"missing-memory"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 1 || res.NotFound[0] != "missing-memory" || len(res.Failed) != 0 {
+			t.Fatalf("result = %+v, want missing memory in NotFound only", res)
+		}
+	})
+
+	t.Run("database failure", func(t *testing.T) {
+		db := testutil.SetupTestDB(t, &entity.Task{})
+		cleanup := testutil.ReplaceDBForTest(t, db)
+		defer cleanup()
+
+		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+			t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"},
+		)
+		if err != nil {
+			t.Fatalf("QueueSaveToMemoryTask: %v", err)
+		}
+		if len(res.NotFound) != 0 || len(res.Failed) != 1 || res.Failed[0].MemoryID != "memory-1" || res.Failed[0].FailMsg == "" {
+			t.Fatalf("result = %+v, want database lookup failure in Failed only", res)
+		}
+	})
+}
+
+// TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails verifies
+// task state exists before raw storage and records a visible terminal outcome
+// when that storage cannot start.
+func TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.User{}, &entity.Memory{}, &entity.Task{}, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.Memory{
+		ID:               "memory-1",
+		Name:             "memory",
+		TenantID:         "tenant-1",
+		MemoryType:       1,
+		StorageType:      "table",
+		Permissions:      "me",
+		ForgettingPolicy: "FIFO",
+	}).Error; err != nil {
+		t.Fatalf("create memory: %v", err)
+	}
+	memorySvc := NewMemoryService()
+	memorySvc.docEngine = nil
+	svc := NewMemoryMessageService(memorySvc)
+	publisher := &recordingTaskPublisher{}
+	svc.taskPublisher = publisher
+
+	res, err := svc.QueueSaveToMemoryTask(t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"})
+	if err != nil {
+		t.Fatalf("QueueSaveToMemoryTask: %v", err)
+	}
+	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].FailMsg, "message store is not initialized") {
+		t.Fatalf("result = %+v, want raw-storage failure", res)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want none after raw-storage failure", len(publisher.messages))
+	}
+
+	var memoryTask entity.MemoryTask
+	if err = db.First(&memoryTask).Error; err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if memoryTask.State != entity.MemoryTaskStateFailed || !strings.Contains(memoryTask.LastError, "message store is not initialized") {
+		t.Fatalf("memory task state/error = %q/%q, want failed raw-storage error", memoryTask.State, memoryTask.LastError)
+	}
+	var task entity.Task
+	if err = db.First(&task, "id = ?", memoryTask.TaskID).Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if task.Progress != -1 || task.ProgressMsg == nil || !strings.Contains(*task.ProgressMsg, "message store is not initialized") {
+		t.Fatalf("generic task progress/message = %v/%v, want visible raw-storage failure", task.Progress, task.ProgressMsg)
+	}
+}
+
+// TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
+// server-local wall-clock string, not UTC — otherwise memories asked at
+// 10:05 local show up as 02:05. The clock is pinned to a fixed instant in a
+// fixed non-UTC location so the assertion holds on any host, including UTC
+// CI runners.
+func TestBuildRawMessage_ValidAtServerLocal(t *testing.T) {
+	pinMemoryNow(t, time.Date(2026, 8, 20, 10, 5, 0, 0, time.FixedZone("UTC+8", 8*3600)))
+
+	raw := buildRawMessage(42, "mem-1", MemoryMessage{
+		UserID:        "u1",
+		AgentID:       "a1",
+		SessionID:     "s1",
+		UserInput:     "hi",
+		AgentResponse: "hello",
+	})
+
+	got, ok := raw["valid_at"].(string)
+	if !ok {
+		t.Fatalf("valid_at = %#v, want string", raw["valid_at"])
+	}
+	if want := "2026-08-20 10:05:00"; got != want {
+		t.Fatalf("valid_at = %q, want server-local wall clock %q (UTC-shifted would be %q)", got, want, "2026-08-20 02:05:00")
 	}
 }
 
@@ -112,37 +228,34 @@ func TestBuildRawMessage_EnvelopeShape(t *testing.T) {
 	}
 }
 
-// TestBuildTaskRow_Shape: the task row mirrors the Python Task
-// entity's memory-task shape.
-func TestBuildTaskRow_Shape(t *testing.T) {
-	row := buildTaskRow(99, "mem-1")
-	if row["task_type"] != "memory" {
-		t.Errorf("task_type = %v, want \"memory\"", row["task_type"])
+// TestBuildMemoryTaskRecordsShape verifies the UI task and durable execution
+// record carry the same identity and the worker input is persisted in the DB.
+func TestBuildMemoryTaskRecordsShape(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1", UserInput: "hi", AgentResponse: "hello"}
+	task, memoryTask := buildMemoryTaskRecords(99, "mem-1", msg)
+	if task.TaskType != "memory" {
+		t.Errorf("task_type = %v, want \"memory\"", task.TaskType)
 	}
-	if row["doc_id"] != "mem-1" {
-		t.Errorf("doc_id = %v, want \"mem-1\"", row["doc_id"])
+	if task.DocID != "mem-1" {
+		t.Errorf("doc_id = %v, want \"mem-1\"", task.DocID)
 	}
-	if row["progress"] != 0.0 {
-		t.Errorf("progress = %v, want 0.0", row["progress"])
+	if task.Progress != 0.0 {
+		t.Errorf("progress = %v, want 0.0", task.Progress)
 	}
-	if row["progress_msg"] != "" {
-		t.Errorf("progress_msg = %v, want empty string", row["progress_msg"])
+	if task.ProgressMsg == nil || *task.ProgressMsg != "" {
+		t.Errorf("progress_msg = %v, want empty string", task.ProgressMsg)
 	}
-	if row["digest"] != "99" {
-		t.Errorf("digest = %v, want \"99\"", row["digest"])
+	if task.Digest == nil || *task.Digest != "99" {
+		t.Errorf("digest = %v, want \"99\"", task.Digest)
 	}
-	if id, _ := row["id"].(string); len(id) != 32 {
-		t.Errorf("id = %q, want 32-char uuid", id)
+	if len(task.ID) != 32 {
+		t.Errorf("id = %q, want 32-char uuid", task.ID)
 	}
-}
-
-func TestTaskFromRow_InitializesProgressMessage(t *testing.T) {
-	task := taskFromRow(buildTaskRow(99, "mem-1"))
-	if task.ProgressMsg == nil {
-		t.Fatal("ProgressMsg is nil")
+	if memoryTask.TaskID != task.ID || memoryTask.MemoryID != "mem-1" || memoryTask.SourceID != 99 {
+		t.Fatalf("memory task identity = %+v, want task %s/mem-1/99", memoryTask, task.ID)
 	}
-	if *task.ProgressMsg != "" {
-		t.Fatalf("ProgressMsg = %q, want empty string", *task.ProgressMsg)
+	if memoryTask.State != "pending" || memoryTask.Input["agent_response"] != "hello" {
+		t.Fatalf("memory task execution data = %+v", memoryTask)
 	}
 }
 

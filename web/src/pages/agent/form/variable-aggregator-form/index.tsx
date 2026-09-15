@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useCallback } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { initialDataOperationsValues } from '../../constant';
+import { initialVariableAggregatorValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
@@ -20,13 +20,12 @@ function VariableAggregatorForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const getNode = useGraphStore((state) => state.getNode);
 
-  const defaultValues = useFormValues(initialDataOperationsValues, node);
+  const defaultValues = useFormValues(initialVariableAggregatorValues, node);
 
   const form = useForm<VariableAggregatorFormSchemaType>({
     defaultValues: defaultValues,
     mode: 'onChange',
     resolver: zodResolver(FormSchema),
-    shouldUnregister: true,
   });
 
   const { fields, remove, append } = useFieldArray({

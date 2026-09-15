@@ -41,7 +41,7 @@ from typing import Optional
 import xxhash
 
 from common import settings
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import hashable_key, thread_pool_exec
 from rag.advanced_rag.knowlege_compile._common import (
     encode as _encode,
 )
@@ -350,23 +350,34 @@ async def _merge_bucket(
         all_docs: list[str] = []
         all_descriptions: list[str] = []
         all_original_names: list[str] = []
+        seen_chunks: set[str] = set()
+        seen_docs: set[str] = set()
+        seen_descriptions: set[str] = set()
+        seen_original_names: set[str] = set()
         mention_count = 0
         for r in rows:
             payload = json.loads(r.get("content_with_weight") or "{}")
             chunks = r.get("source_chunk_ids") or []
             for c in chunks:
-                if c not in all_chunks:
+                c_key = hashable_key(c)
+                if c_key not in seen_chunks:
                     all_chunks.append(c)
+                    seen_chunks.add(c_key)
             doc = r.get("doc_id") or ""
-            if doc and doc not in all_docs:
+            doc_key = hashable_key(doc)
+            if doc and doc_key not in seen_docs:
                 all_docs.append(doc)
+                seen_docs.add(doc_key)
             mention_count += int(r.get("mention_count_int") or payload.get("mention_count", 1))
             desc = payload.get("description", "")
-            if desc and desc not in all_descriptions:
+            desc_key = hashable_key(desc)
+            if desc and desc_key not in seen_descriptions:
                 all_descriptions.append(desc)
+                seen_descriptions.add(desc_key)
             orig = _struct_entity_name(payload) or ""
-            if orig and orig not in all_original_names:
+            if orig and orig not in seen_original_names:
                 all_original_names.append(orig)
+                seen_original_names.add(orig)
 
         # Use the longest description (most complete) and best original-cased name
         best_desc = max(all_descriptions, key=len) if all_descriptions else name_lower
@@ -435,18 +446,27 @@ async def _merge_relations(
         all_docs: list[str] = []
         # Use the longest description for tokenization
         all_desc: list[str] = []
+        seen_chunks: set[str] = set()
+        seen_docs: set[str] = set()
+        seen_desc: set[str] = set()
         for r in rows:
             payload = json.loads(r.get("content_with_weight") or "{}")
             chunks = r.get("source_chunk_ids") or []
             for c in chunks:
-                if c not in all_chunks:
+                c_key = hashable_key(c)
+                if c_key not in seen_chunks:
                     all_chunks.append(c)
+                    seen_chunks.add(c_key)
             doc = r.get("doc_id") or ""
-            if doc and doc not in all_docs:
+            doc_key = hashable_key(doc)
+            if doc and doc_key not in seen_docs:
                 all_docs.append(doc)
+                seen_docs.add(doc_key)
             desc = payload.get("description") or f"{src} {rel_type} {tgt}"
-            if desc not in all_desc:
+            desc_key = hashable_key(desc)
+            if desc_key not in seen_desc:
                 all_desc.append(desc)
+                seen_desc.add(desc_key)
         best_desc = max(all_desc, key=len)
         ltks, sm_ltks = _tokenize_for_search(best_desc)
 
@@ -547,7 +567,11 @@ async def _cleanup_deleted_docs(
 
     if not cursor:
         return True  # no markers — nothing to do
-    deleted_doc_ids = list(set(cursor.values()))
+    deleted_doc_ids_by_key: dict = {}
+    for v in cursor.values():
+        deleted_doc_ids_by_key.setdefault(hashable_key(v), v)
+    deleted_doc_ids_set = set(deleted_doc_ids_by_key.keys())
+    deleted_doc_ids = list(deleted_doc_ids_by_key.values())
 
     # ── Pass 2: find affected dataset rows and remove ghosts ─────────
     dataset_del_cond: dict = {
@@ -587,7 +611,7 @@ async def _cleanup_deleted_docs(
             current: list = row.get("doc_ids_kwd") or []
             if not isinstance(current, list):
                 current = []
-            remaining = [d for d in current if d not in deleted_doc_ids]
+            remaining = [d for d in current if hashable_key(d) not in deleted_doc_ids_set]
             if not remaining:
                 ids_to_delete.append(row["id"])
             elif len(remaining) < len(current):

@@ -50,13 +50,13 @@ export default function SearchPage() {
 
   return (
     <section
-      className="size-full flex-1 relative px-5 pb-5 flex pt-4 overflow-x-auto"
+      className="size-full flex-1 relative px-5 pb-5 flex pt-4"
       data-testid="search-detail"
     >
-      <div className="flex gap-3 w-full bg-bg-base border-0.5 border-border-button min-w-[1280px] ">
-        <div className="flex-1 min-w-0">
+      <div className="flex gap-3 flex-1 min-w-0 bg-bg-base border-0.5 border-border-button">
+        <div className="flex-1 min-w-0 overflow-hidden">
           {!isSearching && (
-            <div className="animate-fade-in-down">
+            <div className="animate-fade-in-down h-full overflow-x-hidden overflow-y-auto">
               <SearchHome
                 setIsSearching={setIsSearching}
                 isSearching={isSearching}
@@ -82,6 +82,7 @@ export default function SearchPage() {
           <SearchSetting
             open={openSetting}
             setOpen={setOpenSetting}
+            className="shrink-0 max-w-full"
             data={SearchData as ISearchAppDetailProps}
           />
         )}
@@ -89,7 +90,7 @@ export default function SearchPage() {
 
       <Button
         variant="transparent"
-        className="bg-bg-card ml-5"
+        className="bg-bg-card ml-5 shrink-0"
         onClick={() => setOpenSetting(!openSetting)}
       >
         <Settings className="text-text-secondary" />

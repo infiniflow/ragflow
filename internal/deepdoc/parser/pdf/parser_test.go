@@ -461,8 +461,10 @@ func TestOCR_MergeChars(t *testing.T) {
 	})
 }
 
-// TestTableSectionCaptionInHTML verifies mergeCaptions prepends table
-// caption text before the HTML table, matching Python's caption handling.
+// TestTableSectionCaptionInHTML verifies mergeCaptions retains a table
+// caption by injecting it as a <caption> element INSIDE the table's HTML
+// (matching Python's __html_table), instead of dropping it or emitting
+// malformed pre-table text. The standalone caption section is removed.
 
 func TestTableSectionCaptionInHTML(t *testing.T) {
 	// Simulate pipeline order: extractTableAndReplace → boxesToSections → mergeCaptions
@@ -489,12 +491,21 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 		Text:       "表1: 交通工具等级",
 	})
 
-	// Step 2: mergeCaptions prepends caption before HTML
+	// Step 2: mergeCaptions injects caption as a <caption> element inside <table>
 	figures := pdf.CollectFigures(sections)
 	sections = tbl.MergeCaptions(sections, figures)
 
-	if !strings.HasPrefix(sections[0].Text, "表1: 交通工具等级<table") {
-		t.Errorf("expected caption before table HTML, got %q", sections[0].Text)
+	got := sections[0].Text
+	if !strings.Contains(got, "<caption>表1: 交通工具等级</caption>") {
+		t.Errorf("expected a <caption> element inside the table HTML, got %q", got)
+	}
+	// <caption> must be a proper child of <table>, immediately after <table>.
+	if i := strings.Index(got, "<table>"); i < 0 || !strings.Contains(got[i:i+len("<table><caption>")], "<caption>") {
+		t.Errorf("expected <caption> immediately after <table>, got %q", got)
+	}
+	// The standalone caption section must be removed (no raw pre-table text).
+	if strings.HasPrefix(got, "表1: 交通工具等级<table") {
+		t.Errorf("caption must be a <caption> child of <table>, not pre-table text, got %q", got)
 	}
 }
 

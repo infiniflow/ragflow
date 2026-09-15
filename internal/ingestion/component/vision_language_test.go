@@ -69,28 +69,23 @@ func TestRenderFigureVisionLanguage(t *testing.T) {
 	}
 }
 
-func TestBuildFigureVisionPromptRendersLanguageAndContext(t *testing.T) {
-	prompt, err := buildFigureVisionPrompt("Context above", "Context below", "Japanese")
+func TestBuildFigureVisionPromptRendersLanguage(t *testing.T) {
+	prompt, err := buildFigureVisionPrompt("Japanese")
 	if err != nil {
 		t.Fatalf("buildFigureVisionPrompt: %v", err)
 	}
 
-	for _, want := range []string{
-		"Write all descriptions and field values in Japanese.",
-		"Context above",
-		"Context below",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt does not contain %q", want)
-		}
+	if !strings.Contains(prompt, "Write all descriptions and field values in Japanese.") {
+		t.Fatalf("prompt does not contain language directive, got: %q", prompt)
 	}
-	for _, unresolved := range []string{"{{ language }}", "{{ context_above }}", "{{ context_below }}"} {
+	for _, unresolved := range []string{"{{ language }}", "{{language}}"} {
 		if strings.Contains(prompt, unresolved) {
 			t.Fatalf("prompt contains unresolved placeholder %q", unresolved)
 		}
 	}
 
-	secondPrompt, err := buildFigureVisionPrompt("", "", "Chinese")
+	// Second call uses cache — verify language is re-rendered correctly per call.
+	secondPrompt, err := buildFigureVisionPrompt("Chinese")
 	if err != nil {
 		t.Fatalf("buildFigureVisionPrompt with cached template: %v", err)
 	}

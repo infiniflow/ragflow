@@ -3,15 +3,20 @@ package nlp
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	modelModule "ragflow/internal/entity/models"
 
 	"gorm.io/gorm"
 )
 
-func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.T) {
+func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
@@ -31,17 +36,19 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	threshold := 0.5
 	vectorWeight := 1.0
 	aggs := false
+	rerankCandidatesCount := 70
 
-	result, err := service.Retrieval(context.Background(), &RetrievalRequest{
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
 		Question:               "alpha",
 		TenantIDs:              []string{"tenant-1"},
 		Page:                   1,
 		PageSize:               10,
-		Top:                    &top,
+		KNNTopK:                &top,
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
 		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+		RerankCandidatesCount:  &rerankCandidatesCount,
 	})
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
@@ -49,11 +56,11 @@ func TestRetrievalTotalCountsThresholdValidMatchesBeyondRerankWindow(t *testing.
 	if len(result.Chunks) != 10 {
 		t.Fatalf("page chunk count = %d, want 10", len(result.Chunks))
 	}
-	if result.Total != 75 {
-		t.Fatalf("total = %d, want 75", result.Total)
+	if result.Total != 70 {
+		t.Fatalf("total = %d, want 70", result.Total)
 	}
-	if len(engine.searchLimits) != 2 || engine.searchLimits[0] != 70 || engine.searchLimits[1] != 100 {
-		t.Fatalf("search limits = %v, want [70 100]", engine.searchLimits)
+	if len(engine.searchLimits) != 1 || engine.searchLimits[0] != rerankCandidatesCount {
+		t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, rerankCandidatesCount)
 	}
 	for _, filters := range engine.searchFilters {
 		mustNot, ok := filters["must_not"].(map[string]interface{})
@@ -184,4 +191,318 @@ func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string,
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
+}
+
+func TestBuildInfinityFusionExprUsesVectorSimilarityWeight(t *testing.T) {
+	tests := []struct {
+		name                   string
+		vectorSimilarityWeight *float64
+		expectedWeights        string
+	}{
+		{name: "default", vectorSimilarityWeight: nil, expectedWeights: "0.7,0.3"},
+		{name: "text only", vectorSimilarityWeight: float64Ptr(0), expectedWeights: "1,0"},
+		{name: "balanced", vectorSimilarityWeight: float64Ptr(0.5), expectedWeights: "0.5,0.5"},
+		{name: "vector only", vectorSimilarityWeight: float64Ptr(1), expectedWeights: "0,1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := buildInfinityFusionExpr(10, tt.vectorSimilarityWeight)
+			if expr.Method != "weighted_sum" {
+				t.Fatalf("expected weighted_sum, got %q", expr.Method)
+			}
+			if expr.TopN != 10 {
+				t.Fatalf("expected TopN=10, got %d", expr.TopN)
+			}
+			weights, ok := expr.FusionParams["weights"].(string)
+			if !ok || weights != tt.expectedWeights {
+				t.Fatalf("expected weights=%q, got %v", tt.expectedWeights, expr.FusionParams["weights"])
+			}
+		})
+	}
+}
+
+func float64Ptr(value float64) *float64 { return &value }
+func intPtr(value int) *int             { return &value }
+
+type captureSearchDocEngine struct {
+	engine.DocEngine
+	engineType    string
+	searchRequest *types.SearchRequest
+	result        *types.SearchResult
+}
+
+func (e *captureSearchDocEngine) GetType() string {
+	return e.engineType
+}
+
+func (e *captureSearchDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchRequest = req
+	if e.result != nil {
+		return e.result, nil
+	}
+	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "chunk-1"}}, Total: 1}, nil
+}
+func (e *captureSearchDocEngine) GetChunkIDs(_ []map[string]interface{}) []string {
+	return []string{"chunk-1"}
+}
+func (e *captureSearchDocEngine) GetFields(_ []map[string]interface{}, _ []string) map[string]map[string]interface{} {
+	return map[string]map[string]interface{}{}
+}
+func (e *captureSearchDocEngine) GetAggregation(_ []map[string]interface{}, _ string) []map[string]interface{} {
+	return []map[string]interface{}{}
+}
+func (e *captureSearchDocEngine) GetHighlight(_ []map[string]interface{}, _ []string, _ string) map[string]string {
+	return nil
+}
+func (e *captureSearchDocEngine) KNNScores(context.Context, []map[string]interface{}, []float64, int) (map[string]interface{}, error) {
+	return map[string]interface{}{}, nil
+}
+func (e *captureSearchDocEngine) GetScores(map[string]interface{}) map[string]float64 {
+	return map[string]float64{}
+}
+
+type captureEmbeddingDriver struct{ modelModule.ModelDriver }
+
+func (d *captureEmbeddingDriver) Embed(_ context.Context, _ *string, _ modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	return []modelModule.EmbeddingData{{Embedding: []float64{0.1, 0.2}}}, nil
+}
+
+type retryCaptureEngine struct {
+	engine.DocEngine
+	engineType string
+	totals     []int64
+	requests   []*types.SearchRequest
+	mutate     bool
+}
+
+func (e *retryCaptureEngine) GetType() string { return e.engineType }
+func (e *retryCaptureEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	requestCopy := *req
+	requestCopy.Filter = maps.Clone(req.Filter)
+	requestCopy.MatchExprs = slices.Clone(req.MatchExprs)
+	for i, expression := range requestCopy.MatchExprs {
+		if dense, ok := expression.(*types.MatchDenseExpr); ok {
+			requestCopy.MatchExprs[i] = cloneDenseExpr(dense)
+		}
+	}
+	e.requests = append(e.requests, &requestCopy)
+	if e.mutate {
+		for _, expression := range req.MatchExprs {
+			if dense, ok := expression.(*types.MatchDenseExpr); ok {
+				delete(dense.ExtraOptions, "num_candidates")
+				dense.ExtraOptions["filter"] = "connector-added"
+			}
+		}
+	}
+	total := e.totals[0]
+	e.totals = e.totals[1:]
+	return &types.SearchResult{Total: total}, nil
+}
+func (e *retryCaptureEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }
+func (e *retryCaptureEngine) GetFields([]map[string]interface{}, []string) map[string]map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetAggregation([]map[string]interface{}, string) []map[string]interface{} {
+	return nil
+}
+func (e *retryCaptureEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
+	return nil
+}
+
+func TestSearchDenseFallbackContract(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	for _, engineType := range []string{string(engine.EngineElasticsearch), string(engine.EngineInfinity)} {
+		for _, test := range []struct {
+			name      string
+			totals    []int64
+			wantCalls int
+			wantExprs int
+		}{
+			{name: "one weak lexical hit", totals: []int64{1}, wantCalls: 1, wantExprs: 3},
+			{name: "relaxed hit", totals: []int64{0, 1}, wantCalls: 2, wantExprs: 3},
+			{name: "dense recovery", totals: []int64{0, 0, 1}, wantCalls: 3, wantExprs: 1},
+			{name: "dense recovery empty", totals: []int64{0, 0, 0}, wantCalls: 3, wantExprs: 1},
+		} {
+			t.Run(engineType+"/"+test.name, func(t *testing.T) {
+				docEngine := &retryCaptureEngine{engineType: engineType, totals: slices.Clone(test.totals), mutate: true}
+				service := NewRetrievalService(docEngine, nil)
+				_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+					Question: "ปัญหาแจ้งระบบภาษี", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+					KNNTopK: 7, KNNNumCandidates: 19, Filter: map[string]interface{}{"category_kwd": "allowed"},
+					EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(docEngine.requests) != test.wantCalls {
+					t.Fatalf("search calls = %d, want %d", len(docEngine.requests), test.wantCalls)
+				}
+				last := docEngine.requests[len(docEngine.requests)-1]
+				if len(last.MatchExprs) != test.wantExprs {
+					t.Fatalf("final expressions = %d, want %d", len(last.MatchExprs), test.wantExprs)
+				}
+				if test.wantCalls == 3 {
+					dense := last.MatchExprs[0].(*types.MatchDenseExpr)
+					if dense.TopN != 7 || dense.ExtraOptions["num_candidates"] != 19 || dense.ExtraOptions["similarity"] != 0.17 {
+						t.Fatalf("dense fallback changed options: %#v", dense)
+					}
+					if _, contaminated := dense.ExtraOptions["filter"]; contaminated {
+						t.Fatalf("dense fallback inherited connector mutation: %#v", dense.ExtraOptions)
+					}
+					if fmt.Sprint(last.Filter["kb_id"]) != "[kb-1]" || last.Filter["available_int"] != 1 || last.Filter["category_kwd"] != "allowed" {
+						t.Fatalf("dense fallback lost scope filters: %#v", last.Filter)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSearchWithoutLexicalExpressionRetries(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 1}, mutate: true}
+	service := NewRetrievalService(docEngine, nil)
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "!!!", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 2 || len(docEngine.requests[1].MatchExprs) != 1 {
+		t.Fatalf("dense-only request did not retry: %#v", docEngine.requests)
+	}
+	dense := docEngine.requests[1].MatchExprs[0].(*types.MatchDenseExpr)
+	if dense.ExtraOptions["similarity"] != 0.17 || dense.ExtraOptions["num_candidates"] != 2048 || dense.ExtraOptions["filter"] != nil {
+		t.Fatalf("fallback options = %#v", dense.ExtraOptions)
+	}
+}
+
+func TestRetrievalDisablesDenseFallback(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	for _, query := range []string{"!!!", "weak lexical query"} {
+		t.Run(query, func(t *testing.T) {
+			wantCalls := 2
+			if query == "!!!" {
+				wantCalls = 1
+			}
+			docEngine := &retryCaptureEngine{engineType: string(engine.EngineElasticsearch), totals: []int64{0, 0, 0}}
+			service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+			_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+				Question: query, TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"},
+				EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, AllowDenseFallback: new(false),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(docEngine.requests) != wantCalls {
+				t.Fatalf("calls = %d, want %d", len(docEngine.requests), wantCalls)
+			}
+		})
+	}
+}
+
+func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	vectorWeight := 0.8
+	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
+	service := NewRetrievalService(docEngine, nil)
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: 10,
+		RankFeature: map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	assertFusionWeights(t, docEngine.searchRequest, "0.2,0.8")
+}
+
+func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	vectorWeight := 0.8
+	top := 10
+	docEngine := &captureSearchDocEngine{
+		engineType: string(engine.EngineInfinity),
+		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 1},
+	}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: &top,
+		RankFeature: &map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	assertFusionWeights(t, docEngine.searchRequest, "0.2,0.8")
+}
+
+func assertFusionWeights(t *testing.T, request *types.SearchRequest, want string) {
+	t.Helper()
+	if request == nil || len(request.MatchExprs) != 3 {
+		t.Fatalf("expected three match expressions, got %#v", request)
+	}
+	fusionExpr, ok := request.MatchExprs[2].(*types.FusionExpr)
+	if !ok {
+		t.Fatalf("expected third match expression to be FusionExpr, got %T", request.MatchExprs[2])
+	}
+	if got := fusionExpr.FusionParams["weights"]; got != want {
+		t.Fatalf("expected weights=%s, got %v", want, got)
+	}
+}
+
+func TestBuildRetrievalFusionExprKeepsPythonWeightsOutsideInfinity(t *testing.T) {
+	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
+
+	// Python Dealer.search's non-Infinity branch (rag/nlp/search.py:265).
+	if got := expr.FusionParams["weights"]; got != "0.001,1" {
+		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
+	}
+}
+
+func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	vectorWeight := 0.8
+	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineElasticsearch)}
+	service := NewRetrievalService(docEngine, nil)
+
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question:               "test question",
+		TenantIDs:              []string{"tenant-1"},
+		KbIDs:                  []string{"kb-1"},
+		Page:                   1,
+		PageSize:               10,
+		KNNTopK:                10,
+		RankFeature:            map[string]float64{},
+		EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	if docEngine.searchRequest == nil || len(docEngine.searchRequest.MatchExprs) != 3 {
+		t.Fatalf("expected three match expressions, got %#v", docEngine.searchRequest)
+	}
+	fusionExpr, ok := docEngine.searchRequest.MatchExprs[2].(*types.FusionExpr)
+	if !ok {
+		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
+	}
+	if got := fusionExpr.FusionParams["weights"]; got != "0.001,1" {
+		t.Fatalf("expected Elasticsearch weights=0.001,1, got %v", got)
+	}
 }
