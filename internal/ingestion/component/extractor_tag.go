@@ -645,7 +645,11 @@ func (c *ExtractorComponent) resolveTagSource(ctx context.Context, lang string) 
 }
 
 func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, lang string) (*MemoryTagIndex, bool) {
-	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.Tags.TagFileID)
+	// Same IDOR guard as TagVocabularyFromTagFileID: tag_file_id is
+	// user-controlled through parser_config, so it must resolve inside the
+	// caller's tenant before the bytes are read.
+	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
+	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, c.Param.Tags.TagFileID, tenantID)
 	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
 		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.Tags.TagFileID, err))
 		return nil, false
@@ -664,7 +668,6 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, lang string
 		common.Warn("extractor tags: no storage backend registered")
 		return nil, false
 	}
-	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
 	data, err := stg.Get(ctx, f.ParentID, *f.Location, tenantID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: load tag source %q/%q: %v", f.ParentID, *f.Location, err))
@@ -731,6 +734,75 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 	default:
 		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .txt and .csv are supported", filepath.Ext(filename))
 	}
+}
+
+// TagVocabularyFromBytes is the storage/DAO-free core of
+// TagVocabularyFromTagFileID. It parses a tag source file's raw bytes (mirroring
+// rag/app/tag.py's chunk format) and returns the vocabulary as tag -> number of
+// source examples that mention the tag; a tag repeated within one source example
+// counts once, matching buildMemoryTagIndex's per-sample deduplication. Note: the
+// Go tag extractor
+// (matchAndTagChunk) DOES write tag_kwd onto chunks at parse time, but this
+// vocabulary is the authoritative selectable-tag list for the Go backend (the
+// tag-options/aggregation API sources the list from the tag source file, not
+// from chunk usage).
+func TagVocabularyFromBytes(data []byte, filename string) (map[string]int, error) {
+	labels, err := parseTagSourceByFilename(data, filename)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, lbl := range labels {
+		seen := make(map[string]struct{}, len(lbl.Tags))
+		for _, t := range lbl.Tags {
+			t = strings.TrimSpace(strings.ReplaceAll(t, ".", "_"))
+			if t != "" {
+				if _, exists := seen[t]; exists {
+					continue
+				}
+				seen[t] = struct{}{}
+				counts[t]++
+			}
+		}
+	}
+	return counts, nil
+}
+
+// TagVocabularyFromTagFileID loads a tag source file (parser_config.tags.tag_file_id)
+// and returns the tag vocabulary it defines. It is the Go-native source of the
+// selectable-tag list surfaced by the tag-options API. Although the Go tag
+// extractor (matchAndTagChunk) writes tag_kwd onto chunks during parsing, the
+// selectable-tag list is taken from this vocabulary (the tag source file), not
+// from chunk usage.
+//
+// It returns (nil, nil) when tagFileID is empty.
+//
+// ownerTenantID is the tenant of the dataset that configured the file and is
+// required: tag_file_id is user-writable through parser_config, so the file must
+// be proven to belong to that tenant before its bytes are read (IDOR, CWE-639).
+// An empty ownerTenantID fails closed. Note that storage.Get's tenant argument
+// does not establish file ownership by itself.
+func TagVocabularyFromTagFileID(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+	if tagFileID == "" {
+		return nil, nil
+	}
+	common.Info(fmt.Sprintf("tag_vocab: loading tag source file_id=%q", tagFileID))
+	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, tagFileID, ownerTenantID)
+	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
+		return nil, fmt.Errorf("tag source file %q not found: %w", tagFileID, err)
+	}
+	common.Info(fmt.Sprintf("tag_vocab: file_id=%q name=%q parent_id=%q location=%q",
+		tagFileID, f.Name, f.ParentID, *f.Location))
+	stg := resolveStorage()
+	if stg == nil {
+		return nil, fmt.Errorf("tag source file %q: no storage backend registered", tagFileID)
+	}
+	data, err := stg.Get(ctx, f.ParentID, *f.Location, ownerTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("load tag source file %q/%q: %w", f.ParentID, *f.Location, err)
+	}
+	common.Info(fmt.Sprintf("tag_vocab: file_id=%q loaded %d bytes", tagFileID, len(data)))
+	return TagVocabularyFromBytes(data, f.Name)
 }
 
 func parseCSVTagSource(text string) []schema.TagLabel {
