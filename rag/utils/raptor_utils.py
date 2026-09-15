@@ -25,36 +25,11 @@ from typing import Optional
 import xxhash
 
 RAPTOR_TREE_BUILDER = "raptor"
-PSI_TREE_BUILDER = "psi"
-SUPPORTED_TREE_BUILDERS = {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
-GMM_CLUSTERING_METHOD = "gmm"
-AHC_CLUSTERING_METHOD = "ahc"
-SUPPORTED_CLUSTERING_METHODS = {GMM_CLUSTERING_METHOD, AHC_CLUSTERING_METHOD}
 
 # File extensions for structured data types
 EXCEL_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb"}
 CSV_EXTENSIONS = {".csv", ".tsv"}
 STRUCTURED_EXTENSIONS = EXCEL_EXTENSIONS | CSV_EXTENSIONS
-
-
-def get_raptor_tree_builder(raptor_config: dict | None) -> str:
-    """Return the configured RAPTOR tree builder with legacy ext fallback."""
-    raptor_config = raptor_config or {}
-    ext = raptor_config.get("ext") or {}
-    tree_builder = ext.get("tree_builder") or raptor_config.get("tree_builder") or RAPTOR_TREE_BUILDER
-    if tree_builder not in SUPPORTED_TREE_BUILDERS:
-        raise ValueError(f"Unsupported RAPTOR tree builder: {tree_builder}")
-    return tree_builder
-
-
-def get_raptor_clustering_method(raptor_config: dict | None) -> str:
-    """Return the configured RAPTOR clustering method with legacy ext fallback."""
-    raptor_config = raptor_config or {}
-    ext = raptor_config.get("ext") or {}
-    clustering_method = ext.get("clustering_method") or raptor_config.get("clustering_method") or GMM_CLUSTERING_METHOD
-    if clustering_method not in SUPPORTED_CLUSTERING_METHODS:
-        raise ValueError(f"Unsupported RAPTOR clustering method: {clustering_method}")
-    return clustering_method
 
 
 def _as_extra_dict(extra) -> dict:

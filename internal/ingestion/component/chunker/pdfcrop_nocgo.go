@@ -12,9 +12,11 @@ import (
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
-func newPDFEngineFromUpstream(_ context.Context, _ schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
+func newPDFEngineFromUpstream(_ context.Context, _ *gorm.DB, _ schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
 	return nil, nil
 }
 

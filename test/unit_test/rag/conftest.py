@@ -14,7 +14,10 @@
 #  limitations under the License.
 #
 
-"""Restore the real ``common.data_source`` package before importing rag unit tests.
+"""Shared fixtures for ``rag`` unit tests.
+
+Also restores the real ``common.data_source`` package before importing rag
+unit tests.
 
 ``test/unit_test/data_source/conftest.py`` registers a lightweight
 ``sys.modules["common.data_source"]`` stub so submodule imports skip the heavy
@@ -26,8 +29,14 @@ package ``__init__.py``. Pytest collection order visits ``data_source/`` before
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 import types
+
+import pytest
+
+_LOG = logging.getLogger(__name__)
+_PDF_PARSER_KEY = "deepdoc.parser.pdf_parser"
 
 
 def _restore_common_data_source_package() -> None:
@@ -50,3 +59,66 @@ def _restore_common_data_source_package() -> None:
 
 
 _restore_common_data_source_package()
+
+
+def _make_pdf_parser_stub():
+    pdf_parser = types.ModuleType(_PDF_PARSER_KEY)
+
+    class _StubPdfParser:
+        @staticmethod
+        def remove_tag(text):
+            return text
+
+    pdf_parser.RAGFlowPdfParser = _StubPdfParser
+    return pdf_parser
+
+
+def _install_pdf_parser_stub() -> None:
+    """Install a lightweight stub so ``rag.nlp`` imports without deepdoc/infinity.
+
+    Must run at conftest import time: delimiter and naive_merge tests import
+    ``rag.nlp`` at module scope, which is before any fixture runs.
+    """
+    if _PDF_PARSER_KEY in sys.modules:
+        _LOG.debug(
+            "pdf_parser_stub: retaining existing module for %s",
+            _PDF_PARSER_KEY,
+        )
+        return
+    sys.modules[_PDF_PARSER_KEY] = _make_pdf_parser_stub()
+    _LOG.debug("pdf_parser_stub: installed stub for %s", _PDF_PARSER_KEY)
+
+
+_install_pdf_parser_stub()
+
+
+@pytest.fixture
+def pdf_parser_stub():
+    """Ensure the pdf_parser stub is installed for the duration of a test.
+
+    Saves and restores any pre-existing ``sys.modules`` entry so tests that
+    opt into this fixture do not permanently replace a real module loaded
+    earlier in the session.
+    """
+    previous = sys.modules.get(_PDF_PARSER_KEY)
+    stub = _make_pdf_parser_stub()
+    sys.modules[_PDF_PARSER_KEY] = stub
+    _LOG.debug("pdf_parser_stub fixture: installed stub for %s", _PDF_PARSER_KEY)
+    try:
+        yield stub
+    finally:
+        if previous is None:
+            # Keep a stub in place so later module-level imports still work;
+            # only restore when a real prior module existed.
+            if sys.modules.get(_PDF_PARSER_KEY) is stub:
+                pass
+            _LOG.debug(
+                "pdf_parser_stub fixture: left stub in place for %s",
+                _PDF_PARSER_KEY,
+            )
+        else:
+            sys.modules[_PDF_PARSER_KEY] = previous
+            _LOG.debug(
+                "pdf_parser_stub fixture: restored prior module for %s",
+                _PDF_PARSER_KEY,
+            )

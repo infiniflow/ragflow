@@ -17,10 +17,15 @@
 package file
 
 import (
+	"context"
+	"errors"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
+
+// ErrNoAuthorization indicates the current user cannot access the target file.
+var ErrNoAuthorization = errors.New("no authorization")
 
 var (
 	// assertURLSafe and pinnedHTTPClient are aliased from utility so tests
@@ -31,13 +36,13 @@ var (
 
 // DocRemover is the narrow interface FileService needs from the document domain.
 type DocRemover interface {
-	RemoveDocumentKeepFile(docID string) error
+	RemoveDocumentKeepFile(ctx context.Context, docID string) error
 }
 
 // CheckFilePermFunc is the function signature for file-team permission checks,
 // injected by the parent adapter so the file subpackage does not need to import
 // the parent service package.
-type CheckFilePermFunc func(fileDAO *dao.FileDAO, file *entity.File, userID string) bool
+type CheckFilePermFunc func(ctx context.Context, fileDAO *dao.FileDAO, file *entity.File, userID string) bool
 
 // FileService file service
 type FileService struct {

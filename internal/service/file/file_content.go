@@ -1,9 +1,11 @@
 package file
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -14,22 +16,22 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(uid, fileID string) (*entity.File, error) {
-	file, err := s.fileDAO.GetByID(fileID)
+func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
-		return nil, fmt.Errorf("Document not found!")
+		return nil, fmt.Errorf("document not found")
 	}
-	if !s.checkFilePerm(s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
+		return nil, fmt.Errorf("no authorization")
 	}
 	return file, nil
 }
 
 // GetStorageAddress gets storage address for a file (fallback for when direct blob is empty)
 // Matches Python's File2DocumentService.get_storage_address function
-func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) {
+func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*StorageAddress, error) {
 	// Get file2document mapping
-	f2d, err := s.file2DocumentDAO.GetByFileID(fileID)
+	f2d, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 	if err != nil || len(f2d) == 0 {
 		return nil, fmt.Errorf("file2document mapping not found")
 	}
@@ -38,7 +40,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	if f2d[0].FileID == nil {
 		return nil, fmt.Errorf("file_id is nil in file2document mapping")
 	}
-	file, err := s.fileDAO.GetByID(*f2d[0].FileID)
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, *f2d[0].FileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("file not found")
 	}
@@ -60,7 +62,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 	}
 
 	documentDAO := dao.NewDocumentDAO()
-	doc, err := documentDAO.GetByID(*f2d[0].DocumentID)
+	doc, err := documentDAO.GetByID(ctx, dao.DB, *f2d[0].DocumentID)
 	if err != nil || doc == nil {
 		return nil, fmt.Errorf("document not found")
 	}
@@ -76,7 +78,7 @@ func (s *FileService) GetStorageAddress(fileID string) (*StorageAddress, error) 
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -84,7 +86,7 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 
 	bucketName := fmt.Sprintf("%s-downloads", tenantID)
 
-	blob, err := storageImpl.Get(bucketName, location)
+	blob, err := storageImpl.Get(ctx, bucketName, location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file from storage: %w", err)
 	}
@@ -93,10 +95,22 @@ func (s *FileService) DownloadAgentFile(tenantID, location string) ([]byte, erro
 }
 
 // GetFileContents fetches file contents (text + image) from storage
-// for the given file dicts.
-//   - raw=false: images returned as base64 data URIs in images; non-images parsed and returned as text.
-//   - raw=true:  images returned as raw bytes in images; non-images parsed and returned as text.
-func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interface{}, raw bool) (texts []string, images []string, err error) {
+// for the given file dicts. Images are always returned as MIME-preserving
+// base64 data URIs so the multimodal conversion layer (parseDataURIOrB64)
+// accepts them.
+//
+// File dicts are the descriptors returned by the upload_info endpoint
+// (UploadInfos / storeUploadInfoBlob). They contain:
+//
+//   - "id":         storage location UUID (key in the downloads bucket)
+//   - "created_by": the user ID who owns the downloads bucket
+//   - "name":       the original filename
+//   - "mime_type":  the content type
+//
+// Blobs are stored directly in "{created_by}-downloads/{id}" in object
+// storage WITHOUT a corresponding File entity row in the database.
+// Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
+func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -107,36 +121,40 @@ func (s *FileService) GetFileContents(uid string, fileDicts []map[string]interfa
 		if id == "" {
 			continue
 		}
-		file, ferr := s.fileDAO.GetByID(id)
-		if ferr != nil || file == nil || file.Location == nil || *file.Location == "" {
-			continue
+		name, _ := fd["name"].(string)
+		mimeType, _ := fd["mime_type"].(string)
+		createdBy, _ := fd["created_by"].(string)
+		if createdBy == "" {
+			createdBy = uid
 		}
-		if !s.checkFilePerm(s.fileDAO, file, uid) {
-			return nil, nil, fmt.Errorf("No authorization.")
+		// Permission: only the owner can access their uploads bucket.
+		if createdBy != uid {
+			return nil, nil, fmt.Errorf("no authorization")
 		}
-		data, derr := storageImpl.Get(file.ParentID, *file.Location)
+
+		data, derr := storageImpl.Get(ctx, createdBy+"-downloads", id)
 		if derr != nil || len(data) == 0 {
 			continue
 		}
-		ft := utility.FilenameType(file.Name)
+
+		ft := utility.FilenameType(name)
 		if ft == utility.FileTypeVISUAL {
-			if raw {
-				images = append(images, string(data))
-			} else {
-				ext := utility.GetFileExtension(file.Name)
-				mime := utility.GetContentType(ext, string(ft))
-				images = append(images, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
+			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+			if mediaType == "" {
+				ext := utility.GetFileExtension(name)
+				mediaType = utility.GetContentType(ext, string(ft))
 			}
+			images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 		} else {
-			texts = append(texts, parseFileContent(file.Name, data))
+			texts = append(texts, parseFileContent(ctx, name, data))
 		}
 	}
 	return texts, images, nil
 }
 
-// parseAgentUploads resolves descriptors returned by upload_info from the
+// ParseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -155,7 +173,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 			return nil, fmt.Errorf("file %q: created_by does not match the current user", name)
 		}
 
-		data, err := storageImpl.Get(createdBy+"-downloads", id)
+		data, err := storageImpl.Get(ctx, createdBy+"-downloads", id)
 		if err != nil {
 			return nil, fmt.Errorf("file %q: read upload: %w", name, err)
 		}
@@ -169,7 +187,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 			continue
 		}
 
-		content, err := parseAgentUploadContent(name, data, layoutRecognize)
+		content, err := parseAgentUploadContent(ctx, name, data, layoutRecognize)
 		if err != nil {
 			return nil, fmt.Errorf("file %q: parse upload: %w", name, err)
 		}
@@ -178,7 +196,7 @@ func (s *FileService) ParseAgentUploads(userID string, fileDicts []map[string]in
 	return contents, nil
 }
 
-func parseAgentUploadContent(filename string, data []byte, layoutRecognize string) (string, error) {
+func parseAgentUploadContent(ctx context.Context, filename string, data []byte, layoutRecognize string) (string, error) {
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
@@ -189,18 +207,35 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
 		}
-		res := fp.ParseWithResult(filename, data)
+		res := fp.ParseWithResult(ctx, filename, data)
 		if res.Err != nil {
 			return "", res.Err
 		}
-		switch res.OutputFormat {
-		case "text":
-			content = res.Text
-		case "markdown":
-			content = res.Markdown
-		case "html":
-			content = res.HTML
-		case "json":
+		parsed, err := parseResultText(res)
+		if err != nil {
+			return "", err
+		}
+		content = parsed
+	}
+	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+// parseResultText converts a parser result into the readable text expected by
+// sys.files. JSON results are flattened in item order, preferring each item's
+// text field and serializing items without one as a final fallback.
+func parseResultText(res parser.ParseResult) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
+	case "text":
+		return res.Text, nil
+	case "markdown":
+		return res.Markdown, nil
+	case "html":
+		return res.HTML, nil
+	case "json":
+		if len(res.JSON) > 0 {
+			if rendered, ok := renderSpreadsheetJSON(res.JSON); ok {
+				return rendered, nil
+			}
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
@@ -213,15 +248,183 @@ func parseAgentUploadContent(filename string, data []byte, layoutRecognize strin
 				}
 				parts = append(parts, string(raw))
 			}
-			content = strings.Join(parts, "\n")
+			return strings.Join(parts, "\n"), nil
 		}
+		// Some legacy parsers mark the result as JSON while only populating a
+		// rendered companion field. Preserve that content instead of returning
+		// an empty sys.files value.
+		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+			if fallback != "" {
+				return fallback, nil
+			}
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
 	}
-	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+func renderSpreadsheetJSON(items []map[string]any) (string, bool) {
+	parts := make([]string, 0, len(items))
+	rendered := false
+	for i := 0; i < len(items); {
+		if !isSpreadsheetRowItem(items[i]) {
+			if text, ok := items[i]["text"].(string); ok {
+				parts = append(parts, text)
+			} else {
+				raw, err := json.Marshal(items[i])
+				if err != nil {
+					return "", false
+				}
+				parts = append(parts, string(raw))
+			}
+			i++
+			continue
+		}
+
+		start := i
+		i = spreadsheetTableEnd(items, start)
+		parts = append(parts, renderSpreadsheetTable(items[start:i]))
+		rendered = true
+	}
+	if !rendered {
+		return "", false
+	}
+	return strings.Join(parts, "\n"), true
+}
+
+func isSpreadsheetRowItem(item map[string]any) bool {
+	kind, _ := item["ck_type"].(string)
+	return kind == "table_header" || kind == "table_row"
+}
+
+func spreadsheetTableKey(item map[string]any) string {
+	if tableID, _ := item["table_id"].(string); strings.TrimSpace(tableID) != "" {
+		return "table:" + tableID
+	}
+	if sheetIndex, ok := item["sheet_index"].(float64); ok {
+		return fmt.Sprintf("sheet-index:%g", sheetIndex)
+	}
+	if sheetIndex, ok := item["sheet_index"].(int); ok {
+		return fmt.Sprintf("sheet-index:%d", sheetIndex)
+	}
+	if sheet, _ := item["sheet"].(string); strings.TrimSpace(sheet) != "" {
+		return "sheet:" + sheet
+	}
+	return ""
+}
+
+func spreadsheetTableEnd(items []map[string]any, start int) int {
+	key := spreadsheetTableKey(items[start])
+	if key != "" {
+		i := start
+		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
+			i++
+		}
+		return i
+	}
+
+	// Without a stable table identity, do not merge unrelated row sequences.
+	// A header can still own the following anonymous rows until the next
+	// anonymous header; anonymous row-only inputs are kept as separate tables
+	// because their table boundary cannot be inferred safely.
+	if kind, _ := items[start]["ck_type"].(string); kind == "table_header" {
+		i := start + 1
+		for i < len(items) && isSpreadsheetRowItem(items[i]) {
+			if nextKind, _ := items[i]["ck_type"].(string); nextKind == "table_header" {
+				break
+			}
+			if spreadsheetTableKey(items[i]) != "" {
+				break
+			}
+			i++
+		}
+		return i
+	}
+	return start + 1
+}
+
+func renderSpreadsheetTable(items []map[string]any) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var header []string
+	if kind, _ := items[0]["ck_type"].(string); kind == "table_header" {
+		header = spreadsheetStringSlice(items[0]["cells"])
+		if len(header) == 0 {
+			header = spreadsheetStringSlice(items[0]["text"])
+		}
+	} else {
+		// Row IR carries the logical column names separately from its cells.
+		// Use those names as a preview header without consuming the first row.
+		header = spreadsheetStringSlice(items[0]["headers"])
+	}
+
+	sheet, _ := items[0]["sheet"].(string)
+	var builder strings.Builder
+	builder.WriteString("<table>")
+	if strings.TrimSpace(sheet) != "" {
+		builder.WriteString("<caption>")
+		builder.WriteString(html.EscapeString(strings.TrimSpace(sheet)))
+		builder.WriteString("</caption>")
+	}
+	if len(header) > 0 {
+		builder.WriteString("<tr>")
+		for _, cell := range header {
+			builder.WriteString("<th>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</th>")
+		}
+		builder.WriteString("</tr>")
+	}
+	for _, item := range items {
+		kind, _ := item["ck_type"].(string)
+		if kind == "table_header" {
+			continue
+		}
+		cells := spreadsheetStringSlice(item["cells"])
+		if len(cells) == 0 {
+			cells = spreadsheetStringSlice(item["text"])
+		}
+		builder.WriteString("<tr>")
+		for _, cell := range cells {
+			builder.WriteString("<td>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</td>")
+		}
+		builder.WriteString("</tr>")
+	}
+	builder.WriteString("</table>")
+	return builder.String()
+}
+
+func spreadsheetStringSlice(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		out := make([]string, len(values))
+		for i, value := range values {
+			out[i] = strings.TrimSpace(value)
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			out = append(out, strings.TrimSpace(fmt.Sprint(value)))
+		}
+		return out
+	case string:
+		if strings.TrimSpace(values) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(values)}
+	default:
+		return nil
+	}
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
 // Falls back to returning raw text if no parser is available.
-func parseFileContent(filename string, data []byte) string {
+func parseFileContent(ctx context.Context, filename string, data []byte) string {
 	fileType := utility.GetFileType(filename)
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
@@ -230,20 +433,13 @@ func parseFileContent(filename string, data []byte) string {
 	if err != nil {
 		return string(data)
 	}
-	res := fp.ParseWithResult(filename, data)
+	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return string(data)
 	}
-	switch res.OutputFormat {
-	case "text":
-		return res.Text
-	case "markdown":
-		return res.Markdown
-	case "html":
-		return res.HTML
-	case "json":
-		return string(data)
-	default:
+	content, err := parseResultText(res)
+	if err != nil {
 		return string(data)
 	}
+	return content
 }

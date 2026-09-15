@@ -212,7 +212,7 @@ class RAGFlowPdfParser:
                 logging.warning("Could not load OCR alphabet from %s: %s; treating all text as representable.", res, e)
                 cls._OCR_ALPHABET = set()
         if not cls._OCR_ALPHABET:
-            return True                      # unknown alphabet: preserve existing behaviour
+            return True  # unknown alphabet: preserve existing behaviour
         letters = [c for c in text if c.strip()]
         if not letters:
             return True
@@ -467,7 +467,7 @@ class RAGFlowPdfParser:
             return width - y, x
         return x, y
 
-    def _table_transformer_job(self, ZM, auto_rotate=True):
+    def _table_transformer_job(self, ZM, auto_rotate=None):
         """
         Process table structure recognition.
 
@@ -479,8 +479,12 @@ class RAGFlowPdfParser:
 
         Args:
             ZM: Zoom factor
-            auto_rotate: Whether to enable auto orientation correction
+            auto_rotate: Whether to enable auto orientation correction.
+                         None means reading TABLE_AUTO_ROTATE from the environment.
         """
+        if auto_rotate is None:
+            auto_rotate = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+
         logging.debug("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
@@ -855,15 +859,17 @@ class RAGFlowPdfParser:
         # logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         # start = timer()
         boxes_to_reg = []
-        img_np = None
+        crop_boxes = []
         for b in bxs:
             if not b["text"]:
-                if img_np is None:
-                    img_np = np.asarray(img)
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * ZM, b["top"] * ZM, b["bottom"] * ZM
-                b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
+                crop_boxes.append(np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
             del b["txt"]
+        if boxes_to_reg:
+            crops = self.ocr.get_rotate_crop_images(np.asarray(img), crop_boxes)
+            for box, crop in zip(boxes_to_reg, crops):
+                box["box_image"] = crop
         texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
@@ -1755,9 +1761,6 @@ class RAGFlowPdfParser:
                                True: Enable auto orientation correction
                                False: Disable auto orientation correction
         """
-        if auto_rotate_tables is None:
-            auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
-
         self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
@@ -1814,10 +1817,8 @@ class RAGFlowPdfParser:
         if callback:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
-        auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
-
         start = timer()
-        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
+        self._table_transformer_job(zoomin)
         if callback:
             callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
 

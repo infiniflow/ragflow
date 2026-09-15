@@ -24,7 +24,7 @@ type CompilationTemplate struct {
 	Name        string  `gorm:"column:name;size:128;not null;index" json:"name"`
 	Description *string `gorm:"column:description;type:text" json:"description,omitempty"`
 	Kind        string  `gorm:"column:kind;size:64;not null;index" json:"kind"`
-	Config      JSONMap `gorm:"column:config;type:text;not null;default:'{}'" json:"config"`
+	Config      JSONMap `gorm:"column:config;type:text;not null" json:"config"`
 	IsBuiltin   bool    `gorm:"column:is_builtin;not null;default:false;index" json:"is_builtin"`
 	Status      *string `gorm:"column:status;size:1;default:1;index" json:"status,omitempty"`
 	BaseModel

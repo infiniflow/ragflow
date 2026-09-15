@@ -49,3 +49,19 @@ type ModelUsage struct {
 func (m *ModelUsage) String() string {
 	return fmt.Sprintf("%#v", m)
 }
+
+type OperationLog struct {
+	EventTime     time.Time `json:"event_time"`
+	UserID        string    `json:"user_id"`
+	IPAddress     string    `json:"ip_address"`
+	Operation     string    `json:"operation"`
+	APIPath       string    `json:"api_path"`
+	HTTPMethod    string    `json:"http_method"`
+	ResourceType  string    `json:"resource_type"`
+	ResourceID    string    `json:"resource_id"`
+	ResourceName  string    `json:"resource_name"`
+	RequestParams string    `json:"request_params"`
+	ErrorCode     uint16    `json:"error_code"`
+	Message       string    `json:"message"`
+	DurationMS    int64     `json:"duration_ms"`
+}

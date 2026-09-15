@@ -14,14 +14,16 @@
 //  limitations under the License.
 //
 
+//go:build integration
+
 package elasticsearch
 
 import (
-	"context"
-	"ragflow/internal/common"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/server/config"
 )
 
 // TestKGSearchSelectFields verifies that SelectFields overrides default output
@@ -48,8 +50,9 @@ func TestKGSearchSelectFields(t *testing.T) {
 		SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt"},
 		Limit:        10,
 	}
+	ctx := t.Context()
 
-	result, err := engine.Search(context.Background(), req)
+	result, err := engine.Search(ctx, req)
 	if err != nil {
 		t.Fatalf("search failed: %v", err)
 	}
@@ -73,7 +76,7 @@ func TestKGSearchSelectFields(t *testing.T) {
 
 // getTestConfig returns a minimal ES config for testing.
 // Reads from environment or uses defaults pointing to localhost.
-func getTestConfig() map[string]interface{} {
+func getTestConfig() config.ElasticsearchConfig {
 	hosts := common.GetEnv(common.EnvESHost)
 	if hosts == "" {
 		hosts = "http://localhost:1200"
@@ -86,9 +89,9 @@ func getTestConfig() map[string]interface{} {
 	if password == "" {
 		password = "infini_rag_flow"
 	}
-	return map[string]interface{}{
-		"hosts":    []string{hosts},
-		"username": username,
-		"password": password,
+	return config.ElasticsearchConfig{
+		Hosts:    hosts,
+		Username: username,
+		Password: password,
 	}
 }

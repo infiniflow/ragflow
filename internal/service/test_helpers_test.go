@@ -49,12 +49,19 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
+		&entity.PipelineOperationLog{},
+		&entity.UserCanvas{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
+		&entity.ChatSession{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -70,6 +77,18 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {
+	t.Helper()
+	conversation, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), db, id)
+	if err != nil {
+		t.Fatalf("failed to load API conversation %s: %v", id, err)
+	}
+	if conversation == nil {
+		t.Fatalf("API conversation %s not found", id)
+	}
+	return conversation
 }
 
 // fakeChatDocEngine is a stub engine.DocEngine used by parent-package tests.
@@ -144,7 +163,7 @@ func (fakeChatDocEngine) GetScores(map[string]interface{}) map[string]float64 { 
 func (fakeChatDocEngine) Ping(context.Context) error                          { return nil }
 func (fakeChatDocEngine) Close() error                                        { return nil }
 func (fakeChatDocEngine) CheckStatus() error                                  { return nil }
-func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 func (fakeChatDocEngine) GetMessages(context.Context, string, int, int) ([]interface{}, error) {

@@ -153,6 +153,7 @@ func drainStreamUntilError(t *testing.T, sr *schema.StreamReader[int]) ([]int, e
 // "Outer callbacks versus inner callbacks" requirement: the
 // sub-workflow sees one execution per iteration.
 func TestIntegration_OuterVsInnerCallback_Counts(t *testing.T) {
+	ctx := t.Context()
 	var subCalls atomic.Int64
 	subStore := newInMemoryStore()
 	sub := counterSub(t, &subCalls)
@@ -161,7 +162,7 @@ func TestIntegration_OuterVsInnerCallback_Counts(t *testing.T) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -173,11 +174,11 @@ func TestIntegration_OuterVsInnerCallback_Counts(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
+	if _, err = compiled.Invoke(ctx, 0); err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
 	if got := subCalls.Load(); got != 3 {
@@ -193,6 +194,7 @@ func TestIntegration_OuterVsInnerCallback_Counts(t *testing.T) {
 // the InterruptInfo tree because that is how downstream callers
 // distinguish a loop-internal interrupt from a user-level one.
 func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
+	ctx := t.Context()
 	outerStore := newInMemoryStore()
 	subStore := newInMemoryStore()
 	sub := interruptingSub(t)
@@ -201,7 +203,7 @@ func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
 		return true, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(5),
 		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -213,14 +215,14 @@ func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(ctx,
 		compose.WithCheckPointStore(outerStore),
 	)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	_, err = compiled.Invoke(context.Background(), 0,
+	_, err = compiled.Invoke(ctx, 0,
 		compose.WithCheckPointID("outer-cp"),
 	)
 	if err == nil {
@@ -239,8 +241,8 @@ func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
 		if i == nil {
 			return
 		}
-		for _, ctx := range i.InterruptContexts {
-			if s, ok := ctx.Info.(string); ok && s == "sub-interrupt" {
+		for _, interruptCtx := range i.InterruptContexts {
+			if s, ok := interruptCtx.Info.(string); ok && s == "sub-interrupt" {
 				foundSubInterrupt = true
 			}
 		}
@@ -258,6 +260,7 @@ func TestIntegration_SubWorkflowInterrupt_PropagatedAsComposite(t *testing.T) {
 // the sub-workflow interrupts, the outer checkpoint payload
 // exists (i.e. the framework has written the loop's state).
 func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
+	ctx := t.Context()
 	outerStore := newInMemoryStore()
 	subStore := newInMemoryStore()
 	sub := interruptingSub(t)
@@ -266,7 +269,7 @@ func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
 		return true, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(5),
 		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -278,7 +281,7 @@ func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(ctx,
 		compose.WithCheckPointStore(outerStore),
 	)
 	if err != nil {
@@ -286,13 +289,13 @@ func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
 	}
 
 	cpID := "outer-cp-persist"
-	_, err = compiled.Invoke(context.Background(), 0,
+	_, err = compiled.Invoke(ctx, 0,
 		compose.WithCheckPointID(cpID),
 	)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
-	if _, found, _ := outerStore.Get(context.Background(), cpID); !found {
+	if _, found, _ := outerStore.Get(ctx, cpID); !found {
 		t.Errorf("outer checkpoint %q not written", cpID)
 	}
 }
@@ -302,6 +305,7 @@ func TestIntegration_LoopStatePersistedOnInterrupt(t *testing.T) {
 // cap. This uses a non-interrupting sub-workflow so the loop actually reaches
 // the cap.
 func TestIntegration_ExplicitMaxIterationsStops_OnInvokePath(t *testing.T) {
+	ctx := t.Context()
 	var subCalls atomic.Int64
 	subStore := newInMemoryStore()
 	sub := counterSub(t, &subCalls)
@@ -310,7 +314,7 @@ func TestIntegration_ExplicitMaxIterationsStops_OnInvokePath(t *testing.T) {
 		return false, nil // never quits
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(3),
 		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -322,12 +326,12 @@ func TestIntegration_ExplicitMaxIterationsStops_OnInvokePath(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	out, err := compiled.Invoke(context.Background(), 0)
+	out, err := compiled.Invoke(ctx, 0)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -345,6 +349,7 @@ func TestIntegration_ExplicitMaxIterationsStops_OnInvokePath(t *testing.T) {
 // in loop_test.go, this exercises the full compile/invoke path
 // and confirms the loop survives eino's runner.
 func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 	sub := interruptingSub(t)
 
@@ -352,7 +357,7 @@ func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
 		return next >= 2, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCompileOptions(compose.WithCheckPointStore(store)),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -364,7 +369,7 @@ func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(ctx,
 		compose.WithCheckPointStore(store),
 	)
 	if err != nil {
@@ -375,7 +380,7 @@ func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
 	// call; the loop must persist state and return an
 	// interrupt error.
 	cpID := "outer-cp-e2e"
-	_, err = compiled.Invoke(context.Background(), 0,
+	_, err = compiled.Invoke(ctx, 0,
 		compose.WithCheckPointID(cpID),
 	)
 	if err == nil {
@@ -394,6 +399,7 @@ func TestIntegration_LoopRunsConcurrentlyWithResumeData(t *testing.T) {
 // fail with "receive checkpoint id but have not set checkpoint
 // store".
 func TestIntegration_EnableSubCheckpoint_HappyPath(t *testing.T) {
+	ctx := t.Context()
 	var subCalls atomic.Int64
 	subStore := newInMemoryStore()
 	sub := counterSub(t, &subCalls)
@@ -402,7 +408,7 @@ func TestIntegration_EnableSubCheckpoint_HappyPath(t *testing.T) {
 		return next >= 2, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(5),
 		WithLoopCompileOptions(compose.WithCheckPointStore(subStore)),
 		WithLoopEnableSubCheckpoint(true),
@@ -415,11 +421,11 @@ func TestIntegration_EnableSubCheckpoint_HappyPath(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	if _, err := compiled.Invoke(context.Background(), 0); err != nil {
+	if _, err = compiled.Invoke(ctx, 0); err != nil {
 		t.Fatalf("invoke: %v", err)
 	}
 	if got := subCalls.Load(); got != 2 {
@@ -431,6 +437,7 @@ func TestIntegration_EnableSubCheckpoint_HappyPath(t *testing.T) {
 // resume contract: an interrupt during iteration N resumes at
 // iteration N rather than restarting from 1.
 func TestIntegration_ResumeContinuesSameIteration(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 
 	sub := compose.NewWorkflow[int, int]()
@@ -454,7 +461,7 @@ func TestIntegration_ResumeContinuesSameIteration(t *testing.T) {
 	}
 
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
 			return "resume-same-iter:" + itoa(iter)
@@ -465,17 +472,17 @@ func TestIntegration_ResumeContinuesSameIteration(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
+	compiled, err := outer.Compile(ctx, compose.WithCheckPointStore(store))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	cpID := "resume-same-iteration"
-	_, err = compiled.Invoke(context.Background(), 0, compose.WithCheckPointID(cpID))
+	_, err = compiled.Invoke(ctx, 0, compose.WithCheckPointID(cpID))
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
-	resumeCtx := compose.Resume(context.Background(), firstRootInterruptID(t, err))
+	resumeCtx := compose.Resume(ctx, firstRootInterruptID(t, err))
 	out, err := compiled.Invoke(resumeCtx, 0, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume invoke: %v", err)
@@ -498,6 +505,7 @@ func TestIntegration_ResumeContinuesSameIteration(t *testing.T) {
 // WithForceNewRun ignores the saved loop checkpoint and restarts
 // the loop from iteration 1 on the next invocation.
 func TestIntegration_WithForceNewRunRestartsLoop(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 
 	sub := compose.NewWorkflow[int, int]()
@@ -521,7 +529,7 @@ func TestIntegration_WithForceNewRunRestartsLoop(t *testing.T) {
 	}
 
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
 			return "force-new-run:" + itoa(iter)
@@ -532,17 +540,17 @@ func TestIntegration_WithForceNewRunRestartsLoop(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
+	compiled, err := outer.Compile(ctx, compose.WithCheckPointStore(store))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	cpID := "force-new-run"
-	_, err = compiled.Invoke(context.Background(), 0, compose.WithCheckPointID(cpID))
+	_, err = compiled.Invoke(ctx, 0, compose.WithCheckPointID(cpID))
 	if err == nil {
 		t.Fatal("expected first interrupt, got nil")
 	}
-	_, err = compiled.Invoke(context.Background(), 0,
+	_, err = compiled.Invoke(ctx, 0,
 		compose.WithCheckPointID(cpID),
 		compose.WithForceNewRun(),
 	)
@@ -567,6 +575,7 @@ func TestIntegration_WithForceNewRunRestartsLoop(t *testing.T) {
 // the interrupt state is written to the designated checkpoint ID
 // and can be resumed from that new location.
 func TestIntegration_WithWriteToCheckPointIDPersistsToNewID(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 	sub := interruptingSub(t)
 
@@ -574,7 +583,7 @@ func TestIntegration_WithWriteToCheckPointIDPersistsToNewID(t *testing.T) {
 		return next >= 1, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(5),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
 			return "write-to-cp:" + itoa(iter)
@@ -585,28 +594,28 @@ func TestIntegration_WithWriteToCheckPointIDPersistsToNewID(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
+	compiled, err := outer.Compile(ctx, compose.WithCheckPointStore(store))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	oldID := "loop-old"
 	newID := "loop-new"
-	_, err = compiled.Invoke(context.Background(), 0,
+	_, err = compiled.Invoke(ctx, 0,
 		compose.WithCheckPointID(oldID),
 		compose.WithWriteToCheckPointID(newID),
 	)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
-	if _, found, _ := store.Get(context.Background(), oldID); found {
+	if _, found, _ := store.Get(ctx, oldID); found {
 		t.Fatalf("old checkpoint %q should not be written", oldID)
 	}
-	if _, found, _ := store.Get(context.Background(), newID); !found {
+	if _, found, _ := store.Get(ctx, newID); !found {
 		t.Fatalf("new checkpoint %q was not written", newID)
 	}
 
-	resumeCtx := compose.Resume(context.Background(), firstRootInterruptID(t, err))
+	resumeCtx := compose.Resume(ctx, firstRootInterruptID(t, err))
 	out, err := compiled.Invoke(resumeCtx, 0, compose.WithCheckPointID(newID))
 	if err != nil {
 		t.Fatalf("resume invoke: %v", err)
@@ -620,6 +629,7 @@ func TestIntegration_WithWriteToCheckPointIDPersistsToNewID(t *testing.T) {
 // asserts that FinalOnly mode does not expose historical iteration
 // chunks after resume.
 func TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 
 	sub := compose.NewWorkflow[int, int]()
@@ -648,7 +658,7 @@ func TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration(t *testing.
 		return next >= 20, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopStream(LoopStreamFinalOnly),
 		WithLoopMaxIterations(5),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -660,20 +670,20 @@ func TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration(t *testing.
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
+	compiled, err := outer.Compile(ctx, compose.WithCheckPointStore(store))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	cpID := "stream-final-only"
-	sr, err := compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
+	sr, err := compiled.Stream(ctx, 0, compose.WithCheckPointID(cpID))
 	if err == nil {
 		_, err = drainStreamUntilError(t, sr)
 	}
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
-	sr, err = compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
+	sr, err = compiled.Stream(ctx, 0, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume stream: %v", err)
 	}
@@ -697,6 +707,7 @@ func TestIntegration_StreamFinalOnly_ResumeExposesOnlyFinalIteration(t *testing.
 // fully published iterations are not replayed, while the interrupted
 // iteration is replayed from its start.
 func TestIntegration_StreamEveryIteration_ResumeFromFirstUnpublishedIteration(t *testing.T) {
+	ctx := t.Context()
 	store := newInMemoryStore()
 
 	sub := compose.NewWorkflow[int, int]()
@@ -725,7 +736,7 @@ func TestIntegration_StreamEveryIteration_ResumeFromFirstUnpublishedIteration(t 
 		return next >= 20, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopStream(LoopStreamEveryIteration),
 		WithLoopMaxIterations(5),
 		WithLoopCheckpointIDBuilder(func(_ string, iter int) string {
@@ -737,20 +748,20 @@ func TestIntegration_StreamEveryIteration_ResumeFromFirstUnpublishedIteration(t 
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background(), compose.WithCheckPointStore(store))
+	compiled, err := outer.Compile(ctx, compose.WithCheckPointStore(store))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
 	cpID := "stream-every-iteration"
-	sr, err := compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
+	sr, err := compiled.Stream(ctx, 0, compose.WithCheckPointID(cpID))
 	if err == nil {
 		_, err = drainStreamUntilError(t, sr)
 	}
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
-	sr, err = compiled.Stream(context.Background(), 0, compose.WithCheckPointID(cpID))
+	sr, err = compiled.Stream(ctx, 0, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume stream: %v", err)
 	}
@@ -806,12 +817,13 @@ func streamingIncSub(t *testing.T) *compose.Workflow[int, int] {
 // [2,3] (next=3, quit). Caller must observe ONLY the final iteration's
 // chunks: [2, 3].
 func TestIntegration_StreamFinalOnly_HappyPath(t *testing.T) {
+	ctx := t.Context()
 	sub := streamingIncSub(t)
 	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopStream(LoopStreamFinalOnly),
 		WithLoopMaxIterations(10),
 	)
@@ -820,12 +832,12 @@ func TestIntegration_StreamFinalOnly_HappyPath(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	sr, err := compiled.Stream(context.Background(), 0)
+	sr, err := compiled.Stream(ctx, 0)
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -854,12 +866,13 @@ func TestIntegration_StreamFinalOnly_HappyPath(t *testing.T) {
 // Caller must observe every iteration's chunks concatenated in order:
 // [0, 1, 1, 2, 2, 3].
 func TestIntegration_StreamEveryIteration_HappyPath(t *testing.T) {
+	ctx := t.Context()
 	sub := streamingIncSub(t)
 	shouldQuit := func(_ context.Context, _, _, next int) (bool, error) {
 		return next >= 3, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopStream(LoopStreamEveryIteration),
 		WithLoopMaxIterations(10),
 	)
@@ -868,12 +881,12 @@ func TestIntegration_StreamEveryIteration_HappyPath(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	sr, err := compiled.Stream(context.Background(), 0)
+	sr, err := compiled.Stream(ctx, 0)
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
@@ -900,6 +913,7 @@ func TestIntegration_StreamEveryIteration_HappyPath(t *testing.T) {
 // this test the branch (loop.go: "iteration N produced empty stream")
 // is unreachable from the existing test surface.
 func TestIntegration_Stream_EmptyIterationFails(t *testing.T) {
+	ctx := t.Context()
 	sub := compose.NewWorkflow[int, int]()
 	lambda, err := compose.AnyLambda[int, int, struct{}](
 		nil,
@@ -921,7 +935,7 @@ func TestIntegration_Stream_EmptyIterationFails(t *testing.T) {
 		return false, nil
 	}
 	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(ctx, outer, "loop", sub, shouldQuit,
 		WithLoopStream(LoopStreamFinalOnly),
 		WithLoopMaxIterations(3),
 	)
@@ -930,12 +944,12 @@ func TestIntegration_Stream_EmptyIterationFails(t *testing.T) {
 	}
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
-	sr, err := compiled.Stream(context.Background(), 0)
+	sr, err := compiled.Stream(ctx, 0)
 	if err == nil {
 		_, err = readAllInts(t, sr)
 	}

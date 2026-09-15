@@ -85,10 +85,10 @@ export function RAGFlowPagination({
 
   const handlePageSizeChange = useCallback(
     (size: string) => {
-      onChange?.(currentPage, Number(size));
+      onChange?.(1, Number(size));
       setCurrentPageSize(size);
     },
-    [currentPage, onChange],
+    [onChange],
   );
 
   useEffect(() => {

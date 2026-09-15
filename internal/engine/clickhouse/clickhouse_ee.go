@@ -41,6 +41,8 @@ func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
 	return nil
 }
 
+func (d *Driver) SaveOperationLog(operationLog *common.OperationLog) error { return nil }
+
 func (d *Driver) Status() (map[string]interface{}, error) {
 	return nil, nil
 }

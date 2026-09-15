@@ -203,6 +203,22 @@ func TestChatCompletions_RejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestChatCompletions_RejectsNonPositiveMaxTokens(t *testing.T) {
+	h := NewOpenAIChatHandler(service.NewOpenAIChatService())
+	c, w := newOpenAITestContext(t, "c1", `{
+		"model": "model",
+		"messages": [{"role": "user", "content": "hi"}],
+		"max_tokens": 0
+	}`)
+
+	h.OpenAIChatCompletions(c)
+
+	respBody := w.Body.String()
+	if !strings.Contains(respBody, "`max_tokens` must be greater than 0.") {
+		t.Fatalf("expected max_tokens validation error, got %s", respBody)
+	}
+}
+
 // TestChatCompletions_SilentlyDropsTopLevelStop verifies that top-level
 // `stop` is silently dropped rather than rejected. The field is not declared
 // on OpenAIChatRequest, so Go's json.Unmarshal discards it — matching the

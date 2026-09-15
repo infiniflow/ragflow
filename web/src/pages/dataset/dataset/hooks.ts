@@ -1,41 +1,117 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
+import { useParams } from 'react-router';
+import { listDataPipelineLogDocument } from '@/services/knowledge-service';
 import { ILogInfo } from '../process-log-modal';
 import { RunningStatus } from './constant';
+import {
+  getDocumentRunningStatus,
+  ingestionStatusToRunningStatus,
+} from './utils';
+import type { IFileLogList } from '../dataset-overview/interface';
+
+const PollIntervalMs = 5000;
+
+export const DocumentLogKeys = {
+  queued: (datasetId: string | undefined, documentId: string | undefined) =>
+    ['queuedDocumentLog', datasetId, documentId] as const,
+};
 
 export const useShowLog = (documents: IDocumentInfo[]) => {
   const { showModal, hideModal, visible } = useSetModalState();
   const [record, setRecord] = useState<IDocumentInfo>();
+  const { id: routeId } = useParams();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const datasetId = knowledgeId || routeId;
+  const isGoBackend = useIsGoBackend();
+
+  // When the modal is visible, poll the document directly by ID so progress_msg
+  // updates (e.g. "Indexing done") are captured even if the parent list no longer
+  // polls (isLoop became false before the final message) or the record fell off
+  // the current paginated page.
+  const { documents: liveDocs } = useFetchDocumentsByIds(
+    record?.id ? [record.id] : [],
+    { enabled: visible, refetchInterval: PollIntervalMs },
+  );
+  const liveDoc = liveDocs?.[0];
+  const sourceDoc =
+    liveDoc ??
+    documents.find((item: IDocumentInfo) => item.id === record?.id) ??
+    record;
+  const queued =
+    isGoBackend &&
+    !!sourceDoc &&
+    ingestionStatusToRunningStatus(sourceDoc.ingestion_status) ===
+      RunningStatus.QUEUED;
+
+  // The Go backend reports a queued document via ingestion_status while the
+  // legacy document.progress_msg stays empty until the worker starts. Fall
+  // back to the early pipeline-operation-log row the Go API writes at task
+  // creation, so the queued modal shows "Task is queued..." instead of "-".
+  // Python never sets ingestion_status, so this query stays disabled there.
+  const { data: queuedLog } = useQuery<IFileLogList>({
+    queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
+    enabled: visible && queued && !!datasetId && !!sourceDoc?.id,
+    refetchInterval: PollIntervalMs,
+    queryFn: async () => {
+      const { data: res = {} } = await listDataPipelineLogDocument(
+        datasetId || '',
+        {
+          page: 1,
+          page_size: 10,
+          // Exact match on the document: a name search is fuzzy and can push
+          // this document's row off the first page when several documents
+          // share a name, silently losing the queued message.
+          document_id: sourceDoc?.id,
+          log_type: 'file',
+        },
+      );
+      return (res.data || { logs: [], total: 0 }) as IFileLogList;
+    },
+  });
+  const queuedProgressMsg = useMemo(() => {
+    const logs = queuedLog?.logs ?? [];
+    // The endpoint filters by document_id, so the first row is this document's
+    // newest log. A miss falls back to the document progress_msg below.
+    return logs[0]?.progress_msg;
+  }, [queuedLog]);
+  // The queued fallback is only meaningful while the document is still
+  // queued. Once it starts running, the query cache may still hold the stale
+  // "Task is queued..." message and would shadow the live progress below.
+  const effectiveQueuedProgressMsg = queued ? queuedProgressMsg : undefined;
+
   const logInfo = useMemo(() => {
-    const findRecord = documents.find(
-      (item: IDocumentInfo) => item.id === record?.id,
-    );
+    const source = sourceDoc;
     let log: ILogInfo = {
-      taskId: record?.id,
-      fileName: record?.name || '-',
-      details: record?.progress_msg || '-',
+      taskId: source?.id,
+      fileName: source?.name || '-',
+      details: effectiveQueuedProgressMsg || source?.progress_msg || '-',
     };
-    if (findRecord) {
+    if (source) {
       log = {
-        fileType: findRecord?.suffix,
-        uploadedBy: findRecord?.nickname,
-        fileName: findRecord?.name,
-        uploadDate: formatDate(findRecord.create_date),
-        fileSize: formatBytes(findRecord.size || 0),
-        processBeginAt: formatDate(findRecord.process_begin_at),
-        chunkNumber: findRecord.chunk_count,
-        duration: formatSecondsToHumanReadable(
-          findRecord.process_duration || 0,
-        ),
-        status: findRecord.run as RunningStatus,
-        details: findRecord.progress_msg,
+        fileType: source?.suffix,
+        uploadedBy: source?.nickname,
+        fileName: source?.name,
+        uploadDate: formatDate(source.create_date),
+        fileSize: formatBytes(source.size || 0),
+        processBeginAt: formatDate(source.process_begin_at),
+        chunkNumber: source.chunk_count,
+        duration: formatSecondsToHumanReadable(source.process_duration || 0),
+        // Go derives status from ingestion_status (queued included);
+        // Python reads the legacy run field.
+        status: getDocumentRunningStatus(source),
+        details: effectiveQueuedProgressMsg || source.progress_msg,
       };
     }
     return log;
-  }, [record, documents]);
+  }, [sourceDoc, effectiveQueuedProgressMsg]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

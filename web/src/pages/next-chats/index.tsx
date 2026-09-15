@@ -5,6 +5,9 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
+import { ListDeletionKey } from '@/constants/list-deletion';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useFetchChatList } from '@/hooks/use-chat-request';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
@@ -23,14 +26,15 @@ export default function ChatList() {
     pagination,
     handleInputChange,
     searchString,
+    setSearchString,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchChatList();
   const { t } = useTranslation();
   const { t: tc } = useTranslation('common');
-  const owners = [
-    buildOwnersFilter(data?.chats ?? [], undefined, tc('owner')),
-  ];
+  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
   const {
     initialChatName,
     chatRenameVisible,
@@ -53,6 +57,13 @@ export default function ChatList() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(data?.chats?.length, loading, {
+    deletionKey: ListDeletionKey.ChatList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const handleShowCreateModal = useCallback(() => {
     showCreateChatModal();
@@ -103,7 +114,14 @@ export default function ChatList() {
 
   return (
     <>
-      {data.chats?.length || searchString ? (
+      {loading && !data.chats?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <Spin size="large" />
+        </article>
+      ) : data.chats?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
           data-testid="chats-list"

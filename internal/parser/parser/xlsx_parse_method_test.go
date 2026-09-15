@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -39,8 +40,7 @@ func TestNormalizeXLSXParseMethod(t *testing.T) {
 }
 
 // TestXLSXParser_DeepDocParseMethod verifies that both the lowercase "deepdoc"
-// and the uppercase "DeepDOC" (as shipped by the ingestion pipeline DSL templates)
-// parse_method values produce the default HTML table output.
+// and the uppercase "DeepDOC" produce structured spreadsheet output.
 func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -69,35 +69,115 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			}
 			p.ConfigureFromSetup(map[string]any{"parse_method": tc.method})
 
-			res := p.ParseWithResult("test.xlsx", buf.Bytes())
+			ctx := t.Context()
+			res := p.ParseWithResult(ctx, "test.xlsx", buf.Bytes())
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
-			if got, want := res.OutputFormat, "html"; got != want {
+			if got, want := res.OutputFormat, "json"; got != want {
 				t.Fatalf("OutputFormat = %q, want %q", got, want)
 			}
-			if !strings.Contains(res.HTML, tc.cellValue) {
-				t.Fatalf("HTML = %q, want it to contain cell content %q", res.HTML, tc.cellValue)
+			if len(res.JSON) != 1 {
+				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
+			}
+			text, _ := res.JSON[0]["text"].(string)
+			if !strings.Contains(text, tc.cellValue) {
+				t.Fatalf("JSON = %#v, want it to contain cell content %q", res.JSON, tc.cellValue)
 			}
 		})
 	}
 }
 
+func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "table content")
+		if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "sheet image"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "with-image.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("JSON item count = %d, want table and image", len(res.JSON))
+	}
+	image := res.JSON[1]
+	if image["text"] != "sheet image" || image["doc_type_kwd"] != "image" {
+		t.Fatalf("unexpected image item: %#v", image)
+	}
+	if image["image"] != "data:image/png;base64,"+pngBase64 {
+		t.Fatalf("image data = %v, want data URL", image["image"])
+	}
+	if image["sheet_index"] != 1 || image["row_start"] != 3 || image["row_end"] != 3 || image["col_start"] != 3 || image["col_end"] != 3 {
+		t.Fatalf("image coordinates = %#v, want Sheet1!C3", image)
+	}
+}
+
+func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+	data := newTestXLSX(t, func(f *excelize.File) {
+		if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "without-alt.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "C3" {
+		t.Fatalf("image item = %#v, want anchor-cell text C3", res.JSON)
+	}
+}
+
+func mustDecodeBase64(t *testing.T, encoded string) []byte {
+	t.Helper()
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("DecodeString: %v", err)
+	}
+	return data
+}
+
 // TestCSVParser_DeepDocParseMethod asserts the CSV parser accepts the
-// default "deepdoc" parse_method and renders the default HTML table.
+// default "deepdoc" parse_method and emits row IR.
 func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 
-	res := p.ParseWithResult("test.csv", []byte("a,b\n1,2"))
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, "test.csv", []byte("a,b\n1,2"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if !strings.Contains(res.HTML, "<table>") {
-		t.Fatalf("HTML = %q, want a rendered <table>", res.HTML)
+	if len(res.JSON) < 2 {
+		t.Fatalf("JSON items = %d, want at least header and one data row", len(res.JSON))
+	}
+	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
+		t.Fatalf("JSON items = %#v, want header and row", res.JSON)
 	}
 }
 
@@ -114,7 +194,8 @@ func TestXLSParser_DeepDocParseMethod_NoUnsupportedError(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 
-	res := p.ParseWithResult("test.xls", []byte("not a real xls"))
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
 	if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
 		t.Fatalf("deepdoc must not be rejected as unsupported: %v", res.Err)
 	}

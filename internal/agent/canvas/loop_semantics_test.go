@@ -32,7 +32,6 @@
 package canvas
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"strings"
@@ -52,13 +51,14 @@ import (
 // assert per-iteration writes landed.
 func runLoopCanvas(t *testing.T, dsl *Canvas) (*CanvasState, error) {
 	t.Helper()
-	cc, err := Compile(context.Background(), dsl)
+	ctx := t.Context()
+	cc, err := Compile(ctx, dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	state := NewCanvasState("run-loop", "task-loop")
-	ctx := withState(context.Background(), state)
-	_, runErr := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"})
+	newCtx := withState(ctx, state)
+	_, runErr := cc.Workflow.Invoke(newCtx, map[string]any{"query": "go"})
 	return state, runErr
 }
 
@@ -174,13 +174,14 @@ func TestLoop_MaxCount(t *testing.T) {
 // canvas must therefore install workflowx loops in every_iteration mode rather
 // than buffering and exposing only the final body result.
 func TestLoop_StreamEmitsEveryIteration(t *testing.T) {
-	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	ctx := t.Context()
+	cc, err := Compile(ctx, counterLoopDSL(1, 3, 50))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	state := NewCanvasState("run-loop-stream", "task-loop-stream")
-	ctx := withState(context.Background(), state)
-	sr, err := cc.Workflow.Stream(ctx, map[string]any{"query": "go"})
+	newCtx := withState(ctx, state)
+	sr, err := cc.Workflow.Stream(newCtx, map[string]any{"query": "go"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -210,16 +211,17 @@ func TestLoop_StreamEmitsEveryIteration(t *testing.T) {
 }
 
 func TestLoop_EmitsLifecycleEventsForMacroAndBody(t *testing.T) {
-	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	ctx := t.Context()
+	cc, err := Compile(ctx, counterLoopDSL(1, 3, 50))
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	state := NewCanvasState("run-loop-events", "task-loop-events")
 	events := make(chan RunEvent, 32)
-	ctx := withState(context.Background(), state)
-	ctx = WithRunMeta(ctx, &RunMeta{Events: events})
+	newCtx := withState(ctx, state)
+	newCtx = WithRunMeta(newCtx, &RunMeta{Events: events})
 
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
+	if _, err = cc.Workflow.Invoke(newCtx, map[string]any{"query": "go"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
@@ -239,6 +241,7 @@ func TestLoop_EmitsLifecycleEventsForMacroAndBody(t *testing.T) {
 }
 
 func TestLoop_MessageEmitsEveryIteration(t *testing.T) {
+	ctx := t.Context()
 	dsl := counterLoopDSL(1, 3, 50)
 	bump := dsl.Components["bump"]
 	bump.Downstream = []string{"msg"}
@@ -253,18 +256,18 @@ func TestLoop_MessageEmitsEveryIteration(t *testing.T) {
 		Upstream: []string{"bump"},
 	}
 
-	cc, err := Compile(context.Background(), dsl)
+	cc, err := Compile(ctx, dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
 	state := NewCanvasState("run-loop-message", "task-loop-message")
-	ctx := withState(context.Background(), state)
+	newCtx := withState(ctx, state)
 	var emitted []string
-	ctx = runtime.WithCanvasMessageEmitter(ctx, func(content string) {
+	newCtx = runtime.WithCanvasMessageEmitter(newCtx, func(content string) {
 		emitted = append(emitted, content)
 	})
 
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
+	if _, err = cc.Workflow.Invoke(newCtx, map[string]any{"query": "go"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if len(emitted) != 3 {
@@ -341,7 +344,8 @@ func TestLoop_FactoryErrorSurfaces(t *testing.T) {
 			},
 		},
 	}
-	_, err := Compile(context.Background(), dsl)
+	ctx := t.Context()
+	_, err := Compile(ctx, dsl)
 	if err == nil {
 		t.Fatal("expected factory error, got nil")
 	}
@@ -373,7 +377,8 @@ func TestLoop_LegacyExitLoopStaysNoOp(t *testing.T) {
 			},
 		},
 	}
-	if _, err := Compile(context.Background(), dsl); err != nil {
+	ctx := t.Context()
+	if _, err := Compile(ctx, dsl); err != nil {
 		t.Fatalf("Compile with legacy ExitLoop (factory registered): %v", err)
 	}
 	// Also verify the factory IS registered — otherwise this test

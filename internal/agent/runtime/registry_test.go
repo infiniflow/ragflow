@@ -23,6 +23,8 @@ import (
 	"sort"
 	"sync"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 // stubComponent is a minimal Component impl used as the factory's
@@ -33,7 +35,7 @@ type stubComponent struct {
 	params map[string]any
 }
 
-func (s *stubComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *stubComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return map[string]any{"name": s.name, "params": s.params}, nil
 }
 
@@ -311,7 +313,7 @@ func TestRegistry_ThreadSafe(t *testing.T) {
 func TestRegistry_FactoryErrorPropagates(t *testing.T) {
 	// A factory that returns an error must propagate that error through
 	// the Lookup → invoke path. This is not directly tested by the
-	// plan checklist but it confirms the factory closure contract.
+	// plan checklist but it confirms the factory closure
 	r := NewMemoryRegistry()
 	wantErr := errors.New("boom")
 	if err := r.Register("Bad", CategoryAgent, errFactory(wantErr), Metadata{Version: "legacy"}); err != nil {

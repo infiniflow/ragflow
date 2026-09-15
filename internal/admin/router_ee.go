@@ -70,6 +70,10 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/system/license", r.handler.ShowSystemLicense)
 	protected.PUT("/system/license/config", r.handler.UpdateSystemLicenseConfig)
 
+	protected.POST("/system/soft-fingerprint", r.handler.SetSoftFingerprint)
+	protected.GET("/system/soft-fingerprint", r.handler.ShowSoftFingerprint)
+	protected.DELETE("/system/soft-fingerprint", r.handler.DeleteSoftFingerprint)
+
 	protected.GET("/fingerprint", r.handler.GetFingerprint)
 	protected.POST("/license", r.handler.SetLicense)
 	protected.POST("/license/config", r.handler.UpdateLicenseConfig)
@@ -79,6 +83,9 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/stats/token", r.handler.GetTokenStats)
 	protected.GET("/stats/token/users", r.handler.GetTokenUsersStats)
 	protected.GET("/stats/token/summary", r.handler.GetTokenStatsSummary)
+
+	// Logs
+	protected.GET("/logs", r.handler.ListLogs)
 
 	// Stats data info
 	protected.GET("/users/:username/activity", r.handler.ShowUserActivity)

@@ -36,6 +36,7 @@ from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
 from flask_session import Session
 from common.versions import get_ragflow_version
+from api.db.db_models import close_connection
 
 stop_event = threading.Event()
 
@@ -60,6 +61,18 @@ if __name__ == "__main__":
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
+
+    @app.teardown_request
+    def _db_close(exception):
+        if settings.DATABASE_TYPE.lower() == "gaussdb":
+            if exception:
+                logging.error(
+                    "Admin request failed: %s",
+                    exception,
+                    exc_info=(type(exception), exception, exception.__traceback__),
+                )
+            close_connection()
+
     settings.init_settings()
     setup_auth(login_manager)
     init_default_admin()

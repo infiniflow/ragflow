@@ -17,14 +17,17 @@
 package handler
 
 import (
-	"encoding/json"
+	"crypto/tls"
+	"fmt"
 	"net/http"
-	"os"
+	"net/mail"
+	"net/smtp"
+	"ragflow/internal/server"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -75,7 +78,8 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
-	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	ctx := c.Request.Context()
+	err := h.tenantService.SetTenantDefaultModels(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -100,8 +104,9 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
+	defaultModels, err := h.tenantService.ListTenantDefaultModels(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -121,8 +126,6 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 // @Summary Get Tenant Information
 // @Description Get current user's tenant information (owner tenant)
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/tenant_info [get]
@@ -132,8 +135,9 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
+	tenantInfo, err := h.tenantService.GetTenantInfo(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -151,8 +155,6 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Summary Get Tenant List
 // @Description Get all tenants that the current user belongs to
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/list [get]
@@ -162,8 +164,9 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	tenantList, err := h.tenantService.GetTenantList(user.ID)
+	tenantList, err := h.tenantService.GetTenantList(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -190,8 +193,8 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
-
-	code, err := h.tenantService.CreateMetadataStore(tenantID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.CreateMetadataStore(ctx, tenantID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -219,7 +222,8 @@ func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
-	code, err := h.tenantService.DeleteMetadataStore(tenantID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.DeleteMetadataStore(ctx, tenantID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -257,9 +261,10 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -267,7 +272,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		KBID:       req.KBID,
 		VectorSize: req.VectorSize,
 	}
-	result, code, err := h.tenantService.CreateChunkStore(serviceReq)
+	result, code, err := h.tenantService.CreateChunkStore(ctx, serviceReq)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -298,6 +303,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	var req DeleteChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
@@ -305,12 +311,12 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
-	code, err := h.tenantService.DeleteChunkStore(req.KBID)
+	code, err := h.tenantService.DeleteChunkStore(ctx, req.KBID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -319,160 +325,9 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	common.SuccessNoData(c, "success")
 }
 
-// InsertChunksFromFileRequest request for inserting chunks from file
-type InsertChunksFromFileRequest struct {
-	FilePath string `json:"file_path" binding:"required"`
-}
-
-// @Summary Insert chunks into dataset from JSON file
-// @Description Internal: Insert chunks into dataset table from a JSON file
-// @Tags tenants
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body InsertChunksFromFileRequest true "insert chunks request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/dev_insert_chunks_from_file [post]
-func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req InsertChunksFromFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	if req.FilePath == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
-		return
-	}
-
-	// Read the JSON file
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	// JSON file path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	data, err := os.ReadFile(req.FilePath)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
-		return
-	}
-
-	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
-	var debugFormat struct {
-		IndexName       string                   `json:"index_name"`
-		TableName       string                   `json:"table_name"`
-		KnowledgebaseID string                   `json:"knowledgebase_id"`
-		Chunks          []map[string]interface{} `json:"chunks"`
-	}
-
-	if err = json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}")
-		return
-	}
-
-	if len(debugFormat.Chunks) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
-		return
-	}
-
-	// Support both index_name (ES) and table_name (Infinity) in JSON
-	indexName := debugFormat.IndexName
-	if indexName == "" {
-		indexName = debugFormat.TableName
-	}
-
-	// Get the document engine and insert
-	docEngine := engine.Get()
-	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert into dataset: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-// InsertMetadataFromFileRequest request for inserting metadata from file
-type InsertMetadataFromFileRequest struct {
-	FilePath string `json:"file_path" binding:"required"`
-}
-
-// @Summary Insert document metadata from JSON file
-// @Description Internal: Insert metadata into tenant's metadata table from a JSON file
-// @Tags tenants
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body InsertMetadataFromFileRequest true "insert metadata request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/dev_insert_metadata_from_file [post]
-func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req InsertMetadataFromFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	if req.FilePath == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
-		return
-	}
-
-	// Read the JSON file
-	// JSON file path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	data, err := os.ReadFile(req.FilePath)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
-		return
-	}
-
-	// Parse JSON - format: {"chunks": [...]}
-	var inputFormat struct {
-		Chunks []map[string]interface{} `json:"chunks"`
-	}
-
-	if err = json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"chunks\": [...]}")
-		return
-	}
-
-	if len(inputFormat.Chunks) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
-		return
-	}
-
-	// Use user.ID as tenant ID (user IS the tenant in user mode)
-	tenantID := user.ID
-
-	// Get the document engine and insert
-	docEngine := engine.Get()
-	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert metadata: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
 // ListTenantMembers lists all non-owner members of a tenant.
 // @Summary List tenant members
 // @Tags tenants
-// @Produce json
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id}/users [get]
 func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
@@ -488,12 +343,134 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 		return
 	}
 
-	members, code, err := h.tenantService.ListMembers(user.ID, tenantID)
+	ctx := c.Request.Context()
+	members, code, err := h.tenantService.ListMembers(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, members, "success")
+}
+
+func sendTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string) error {
+	config := server.GetConfig()
+	if config == nil {
+		return fmt.Errorf("server config is not initialized")
+	}
+
+	smtpCfg := config.GetSMTPConfig()
+	if smtpCfg.MailServer == "" || smtpCfg.MailPort == 0 {
+		return fmt.Errorf("SMTP config is incomplete")
+	}
+
+	from := mail.Address{
+		Name:    smtpCfg.MailFromName,
+		Address: smtpCfg.MailFromAddress,
+	}
+	to := mail.Address{Address: toEmail}
+	subject := "RAGFlow Invitation"
+	body := fmt.Sprintf(
+		"Hi %s,\n%s has invited you to join their team (ID: %s).\nClick the link below to complete your registration:\n%s\nIf you did not request this, please ignore this email.\n",
+		recipientEmail,
+		inviter,
+		tenantID,
+		smtpCfg.MailFrontendURL,
+	)
+	message := strings.Join([]string{
+		fmt.Sprintf("From: %s", from.String()),
+		fmt.Sprintf("To: %s", to.String()),
+		fmt.Sprintf("Subject: %s", subject),
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+		"",
+		body,
+	}, "\r\n")
+
+	address := fmt.Sprintf("%s:%d", smtpCfg.MailServer, smtpCfg.MailPort)
+	var auth smtp.Auth
+	if smtpCfg.MailUsername != "" || smtpCfg.MailPassword != "" {
+		auth = smtp.PlainAuth("", smtpCfg.MailUsername, smtpCfg.MailPassword, smtpCfg.MailServer)
+	}
+
+	if smtpCfg.MailUseSSL {
+		return sendMailWithTLS(address, smtpCfg.MailServer, auth, from.Address, []string{to.Address}, []byte(message))
+	}
+
+	client, err := smtp.Dial(address)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if smtpCfg.MailUseTLS {
+		tlsConfig := &tls.Config{ServerName: smtpCfg.MailServer}
+		if err = client.StartTLS(tlsConfig); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if err = client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err = client.Mail(from.Address); err != nil {
+		return err
+	}
+	if err = client.Rcpt(to.Address); err != nil {
+		return err
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = writer.Write([]byte(message)); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err = writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
+}
+
+func sendMailWithTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if auth != nil {
+		if err = client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err = client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err = client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err = writer.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }
 
 // AddTenantMember invites a user (by email) to the tenant.
@@ -523,19 +500,28 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		return
 	}
 
-	resp, code, err := h.tenantService.AddMember(user.ID, tenantID, &req)
+	ctx := c.Request.Context()
+	resp, code, err := h.tenantService.AddMember(ctx, user.ID, tenantID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
+
+	inviter := user.Nickname
+	if inviter == "" {
+		inviter = user.Email
+	}
+	if err = sendTenantInviteEmail(req.Email, req.Email, tenantID, inviter); err != nil {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		return
+	}
+
 	common.SuccessWithData(c, resp, "success")
 }
 
 // RemoveTenantMember removes a user from the tenant.
 // @Summary Remove a user from a tenant
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Param tenant_id path string true "Tenant ID"
 // @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
@@ -560,7 +546,8 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		return
 	}
 
-	code, err := h.tenantService.RemoveMember(user.ID, tenantID, body.UserID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.RemoveMember(ctx, user.ID, tenantID, body.UserID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -587,7 +574,8 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 
-	code, err := h.tenantService.AcceptInvite(user.ID, tenantID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return

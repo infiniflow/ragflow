@@ -256,11 +256,39 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
+# Internal RetCode values below 200 collide with the HTTP 1xx (informational) range.
+# h11 refuses to send a 1xx status as a final response, so Hypercorn drops the
+# connection and the client receives an empty reply instead of the JSON error body.
+# Map them to real HTTP statuses; the body keeps the original RetCode.
+RET_CODE_TO_HTTP_STATUS = {
+    RetCode.EXCEPTION_ERROR: 500,
+    RetCode.ARGUMENT_ERROR: 400,
+    RetCode.DATA_ERROR: 400,
+    RetCode.OPERATING_ERROR: 400,
+    RetCode.CONNECTION_ERROR: 500,
+    RetCode.RUNNING: 500,
+    RetCode.PERMISSION_ERROR: 403,
+    # Dify's external knowledge API expects HTTP 403 for authorization failures.
+    RetCode.AUTHENTICATION_ERROR: 403,
+}
+
+
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        ret_code = int(code)
+        http_status = RET_CODE_TO_HTTP_STATUS.get(ret_code)
+        # The status logs below carry the ret code only; `message` can hold user input.
+        if http_status is not None:
+            logging.debug("build_error_result: ret code %s mapped to HTTP %s", ret_code, http_status)
+        elif 200 <= ret_code <= 599:
+            http_status = ret_code
+            logging.debug("build_error_result: ret code %s used as HTTP status", ret_code)
+        else:
+            http_status = 500
+            logging.warning("build_error_result: unmapped ret code %s, falling back to HTTP 500", ret_code)
+        response.status_code = http_status
     return response
 
 
@@ -276,7 +304,7 @@ def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
     {
         "code": 0,
         "data": [...],        # List or object, backward compatible
-        "total": 47,          # Optional field for pagination
+        "total_datasets": 47, # Optional field for pagination
         "message": "..."      # Error or status message
     }
     """
@@ -343,56 +371,25 @@ def get_parser_config(chunk_method, parser_config):
             "auto_questions": 0,
             "html4excel": False,
             "topn_tags": 3,
-            "raptor": {
-                "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
-                "max_cluster": 64,
-                "random_seed": 0,
-            },
-            "graphrag": {
-                "use_graphrag": True,
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "geo",
-                    "event",
-                    "category",
-                ],
-                "method": "light",
-                "batch_chunk_token_size": 4096,
-                "retry_attempts": 2,
-                "retry_backoff_seconds": 2.0,
-                "retry_backoff_max_seconds": 60.0,
-                "build_subgraph_timeout_per_chunk_seconds": 300,
-                "build_subgraph_min_timeout_seconds": 600,
-                "merge_timeout_seconds": 180,
-                "resolution_timeout_seconds": 1800,
-                "community_timeout_seconds": 1800,
-                "lock_acquire_timeout_seconds": 600,
-            },
             "parent_child": {
                 "use_parent_child": False,
                 "children_delimiter": "\n",
             },
         },
-        "qa": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "qa": {},
         "tag": None,
         "resume": None,
-        "manual": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "manual": {},
         "table": None,
-        "paper": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
-        "book": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
-        "laws": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
-        "presentation": {"raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        "paper": {},
+        "book": {},
+        "laws": {},
+        "presentation": {},
         "one": None,
         "knowledge_graph": {
             "chunk_token_num": 8192,
-            "delimiter": r"\n",
+            "delimiter": "\n",
             "entity_types": ["organization", "person", "location", "event", "time"],
-            "raptor": {"use_raptor": False},
-            "graphrag": {"use_graphrag": False},
         },
         "email": None,
         "picture": None,
@@ -615,6 +612,14 @@ def deep_merge(default: dict, custom: dict) -> dict:
     return merged
 
 
+def strip_graphrag_raptor_config(source_data: dict) -> dict:
+    result = dict(source_data)
+    parser_config = source_data.get("parser_config")
+    if isinstance(parser_config, dict):
+        result["parser_config"] = {key: value for key, value in parser_config.items() if key not in ("graphrag", "raptor")}
+    return result
+
+
 def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
     """
     Transform dictionary keys using a configurable mapping schema.
@@ -647,7 +652,7 @@ def remap_dictionary_keys(source_data: dict, key_aliases: dict = None) -> dict:
         mapped_key = mapping.get(original_key, original_key)
         transformed_data[mapped_key] = value
 
-    return transformed_data
+    return strip_graphrag_raptor_config(transformed_data)
 
 
 def group_by(list_of_dict, key):

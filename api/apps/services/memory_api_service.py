@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+
 from api.apps import current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
@@ -20,6 +22,7 @@ from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
@@ -250,6 +253,7 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     :param filter_params: {
         "memory_type": list[str],
         "tenant_id": list[str],
+        "ids": list[str],
         "storage_type": str
     }
     :param keywords: str
@@ -258,6 +262,18 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     """
     filter_dict: dict = {"storage_type": filter_params.get("storage_type"), "accessible_user_id": current_user.id}
     allowed_tenant_ids = _joined_tenant_ids(current_user.id)
+
+    memory_ids = _split_filter_values(filter_params.get("ids"))
+    if memory_ids:
+        accessible_memories = _filter_accessible_memories(memory_ids)
+        accessible_memory_ids = [m.id for m in accessible_memories]
+        denied_ids = [mid for mid in memory_ids if mid not in accessible_memory_ids]
+        if denied_ids:
+            logging.warning("User '%s' lacks permission for memories: '%s'", current_user.id, ", ".join(denied_ids))
+        filter_dict["ids"] = accessible_memory_ids
+        if not accessible_memory_ids:
+            return {"memory_list": [], "total_count": 0}
+
     tenant_ids = _split_filter_values(filter_params.get("tenant_id") or filter_params.get("owner_ids"))
     if tenant_ids:
         filter_dict["tenant_id"] = [tenant_id for tenant_id in tenant_ids if tenant_id in allowed_tenant_ids]
@@ -269,7 +285,8 @@ async def list_memory(filter_params: dict, keywords: str, page: int = 1, page_si
     filter_dict["memory_type"] = memory_types
 
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
-    [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
+    embd_name_map = get_composite_model_name_by_ids([memory["embd_id"] for memory in memory_list])
+    [memory.update({"memory_type": get_memory_type_human(memory["memory_type"]), "embd_name": embd_name_map.get(memory["embd_id"], "")}) for memory in memory_list]
     memory_list.sort(key=lambda m: m["create_time"], reverse=True)
     return {"memory_list": memory_list, "total_count": count}
 

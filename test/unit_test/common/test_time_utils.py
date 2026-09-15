@@ -711,3 +711,11 @@ class TestFormatIso8601ToYmdHms:
     def test_invalid_string_returns_original(self):
         """Unparseable input is returned unchanged."""
         assert format_iso_8601_to_ymd_hms("not-a-date") == "not-a-date"
+
+    def test_invalid_string_uses_explicit_fallback(self, caplog):
+        """Callers can prevent invalid timestamps from being written through."""
+        with caplog.at_level("ERROR"):
+            result = format_iso_8601_to_ymd_hms("not-a-date", fallback="2026-08-18 12:00:00")
+
+        assert result == "2026-08-18 12:00:00"
+        assert "not-a-date" in caplog.text

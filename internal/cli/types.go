@@ -108,6 +108,7 @@ const (
 	TokenMemory
 	TokenRetrieve
 	TokenCurrent
+	TokenSoft
 	TokenFingerprint
 	TokenLicense
 	TokenVision
@@ -128,6 +129,7 @@ const (
 	TokenDimension
 	TokenAsync
 	TokenSync
+	TokenSyncLogs
 	TokenBenchmark
 	TokenPing
 	TokenToken
@@ -157,7 +159,6 @@ const (
 	TokenMax
 	TokenLS
 	TokenCat
-	TokenInsert
 	TokenFile
 	TokenMetadata
 	TokenTable
@@ -204,6 +205,7 @@ const (
 	TokenPreview
 	TokenOpenaiChat
 	TokenLog
+	TokenLogs
 	TokenLevel
 	TokenDebug
 	TokenInfo

@@ -32,6 +32,14 @@ class _DummyStreamResponse:
             yield line
 
 
+class _DummyJsonResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
     @pytest.mark.p3
@@ -41,7 +49,7 @@ class TestSessionWithChatAssistantCreate:
             ("valid_name", ""),
             pytest.param("a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` can not be empty."),
+            ("", "`name` can not be empty"),
             ("duplicated_name", ""),
             ("case insensitive", ""),
         ],
@@ -86,7 +94,7 @@ class TestSessionWithChatAssistantCreate:
         client.delete_chats(ids=[chat_assistant.id])
         with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "No authorization." in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2
@@ -156,3 +164,54 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     assert calls[1][2]["openai-compatible"] is False
     assert calls[1][2]["top_p"] == 0.8
     assert calls[1][3] is True
+
+
+@pytest.mark.p2
+def test_agent_session_preserves_non_stream_reference_chunks(monkeypatch, caplog):
+    first_chunk = {"id": "chunk-1", "content": "first source"}
+    second_chunk = {"id": "chunk-2", "content": "second source"}
+    session = Session(None, {"id": "session-agent", "agent_id": "agent-1"})
+    response = _DummyJsonResponse(
+        {
+            "data": {
+                "event": "message_end",
+                "data": {
+                    "content": "agent-answer",
+                    "reference": {"chunks": {"500": first_chunk, "100": second_chunk}},
+                },
+            }
+        }
+    )
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+
+    with caplog.at_level("DEBUG", logger="ragflow_sdk.modules.session"):
+        messages = list(session.ask("hello agent", stream=False))
+
+    assert len(messages) == 1
+    assert messages[0].content == "agent-answer"
+    assert messages[0].reference == [first_chunk, second_chunk]
+    assert "session_id=session-agent event=message_end reference_count=2" in caplog.text
+    assert "first source" not in caplog.text
+    assert "second source" not in caplog.text
+
+
+@pytest.mark.p2
+def test_agent_session_streams_all_message_references_without_duplicate_content(monkeypatch):
+    first_chunk = {"id": "chunk-1", "content": "first source"}
+    second_chunk = {"id": "chunk-2", "content": "second source"}
+    session = Session(None, {"id": "session-agent", "agent_id": "agent-1"})
+    response = _DummyStreamResponse(
+        [
+            'data: {"event":"message","data":{"content":"first answer"}}',
+            'data: {"event":"message_end","data":{"content":"first answer","reference":{"chunks":{"123":{"id":"chunk-1","content":"first source"}}}}}',
+            'data: {"event":"message","data":{"content":"second answer"}}',
+            'data: {"event":"message_end","data":{"content":"second answer","reference":{"chunks":{"456":{"id":"chunk-2","content":"second source"}}}}}',
+            "data: [DONE]",
+        ]
+    )
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+
+    messages = list(session.ask("hello agent", stream=True))
+
+    assert "".join(message.content for message in messages) == "first answersecond answer"
+    assert [message.reference for message in messages if message.reference] == [[first_chunk], [second_chunk]]

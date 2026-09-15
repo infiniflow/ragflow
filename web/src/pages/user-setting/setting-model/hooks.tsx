@@ -144,9 +144,9 @@ export const useVerifyConnection = () => {
 };
 
 // ============ Hooks for retained special modals ============
-// Bedrock and SoMark have been migrated to inline instance cards
-// (BedrockInstanceCard / SoMarkInstanceCard); these legacy modal
-// hooks are kept only for backward-compat references.
+// Bedrock has been migrated to an inline instance card
+// (BedrockInstanceCard); these legacy modal hooks are kept only
+// for backward-compat references.
 
 export const useSubmitBedrock = () => {
   const [saveLoading, setSaveLoading] = useState(false);

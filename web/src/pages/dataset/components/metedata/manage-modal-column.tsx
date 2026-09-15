@@ -73,14 +73,12 @@ export const useMetadataColumns = ({
   };
 
   const saveEditedValue = useCallback(
-    (
-      newValue?: {
-        field: string;
-        value: string;
-        newValue: string;
-        valueType: MetadataValueType;
-      },
-    ) => {
+    (newValue?: {
+      field: string;
+      value: string;
+      newValue: string;
+      valueType: MetadataValueType;
+    }) => {
       const realValue = newValue || editingValue;
       if (realValue) {
         setTableData((prev) => {
@@ -308,7 +306,8 @@ export const useMetadataColumns = ({
                         handleEditValue(
                           row.getValue('field'),
                           value,
-                          row.original.valueType || metadataValueTypeEnum.string,
+                          row.original.valueType ||
+                            metadataValueTypeEnum.string,
                         )
                       }
                       aria-label="Edit"
@@ -344,19 +343,20 @@ export const useMetadataColumns = ({
                   </div>
                 </Button>
               )}
-              {hasMore && isRowExpanded && (
-                // <div className="self-end mt-1">
-                <Button
-                  variant={'ghost'}
-                  className="bg-transparent px-2 py-1"
-                  onClick={handleToggleExpand}
-                >
-                  <div className="text-text-secondary">
-                    <ListChevronsDownUp size={14} />
-                  </div>
-                </Button>
-                // </div>
-              )}
+              {hasMore &&
+                isRowExpanded && (
+                  // <div className="self-end mt-1">
+                  <Button
+                    variant={'ghost'}
+                    className="bg-transparent px-2 py-1"
+                    onClick={handleToggleExpand}
+                  >
+                    <div className="text-text-secondary">
+                      <ListChevronsDownUp size={14} />
+                    </div>
+                  </Button>
+                  // </div>
+                )}
             </div>
           );
         },

@@ -1,9 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FilterFormField, FormFieldType } from '@/components/dynamic-form';
 import { TFunction } from 'i18next';
 
 export const seafileConstant = (t: TFunction) => [
   {
-    label: 'SeaFile Server URL',
+    label: t('setting.dataSourceFieldSeafileServerUrl'),
     name: 'config.seafile_url',
     type: FormFieldType.Text,
     required: true,
@@ -11,13 +27,16 @@ export const seafileConstant = (t: TFunction) => [
     tooltip: t('setting.seafileUrlTip'),
   },
   {
-    label: 'Sync Scope',
+    label: t('setting.dataSourceFieldSyncScope'),
     name: 'config.sync_scope',
     type: FormFieldType.Segmented,
     options: [
-      { label: 'Entire Account', value: 'account' },
-      { label: 'Single Library', value: 'library' },
-      { label: 'Specific Directory', value: 'directory' },
+      { label: t('setting.dataSourceOptionEntireAccount'), value: 'account' },
+      { label: t('setting.dataSourceOptionSingleLibrary'), value: 'library' },
+      {
+        label: t('setting.dataSourceOptionSpecificDirectory'),
+        value: 'directory',
+      },
     ],
     tooltip: t('setting.seafileSyncScopeTip'),
   },
@@ -37,7 +56,7 @@ export const seafileConstant = (t: TFunction) => [
     ),
   },
   {
-    label: 'Account API Token',
+    label: t('setting.dataSourceFieldAccountApiToken'),
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
@@ -56,7 +75,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: 'Include Shared Libraries',
+    label: t('setting.dataSourceFieldIncludeSharedLibraries'),
     name: 'config.include_shared',
     type: FormFieldType.Checkbox,
     required: false,
@@ -84,11 +103,15 @@ export const seafileConstant = (t: TFunction) => [
         </p>
         <ul className="list-disc list-inside space-y-0.5">
           <li>
-            <span className="font-medium">Account API Token</span>
+            <span className="font-medium">
+              {t('setting.dataSourceFieldAccountApiToken')}
+            </span>
             {' ' + t('setting.seafileTokenPanelAccountBullet')}
           </li>
           <li>
-            <span className="font-medium">Library Token</span>
+            <span className="font-medium">
+              {t('setting.dataSourceFieldLibraryToken')}
+            </span>
             {' ' + t('setting.seafileTokenPanelLibraryBullet')}
           </li>
         </ul>
@@ -96,7 +119,7 @@ export const seafileConstant = (t: TFunction) => [
     ),
   },
   {
-    label: 'Account API Token',
+    label: t('setting.dataSourceFieldAccountApiToken'),
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
@@ -107,7 +130,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: 'Library Token',
+    label: t('setting.dataSourceFieldLibraryToken'),
     name: 'config.credentials.repo_token',
     type: FormFieldType.Password,
     required: false,
@@ -130,7 +153,7 @@ export const seafileConstant = (t: TFunction) => [
     },
   },
   {
-    label: 'Library ID',
+    label: t('setting.dataSourceFieldLibraryId'),
     name: 'config.repo_id',
     type: FormFieldType.Text,
     required: false,
@@ -150,7 +173,7 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: 'Directory Path',
+    label: t('setting.dataSourceFieldDirectoryPath'),
     name: 'config.sync_path',
     type: FormFieldType.Text,
     required: false,
@@ -168,7 +191,7 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: 'Batch Size',
+    label: t('setting.dataSourceFieldBatchSize'),
     name: 'config.batch_size',
     type: FormFieldType.Number,
     required: false,
@@ -177,35 +200,35 @@ export const seafileConstant = (t: TFunction) => [
   },
 
   {
-    label: 'Account API Token',
+    label: t('setting.dataSourceFieldAccountApiToken'),
     name: 'config.credentials.seafile_token',
     type: FormFieldType.Password,
     required: false,
     hidden: true,
   },
   {
-    label: 'Library Token',
+    label: t('setting.dataSourceFieldLibraryToken'),
     name: 'config.credentials.repo_token',
     type: FormFieldType.Password,
     required: false,
     hidden: true,
   },
   {
-    label: 'Library ID',
+    label: t('setting.dataSourceFieldLibraryId'),
     name: 'config.repo_id',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: 'Directory Path',
+    label: t('setting.dataSourceFieldDirectoryPath'),
     name: 'config.sync_path',
     type: FormFieldType.Text,
     required: false,
     hidden: true,
   },
   {
-    label: 'Include Shared Libraries',
+    label: t('setting.dataSourceFieldIncludeSharedLibraries'),
     name: 'config.include_shared',
     type: FormFieldType.Checkbox,
     required: false,

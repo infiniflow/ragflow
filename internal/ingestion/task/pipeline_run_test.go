@@ -17,7 +17,6 @@
 package task
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -30,16 +29,17 @@ import (
 func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
+	ctx := t.Context()
 
 	dslMap := entity.JSONMap{"dsl": map[string]any{"graph": map[string]any{"nodes": []any{}, "edges": []any{}}}}
 	title := "title 1"
-	if err := dao.NewUserCanvasDAO().Create(&entity.UserCanvas{Title: &title, ID: "canvas-1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", DSL: dslMap}); err != nil {
+	if err := dao.NewUserCanvasDAO().Create(ctx, dao.DB, &entity.UserCanvas{Title: &title, ID: "canvas-1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", DSL: dslMap}); err != nil {
 		t.Fatalf("create user canvas: %v", err)
 	}
 
-	ctx := makeTaskCtx()
-	svc := mustNewPipelineExecutor(t, ctx, "canvas-1", 0)
-	gotDSL, correctedID, err := svc.loadDSLFunc(context.Background(), "canvas-1")
+	taskCtx := makeTaskCtx()
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
+	gotDSL, correctedID, err := svc.loadDSLFunc(ctx, "canvas-1")
 	if err != nil {
 		t.Fatalf("loadDSLFunc: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
 	}
 	var decoded map[string]any
-	if err := json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
+	if err = json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
 		t.Fatalf("unmarshal dsl: %v", err)
 	}
 	if _, ok := decoded["dsl"].(map[string]any); !ok {

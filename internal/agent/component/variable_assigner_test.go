@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -28,7 +27,7 @@ import (
 func TestVariableAssigner_Append(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -41,7 +40,7 @@ func TestVariableAssigner_Append(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -62,7 +61,7 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"x": "old"}
 	state.Outputs["cpn_1"] = map[string]any{"y": "fresh"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -75,11 +74,61 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["x"], "fresh"; got != want {
 		t.Errorf("state.Outputs[cpn_0][x]: got %v, want %v", got, want)
+	}
+}
+
+// TestVariableAssigner_SetBoolean: boolean spellings are normalized
+// case-insensitively, while native booleans are passed through unchanged.
+func TestVariableAssigner_SetBoolean(t *testing.T) {
+	tests := []struct {
+		name      string
+		parameter any
+		want      bool
+	}{
+		{name: "native true", parameter: true, want: true},
+		{name: "native false", parameter: false, want: false},
+		{name: "legacy yes", parameter: "yes", want: true},
+		{name: "legacy no", parameter: "no", want: false},
+		{name: "uppercase yes", parameter: "YES", want: true},
+		{name: "mixed-case no", parameter: "No", want: false},
+		{name: "true spelling", parameter: "true", want: true},
+		{name: "uppercase false spelling", parameter: "FALSE", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := canvas.NewCanvasState("run-set-boolean", "task-set-boolean")
+			state.Outputs["cpn_0"] = map[string]any{"flag": false}
+			ctx := canvas.WithState(t.Context(), state)
+
+			vars := []map[string]any{
+				{
+					"variable":  "cpn_0@flag",
+					"operator":  "set",
+					"parameter": tt.parameter,
+				},
+			}
+			c, err := NewVariableAssignerComponent(map[string]any{"variables": vars})
+			if err != nil {
+				t.Fatalf("NewVariableAssignerComponent: %v", err)
+			}
+			if _, err = c.Invoke(ctx, nil, nil); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+
+			got, ok := state.Outputs["cpn_0"]["flag"].(bool)
+			if !ok {
+				t.Fatalf("flag has type %T, want bool", state.Outputs["cpn_0"]["flag"])
+			}
+			if got != tt.want {
+				t.Errorf("flag: got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -88,7 +137,7 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 func TestVariableAssigner_DivideByZero(t *testing.T) {
 	state := canvas.NewCanvasState("run-3", "task-3")
 	state.Outputs["cpn_0"] = map[string]any{"n": 6.0}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{
@@ -101,7 +150,7 @@ func TestVariableAssigner_DivideByZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -133,7 +182,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 		"c": map[string]any{"k": "v"},
 		"d": 42,
 	}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@a", "operator": "clear", "parameter": "x"},
@@ -145,7 +194,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got := state.Outputs["cpn_0"]["a"]; reflect.DeepEqual(got, []any{1, 2}) {
@@ -166,7 +215,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 func TestVariableAssigner_Arithmetic(t *testing.T) {
 	state := canvas.NewCanvasState("run-5", "task-5")
 	state.Outputs["cpn_0"] = map[string]any{"n": 10.0}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@n", "operator": "+=", "parameter": 5},
@@ -178,7 +227,7 @@ func TestVariableAssigner_Arithmetic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	// 10 + 5 = 15, 15 - 3 = 12, 12 * 2 = 24, 24 / 4 = 6
@@ -191,13 +240,13 @@ func TestVariableAssigner_Arithmetic(t *testing.T) {
 func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 	state := canvas.NewCanvasState("run-6", "task-6")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"a", "b", "c", "d"}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "cpn_0@xs", "operator": "remove_first", "parameter": "x"},
 	}
 	c, _ := NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["xs"], []any{"b", "c", "d"}; !reflect.DeepEqual(got, want) {
@@ -208,7 +257,7 @@ func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 		{"variable": "cpn_0@xs", "operator": "remove_last", "parameter": "x"},
 	}
 	c, _ = NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["xs"], []any{"b", "c"}; !reflect.DeepEqual(got, want) {
@@ -219,13 +268,13 @@ func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 // TestVariableAssigner_SysTarget: variable="sys.x" → state.Sys is written.
 func TestVariableAssigner_SysTarget(t *testing.T) {
 	state := canvas.NewCanvasState("run-7", "task-7")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	vars := []map[string]any{
 		{"variable": "sys.x", "operator": "set", "parameter": "hello"},
 	}
 	c, _ := NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Sys["x"], "hello"; got != want {

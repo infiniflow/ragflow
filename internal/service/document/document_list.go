@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -21,36 +22,55 @@ func escapeSQLLikePattern(s string) string {
 }
 
 // ListDocuments list documents
-func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse, int64, error) {
+func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.List(offset, pageSize)
+	documents, total, err := s.documentDAO.List(ctx, dao.DB, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	docIDs := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		if doc != nil && doc.ID != "" {
+			docIDs = append(docIDs, doc.ID)
+		}
+	}
+	var taskMap map[string]*entity.IngestionTask
+	if s.ingestionTaskDAO != nil && len(docIDs) > 0 {
+		var err error
+		taskMap, err = s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, docIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get ingestion tasks for documents: %w", err)
+		}
+	}
+
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(doc)
+		var task *entity.IngestionTask
+		if taskMap != nil && doc != nil {
+			task = taskMap[doc.ID]
+		}
+		responses[i] = s.toResponseWithTask(doc, task)
 	}
 
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[string]string, error) {
+func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
 	if len(docIDs) == 0 {
 		return map[string]string{}, nil
 	}
 
 	tenantIDs := []string{userID}
 	if userID != "" {
-		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
 		}
 		tenantIDs = append(tenantIDs, ids...)
 	}
 
-	documents, err := s.documentDAO.GetByIDsAndTenantIDs(docIDs, tenantIDs)
+	documents, err := s.documentDAO.GetByIDsAndTenantIDs(ctx, dao.DB, docIDs, tenantIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}
@@ -81,8 +101,8 @@ func (s *DocumentService) GetThumbnails(userID string, docIDs []string) (map[str
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
-	return s.ListDocumentsByDatasetIDWithOptions(dao.DocumentListOptions{
+func (s *DocumentService) ListDocumentsByDatasetID(ctx context.Context, kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+	return s.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
 		KbID:     kbID,
 		Keywords: keywords,
 		OrderBy:  "create_time",
@@ -91,13 +111,13 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID, keywords string, page, 
 }
 
 // ListDocumentsByDatasetIDWithOptions lists documents by knowledge base ID with filters.
-func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
+func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	opts.Offset = (page - 1) * pageSize
 	opts.Limit = pageSize
 	if opts.OrderBy == "" {
 		opts.OrderBy = "create_time"
 	}
-	documents, total, err := s.documentDAO.ListByKBIDWithOptions(opts)
+	documents, total, err := s.documentDAO.ListByKBIDWithOptions(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -111,16 +131,16 @@ func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(opts dao.DocumentL
 }
 
 // GetDocumentFiltersByDatasetID returns aggregate filter values for documents in a dataset.
-func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
-	filters, total, err := s.documentDAO.GetFilterByKBID(opts)
+func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error) {
+	filters, total, err := s.documentDAO.GetFilterByKBID(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
-	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(opts)
+	docIDs, err := s.documentDAO.ListIDsByKBIDWithOptions(ctx, dao.DB, opts)
 	if err != nil {
 		return nil, 0, err
 	}
-	metadataFilter, err := s.getDocumentMetadataFilter(opts.KbID, docIDs)
+	metadataFilter, err := s.getDocumentMetadataFilter(ctx, opts.KbID, docIDs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -128,8 +148,8 @@ func (s *DocumentService) GetDocumentFiltersByDatasetID(opts dao.DocumentListOpt
 	return filters, total, nil
 }
 
-func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string) (map[string]interface{}, error) {
-	metadataByKey, err := s.GetMetadataByKBs([]string{kbID})
+func (s *DocumentService) getDocumentMetadataFilter(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
+	metadataByKey, err := s.GetMetadataByKBs(ctx, []string{kbID})
 	if err != nil {
 		return nil, err
 	}
@@ -164,28 +184,61 @@ func (s *DocumentService) getDocumentMetadataFilter(kbID string, docIDs []string
 }
 
 // ListDocumentIDsByDatasetIDWithOptions lists matching document IDs without pagination.
-func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(opts dao.DocumentListOptions) ([]string, error) {
-	return s.documentDAO.ListIDsByKBIDWithOptions(opts)
+func (s *DocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error) {
+	return s.documentDAO.ListIDsByKBIDWithOptions(ctx, dao.DB, opts)
 }
 
 // GetDocumentsByAuthorID get documents by author ID
-func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*DocumentResponse, int64, error) {
+func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
-	documents, total, err := s.documentDAO.GetByAuthorID(fmt.Sprintf("%d", authorID), offset, pageSize)
+	documents, total, err := s.documentDAO.GetByAuthorID(ctx, dao.DB, fmt.Sprintf("%d", authorID), offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	docIDs := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		if doc != nil && doc.ID != "" {
+			docIDs = append(docIDs, doc.ID)
+		}
+	}
+	var taskMap map[string]*entity.IngestionTask
+	if s.ingestionTaskDAO != nil && len(docIDs) > 0 {
+		var err error
+		taskMap, err = s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, docIDs)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get ingestion tasks for documents: %w", err)
+		}
+	}
+
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(doc)
+		var task *entity.IngestionTask
+		if taskMap != nil && doc != nil {
+			task = taskMap[doc.ID]
+		}
+		responses[i] = s.toResponseWithTask(doc, task)
 	}
 
 	return responses, total, nil
 }
 
 // toResponse convert model.Document to DocumentResponse
-func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
+func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) (*DocumentResponse, error) {
+	if s.ingestionTaskDAO == nil || doc == nil || doc.ID == "" {
+		return s.toResponseWithTask(doc, nil), nil
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
+	}
+	return s.toResponseWithTask(doc, task), nil
+}
+
+func (s *DocumentService) toResponseWithTask(doc *entity.Document, task *entity.IngestionTask) *DocumentResponse {
+	if doc == nil {
+		return nil
+	}
 	createdAt := ""
 	if doc.CreateTime != nil {
 		// Check if timestamp is in milliseconds (13 digits) or seconds (10 digits)
@@ -207,6 +260,10 @@ func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 		}
 		updatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 	}
+	ingestionStatus := "UNSTART"
+	if task != nil && task.Status != "" {
+		ingestionStatus = task.Status
+	}
 	return &DocumentResponse{
 		ID:              doc.ID,
 		Name:            doc.Name,
@@ -222,9 +279,10 @@ func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 		ChunkNum:        doc.ChunkNum,
 		Progress:        doc.Progress,
 		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
 		ProcessDuration: doc.ProcessDuration,
 		Suffix:          doc.Suffix,
-		Run:             doc.Run,
+		IngestionStatus: ingestionStatus,
 		Status:          doc.Status,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,

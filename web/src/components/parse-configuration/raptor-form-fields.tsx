@@ -1,15 +1,30 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FormLayout } from '@/constants/form';
-import { DocumentParserType } from '@/constants/knowledge';
+import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
-import {
-  GenerateLogButton,
-  IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate-log-button';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import {
+  GenerateLogButton,
+  IGenerateLogButtonProps,
+} from '../generate-log-button';
 import { SliderInputFormField } from '../slider-input-form-field';
 import {
   FormControl,
@@ -51,7 +66,6 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const UseRaptorField = 'parser_config.raptor.use_raptor';
 const RandomSeedField = 'parser_config.raptor.random_seed';
 const ClusteringMethodField = 'parser_config.raptor.clustering_method';
-const ClusteringMethodExtField = 'parser_config.raptor.ext.clustering_method';
 const TreeBuilderField = 'parser_config.raptor.tree_builder';
 const MaxClusterMax = 1024;
 
@@ -68,15 +82,12 @@ const RaptorFormFields = ({
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
   const clusteringMethod = useWatch({ name: ClusteringMethodField });
-  const extClusteringMethod = useWatch({ name: ClusteringMethodExtField });
   const selectedClusteringMethod = useMemo(
     () =>
-      (clusteringMethod ??
-        extClusteringMethod ??
-        form.getValues(ClusteringMethodField) ??
-        form.getValues(ClusteringMethodExtField) ??
-        'gmm') as 'gmm' | 'ahc',
-    [clusteringMethod, extClusteringMethod, form],
+      (clusteringMethod ?? form.getValues(ClusteringMethodField) ?? 'gmm') as
+        | 'gmm'
+        | 'ahc',
+    [clusteringMethod, form],
   );
 
   const handleGenerate = useCallback(() => {
@@ -98,10 +109,10 @@ const RaptorFormFields = ({
   );
 
   useEffect(() => {
-    if (!clusteringMethod && !extClusteringMethod) {
+    if (!clusteringMethod) {
       handleClusteringMethodChange('gmm');
     }
-  }, [clusteringMethod, extClusteringMethod, handleClusteringMethodChange]);
+  }, [clusteringMethod, handleClusteringMethodChange]);
 
   return (
     <>

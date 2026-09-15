@@ -9,8 +9,8 @@ import (
 
 func TestPDFParser_ParseWithResult_NoCGO(t *testing.T) {
 	pdf := NewPDFParser()
-
-	empty := pdf.ParseWithResult("empty.pdf", nil)
+	ctx := t.Context()
+	empty := pdf.ParseWithResult(ctx, "empty.pdf", nil)
 	if empty.Err != nil {
 		t.Fatalf("empty input: want nil err, got %v", empty.Err)
 	}
@@ -21,7 +21,7 @@ func TestPDFParser_ParseWithResult_NoCGO(t *testing.T) {
 		t.Fatalf("empty input JSON len = %d, want 1", len(empty.JSON))
 	}
 
-	res := pdf.ParseWithResult("a.pdf", []byte("%PDF-1.4"))
+	res := pdf.ParseWithResult(ctx, "a.pdf", []byte("%PDF-1.4"))
 	if res.Err == nil {
 		t.Fatal("want ErrPDFEngineUnavailable, got nil")
 	}

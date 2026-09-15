@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"ragflow/internal/tokenizer"
@@ -129,7 +130,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		tcChoice := "auto"
 		cfg.ToolChoice = &tcChoice
 
-		resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
+		resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
 		if err != nil {
 			return "", totalTokens, fmt.Errorf("round %d: %w", round, err)
 		}
@@ -154,7 +155,23 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 			return answer, totalTokens, nil
 		}
 
-		history = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession)
+		// Execute the round's tool calls and fold their results into history.
+		// If one of them is a terminal tool and succeeded, its result is already
+		// the final answer — return it directly instead of re-invoking the model
+		// (Python chat_model.py:619-627). Non-streaming matches Python's
+		// all-empty fallthrough: no qualifying terminal result and the loop
+		// runs another round (chat_model.py:692-704).
+		var hit bool
+		var toolAnswer string
+		history, toolAnswer, hit = appendToolResults(history, resp.ToolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), false)
+		if hit {
+			// This round's usage was already folded in by addRoundUsage above
+			// (it accumulates into aggUsage and forwards a per-round delta to the
+			// run-usage sink, which ADDS): calling it again here would count the
+			// round twice in both totalTokens and the recorded run usage.
+			return toolAnswer, totalTokens, nil
+		}
+		// history now carries this round's tool results; continue to the next round.
 	}
 
 	// Exceeded max rounds
@@ -163,7 +180,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
 	})
 	cfg := *chatCfg
-	resp, err := cm.ModelDriver.ChatWithMessages(*cm.ModelName, history, cm.APIConfig, &cfg, nil)
+	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
 	}
@@ -176,6 +193,14 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens += tokenizer.NumTokensFromString(*resp.Answer)
 	}
 	return *resp.Answer, totalTokens, nil
+}
+
+// terminalSet returns the configured terminal-tool name set, or nil when none.
+func terminalSet(cm *ChatModel) map[string]struct{} {
+	if cm.ToolConfig == nil {
+		return nil
+	}
+	return cm.ToolConfig.TerminalTools
 }
 
 // ChatStreamlyWithTools runs the streaming tool-calling loop.
@@ -278,7 +303,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		var pendingThinkClose bool
 		var roundTokens int
 
-		err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
+		err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 			if reason != nil && *reason != "" {
 				if !reasoningStarted {
 					reasoningStarted = true
@@ -338,7 +363,24 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			return totalTokens, fmt.Errorf("round %d: no content and no tool_calls", round)
 		}
 
-		history = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession)
+		// A terminal tool's successful result is already the final answer:
+		// stream it to the caller and stop instead of asking the model again
+		// (Python chat_model.py:2574-2582). sendTerminal streams the result.
+		// Streaming passes emptyTerminalIsHit=true: a Go streaming tool returns
+		// "" to say "already delivered through the sink", and the loop must
+		// stop even when the folded content is empty — unlike Python, whose rag
+		// tool returns the full text and whose all-empty fallthrough would only
+		// buy an extra model round whose output the mux drops.
+		var termAnswer string
+		var termHit bool
+		history, termAnswer, termHit = appendToolResults(history, toolCalls, cm.ToolConfig.ToolCallSession, terminalSet(cm), true)
+		if termHit {
+			if err := sendTerminal(sender, &termAnswer); err != nil {
+				return totalTokens, err
+			}
+			return totalTokens, nil
+		}
+		// history now carries this round's tool results; continue to the next round.
 	}
 
 	// Exceeded max rounds
@@ -351,7 +393,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
-	err := cm.ModelDriver.ChatStreamlyWithSender(*cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
+	err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
 		if delta != nil && *delta != "" && *delta != "[DONE]" {
 			exceedTokens += tokenizer.NumTokensFromString(*delta)
 		}
@@ -363,7 +405,26 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 
 // appendToolResults executes tool calls concurrently, appends the assistant
 // message with tool_calls and individual tool result messages to history.
-func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession) []Message {
+//
+// When terminal is non-empty, a successful call to one of those tools
+// short-circuits: the loop returns (history, that result, true) so the caller
+// treats it as the final answer instead of re-invoking the model (mirrors
+// Python chat_model.py:619-627 / :2574-2582). An EMPTY terminal result does
+// not win on its own: Python's fold only returns on a non-empty string
+// (`if out:`, chat_model.py:696), so an empty result is skipped in favour of
+// a later non-empty sibling. When NO terminal result is non-empty,
+// emptyTerminalIsHit decides:
+//   - false (non-streaming, Python :692-704 fallthrough): no hit — the tool
+//     responses are in history and the loop runs another model round, which
+//     then answers from them or re-calls the tool;
+//   - true (streaming): hit with the first successful call's (empty) content.
+//     The Go streaming tool returns "" to say "already delivered through the
+//     sink", and the loop must stop (sendTerminal stays silent) instead of
+//     paying another model round whose output the mux would only drop.
+//
+// When terminal is empty or no terminal tool fired, it returns
+// (history, "", false) either way.
+func appendToolResults(history []Message, toolCalls []map[string]interface{}, session ToolCallSession, terminal map[string]struct{}, emptyTerminalIsHit bool) ([]Message, string, bool) {
 	if session == nil {
 		history = append(history, Message{
 			Role:      "assistant",
@@ -378,13 +439,15 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 				ToolCallID: tcID,
 			})
 		}
-		return history
+		return history, "", false
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	type toolResult struct {
 		index   int
 		tcID    string
+		name    string
+		err     error
 		content string
 	}
 	results := make([]toolResult, len(toolCalls))
@@ -405,6 +468,7 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 			name, _ := fn["name"].(string)
 			argsStr, _ := fn["arguments"].(string)
 			result.tcID, _ = tcMap["id"].(string)
+			result.name = name
 
 			var args map[string]interface{}
 			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
@@ -413,6 +477,7 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 
 			res, err := session.ToolCall(name, args)
 			if err != nil {
+				result.err = err
 				result.content = fmt.Sprintf("Error: %s", err.Error())
 			} else {
 				result.content = res
@@ -430,6 +495,13 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 		ToolCalls: toolCalls,
 	})
 
+	// Every tool_call the assistant declared gets its matching tool message,
+	// well-formed history whichever path the caller takes. Then two passes over
+	// the (tiny) results slice pick the fold: the FIRST non-empty successful
+	// terminal result wins (Python chat_model.py:696 `if out:` — an empty
+	// terminal result never ships while a non-empty sibling exists, trimmed
+	// whitespace counts as empty), then the empty fallthrough per
+	// emptyTerminalIsHit (see the doc comment above).
 	for _, r := range results {
 		history = append(history, Message{
 			Role:       "tool",
@@ -437,10 +509,48 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 			ToolCallID: r.tcID,
 		})
 	}
+	var terminalAnswer string
+	var terminalHit bool
+	for _, r := range results {
+		if r.err == nil && r.name != "" && strings.TrimSpace(r.content) != "" {
+			if _, ok := terminal[r.name]; ok {
+				terminalAnswer, terminalHit = r.content, true
+				break
+			}
+		}
+	}
+	if !terminalHit && emptyTerminalIsHit {
+		for _, r := range results {
+			if r.err == nil && r.name != "" {
+				if _, ok := terminal[r.name]; ok {
+					terminalAnswer, terminalHit = r.content, true
+					break
+				}
+			}
+		}
+	}
 
-	return history
+	// A terminal tool short-circuits on success regardless of what it returned.
+	// Tools that stream their own answer through the caller's sender return an
+	// empty string to say "nothing more to emit", and sendTerminal's empty guard
+	// then keeps the loop from re-streaming it (mirrors Python, where the
+	// terminal result is ignored once the inner answer_sink has streamed).
+	if terminalHit {
+		return history, terminalAnswer, true
+	}
+	return history, "", false
 }
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// sendTerminal streams a terminal tool's already-final answer to the sender as
+// plain text deltas (no reasoning), mirroring how Python yields the terminal
+// result and stops.
+func sendTerminal(sender func(*string, *string) error, answer *string) error {
+	if answer == nil || *answer == "" {
+		return nil
+	}
+	return sender(answer, nil)
 }
