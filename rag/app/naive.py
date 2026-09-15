@@ -44,6 +44,7 @@ from api.db.joint_services.tenant_model_service import (
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
+from rag.app.pdf_naive_vision import enhance_naive_deepdoc_pdf_media
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
@@ -166,11 +167,27 @@ def _merge_excel_items(items, chunk_token_num=128):
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
+    blob = binary
+    if blob is None and filename:
+        with open(filename, "rb") as pdf_file:
+            blob = pdf_file.read()
+
     sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
     tables = vision_figure_parser_pdf_wrapper(
         tbls=tables,
         sections=sections,
+        callback=callback,
+        lang=lang,
+        **kwargs,
+    )
+    sections, tables = enhance_naive_deepdoc_pdf_media(
+        sections,
+        tables,
+        blob,
+        pdf_parser,
+        from_page=from_page,
+        to_page=to_page,
         callback=callback,
         lang=lang,
         **kwargs,
