@@ -124,6 +124,8 @@ func isKnownPrimitive(name string) bool {
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
 		return true
+	case "generalchunker":
+		return true
 	}
 	return false
 }

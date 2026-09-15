@@ -56,6 +56,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
@@ -1143,6 +1144,14 @@ func startServer(ctx context.Context) {
 			// and Python has no evidence-token override (the compose always
 			// uses min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS=8000),
 			// which EvidenceMaxTokens<=0 reproduces).
+		}
+		for _, message := range req.Messages {
+			content, err := service.NormalizeOpenAIMessageContent(message["content"])
+			if err != nil {
+				return service.HarnessResult{}, err
+			}
+			role, _ := message["role"].(string)
+			deps.Messages = append(deps.Messages, schema.Message{Role: schema.RoleType(role), Content: content})
 		}
 		// Diagnose WHY compiled expansion is disabled: NewCompiledExpander
 		// returns nil for three reasons (store==nil / no datasets / no tenant)

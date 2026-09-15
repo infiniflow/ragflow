@@ -63,13 +63,14 @@ type ChatListItem struct {
 	TenantAvatar *string `gorm:"column:tenant_avatar" json:"tenant_avatar,omitempty"`
 }
 
-// ChatSession chat session model
+// ChatSession chat session model. Message and Reference are hydrated from
+// their ordered child tables.
 type ChatSession struct {
 	ID        string          `gorm:"column:id;primaryKey;size:32" json:"id"`
 	DialogID  string          `gorm:"column:dialog_id;size:32;not null;index" json:"dialog_id"`
 	Name      *string         `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Message   json.RawMessage `gorm:"column:message;type:longtext" json:"message,omitempty"`
-	Reference json.RawMessage `gorm:"column:reference;type:longtext" json:"reference"`
+	Message   json.RawMessage `gorm:"-" json:"message,omitempty"`
+	Reference json.RawMessage `gorm:"-" json:"reference"`
 	UserID    *string         `gorm:"column:user_id;size:255;index" json:"user_id,omitempty"`
 	BaseModel
 }

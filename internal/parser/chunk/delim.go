@@ -38,6 +38,42 @@ func HasWrappedDelimiter(s string) bool {
 	return backtickWrappedRE.MatchString(s)
 }
 
+// ParseDelimiterField converts the legacy Python delimiter string into the
+// canonical delimiter list used by the Go pipeline. Characters outside
+// backticks are individual Unicode delimiters; a backtick-wrapped token stays
+// as one list entry so multi-character delimiters remain lossless.
+func ParseDelimiterField(value string) []string {
+	if value == "" {
+		return []string{}
+	}
+	var delimiters []string
+	var wrapped strings.Builder
+	inWrapped := false
+	for _, r := range value {
+		if r == '`' {
+			if inWrapped {
+				wrapped.WriteRune(r)
+				delimiters = append(delimiters, wrapped.String())
+				wrapped.Reset()
+				inWrapped = false
+			} else {
+				inWrapped = true
+				wrapped.WriteRune(r)
+			}
+			continue
+		}
+		if inWrapped {
+			wrapped.WriteRune(r)
+			continue
+		}
+		delimiters = append(delimiters, string(r))
+	}
+	if wrapped.Len() > 0 {
+		delimiters = append(delimiters, wrapped.String())
+	}
+	return delimiters
+}
+
 // CompileDelimiterPattern builds an alternation regex from delimiter strings.
 //
 // Each delimiter is regexp.QuoteMeta'd so whitespace and metacharacters match
@@ -79,8 +115,8 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 //     bare ones.
 //
 // Returns nil when no active entry remains. This helper exists for the
-// dataflow list API. The single-string parser_config.delimiter field is not
-// parsed in Go; only the []string list API is consumed.
+// dataflow list API. Call ParseDelimiterField before it when consuming the
+// legacy single-string parser_config field.
 func CompileDelimiterPatternList(delims []string, keepBare bool) *regexp.Regexp {
 	var out []string
 	seen := make(map[string]struct{})

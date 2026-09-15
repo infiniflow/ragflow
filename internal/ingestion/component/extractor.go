@@ -715,6 +715,9 @@ func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in
 // them on ck["important_kwd"]. Keyword extraction pins
 // temperature to extractorTemperature (0.2) to mirror generator.py.
 func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["important_kwd"]; exists {
 		return nil
 	}
@@ -757,6 +760,9 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 // runAutoQuestions extracts questions for the current chunk and stores
 // them on ck["question_kwd"]. See runAutoKeywords for the temperature pin.
 func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["question_kwd"]; exists {
 		return nil
 	}
@@ -807,6 +813,9 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 // runAutoSummary extracts a concise summary for the current chunk using autoSummaryPrompt
 // and stores it on ck["summary"].
 func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["summary"]; exists {
 		return nil
 	}
@@ -845,6 +854,9 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 	for i, ck := range in.chunks {
 		i, ck := i, ck
 		text := extractorChunkText(ck)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
 		fn := func() error {
 			if err := c.runAutoKeywords(ctx, db, in, ck, text); err != nil {
 				return fmt.Errorf("chunk %d keywords: %w", i, err)
@@ -870,6 +882,9 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 	for i, ck := range in.chunks {
 		i, ck := i, ck
 		text := extractorChunkText(ck)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
 		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text)
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
@@ -936,6 +951,9 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 // runAutoKeywords/runAutoQuestions shape but parses a JSON object and
 // merges into the chunk's metadata map.
 func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
 		return nil
 	}
@@ -1006,10 +1024,24 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 }
 
 // extractorChunkText resolves the body an extraction is run against.
-// Pre-index components must carry canonical string "text" only.
+//
+// Canonical text wins. Media-only chunks may use their explicit surrounding
+// context; chunks with neither body nor context are skipped by the extraction
+// schedulers.
 func extractorChunkText(ck map[string]any) string {
-	v, _ := ck["text"].(string)
-	return v
+	if v, _ := ck["text"].(string); strings.TrimSpace(v) != "" {
+		return v
+	}
+	var contextParts []string
+	for _, key := range []string{"context_above", "context_below"} {
+		if v, _ := ck[key].(string); strings.TrimSpace(v) != "" {
+			contextParts = append(contextParts, strings.TrimSpace(v))
+		}
+	}
+	if len(contextParts) > 0 {
+		return strings.Join(contextParts, " ")
+	}
+	return ""
 }
 
 // chunkCacheID returns the chunk's stable per-chunk id, assigned by the chunker
@@ -1063,6 +1095,9 @@ func setMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, s
 //   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
 //     returns a map — the metadata path, matching Python gen_metadata.
 func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil, fmt.Errorf("extractor: chunk text is empty")
+	}
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err
@@ -1548,8 +1583,9 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 }
 
 // buildExtractorMessages assembles system + user messages for one extraction
-// call. The user message strictly carries chunkText (or a fallback single space
-// if empty), ensuring a clean and consistent message contract.
+// call. Normal per-chunk schedulers reject empty chunk text before reaching
+// this low-level builder; the single-space fallback remains for direct
+// callRaw callers that rely on the historical message shape.
 // System prompt is omitted if empty or whitespace-only to avoid sending empty
 // system turns to LLM providers.
 func buildExtractorMessages(systemPrompt, chunkText string) []eschema.Message {

@@ -122,9 +122,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.Chat{},
 		&entity.ChatChannel{},
 		&entity.ChatSession{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
 		&entity.Task{},
 		&entity.APIToken{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 		&entity.Knowledgebase{},
 		&entity.InvitationCode{},
 		&entity.Document{},
@@ -191,6 +195,15 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		// only converges the tables it needs itself.
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
+		}
+	}
+	// Conversation lists filter by dialog and usually order by update time.
+	for _, table := range []string{"conversation", "api_4_conversation"} {
+		indexName := "idx_" + table + "_dialog_updated"
+		if !DB.WithContext(ctx).Migrator().HasIndex(table, indexName) {
+			if err = DB.WithContext(ctx).Exec("CREATE INDEX " + indexName + " ON " + table + " (dialog_id, update_time, id)").Error; err != nil {
+				common.Warn("Failed to create conversation list index", zap.String("table", table), zap.Error(err))
+			}
 		}
 	}
 	// ingestion_task.pipeline_log_id cannot be added by AutoMigrate (see the
@@ -317,6 +330,10 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
 		&entity.MemoryTask{},
+		&entity.ConversationMessage{},
+		&entity.ConversationReference{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
