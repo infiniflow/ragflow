@@ -28,12 +28,17 @@ export const TagFeatureItem = () => {
   const isGoBackend = useIsGoBackend();
   const form = useFormContext();
   const tagKnowledgeIds = useMemo(() => {
-    const configuredIds = knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
+    const configuredIds =
+      knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
     // The Go ingestion pipeline keeps the tag vocabulary on the dataset's own
     // chunks and never writes tag-set references into parser_config.tag_kb_ids,
     // so fall back to aggregating the current dataset's tags through the Go
     // aggregation endpoint (GET /datasets/tags/aggregation).
-    if (isGoBackend && configuredIds.length === 0 && knowledgeConfiguration?.id) {
+    if (
+      isGoBackend &&
+      configuredIds.length === 0 &&
+      knowledgeConfiguration?.id
+    ) {
       return [knowledgeConfiguration.id];
     }
     return configuredIds;
