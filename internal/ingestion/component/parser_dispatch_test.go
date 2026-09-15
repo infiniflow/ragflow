@@ -1123,6 +1123,146 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 	requireJSONText(t, out, "Cloud Paddle Title")
 }
 
+// TestDispatch_PDFMinerU_BareModelUUID_InParseMethod pins the routing of a
+// bare tenant model UUID in parse_method — the value stored when a user picks
+// an OCR model for PDF parsing — to the MinerU dispatch path using that exact
+// model. The UUID carries no "@provider" hint, so it must be resolved before
+// the dispatch path is chosen instead of falling through to the image2text
+// VLM path.
+func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer mineru-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Cloud MinerU Title")
+}
+
+// TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer pins the same
+// bare-UUID routing when the model id lands in layout_recognizer while
+// parse_method stays a named method: the layout selector drives the probe and
+// the named parse method never reaches the MinerU API form.
+func TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "deepdoc"
+	setups["pdf"]["layout_recognizer"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Cloud MinerU Title")
+}
+
 func TestIsPaddleOCRDriver(t *testing.T) {
 	for _, tc := range []struct {
 		name string
