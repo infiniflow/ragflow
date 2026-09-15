@@ -396,6 +396,50 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 	return nil
 }
 
+func validateAutoMetadataConfig(config map[string]interface{}) error {
+	for _, key := range []string{"metadata", "built_in_metadata"} {
+		value, ok := config[key]
+		if !ok {
+			continue
+		}
+		fields, ok := value.([]interface{})
+		if !ok {
+			return errors.New("Input should be a valid list")
+		}
+		for _, raw := range fields {
+			field, ok := raw.(map[string]interface{})
+			if !ok {
+				return errors.New("Input should be a valid dictionary")
+			}
+			keyValue, ok := field["key"].(string)
+			if !ok || strings.TrimSpace(keyValue) == "" || len(keyValue) > 255 {
+				return errors.New("String should have at least 1 character")
+			}
+			typ, ok := field["type"].(string)
+			if !ok || (typ != "string" && typ != "list" && typ != "time" && typ != "number") {
+				return errors.New("Input should be valid metadata field type")
+			}
+			if desc, ok := field["description"]; ok && desc != nil {
+				if s, ok := desc.(string); !ok || len(s) > 65535 {
+					return errors.New("String should have at most 65535 characters")
+				}
+			}
+			if enum, ok := field["enum"]; ok && enum != nil {
+				items, ok := enum.([]interface{})
+				if !ok {
+					return errors.New("Input should be a valid list")
+				}
+				for _, item := range items {
+					if _, ok := item.(string); !ok {
+						return errors.New("Input should be a valid string")
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // NormalizeDatasetID validates the dataset ID format and returns its
 // dash-less UUID form. Exported so HTTP handlers can mirror the pydantic
 // UUID validation of the Python request models (error code 101).

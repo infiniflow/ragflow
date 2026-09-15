@@ -4,7 +4,59 @@ import (
 	"strings"
 
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
+
+// FlatParserConfigOverrides translates the legacy dataset-level fields into
+// the component-scoped keys consumed by the ingestion pipeline.
+func FlatParserConfigOverrides(dsl []byte, flat map[string]interface{}) map[string]interface{} {
+	defaults, err := pipelinepkg.ComponentParamsDefaults(dsl)
+	if err != nil {
+		return flat
+	}
+	out := make(map[string]interface{})
+	for id := range defaults {
+		lower := strings.ToLower(id)
+		cp := map[string]interface{}{}
+		if strings.Contains(lower, "tokenchunker") || strings.Contains(lower, "chunker") {
+			if v, ok := flat["chunk_token_num"]; ok {
+				cp["chunk_token_size"] = v
+			}
+			if v, ok := flat["delimiter"]; ok {
+				cp["delimiters"] = []interface{}{v}
+			}
+			if pc, ok := flat["parent_child"].(map[string]interface{}); ok && pc["use_parent_child"] == true {
+				if v, ok := pc["children_delimiter"]; ok {
+					cp["children_delimiters"] = []interface{}{v}
+				}
+			}
+			if v, ok := flat["children_delimiter"]; ok && v != "" {
+				cp["children_delimiters"] = []interface{}{v}
+			}
+		}
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			for src, dst := range map[string]string{"auto_keywords": "keywords", "auto_questions": "questions", "topn_tags": "tags"} {
+				if v, ok := flat[src]; ok {
+					cp[dst] = map[string]interface{}{"top_n": v}
+				}
+			}
+			if v, ok := flat["llm_id"]; ok {
+				cp["llm_id"] = v
+			}
+		}
+		if len(cp) > 0 {
+			out[id] = cp
+		}
+	}
+	// Preserve already component-scoped overrides, allowing pipeline callers to
+	// use the same helper without losing explicit component settings.
+	for k, v := range flat {
+		if strings.Contains(k, ":") {
+			out[k] = v
+		}
+	}
+	return out
+}
 
 // ApplyComponentScopedParserConfig scopes a dataset-level modular metadata
 // config (parserConfig["metadata"] = {enabled, metadata, built_in_metadata})
