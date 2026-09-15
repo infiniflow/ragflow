@@ -715,7 +715,7 @@ jobs:
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
@@ -731,7 +731,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env-go (not .env). Without syncing these two,
@@ -752,7 +752,7 @@ jobs:
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
+                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -799,7 +799,6 @@ jobs:
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
-                 -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
                # Patch entrypoint.sh for coverage
@@ -1393,7 +1392,7 @@ jobs:
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
@@ -1409,7 +1408,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env-go (not .env). Without syncing these two,
@@ -1430,7 +1429,7 @@ jobs:
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
+                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -1477,7 +1476,6 @@ jobs:
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
-                 -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
                # Patch entrypoint.sh for coverage
