@@ -199,7 +199,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				common.Warn("Failed to create conversation list index", zap.String("table", table), zap.Error(err))
 			}
 		}
-  }
+	}
 	// ingestion_task.pipeline_log_id cannot be added by AutoMigrate (see the
 	// helper for why), and every ingestion_task query selects all columns, so a
 	// missing column fails the whole API with Error 1054. Ensure it on both
