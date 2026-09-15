@@ -57,10 +57,8 @@ func NewTextParser() *TextParser {
 // non-empty JSON payload even for an empty input (mirrors the
 // MarkdownParser convention at markdown_parser.go:71-76).
 func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	if !utf8Valid(data) {
-		return ParseResult{Err: errInvalidUTF8}
-	}
-	items := textParserItems(data)
+	decoded, encName := DecodeToUTF8(data, "text/plain")
+	items := textParserItems(decoded)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -69,7 +67,7 @@ func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data 
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": encName,
 		},
 		JSON: items,
 	}
@@ -77,62 +75,6 @@ func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data 
 
 func (p *TextParser) String() string {
 	return "TextParser"
-}
-
-// errInvalidUTF8 is returned when the input bytes fail UTF-8
-// validation. Matches the python TxtParser's behaviour of
-// surfacing a clear error rather than emitting replacement bytes.
-var errInvalidUTF8 = errInvalidUTF8Sentinel("parser: text input is not valid UTF-8")
-
-type errInvalidUTF8Sentinel string
-
-func (e errInvalidUTF8Sentinel) Error() string { return string(e) }
-
-// utf8Valid is a tiny stdlib-free validator. We avoid
-// unicode/utf8.Valid to keep this file dependency-light; the
-// validation rule is the same (decode without rejecting bytes).
-func utf8Valid(data []byte) bool {
-	for i := 0; i < len(data); {
-		r, size := decodeRune(data[i:])
-		if r == 0xFFFD && size == 1 {
-			return false
-		}
-		i += size
-	}
-	return true
-}
-
-// decodeRune is a minimal UTF-8 decoder that mirrors
-// utf8.DecodeRune's signature: returns the rune and its byte
-// width. Returns (RuneError, 1) on invalid sequences, matching
-// the stdlib contract.
-func decodeRune(p []byte) (rune, int) {
-	if len(p) == 0 {
-		return 0xFFFD, 0
-	}
-	c := p[0]
-	switch {
-	case c < 0x80:
-		return rune(c), 1
-	case c < 0xC2:
-		return 0xFFFD, 1
-	case c < 0xE0:
-		if len(p) < 2 || p[1]&0xC0 != 0x80 {
-			return 0xFFFD, 1
-		}
-		return rune(c&0x1F)<<6 | rune(p[1]&0x3F), 2
-	case c < 0xF0:
-		if len(p) < 3 || p[1]&0xC0 != 0x80 || p[2]&0xC0 != 0x80 {
-			return 0xFFFD, 1
-		}
-		return rune(c&0x0F)<<12 | rune(p[1]&0x3F)<<6 | rune(p[2]&0x3F), 3
-	case c < 0xF5:
-		if len(p) < 4 || p[1]&0xC0 != 0x80 || p[2]&0xC0 != 0x80 || p[3]&0xC0 != 0x80 {
-			return 0xFFFD, 1
-		}
-		return rune(c&0x07)<<18 | rune(p[1]&0x3F)<<12 | rune(p[2]&0x3F)<<6 | rune(p[3]&0x3F), 4
-	}
-	return 0xFFFD, 1
 }
 
 // defaultTextDelimiterPattern is the regexp alternation of the flow parser's

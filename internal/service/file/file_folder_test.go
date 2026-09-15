@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -92,6 +93,22 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 	}
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
+	}
+}
+
+func TestFileService_AncestryRejectsUnauthorized(t *testing.T) {
+	setupFolderTestDB(t)
+	insertFolderTestFile(t, "file-1", "folder-1", "file.pdf")
+	svc := testFileService()
+	svc.checkFilePerm = func(context.Context, *dao.FileDAO, *entity.File, string) bool { return false }
+
+	for _, call := range []func() error{
+		func() error { _, err := svc.GetParentFolder(t.Context(), "user-2", "file-1"); return err },
+		func() error { _, err := svc.GetAllParentFolders(t.Context(), "user-2", "file-1"); return err },
+	} {
+		if err := call(); !errors.Is(err, ErrNoAuthorization) {
+			t.Fatalf("error = %v, want ErrNoAuthorization", err)
+		}
 	}
 }
 

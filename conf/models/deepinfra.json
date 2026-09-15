@@ -16,7 +16,7 @@
   "models": [
     {
       "name": "deepseek-ai/DeepSeek-V3.2",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"

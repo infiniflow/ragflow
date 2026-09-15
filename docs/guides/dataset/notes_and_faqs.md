@@ -107,6 +107,11 @@ The following screenshot shows retrieval testing using the knowledge graph. It s
 
 Yes. Your LLM participates in analyzing your query and extracting relevant entities and relationships from the knowledge graph. This also explains why extra tokens and time are consumed.
 
+#### Why does it take longer for RAGFlow to parse a document than LangChain?
+
+We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
+
+
 ## Best Practices: Index Acceleration
 
 A checklist for accelerating document parsing and indexing.

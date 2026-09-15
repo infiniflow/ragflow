@@ -79,6 +79,11 @@ _DIALOG = SimpleNamespace(
     llm_setting={"temperature": 0.1},
     prompt_config={"reasoning": 1},
     meta_data_filter=None,
+    similarity_threshold=0.2,
+    vector_similarity_weight=0.3,
+    top_n=6,
+    rerank_candidates_count=64,
+    top_k=1024,
 )
 
 _KB = SimpleNamespace(id="kb-1", tenant_id="tenant-1")
@@ -88,6 +93,7 @@ class _RecordingChatModel:
     """Records the message list rag_agent() hands to the provider."""
 
     def __init__(self):
+        self.is_tools = True
         self.model_config = {"model_type": "chat", "llm_factory": "OpenAI"}
         self.mdl = None
         self.sent_messages = None
@@ -121,6 +127,43 @@ def _drive_rag_agent(monkeypatch, messages):
     events = asyncio.run(_run())
     assert events, "rag_agent must yield an answer event"
     return chat_mdl
+
+
+@pytest.mark.p2
+def test_rag_agent_falls_back_to_retrieval_when_model_has_no_tools(monkeypatch):
+    """Reasoning must not bypass KB retrieval for models without tool support."""
+
+    class _NoToolsChatModel(_RecordingChatModel):
+        def __init__(self):
+            super().__init__()
+            self.is_tools = False
+
+    chat_mdl = _NoToolsChatModel()
+    fallback_calls = []
+
+    async def _fallback(_dialog, _messages, stream=True, **_kwargs):
+        fallback_calls.append((stream, _kwargs))
+        yield {"answer": "retrieved answer", "reference": {"chunks": [{"doc_id": "doc-1"}]}}
+
+    monkeypatch.setattr(dialog_service, "get_models", lambda _dialog, **_kw: ([_KB], None, None, chat_mdl, None))
+    monkeypatch.setattr(dialog_service, "async_chat", _fallback)
+
+    async def _run():
+        return [
+            event
+            async for event in dialog_service.rag_agent(
+                _DIALOG,
+                [{"role": "user", "content": "What is RAGFlow?"}],
+                False,
+                reasoning="2",
+                doc_ids=["doc-1"],
+            )
+        ]
+
+    events = asyncio.run(_run())
+
+    assert fallback_calls == [(False, {"reasoning": "2", "doc_ids": "doc-1"})]
+    assert events[0]["answer"] == "retrieved answer"
 
 
 @pytest.mark.p2
@@ -179,16 +222,69 @@ def test_rag_agent_preserves_multimodal_content_parts(monkeypatch):
 
 
 @pytest.mark.p2
-def test_render_reasoning_system_prompt_substitutes_date_and_knowledge():
-    """The reasoning path should honor the dialog system prompt like async_chat does."""
+def test_render_reasoning_system_prompt_substitutes_date_and_knowledge(monkeypatch):
+    """The reasoning path should honor the dialog system prompt like async_chat does.
+
+    {knowledge} is trusted-template content only: mutable runtime data (bound
+    dataset names) must NOT be injected into the reasoning system prompt
+    through it. When the caller does not supply a value it renders empty —
+    the bound dataset names are exposed through the agentic graph's untrusted
+    evidence block instead (see rag/advanced_rag/agentic_rag_graph.py).
+    """
     dialog = SimpleNamespace(kb_ids=["kb-1"])
     prompt_config = {"system": "Role: pirate. Date: {date}. Context: '{knowledge}'."}
     kwargs = {}
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda ids: [SimpleNamespace(name="Pirate KB")],
+    )
 
     rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
 
     assert rendered.startswith("Role: pirate. Date: 2")
     assert "Context: ''." in rendered
+    assert "Pirate KB" not in rendered
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_caller_supplied_knowledge_wins(monkeypatch):
+    """A caller-supplied knowledge value must not be overwritten by the default."""
+    dialog = SimpleNamespace(kb_ids=["kb-1"])
+    prompt_config = {"system": "Context: '{knowledge}'."}
+    kwargs = {"knowledge": "caller evidence"}
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda ids: [SimpleNamespace(name="Pirate KB")],
+    )
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, kwargs)
+
+    assert rendered == "Context: 'caller evidence'."
+
+
+@pytest.mark.p2
+def test_render_reasoning_system_prompt_empty_knowledge_is_backward_compatible(monkeypatch):
+    """A dialog without datasets (or unnamed ones) still renders the template.
+
+    get_by_ids failures are swallowed: names are cosmetic and must never block
+    the prompt render.
+    """
+    dialog = SimpleNamespace(kb_ids=["kb-1"])
+    prompt_config = {"system": "Context: '{knowledge}'."}
+
+    def _boom(ids):
+        raise RuntimeError("no db in unit test")
+
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", _boom)
+
+    rendered = dialog_service._render_reasoning_system_prompt(dialog, prompt_config, {})
+
+    assert rendered == "Context: ''."
+
+    no_kb = dialog_service._render_reasoning_system_prompt(SimpleNamespace(kb_ids=[]), prompt_config, {})
+    assert no_kb == "Context: ''."
 
 
 @pytest.mark.p2

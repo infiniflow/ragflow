@@ -1,5 +1,8 @@
 import { type SelectWithSearchFlagOptionType } from '@/components/originui/select-with-search';
-import { getEntityDisplayName } from '@/components/structure-graph/adapters';
+import {
+  findEntityDisplayNameByKeyword,
+  getEntityDisplayName,
+} from '@/components/structure-graph/adapters';
 import { type ClickableNode } from '@/components/structure-graph/representation-renderer';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { useFetchDocumentStructureGraph } from '@/hooks/use-document-request';
@@ -76,11 +79,26 @@ export function useGraphEntitySearch(
     [selectedTemplate?.entities, onNodeClick],
   );
 
-  const handleNoMatchEnter = useCallback((keywords: string) => {
-    setGraphKeywords(keywords);
-    setSearchKeyword('');
-    setSelectedNodeId('');
-  }, []);
+  const handleNoMatchEnter = useCallback(
+    (keywords: string) => {
+      // Enter on a keyword that exactly names an entity must behave like
+      // picking it from the dropdown: highlight that node and its neighbors
+      // and dim the rest. Only unmatched text falls back to the server-side
+      // keyword subgraph, which renders fully bright.
+      const entityName = findEntityDisplayNameByKeyword(
+        selectedTemplate?.entities ?? [],
+        keywords,
+      );
+      if (entityName) {
+        handleSelectEntity(entityName);
+        return;
+      }
+      setGraphKeywords(keywords);
+      setSearchKeyword('');
+      setSelectedNodeId('');
+    },
+    [selectedTemplate?.entities, handleSelectEntity],
+  );
 
   const handleSearchKeywordChange = useCallback((value: string) => {
     setSearchKeyword(value);

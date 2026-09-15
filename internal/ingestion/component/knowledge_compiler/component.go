@@ -412,7 +412,19 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// are ignored (tokenizer pool may be uninitialised in no-CGo tests),
 		// leaving the fields empty — matching the chunker's graceful-degrade
 		// behaviour.
-		if ltks, err := tokenizer.Tokenize(p.Content); err == nil && ltks != "" {
+		//
+		// Structure rows tokenize the FLATTENED PAYLOAD DESCRIPTION, not the
+		// raw JSON: Python indexes
+		// _tokenize_for_search(_struct_payload_description(payload)), so
+		// tokenizing p.Content here would feed JSON keys/brackets and opaque
+		// chunk ids into the inverted index.
+		indexText := p.Content
+		if p.Variant == common.VariantStructure {
+			if d := structure.IndexText(p.Content); strings.TrimSpace(d) != "" {
+				indexText = d
+			}
+		}
+		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
 			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm
@@ -608,6 +620,30 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
 			return applyStructureGraphColumns(doc, p, kind)
+		case "claim":
+			// Claim rows are searchable on their own (global KNN) but are NOT
+			// part of the structure graph: they carry no relation, and a
+			// relation-less row would be rendered as a root in the artifacts
+			// tree. So they deliberately skip knowledge_graph_kwd, which keeps
+			// them out of the artifacts query (it filters
+			// knowledge_graph_kwd=["entity","relation"]) without a frontend
+			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
+			if v := metaString(p.Meta, "name"); v != "" {
+				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+					return err
+				}
+			}
+			if v := metaString(p.Meta, "entity_type"); v != "" {
+				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+					return err
+				}
+			}
+			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+					return err
+				}
+			}
+			return nil
 		default:
 			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
 			// raptor_layer_int records tree depth.

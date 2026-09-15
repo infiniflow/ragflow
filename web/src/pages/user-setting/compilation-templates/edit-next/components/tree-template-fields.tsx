@@ -42,6 +42,18 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
           />
         </RAGFlowFormItem>
 
+        <RAGFlowFormItem
+          name={`templates.${index}.config.raptor.claim_prompt`}
+          label={t('knowledgeCompilation.claimExtractionPrompt')}
+          tooltip={t('knowledgeCompilation.claimExtractionPromptTip')}
+        >
+          <Textarea
+            placeholder={t('common.descriptionPlaceholder')}
+            rows={12}
+            resize="vertical"
+          />
+        </RAGFlowFormItem>
+
         <SliderInputFormField
           name={`templates.${index}.config.raptor.max_token`}
           label={t('knowledgeCompilation.maxToken')}

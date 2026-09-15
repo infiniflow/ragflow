@@ -5,6 +5,7 @@ jest.mock('@/constants/agent', () => ({
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
     YouComSearch: 'YouComSearch',
+    SofyaSearch: 'SofyaSearch',
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
@@ -144,6 +145,42 @@ describe('clearSensitiveFields', () => {
     expect(sanitized.tools[0].params.top_n).toBe(10);
     expect(dsl.graph.nodes[0].data.form.api_key).toBe('ydc-graph-secret');
     expect(dsl.tools[0].params.api_key).toBe('ydc-tool-secret');
+  });
+
+  it('clears a Sofya key from a canvas node and from a tool record', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.SofyaSearch,
+              form: {
+                api_key: 'sofya-graph-secret',
+                search_depth: 'basic',
+              },
+            },
+          },
+        ],
+      },
+      tools: [
+        {
+          component_name: Operator.SofyaSearch,
+          params: {
+            api_key: 'sofya-tool-secret',
+            top_n: 10,
+          },
+        },
+      ],
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.search_depth).toBe('basic');
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.top_n).toBe(10);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe('sofya-graph-secret');
+    expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
   });
 
   it('does not change standalone graph export behavior for other tools', () => {

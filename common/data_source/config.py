@@ -44,6 +44,7 @@ class DocumentSource(str, Enum):
     """Document sources"""
 
     RSS = "rss"
+    SITEMAP = "sitemap"
     S3 = "s3"
     NOTION = "notion"
     REST_API = "rest_api"
@@ -55,6 +56,7 @@ class DocumentSource(str, Enum):
     CONFLUENCE = "confluence"
     JIRA = "jira"
     GOOGLE_DRIVE = "google_drive"
+    FEISHU_WIKI = "feishu_wiki"
     GMAIL = "gmail"
     DISCORD = "discord"
     WEBDAV = "webdav"

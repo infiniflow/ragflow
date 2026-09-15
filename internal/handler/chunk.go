@@ -235,6 +235,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	req := service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		ChunkIDs:  queryStringList(c, "chunk_ids"),
 		Page:      &page,
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
@@ -256,6 +257,26 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, resp, "success")
+}
+
+func queryStringList(c *gin.Context, name string) []string {
+	values := c.QueryArray(name)
+	seen := make(map[string]struct{}, len(values))
+	ids := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			ids = append(ids, item)
+		}
+	}
+	return ids
 }
 
 func parsePositiveQueryInt(c *gin.Context, name string, defaultValue int) (int, error) {
