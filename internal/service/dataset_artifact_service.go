@@ -866,17 +866,17 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// ListNavClusters returns the navigation clusters of a dataset. It delegates to
-// the ES-backed NavService and returns the frontend DatasetNavNode shape
-// (snake_case NavNode JSON), matching Python GET /navigation exactly. The old
-// NavigationItem{name,title,count} shape did not match the frontend interface
-// and has been removed.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]nav.NavNode, int64, error) {
+// ListNavClusters returns the navigation clusters of a dataset. A non-empty
+// keywords value searches the navigation rows instead of limiting the result
+// to root clusters. It delegates to the ES-backed NavService and returns the
+// frontend DatasetNavNode shape (snake_case NavNode JSON), matching Python GET
+// /navigation.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID, keywords string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
 	}
-	nodes, total, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
+	nodes, total, err := ns.ListClusters(ctx, tenantID, datasetID, keywords, 0, 10000)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -884,13 +884,13 @@ func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, 
 }
 
 // ListNavChildren returns the children of a navigation cluster in the frontend
-// DatasetNavNode shape.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]nav.NavNode, int64, error) {
+// DatasetNavNode shape, optionally filtered by keywords.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name, keywords string) ([]nav.NavNode, int64, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
 		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
 	}
-	nodes, total, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
+	nodes, total, err := ns.ListChildren(ctx, tenantID, datasetID, name, keywords, 0, 10000)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -17,10 +17,11 @@
 // QAChunker extracts question-answer pairs from parsed content.
 //
 // Input formats and extraction strategies:
-//   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
-//   - Markdown (md)    → heading-based Q&A
-//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
-//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
+//   - Text (txt, csv) → delimiter-based Q&A (comma or tab)
+//   - Markdown (md)   → heading-based Q&A
+//   - HTML table      → table-based Q&A (first two columns)
+//   - JSON            → typed spreadsheet cells first; otherwise text sections
+//     or the HTML-table fallback for parsers that emit table markup.
 //
 // Every Q&A pair becomes a single chunk whose text is
 // "Question: {q}\tAnswer: {a}" (ingestion renames text to
@@ -119,7 +120,11 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
-		qaPairs = extractQAJSON(upstream.JSONResult)
+		fileType := upstream.FileType
+		if strings.TrimSpace(fileType) == "" && isCSV(upstream.Name) {
+			fileType = "csv"
+		}
+		qaPairs = extractQAJSON(upstream.JSONResult, fileType)
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
@@ -338,6 +343,9 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	for _, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
+			if len(pairs) > 0 {
+				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")
+			}
 			continue
 		}
 		var texts []string
@@ -546,28 +554,39 @@ func detectDelimiter(lines []string) string {
 // JSON / structured QA extraction
 // ---------------------------------------------------------------------------
 
-func extractQAJSON(items []schema.ChunkDoc) []qaPair {
+func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
+	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
-		txt, _ := itemText(item)
-		if txt == "" {
-			continue
-		}
-		// A JSON item can hold a rendered HTML table. The xlsx, docx, html
-		// and markdown parsers all emit one. Splitting that markup on
-		// newlines produces no CSV record, so read the rows the same way
-		// the HTML payload path does.
-		//
-		// Route on the payload, not on doc_type_kwd. The type says what the
-		// producer meant, and the two disagree in both directions:
-		// pdf_postprocess.go:222 sets "table" from the layout class with
-		// plain text under it, and a docx or markdown table can arrive with
-		// no type at all.
 		var tmp []qaPair
-		if isTableHTML(txt) {
-			tmp = extractQATable(txt, false)
+		if item.CKType == "table_header" || item.CKType == "table_row" {
+			// QA spreadsheets have no header row: the parser's structural
+			// table_header is still the first question/answer record.
+			if strictCSV && len(item.Cells) != 2 {
+				if len(pairs) > 0 {
+					pairs[len(pairs)-1].Answer += "\n" + strings.Join(item.Cells, ",")
+				}
+				continue
+			}
+			tmp = extractQARowCells(item.Cells, strictCSV, item.RowStart)
 		} else {
-			tmp = extractQAText(txt)
+			txt, _ := itemText(item)
+			if txt == "" {
+				continue
+			}
+			// Non-spreadsheet table items may still carry HTML markup. Keep
+			// the HTML fallback for parsers that do not expose typed cells.
+			//
+			// Route on the payload, not on doc_type_kwd. The type says what
+			// the producer meant, and the two disagree in both directions:
+			// pdf_postprocess.go:222 sets "table" from the layout class with
+			// plain text under it, and a docx or markdown table can arrive
+			// with no type at all.
+			if isTableHTML(txt) {
+				tmp = extractQATable(txt, strictCSV)
+			} else {
+				tmp = extractQAText(txt)
+			}
 		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
@@ -579,6 +598,26 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		}
 	}
 	return pairs
+}
+
+func extractQARowCells(cells []string, strict bool, rowStart *int) []qaPair {
+	if strict && len(cells) != 2 {
+		return nil
+	}
+	texts := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		if cell = strings.TrimSpace(cell); cell != "" {
+			texts = append(texts, cell)
+		}
+	}
+	if len(texts) < 2 {
+		return nil
+	}
+	rowNum := -1
+	if rowStart != nil && *rowStart > 0 {
+		rowNum = *rowStart - 1
+	}
+	return []qaPair{{Question: texts[0], Answer: texts[1], RowNum: rowNum}}
 }
 
 func init() {

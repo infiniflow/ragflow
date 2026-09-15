@@ -27,8 +27,8 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 		t.Fatal("JSON is empty; want at least one item")
 	}
 	// Verify heading
-	if got, _ := res.JSON[0]["text"].(string); got != "Hello" {
-		t.Fatalf("first item text = %q, want %q", got, "Hello")
+	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
 	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
 		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
@@ -321,7 +321,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	// Title, Intro, table item, Trailing = 4.
+	// # Title, Intro, table item, Trailing = 4.
 	if len(res.JSON) != 4 {
 		t.Fatalf("len(JSON) = %d, want 4 (one per top-level block, table as one item)", len(res.JSON))
 	}
@@ -332,7 +332,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
 		all.WriteString("\n")
-		if text == "Title" {
+		if text == "# Title" {
 			sawTitle = true
 		}
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
@@ -569,7 +569,7 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
 			switch text {
-			case "Title":
+			case "# Title":
 				titleIdx = i
 			case "Middle.":
 				middleIdx = i

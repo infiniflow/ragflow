@@ -27,6 +27,9 @@ type ParserOutputs struct {
 	// Name is the resolved source filename.
 	Name string `json:"name"`
 
+	// FileType is the canonical extension used for parser dispatch.
+	FileType string `json:"file_type"`
+
 	// OutputFormat is always "json". Downstream components consume structured JSON items.
 	OutputFormat string `json:"output_format,omitempty"`
 

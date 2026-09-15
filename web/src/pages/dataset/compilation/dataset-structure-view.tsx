@@ -109,20 +109,17 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       : '';
 
   const handleSelectEntity = useCallback((name: string) => {
-    if (!name) {
-      setGraphKeywords('');
-      setSelectedNodeId('');
-      return;
-    }
+    // Picking an option behaves like an Enter search: refetch the server-side
+    // keyword subgraph for that entity and keep the node highlighted.
     setSelectedNodeId(name);
+    setGraphKeywords(name);
   }, []);
 
   const handleNoMatchEnter = useCallback(
     (keywords: string) => {
       // Enter on a keyword that exactly names an entity must behave like
-      // picking it from the dropdown: highlight that node and its neighbors
-      // and dim the rest. Only unmatched text falls back to the server-side
-      // keyword subgraph, which renders fully bright.
+      // picking it from the dropdown. Only unmatched text falls back to the
+      // raw keyword subgraph with no highlighted node.
       const entityName = findEntityDisplayNameByKeyword(
         template?.entities ?? [],
         keywords,
@@ -208,7 +205,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             onChange={handleSelectEntity}
             placeholder={t('knowledgeCompilation.searchEntity')}
             allowClear
-            triggerClassName="w-96 max-w-full"
+            alwaysShowSearch
+            triggerClassName="ml-auto w-96 max-w-full"
             onNoMatchEnter={handleNoMatchEnter}
             disableAutoSelectOnEnter
           />

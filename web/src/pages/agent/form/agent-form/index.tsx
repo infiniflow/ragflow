@@ -4,6 +4,7 @@ import {
   LargeModelFormField,
 } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
+import { SliderInputSwitchFormField } from '@/components/llm-setting-items/slider';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
@@ -163,6 +164,28 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField></LargeModelFormField>
+          <SliderInputSwitchFormField
+            name="max_tokens"
+            checkName="maxTokensEnabled"
+            label="maxTokens"
+            numberInputClassName="w-24 shrink-0"
+            min={0}
+            max={128000}
+          />
+          {(mcpIds.length > 0 || hasSubAgentOrTool(edges, node?.id)) && (
+            <FormField
+              control={form.control}
+              name={`max_rounds`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormLabel>{t('flow.maxRounds')}</FormLabel>
+                  <FormControl>
+                    <NumberInput {...field} min={0}></NumberInput>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          )}
           {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
@@ -271,20 +294,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   )}
                 </RAGFlowFormItem>
               )}
-              {hasSubAgentOrTool(edges, node?.id) && (
-                <FormField
-                  control={form.control}
-                  name={`max_rounds`}
-                  render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>{t('flow.maxRounds')}</FormLabel>
-                      <FormControl>
-                        <NumberInput {...field} min={0}></NumberInput>
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              )}
+
               <FormField
                 control={form.control}
                 name={`exception_method`}

@@ -1,9 +1,14 @@
 package component
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrCompilationTemplateRequired identifies a Compiler component without a
+// selected compilation template or template group.
+var ErrCompilationTemplateRequired = errors.New("Compilation Template Group does not support empty value")
 
 // ValidateDynamicEntries rejects blank values in repeatable Agent parameters.
 func ValidateDynamicEntries(dsl map[string]any) error {
@@ -95,6 +100,10 @@ func validateDynamicParams(component string, params map[string]any) error {
 	case "exesql":
 		if err := validateExeSQLParams(params); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
+		}
+	case "compiler":
+		if !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
+			return fmt.Errorf("[%s] %w", component, ErrCompilationTemplateRequired)
 		}
 	}
 	return nil

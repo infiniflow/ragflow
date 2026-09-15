@@ -56,13 +56,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/redis"
 	et "ragflow/internal/engine/types"
@@ -250,6 +251,9 @@ func parseArgs() (*serverArgs, error) {
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
+	if args.migrateDB && args.mode != nil {
+		return nil, errors.New("--migrate is a standalone action and cannot be combined with --api/--admin/--ingestor/--syncer")
+	}
 	return args, nil
 }
 
@@ -261,13 +265,16 @@ func parseArgs() (*serverArgs, error) {
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
 		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -329,7 +336,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || arguments.mode == nil {
+	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
 		printHelp(arguments)
 		os.Exit(1)
 	}
@@ -337,6 +344,17 @@ func main() {
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
+	}
+
+	// --migrate is a standalone one-shot action: run the database migrations and
+	// exit without selecting a server mode. It deliberately skips the
+	// mode-specific startup (native DeepDoc, doc engine, Redis, storage, message
+	// queue) so it can run independently, before any server boots.
+	if arguments.migrateDB {
+		if err = runMigrate(ctx, arguments); err != nil {
+			common.Fatal("Failed to run database migration", zap.Error(err))
+		}
+		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -456,9 +474,19 @@ func main() {
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
-	// Initialize database
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	// Initialize database. Migrations are not run here: --migrate is a
+	// standalone action, so a server-mode process only ensures the runtime
+	// tables it needs (see InitDB).
+	if err = dao.InitDB(ctx, false); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	// Refuse to start a server against a database that a newer version already
+	// migrated: rolling the code back cannot roll the schema back. The
+	// standalone --migrate action is exempt because advancing the database is
+	// its job.
+	if err = checkDatabaseVersion(ctx); err != nil {
+		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
@@ -523,6 +551,104 @@ func main() {
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
 	}
+}
+
+// checkDatabaseVersion refuses to run a server when the running code is older
+// than the version recorded in the system_settings migration marker. Migrating
+// the database forward is a one-way operation, so an older binary would read and
+// write a schema it does not understand.
+//
+// A missing marker, or a version on either side that cannot be parsed, never
+// blocks startup: without a usable comparison there is no evidence that the
+// database is ahead of the code.
+func checkDatabaseVersion(ctx context.Context) error {
+	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
+	if err != nil {
+		return fmt.Errorf("read database version marker: %w", err)
+	}
+	if databaseVersion == "" {
+		return nil
+	}
+
+	codeVersion := common.GetRAGFlowVersion()
+	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparable {
+		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
+			zap.String("code_version", codeVersion),
+			zap.String("database_version", databaseVersion))
+		return nil
+	}
+	if older {
+		return fmt.Errorf("code version %s is older than database version %s: upgrade this deployment to %s or newer before starting",
+			codeVersion, databaseVersion, databaseVersion)
+	}
+
+	common.Info("Database version check passed",
+		zap.String("code_version", codeVersion),
+		zap.String("database_version", databaseVersion))
+	return nil
+}
+
+// runMigrate runs the database schema and data migrations and returns. It is
+// the whole of the standalone --migrate action: load the configuration, run
+// dao.InitDB with migrations enabled, then exit. It deliberately does not call
+// registerNativeDeepDoc or initialize the doc engine, Redis, storage or the
+// message queue, so it can run on its own, before any server mode boots (see
+// docker/entrypoint-go.sh and docker/launch_backend_service.sh).
+func runMigrate(ctx context.Context, args *serverArgs) error {
+	const serverName = "migrate"
+
+	if err := server.InitLocalVariables(); err != nil {
+		return fmt.Errorf("initialize local variables: %w", err)
+	}
+
+	logLevel := "info"
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
+	}
+
+	var configPath string
+	if args.configPath != nil {
+		configPath = *args.configPath
+	}
+	if err := server.Init(configPath); err != nil {
+		return fmt.Errorf("initialize configuration: %w", err)
+	}
+
+	globalConfig := server.GetConfig()
+	server.SetServerName(serverName)
+
+	logConfig := globalConfig.GetLogConfig()
+	if logConfig.Level != "" {
+		logLevel = logConfig.Level
+	}
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	globalConfig.SetLogLevel(logLevel)
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, common.FileOutput{
+		Filename:   serverName + ".log",
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
+	}
+
+	common.Info("Running database migrations")
+	if err := dao.InitDB(ctx, true); err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	common.Info("Database migrations completed")
+
+	return nil
 }
 
 func runAdmin(ctx context.Context, args *serverArgs) error {
@@ -926,8 +1052,11 @@ func startServer(ctx context.Context) {
 
 		// Load the KB objects (mirroring Python RAGTools' self.kbs via
 		// KnowledgebaseService.get_by_ids(kb_ids)) so the agentic tool can
-		// derive rank features from parser_config.tag_kb_ids. Best-effort: a
-		// load failure leaves KBs empty and the adapter resolves them itself.
+		// derive rank features. The Go tag extractor (extractor_tag.go) writes
+		// both tag_kwd (the list of tag names) and tag_feas (per-tag weights)
+		// onto each chunk at parse time; the labeler aggregates tag_kwd to build
+		// the tag vocabulary and the retriever ranks with tag_feas. Best-effort:
+		// a load failure leaves KBs empty and the adapter resolves them itself.
 		var kbs []*entity.Knowledgebase
 		if len(req.DatasetIDs) > 0 {
 			if loaded, lErr := dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, req.DatasetIDs); lErr == nil {
@@ -1015,6 +1144,14 @@ func startServer(ctx context.Context) {
 			// and Python has no evidence-token override (the compose always
 			// uses min(chat_mdl.max_length, _EVIDENCE_BUDGET_TOKENS=8000),
 			// which EvidenceMaxTokens<=0 reproduces).
+		}
+		for _, message := range req.Messages {
+			content, err := service.NormalizeOpenAIMessageContent(message["content"])
+			if err != nil {
+				return service.HarnessResult{}, err
+			}
+			role, _ := message["role"].(string)
+			deps.Messages = append(deps.Messages, schema.Message{Role: schema.RoleType(role), Content: content})
 		}
 		// Diagnose WHY compiled expansion is disabled: NewCompiledExpander
 		// returns nil for three reasons (store==nil / no datasets / no tenant)

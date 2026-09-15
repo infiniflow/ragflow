@@ -47,8 +47,6 @@ export default function DatasetSetting() {
     defaultValues: {
       parse_type: ParseType.BuiltIn,
       pipeline_id: '',
-      pipeline_name: '',
-      pipeline_avatar: '',
       parser_id: '',
       parser_config: {},
       name: '',
@@ -136,8 +134,6 @@ export default function DatasetSetting() {
   useEffect(() => {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
-      form.setValue('pipeline_name', '');
-      form.setValue('pipeline_avatar', '');
     }
   }, [parseType, form]);
 
