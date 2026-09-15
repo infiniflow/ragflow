@@ -1,7 +1,6 @@
 package pdf
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -52,7 +51,7 @@ func TestParse_ExtractsOutlinesFromEngine(t *testing.T) {
 	mockDLA := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	result, err := p.ParseRaw(t.Context(), eng, mockDLA)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -90,7 +89,7 @@ func TestParse_OutlinesErrorDoesNotBlockParsing(t *testing.T) {
 	mockDLA := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.ParseRaw(context.Background(), eng, mockDLA)
+	result, err := p.ParseRaw(t.Context(), eng, mockDLA)
 	if err != nil {
 		t.Fatalf("Parse should not fail when Outlines() errors: %v", err)
 	}

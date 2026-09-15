@@ -67,6 +67,11 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 // separate ck_type — the python HtmlParser collapses inline
 // formatting into the parent block's text.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	// x/net/html assumes UTF-8 input, so a GBK/Big5/Shift-JIS page would
+	// otherwise surface as U+FFFD mojibake. Decode first, mirroring the
+	// Python dataflow path (RAGFlowHtmlParser decodes the blob via
+	// rag.nlp.find_codec before parsing). See decodeHTMLToUTF8.
+	data, encName := decodeHTMLToUTF8(data)
 	// remove_header_footer: pre-parse strip of <header>/<footer> tags
 	// and ARIA role=banner/contentinfo elements (mirrors Python
 	// parser.py:1083-1084 remove_header_footer_html_blob).
@@ -95,10 +100,16 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
-			"encoding": "utf-8",
+			"encoding": encName,
 		},
 		JSON: items,
 	}
+}
+
+// decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
+// encoding label used. It delegates to the shared DecodeToUTF8 helper.
+func decodeHTMLToUTF8(data []byte) ([]byte, string) {
+	return DecodeToUTF8(data, "text/html")
 }
 
 // walkHTMLBlocks emits one normalized item per block-level

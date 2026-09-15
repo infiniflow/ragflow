@@ -68,6 +68,8 @@ type retrievalParams struct {
 	Query                    string
 	KbIDs                    []string
 	MemoryIDs                []string
+	DocumentIDs              []string
+	UserID                   string
 	TopN                     int
 	TopK                     int
 	SimilarityThreshold      *float64
@@ -108,6 +110,16 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.KbIDs = append(out.KbIDs, v...)
 	}
 	out.MemoryIDs = toStringSlice(params["memory_ids"])
+	if v, ok := params["document_ids"].(string); ok {
+		if strings.TrimSpace(v) != "" {
+			out.DocumentIDs = []string{v}
+		}
+	} else {
+		out.DocumentIDs = toStringSlice(params["document_ids"])
+	}
+	if v, ok := params["user_id"].(string); ok {
+		out.UserID = v
+	}
 	if v, ok := params["top_n"]; ok {
 		out.TopN = toIntParam(v)
 	}
@@ -166,10 +178,11 @@ func (c *retrievalComponent) Name() string { return "Retrieval" }
 
 func (c *retrievalComponent) Inputs() map[string]string {
 	return map[string]string{
-		"query":       "Natural-language search query.",
-		"dataset_ids": "Optional list of dataset IDs to restrict the search to (overrides node-level kb_ids).",
-		"top_n":       "Maximum chunks to return (default 8, overrides node-level top_n).",
-		"use_kg":      "GraphRAG toggle (returns ErrKGRetrievalServiceMissing until a kg adapter is registered).",
+		"query":        "Natural-language search query.",
+		"dataset_ids":  "Optional list of dataset IDs to restrict the search to (overrides node-level kb_ids).",
+		"document_ids": "Optional list of document IDs to restrict retrieval scope.",
+		"top_n":        "Maximum chunks to return (default 8, overrides node-level top_n).",
+		"use_kg":       "GraphRAG toggle (returns ErrKGRetrievalServiceMissing until a kg adapter is registered).",
 	}
 }
 
@@ -177,6 +190,10 @@ func (c *retrievalComponent) GetInputForm() map[string]any {
 	return map[string]any{
 		"query": map[string]any{
 			"name": "Query",
+			"type": "line",
+		},
+		"document_ids": map[string]any{
+			"name": "Document IDs",
 			"type": "line",
 		},
 	}
@@ -192,6 +209,25 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	query, _ := merged["query"].(string)
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
+			query = resolved
+		}
+	}
+	if query != "" && merged["retrieval_from"] == "dataset" {
+		rawIDs, present := merged["dataset_ids"]
+		emptySelection := !present || rawIDs == nil
+		switch ids := rawIDs.(type) {
+		case []string:
+			emptySelection = len(ids) == 0
+		case []any:
+			emptySelection = len(ids) == 0
+		}
+		if emptySelection {
+			return map[string]any{"_ERROR": "No dataset is selected."}, nil
+		}
+	}
 	common.Debug("agent retrieval component: invoke",
 		zap.Any("inputs", inputs),
 		zap.Any("merged", merged),
@@ -270,6 +306,19 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	}
 	if _, ok := out["memory_ids"]; !ok && len(c.params.MemoryIDs) > 0 {
 		out["memory_ids"] = append([]string(nil), c.params.MemoryIDs...)
+	}
+	if _, ok := out["document_ids"]; !ok && len(c.params.DocumentIDs) > 0 {
+		out["document_ids"] = append([]string(nil), c.params.DocumentIDs...)
+	}
+	if s, ok := out["document_ids"].(string); ok {
+		if strings.TrimSpace(s) == "" {
+			delete(out, "document_ids")
+		} else {
+			out["document_ids"] = []string{s}
+		}
+	}
+	if _, ok := out["user_id"]; !ok && c.params.UserID != "" {
+		out["user_id"] = c.params.UserID
 	}
 	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
 		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)

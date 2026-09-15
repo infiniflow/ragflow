@@ -365,7 +365,11 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	if req == nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
-	question := strings.TrimSpace(req.Question)
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	question = strings.TrimSpace(question)
 	if question == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
@@ -434,6 +438,9 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 	}
 	if value, ok := intFromSearchConfig(searchConfig["top_k"]); ok {
 		opts.TopK = &value
+	}
+	if value, ok := intFromSearchConfig(searchConfig["rerank_candidates_count"]); ok {
+		opts.RerankCandidatesCount = &value
 	}
 	if value, ok := searchConfigMapValue(searchConfig["meta_data_filter"]); ok {
 		opts.Filter = value
@@ -680,6 +687,8 @@ func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[str
 }
 
 type SearchCompletionsRequest struct {
-	Question string   `json:"question" binding:"required"`
-	KBIDs    []string `json:"kb_ids,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KBIDs    []string                 `json:"kb_ids,omitempty"`
 }

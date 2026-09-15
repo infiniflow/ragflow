@@ -636,6 +636,13 @@ func formatEmptyArray(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+func retrievalChunkValue(chunk map[string]interface{}, key, fallbackKey string) interface{} {
+	if value, ok := chunk[key]; ok {
+		return value
+	}
+	return chunk[fallbackKey]
+}
+
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
@@ -697,9 +704,6 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	if val, ok := cmd.Params["rerank_id"]; ok {
 		payload["rerank_id"] = val
 	}
-	if val, ok := cmd.Params["tenant_rerank_id"]; ok {
-		payload["tenant_rerank_id"] = val
-	}
 	if val, ok := cmd.Params["page_size"]; ok {
 		payload["page_size"] = val
 	}
@@ -707,21 +711,19 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		payload["page"] = val
 	}
 	if val, ok := cmd.Params["search_id"]; ok {
-		if s, ok := val.(string); ok {
-			payload["search_id"] = s
-		}
+		payload["search_id"] = val
 	}
 	if val, ok := cmd.Params["cross_languages"]; ok {
 		if list, ok := val.([]string); ok {
 			payload["cross_languages"] = list
 		}
 	}
-	if val, ok := cmd.Params["doc_ids"]; ok {
+	if val, ok := cmd.Params["document_ids"]; ok {
 		if list, ok := val.([]string); ok {
-			payload["doc_ids"] = list
+			payload["document_ids"] = list
 		}
 	}
-	if val, ok := cmd.Params["meta_data_filter"]; ok {
+	if val, ok := cmd.Params["metadata_condition"]; ok {
 		// Accept either a raw JSON string from the CLI or a pre-decoded
 		// map[string]interface{} (future-proofing for callers that
 		// construct the command programmatically). The string form is
@@ -730,13 +732,13 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		case string:
 			var decoded map[string]interface{}
 			if err := json.Unmarshal([]byte(v), &decoded); err != nil {
-				return nil, fmt.Errorf("invalid meta_data_filter JSON: %w", err)
+				return nil, fmt.Errorf("invalid metadata_condition JSON: %w", err)
 			}
-			payload["meta_data_filter"] = decoded
+			payload["metadata_condition"] = decoded
 		case map[string]interface{}:
-			payload["meta_data_filter"] = v
+			payload["metadata_condition"] = v
 		default:
-			return nil, fmt.Errorf("meta_data_filter must be JSON string or object")
+			return nil, fmt.Errorf("metadata_condition must be JSON string or object")
 		}
 	}
 
@@ -782,12 +784,12 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	for _, chunk := range chunks {
 		if chunkMap, ok := chunk.(map[string]interface{}); ok {
 			row := map[string]interface{}{
-				"id":                chunkMap["chunk_id"],
-				"content":           chunkMap["content_with_weight"],
-				"document_id":       chunkMap["doc_id"],
-				"dataset_id":        chunkMap["kb_id"],
-				"docnm_kwd":         chunkMap["docnm_kwd"],
-				"image_id":          chunkMap["image_id"],
+				"id":                retrievalChunkValue(chunkMap, "id", "chunk_id"),
+				"content":           retrievalChunkValue(chunkMap, "content", "content_with_weight"),
+				"document_id":       retrievalChunkValue(chunkMap, "document_id", "doc_id"),
+				"dataset_id":        retrievalChunkValue(chunkMap, "dataset_id", "kb_id"),
+				"document_keyword":  retrievalChunkValue(chunkMap, "document_keyword", "docnm_kwd"),
+				"image_id":          retrievalChunkValue(chunkMap, "image_id", "img_id"),
 				"similarity":        chunkMap["similarity"],
 				"term_similarity":   chunkMap["term_similarity"],
 				"vector_similarity": chunkMap["vector_similarity"],
@@ -796,8 +798,8 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 			if v, ok := chunkMap["doc_type_kwd"]; ok {
 				row["doc_type_kwd"] = formatEmptyArray(v)
 			}
-			if v, ok := chunkMap["important_kwd"]; ok {
-				row["important_kwd"] = formatEmptyArray(v)
+			if v := retrievalChunkValue(chunkMap, "important_keywords", "important_kwd"); v != nil {
+				row["important_keywords"] = formatEmptyArray(v)
 			}
 			if v, ok := chunkMap["mom_id"]; ok {
 				row["mom_id"] = formatEmptyArray(v)
@@ -2893,95 +2895,6 @@ func (c *CLI) APIAddCustomModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "add custom model")
 }
 
-// DevInsertChunksFromFileCommand inserts chunks from a JSON file
-func (c *CLI) DevInsertChunksFromFileCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-	filePath, ok := cmd.Params["file_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("file_path not provided")
-	}
-
-	payload := map[string]interface{}{
-		"file_path": filePath,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", "/tenant/dev_insert_chunks_from_file", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to insert dataset from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to insert dataset from file: %s", filePath)
-	} else {
-		result.Message = fmt.Sprintf("Failed to insert dataset from file: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
-// DevInsertMetadataFromFileCommand inserts metadata from a JSON file
-func (c *CLI) DevInsertMetadataFromFileCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	filePath, ok := cmd.Params["file_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("file_path not provided")
-	}
-
-	payload := map[string]interface{}{
-		"file_path": filePath,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", "/tenant/dev_insert_metadata_from_file", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to insert metadata from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to insert metadata from file: %s", filePath)
-	} else {
-		result.Message = fmt.Sprintf("Failed to insert metadata from file: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
 // DevUpdateChunkCommand updates a chunk in a dataset
 func (c *CLI) DevUpdateChunkCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -4151,9 +4064,6 @@ func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, erro
 	}
 
 	// Optional flags — only emit when explicitly set
-	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
-		body["pass_all_history_messages"] = true
-	}
 	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
 		body["legacy"] = true
 	}

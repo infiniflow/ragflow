@@ -146,7 +146,7 @@ func TestReflectTool_Basic(t *testing.T) {
 		t.Errorf("expected 'Greet someone', got %s", tool.Description())
 	}
 
-	result, err := tool.Invoke(context.Background(), `{"city":"London"}`)
+	result, err := tool.Invoke(t.Context(), `{"city":"London"}`)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestReflectTool_Stream(t *testing.T) {
 		t.Fatalf("ReflectTool: %v", err)
 	}
 
-	stream, err := tool.Stream(context.Background(), `{"city":"test"}`)
+	stream, err := tool.Stream(t.Context(), `{"city":"test"}`)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestReflectTool_InvalidJSON(t *testing.T) {
 		t.Fatalf("ReflectTool: %v", err)
 	}
 
-	_, err = tool.Invoke(context.Background(), `not valid json`)
+	_, err = tool.Invoke(t.Context(), `not valid json`)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}

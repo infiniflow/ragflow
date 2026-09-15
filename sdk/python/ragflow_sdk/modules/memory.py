@@ -32,7 +32,7 @@ class Memory(Base):
         self.description = ""
         self.memory_size = 5 * 1024 * 1024
         self.forgetting_policy = "FIFO"
-        self.temperature = (0.5,)
+        self.temperature = 0.5
         self.system_prompt = ""
         self.user_prompt = ""
         for k in list(res_dict.keys()):

@@ -38,6 +38,7 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from rag.nlp.delim import DEFAULT_DELIMITER
 from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
@@ -54,6 +55,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     reorder_multi_column_bboxes,
 )
 from rag.flow.parser.schema import ParserFromUpstream
+from rag.flow.parser.spreadsheet_positions import TCADP_POSITION_TAG_RE, tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
@@ -66,6 +68,14 @@ from rag.flow.parser.utils import (
 )
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
+
+# Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
+# deliberately far beyond any real sheet: a sheet is emitted as ONE
+# self-contained <table> and is never split by row count or token budget.
+# Any split would cut inside ``<td>`` content or, worse, drop the delimiter
+# characters it cut on — the bug this typed parser output exists to prevent.
+# The TCADP path applies the same rule and emits one item per returned table.
+TABLE_NO_SPLIT_ROWS = 1 << 30
 
 
 class ParserParam(ProcessParamBase):
@@ -136,7 +146,7 @@ class ParserParam(ProcessParamBase):
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "flatten_media_to_text": False,
-                "output_format": "html",
+                "output_format": "json",
                 "suffix": [
                     "xls",
                     "xlsx",
@@ -305,15 +315,6 @@ class ParserParam(ProcessParamBase):
             html_output_format = html_config.get("output_format", "")
             self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
-        audio_config = self.setups.get("audio", "")
-        if audio_config:
-            audio_vlm = audio_config.get("vlm") or {}
-            self.check_empty(audio_vlm.get("llm_id"), "Audio VLM")
-
-        video_config = self.setups.get("video", "")
-        if video_config:
-            video_vlm = video_config.get("vlm") or {}
-            self.check_empty(video_vlm.get("llm_id"), "Video VLM")
         email_config = self.setups.get("email", "")
         if email_config:
             email_output_format = email_config.get("output_format", "")
@@ -634,7 +635,7 @@ class Parser(ProcessBase):
             bboxes = []
             for section, position_tag in sections:
                 if position_tag:
-                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    match = TCADP_POSITION_TAG_RE.match(position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
                         bboxes.append(
@@ -846,23 +847,7 @@ class Parser(ProcessBase):
                 self.set_output("html", html_content)
 
             elif output_format == "json":
-                # For JSON output, create a list of text items
-                result = []
-                # Add sections as text
-                for section, position_tag in sections:
-                    if section:
-                        result.append({"text": section, "doc_type_kwd": "text"})
-                # Add tables as text
-                for table in tables:
-                    if table:
-                        result.append(
-                            {
-                                "text": table,
-                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
-                            }
-                        )
-
-                self.set_output("json", result)
+                self.set_output("json", tcadp_spreadsheet_json_items(sections, tables, flatten_media_to_text))
 
             elif output_format == "markdown":
                 # For markdown output, combine into markdown
@@ -880,9 +865,25 @@ class Parser(ProcessBase):
             spreadsheet_parser = ExcelParser()
             if conf.get("output_format") == "html":
                 htmls = spreadsheet_parser.html(blob, 1000000000)
-                self.set_output("html", htmls[0])
+                self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
-                self.set_output("json", [{"text": txt, "doc_type_kwd": "text"} for txt in spreadsheet_parser(blob) if txt])
+                # One self-contained <table> item per sheet, never split, so the
+                # downstream TokenChunker keeps every table whole instead of
+                # cutting it on a delimiter.
+                self.set_output(
+                    "json",
+                    [
+                        {
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
+                            # 0-based sheet. TaskExecutor and dataflow_service
+                            # call add_positions, which stores pn+1 (1-based).
+                            "positions": [[sheet, r1, r2, c1, c2]],
+                        }
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_NO_SPLIT_ROWS)
+                        if tb
+                    ],
+                )
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
@@ -1135,7 +1136,7 @@ class Parser(ProcessBase):
             name,
             blob,
             conf.get("chunk_token_num", 128),
-            conf.get("delimiter", "\n!?;。；！？"),
+            conf.get("delimiter", DEFAULT_DELIMITER),
             keep_delimiters=True,
         )
         if conf.get("output_format") == "json":
@@ -1209,14 +1210,17 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an audio.")
 
         conf = self._param.setups["audio"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
         _, ext = os.path.splitext(name)
         with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-            seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
+            if vlm.get("llm_id"):
+                seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
+            else:
+                seq2txt_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.ASR)
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
@@ -1227,9 +1231,12 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
 
         conf = self._param.setups["video"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
-        cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
+        if vlm.get("llm_id"):
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
+        else:
+            cv_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.VISION)
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))

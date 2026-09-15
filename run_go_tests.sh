@@ -4,7 +4,6 @@ set -e
 PACKAGES=(
     "./internal/admin/..."
 #    "./internal/binding/..."
-    "./internal/cache/..."
     "./internal/cli/..."
     "./internal/common/..."
     "./internal/dao/..."

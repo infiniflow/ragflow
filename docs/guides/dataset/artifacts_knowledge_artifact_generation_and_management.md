@@ -1,11 +1,10 @@
 ---
 sidebar_position: 8
-title: Artifacts: Knowledge Artifact Generation and Management
-sidebar_label: Artifacts: Knowledge Artifact Generation and Management
+title: "Artifacts: Knowledge Artifact Generation and Management"
+sidebar_label: "Artifacts: Knowledge Artifact Generation and Management"
 slug: /artifacts_knowledge_artifact_generation_and_management
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Artifacts: Knowledge Artifact Generation and Management

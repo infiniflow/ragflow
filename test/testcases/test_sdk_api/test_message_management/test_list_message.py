@@ -48,7 +48,7 @@ class TestMessageList:
         res = memory.list_memory_messages()
         assert len(res["messages"]["message_list"]) == 5, str(res)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_params_empty(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})

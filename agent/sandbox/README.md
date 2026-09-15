@@ -174,6 +174,29 @@ For users who need **zero-trust-level syscall control**, we support an additiona
 
 In addition to sandboxing, Python code is **statically analyzed via AST (Abstract Syntax Tree)** before execution. Potentially malicious code (e.g. file operations, subprocess calls, etc.) is rejected early, providing an extra layer of protection.
 
+### 🌐 Network Isolation (Default: No External Access)
+
+Sandbox runner containers are started with `--network none`: sandboxed code has **no external network access** by default. `docker exec` (used to feed code in and collect results) is unaffected.
+
+If your sandboxed code genuinely needs outbound network access (e.g. runtime `pip install` / `npm install`), opt in explicitly via `.env`:
+
+```dotenv
+SANDBOX_CONTAINER_NETWORK=bridge
+```
+
+Prefer baking dependencies into the base images (`sandbox_base_image/python/requirements.txt`, `sandbox_base_image/nodejs/package.json`) instead — that keeps the default hermetic profile.
+
+### 🔑 Executor API Authentication (Shared Secret)
+
+The `/run` endpoint can require a shared secret. Set the same value on both sides:
+
+```dotenv
+# executor manager (and RAGFlow when using the compose profile)
+SANDBOX_EXECUTOR_MANAGER_API_TOKEN=<openssl rand -hex 32>
+```
+
+Requests must then carry `Authorization: Bearer <token>` (or `X-Sandbox-Token: <token>`); the RAGFlow self-managed provider sends this automatically. When the variable is unset the endpoint accepts unauthenticated requests (the pre-token behavior), and the executor manager logs a prominent security warning at startup and on first request. `/run` is additionally rate limited per client address (`SANDBOX_RUN_RATE_LIMIT`, default `120/minute`).
+
 ---
 
 This security model strikes a balance between **robust isolation** and **developer usability**. While `seccomp` can be highly restrictive, our default setup aims to keep things usable for most developers — no obscure crashes or cryptic setup required.
@@ -252,6 +275,8 @@ function main({arg1, arg2}) {
 ```
 
 Async funcion with aioxs
+
+> Note: outbound HTTP requires opting into network access (`SANDBOX_CONTAINER_NETWORK=bridge`); by default sandbox containers have no external network.
 
 ```javascript
 const axios = require('axios');

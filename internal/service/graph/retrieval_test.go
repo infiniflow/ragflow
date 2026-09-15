@@ -134,7 +134,7 @@ func TestSearchTypeSamples_Success(t *testing.T) {
 			}},
 		},
 	}
-	result, err := searchTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
+	result, err := searchTypeSamples(t.Context(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestSearchTypeSamples_Success(t *testing.T) {
 
 func TestSearchTypeSamples_Empty(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := searchTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
+	result, err := searchTypeSamples(t.Context(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRetrieval_Basic(t *testing.T) {
 			}},
 		},
 	}
-	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(t.Context(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRetrieval_Basic(t *testing.T) {
 
 func TestRetrieval_NoEntities(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
+	result, err := Retrieval(t.Context(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestRetrieval_WithChatModel(t *testing.T) {
 	// chatModel with nil ModelName so queryRewrite falls back to raw question,
 	// but the ty2entsJSON construction path is still exercised.
 	chatModel := &modelModule.ChatModel{ModelName: nil, APIConfig: nil}
-	result, err := Retrieval(context.Background(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(t.Context(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestEntitySearch_MultiEntities(t *testing.T) {
 			},
 		},
 	}
-	mock.Search(context.Background(), entsReq)
+	mock.Search(t.Context(), entsReq)
 	if !strings.Contains(capturedText, "Elon Musk") || !strings.Contains(capturedText, "SpaceX") {
 		t.Errorf("expected both entities in query, got %q", capturedText)
 	}
@@ -515,7 +515,7 @@ func TestIndexName_Empty(t *testing.T) {
 
 func TestSearchKGCommunityContent_EmptyEntities(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, nil, 1, intPtr(100))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, nil, 1, intPtr(100))
 	if result != "" {
 		t.Errorf("expected empty, got %q", result)
 	}
@@ -532,7 +532,7 @@ func TestSearchKGCommunityContent_WithContent(t *testing.T) {
 			}},
 		},
 	}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(500))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(500))
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
@@ -552,7 +552,7 @@ func TestSearchKGCommunityContent_WithContent(t *testing.T) {
 
 func TestSearchKGCommunityContent_NilMaxToken(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, nil)
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, nil)
 	if result != "" {
 		t.Errorf("expected empty when maxToken is nil, got %q", result)
 	}
@@ -560,7 +560,7 @@ func TestSearchKGCommunityContent_NilMaxToken(t *testing.T) {
 
 func TestSearchKGCommunityContent_ZeroMaxToken(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(0))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(0))
 	if result != "" {
 		t.Errorf("expected empty when maxToken=0, got %q", result)
 	}

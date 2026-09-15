@@ -108,8 +108,16 @@ def _element_text(el: dict) -> str:
         for c in cells:
             if not isinstance(c, dict):
                 continue
-            row = c.get("row") or c.get("row_index") or 0
-            rows.setdefault(int(row), []).append(str(c.get("content") or c.get("text") or ""))
+            raw_row = c.get("row")
+            if raw_row is None:
+                raw_row = c.get("row_index")
+            try:
+                # a non-numeric row label must not abort the whole parse; also treat
+                # row 0 as a real index rather than "missing" (the `or` chain did not).
+                row_idx = int(raw_row) if raw_row is not None else 0
+            except (TypeError, ValueError):
+                row_idx = 0
+            rows.setdefault(row_idx, []).append(str(c.get("content") or c.get("text") or ""))
         return "\n".join(" | ".join(v) for _, v in sorted(rows.items()))
     return ""
 
@@ -122,18 +130,27 @@ def _element_html(el: dict) -> str:
     # Docling tables: rebuild HTML from table_cells
     cells = el.get("table_cells")
     if isinstance(cells, list) and cells:
-        num_rows = el.get("num_rows") or 0
-        num_cols = el.get("num_cols") or 0
+        try:
+            num_rows = int(el.get("num_rows") or 0)
+            num_cols = int(el.get("num_cols") or 0)
+        except (TypeError, ValueError):
+            num_rows = num_cols = 0
         if num_rows > 0 and num_cols > 0:
             grid: list[list[dict]] = [[{} for _ in range(num_cols)] for _ in range(num_rows)]
             for c in cells:
                 if not isinstance(c, dict):
                     continue
-                r = c.get("start_row_offset_idx", 0)
-                col = c.get("start_col_offset_idx", 0)
-                row_span = max(1, c.get("row_span", 1) or 1)
-                col_span = max(1, c.get("col_span", 1) or 1)
-                text = html.escape(c.get("text", ""))
+                try:
+                    # cells come from the external opendataloader/Docling json, so a
+                    # null/non-numeric offset or span must skip the cell, not crash the parse.
+                    r = int(c.get("start_row_offset_idx") or 0)
+                    col = int(c.get("start_col_offset_idx") or 0)
+                    row_span = max(1, int(c.get("row_span") or 1))
+                    col_span = max(1, int(c.get("col_span") or 1))
+                except (TypeError, ValueError):
+                    continue
+                # a cell may carry a null or non-string text; coerce before escaping.
+                text = html.escape(str(c.get("text") or ""))
                 if 0 <= r < num_rows and 0 <= col < num_cols:
                     grid[r][col] = {"text": text, "row_span": row_span, "col_span": col_span}
                     # Mark spanned positions as occupied so they are skipped

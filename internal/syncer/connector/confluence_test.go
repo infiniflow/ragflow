@@ -45,7 +45,7 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	if page.SourceID != server.URL+"/wiki/display/SPACE/Page" {
 		t.Fatalf("page SourceID = %q", page.SourceID)
 	}
-	if page.SemanticIdentifier != "Page" {
+	if page.SemanticIdentifier != "Engineering / Root / Page" {
 		t.Fatalf("page SemanticIdentifier = %q", page.SemanticIdentifier)
 	}
 	if !strings.Contains(string(page.Blob), "Hello Confluence") || !strings.Contains(string(page.Blob), "Comment text") {
@@ -67,6 +67,9 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	}
 	if attachment.Extension != ".txt" {
 		t.Fatalf("attachment Extension = %q", attachment.Extension)
+	}
+	if attachment.SemanticIdentifier != "Engineering / Root / Page / file.txt" {
+		t.Fatalf("attachment SemanticIdentifier = %q", attachment.SemanticIdentifier)
 	}
 	if string(attachment.Blob) != "attachment bytes" {
 		t.Fatalf("attachment Blob = %q", string(attachment.Blob))
@@ -115,6 +118,21 @@ func TestConfluenceConnectorResume(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].Extension != ".txt" || batch.Documents[0].SourceID == first.Documents[0].SourceID {
 		t.Fatalf("resumed batch = %#v first = %#v", batch.Documents, first.Documents)
+	}
+}
+
+func TestConfluenceConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	server := newConfluenceFixtureServer(t, http.StatusOK)
+	defer server.Close()
+
+	connector := newTestConfluenceConnector(t, server.URL, map[string]any{"batch_size": 1})
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     confluenceTestTime(t, "2026-01-03T00:00:00Z"),
+		Resume:        &SyncCheckpoint{},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 
@@ -324,5 +342,22 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	want := `path\\name\'s`
 	if got != want {
 		t.Fatalf("confluenceCQLQuote() = %q, want %q", got, want)
+	}
+}
+
+func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
+	// Every identifier carries the full hierarchical path: space, ancestors, title.
+	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
+	if got != "Engineering / Root / Page" {
+		t.Fatalf("first occurrence identifier = %q, want full path", got)
+	}
+	if again := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page"); again != got {
+		t.Fatalf("later occurrence identifier = %q, want stable %q", again, got)
+	}
+	if bare := confluenceSemanticIdentifier("", nil, "Standalone"); bare != "Standalone" {
+		t.Fatalf("no-space identifier = %q, want title only", bare)
+	}
+	if unnamed := confluenceSemanticIdentifier("Space", nil, ""); unnamed != "Space / Untitled" {
+		t.Fatalf("untitled identifier = %q, want Space / Untitled", unnamed)
 	}
 }

@@ -333,7 +333,6 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
         return
     else:
-        session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
         assert conv.dialog_id == dialog_id, "Session does not belong to this dialog"
