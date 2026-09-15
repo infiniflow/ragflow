@@ -324,15 +324,14 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting RAGFlow go server..."
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate &
+        MCP_ARGS=()
+        if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+            MCP_ARGS=(--enable-mcpserver --mcp-host="${MCP_HOST}" --mcp-port="${MCP_PORT}" --mcp-mode="${MCP_MODE}" --mcp-host-api-key="${MCP_HOST_API_KEY}")
+        fi
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate "${MCP_ARGS[@]}" &
     fi
 fi
 
-
-
-#if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
-#    start_mcp_server
-#fi
 
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then

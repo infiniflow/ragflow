@@ -23,6 +23,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 )
 
 // JSONRPCVersion is the protocol version string.
@@ -216,6 +218,52 @@ func NewInvalidRequestError(id json.RawMessage, msg string) JSONRPCResponse {
 			Message: fmt.Sprintf("Invalid Request: %s", msg),
 		},
 	}
+}
+
+// HTTPHandler exposes the stateless streamable-HTTP MCP transport. The
+// factory is called for every request so host-mode credentials never cross
+// request boundaries.
+type HTTPHandler struct {
+	newServer func(*http.Request) (*Server, error)
+}
+
+func NewHTTPHandler(newServer func(*http.Request) (*Server, error)) http.Handler {
+	return &HTTPHandler{newServer: newServer}
+}
+
+func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		if r.Method == http.MethodGet || r.Method == http.MethodDelete {
+			w.Header().Set("Allow", "POST, GET, DELETE")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	server, err := h.newServer(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	request, err := io.ReadAll(body)
+	if err != nil {
+		http.Error(w, "failed to read MCP request", http.StatusBadRequest)
+		return
+	}
+	response, hasResponse, err := server.HandleRequest(r.Context(), request)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !hasResponse {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(response)
 }
 
 // float64Ptr returns a pointer to a float64 value, used for Property

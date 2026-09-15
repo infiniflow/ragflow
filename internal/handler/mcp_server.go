@@ -46,6 +46,23 @@ type MCPServerHandler struct {
 	retrievalFunc    func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error)
 }
 
+// NewStandaloneMCPHandler exposes the native streamable-HTTP transport. User
+// resolution and service calls are supplied by the application bootstrap.
+func NewStandaloneMCPHandler(
+	resolveUser func(context.Context, string) (string, error),
+	listDatasetsFunc func(context.Context, string, int, int, string, bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(context.Context, string, int, int, string, bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(context.Context, string, mcp.RetrievalRequest) (string, error),
+) http.Handler {
+	return mcp.NewHTTPHandler(func(r *http.Request) (*mcp.Server, error) {
+		userID, err := resolveUser(r.Context(), r.Header.Get("Authorization"))
+		if err != nil {
+			return nil, err
+		}
+		return mcp.NewServer(mcp.NewServiceConnector(userID, listDatasetsFunc, listChatsFunc, retrievalFunc)), nil
+	})
+}
+
 // NewMCPServerHandler creates a new MCPServerHandler.
 // The service functions are passed as closures to avoid importing the service
 // package directly from the handler layer.

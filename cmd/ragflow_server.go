@@ -84,6 +84,11 @@ type serverArgs struct {
 	adminHost     *string // Used by api, ingestor, syncer for heartbeat
 	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
 	name          *string // server name
+	mcpEnabled    bool
+	mcpHost       string
+	mcpPort       int
+	mcpMode       string
+	mcpAPIKey     string
 }
 
 // engineDocEngine is the small slice of the engine surface the doc-chunk pager
@@ -175,12 +180,50 @@ func (p *docChunkPager) DocChunks(ctx context.Context, req harness.DocChunksRequ
 }
 
 func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{}
+	args := &serverArgs{mcpHost: "127.0.0.1", mcpPort: 9382, mcpMode: "self-host"}
+	if value := os.Getenv("RAGFLOW_MCP_HOST"); value != "" {
+		args.mcpHost = value
+	}
+	if value := os.Getenv("RAGFLOW_MCP_PORT"); value != "" {
+		port, err := strconv.Atoi(value)
+		if err != nil || port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("invalid MCP port: %s", value)
+		}
+		args.mcpPort = port
+	}
+	if value := os.Getenv("RAGFLOW_MCP_LAUNCH_MODE"); value != "" {
+		args.mcpMode = value
+	}
+	args.mcpAPIKey = os.Getenv("RAGFLOW_MCP_HOST_API_KEY")
+	args.mcpEnabled = strings.EqualFold(os.Getenv("RAGFLOW_MCP_ENABLED"), "true") || os.Getenv("RAGFLOW_MCP_ENABLED") == "1"
 
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
+		if key, value, ok := strings.Cut(arg, "="); ok {
+			switch key {
+			case "--mcp-host":
+				args.mcpHost = value
+				continue
+			case "--mcp-port":
+				port, err := strconv.Atoi(value)
+				if err != nil || port <= 0 || port > 65535 {
+					return nil, fmt.Errorf("invalid MCP port: %s", value)
+				}
+				args.mcpPort = port
+				continue
+			case "--mcp-mode":
+				if value != "self-host" && value != "host" {
+					return nil, fmt.Errorf("invalid MCP mode: %s", value)
+				}
+				args.mcpMode = value
+				continue
+			case "--mcp-host-api-key":
+				args.mcpAPIKey = value
+				continue
+			}
+		}
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
@@ -193,6 +236,8 @@ func parseArgs() (*serverArgs, error) {
 		case "--api":
 			serverMode = "api"
 			args.mode = &serverMode
+		case "--enable-mcpserver":
+			args.mcpEnabled = true
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
@@ -249,6 +294,9 @@ func parseArgs() (*serverArgs, error) {
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
+	}
+	if args.mcpEnabled && args.mcpMode == "self-host" && args.mcpAPIKey == "" {
+		return nil, errors.New("--mcp-host-api-key is required when --mcp-mode=self-host")
 	}
 	return args, nil
 }
@@ -572,7 +620,6 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 		Addr:    addr,
 		Handler: ginEngine,
 	}
-
 	// Print RAGFlow Admin logo
 	common.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
@@ -814,14 +861,14 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	startServer(ctx)
+	startServer(ctx, args)
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(ctx context.Context) {
+func startServer(ctx context.Context, args *serverArgs) {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -1259,6 +1306,37 @@ func startServer(ctx context.Context) {
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	var mcpSrv *http.Server
+	if args != nil && args.mcpEnabled {
+		resolveUser := func(ctx context.Context, authorization string) (string, error) {
+			if args.mcpMode == "self-host" {
+				authorization = args.mcpAPIKey
+			}
+			user, err := authHandler.ResolveMCPUser(ctx, authorization)
+			if err != nil {
+				return "", err
+			}
+			return user.ID, nil
+		}
+		mcpSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", args.mcpHost, args.mcpPort), Handler: handler.NewStandaloneMCPHandler(
+			resolveUser,
+			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+				return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderby, desc)
+			},
+			func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+				return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderby, desc)
+			},
+			func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
+				return handler.MCPRetrieval(ctx, datasetsService, userID, req)
+			},
+		)}
+		go func() {
+			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
+			if err := mcpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				common.Error("MCP server failed", err)
+			}
+		}()
+	}
 
 	// Start server in a goroutine
 	go func() {
@@ -1299,6 +1377,11 @@ func startServer(ctx context.Context) {
 	// Shutdown server
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
+	}
+	if mcpSrv != nil {
+		if err := mcpSrv.Shutdown(shutdownCtx); err != nil {
+			common.Fatal("MCP server forced to shutdown", zap.Error(err))
+		}
 	}
 }
 
