@@ -258,6 +258,9 @@ function transformGeneralChunkerConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   const result = transformTokenChunkerConfigToForm(config);
+  result.table_context_size = Number(config?.table_context_size ?? 0);
+  result.image_context_size = Number(config?.image_context_size ?? 0);
+  delete result.image_table_context_window;
   delete result.delimiter_mode;
   return result;
 }

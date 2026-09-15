@@ -78,6 +78,41 @@ func TestCleanComponentParamsNormalizesGeneralLegacyDelimiter(t *testing.T) {
 	}
 }
 
+func TestCleanComponentParamsNormalizesDelimiterWhenDSLDeclaresOnlyLegacyKey(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"GeneralChunker:Custom": map[string]any{
+				"obj": map[string]any{
+					"component_name": "GeneralChunker",
+					"params": map[string]any{
+						"delimiter": "\n",
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal DSL: %v", err)
+	}
+	result := CleanComponentParams(dslJSON, map[string]any{
+		"GeneralChunker:Custom": map[string]any{
+			"delimiter": "\n!?",
+		},
+	})
+	params, ok := result["GeneralChunker:Custom"].(map[string]any)
+	if !ok {
+		t.Fatalf("normalized component params = %#v", result)
+	}
+	want := []string{"\n", "!", "?"}
+	if !reflect.DeepEqual(params["delimiters"], want) {
+		t.Fatalf("delimiters = %#v, want %#v", params["delimiters"], want)
+	}
+	if _, ok := params["delimiter"]; ok {
+		t.Fatal("legacy delimiter key survived normalization")
+	}
+}
+
 func TestCleanComponentParams_DropsLegacyFlatFields(t *testing.T) {
 	dslJSON := generalDSL(t)
 	raw := map[string]any{

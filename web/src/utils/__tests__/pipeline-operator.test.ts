@@ -29,7 +29,9 @@ describe('GeneralChunker operator bridge', () => {
       image_context_size: 3,
     });
     expect(form.delimiters).toEqual([{ value: '\n' }, { value: ';' }]);
-    expect(form.image_table_context_window).toBe(3);
+    expect(form.table_context_size).toBe(2);
+    expect(form.image_context_size).toBe(3);
+    expect(form).not.toHaveProperty('image_table_context_window');
     expect(form).not.toHaveProperty('delimiter_mode');
 
     const api = transformFormConfigToApi('GeneralChunker', {
@@ -39,9 +41,11 @@ describe('GeneralChunker operator bridge', () => {
       children_delimiters: [],
       enable_children: false,
       overlapped_percent: 10,
-      image_table_context_window: 3,
+      table_context_size: 2,
+      image_context_size: 3,
     });
     expect(api.delimiters).toEqual(['\n', ';']);
+    expect(api.table_context_size).toBe(2);
     expect(api.image_context_size).toBe(3);
     expect(api).not.toHaveProperty('delimiter_mode');
   });

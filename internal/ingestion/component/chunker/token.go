@@ -541,11 +541,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	lanes := partition(len(items), workers)
 	perItem := make([][]schema.ChunkDoc, len(items))
-	hasSpreadsheetRows := false
+	dataTables := make(map[string]struct{})
 	for _, item := range items {
 		if item.CKType == "table_row" {
-			hasSpreadsheetRows = true
-			break
+			dataTables[spreadsheetTableKey(item)] = struct{}{}
 		}
 	}
 
@@ -560,12 +559,14 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 					perItem[i] = nil
 					continue
 				}
-				if hasSpreadsheetRows && items[i].CKType == "table_header" {
-					// The typed header is metadata carried by every row. It
-					// must not become an independent TokenChunker chunk when
-					// row IR is consumed by a legacy pipeline.
-					perItem[i] = nil
-					continue
+				if items[i].CKType == "table_header" {
+					if _, hasRows := dataTables[spreadsheetTableKey(items[i])]; hasRows {
+						// The typed header is metadata carried by every row. It
+						// must not become an independent TokenChunker chunk when
+						// row IR is consumed by a legacy pipeline.
+						perItem[i] = nil
+						continue
+					}
 				}
 				if isTextParserSentenceFallback(fileType, c.param.Delimiters, items[i]) {
 					perItem[i] = splitTextParserSentences(items[i])

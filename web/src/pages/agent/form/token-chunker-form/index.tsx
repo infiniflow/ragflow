@@ -29,7 +29,9 @@ const outputList = buildOutputList(initialTokenChunkerValues.outputs);
 
 export const FormSchema = z.object({
   chunk_token_size: z.number(),
-  image_table_context_window: z.number(),
+  image_table_context_window: z.number().optional(),
+  table_context_size: z.number().optional(),
+  image_context_size: z.number().optional(),
   delimiters: z.array(
     z.object({
       value: z.string().optional(),
@@ -133,14 +135,35 @@ const TokenChunkerForm = ({
               integer
               label={t('flow.overlappedPercent')}
             />
-            <SliderInputFormField
-              name="image_table_context_window"
-              max={256}
-              min={0}
-              integer
-              label={t('knowledgeConfiguration.imageTableContextWindow')}
-              tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
-            />
+            {isGeneralChunker ? (
+              <>
+                <SliderInputFormField
+                  name="table_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.tableContextWindow')}
+                  tooltip={t('knowledgeConfiguration.tableContextWindowTip')}
+                />
+                <SliderInputFormField
+                  name="image_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.imageContextWindow')}
+                  tooltip={t('knowledgeConfiguration.imageContextWindowTip')}
+                />
+              </>
+            ) : (
+              <SliderInputFormField
+                name="image_table_context_window"
+                max={256}
+                min={0}
+                integer
+                label={t('knowledgeConfiguration.imageTableContextWindow')}
+                tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
+              />
+            )}
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">

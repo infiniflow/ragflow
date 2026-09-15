@@ -371,6 +371,8 @@ export function transformGeneralChunkerParams(
   params: TokenChunkerFormSchemaType,
 ) {
   const result = transformTokenChunkerParams(params);
+  result.table_context_size = Number(params.table_context_size || 0);
+  result.image_context_size = Number(params.image_context_size || 0);
   delete result.delimiter_mode;
   return result;
 }

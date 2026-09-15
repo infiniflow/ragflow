@@ -87,8 +87,8 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	if res.OutputFormat != "json" {
 		t.Errorf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
 	}
-	if len(res.JSON) == 0 {
-		t.Fatalf("res.JSON should have items")
+	if len(res.JSON) < 2 {
+		t.Fatalf("res.JSON = %#v, want header and row", res.JSON)
 	}
 	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
 		t.Errorf("items should be header and row, got %#v", res.JSON)

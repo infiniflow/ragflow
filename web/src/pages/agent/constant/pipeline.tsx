@@ -301,7 +301,8 @@ export const initialGeneralChunkerValues = {
     { value: '！' },
     { value: '？' },
   ],
-  image_table_context_window: 0,
+  table_context_size: 0,
+  image_context_size: 0,
   enable_children: false,
   children_delimiters: [],
 };

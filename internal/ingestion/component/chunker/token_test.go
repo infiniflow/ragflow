@@ -106,6 +106,33 @@ func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
 	}
 }
 
+func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Name; Owner", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want data row and header-only sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "Name; Owner" {
+		t.Fatalf("chunks = %#v, want row followed by header-only sheet", chunks)
+	}
+}
+
 // TestTokenChunker_InvokeDelimMode_BasicChunking drives the
 // delimiter-mode path with a backtick delimiter and asserts each
 // chunk carries the matched delimiter text within itself (split

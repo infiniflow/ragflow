@@ -102,6 +102,9 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		for k := range s.ParamsDefaults {
 			keys[k] = struct{}{}
 		}
+		if s.ComponentName == "GeneralChunker" {
+			keys["delimiters"] = struct{}{}
+		}
 		validCPNs[s.CpnID] = keys
 		componentNames[s.CpnID] = s.ComponentName
 	}
