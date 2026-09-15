@@ -36,10 +36,9 @@ const (
 )
 
 type ocrRecItem struct {
-	idx    int
-	part   int
-	img    *Image
-	weight int
+	idx  int
+	part int
+	img  *Image
 }
 
 type ocrRecBatch []ocrRecItem
@@ -88,7 +87,6 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		return nil, err
 	}
 	fragments := make([]map[int]OCRRecResult, n)
-	fragmentWeights := make([]map[int]int, n)
 	for _, batch := range batches {
 		chunkImgs := make([]*Image, len(batch))
 		for i := range batch {
@@ -102,24 +100,25 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 			item := batch[i]
 			if fragments[item.idx] == nil {
 				fragments[item.idx] = make(map[int]OCRRecResult)
-				fragmentWeights[item.idx] = make(map[int]int)
 			}
 			fragments[item.idx][item.part] = chunkRes[i]
-			fragmentWeights[item.idx][item.part] = item.weight
 		}
 	}
 	results := make([]OCRRecResult, n)
 	for i := range results {
-		var totalWeight int
+		var totalChars int
+		var weightedScore float64
 		for part := 0; part < len(fragments[i]); part++ {
 			fragment := fragments[i][part]
-			weight := fragmentWeights[i][part]
 			results[i].Text += fragment.Text
-			results[i].Score += fragment.Score * float32(weight)
-			totalWeight += weight
+			charCount := len([]rune(fragment.Text))
+			if charCount > 0 {
+				weightedScore += float64(fragment.Score) * float64(charCount)
+				totalChars += charCount
+			}
 		}
-		if totalWeight > 0 {
-			results[i].Score /= float32(totalWeight)
+		if totalChars > 0 {
+			results[i].Score = round4(float32(weightedScore / float64(totalChars)))
 		}
 	}
 	return results, nil
@@ -133,7 +132,7 @@ func planOCRRecBatches(imgs []*Image) ([]ocrRecBatch, error) {
 			return nil, err
 		}
 		for partIndex, part := range parts {
-			items = append(items, ocrRecItem{idx: i, part: partIndex, img: part, weight: part.W})
+			items = append(items, ocrRecItem{idx: i, part: partIndex, img: part})
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {

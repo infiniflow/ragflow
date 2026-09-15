@@ -246,7 +246,7 @@ func (e *Engine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 // correctly applies /Rotate.  pdf_oxide's own PageSize returns raw
 // (unrotated) dimensions.
 func (e *Engine) PageSize(pageNum int) (float64, float64, error) {
-	w, h, err := pdfium.PageSize(e.rawData, pageNum)
+	w, h, err := e.pdfiumDoc.PageSize(pageNum)
 	if err != nil {
 		return e.doc.PageSize(pageNum)
 	}

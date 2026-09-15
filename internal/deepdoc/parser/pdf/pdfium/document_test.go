@@ -1,4 +1,4 @@
-//go:build cgo && manual
+//go:build cgo
 
 package pdfium
 

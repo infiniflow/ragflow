@@ -4,6 +4,7 @@ package pdf
 
 import (
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
 
@@ -48,9 +49,14 @@ func BenchmarkNativePDFParse(b *testing.B) {
 		}
 		result.Close()
 	}
+	b.StopTimer()
 	var usage syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil {
 		b.Fatal(err)
 	}
-	b.ReportMetric(float64(usage.Maxrss)/1024, "peak-RSS-MiB")
+	rssMiB := float64(usage.Maxrss) / 1024
+	if runtime.GOOS == "darwin" {
+		rssMiB /= 1024
+	}
+	b.ReportMetric(rssMiB, "peak-RSS-MiB")
 }

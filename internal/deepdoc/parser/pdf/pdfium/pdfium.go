@@ -49,6 +49,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"runtime"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
@@ -113,6 +114,9 @@ func OpenDocument(pdfData []byte) (document *Document, err error) {
 			return
 		}
 		document = &Document{cData: cData, doc: doc}
+		runtime.SetFinalizer(document, func(d *Document) {
+			d.Close()
+		})
 	})
 	return document, err
 }
@@ -122,6 +126,7 @@ func (d *Document) Close() {
 	if d == nil {
 		return
 	}
+	runtime.SetFinalizer(d, nil)
 	pdfsync.With(func() {
 		if d.doc != nil {
 			C.FPDF_CloseDocument(d.doc)
