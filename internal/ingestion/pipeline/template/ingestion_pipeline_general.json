@@ -374,7 +374,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -430,7 +430,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_0"
+                        "name": "Token Chunker"
                     },
                     "id": "TokenChunker:SixApplesFall",
                     "measured": {
@@ -458,7 +458,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:LegalReadersDecide",
                     "measured": {
@@ -482,7 +482,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

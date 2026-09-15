@@ -222,8 +222,12 @@ def _load_connector_app(monkeypatch):
         def list_sync_tasks(*_args, **_kwargs):
             return [], 0
 
+    class _StubConnectorAuthorizationError(Exception):
+        pass
+
     connector_service_mod.ConnectorService = _StubConnectorService
     connector_service_mod.SyncLogsService = _StubSyncLogsService
+    connector_service_mod.ConnectorAuthorizationError = _StubConnectorAuthorizationError
     monkeypatch.setitem(sys.modules, "api.db.services.connector_service", connector_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
@@ -508,6 +512,49 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     )
     bad_config_res = _run(module.test_connector("rss"))
     assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
+
+
+@pytest.mark.p2
+def test_connector_rebuild_maps_service_auth_denials(monkeypatch):
+    """The route lets the service own kb authorization and only maps the
+    service's ConnectorAuthorizationError to an auth response. This keeps the
+    destructive service operation protected regardless of the HTTP caller.
+    """
+    module = _load_connector_app(monkeypatch)
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
+
+    def _deny(message):
+        def _rebuild(*_args, **_kwargs):
+            raise module.ConnectorAuthorizationError(message)
+
+        return _rebuild
+
+    monkeypatch.setattr(module.ConnectorService, "rebuild", _deny("no authorization"))
+    denied_kb = _run(module.rebuild("conn-rb"))
+    assert denied_kb["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert denied_kb["message"] == "no authorization"
+    assert denied_kb["data"] is False
+
+    monkeypatch.setattr(
+        module.ConnectorService,
+        "rebuild",
+        _deny("Connector is not bound to this knowledge base."),
+    )
+    denied_unbound = _run(module.rebuild("conn-rb"))
+    assert denied_unbound["code"] == module.RetCode.AUTHENTICATION_ERROR
+    assert denied_unbound["message"] == "Connector is not bound to this knowledge base."
+    assert denied_unbound["data"] is False
+
+    # A non-authorization service failure still maps to a server error.
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: "rebuild-failed")
+    failed = _run(module.rebuild("conn-rb"))
+    assert failed["code"] == module.RetCode.SERVER_ERROR
+    assert failed["message"] == "rebuild-failed"
+
+    # Success path returns data True.
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: None)
+    ok = _run(module.rebuild("conn-rb"))
+    assert ok["data"] is True
 
 
 @pytest.mark.p2

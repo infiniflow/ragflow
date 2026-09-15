@@ -78,6 +78,15 @@ import re
 # Match a backtick-wrapped token. Case-sensitive on purpose (see #17384).
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 
+# The single source of truth for the default value of the
+# ``parser_config.delimiter`` field (issue #18562). Before this constant
+# existed, the per-callback ``parser_config.get("delimiter", ...)`` defaults
+# drifted across several copy-pasted values: txt/markdown shipped this full
+# 8-character set, docx/image/email omitted the ASCII ``;``, and
+# ``rag/app/book.py`` keeps its own deliberate Chinese-only set. Every backend
+# default must reference this constant so the value can never drift again.
+DEFAULT_DELIMITER = "\n!?;。；！？"
+
 
 def normalize_text_newlines(text: str) -> str:
     """Normalize CRLF and standalone CR to LF in source text."""

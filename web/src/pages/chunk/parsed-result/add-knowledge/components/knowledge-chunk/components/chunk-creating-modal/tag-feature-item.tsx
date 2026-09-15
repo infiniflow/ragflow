@@ -76,6 +76,10 @@ export const TagFeatureItem = () => {
                     <FormField
                       control={form.control}
                       name={`${FieldKey}.${name}.tag` as any}
+                      rules={{
+                        validate: (value: string) =>
+                          value ? true : t('knowledgeConfiguration.tagMessage'),
+                      }}
                       render={({ field }) => (
                         <FormItem className="w-2/3">
                           <FormControl className="w-full">

@@ -53,6 +53,23 @@
     padding-inline-start: 10px;
     border-inline-start: 4px solid #ccc;
   }
+  :global(ul),
+  :global(ol) {
+    margin: 0.5em 0;
+    padding-inline-start: 1.5em;
+  }
+  :global(ul) {
+    list-style-type: disc;
+  }
+  :global(ol) {
+    list-style-type: decimal;
+  }
+  :global(li) {
+    margin: 0.25em 0;
+  }
+  :global(li > p) {
+    margin: 0.15em 0;
+  }
 
   // RTL Support
   &[dir='rtl'] {

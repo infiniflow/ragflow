@@ -12,7 +12,7 @@
   "models": [
     {
       "name": "meta/llama-4-maverick-instruct",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -20,7 +20,7 @@
     },
     {
       "name": "meta/llama-4-scout-instruct",
-      "content_length": 10485760,
+      "context_length": 10485760,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -28,7 +28,7 @@
     },
     {
       "name": "meta/meta-llama-3-70b-instruct",
-      "content_length": 8000,
+      "context_length": 8000,
       "max_output": 8000,
       "model_types": [
         "chat"
@@ -36,7 +36,7 @@
     },
     {
       "name": "meta/meta-llama-3-8b-instruct",
-      "content_length": 8000,
+      "context_length": 8000,
       "max_output": 8000,
       "model_types": [
         "chat"

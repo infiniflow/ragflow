@@ -82,6 +82,56 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 	}
 }
 
+// TestVariableAssigner_SetBoolean: boolean spellings are normalized
+// case-insensitively, while native booleans are passed through unchanged.
+func TestVariableAssigner_SetBoolean(t *testing.T) {
+	tests := []struct {
+		name      string
+		parameter any
+		want      bool
+	}{
+		{name: "native true", parameter: true, want: true},
+		{name: "native false", parameter: false, want: false},
+		{name: "legacy yes", parameter: "yes", want: true},
+		{name: "legacy no", parameter: "no", want: false},
+		{name: "uppercase yes", parameter: "YES", want: true},
+		{name: "mixed-case no", parameter: "No", want: false},
+		{name: "true spelling", parameter: "true", want: true},
+		{name: "uppercase false spelling", parameter: "FALSE", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := canvas.NewCanvasState("run-set-boolean", "task-set-boolean")
+			state.Outputs["cpn_0"] = map[string]any{"flag": false}
+			ctx := canvas.WithState(t.Context(), state)
+
+			vars := []map[string]any{
+				{
+					"variable":  "cpn_0@flag",
+					"operator":  "set",
+					"parameter": tt.parameter,
+				},
+			}
+			c, err := NewVariableAssignerComponent(map[string]any{"variables": vars})
+			if err != nil {
+				t.Fatalf("NewVariableAssignerComponent: %v", err)
+			}
+			if _, err = c.Invoke(ctx, nil, nil); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+
+			got, ok := state.Outputs["cpn_0"]["flag"].(bool)
+			if !ok {
+				t.Fatalf("flag has type %T, want bool", state.Outputs["cpn_0"]["flag"])
+			}
+			if got != tt.want {
+				t.Errorf("flag: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestVariableAssigner_DivideByZero: assert "ERROR:DIVIDE_BY_ZERO"
 // returned, state unchanged.
 func TestVariableAssigner_DivideByZero(t *testing.T) {

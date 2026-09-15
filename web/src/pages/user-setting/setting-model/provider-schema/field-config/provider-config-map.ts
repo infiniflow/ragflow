@@ -19,6 +19,19 @@ import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
 import { parseApiKeyAsObject } from './utils';
 
+const buildMineruApiKey = (values: Record<string, any>) => {
+  const cfg: Record<string, any> = { ...values };
+  delete cfg.instance_name;
+  cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
+  if (
+    values.mineru_backend !== 'vlm-http-client' &&
+    values.mineru_backend !== 'hybrid-http-client'
+  ) {
+    delete cfg.mineru_server_url;
+  }
+  return cfg;
+};
+
 /**
  * Factory configuration mapping table
  * key: LLMFactory value
@@ -659,12 +672,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'mineruSelectBackend',
         options: [
           { label: 'pipeline', value: 'pipeline' },
-          { label: 'vlm-transformers', value: 'vlm-transformers' },
-          { label: 'vlm-vllm-engine', value: 'vlm-vllm-engine' },
+          { label: 'vlm-engine', value: 'vlm-engine' },
+          { label: 'hybrid-engine', value: 'hybrid-engine' },
           { label: 'vlm-http-client', value: 'vlm-http-client' },
-          { label: 'vlm-mlx-engine', value: 'vlm-mlx-engine' },
-          { label: 'vlm-vllm-async-engine', value: 'vlm-vllm-async-engine' },
-          { label: 'vlm-lmdeploy-engine', value: 'vlm-lmdeploy-engine' },
+          { label: 'hybrid-http-client', value: 'hybrid-http-client' },
         ],
         validation: { message: 'mineruBackendMessage' },
       },
@@ -675,7 +686,8 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         required: false,
         placeholder: 'mineruServerUrlPlaceholder',
         shouldRender: (values: any) =>
-          values?.mineru_backend === 'vlm-http-client',
+          values?.mineru_backend === 'vlm-http-client' ||
+          values?.mineru_backend === 'hybrid-http-client',
         validation: { message: 'mineruServerUrlMessage' },
       },
       {
@@ -686,34 +698,18 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: true,
       },
     ],
-    verifyTransform: (values) => {
-      const cfg: Record<string, any> = { ...values };
-      delete cfg.instance_name;
-      cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
-      if (values.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
-      }
-      return {
-        apiKey: cfg,
-        baseUrl: values.mineru_apiserver,
-        modelInfo: [],
-      };
-    },
-    submitTransform: (values) => {
-      const cfg: Record<string, any> = { ...values };
-      delete cfg.instance_name;
-      cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
-      if (values.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
-      }
-      return {
-        instance_name: values.instance_name,
-        llm_factory: LLMFactory.MinerU,
-        api_key: cfg,
-        base_url: '',
-        model_info: [],
-      };
-    },
+    verifyTransform: (values) => ({
+      apiKey: buildMineruApiKey(values),
+      baseUrl: values.mineru_apiserver,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.MinerU,
+      api_key: buildMineruApiKey(values),
+      base_url: '',
+      model_info: [],
+    }),
     echoTransform: (instance) => {
       const obj = parseApiKeyAsObject(instance.api_key) ?? {};
       const rawDelete = obj.mineru_delete_output;

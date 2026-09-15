@@ -50,13 +50,22 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// chunk list). buildTree reads the texts, ids, and embeddings directly from
 	// the source chunks.
 	var products []common.Product
-	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products); err != nil {
+	var claimsByChunk map[string][]Claim
+	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products, &claimsByChunk); err != nil {
 		return common.Outputs{}, err
 	}
 
+	// Rename duplicate summary titles whose descriptions differ (Python
+	// rewrite_duplicate_tree_names), BEFORE the graph projection: titles are
+	// the entity names and the relation endpoints, so two nodes sharing a
+	// title would render as one ambiguous node. Best-effort — a rewrite
+	// failure must not cost us the tree.
+	rewriteDuplicateTreeNames(ctx, deps, llmID, products)
+
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
 	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
-	// plus a compact graph blob (knowledge_graph_kwd="graph"), so the
+	// plus per-row entity/relation rows (knowledge_graph_kwd="entity"|
+	// "relation"), so the
 	// document-structure /structure/graph endpoint can serve the tree. A failure
 	// here must not abort the whole tree compile — the summary nodes are already
 	// valid on their own — so it is best-effort and surfaced as a log.
@@ -64,6 +73,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		log.Printf("tree: graph projection failed (best-effort, continuing): %v", err)
 	} else {
 		products = append(products, graphProds...)
+	}
+
+	// Claims become their own searchable rows so global KNN can hit them
+	// directly instead of only reaching them through beam descent. Also
+	// best-effort: a failure here must not cost us the tree.
+	if claimProds, err := buildTreeClaimProducts(ctx, deps, docID, claimsByChunk, param.TemplateID); err != nil {
+		log.Printf("tree: claim rows failed (best-effort, continuing): %v", err)
+	} else {
+		products = append(products, claimProds...)
 	}
 
 	out := common.Outputs{
@@ -153,7 +171,12 @@ func resolveMaxErrors(param common.Param) int {
 // never calls the embedder directly. treeOrder drives both the top-level
 // clustering (performed inside buildTree via watershed) and the recursive
 // sub-clustering, so the same method is used at every level of the tree.
-func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, chunks []common.Chunk, treeOrder int, taskPrompt string, param common.Param, products *[]common.Product) error {
+//
+// claimOut, when non-nil, receives the extracted claims keyed by chunk id so the
+// caller can persist them as their own rows (see buildTreeClaimProducts). It is
+// an out-param rather than a return value so buildTree keeps a single error
+// return for its existing callers.
+func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, chunks []common.Chunk, treeOrder int, taskPrompt string, param common.Param, products *[]common.Product, claimOut *map[string][]Claim) error {
 	maxToken := resolveMaxToken(param)
 	maxErrors := resolveMaxErrors(param)
 	errorCount := 0
@@ -173,6 +196,77 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		embeddings = toFloat64Matrix(vectors)
 	}
+	// Extract claims before clustering so each cluster can be summarised from
+	// its members' claims instead of their truncated raw text. Claims are far
+	// more compact than the source, so the per-chunk truncation in
+	// buildClusterContent no longer discards content, and the abstraction is
+	// guaranteed to agree with the claims attached to the same cluster.
+	//
+	// The gate mode comes from the template config, mirroring Python
+	// _struct_evidence_gate_mode(parser_config); the extraction toggle and the
+	// template-declared extraction contract mirror Python's
+	// raptor_config.get("extract_claims", True) / raptor_config["claim_prompt"].
+	var claimsByChunk map[string][]Claim
+	if resolveExtractClaims(param) {
+		claimsByChunk = ExtractClaimsForChunks(ctx, deps, llmID, chunks,
+			ParseEvidenceGateMode(param.Extra["evidence_gate_mode"]), resolveClaimPrompt(param))
+		if len(claimsByChunk) > 0 {
+			log.Printf("tree: extracted claims for %d/%d chunk(s)", len(claimsByChunk), len(chunks))
+		}
+	}
+	if claimOut != nil {
+		*claimOut = claimsByChunk
+	}
+
+	// Claim-view clustering vectors (mirrors Python build_doc_tree): each chunk
+	// is represented to the clustering layer by the embedding of its claims +
+	// verbatim evidence, not by its raw-text vector. Claims are the chunk's
+	// semantics stripped of layout noise, so topic clusters form around what
+	// the chunks actually assert. Chunks without claims keep their raw vector,
+	// and a claim vector whose dimension disagrees with the chunk vectors is
+	// ignored rather than fed into clustering (mixed-model guard).
+	if len(claimsByChunk) > 0 {
+		digestIDs := make([]string, 0, len(claimsByChunk))
+		digests := make([]string, 0, len(claimsByChunk))
+		for _, cid := range chunkIDs {
+			claims, ok := claimsByChunk[cid]
+			if !ok || len(claims) == 0 {
+				continue
+			}
+			digest := ClaimDigest(claims)
+			if strings.TrimSpace(digest) == "" {
+				continue
+			}
+			digestIDs = append(digestIDs, cid)
+			digests = append(digests, digest)
+		}
+		if len(digests) > 0 {
+			if claimVecs, err := deps.Embed.Encode(ctx, digests); err != nil {
+				log.Printf("tree: claim-view embedding failed; clustering on raw chunk vectors: %v", err)
+			} else {
+				claimView := make(map[string][]float32, len(digestIDs))
+				for i, cid := range digestIDs {
+					if i < len(claimVecs) && len(claimVecs[i]) > 0 {
+						claimView[cid] = claimVecs[i]
+					}
+				}
+				replaced := 0
+				for i, cid := range chunkIDs {
+					view, ok := claimView[cid]
+					if !ok {
+						continue
+					}
+					if len(embeddings[i]) > 0 && len(view) != len(embeddings[i]) {
+						continue // mixed-model guard: never feed mixed dimensions in
+					}
+					embeddings[i] = toFloat64Slice(view)
+					replaced++
+				}
+				log.Printf("tree: %d/%d chunk(s) clustered on claim-view embeddings", replaced, len(chunkIDs))
+			}
+		}
+	}
+
 	labels, err := watershed(embeddings, treeOrder)
 	if err != nil {
 		return err
@@ -208,7 +302,19 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		// text to a per-chunk token budget so the cluster fits the LLM context
 		// (Python: len_per_chunk = (max_length - max_token) / len(texts);
 		// truncate(t, len_per_chunk), raptor.py:389-390).
-		content := buildClusterContent(texts, task.pointIdxs, deps.ModelContextLen, maxToken)
+		//
+		// At the bottom level, prefer the members' claims: BuildClaimContent
+		// returns "" when a cluster has none, so we fall through to the raw
+		// text path. Upper levels keep using raw text — they re-cluster the
+		// same original points, so claim-feeding them would only repeat what
+		// the level-0 summaries already compressed.
+		content := ""
+		if task.level == 0 {
+			content = BuildClaimContent(texts, chunkIDs, task.pointIdxs, claimsByChunk)
+		}
+		if content == "" {
+			content = buildClusterContent(texts, task.pointIdxs, deps.ModelContextLen, maxToken)
+		}
 		system := raptorSystemHelper + strings.Replace(taskPrompt, "{cluster_content}", content, 1)
 		summary, err := summarizeTexts(ctx, deps, llmID, system, raptorTitleInstruction, maxToken)
 		if err != nil {
@@ -360,10 +466,11 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			}
 		}
 		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-			LLMID:        llmID,
-			SystemPrompt: systemText,
-			UserPrompt:   userText,
-			MaxTokens:    &mt,
+			LLMID:           llmID,
+			SystemPrompt:    systemText,
+			UserPrompt:      userText,
+			MaxTokens:       &mt,
+			DisableThinking: true,
 		})
 		if err != nil {
 			continue
@@ -575,13 +682,73 @@ const raptorSystemHelper = "You're a helpful assistant.\n\nHelp me with the foll
 // in the same language as the paragraphs.").
 const raptorTitleInstruction = "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs."
 
-// resolveRaptorPrompt returns the summary task template, honouring an
-// extra["prompt"] override; falls back to defaultRaptorPrompt.
+// templateRaptorString reads a string field from the template config's
+// "raptor" section (tree.yaml's raptor: block, which Python compiles into
+// raptor_config — compiler.py) and returns "" when absent.
+func templateRaptorString(param common.Param, key string) string {
+	cfg, ok := param.TemplateConfig["raptor"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(cfgStr(cfg[key]))
+}
+
+// templateRaptorBool reads a boolean field from the template config's "raptor"
+// section, reporting presence so callers can distinguish unset from false.
+func templateRaptorBool(param common.Param, key string) (bool, bool) {
+	cfg, ok := param.TemplateConfig["raptor"].(map[string]any)
+	if !ok {
+		return false, false
+	}
+	b, ok := cfg[key].(bool)
+	return b, ok
+}
+
+func cfgStr(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+// resolveRaptorPrompt returns the summary task template, honouring in order an
+// extra["prompt"] caller override, the template's raptor.prompt (Python:
+// raptor_cfg["prompt"]), and the built-in default.
 func resolveRaptorPrompt(param common.Param) string {
 	if raw, ok := param.Extra["prompt"]; ok {
 		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
 			return s
 		}
 	}
+	if s := templateRaptorString(param, "prompt"); s != "" {
+		return s
+	}
 	return defaultRaptorPrompt
+}
+
+// resolveClaimPrompt returns the claim-extraction system prompt, honouring in
+// order an extra["claim_prompt"] caller override and the template's
+// raptor.claim_prompt (Python passes raptor_config["claim_prompt"] into
+// extract_claims_for_chunks). An empty result means "use the built-in
+// contract" — the same None-fallback Python applies.
+func resolveClaimPrompt(param common.Param) string {
+	if raw, ok := param.Extra["claim_prompt"]; ok {
+		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return templateRaptorString(param, "claim_prompt")
+}
+
+// resolveExtractClaims mirrors Python raptor_config.get("extract_claims", True):
+// claim harvesting is on unless the template (or a caller override) turns it
+// off, in which case clusters summarise from raw chunk text.
+func resolveExtractClaims(param common.Param) bool {
+	if raw, ok := param.Extra["extract_claims"]; ok {
+		if b, ok := raw.(bool); ok {
+			return b
+		}
+	}
+	if b, ok := templateRaptorBool(param, "extract_claims"); ok {
+		return b
+	}
+	return true
 }
