@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"ragflow/internal/engine"
@@ -51,6 +52,24 @@ const (
 // the tenant's embedding model. Kept as an interface so tests inject a stub.
 type NavEmbedder interface {
 	Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error)
+}
+
+// NavQueryEmbedder is the optional query-side counterpart of NavEmbedder
+// (Python LLMBundle.encode_queries). It is implemented by embedders whose model
+// encodes queries and documents asymmetrically (Cohere / Voyage / Jina /
+// NVIDIA); callers embedding a SEARCH QUERY must prefer it and fall back to
+// Encode when it is absent.
+type NavQueryEmbedder interface {
+	EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error)
+}
+
+// encodeNavQuery embeds a search query, using the asymmetric query encoding
+// when the embedder provides one, mirroring Python's encode_queries split.
+func encodeNavQuery(ctx context.Context, emb NavEmbedder, tenantID string, texts []string) ([][]float32, error) {
+	if q, ok := emb.(NavQueryEmbedder); ok {
+		return q.EncodeQueries(ctx, tenantID, texts)
+	}
+	return emb.Encode(ctx, tenantID, texts)
 }
 
 // NavService is the concrete, ES-backed implementation of nav.NavService.
@@ -253,16 +272,17 @@ func isHexString(s string) bool {
 }
 
 // Search runs query KNN over nav rows and returns routed doc ids.
-func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, embd []float32, topK int) ([]nav.NavHit, error) {
+func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]nav.NavHit, error) {
 	if topK <= 0 {
 		topK = 8
 	}
+	allowed := navScopeSet(docScope)
 	vec := embd
 	if len(vec) == 0 {
 		if s.embed == nil {
 			return nil, fmt.Errorf("datasetnav: no embedding available for Search")
 		}
-		embeddings, err := s.embed.Encode(ctx, tenantID, []string{query})
+		embeddings, err := encodeNavQuery(ctx, s.embed, tenantID, []string{query})
 		if err != nil {
 			return nil, err
 		}
@@ -272,15 +292,67 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 		vec = embeddings[0]
 	}
 	f64 := f32ToF64Slice(vec)
+	// An unscoped read takes one mixed KNN read: every row is already in scope,
+	// so the engine's own topK budget cannot starve the result.
+	if len(allowed) == 0 {
+		return s.navScan(ctx, tenantID, kbID, navFilter(nil), f64, topK, nil)
+	}
+	// A scoped read pushes the scope into the query as two type-pinned legs —
+	// nav_doc leaves filter on doc_id, nav_cluster rows on doc_ids_kwd — so the
+	// ENGINE decides what is in scope, not an in-memory pass over a fixed pool.
+	// A fixed pool cannot honor the scope-before-topK contract: a pool of any
+	// size N is exhausted by N higher-ranked out-of-scope rows, which silently
+	// drops in-scope rows that exist (Python hits the same wall — its mixed read
+	// re-checks the scope in memory after a `top_k or 10000` pool, so its typed
+	// leg is the only one that actually pushes the scope: dataset_nav.py:1371-1383,
+	// 1400, 1444-1447).
+	//
+	// Two legs are needed because a single mixed condition cannot express both
+	// keys at once: `_matches_condition` ANDs across fields, so one condition
+	// cannot mean "doc_id IN scope" for leaves and "doc_ids_kwd intersects
+	// scope" for clusters (dataset_nav.py:1374-1383 says exactly this).
+	scope := navScopeList(allowed)
+	leaves, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd": []string{nav.TypeNavDoc},
+		"doc_id":   scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	clusters, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd":    []string{nav.TypeNavCluster},
+		"doc_ids_kwd": scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	// Both legs score the same vector with the same cosine metric, so their
+	// _score values are directly comparable. Taking each leg's top topK and
+	// merging by score yields the global topK of the union: a row ranked below
+	// its own leg's cap is already outranked by topK in-scope rows of that leg.
+	merged := append(leaves, clusters...)
+	sort.SliceStable(merged, func(i, j int) bool { return merged[i].Score > merged[j].Score })
+	if len(merged) > topK {
+		merged = merged[:topK]
+	}
+	return merged, nil
+}
+
+// navScan runs one KNN nav read behind filter, maps the rows to NavHits, and
+// re-checks the scope in memory the way Python does unconditionally
+// (dataset_nav.py:1444). The re-check is belt-and-braces on top of a pushed
+// scope filter, and trims a cluster's coverage to the scoped set. allowed may
+// be nil for an unscoped read.
+func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter map[string]interface{}, f64 []float64, limit int, allowed map[string]struct{}) ([]nav.NavHit, error) {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(nil),
-		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, topK,
+		filter,
+		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
-			TopN:              topK,
+			TopN:              limit,
 			ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 		}})
 	if err != nil {
@@ -289,25 +361,144 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 	hits := make([]nav.NavHit, 0, len(chunks))
 	for _, c := range chunks {
 		h := nav.NavHit{
-			Type:  firstStringValue(c["type_kwd"]),
-			Name:  firstStringValue(c["title_kwd"]),
-			DocID: firstStringValue(c["doc_id"]),
+			Type:   firstStringValue(c["type_kwd"]),
+			Name:   firstStringValue(c["title_kwd"]),
+			DocID:  firstStringValue(c["doc_id"]),
+			DocIDs: firstStringSlice(c["doc_ids_kwd"]),
 		}
 		if sc, ok := c["_score"].(float64); ok {
 			h.Score = sc
 		} else if sc, ok := c["_score"].(float32); ok {
 			h.Score = float64(sc)
 		}
-		if ds, ok := c["doc_ids_kwd"].([]interface{}); ok {
-			for _, d := range ds {
-				if dd, ok := d.(string); ok {
-					h.DocIDs = append(h.DocIDs, dd)
-				}
-			}
+		if !navHitInScope(h, allowed) {
+			continue
+		}
+		if len(allowed) > 0 && len(h.DocIDs) > 0 {
+			// A scoped search must only surface in-scope documents: cut a
+			// cluster's coverage list down to the scoped set so no out-of-scope
+			// doc appears under a cluster that merely overlaps the scope
+			// (dataset_nav.py:1460-1465).
+			h.DocIDs = navIntersectScope(h.DocIDs, allowed)
 		}
 		hits = append(hits, h)
 	}
 	return hits, nil
+}
+
+// navScopeList renders a scope set as a sorted list for an engine filter, so the
+// term order is deterministic run to run (Python sorts its scope the same way:
+// dataset_nav.py:1381-1383).
+func navScopeList(allowed map[string]struct{}) []string {
+	out := make([]string, 0, len(allowed))
+	for d := range allowed {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// navScopeSet normalizes a caller's doc scope the way search_dataset_nav does
+// (dataset_nav.py:1364): trimmed, non-empty, deduped. A nil result means "no
+// restriction".
+func navScopeSet(docScope []string) map[string]struct{} {
+	if len(docScope) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(docScope))
+	for _, d := range docScope {
+		if d = strings.TrimSpace(d); d != "" {
+			out[d] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// navHitInScope mirrors Python _in_nav_scope (dataset_nav.py:611): a nav_cluster
+// row belongs when it covers at least one scoped document (a non-empty coverage
+// list is the reliable discriminator — a cluster's doc_id is the kb_id, not a
+// document), a nav_doc leaf when its doc_id is in scope.
+func navHitInScope(h nav.NavHit, allowed map[string]struct{}) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if len(h.DocIDs) > 0 {
+		for _, d := range h.DocIDs {
+			if _, ok := allowed[strings.TrimSpace(d)]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	_, ok := allowed[strings.TrimSpace(h.DocID)]
+	return ok
+}
+
+// navIntersectScope keeps only the doc ids that are inside the scope, preserving
+// order.
+func navIntersectScope(docIDs []string, allowed map[string]struct{}) []string {
+	out := make([]string, 0, len(docIDs))
+	for _, d := range docIDs {
+		if _, ok := allowed[strings.TrimSpace(d)]; ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// SummariesByDocIDs returns the nav_doc summary keyed by doc_id for the given
+// documents. It mirrors Python dataset_api_service._nav_doc_summaries: it reads
+// the nav_doc rows (compile_kwd=dataset_nav, type_kwd=nav_doc) for the doc_ids
+// and yields, per doc, the readable nav name when present, else the payload
+// description. Documents with no nav_doc row are absent from the result.
+func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID string, docIDs []string) map[string]string {
+	if len(docIDs) == 0 {
+		return map[string]string{}
+	}
+	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
+		navFilter(map[string]interface{}{
+			"type_kwd": []string{"nav_doc"},
+			"doc_id":   docIDs,
+		}),
+		[]string{"type_kwd", "name", "title_kwd", "content_with_weight", "doc_id"},
+		0, len(docIDs), nil)
+	if err != nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(chunks))
+	for _, c := range chunks {
+		docID := firstStringValue(c["doc_id"])
+		if docID == "" {
+			continue
+		}
+		// Prefer an explicit readable name, else the payload description, matching
+		// nodeFromRow's label rules (a raw 32-hex id is not a human label).
+		name := firstStringValue(c["name"])
+		if name == "" {
+			name = firstStringValue(c["title_kwd"])
+		}
+		if graphIsRawID(name) {
+			name = ""
+		}
+		summary := name
+		if summary == "" {
+			if payload, ok := c["content_with_weight"].(string); ok {
+				var m map[string]interface{}
+				if json.Unmarshal([]byte(payload), &m) == nil {
+					if d, ok := m["description"].(string); ok {
+						summary = strings.TrimSpace(d)
+					}
+				}
+			}
+		}
+		if summary != "" {
+			out[docID] = summary
+		}
+	}
+	return out
 }
 
 // UpsertDoc places one document summary into the nav tree. Minimal closed loop:

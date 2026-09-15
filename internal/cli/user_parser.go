@@ -2396,7 +2396,7 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 			//	continue
 			//}
 
-			return nil, fmt.Errorf("unknow parameter: %s", p.curToken.Value)
+			return nil, fmt.Errorf("unknown parameter: %s", p.curToken.Value)
 		} else if p.curToken.Type == TokenIdentifier {
 			if cmd.Params["path"] == nil {
 				cmd.Params["path"] = p.curToken.Value
@@ -2685,8 +2685,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseAPIListCommands()
 	case TokenImport:
 		return p.parseAPIImport()
-	case TokenInsert:
-		return p.parseDevInsertCommand()
 	case TokenRetrieve:
 		return p.parseAPIRetrieve()
 	default:

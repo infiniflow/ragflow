@@ -140,6 +140,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.SyncLogs{},
 		&entity.MCPServer{},
 		&entity.Memory{},
+		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
 		&entity.EvaluationDataset{},
@@ -183,7 +184,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	} else {
 		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
-			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
+			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
@@ -301,10 +302,15 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
+		&entity.MemoryTask{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
-			return fmt.Errorf("failed to auto-migrate runtime model %T: %w", m, err)
+			tableName := fmt.Sprintf("%T", m)
+			if named, ok := m.(interface{ TableName() string }); ok {
+				tableName = named.TableName()
+			}
+			return fmt.Errorf("failed to auto-migrate runtime table %s: %w", tableName, err)
 		}
 	}
 	return nil

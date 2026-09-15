@@ -27,16 +27,19 @@ import (
 
 func strPtr(s string) *string { return &s }
 
-// TestMarkCompiledProductsHidden verifies the pipeline caller hides
-// per-document compiled knowledge products (compile_kwd present) as
-// available_int=0 while leaving ordinary source chunks searchable
-// (available_int=1, the index default). Merged dataset-level products are written
-// by the consumer and never reach this path, so they are never double-marked.
+// TestMarkCompiledProductsHidden verifies the pipeline caller stages ONLY the
+// wiki variant's per-document rows as available_int=0 (they are intermediate
+// state for the consumer's merged pages). Tree / structure (page_index) /
+// mindmap rows are the final per-document products — Python writes them visible
+// at compile time — so they keep the index default available_int=1, as do
+// ordinary source chunks.
 func TestMarkCompiledProductsHidden(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
-		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A"},
+		{"id": "tree-1", "compile_kwd": "tree", "content_with_weight": "tree node"},
+		{"id": "struct-1", "compile_kwd": "page_index", "content_with_weight": "entity A"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X"},
+		{"id": "wiki-2", "compile_kwd": "wiki_section", "content_with_weight": "section X"},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -44,13 +47,19 @@ func TestMarkCompiledProductsHidden(t *testing.T) {
 	if v, ok := chunks[0]["available_int"]; ok {
 		t.Fatalf("ordinary source chunk should keep default available_int, got %v", v)
 	}
-	if chunks[1]["available_int"] != 0 {
-		t.Fatalf("compiled structure chunk should be available_int=0, got %v", chunks[1]["available_int"])
+	if v, ok := chunks[1]["available_int"]; ok {
+		t.Fatalf("tree row should stay visible (Python parity), got available_int=%v", v)
 	}
-	if chunks[2]["available_int"] != 0 {
-		t.Fatalf("compiled wiki chunk should be available_int=0, got %v", chunks[2]["available_int"])
+	if v, ok := chunks[2]["available_int"]; ok {
+		t.Fatalf("page_index row should stay visible (Python parity), got available_int=%v", v)
 	}
-	if v, ok := chunks[3]["available_int"]; ok {
+	if chunks[3]["available_int"] != 0 {
+		t.Fatalf("wiki page staging row should be available_int=0, got %v", chunks[3]["available_int"])
+	}
+	if chunks[4]["available_int"] != 0 {
+		t.Fatalf("wiki section staging row should be available_int=0, got %v", chunks[4]["available_int"])
+	}
+	if v, ok := chunks[5]["available_int"]; ok {
 		t.Fatalf("source chunk without compile_kwd should keep default available_int, got %v", v)
 	}
 }
@@ -70,11 +79,14 @@ func TestWikiActiveStatesDecodeCheckpointValues(t *testing.T) {
 }
 
 // TestApplyDocumentAvailability verifies disabled documents (status=0) force
-// ordinary source chunks to available_int=0 while compiled products stay hidden.
+// every row — source chunks AND compiled products — to available_int=0
+// (matching Python's doc_id-scoped availability toggle). Wiki staging rows are
+// already 0 from markCompiledProductsHidden; the stamp is a no-op for them.
 func TestApplyDocumentAvailability(t *testing.T) {
 	chunks := []map[string]any{
 		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
-		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A", "available_int": 0},
+		{"id": "tree-1", "compile_kwd": "tree", "content_with_weight": "tree node"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page", "content_with_weight": "page X", "available_int": 0},
 		{"id": "src-2", "content_with_weight": "another source chunk"},
 	}
 	markCompiledProductsHidden(chunks)
@@ -84,10 +96,13 @@ func TestApplyDocumentAvailability(t *testing.T) {
 		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[0]["available_int"])
 	}
 	if chunks[1]["available_int"] != 0 {
-		t.Fatalf("compiled product should stay available_int=0, got %v", chunks[1]["available_int"])
+		t.Fatalf("disabled doc compiled row should be available_int=0, got %v", chunks[1]["available_int"])
 	}
 	if chunks[2]["available_int"] != 0 {
-		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[2]["available_int"])
+		t.Fatalf("wiki staging row should stay available_int=0, got %v", chunks[2]["available_int"])
+	}
+	if chunks[3]["available_int"] != 0 {
+		t.Fatalf("disabled doc source chunk should be available_int=0, got %v", chunks[3]["available_int"])
 	}
 
 	enabled := []map[string]any{
@@ -358,7 +373,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	defer cleanup()
 
 	docName := "terminal.pdf"
-	run := "1"
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
 		TenantID:   "tenant-1",
 		KbID:       "kb-1",
@@ -373,7 +387,6 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 			Type:         "pdf",
 			Name:         &docName,
 			Suffix:       ".pdf",
-			Run:          &run,
 		},
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
@@ -509,7 +522,6 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		t.Fatalf("seed knowledgebase: %v", err)
 	}
 	docName := "sample.avi"
-	run := "1"
 	if err := dao.DB.Create(&entity.Document{
 		ID:           "doc-1",
 		KbID:         "kb-1",
@@ -517,7 +529,6 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
 		Name:         &docName,
-		Run:          &run,
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1037,6 +1048,40 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 
 	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPipelineExecutor_Execute_RecordsDoneOperationStatus(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Ctx = t.Context()
+	var capturedLog *entity.PipelineOperationLog
+
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return `{"nodes":[{"id":"n1"}],"edges":[]}`, canvasID, nil
+		}).
+		WithRunPipelineFunc(func(runCtx context.Context, dsl string) (map[string]any, string, error) {
+			return map[string]any{"chunks": []map[string]any{{"text": "hello world"}}}, dsl, nil
+		}).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			capturedLog = log
+			return nil
+		})
+
+	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedLog == nil {
+		t.Fatalf("expected pipeline operation log to be recorded")
+	}
+	if capturedLog.OperationStatus == "" {
+		t.Fatalf("expected OperationStatus to be non-empty")
+	}
+	if capturedLog.OperationStatus != string(entity.TaskStatusDone) {
+		t.Fatalf("expected OperationStatus = %q, got %q", entity.TaskStatusDone, capturedLog.OperationStatus)
 	}
 }
 

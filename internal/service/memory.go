@@ -1407,7 +1407,9 @@ func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question str
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{question}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	// Query: true — the memory store is searched by question (Python
+	// memory/services/query.py uses emb_mdl.encode_queries).
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{question}, Query: true}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1674,7 +1676,7 @@ func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID st
 func (s *MemoryService) getMemoryConfig(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
 	memory, err := s.memoryDAO.GetWithOwnerNameByID(ctx, dao.DB, memoryID)
 	if err != nil {
-		return nil, fmt.Errorf("memory '%s' not found", memoryID)
+		return nil, fmt.Errorf("get memory %q: %w", memoryID, err)
 	}
 	return formatRetDataFromMemoryListItem(memory), nil
 }

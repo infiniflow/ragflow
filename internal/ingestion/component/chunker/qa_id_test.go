@@ -9,7 +9,7 @@ import (
 )
 
 // xlsxQATableHTML is the HTML the spreadsheet parser emits for a
-// headerless two-column Q&A workbook (renderSheetTables repeats the
+// headerless two-column Q&A workbook (the table renderer repeats the
 // first row as the <th> header; extractQATable still reads it as a pair).
 const xlsxQATableHTML = `<table><caption>Sheet1</caption>
 <tr><th>门打不开怎么办</th><th>请家人回来开门</th></tr>

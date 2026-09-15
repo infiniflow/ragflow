@@ -361,6 +361,180 @@ async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str
     return entities, normalize_relation_endpoints(entities, relations)
 
 
+# ---------------------------------------------------------------------------
+# Claim rows (entity_type_kwd="claim") — the tree UI's leaf fact list.
+# ---------------------------------------------------------------------------
+
+
+def project_claim(row: dict) -> dict | None:
+    """Project a raw claim row to the API shape, keeping its verbatim evidence.
+
+    Unlike graph entities, the quote and its location ARE the payload — that is
+    what a compiled claim exists to carry (see claim_evidence.md §4).
+    """
+    try:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return None
+    chunk_ids = row.get("source_chunk_ids") or payload.get("source_chunk_ids") or []
+    if isinstance(chunk_ids, str):
+        chunk_ids = [chunk_ids]
+    if not isinstance(chunk_ids, (list, tuple)):
+        chunk_ids = []
+    claim: dict = {
+        "name": name,
+        "description": str(payload.get("description") or name),
+        "source_chunk_ids": [str(c).strip() for c in chunk_ids if str(c).strip()],
+    }
+    typ = str(payload.get("type") or "").strip()
+    if typ:
+        claim["type"] = typ
+    evidence = payload.get("evidence")
+    if isinstance(evidence, list):
+        kept = [e for e in evidence if isinstance(e, dict) and str(e.get("quote") or "").strip()]
+        if kept:
+            claim["evidence"] = kept
+    return claim
+
+
+# Row types that carry a claim. ``claim`` is the type every compiler writes now
+# (page_index folded its ``fact``/``conclusion`` types into it); the older two
+# spellings stay listed so rows compiled before the rename keep showing up
+# until the dataset is recompiled.
+CLAIM_ROW_TYPES = ("claim", "fact", "conclusion")
+
+
+async def list_claim_rows(
+    index_name: str,
+    kb_id: str,
+    doc_id: str,
+    compile_kwd: str | None = None,
+    compilation_template_id: str | None = None,
+    chunk_ids: list[str] | None = None,
+    offset: int = 0,
+    limit: int = 20,
+    row_types: tuple[str, ...] = CLAIM_ROW_TYPES,
+) -> tuple[list[dict], int]:
+    """Page through one document's claim rows.
+
+    ``chunk_ids`` narrows the page to claims sourced from those chunks — the
+    tree UI passes a leaf cluster's members when the user expands it; without
+    it the endpoint pages the whole document.
+
+    ``compile_kwd`` must be the template's own kind, not a fixed "tree": a
+    page_index document stores ``compile_kwd="page_index"``, so hard-coding
+    "tree" returned nothing for it. Pass ``None`` to scope by document and
+    template alone.
+    """
+    condition: dict = {
+        "doc_id": [doc_id],
+        "entity_type_kwd": [str(t) for t in (row_types or CLAIM_ROW_TYPES)],
+    }
+    if compile_kwd:
+        condition["compile_kwd"] = [compile_kwd]
+    if compilation_template_id:
+        condition["compilation_template_ids"] = [compilation_template_id]
+    if chunk_ids:
+        condition["source_chunk_ids"] = sorted({c for c in chunk_ids if c})
+    field_map, total = await graph_search(
+        index_name,
+        kb_id,
+        ["content_with_weight", "source_chunk_ids"],
+        condition,
+        OrderByExpr(),
+        max(int(limit or 0), 1),
+        offset=max(int(offset or 0), 0),
+    )
+    claims = [c for c in (project_claim(r) for r in field_map.values()) if c]
+    return claims, total
+
+
+async def attach_claim_counts(
+    entities: list[dict],
+    relations: list[dict],
+    index_name: str,
+    kb_id: str,
+    doc_id: str,
+    compile_kwd: str = "tree",
+    leaves_only: bool = True,
+) -> None:
+    """Stamp entities with the number of claims sourced to their chunks.
+
+    One scan of the document's claim rows, counted per chunk id, keeps this to
+    a single query.
+
+    ``leaves_only=True`` (tree): only leaves carry a badge, so a parent never
+    double-counts its descendants' claims.
+
+    ``leaves_only=False`` (page_index): every non-claim entity is stamped with
+    the claims whose chunks fall inside its own span — for a heading that is
+    exactly its subtree, because a title's ``source_chunk_ids`` cover the whole
+    section. The UI opens a node's claims from any level, so a parent needs the
+    badge as much as a leaf does. Claim entities themselves are skipped: they
+    are the counted rows, not badge carriers.
+    """
+    if not entities:
+        return
+    condition: dict = {
+        "doc_id": [doc_id],
+        "entity_type_kwd": [str(t) for t in CLAIM_ROW_TYPES],
+    }
+    if compile_kwd:
+        condition["compile_kwd"] = [compile_kwd]
+    try:
+        field_map, _ = await graph_search(
+            index_name,
+            kb_id,
+            ["content_with_weight", "source_chunk_ids"],
+            condition,
+            OrderByExpr(),
+            10000,
+        )
+    except Exception:
+        logging.exception("structure graph: claim count scan failed for doc=%s", doc_id)
+        return
+    if not field_map:
+        return
+
+    counts: dict[str, int] = {}
+    for row in field_map.values():
+        ids = row.get("source_chunk_ids") or []
+        if isinstance(ids, str):
+            ids = [ids]
+        for cid in ids:
+            cid = str(cid).strip()
+            if cid:
+                counts[cid] = counts.get(cid, 0) + 1
+    if not counts:
+        return
+
+    inner: set[str] = set()
+    if leaves_only:
+        for edge in relations or []:
+            if isinstance(edge, dict):
+                src = str(edge.get("from") or "").strip()
+                if src:
+                    inner.add(src)
+    claim_types = {str(t).strip().lower() for t in CLAIM_ROW_TYPES}
+    for entity in entities:
+        # Claims are the rows being counted, not badge carriers (page_index
+        # stores them as entities; the tree filters them out of the view).
+        if str(entity.get("type") or "").strip().lower() in claim_types:
+            continue
+        if leaves_only and _entity_response_id(entity) in inner:
+            continue  # not a leaf: its descendants' claims are counted there
+        total = 0
+        for cid in entity.get("source_chunk_ids") or []:
+            total += counts.get(str(cid).strip(), 0)
+        if total:
+            entity["claim_count"] = total
+
+
 async def keyword_subgraph(
     index_name,
     kb_id,
