@@ -307,6 +307,20 @@ class StorageFactory:
         return cls.storage_mapping[storage]()
 
 
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment variable the way the rest of the codebase does.
+
+    Unset keeps the documented default. Anything else is matched against the
+    truthy vocabulary used elsewhere in this file and in common/data_source, so
+    a switch written as "off" or "disabled" turns the feature off instead of
+    being read as its opposite.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
@@ -326,8 +340,7 @@ def init_settings():
         pass
 
     global OAUTH_AUTO_REGISTER
-    env_val = os.environ.get("OAUTH_AUTO_REGISTER", "").lower()
-    OAUTH_AUTO_REGISTER = env_val not in ("0", "false", "no")
+    OAUTH_AUTO_REGISTER = env_flag("OAUTH_AUTO_REGISTER", True)
 
     global DISABLE_PASSWORD_LOGIN
     try:

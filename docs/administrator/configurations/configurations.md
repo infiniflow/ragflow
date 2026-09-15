@@ -143,8 +143,8 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   - `0`: Disable user registration.
 
 - `OAUTH_AUTO_REGISTER`
-  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login.
-  - `false`: Require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
+  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login. Also accepts `1`, `yes`, `on`.
+  - Any other value, `false` included: require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
 
 ## Service Configuration
 
