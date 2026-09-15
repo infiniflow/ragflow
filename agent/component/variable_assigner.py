@@ -55,7 +55,7 @@ class VariableAssigner(ComponentBase, ABC):
                 operator = item.get("operator")
                 parameter = item.get("parameter")
                 if isinstance(parameter, str) and "@" in parameter:
-                    matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
+                    matches = [m.group(1) for m in self._iter_template_matches(self.variable_ref_patt_re, parameter)]
                     if matches:
                         refs.extend(matches)
                     elif operator in ("overwrite", "append", "extend"):

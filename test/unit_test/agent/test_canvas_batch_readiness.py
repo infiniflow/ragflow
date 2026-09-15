@@ -156,7 +156,6 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
         def check(self):
             """Validate Begin parameters."""
-            pass
 
     class Begin(base.ComponentBase):
         """Test Begin component logging start and end events."""
@@ -184,7 +183,6 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
         def check(self):
             """Validate Echo parameters."""
-            pass
 
     class Echo(base.ComponentBase):
         """Test Echo component outputting interpolated text with optional delay."""
@@ -788,10 +786,61 @@ def test_dependency_ids_handles_braced_param_refs(canvas_stack):
 
         def param_refs(self):
             """Return test parameter references with braces and whitespace."""
-            return ["{producer_1@output}", "producer_2@output", " {producer_3@output} ", " { producer_4@output } ", "{ sys.query }", "invalid_no_at"]
+            return [
+                "{producer_1@output}",
+                "producer_2@output",
+                " {producer_3@output} ",
+                " { producer_4@output } ",
+                "{{producer_5@output}}",
+                " {{{producer_6@output}}} ",
+                "{ sys.query }",
+                "invalid_no_at",
+            ]
 
     c = DummyComponent.__new__(DummyComponent)
     param = base.ComponentParamBase.__new__(base.ComponentParamBase)
     param.inputs = {}
     c._param = param
-    assert c.get_dependency_ids() == ["producer_1", "producer_2", "producer_3", "producer_4"]
+    assert c.get_dependency_ids() == ["producer_1", "producer_2", "producer_3", "producer_4", "producer_5", "producer_6"]
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "parameter, expected_refs, expected_value",
+    [
+        ("{ {missing@result}", [], "{ {missing@result}"),
+        ("{missing@result} }", [], "{missing@result} }"),
+        ("{{missing@result}", [], "{{missing@result}"),
+        ("{missing@result}}", [], "{missing@result}}"),
+        ("{ {missing@result} and {producer@result}", ["producer@result"], "{ {missing@result} and computed_val"),
+    ],
+)
+def test_assigner_malformed_templates_stay_literal(canvas_stack, parameter, expected_refs, expected_value):
+    """Malformed templates must not create dependencies that drop the assigner."""
+    canvas_module, trace, _ = canvas_stack
+    dsl = json.loads(_assigner_sibling_graph())
+    dsl["components"]["assigner"]["obj"]["params"]["variables"][0]["parameter"] = parameter
+    graph = _run(canvas_module, json.dumps(dsl))
+    assigner = graph.get_component_obj("assigner")
+
+    assert assigner.param_refs() == expected_refs
+    assert trace.runs("assigner") == 1
+    assert graph.get_variable_value("assigned_res") == expected_value
+    if expected_refs:
+        assert trace.at("start", "assigner") >= trace.at("end", "producer")
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("reference", ["{{producer@result}}", "{{{producer@result}}}", " {{producer@result}} "])
+def test_repeated_braces_resolve_the_scheduled_producer(canvas_stack, reference):
+    """Dependency normalization must match direct runtime reads of repeated braces."""
+    canvas_module, trace, _ = canvas_stack
+    dsl = json.loads(_assigner_sibling_graph())
+    operation = dsl["components"]["assigner"]["obj"]["params"]["variables"][0]
+    operation.update(operator="overwrite", parameter=reference)
+    graph = _run(canvas_module, json.dumps(dsl))
+
+    assert graph.get_component_obj("assigner").get_dependency_ids() == ["producer"]
+    assert graph.get_variable_value(reference) == "computed_val"
+    assert graph.get_variable_value("assigned_res") == "computed_val"
+    assert trace.at("start", "assigner") >= trace.at("end", "producer")
