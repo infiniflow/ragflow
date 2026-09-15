@@ -24,7 +24,7 @@ from common.data_source.utils import batch_generator, rl_requests
 logger = logging.getLogger(__name__)
 
 ZOTERO_API_BASE = "https://api.zotero.org"
-DEFAULT_WEBDAV_URL = "https://sync.zotero.org"
+DEFAULT_WEBDAV_URL = ""
 STORAGE_MODE_ZOTERO = "zotero_storage"
 STORAGE_MODE_WEBDAV = "webdav"
 PAGE_SIZE = 100
@@ -33,14 +33,14 @@ PAGE_SIZE = 100
 class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(
         self,
-        zotero_user_id: str,
+        zotero_user_id: str | None = None,
         storage_mode: str = STORAGE_MODE_ZOTERO,
-        webdav_url: str = DEFAULT_WEBDAV_URL,
+        webdav_url: str | None = None,
         batch_size: int = INDEX_BATCH_SIZE,
     ) -> None:
-        self.user_id = zotero_user_id.strip()
+        self.user_id = (zotero_user_id or "").strip()
         self.storage_mode = (storage_mode or STORAGE_MODE_ZOTERO).strip()
-        self.webdav_url = (webdav_url or DEFAULT_WEBDAV_URL).rstrip("/")
+        self.webdav_url = (webdav_url or "").rstrip("/")
         self.batch_size = batch_size
         self.api_key: str | None = None
         self.webdav_password: str | None = None
@@ -71,8 +71,11 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorMissingCredentialError("Zotero user ID is required")
         if not self.api_key:
             raise ConnectorMissingCredentialError("Zotero API key is required")
-        if self.storage_mode == STORAGE_MODE_WEBDAV and not self.webdav_password:
-            raise ConnectorMissingCredentialError("WebDAV password is required when storage_mode is webdav")
+        if self.storage_mode == STORAGE_MODE_WEBDAV:
+            if not self.webdav_url:
+                raise ConnectorValidationError("webdav_url is required when storage_mode is webdav")
+            if not self.webdav_password:
+                raise ConnectorMissingCredentialError("WebDAV password is required when storage_mode is webdav")
         if self.storage_mode not in {STORAGE_MODE_ZOTERO, STORAGE_MODE_WEBDAV}:
             raise ConnectorValidationError("storage_mode must be 'zotero_storage' or 'webdav'")
         self._list_attachment_items(start=0)
@@ -149,6 +152,9 @@ class ZoteroConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             for item in items:
                 data = item.get("data") or {}
                 if data.get("itemType") != "attachment":
+                    continue
+                link_mode = (data.get("linkMode") or "").lower()
+                if link_mode in {"linked_file", "linked_url"}:
                     continue
                 content_type = (data.get("contentType") or "").lower()
                 filename = (data.get("filename") or "").lower()

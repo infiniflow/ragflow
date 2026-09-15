@@ -2085,9 +2085,9 @@ class Zotero(SyncBase):
             batch_size = INDEX_BATCH_SIZE
 
         self.connector = ZoteroConnector(
-            zotero_user_id=conf.get("zotero_user_id") or conf["credentials"].get("zotero_user_id"),
+            zotero_user_id=conf.get("zotero_user_id") or (conf.get("credentials") or {}).get("zotero_user_id") or "",
             storage_mode=conf.get("storage_mode", "zotero_storage"),
-            webdav_url=conf.get("webdav_url"),
+            webdav_url=conf.get("webdav_url") or "",
             batch_size=batch_size,
         )
         self.connector.load_credentials(conf["credentials"])

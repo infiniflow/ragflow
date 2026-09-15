@@ -1626,7 +1626,9 @@ Example: Virtual Hosted Style`,
       zoteroStorageModeTip:
         'Choose Zotero cloud to download files via the Web API, or WebDAV if your attachments are stored on a WebDAV server (for example sync.zotero.org).',
       zoteroWebdavUrlTip:
-        'WebDAV server URL. Leave the default for Zotero-hosted WebDAV storage.',
+        'Full WebDAV base URL where Zotero stores attachment ZIPs (for example https://webdav.example.com/zotero). Do not use api.zotero.org or a guessed sync.zotero.org URL.',
+      zoteroWebdavUrlRequired:
+        'WebDAV URL is required when attachment storage is WebDAV.',
       zoteroWebdavPasswordTip:
         'WebDAV password from Zotero storage settings (not your Zotero account password).',
       zoteroWebdavPasswordRequired:

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -36,7 +37,6 @@ import (
 const (
 	zoteroAPIBaseURL            = "https://api.zotero.org"
 	defaultZoteroBatchSize      = 4
-	defaultZoteroWebDAVURL      = "https://sync.zotero.org"
 	zoteroRequestTimeout        = 120 * time.Second
 	zoteroDefaultPageSize       = 100
 	zoteroMaxAttachmentBytes    = 100 * 1024 * 1024
@@ -46,15 +46,16 @@ const (
 
 // ZoteroConnector syncs PDF attachments from a Zotero library.
 type ZoteroConnector struct {
-	userID       string
-	apiKey       string
-	storageMode  string
-	webdavURL    string
-	webdavPass   string
-	batchSize    int
-	httpClient   *http.Client
-	listItems    func(ctx context.Context, start int) ([]zoteroAPIItem, int, error)
-	downloadPDF  func(ctx context.Context, attachment zoteroAPIItem) ([]byte, string, error)
+	userID      string
+	apiKey      string
+	apiBase     string
+	storageMode string
+	webdavURL   string
+	webdavPass  string
+	batchSize   int
+	httpClient  *http.Client
+	listItems   func(ctx context.Context, start int) ([]zoteroAPIItem, int, error)
+	downloadPDF func(ctx context.Context, attachment zoteroAPIItem) ([]byte, string, error)
 }
 
 type zoteroAPIItem struct {
@@ -85,15 +86,21 @@ func NewZoteroConnector(config map[string]any) (*ZoteroConnector, error) {
 	if storageMode != zoteroStorageModeZotero && storageMode != zoteroStorageModeWebDAV {
 		return nil, &ConnectorValidationError{Message: "storage_mode must be 'zotero_storage' or 'webdav'"}
 	}
-	webdavURL := strings.TrimRight(strings.TrimSpace(firstNonEmpty(stringConfig(config["webdav_url"]), defaultZoteroWebDAVURL)), "/")
+	webdavURL := strings.TrimRight(strings.TrimSpace(stringConfig(config["webdav_url"])), "/")
 	connector := &ZoteroConnector{
 		userID:      strings.TrimSpace(firstNonEmpty(stringConfig(config["zotero_user_id"]), stringConfig(credentials["zotero_user_id"]))),
 		apiKey:      strings.TrimSpace(stringConfig(credentials["zotero_api_key"])),
+		apiBase:     zoteroAPIBaseURL,
 		storageMode: storageMode,
 		webdavURL:   webdavURL,
 		webdavPass:  stringConfig(credentials["webdav_password"]),
 		batchSize:   configInt(config["batch_size"], defaultZoteroBatchSize),
-		httpClient:  &http.Client{Timeout: zoteroRequestTimeout},
+		httpClient: &http.Client{
+			Timeout: zoteroRequestTimeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 	connector.listItems = connector.defaultListAttachmentItems
 	connector.downloadPDF = connector.defaultDownloadPDF
@@ -178,8 +185,13 @@ func (c *ZoteroConnector) validateStatic() error {
 	if c.apiKey == "" {
 		return &ConnectorMissingCredentialError{Message: "Zotero API key is required"}
 	}
-	if c.storageMode == zoteroStorageModeWebDAV && c.webdavPass == "" {
-		return &ConnectorMissingCredentialError{Message: "WebDAV password is required when storage_mode is webdav"}
+	if c.storageMode == zoteroStorageModeWebDAV {
+		if c.webdavURL == "" {
+			return &ConnectorValidationError{Message: "webdav_url is required when storage_mode is webdav"}
+		}
+		if c.webdavPass == "" {
+			return &ConnectorMissingCredentialError{Message: "WebDAV password is required when storage_mode is webdav"}
+		}
 	}
 	if c.batchSize <= 0 {
 		return &ConnectorValidationError{Message: "batch_size must be a positive integer"}
@@ -252,7 +264,7 @@ func (c *ZoteroConnector) sourceID(attachmentKey string) string {
 }
 
 func (c *ZoteroConnector) defaultListAttachmentItems(ctx context.Context, start int) ([]zoteroAPIItem, int, error) {
-	endpoint := fmt.Sprintf("%s/users/%s/items", zoteroAPIBaseURL, c.userID)
+	endpoint := fmt.Sprintf("%s/users/%s/items", c.apiBaseURL(), c.userID)
 	query := fmt.Sprintf("?itemType=attachment&format=json&limit=%d&start=%d", zoteroDefaultPageSize, start)
 	body, headers, err := c.doZoteroRequest(ctx, endpoint+query, http.MethodGet, nil)
 	if err != nil {
@@ -318,7 +330,7 @@ func (c *ZoteroConnector) defaultDownloadPDF(ctx context.Context, attachment zot
 }
 
 func (c *ZoteroConnector) downloadPDFViaZoteroAPI(ctx context.Context, attachmentKey, filename string) ([]byte, string, error) {
-	fileURL := fmt.Sprintf("%s/users/%s/items/%s/file", zoteroAPIBaseURL, c.userID, attachmentKey)
+	fileURL := fmt.Sprintf("%s/users/%s/items/%s/file", c.apiBaseURL(), c.userID, attachmentKey)
 	data, err := c.downloadAuthedURL(ctx, fileURL)
 	if err != nil {
 		return nil, "", err
@@ -335,8 +347,10 @@ func (c *ZoteroConnector) downloadAuthedURL(ctx context.Context, rawURL string) 
 			cancel()
 			return nil, err
 		}
-		req.Header.Set("Zotero-API-Key", c.apiKey)
-		req.Header.Set("Zotero-API-Version", "3")
+		if strings.HasPrefix(currentURL, c.apiBaseURL()+"/") || currentURL == c.apiBaseURL() {
+			req.Header.Set("Zotero-API-Key", c.apiKey)
+			req.Header.Set("Zotero-API-Version", "3")
+		}
 		resp, err := c.httpClient.Do(req)
 		cancel()
 		if err != nil {
@@ -348,7 +362,18 @@ func (c *ZoteroConnector) downloadAuthedURL(ctx context.Context, rawURL string) 
 			if location == "" {
 				return nil, fmt.Errorf("Zotero file redirect missing Location header")
 			}
-			currentURL = location
+			nextURL, err := url.Parse(location)
+			if err != nil {
+				return nil, err
+			}
+			if !nextURL.IsAbs() {
+				baseURL, err := url.Parse(currentURL)
+				if err != nil {
+					return nil, err
+				}
+				nextURL = baseURL.ResolveReference(nextURL)
+			}
+			currentURL = nextURL.String()
 			continue
 		}
 		if resp.StatusCode >= 400 {
@@ -429,8 +454,19 @@ func extractPDFFromZip(zipBytes []byte, fallbackName string) ([]byte, string, er
 	return pdfData, pdfName, nil
 }
 
+func (c *ZoteroConnector) apiBaseURL() string {
+	if c != nil && strings.TrimSpace(c.apiBase) != "" {
+		return strings.TrimRight(c.apiBase, "/")
+	}
+	return zoteroAPIBaseURL
+}
+
 func zoteroIsPDFAttachment(item zoteroAPIItem) bool {
 	if item.Data.ItemType != "attachment" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(item.Data.LinkMode)) {
+	case "linked_file", "linked_url":
 		return false
 	}
 	contentType := strings.ToLower(strings.TrimSpace(item.Data.ContentType))
@@ -457,7 +493,7 @@ func zoteroParseTime(value string) (time.Time, error) {
 	if value == "" {
 		return time.Time{}, errors.New("missing timestamp")
 	}
-	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T%H:%M:%SZ"}
+	layouts := []string{time.RFC3339Nano, time.RFC3339}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
 			return parsed.UTC(), nil

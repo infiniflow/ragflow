@@ -1,12 +1,12 @@
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from common.data_source.zotero_connector import ZoteroConnector, STORAGE_MODE_ZOTERO
+from common.data_source.exceptions import ConnectorMissingCredentialError
+from common.data_source.zotero_connector import ZoteroConnector
 
 
-def _attachment_item(key: str, modified: str) -> dict:
+def _attachment_item(key: str, modified: str, link_mode: str = "imported_file") -> dict:
     return {
         "key": key,
         "data": {
@@ -16,6 +16,7 @@ def _attachment_item(key: str, modified: str) -> dict:
             "contentType": "application/pdf",
             "dateModified": modified,
             "parentItem": "PARENT1",
+            "linkMode": link_mode,
         },
     }
 
@@ -77,5 +78,33 @@ def test_zotero_connector_poll_filters_by_modified_time():
 
 def test_zotero_connector_requires_api_key():
     connector = ZoteroConnector(zotero_user_id="12345678")
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectorMissingCredentialError):
         connector.load_credentials({})
+
+
+def test_zotero_connector_accepts_missing_user_id():
+    connector = ZoteroConnector(zotero_user_id=None)
+    assert connector.user_id == ""
+    connector.load_credentials({"zotero_api_key": "secret"})
+    with pytest.raises(ConnectorMissingCredentialError):
+        connector.validate_connector_settings()
+
+
+def test_zotero_connector_skips_linked_attachments():
+    connector = ZoteroConnector(zotero_user_id="12345678", batch_size=10)
+    connector.load_credentials({"zotero_api_key": "secret"})
+    items = [
+        _attachment_item("LINKED", "2026-01-02T00:00:00Z", link_mode="linked_file"),
+        _attachment_item("STORED", "2026-01-02T00:00:00Z"),
+    ]
+    with patch("common.data_source.zotero_connector.rl_requests.get") as mock_get:
+        list_response = MagicMock()
+        list_response.status_code = 200
+        list_response.json.return_value = items
+        file_response = MagicMock()
+        file_response.status_code = 200
+        file_response.content = b"%PDF"
+        mock_get.side_effect = [list_response, file_response]
+        batches = list(connector.load_from_state())
+    assert len(batches) == 1
+    assert batches[0][0].id.endswith(":STORED")
