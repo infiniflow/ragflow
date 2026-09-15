@@ -303,3 +303,7 @@ export interface IArtifactGraph {
   total_entities?: number;
   returned_entities?: number;
 }
+
+// Permission types for dataset configuration
+export type DatasetTestingPermission = 'me' | 'team';
+export type DatasetParsingPermission = 'me' | 'team';
