@@ -62,7 +62,8 @@ mkdir -p "$LOCKDIR"
 exec 9>"$LOCKDIR/$PKG.lock"
 flock 9
 
-# Determine whether we need a writable copy (regeneration) or a symlink.
+# Determine whether we need a writable copy (regeneration) or can use the
+# pre-seeded copy directly.
 NEED_WRITE=0
 for v in "${!GEN_@}"; do
   if [ -n "${!v:-}" ]; then NEED_WRITE=1; break; fi
@@ -75,42 +76,23 @@ done
 if [ -n "${RAGFLOW_TESTDATA_DIR:-}" ]; then
   PRESET="$RAGFLOW_TESTDATA_DIR/deepdoc/$PKG/testdata"
   if [ -d "$PRESET" ] && [ -n "$(ls -A "$PRESET" 2>/dev/null)" ]; then
-    if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET")" = "$(readlink -f "$PRESET")" ] && [ -n "$(ls -A "$PRESET" 2>/dev/null)" ]; then
-      echo "fetch_deepdoc_testdata: $PKG already linked to pre-seeded $PRESET"
-      exit 0
-    fi
-    if [ -d "$TARGET" ] && [ ! -L "$TARGET" ] && [ -n "$(ls -A "$TARGET" 2>/dev/null)" ]; then
-      echo "fetch_deepdoc_testdata: $PKG testdata already present inline at $TARGET"
-      exit 0
-    fi
-    # Remove any stale TARGET before linking. TARGET may be a wrong symlink, an
-    # empty directory, or a leftover real directory from a prior GEN_* copy or a
-    # dereferenced symlink on a persistent runner. `ln -sfn` below also unlinks
-    # TARGET first, but removing it here keeps intent explicit. A partial
-    # removal failure is non-fatal: ln -sfn still replaces TARGET, and the copy
-    # fallback below covers the rare case where even that is blocked.
-    #
-    # Use `ln -sfn`, never `ln -s`: when TARGET already exists as a directory,
-    # plain `ln -s` descends INTO it and creates <TARGET>/testdata (the exact
-    # "Permission denied" failure this job hit), because the existing dir is not
-    # writable. `-f` unlinks TARGET first; `-n`/`--no-dereference` stops ln from
-    # treating TARGET as a container.
-    rm -rf -- "$TARGET" 2>/dev/null || true
     if [ "$NEED_WRITE" -eq 1 ]; then
-      echo "fetch_deepdoc_testdata: copying writable pre-seeded testdata for regeneration ($PKG)"
-      rm -rf -- "$TARGET" 2>/dev/null || true
-      cp -r "$PRESET" "$TARGET"
-    elif ln -sfn "$PRESET" "$TARGET" 2>/dev/null; then
-      echo "fetch_deepdoc_testdata: linked $TARGET -> $PRESET (pre-seeded)"
-    else
-      # Symlink creation failed (e.g. the parent directory is not writable on a
-      # shared runner). The pre-seeded fixtures are authoritative and readable,
-      # so copy them in place instead of reddening CI over a filesystem quirk.
-      echo "fetch_deepdoc_testdata: symlink failed; copying pre-seeded testdata for $PKG" >&2
-      mkdir -p "$TARGET"
-      cp -r "$PRESET"/. "$TARGET"/.
+      # Regeneration rewrites the fixtures, so it needs a writable copy next to
+      # the tests — which a pre-seeded runner cannot provide. Say so plainly
+      # instead of failing later with a confusing permission error.
+      if ! (rm -rf -- "$TARGET" && cp -r "$PRESET" "$TARGET") 2>/dev/null; then
+        echo "fetch_deepdoc_testdata: GEN_* regeneration needs a writable $TARGET, but the workspace is read-only. Run it where $TARGET is writable, or drop RAGFLOW_TESTDATA_DIR to clone the fixtures." >&2
+        exit 1
+      fi
+      echo "fetch_deepdoc_testdata: copied writable pre-seeded testdata for regeneration ($PKG)"
+      exit 0
     fi
-    echo "fetch_deepdoc_testdata: done ($PKG, pre-seeded)"
+    # Leave the workspace untouched: the consuming test binary reads the
+    # fixtures from this directory directly (see testdata_skip_test.go).
+    # Linking or copying them into $TARGET used to be required, and failed on
+    # runners that mount the workspace read-only — which was then reported as a
+    # missing fixture even though the data was right here.
+    echo "fetch_deepdoc_testdata: using pre-seeded testdata at $PRESET (workspace untouched)"
     exit 0
   fi
   echo "fetch_deepdoc_testdata: RAGFLOW_TESTDATA_DIR set but deepdoc/$PKG/testdata is missing; falling back to clone" >&2

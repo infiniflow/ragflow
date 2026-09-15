@@ -880,7 +880,7 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
-	if err := dao.DB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    userID,
@@ -892,7 +892,7 @@ func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string
 			UpdateTime: ptr(updateTime),
 			UpdateDate: &updateDate,
 		},
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }

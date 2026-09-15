@@ -1884,13 +1884,38 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     return mind_map.output
 
 
+def _bound_dataset_names(dialog) -> str:
+    """Comma-joined names of the dialog's bound datasets ("" when none).
+
+    Exposed through the agentic graph's untrusted evidence block (appended to
+    the "Evidence:" section of the compose user content): the prompt must
+    still NAME the bound datasets, but as runtime data they must not be
+    injected into the reasoning system prompt via ``{knowledge}`` — that
+    placeholder is trusted-template content only. Defaulting ``{knowledge}``
+    to the names rendered an empty `` `` `` on first turn (templates like
+    "derived solely from this dataset: ``{knowledge}``"), which the outer
+    model read as "the dataset is empty" — answering the canned "not found
+    in the dataset!" line without ever calling the ``rag`` tool (first-turn
+    short-circuit, observed 2026-09-14).
+    """
+    if not getattr(dialog, "kb_ids", None):
+        return ""
+    try:
+        kbs = KnowledgebaseService.get_by_ids(dialog.kb_ids) or []
+    except Exception:  # noqa: BLE001 — names are cosmetic; never block the render
+        return ""
+    return ", ".join(kb.name for kb in kbs if getattr(kb, "name", ""))
+
+
 def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -> str:
     """Render the dialog-level system prompt for the reasoning agent path.
 
     Mirrors the substitutions ``async_chat`` performs for the non-reasoning path
     so that configured system prompts are honored when reasoning is enabled.
-    The ``{knowledge}`` placeholder is defaulted to an empty string because the
-    agentic graph supplies retrieved evidence through its own evidence block.
+    The ``{knowledge}`` placeholder is trusted-template content only: when the
+    caller does not supply a value it renders empty. Bound dataset names are
+    runtime data — they are exposed through the agentic graph's untrusted
+    evidence block, never through the system prompt.
     """
     system = prompt_config.get("system", "")
     if not system:
@@ -1902,7 +1927,6 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in system:
         param_keys.append("knowledge")
-        kwargs.setdefault("knowledge", "")
 
     for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
@@ -1913,6 +1937,11 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
             system = system.replace("{%s}" % p["key"], " ")
 
     fmt_kwargs = dict(kwargs)
+    # {knowledge} is trusted-template content only: mutable runtime data
+    # (bound dataset names) must never be injected into the system prompt
+    # through it. The bound dataset names are exposed through the untrusted
+    # evidence block instead (see the agentic compose in
+    # rag/advanced_rag/agentic_rag_graph.py).
     fmt_kwargs.setdefault("knowledge", "")
     return system.format(**fmt_kwargs)
 
@@ -2088,6 +2117,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         rerank_candidates_count=dialog.rerank_candidates_count,
         top_k=dialog.top_k,
     )
+    # Mutable runtime data: exposed via the untrusted evidence block in the
+    # agentic compose, never via the reasoning system prompt's {knowledge}.
+    rag_tools._bound_dataset_names = _bound_dataset_names(dialog)
 
     async def decorate_answer(answer):
         nonlocal rag_tools, messages

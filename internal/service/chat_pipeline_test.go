@@ -1565,13 +1565,23 @@ func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 // "rag.llm.chat_model" namespace.
 func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
 	stubHarness(t, "the final cited answer")
+	var receivedHistory []map[string]interface{}
+	retriever := harnessRetriever
+	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
+		receivedHistory = req.Messages
+		return retriever(ctx, req)
+	}
+	history := []map[string]interface{}{{"role": "user", "content": "earlier question"}, {"role": "assistant", "content": "earlier answer"}, {"role": "user", "content": "q"}}
 
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "")
+	_, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", history)
 	if err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
+	}
+	if !reflect.DeepEqual(receivedHistory, history) {
+		t.Fatalf("harness history = %#v, want %#v", receivedHistory, history)
 	}
 	if answer != "the final cited answer" {
 		t.Fatalf("answer = %q", answer)
@@ -1611,7 +1621,7 @@ func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	joined := strings.Join(got, "")
@@ -1631,7 +1641,7 @@ func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
 	var got []string
 	var thinks []bool
 	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), ""); err != nil {
+	if _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks), "", nil); err != nil {
 		t.Fatalf("retrieveViaHarness: %v", err)
 	}
 	if len(got) != 0 {
@@ -1663,7 +1673,7 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos)
+	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil)
 	if res.Reference == nil {
 		t.Fatal("a cited answer must carry a reference")
 	}
@@ -1681,5 +1691,45 @@ func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
 	}
 	if _, has := src["vector"]; !has {
 		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+	}
+}
+
+// TestDecorateHarnessAnswerRewritesSlotCitations is the end-to-end lock for
+// the leaked "[ID:Slot 0]" bug: the harness answer arrives citing the internal
+// slot table, and the final answer must cite the chunk that filled the slot
+// instead — with that chunk present in the reference payload.
+func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c1", "content_with_weight": "unrelated", "doc_id": "d0", "docnm_kwd": "Other"},
+			{"chunk_id": "c9", "content_with_weight": "eiffel", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(
+		"The tower opened in 1889 [ID:Slot 0].",
+		kbinfos,
+		map[string][]string{"0": {"c9"}},
+	)
+	if strings.Contains(res.Answer, "[ID:Slot") {
+		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
+	}
+	if !strings.Contains(res.Answer, "[ID:1]") {
+		t.Fatalf("final answer must cite the evidence chunk pool position, got %q", res.Answer)
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	// The reference keeps the whole citation pool (Python parity); it must at
+	// least carry the slot's evidence chunk so [ID:1] is openable.
+	found := false
+	for _, c := range chunks {
+		if c["content"] == "eiffel" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
 	}
 }

@@ -6,7 +6,6 @@ import {
   FileTypeSuffixMap,
   initialParserValues,
 } from '@/pages/agent/constant/pipeline';
-import { isStaticParseMethod } from '@/pages/agent/form/parser-form/utils';
 import { pickByBackend } from '@/utils/backend-variant';
 import { getExtension } from '@/utils/document-util';
 import {
@@ -160,10 +159,13 @@ export const isDocumentProcessing = (
   });
 
 // --- Parser model prerequisite checks -------------------------------------
-// Audio/video/image files can only be parsed when the matching model is
-// configured on the dataset's Parser operator. The tenant default is
-// deliberately not consulted: parsing reads the operator setup, so a global
-// default does not make the file parsable.
+// Audio/video files can only be parsed when the matching model is configured
+// on the dataset's Parser operator. The tenant default is deliberately not
+// consulted: parsing reads the operator setup, so a global default does not
+// make the file parsable. Image files are exempt: the image parser always
+// runs OCR and only supplements it with the vision model (picked as the
+// image parse_method, with the tenant default as fallback), so a static
+// method like ocr is a complete configuration.
 // These helpers power the upload warning and the parse-click validation.
 
 export type ParserModelGap = {
@@ -236,13 +238,6 @@ export function findMissingParserModel(
     }
     case FileType.Video: {
       const configured = setup?.vlm?.llm_id;
-      return configured ? null : { fileType, modelKind: 'vision' };
-    }
-    case FileType.Image: {
-      // The image parser's vision model is picked as parse_method; a static
-      // method (e.g. ocr) means no vision model is configured.
-      const configured =
-        !!setup?.parse_method && !isStaticParseMethod(setup.parse_method);
       return configured ? null : { fileType, modelKind: 'vision' };
     }
     default:

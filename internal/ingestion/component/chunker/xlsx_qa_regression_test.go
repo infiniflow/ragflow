@@ -45,7 +45,7 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 		t.Fatal(res.Err)
 	}
 
-	inputs := map[string]any{"name": "qa.xlsx", "output_format": res.OutputFormat}
+	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": res.OutputFormat}
 	switch res.OutputFormat {
 	case "json":
 		inputs["json"] = res.JSON
@@ -65,38 +65,38 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	return chunks
 }
 
-// TestXLSXQARegression is the end-to-end smoke test: every row of the sheet
-// becomes one chunk. The chunker has no header concept, so the first row is
-// a Q&A pair like any other.
-func TestXLSXQARegression(t *testing.T) {
+// TestXLSXQAFirstRowIsData protects the QA spreadsheet contract: workbooks
+// contain question/answer rows without a header, so the parser's structural
+// table_header item is still the first QA pair.
+func TestXLSXQAFirstRowIsData(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
-		{"question", "answer"},
-		{"What is RAGFlow?", "A RAG engine."},
-		{"Where are the docs?", "On the website."},
+		{"q1", "a1"},
+		{"q2", "a2"},
 	}))
-	t.Logf("QA chunks=%d", len(chunks))
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected both QA rows, got %d chunks: %#v", len(chunks), chunks)
+	}
+	if got := chunkTexts(chunks); !strings.Contains(got[0], "q1") || !strings.Contains(got[0], "a1") {
+		t.Fatalf("first row was not emitted as QA data: %#v", got)
 	}
 }
 
-// A spreadsheet cell keeps the newline its author typed (Alt+Enter) and the
-// parser renders it into the <tr>/<td> HTML verbatim, so a QA pair whose
-// question or answer spans lines must survive extraction intact. These rows
-// used to disappear from the chunk list without a trace.
+// A spreadsheet cell keeps the newline its author typed (Alt+Enter), so a QA
+// pair whose question or answer spans lines must survive cells-first
+// extraction intact. These rows used to disappear from the chunk list without
+// a trace.
 func TestXLSXQAMultilineCells(t *testing.T) {
 	const multilineQ = "请问全国碳排放权交易市场纳入配额管理的重点排放单\n位名录，是否会公布？"
 	const multilineA = "需要公布。根据《碳排放权交易管理办法（试行）》。"
 	const multilineAnswer = "跨行的答案\n第二行\n第三行"
 
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
-		{"question", "answer"},
 		{multilineQ, multilineA},
 		{"跨行的问句\n第二行", multilineAnswer},
 	}))
 	t.Logf("QA chunks=%d", len(chunks))
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 data-row chunks, got %d", len(chunks))
 	}
 	texts := strings.Join(chunkTexts(chunks), "\n")
 	for _, want := range []string{multilineQ, multilineA, multilineAnswer} {

@@ -1168,6 +1168,37 @@ class AnonRouter(OpenAIAPICompatible):
         return f"{self._BASE_URL}/models"
 
 
+class ApiRoute(OpenAIAPICompatible):
+    """API-Route model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat class pins
+    its endpoint: the catalogue must be read from the gateway itself, never
+    from a host supplied by the tenant. The listing is served in OpenAI format
+    and requires the tenant's bearer key, which ``Base._get_raw_model_list``
+    already sends.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
+class DaoXE(OpenAIAPICompatible):
+    """DaoXE catalog lister.
+
+    The live catalog is account-scoped and changes over time, so the list is
+    read from the gateway's own ``/v1/models`` endpoint (inherited behavior)
+    rather than pinned in ``conf/models/daoxe.json``, which stays empty on
+    purpose.
+    """
+
+    _FACTORY_NAME = "DaoXE"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

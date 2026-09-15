@@ -102,6 +102,7 @@ type docxIRList struct {
 type docxIRRun struct {
 	Type    string          `json:"type"` // "text", "line_break", "image"
 	Text    string          `json:"text"`
+	Data    []byte          `json:"data"`    // raw image bytes for inline image runs
 	Content []docxIRElement `json:"content"` // nested elements (used in table cells)
 }
 
@@ -262,19 +263,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 		for _, el := range sec.Elements {
 			switch el.Type {
 			case "paragraph", "heading":
-				text := joinDOCXIRRuns(el.contentRuns())
-				if strings.TrimSpace(text) == "" {
-					continue
-				}
-				item := map[string]any{
-					"text":         text,
-					"image":        nil,
-					"doc_type_kwd": "text",
-				}
-				if el.Type == "heading" {
-					item["ck_type"] = "heading"
-				}
-				sections = append(sections, item)
+				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading")
 
 			case "image":
 				b64 := base64.StdEncoding.EncodeToString(el.Data)
@@ -324,6 +313,58 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 	return sections
 }
 
+// appendDOCXParagraphSections emits text and inline-image runs in their IR
+// order. A paragraph is not necessarily a single text unit: office_oxide can
+// place an image between two text runs, and dropping that run would make the
+// downstream DOCX chunker lose both media order and adjacency context.
+func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool) []map[string]any {
+	var text strings.Builder
+	flushText := func() {
+		value := strings.TrimSpace(text.String())
+		text.Reset()
+		if value == "" {
+			return
+		}
+		item := map[string]any{
+			"text":         value,
+			"image":        nil,
+			"doc_type_kwd": "text",
+		}
+		if heading {
+			item["ck_type"] = "heading"
+		}
+		sections = append(sections, item)
+	}
+	appendImage := func(data []byte) {
+		if len(data) == 0 {
+			return
+		}
+		sections = append(sections, map[string]any{
+			"text":         "",
+			"image":        base64.StdEncoding.EncodeToString(data),
+			"doc_type_kwd": "image",
+		})
+	}
+	for _, run := range el.contentRuns() {
+		switch run.Type {
+		case "text":
+			text.WriteString(run.Text)
+		case "line_break":
+			text.WriteByte('\n')
+		case "image":
+			flushText()
+			appendImage(run.Data)
+			for _, nested := range run.Content {
+				if nested.Type == "image" {
+					appendImage(nested.Data)
+				}
+			}
+		}
+	}
+	flushText()
+	return sections
+}
+
 // --- figure extraction (used by the cgo parser path) ---
 
 // extractDOCXFiguresFromIR parses the office_oxide IR JSON and
@@ -346,6 +387,10 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 			if el.Type == "image" {
 				b64 := base64.StdEncoding.EncodeToString(el.Data)
 				flat = append(flat, flatBlock{image: b64})
+				continue
+			}
+			if el.Type == "paragraph" || el.Type == "heading" {
+				flat = append(flat, docxInlineFlatBlocks(el)...)
 				continue
 			}
 			text := docxElementText(el, "\n")
@@ -383,6 +428,45 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 		figures = append(figures, fig)
 	}
 	return figures
+}
+
+// docxInlineFlatBlocks preserves the text/image sequence inside a paragraph
+// for figure context extraction. Top-level element order alone is not enough
+// for DOCX because office_oxide can encode an inline image as a paragraph run.
+func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
+	var blocks []flatBlock
+	var text strings.Builder
+	flushText := func() {
+		if text.Len() == 0 {
+			return
+		}
+		blocks = append(blocks, flatBlock{text: text.String()})
+		text.Reset()
+	}
+	appendImage := func(data []byte) {
+		if len(data) == 0 {
+			return
+		}
+		blocks = append(blocks, flatBlock{image: base64.StdEncoding.EncodeToString(data)})
+	}
+	for _, run := range el.contentRuns() {
+		switch run.Type {
+		case "text":
+			text.WriteString(run.Text)
+		case "line_break":
+			text.WriteByte('\n')
+		case "image":
+			flushText()
+			appendImage(run.Data)
+			for _, nested := range run.Content {
+				if nested.Type == "image" {
+					appendImage(nested.Data)
+				}
+			}
+		}
+	}
+	flushText()
+	return blocks
 }
 
 // --- internal types ---

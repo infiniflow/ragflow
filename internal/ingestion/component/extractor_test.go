@@ -167,6 +167,43 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	}
 }
 
+func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "context summary"})
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"image": "image-only"},
+			{"image": "context-image", "context_above": "The table shows", "context_below": "annual revenue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
+	}
+	if _, exists := chunks[0]["summary"]; exists {
+		t.Errorf("image-only chunk received a summary: %#v", chunks[0]["summary"])
+	}
+	if chunks[1]["summary"] != "context summary" {
+		t.Errorf("context-bearing media summary = %#v, want context summary", chunks[1]["summary"])
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	request := stub.lastRequest()
+	if got := request.Messages[len(request.Messages)-1].Content; got != "The table shows annual revenue." {
+		t.Errorf("media extraction prompt = %q, want joined context", got)
+	}
+}
+
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM
 // error is surfaced through Invoke with the component-name prefix.
 func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
@@ -957,7 +994,7 @@ func TestCleanLLMText(t *testing.T) {
 func TestExtractorComponent_callStructured(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -967,7 +1004,7 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 
 	// Non-JSON response → (nil, nil), not an error.
 	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
-	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured on non-JSON: %v", err)
 	}
@@ -980,12 +1017,20 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
 	if got == nil || got["a"].(float64) != 1 {
 		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
+func TestExtractorComponentRejectsEmptyLLMInput(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"unexpected": true}`})
+	c := &ExtractorComponent{}
+	if _, err := c.callRaw(t.Context(), nil, extractorInputs{llmID: "m"}, "system", " "); err == nil {
+		t.Fatal("callRaw accepted an empty chunk text")
 	}
 }
 
@@ -1415,7 +1460,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Hello world content"},
+			{"text": "Hello world content"},
 		},
 	}
 
@@ -1528,7 +1573,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Written by Alice in 2026."},
+			{"text": "Written by Alice in 2026."},
 		},
 	}
 
@@ -1572,7 +1617,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+			{"text": "This is a detailed paragraph about artificial intelligence."},
 		},
 	}
 
@@ -1627,7 +1672,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Text to summarize."},
+			{"text": "Text to summarize."},
 		},
 	}
 
@@ -1685,7 +1730,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1741,7 +1786,7 @@ func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1783,7 +1828,7 @@ func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1826,7 +1871,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Some text."},
+			{"text": "Some text."},
 		},
 	}
 
@@ -2046,8 +2091,8 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 	in := map[string]any{
 		"chunks": []map[string]any{
 			{
-				"docnm_kwd":           "Tender_Notice.pdf",
-				"content_with_weight": "General bidding notice content.",
+				"docnm_kwd": "Tender_Notice.pdf",
+				"text":      "General bidding notice content.",
 			},
 		},
 	}

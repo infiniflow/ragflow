@@ -51,6 +51,7 @@ import {
   initialTavilyValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
+  initialGeneralChunkerValues,
   initialTokenizerValues,
   initialUserFillUpValues,
   initialVariableAggregatorValues,
@@ -185,6 +186,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Parser]: buildInitialParserValues(defaultModelDictionary),
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.TokenChunker]: initialTokenChunkerValues,
+      [Operator.GeneralChunker]: initialGeneralChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
         ...getInitialExtractorValues(),

@@ -95,3 +95,42 @@ export function parseDelimitersForDisplay(
   // Stable sort longest-first (matches backend parse_delimiter_field).
   return result.sort((a, b) => b.raw.length - a.raw.length);
 }
+
+/**
+ * Parse the chunker operator's delimiter LIST (one delimiter per row) for
+ * display — a different field shape from the single delimiter string above,
+ * where each row is already one delimiter.
+ *
+ * A backtick-wrapped row contributes its inner text; any other non-empty row is
+ * one delimiter exactly as typed (multi-character included) when `keepBare` is
+ * true. `keepBare` is false for the Python flow TokenChunker, which only
+ * activates backtick-wrapped entries. Mirrors the backend list compiler:
+ * deduplicated, longest-first.
+ */
+export function parseDelimiterListForDisplay(
+  values: (string | undefined)[] | undefined,
+  { keepBare }: { keepBare: boolean },
+): ParsedDelimiter[] {
+  if (!values) return [];
+
+  const result: ParsedDelimiter[] = [];
+  const seen = new Set<string>();
+
+  const push = (raw: string) => {
+    if (!raw || seen.has(raw)) return;
+    seen.add(raw);
+    result.push({ raw, display: toDisplay(raw) });
+  };
+
+  for (const value of values) {
+    if (!value) continue;
+    if (value.length >= 2 && value.startsWith('`') && value.endsWith('`')) {
+      push(value.slice(1, -1));
+      continue;
+    }
+    if (keepBare) push(value);
+  }
+
+  // Stable sort longest-first (matches the backend list compiler).
+  return result.sort((a, b) => b.raw.length - a.raw.length);
+}
