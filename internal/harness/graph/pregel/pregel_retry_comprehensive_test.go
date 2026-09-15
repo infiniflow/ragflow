@@ -41,7 +41,7 @@ func TestRetry_BackoffTiming(t *testing.T) {
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
 	start := time.Now()
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -77,7 +77,7 @@ func TestRetry_NodePolicyOverridesEnginePolicy(t *testing.T) {
 	enginePolicy.MaxAttempts = 3
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&enginePolicy))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -107,7 +107,7 @@ func TestRetry_EnginePolicyFallback(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&enginePolicy))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -137,7 +137,7 @@ func TestRetry_JitterRandomized(t *testing.T) {
 	rp.Jitter = true
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -184,7 +184,7 @@ func TestRetry_WithCheckpointer_Transient(t *testing.T) {
 		WithRetryPolicy(&rp),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestRetry_ZeroAttempts(t *testing.T) {
 	rp.MaxAttempts = 0
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -244,7 +244,7 @@ func TestRetry_SingleAttempt(t *testing.T) {
 	rp.MaxAttempts = 1
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -273,7 +273,7 @@ func TestRetry_NonRetryableError(t *testing.T) {
 	rp.RetryOn = func(err error) bool { return false }
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -306,7 +306,7 @@ func TestRetry_SelectiveRetry(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -339,7 +339,7 @@ func TestRetry_BackoffCapped(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -371,7 +371,7 @@ func TestRetry_ZeroMaxInterval(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}

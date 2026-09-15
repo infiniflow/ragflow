@@ -2714,8 +2714,8 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 			p.nextToken() // consume NUMBER
 		}
 
-		if messageCount <= 0 || messageCount > 100 {
-			return nil, fmt.Errorf("message count cannot be less than 0 or greater than 100")
+		if messageCount <= 0 || messageCount > common.MaxManualPullMessages {
+			return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
 		}
 
 		cmd = NewCommand("user_pull_message_command")

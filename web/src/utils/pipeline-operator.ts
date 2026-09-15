@@ -39,6 +39,19 @@ export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
 }
 
+// The dataset-level metadata group stored at parser_config.metadata. The group
+// is shaped {enabled, metadata, built_in_metadata}; the boolean enabled flag
+// and the built_in_metadata array identify it among other values.
+function isDatasetMetadataGroup(value: any): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof value.enabled === 'boolean' &&
+    Array.isArray(value.built_in_metadata)
+  );
+}
+
 export function transformParserConfigSetups(
   setups: Record<string, any> | undefined,
 ): any[] {
@@ -316,6 +329,43 @@ export function transformApiConfigToForm(
 }
 
 /**
+ * Converts a saved parser_config (API format, keyed by operator id) to the
+ * form format used by the operator tabs. Configs without pipeline keys
+ * (built-in parse type) are returned as-is.
+ *
+ * The dataset-level metadata group is authoritative for Extractor nodes,
+ * mirroring buildOperatorNode, so the values seeded into the outer form match
+ * what the operator tabs initialize from.
+ */
+export function transformSavedParserConfigToForm(
+  parserConfig?: Record<string, any>,
+): Record<string, any> | undefined {
+  if (
+    !parserConfig ||
+    typeof parserConfig !== 'object' ||
+    Array.isArray(parserConfig) ||
+    !Object.keys(parserConfig).some((key) => key.includes(':'))
+  ) {
+    return parserConfig;
+  }
+
+  const formParserConfig: Record<string, any> = {};
+  for (const [operatorId, config] of Object.entries(parserConfig)) {
+    const operatorType = getOperatorType(operatorId);
+    const apiConfig =
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(parserConfig.metadata)
+        ? { ...config, metadata: parserConfig.metadata }
+        : (config as Record<string, any>);
+    formParserConfig[operatorId] = transformApiConfigToForm(
+      operatorType,
+      apiConfig,
+    );
+  }
+  return formParserConfig;
+}
+
+/**
  * Dispatches forward transform by operator type.
  * Converts form-format config to DSL format for saving.
  */
@@ -341,7 +391,7 @@ export function transformFormConfigToApi(
   }
 }
 
-function normalizeOperatorForm(
+export function normalizeOperatorForm(
   operatorId: string,
   rawForm: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -397,10 +447,24 @@ export function buildOperatorNode(
   };
 
   if (!isEmpty(pipelineParserConfig)) {
+    let apiConfig = pipelineParserConfig[operatorId];
+    // Dataset-level auto-metadata lives at parser_config.metadata; the
+    // backend preserves that object and re-scopes it into every Extractor
+    // node on write, so it is the authoritative source for the metadata
+    // toggle's initial state — prefer it over a possibly stale per-node copy.
+    if (
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(pipelineParserConfig.metadata)
+    ) {
+      apiConfig = {
+        ...apiConfig,
+        metadata: pipelineParserConfig.metadata,
+      };
+    }
     // user overrides from API (now also form format)
     Object.assign(
       rawForm,
-      transformApiConfigToForm(operatorType, pipelineParserConfig[operatorId]), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
+      transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
   }
 

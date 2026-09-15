@@ -47,7 +47,7 @@ type variableAggregatorParam struct {
 }
 
 // Update copies a fresh param map into the receiver. Mirrors the Python
-// ComponentParamBase contract.
+// ComponentParamBase
 //
 // `groups` may arrive as either []any (engine-decoded from JSON) or
 // []map[string]any (test/direct construction); both shapes are accepted

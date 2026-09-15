@@ -11,16 +11,18 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { useKnowledgeBaseContext } from '../../../contexts/knowledge-base-context';
+import { useOwnerTenantId } from '../../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
+  GlobalIndexModelItem,
   ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
 import { FormLayout } from '@/constants/form';
+import { Separator } from '@/components/ui/separator';
 
 export function NaiveConfiguration() {
-  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
+  const ownerTenantId = useOwnerTenantId();
   return (
     <MainContainer>
       <ConfigurationFormContainer>
@@ -33,20 +35,22 @@ export function NaiveConfiguration() {
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"
           numberInputTestId="ds-settings-parser-recommended-chunk-size-input"
         ></MaxTokenNumberFormField>
+        <OverlappedPercent />
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <ImageContextWindow />
-        <AutoMetadata />
-        <OverlappedPercent />
+        <ExcelToHtmlFormField></ExcelToHtmlFormField>
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
+        <Separator />
+        <GlobalIndexModelItem />
+        <AutoMetadata />
         <AutoKeywordsFormField
           layout={FormLayout.Horizontal}
         ></AutoKeywordsFormField>
         <AutoQuestionsFormField
           layout={FormLayout.Horizontal}
         ></AutoQuestionsFormField>
-        <ExcelToHtmlFormField></ExcelToHtmlFormField>
         {/* <TagItems></TagItems> */}
       </ConfigurationFormContainer>
     </MainContainer>

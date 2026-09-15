@@ -17,6 +17,7 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
+import { decodeBlobText } from '@/utils/file-util';
 import classNames from 'classnames';
 import Papa from 'papaparse';
 import React, { useEffect, useRef, useState } from 'react';
@@ -62,14 +63,9 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ url }) => {
           },
         });
 
-        // parse CSV file
-        const reader = new FileReader();
-        reader.readAsText(res.data);
-        reader.onload = () => {
-          const parsedData = parseCSV(reader.result as string);
-          console.log('file loaded successfully', reader.result);
-          setData(parsedData);
-        };
+        // Handles UTF-8/UTF-16 (BOM) as well as GB2312/GBK files
+        const csvText = await decodeBlobText(res.data);
+        setData(parseCSV(csvText));
       } catch (error) {
         message.error('CSV file parse failed');
         console.error('Error loading CSV file:', error);

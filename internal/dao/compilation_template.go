@@ -117,7 +117,8 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, db *gorm.DB, tenantID, templateID string) (*entity.CompilationTemplate, error) {
 	var t entity.CompilationTemplate
 	if err := db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND status = ?", templateID, tenantID, string(entity.StatusValid)).
+		Where("id = ? AND status = ? AND (tenant_id = ? OR (tenant_id IS NULL AND (is_builtin = ? OR group_id = ?)))",
+			templateID, string(entity.StatusValid), tenantID, true, BuiltinCompilationTemplateGroupID).
 		First(&t).Error; err != nil {
 		return nil, fmt.Errorf("load compilation template %q: %w", templateID, err)
 	}

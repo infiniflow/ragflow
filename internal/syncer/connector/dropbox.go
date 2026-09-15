@@ -138,7 +138,9 @@ func (c *DropboxConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		nameCounts: nameCounts,
 		batchSize:  positiveDropboxBatchSize(c.batchSize),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -322,20 +324,21 @@ func (s *dropboxSyncSession) Close() error {
 	return nil
 }
 
-func (s *dropboxSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *dropboxSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
-		return
+		return fmt.Errorf("dropbox sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, file := range s.files {
 		if file.sourceID() == sourceID {
 			s.index = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("dropbox resume anchor %q was not found in the current listing: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 func dropboxSyncCheckpoint(file dropboxFileMetadata) *SyncCheckpoint {

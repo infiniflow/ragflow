@@ -22,7 +22,7 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 			"slug":             "entity/alpha",
 			"title":            "Alpha",
 			"page_type":        "entity",
-			"topic":            "Alpha",
+			"topic":            " Knowledge / Core / Alpha ",
 			"summary":          "A page about Alpha",
 			"entity_names":     []string{"Alpha"},
 			"related_kb_pages": []string{"entity/beta"},
@@ -38,7 +38,7 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		"artifact_slug_kwd":   "entity/alpha",
 		"title_kwd":           "Alpha",
 		"page_type_kwd":       "entity",
-		"topic_kwd":           "Alpha",
+		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
 		"plan_kwd":            "run-abc",
 		"input_hash_kwd":      "hash-123",
@@ -109,6 +109,84 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 	}
 	if p.Merged {
 		t.Errorf("per-doc row must not be marked merged")
+	}
+}
+
+func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
+	oldID := "dataset_structure_old_type_identity"
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            oldID,
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "other",
+			"content_with_weight":           `{"name":"Engine","type":"other","description":"existing"}`,
+			"source_doc_ids":                []string{"d1"},
+			"source_chunk_ids":              []string{"c1"},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "engine", Type: "component", Description: "incoming", CompileKwd: "hypergraph",
+		TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d2"}, SourceChunkIDs: []string{"c2"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.insertedChunks) == 0 {
+		t.Fatal("new structure row was not inserted")
+	}
+	var entity map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["knowledge_graph_kwd"] == "entity" {
+			entity = row
+			break
+		}
+	}
+	if entity == nil {
+		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if entity["id"] == oldID {
+		t.Fatalf("old type-scoped id was reused: %v", entity["id"])
+	}
+	if entity["entity_type_kwd"] != "component" {
+		t.Fatalf("specific incoming type should replace existing other: %v", entity["entity_type_kwd"])
+	}
+	if got := firstStringSlice(entity["source_doc_ids"]); len(got) != 2 {
+		t.Fatalf("source documents were not migrated: %v", got)
+	}
+	ids, ok := eng.lastDeleteCond["id"].([]string)
+	if !ok || len(ids) != 1 || ids[0] != oldID {
+		t.Fatalf("superseded id was not deleted: %v", eng.lastDeleteCond)
+	}
+}
+
+func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
+	oldID := "dataset_structure_old"
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            oldID,
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "component",
+			"content_with_weight":           `{"name":"Engine","type":"component","description":"existing"}`,
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Engine", Type: "component", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eng.lastDeleteCond != nil {
+		t.Fatalf("invalid bucket must not delete the existing row: %v", eng.lastDeleteCond)
 	}
 }
 
