@@ -138,24 +138,27 @@ async def _index_search(
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return []
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            condition,
-            [],
-            OrderByExpr(),
-            offset,
-            limit,
-            index,
-            [kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, fields) or {}
-        return list(field_map.values())
-    except Exception:
-        logging.exception("structure_merge: search failed for kb=%s", kb_id)
-        return []
+    # A deterministic sort is REQUIRED for pagination beyond the ES
+    # max_result_window: ESConnection.search only switches to its
+    # search_after path when an explicit OrderByExpr is present, otherwise
+    # from+size paging fails once offset+limit exceeds the window (datasets
+    # with >10k entity/relation rows), and the caller would silently see
+    # an empty page.
+    order = OrderByExpr().asc("id")
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        condition,
+        [],
+        order,
+        offset,
+        limit,
+        index,
+        [kb_id],
+    )
+    field_map = settings.docStoreConn.get_fields(res, fields) or {}
+    return list(field_map.values())
 
 
 async def _index_delete(tenant_id: str, kb_id: str, condition: dict) -> None:
@@ -546,7 +549,7 @@ async def _cleanup_deleted_docs(
                 [],
                 {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
                 [],
-                OrderByExpr(),
+                OrderByExpr().asc("id"),
                 offset,
                 _PAGE_SIZE,
                 index,
@@ -595,7 +598,7 @@ async def _cleanup_deleted_docs(
                 [],
                 dataset_del_cond,
                 [],
-                OrderByExpr(),
+                OrderByExpr().asc("id"),
                 offset,
                 _PAGE_SIZE,
                 index,
@@ -682,7 +685,7 @@ async def _consume_deletion_markers(tenant_id: str, kb_id: str) -> None:
                 [],
                 {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
                 [],
-                OrderByExpr(),
+                OrderByExpr().asc("id"),
                 offset,
                 _PAGE_SIZE,
                 index,
@@ -998,7 +1001,7 @@ async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str,
                 [],
                 {"knowledge_graph_kwd": ["entity"]},
                 [],
-                OrderByExpr(),
+                OrderByExpr().asc("id"),
                 offset,
                 _PAGE_SIZE,
                 index,
