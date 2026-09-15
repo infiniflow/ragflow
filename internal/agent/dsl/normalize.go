@@ -601,6 +601,7 @@ var componentNameToNodeTypeMap = map[string]string{
 	"File":               "fileNode",
 	"Parser":             "parserNode",
 	"Tokenizer":          "tokenizerNode",
+	"GeneralChunker":     "chunkerNode",
 	"TokenChunker":       "chunkerNode",
 	"TitleChunker":       "chunkerNode",
 	"OneChunker":         "chunkerNode",

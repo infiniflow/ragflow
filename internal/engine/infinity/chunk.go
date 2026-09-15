@@ -446,6 +446,12 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 
 	// Build filter string from condition
 	filter := buildFilterFromCondition(condition, clmns)
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		// Every condition key was dropped (blank value, empty list, unknown
+		// column). table.Update("1=1", ...) would rewrite every row of the
+		// dataset, so refuse instead — mirrors DeleteChunks/DeleteMetadata.
+		return fmt.Errorf("INFINITY update aborted: non-empty condition yielded unconstrained filter on table %s", tableName)
+	}
 
 	// Process remove operation first
 	removeValue := make(map[string]interface{})
