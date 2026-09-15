@@ -465,13 +465,16 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			case <-time.After(time.Duration(1+attempt) * time.Second):
 			}
 		}
-		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+		req := common.ChatRequest{
 			LLMID:           llmID,
 			SystemPrompt:    systemText,
 			UserPrompt:      userText,
 			MaxTokens:       &mt,
 			DisableThinking: true,
-		})
+		}
+		logTreeLLMRequest("raptor-summary", req, attempt+1)
+		resp, err := deps.Chat.Chat(ctx, req)
+		logTreeLLMResponse("raptor-summary", attempt+1, resp, err)
 		if err != nil {
 			continue
 		}

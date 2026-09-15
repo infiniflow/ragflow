@@ -297,6 +297,19 @@ func TestExtractClaimsForChunksAttribution(t *testing.T) {
 func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 	// Mirrors Python _CLAIM_BATCH_SIZE: one call harvests a whole batch, so the
 	// call count stays flat instead of growing one-per-chunk.
+	previous := batchSubmitter
+	defer SetBatchSubmitter(previous)
+	submitted := 0
+	SetBatchSubmitter(func(ctx context.Context, jobs []func() error) error {
+		submitted = len(jobs)
+		for _, job := range jobs {
+			if err := job(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
@@ -315,6 +328,9 @@ func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 	ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft, "")
 	if chat.calls != 1 {
 		t.Fatalf("expected 1 call for %d chunks, got %d", len(chunks), chat.calls)
+	}
+	if submitted != 1 {
+		t.Fatalf("expected one batch submitted to the shared pool, got %d", submitted)
 	}
 }
 

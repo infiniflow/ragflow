@@ -16,9 +16,12 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+
+	"go.uber.org/zap"
 )
 
 // Structure-graph sampling constants (mirror structure_graph_common.py).
@@ -34,6 +37,7 @@ var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -109,6 +113,90 @@ func graphLoadPayload(row map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	return m
+}
+
+type graphPayloadInfo struct {
+	valid    bool
+	keys     []string
+	name     string
+	typeName string
+	reason   string
+}
+
+// inspectGraphPayload returns bounded metadata for projection diagnostics. It
+// deliberately excludes the payload body because this path may contain
+// document content and is called from a user-facing API.
+func inspectGraphPayload(row map[string]interface{}) graphPayloadInfo {
+	raw := firstStringValue(row["content_with_weight"])
+	if strings.TrimSpace(raw) == "" {
+		return graphPayloadInfo{reason: "content_with_weight_empty"}
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return graphPayloadInfo{reason: "content_with_weight_invalid_json"}
+	}
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	info := graphPayloadInfo{valid: true, keys: keys}
+	for _, key := range []string{"name", "text", "term", "title"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			info.name = strings.TrimSpace(value)
+			break
+		}
+	}
+	if value, ok := payload["type"].(string); ok {
+		info.typeName = strings.TrimSpace(value)
+	}
+	switch {
+	case info.name == "":
+		info.reason = "entity_name_missing"
+	case graphIsInvalidSentinel(info.name):
+		info.reason = "entity_name_invalid_sentinel"
+	default:
+		info.reason = ""
+	}
+	return info
+}
+
+func logGraphEntityProjectionSkipped(tenantID, datasetID, documentID string, row map[string]interface{}) {
+	info := inspectGraphPayload(row)
+	common.Warn("document structure graph: entity projection skipped",
+		zap.String("tenant_id", tenantID),
+		zap.String("dataset_id", datasetID),
+		zap.String("document_id", documentID),
+		zap.String("row_id", firstStringValue(row["id"])),
+		zap.String("compile_kwd", firstStringValue(row["compile_kwd"])),
+		zap.Any("compilation_template_ids", row["compilation_template_ids"]),
+		zap.String("template_kind", firstStringValue(row["compilation_template_kind_kwd"])),
+		zap.Int("content_length", len(firstStringValue(row["content_with_weight"]))),
+		zap.Bool("payload_valid", info.valid),
+		zap.Strings("payload_keys", info.keys),
+		zap.String("payload_name", info.name),
+		zap.String("payload_type", info.typeName),
+		zap.String("reason", info.reason),
+	)
+}
+
+func logGraphRelationProjectionSkipped(tenantID, datasetID, documentID string, row map[string]interface{}) {
+	info := inspectGraphPayload(row)
+	common.Warn("document structure graph: relation projection skipped",
+		zap.String("tenant_id", tenantID),
+		zap.String("dataset_id", datasetID),
+		zap.String("document_id", documentID),
+		zap.String("row_id", firstStringValue(row["id"])),
+		zap.String("compile_kwd", firstStringValue(row["compile_kwd"])),
+		zap.Any("compilation_template_ids", row["compilation_template_ids"]),
+		zap.String("template_kind", firstStringValue(row["compilation_template_kind_kwd"])),
+		zap.String("from_entity_kwd", firstStringValue(row["from_entity_kwd"])),
+		zap.String("to_entity_kwd", firstStringValue(row["to_entity_kwd"])),
+		zap.Int("content_length", len(firstStringValue(row["content_with_weight"]))),
+		zap.Bool("payload_valid", info.valid),
+		zap.Strings("payload_keys", info.keys),
+		zap.String("reason", "relation_endpoints_missing_or_invalid"),
+	)
 }
 
 func graphIsInvalidSentinel(v string) bool {
@@ -459,12 +547,21 @@ func graphStr(v interface{}) string {
 // buildBucket mirrors sgc.build_bucket: small buckets whole, large sampled.
 func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, datasetID string, scope map[string]interface{}, excludedDocIDs map[string]bool) ([]StructureGraphNode, []StructureGraphRelation, error) {
 	excludedDocIDs = excludedDocIDsOrEmpty(excludedDocIDs)
+	documentID := firstStringValue(scope["doc_id"])
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
 	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
 	if err != nil {
 		return nil, nil, err
 	}
+	common.Info("document structure graph: bucket rows discovered",
+		zap.String("tenant_id", tenantID),
+		zap.String("dataset_id", datasetID),
+		zap.String("document_id", documentID),
+		zap.Any("scope", scope),
+		zap.Int64("raw_rows", total),
+		zap.Bool("sampled", total >= graphFullThreshold),
+	)
 	if total < graphFullThreshold {
 		fieldMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, nil, 0, int(total), nil)
 		if err != nil {
@@ -476,23 +573,57 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 		// relations without a null guard (mirror Python, which always returns []).
 		entities := make([]StructureGraphNode, 0)
 		relations := make([]StructureGraphRelation, 0)
+		sourceFilteredRows := 0
+		entityRows := 0
+		relationRows := 0
+		projectedEntities := 0
+		projectedRelations := 0
+		skippedEntities := 0
+		skippedRelations := 0
 		for _, row := range fieldMap {
 			if !rowHasEnabledSource(row, excludedDocIDs) {
+				sourceFilteredRows++
 				continue
 			}
 			kg := firstStringValue(row["knowledge_graph_kwd"])
 			if kg == "relation" {
+				relationRows++
 				if edge := projectRelation(row); edge != nil {
 					relations = append(relations, edge)
+					projectedRelations++
+				} else {
+					skippedRelations++
+					logGraphRelationProjectionSkipped(tenantID, datasetID, documentID, row)
 				}
 			} else {
+				entityRows++
 				if node := projectEntity(row); node != nil {
 					entities = append(entities, node)
+					projectedEntities++
+				} else {
+					skippedEntities++
+					logGraphEntityProjectionSkipped(tenantID, datasetID, documentID, row)
 				}
 			}
 		}
 		entities = dedupEntities(entities)
-		return entities, normalizeRelationEndpoints(entities, relations), nil
+		relations = normalizeRelationEndpoints(entities, relations)
+		common.Info("document structure graph: bucket projection completed",
+			zap.String("tenant_id", tenantID),
+			zap.String("dataset_id", datasetID),
+			zap.String("document_id", documentID),
+			zap.Int("rows_returned", len(fieldMap)),
+			zap.Int("source_filtered_rows", sourceFilteredRows),
+			zap.Int("entity_rows", entityRows),
+			zap.Int("relation_rows", relationRows),
+			zap.Int("projected_entities_before_dedup", projectedEntities),
+			zap.Int("projected_entities", len(entities)),
+			zap.Int("projected_relations_before_normalize", projectedRelations),
+			zap.Int("projected_relations", len(relations)),
+			zap.Int("skipped_entities", skippedEntities),
+			zap.Int("skipped_relations", skippedRelations),
+		)
+		return entities, relations, nil
 	}
 
 	// Large bucket: sample. A = top entities by mention_count_int desc.
@@ -757,6 +888,15 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	if err != nil {
 		return nil, err
 	}
+	common.Info("document structure graph: request started",
+		zap.String("tenant_id", in.TenantID),
+		zap.String("dataset_id", in.DatasetID),
+		zap.String("document_id", in.DocumentID),
+		zap.String("graph_type", in.GraphType),
+		zap.String("keywords", in.Keywords),
+		zap.Strings("configured_template_ids", configuredIDs),
+		zap.Int("configured_template_count", len(templateMeta)),
+	)
 
 	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
 	entityCountFilter := map[string]interface{}{
@@ -768,14 +908,30 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		return nil, err
 	}
 	resp.TotalEntities = int(entityTotal)
+	common.Info("document structure graph: raw entity count",
+		zap.String("tenant_id", in.TenantID),
+		zap.String("dataset_id", in.DatasetID),
+		zap.String("document_id", in.DocumentID),
+		zap.Int64("raw_entity_count", entityTotal),
+	)
 
 	// keywords mode: name matching/KNN → matched entities' subgraph.
 	if in.Keywords != "" {
+		common.Info("document structure graph: keyword lookup started",
+			zap.String("document_id", in.DocumentID),
+			zap.String("keywords", in.Keywords),
+		)
 		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, in.DocumentID, in.Keywords, templateMeta, nil)
 		if err != nil {
 			return nil, err
 		}
 		if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
+			common.Warn("document structure graph: keyword lookup returned no graph",
+				zap.String("document_id", in.DocumentID),
+				zap.Bool("bucket_found", bucketMeta != nil),
+				zap.Int("returned_entities", len(entities)),
+				zap.Int("returned_relations", len(relations)),
+			)
 			return resp, nil
 		}
 		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
@@ -786,6 +942,12 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			Relations:    relations,
 		})
 		resp.ReturnedEntities = len(entities)
+		common.Info("document structure graph: keyword lookup completed",
+			zap.String("document_id", in.DocumentID),
+			zap.String("template_id", graphStr(bucketMeta["template_id"])),
+			zap.Int("returned_entities", len(entities)),
+			zap.Int("returned_relations", len(relations)),
+		)
 		return resp, nil
 	}
 
@@ -811,11 +973,28 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			break
 		}
 	}
+	common.Info("document structure graph: metadata scan completed",
+		zap.String("tenant_id", in.TenantID),
+		zap.String("dataset_id", in.DatasetID),
+		zap.String("document_id", in.DocumentID),
+		zap.Int("metadata_rows", len(metaRows)),
+	)
 
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	templateDAO := dao.NewCompilationTemplateDAO()
+	metadataLogCount := 0
 	for _, row := range metaRows {
+		if metadataLogCount < 20 {
+			common.Info("document structure graph: metadata row",
+				zap.String("document_id", in.DocumentID),
+				zap.String("row_id", firstStringValue(row["id"])),
+				zap.String("compile_kwd", firstStringValue(row["compile_kwd"])),
+				zap.String("template_kind", firstStringValue(row["compilation_template_kind_kwd"])),
+				zap.Any("compilation_template_ids", row["compilation_template_ids"]),
+			)
+			metadataLogCount++
+		}
 		// Pipeline-produced rows may contain a template id even when the
 		// document parser config does not contain the corresponding template
 		// group. Resolve that id directly so template_name is the user-visible
@@ -840,16 +1019,47 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			bucketScopes[bid] = scope
 		}
 	}
+	orderedBucketIDs := make([]string, 0, len(bucketMetas))
+	for bid := range bucketMetas {
+		orderedBucketIDs = append(orderedBucketIDs, bid)
+	}
+	sort.Strings(orderedBucketIDs)
+	common.Info("document structure graph: buckets discovered",
+		zap.String("tenant_id", in.TenantID),
+		zap.String("dataset_id", in.DatasetID),
+		zap.String("document_id", in.DocumentID),
+		zap.Int("bucket_count", len(bucketMetas)),
+		zap.Strings("bucket_ids", orderedBucketIDs),
+	)
 
 	grouped := map[string]DocumentStructureGraphTemplate{}
 	for bid, meta := range bucketMetas {
+		common.Info("document structure graph: building bucket",
+			zap.String("document_id", in.DocumentID),
+			zap.String("bucket_id", bid),
+			zap.String("template_name", graphStr(meta["template_name"])),
+			zap.String("kind", graphStr(meta["kind"])),
+			zap.Any("scope", bucketScopes[bid]),
+		)
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)
 		if err != nil {
 			return nil, err
 		}
 		if len(entities) == 0 && len(relations) == 0 {
+			common.Warn("document structure graph: bucket produced no projected graph",
+				zap.String("document_id", in.DocumentID),
+				zap.String("bucket_id", bid),
+				zap.Int("returned_entities", len(entities)),
+				zap.Int("returned_relations", len(relations)),
+			)
 			continue
 		}
+		common.Info("document structure graph: bucket completed",
+			zap.String("document_id", in.DocumentID),
+			zap.String("bucket_id", bid),
+			zap.Int("returned_entities", len(entities)),
+			zap.Int("returned_relations", len(relations)),
+		)
 		grouped[bid] = DocumentStructureGraphTemplate{
 			TemplateID:   graphStr(meta["template_id"]),
 			TemplateName: graphStr(meta["template_name"]),
@@ -877,6 +1087,14 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			resp.ReturnedEntities += len(g.Entities)
 		}
 	}
+	common.Info("document structure graph: request completed",
+		zap.String("tenant_id", in.TenantID),
+		zap.String("dataset_id", in.DatasetID),
+		zap.String("document_id", in.DocumentID),
+		zap.Int("raw_entity_count", resp.TotalEntities),
+		zap.Int("returned_entities", resp.ReturnedEntities),
+		zap.Int("template_count", len(resp.Templates)),
+	)
 	return resp, nil
 }
 

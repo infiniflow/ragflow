@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,18 +14,6 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
-
-// claimExtractionWorkers bounds how many claim-extraction LLM calls run at once.
-// Batches are independent, so a large document would otherwise open one
-// round-trip per batch and trip the provider's rate limit; this keeps the
-// fan-out predictable. Mirrors Python _claim_limiter (raptor.py): the default is
-// 4 and MAX_CONCURRENT_CLAIM_CHATS overrides it.
-func claimExtractionWorkers() int {
-	if n, err := strconv.Atoi(os.Getenv("MAX_CONCURRENT_CLAIM_CHATS")); err == nil && n > 0 {
-		return n
-	}
-	return 4
-}
 
 // claimBatchSize is how many chunks one extraction call covers, mirroring Python
 // _CLAIM_BATCH_SIZE (raptor.py). Every chunk in the batch is a TARGET and the
@@ -174,11 +160,10 @@ type EvidenceRef struct {
 // through source_chunk_ids; the validation gate then checks each quote against
 // that chunk's text.
 //
-// The calls are independent, so a bounded worker pool runs several at once —
-// mirroring the Python side, which fans every batch out under _claim_limiter
-// (default 4, MAX_CONCURRENT_CLAIM_CHATS override) instead of extracting
-// serially. The worker cap keeps a large document from opening hundreds of
-// concurrent round-trips against the provider's rate limit.
+// The calls are independent, so the batches are submitted to the shared
+// knowledge-compilation pool. This keeps Tree's LLM fan-out bounded together
+// with the other compiler variants instead of maintaining a second,
+// document-local semaphore.
 //
 // claimPrompt is the template-declared extraction contract (Python passes
 // raptor_config["claim_prompt"] from tree.yaml's raptor section into
@@ -210,43 +195,26 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 	}
 
 	batches := packClaimBatches(entries)
-	claimsByChunk := make(map[string][]Claim)
 	total := len(entries)
-	workers := claimExtractionWorkers()
-	if workers > len(batches) {
-		workers = len(batches)
-	}
 
 	// Announce the fan-out shape before the first LLM call: the batches take
 	// model latency, so without this line the log would sit silent on
 	// "building tree" for tens of seconds (mirrors Python's start message).
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: claim extraction start: %d chunk(s) -> %d batch(es)", total, len(batches)))
 
+	results := make([]map[string][]Claim, len(batches))
+	jobs := make([]func() error, 0, len(batches))
 	var (
-		// mu guards claimsByChunk and serialises the progress callback, which
-		// is supplied by the caller and is not required to be goroutine-safe.
+		// mu serialises the progress callback, which is supplied by the caller
+		// and is not required to be goroutine-safe.
 		mu        sync.Mutex
-		wg        sync.WaitGroup
 		completed int
 	)
-	sem := make(chan struct{}, workers)
 	for i := range batches {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			// Take a slot before doing any work; if the context is already
-			// done, drop out instead of queueing a call that would be
-			// cancelled mid-flight.
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-sem }()
-
+		i := i
+		jobs = append(jobs, func() error {
 			batch := batches[i]
-
-			batchClaims := extractClaimsForBatch(ctx, deps, llmID, prompt, batch, mode)
+			results[i] = extractClaimsForBatch(ctx, deps, llmID, prompt, batch, mode)
 
 			mu.Lock()
 			// Report progress *after* the batch completes, counting the chunks
@@ -255,15 +223,20 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 			// finish out of order, so the figure jumps by batch size).
 			completed += len(batch)
 			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
-			if len(batchClaims) > 0 {
-				for id, claims := range batchClaims {
-					claimsByChunk[id] = append(claimsByChunk[id], claims...)
-				}
-			}
 			mu.Unlock()
-		}(i)
+			return nil
+		})
 	}
-	wg.Wait()
+	if err := runBatches(ctx, jobs); err != nil {
+		return nil
+	}
+
+	claimsByChunk := make(map[string][]Claim)
+	for _, batchClaims := range results {
+		for id, claims := range batchClaims {
+			claimsByChunk[id] = append(claimsByChunk[id], claims...)
+		}
+	}
 	if len(claimsByChunk) == 0 {
 		return nil
 	}
@@ -394,13 +367,16 @@ func chatWithClaimRetry(ctx context.Context, deps common.Deps, llmID, claimPromp
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+		req := common.ChatRequest{
 			LLMID:           llmID,
 			SystemPrompt:    claimPrompt,
 			UserPrompt:      prompt,
 			JSONMode:        true,
 			DisableThinking: true,
-		})
+		}
+		logTreeLLMRequest("claim-extraction batch="+claimBatchLabel(batch), req, attempt)
+		resp, err := deps.Chat.Chat(ctx, req)
+		logTreeLLMResponse("claim-extraction batch="+claimBatchLabel(batch), attempt, resp, err)
 		if err == nil {
 			if resp == nil {
 				return "", nil

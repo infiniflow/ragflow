@@ -142,13 +142,16 @@ func rewriteTitleGroup(ctx context.Context, deps common.Deps, llmID, title strin
 		"Nodes: " + string(itemsJSON)
 
 	temp := 0.0
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+	req := common.ChatRequest{
 		LLMID:        llmID,
 		SystemPrompt: "You rename duplicate tree node titles for display.",
 		UserPrompt:   prompt,
 		JSONMode:     true,
 		Temperature:  &temp,
-	})
+	}
+	logTreeLLMRequest("duplicate-title-rewrite", req, 1)
+	resp, err := deps.Chat.Chat(ctx, req)
+	logTreeLLMResponse("duplicate-title-rewrite", 1, resp, err)
 	if err != nil {
 		return err
 	}
