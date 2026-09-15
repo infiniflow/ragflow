@@ -82,12 +82,6 @@ func TestVllmCompatibleQwen3ThinkingPayload(t *testing.T) {
 				return NewVllmModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions", AsyncChat: "chat/completions"})
 			},
 		},
-		{
-			name: "openai-compatible",
-			new: func(baseURL string) ModelDriver {
-				return NewOpenAIAPICompatibleModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
-			},
-		},
 	}
 	cases := []struct {
 		name     string
@@ -193,5 +187,33 @@ func TestAliyunQwen3ThinkingPayloadRemainsProviderNative(t *testing.T) {
 	}
 	if _, exists := body["thinking"]; exists {
 		t.Errorf("thinking should be absent for native Aliyun Qwen3")
+	}
+}
+
+// TestOpenAICompatibleQwen3SendsNoVendorThinkingPayload guards the generic
+// OpenAI-API-Compatible driver: endpoints reached through it (LM Studio,
+// Ollama-style local gateways, arbitrary proxies) follow the OpenAI
+// chat-completions schema and must not receive vLLM-only extensions such as
+// chat_template_kwargs, nor any unrequested reasoning control — strict local
+// servers reject the whole request over unknown fields (#19004).
+func TestOpenAICompatibleQwen3SendsNoVendorThinkingPayload(t *testing.T) {
+	withSSRFBypass(t)
+
+	for _, stream := range []bool{false, true} {
+		for _, modelName := range []string{"qwen3-8b", "qwen3.5-9b-uncensored-hauhaucs-aggressive"} {
+			requestBody := make(chan map[string]interface{}, 1)
+			server := newThinkingPayloadServer(t, requestBody)
+			defer server.Close()
+
+			driver := NewOpenAIAPICompatibleModel(map[string]string{"default": server.URL}, URLSuffix{Chat: "chat/completions"})
+			runThinkingPayloadRequest(t, driver, modelName, stream, nil)
+
+			body := <-requestBody
+			for _, field := range []string{"chat_template_kwargs", "enable_thinking", "thinking", "extra_body"} {
+				if _, exists := body[field]; exists {
+					t.Errorf("stream=%v model=%s: unexpected root-level %s in request: %#v", stream, modelName, field, body[field])
+				}
+			}
+		}
 	}
 }
