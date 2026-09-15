@@ -64,7 +64,7 @@ class Excel(ExcelParser):
                 else:
                     fails.append(str(i + 1))
                 if len(res) % 999 == 0:
-                    callback(len(res) * 0.6 / total, ("Extract pairs: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                    callback(len(res) * 0.6 / total, ("Extract pairs: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
@@ -338,12 +338,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 question, answer = arr
             i += 1
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
 
@@ -373,12 +373,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = row
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract Q&A: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
