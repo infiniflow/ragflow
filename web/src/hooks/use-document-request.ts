@@ -17,7 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
@@ -25,13 +25,17 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
-import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
+import {
+  IClaimsResponse,
+  IStructureGraphResponse,
+} from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
@@ -44,6 +48,7 @@ import kbService, {
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { buildChunkHighlights } from '@/utils/document-util';
 import {
   keepPreviousData,
@@ -62,8 +67,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
@@ -98,6 +103,20 @@ export const DocumentStructureKeys = {
       datasetId,
       documentId,
       keywords,
+    ] as const,
+  claims: (
+    datasetId: string,
+    documentId: string,
+    templateId: string | undefined,
+    chunkIds: string[] | undefined,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+      'claims',
+      templateId,
+      ...(chunkIds ?? []),
     ] as const,
 };
 
@@ -173,12 +192,14 @@ export const useFetchDocumentList = (loop = true) => {
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
+    has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
-    initialData: { docs: [], total: 0 },
+    initialData: { docs: [], total: 0, has_active_tasks: false },
     refetchInterval: (query) =>
       loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+      (query.state.data?.has_active_tasks ||
+        !!query.state.data?.docs.some(isDocumentProcessing))
         ? 5000
         : false,
     enabled: !!knowledgeId || !!id,
@@ -200,7 +221,7 @@ export const useFetchDocumentList = (loop = true) => {
       const ret = await listDocument(
         {
           id: knowledgeId || id,
-          ext: { keywords: debouncedSearchString },
+          keywords: debouncedSearchString,
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -221,6 +242,7 @@ export const useFetchDocumentList = (loop = true) => {
       return {
         docs: [],
         total: 0,
+        has_active_tasks: false,
       };
     },
   });
@@ -367,6 +389,7 @@ export const useSetDocumentStatus = () => {
 // This hook is used to run a document by its IDs
 export const useRunDocument = () => {
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -383,6 +406,12 @@ export const useRunDocument = () => {
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
     }) => {
+      // Optimistically move started documents into an active state so the
+      // 5s list polling starts immediately and the row leaves its idle
+      // action. Python drives the worker through the legacy run field
+      // (RUNNING); Go has no run field and reports the task lifecycle via
+      // ingestion_status, so CREATED renders as QUEUED until the next poll
+      // observes the real status (SCHEDULED/RUNNING/COMPLETED/...).
       if (run === 1) {
         const documentIdSet = new Set(documentIds);
         queryClient.setQueriesData<{
@@ -398,7 +427,9 @@ export const useRunDocument = () => {
               documentIdSet.has(doc.id)
                 ? {
                     ...doc,
-                    run: RunningStatus.RUNNING,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.CREATED }
+                      : { run: RunningStatus.RUNNING }),
                     progress: 0,
                     process_duration: 0,
                     process_begin_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -568,7 +599,7 @@ export const useSetDocumentParser = () => {
       }
 
       if (parserConfig) {
-        updateData.parser_config = extractParserConfigExt(parserConfig);
+        updateData.parser_config = normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -633,7 +664,7 @@ export const useSetDocumentPipelineParser = () => {
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
-          : extractParserConfigExt(parserConfig);
+          : normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -816,6 +847,43 @@ export function useFetchDocumentStructureGraph(keywords?: string) {
     documentId,
     keywords,
   );
+
+  return { data, loading };
+}
+
+// Claims are fetched per leaf cluster on demand: the tree shows only a count
+// badge, so the payload (statement + verbatim evidence) loads when the user
+// opens that cluster. chunkIds scopes the query server-side.
+export function useFetchDocumentClaims(
+  chunkIds: string[] | undefined,
+  templateId: string | undefined,
+) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId && !!chunkIds?.length;
+
+  const { data, isFetching: loading } = useQuery<IClaimsResponse | null>({
+    queryKey: DocumentStructureKeys.claims(
+      datasetId,
+      documentId,
+      templateId,
+      chunkIds,
+    ),
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } =
+        await documentStructureService.getDocumentStructureClaims(
+          datasetId,
+          documentId,
+          {
+            chunk_ids: chunkIds?.join(','),
+            template_id: templateId,
+            limit: 100,
+          },
+        );
+      return data?.data ?? null;
+    },
+  });
 
   return { data, loading };
 }

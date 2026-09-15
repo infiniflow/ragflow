@@ -467,7 +467,7 @@ class RAGFlowPdfParser:
             return width - y, x
         return x, y
 
-    def _table_transformer_job(self, ZM, auto_rotate=True):
+    def _table_transformer_job(self, ZM, auto_rotate=None):
         """
         Process table structure recognition.
 
@@ -479,8 +479,12 @@ class RAGFlowPdfParser:
 
         Args:
             ZM: Zoom factor
-            auto_rotate: Whether to enable auto orientation correction
+            auto_rotate: Whether to enable auto orientation correction.
+                         None means reading TABLE_AUTO_ROTATE from the environment.
         """
+        if auto_rotate is None:
+            auto_rotate = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+
         logging.debug("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
@@ -1755,9 +1759,6 @@ class RAGFlowPdfParser:
                                True: Enable auto orientation correction
                                False: Disable auto orientation correction
         """
-        if auto_rotate_tables is None:
-            auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
-
         self.outlines = extract_pdf_outlines(fnm)
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
@@ -1814,10 +1815,8 @@ class RAGFlowPdfParser:
         if callback:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
-        auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
-
         start = timer()
-        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
+        self._table_transformer_job(zoomin)
         if callback:
             callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
 

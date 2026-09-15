@@ -272,6 +272,18 @@ func (dao *ConnectorDAO) ScheduleConnectorTasks(ctx context.Context, db *gorm.DB
 	return taskIDs, err
 }
 
+// Connector2KBExists reports whether the connector is bound to the knowledge base.
+func (dao *ConnectorDAO) Connector2KBExists(ctx context.Context, db *gorm.DB, connectorID, kbID string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Connector2Kb{}).
+		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ListDocumentsByKBAndSourceType lists connector documents in a dataset.
 func (dao *ConnectorDAO) ListDocumentsByKBAndSourceType(ctx context.Context, db *gorm.DB, kbID, sourceType string) ([]*entity.Document, error) {
 	var documents []*entity.Document

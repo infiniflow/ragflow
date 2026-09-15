@@ -9,7 +9,7 @@ import (
 )
 
 // fakeReader is a Reader double that returns a canned product set for
-// recoverDocVariants tests.
+// recoverDocTypes tests.
 type fakeReader struct {
 	products []kccommon.Product
 }
@@ -22,7 +22,7 @@ func (f *fakeReader) SearchSimilar(context.Context, string, string, kccommon.Var
 	return kccommon.Product{}, 0, nil
 }
 
-// TestRecoverDocVariants_AuthoritativeKind covers B1a/O2a: the authoritative
+// TestRecoverDocTypes_AuthoritativeKind covers B1a/O2a: the authoritative
 // Product.Kind (compilation_template_kind_kwd) is mapped through KindToVariant;
 // results are sorted/deduped.
 func TestRecoverDocVariants_AuthoritativeKind(t *testing.T) {
@@ -32,17 +32,20 @@ func TestRecoverDocVariants_AuthoritativeKind(t *testing.T) {
 		// duplicate variant, deduped
 		{DocID: "d1", Kind: "structure"},
 	}}}
-	got, err := c.recoverDocVariants(context.Background(), "t1", "kb1", "d1")
+	got, taskTypes, err := c.recoverDocTypes(context.Background(), "t1", "kb1", "d1")
 	if err != nil {
-		t.Fatalf("recoverDocVariants error: %v", err)
+		t.Fatalf("recoverDocTypes error: %v", err)
 	}
 	want := []string{string(kccommon.VariantStructure), string(kccommon.VariantTree)}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("recoverDocVariants = %v, want %v", got, want)
+		t.Fatalf("recoverDocTypes variants = %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(taskTypes, []string{kccommon.TaskTypeGraph, kccommon.TaskTypeTree}) {
+		t.Fatalf("recoverDocTypes task types = %v, want [Graph Tree]", taskTypes)
 	}
 }
 
-// TestRecoverDocVariants_UnknownKindHardFails covers O2a: a whitelist-out
+// TestRecoverDocTypes_UnknownKindHardFails covers O2a: a whitelist-out
 // authoritative kind aborts recovery (returns an error) so the rebuild does not
 // proceed with an incomplete variant set.
 func TestRecoverDocVariants_UnknownKindHardFails(t *testing.T) {
@@ -50,22 +53,25 @@ func TestRecoverDocVariants_UnknownKindHardFails(t *testing.T) {
 		{DocID: "d1", Kind: "structure"},
 		{DocID: "d1", Kind: "garbage"},
 	}}}
-	if _, err := c.recoverDocVariants(context.Background(), "t1", "kb1", "d1"); err == nil {
-		t.Fatal("recoverDocVariants must hard-fail on an unknown authoritative kind (O2a)")
+	if _, _, err := c.recoverDocTypes(context.Background(), "t1", "kb1", "d1"); err == nil {
+		t.Fatal("recoverDocTypes must hard-fail on an unknown authoritative kind (O2a)")
 	}
 }
 
-// TestRecoverDocVariants_FallbackVariant covers B1a: a product without an
+// TestRecoverDocTypes_FallbackVariant covers B1a: a product without an
 // authoritative kind falls back to its reverse-mapped variant.
 func TestRecoverDocVariants_FallbackVariant(t *testing.T) {
 	c := &Consumer{reader: &fakeReader{products: []kccommon.Product{
 		{DocID: "d1", Variant: kccommon.VariantWiki},
 	}}}
-	got, err := c.recoverDocVariants(context.Background(), "t1", "kb1", "d1")
+	got, taskTypes, err := c.recoverDocTypes(context.Background(), "t1", "kb1", "d1")
 	if err != nil {
-		t.Fatalf("recoverDocVariants error: %v", err)
+		t.Fatalf("recoverDocTypes error: %v", err)
 	}
 	if len(got) != 1 || got[0] != string(kccommon.VariantWiki) {
-		t.Fatalf("recoverDocVariants fallback = %v, want [wiki]", got)
+		t.Fatalf("recoverDocTypes fallback = %v, want [wiki]", got)
+	}
+	if !reflect.DeepEqual(taskTypes, []string{kccommon.TaskTypeWiki}) {
+		t.Fatalf("recoverDocTypes fallback task types = %v, want [Wiki]", taskTypes)
 	}
 }

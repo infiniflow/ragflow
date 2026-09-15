@@ -639,8 +639,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		return nil
 	}
+	wired := make(map[pendingEdge]struct{}, len(pending))
 	first := make(map[string]bool, len(c.Components))
 	for _, e := range pending {
+		// Multiple output handles may converge on the same downstream
+		// node. The DSL keeps one upstream entry per handle, while eino
+		// permits only one control edge for a source/target pair.
+		if _, ok := wired[e]; ok {
+			continue
+		}
+		wired[e] = struct{}{}
 		if e.cpn == e.up {
 			return nil, fmt.Errorf("canvas: self-edge on %q", e.cpn)
 		}

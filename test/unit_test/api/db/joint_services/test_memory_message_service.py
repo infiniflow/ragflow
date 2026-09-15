@@ -80,3 +80,36 @@ async def test_save_extracted_to_memory_only_forwards_custom_extraction_prompts(
 
     assert result == (True, "No memory extracted from raw message.")
     assert_custom_prompts_forwarded(extract_by_llm)
+
+
+@pytest.mark.p1
+def test_query_message_puts_the_keyword_weight_in_the_text_slot(monkeypatch):
+    """FusionExpr weights are "text,vector", so keywords_similarity_weight belongs first.
+
+    The adapters behind msgStoreConn all read slot 1 as the vector weight, so sending
+    the keyword weight there inverted hybrid ranking for every memory search.
+    """
+    captured = {}
+
+    def fake_search_message(_memory_ids, _condition_dict, _uid_list, match_expressions, _top_n):
+        captured["match_expressions"] = match_expressions
+        return []
+
+    memory = SimpleNamespace(id="memory-1", tenant_id="tenant-1", embd_id="embd-1")
+    monkeypatch.setattr(memory_message_service.MemoryService, "get_by_ids", lambda _ids: [memory])
+    monkeypatch.setattr(memory_message_service, "resolve_model_config", lambda *_a, **_k: {})
+    monkeypatch.setattr(memory_message_service, "LLMBundle", lambda *_a, **_k: object())
+    monkeypatch.setattr(memory_message_service, "get_vector", lambda *_a, **_k: SimpleNamespace())
+    monkeypatch.setattr(memory_message_service, "MsgTextQuery", lambda: SimpleNamespace(question=lambda *_a, **_k: (SimpleNamespace(), None)))
+    monkeypatch.setattr(memory_message_service.MessageService, "search_message", fake_search_message)
+
+    memory_message_service.query_message(
+        {"memory_id": ["memory-1"]},
+        {"query": "hello", "similarity_threshold": 0.2, "keywords_similarity_weight": 0.7, "top_n": 5},
+    )
+
+    fusion_expr = captured["match_expressions"][2]
+    text_weight, vector_weight = (float(part) for part in fusion_expr.fusion_params["weights"].split(","))
+
+    assert text_weight == pytest.approx(0.7)
+    assert vector_weight == pytest.approx(0.3)
