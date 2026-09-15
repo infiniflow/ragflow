@@ -8,7 +8,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -115,12 +114,13 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
-		Select("dialog_id").
-		Where("user_id = ? OR exp_user_id = ?", userID, userID).
-		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
+	rows, err := dao.DB.WithContext(ctx).Table("api_4_conversation AS c").
+		Select("c.dialog_id").
+		Joins("JOIN api_4_conversation_message AS cm ON cm.conversation_id = c.id").
+		Where("c.user_id = ? OR c.exp_user_id = ?", userID, userID).
+		Where(`cm.content LIKE ? ESCAPE '!' OR cm.content LIKE ? ESCAPE '!'`,
 			filenamePattern, artifactRefPattern).
-		Distinct("dialog_id").
+		Distinct("c.dialog_id").
 		Rows()
 	if err != nil {
 		return nil

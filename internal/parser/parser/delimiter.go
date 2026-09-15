@@ -25,10 +25,3 @@ package parser
 // alignment test normalizes delimiters. It is a non-test symbol so both the
 // production parsers and the alignment tests share one source of truth.
 const DefaultMarkdownDelimiter = "\n!?;。；！？"
-
-// DefaultTextCodeDelimiter is the flow parser's default text&code delimiter
-// set, used by TextParser and when the text&code alignment test normalizes
-// delimiters. It is a non-test symbol so both the production parser and the
-// alignment tests share one source of truth (no duplicate hard-coded copy in
-// text_parser.go, which would otherwise drift silently).
-const DefaultTextCodeDelimiter = "\n!?;。；！？"

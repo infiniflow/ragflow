@@ -147,7 +147,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -627,6 +627,386 @@ func TestRecordPipelineLog_SourceFromReloadedDoc(t *testing.T) {
 	}
 	if captured.SourceFrom != "rss" {
 		t.Errorf("SourceFrom = %q, want %q", captured.SourceFrom, "rss")
+	}
+}
+
+func TestRecordPipelineLog_ReusesOpenPreTerminalRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	queuedMsg := "Task is queued..."
+	openLog := &entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "test-doc.pdf",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "local",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	progress := 1.0
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         strPtr("test-doc.pdf"),
+		Suffix:       ".pdf",
+		Progress:     progress,
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "open-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (terminal must reuse the bound queued row)", count)
+	}
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.Progress != progress {
+		t.Fatalf("Progress = %v, want %v", log.Progress, progress)
+	}
+	if log.ProgressMsg == nil || *log.ProgressMsg != finalMsg {
+		t.Fatalf("ProgressMsg = %v, want final message", log.ProgressMsg)
+	}
+	if len(log.DSL) != 0 {
+		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
+// TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone locks the
+// timestamp handover: the terminal snapshot must not blank the start time the
+// queued row was opened with when the document carries none (a run that never
+// reached the progress sink).
+func TestRecordPipelineLog_KeepsEarlyTimestampWhenDocumentHasNone(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openedAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local)
+	queuedMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &queuedMsg,
+		ProcessBeginAt:  &openedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "4",
+		PipelineLogID: "open-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("load open log: %v", err)
+	}
+	if log.OperationStatus != "4" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.ProcessBeginAt == nil || !log.ProcessBeginAt.Equal(openedAt) {
+		t.Fatalf("ProcessBeginAt = %v, want the queued row's %v", log.ProcessBeginAt, openedAt)
+	}
+	if log.SourceFrom != "local" || log.DocumentSuffix != ".pdf" || log.DocumentType != "pdf" {
+		t.Fatalf("terminal write did not refresh document metadata: source_from=%q suffix=%q type=%q",
+			log.SourceFrom, log.DocumentSuffix, log.DocumentType)
+	}
+}
+
+// TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow locks the run-isolation
+// contract: a terminal write is bound to the row its own run opened, so a late
+// write from a superseded run (whose row was replaced) can neither finalize nor
+// even touch an open row belonging to another run of the same document.
+func TestRecordPipelineLog_DoesNotAdoptAnotherRunsRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	// An open row for the document that belongs to a different run: either the
+	// superseded run's row (cleanup failed) or the replacement run's fresh
+	// queued row. It must survive the write below untouched.
+	otherMsg := "Task is queued..."
+	other := &entity.PipelineOperationLog{
+		ID:              "other-run-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &otherMsg,
+	}
+	if err := dao.DB.Create(other).Error; err != nil {
+		t.Fatalf("seed other run's log: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	// This run's own row was deleted along with the superseded task.
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:      "tenant-1",
+		KbID:          "kb-1",
+		DocumentID:    "doc-1",
+		Status:        "3",
+		PipelineLogID: "superseded-log",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "other-run-log").Error; err != nil {
+		t.Fatalf("reload other run's log: %v", err)
+	}
+	if reloaded.OperationStatus != "5" {
+		t.Fatalf("other run's row OperationStatus = %q, want %q (must not be touched)", reloaded.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (a bound missing row must not create a duplicate)", count)
+	}
+}
+
+// TestRecordPipelineLog_UnboundAdoptsOpenRow keeps the legacy contract for
+// callers that carry no bound row (debug-adjacent and non-ingestion paths): the
+// document's newest open row is adopted so a stray queued entry is closed
+// rather than left open.
+func TestRecordPipelineLog_UnboundAdoptsOpenRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	openMsg := "Task is queued..."
+	open := &entity.PipelineOperationLog{
+		ID:              "open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &openMsg,
+	}
+	if err := dao.DB.Create(open).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var reloaded entity.PipelineOperationLog
+	if err := dao.DB.First(&reloaded, "id = ?", "open-log").Error; err != nil {
+		t.Fatalf("reload open log: %v", err)
+	}
+	if reloaded.OperationStatus != "3" {
+		t.Fatalf("open row OperationStatus = %q, want %q (adopted by the unbound writer)", reloaded.OperationStatus, "3")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (adopted, not duplicated)", count)
+	}
+}
+
+// TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow locks the ownership rule on
+// the unbound fallback: the document's newest open row belongs to a live run, so
+// another run's terminal write must not finalize it. Adopting it would stamp the
+// live run's entry with a foreign status and swallow that run's own terminal
+// write (its CAS would find the row already closed).
+func TestRecordPipelineLog_DoesNotAdoptLiveRunsOpenRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	liveMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "live-run-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &liveMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed live run's open log: %v", err)
+	}
+	if err := dao.DB.Create(&entity.IngestionTask{
+		ID:         "live-task",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     "RUNNING",
+	}).Error; err != nil {
+		t.Fatalf("seed live task: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "live-task").
+		Update("pipeline_log_id", "live-run-log").Error; err != nil {
+		t.Fatalf("bind live task: %v", err)
+	}
+
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "4",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var live entity.PipelineOperationLog
+	if err := dao.DB.First(&live, "id = ?", "live-run-log").Error; err != nil {
+		t.Fatalf("load live run's log: %v", err)
+	}
+	if live.OperationStatus != "5" {
+		t.Fatalf("live run's row was adopted: OperationStatus = %q, want it untouched at %q", live.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("pipeline log rows = %d, want 2 (the unbound run records its own entry)", count)
+	}
+}
+
+func TestRecordPipelineLog_CreatesRowWithoutOpenPreTerminalRow(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	docName := "legacy.pdf"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Name:         &docName,
+		Suffix:       ".pdf",
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "naive"
+	var captured *entity.PipelineOperationLog
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).WithLogCreateFunc(
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+			captured = log
+			return nil
+		},
+	)
+	svc.recordPipelineLog(t.Context(), dao.DB, "doc-1", `{"components": {}}`, "done")
+	if captured == nil {
+		t.Fatal("logCreateFunc was not called: expected Create fallback without an open row")
 	}
 }
 

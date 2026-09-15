@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	textparser "ragflow/internal/parser/parser"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -66,6 +67,69 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	}
 	if out["_ERROR"] == nil {
 		t.Fatalf("_ERROR missing: %v", out)
+	}
+}
+
+func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 1},
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2},
+			{"text": "ID: B-1; Status: open", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want one row chunk per sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "ID: B-1; Status: open" {
+		t.Fatalf("row chunks = %#v", chunks)
+	}
+	for i, chunk := range chunks {
+		if chunk["ck_type"] != "table_row" {
+			t.Errorf("chunk[%d] ck_type = %v, want table_row", i, chunk["ck_type"])
+		}
+	}
+}
+
+func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Name; Owner", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want data row and header-only sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "Name; Owner" {
+		t.Fatalf("chunks = %#v, want row followed by header-only sheet", chunks)
 	}
 }
 
@@ -225,6 +289,33 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
+	}
+}
+
+func TestTokenChunkerTextParserJSONKeepsSentenceBoundaries(t *testing.T) {
+	parsed := textparser.NewTextParser().ParseWithResult(t.Context(), "doc.txt", []byte("first!second!"))
+	if parsed.Err != nil {
+		t.Fatalf("TextParser.ParseWithResult: %v", parsed.Err)
+	}
+
+	c, err := NewTokenChunker(map[string]any{
+		"chunk_token_size": 128,
+		"delimiters":       []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("TokenChunker.Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!\nsecond!"}) {
+		t.Fatalf("text parser JSON chunks = %q, want sentence boundary between parser units", texts)
 	}
 }
 

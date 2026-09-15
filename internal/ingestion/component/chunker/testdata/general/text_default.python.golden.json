@@ -1,0 +1,34 @@
+{
+  "input": "Alpha one.\nBeta two; Gamma three!\nDelta four? Epsilon five。Zeta six；Eta seven！Theta eight？Iota nine.",
+  "params": {
+    "chunk_token_size": 5,
+    "delimiters": [
+      "\n",
+      "!",
+      "?",
+      ";",
+      "。",
+      "；",
+      "！",
+      "？"
+    ],
+    "overlapped_percent": 0
+  },
+  "chunks": [
+    {
+      "text": "\nAlpha one.\nBeta two"
+    },
+    {
+      "text": "\n Gamma three\nDelta four"
+    },
+    {
+      "text": "\n Epsilon five\nZeta six"
+    },
+    {
+      "text": "\nEta seven\nTheta eight"
+    },
+    {
+      "text": "\nIota nine."
+    }
+  ]
+}
