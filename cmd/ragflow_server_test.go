@@ -33,6 +33,7 @@ func kb(embdID string, tenantEmbdID string) *entity.Knowledgebase {
 		kb.TenantEmbdID = &tenantEmbdID
 	}
 	return kb
+}
 
 func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
 	t.Helper()
@@ -184,7 +185,7 @@ func TestParseArgsMigrateRejectsMode(t *testing.T) {
 
 func TestParseArgsModeResetsMigrate(t *testing.T) {
 	args, err := parseArgsForTest(t, "--api")
-    if err != nil {
+	if err != nil {
 		t.Fatalf("parseArgs(--api) error = %v", err)
 	}
 	if args.mode == nil || *args.mode != "api" {
@@ -374,13 +375,9 @@ func TestEngineCompiledStoreUsesDenseSeedLeg(t *testing.T) {
 	if enc.lastTenant != "owner-tenant" {
 		t.Errorf("encode tenant = %q, want the embedder's owner tenant owner-tenant", enc.lastTenant)
 	}
-	if args.mode == nil || *args.mode != "api" {
-		t.Fatalf("mode = %v, want api", args.mode)
 	if len(eng.last.MatchExprs) != 1 {
 		t.Fatalf("MatchExprs = %#v, want exactly one dense expr", eng.last.MatchExprs)
 	}
-	if args.migrateDB {
-		t.Fatal("migrateDB = true, want false")
 	dense, ok := eng.last.MatchExprs[0].(*types.MatchDenseExpr)
 	if !ok {
 		t.Fatalf("MatchExprs[0] = %T, want *types.MatchDenseExpr", eng.last.MatchExprs[0])
