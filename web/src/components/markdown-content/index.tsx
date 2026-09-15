@@ -145,15 +145,7 @@ const MarkdownContent = ({
     const safeContent = escapeUnmatchedAngleBrackets(content);
 
     let text = DOMPurify.sanitize(safeContent, {
-      ADD_TAGS: [
-        'think',
-        'section',
-        'details',
-        'summary',
-        'retrieving',
-        'tool_call',
-        'pre',
-      ],
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving', 'tool_call', 'pre'],
       ADD_ATTR: ['class'],
     });
 
