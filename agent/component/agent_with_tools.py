@@ -78,11 +78,14 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
+        self.tool_display_names = {}
         for idx, cpn in enumerate(self._param.tools):
+            display_name = str(cpn.get("name") or "").strip()
             cpn = self._load_tool_obj(cpn)
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
+            self.tool_display_names[indexed_name] = display_name or original_name
         model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
         chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
@@ -113,10 +116,11 @@ class Agent(LLM, ToolBase):
                 tool_idx += 1
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
+                self.tool_display_names[indexed_name] = str((meta or {}).get("name") or tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback, default_timeout=self._param.tool_timeout)
         if self.tool_meta:
-            self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
+            self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta, tool_display_names=self.tool_display_names)
 
     def _fit_messages(self, prompt: str, msg: list[dict]) -> tuple[list[dict] | None, str | None]:
         msg_fit, fit_error = LLM.fit_messages(prompt, msg, self.chat_mdl.max_length)

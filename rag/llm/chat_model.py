@@ -339,6 +339,7 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.tool_display_names = {}
         # Token usage split (prompt/completion/total) of the most recent chat call.
         # Consumed by LLMBundle for accurate Langfuse reporting and run aggregation.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -516,7 +517,8 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        display = (getattr(self, "tool_display_names", None) or {}).get(name) or name
+        return "<tool_call>" + json.dumps({"name": display, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -2173,6 +2175,7 @@ class LiteLLMBase(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.tool_display_names = {}
         # Token usage split (prompt/completion/total) of the most recent chat call.
         # Consumed by LLMBundle for accurate Langfuse reporting and run aggregation.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -2433,10 +2436,11 @@ class LiteLLMBase(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
+        display = (getattr(self, "tool_display_names", None) or {}).get(name) or name
         return (
             "<tool_call>"
             + json.dumps(
-                {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
+                {"name": display, "args": args, "result": str(res) if isinstance(res, Exception) else res},
                 ensure_ascii=False,
                 indent=2,
             )
