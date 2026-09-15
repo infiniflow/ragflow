@@ -17,7 +17,7 @@
 
 import pytest
 
-from common.settings import env_flag
+from common.misc_utils import env_flag
 
 
 class TestEnvFlag:
@@ -51,3 +51,24 @@ class TestEnvFlag:
     def test_surrounding_whitespace_is_not_a_different_value(self, monkeypatch):
         monkeypatch.setenv("SOME_FLAG", "  false\n")
         assert env_flag("SOME_FLAG", True) is False
+
+
+class TestTimeoutAssertionFlag:
+    """`ENABLE_TIMEOUT_ASSERTION` is documented as enabling *or disabling* the
+    parsing-task timeout, but every read was a bare presence check, so writing
+    `false` armed a 280-second timeout instead of the effectively unbounded one.
+    """
+
+    @pytest.mark.parametrize("raw", ["false", "0", "no", "off", " false "])
+    def test_a_disabled_value_disables_it(self, monkeypatch, raw):
+        monkeypatch.setenv("ENABLE_TIMEOUT_ASSERTION", raw)
+        assert env_flag("ENABLE_TIMEOUT_ASSERTION", False) is False
+
+    @pytest.mark.parametrize("raw", ["1", "true", "yes", "on"])
+    def test_an_enabled_value_still_enables_it(self, monkeypatch, raw):
+        monkeypatch.setenv("ENABLE_TIMEOUT_ASSERTION", raw)
+        assert env_flag("ENABLE_TIMEOUT_ASSERTION", False) is True
+
+    def test_unset_leaves_it_off(self, monkeypatch):
+        monkeypatch.delenv("ENABLE_TIMEOUT_ASSERTION", raising=False)
+        assert env_flag("ENABLE_TIMEOUT_ASSERTION", False) is False

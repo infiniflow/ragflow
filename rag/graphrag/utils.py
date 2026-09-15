@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
 
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import env_flag, thread_pool_exec
 
 """
 Reference:
@@ -63,7 +63,7 @@ async def insert_chunks_bounded(chunks, tenant_id, kb_id, *, callback=None, labe
     """
     if not chunks:
         return
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     sem = asyncio.Semaphore(_INSERT_CONCURRENCY)
     total = len(chunks)
     progress = {"done": 0, "next_report": 100}
@@ -414,7 +414,7 @@ def chunk_id(chunk):
 async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks, nhop_neighbors=None):
     """Convert a graph node (entity) to an embeddable chunk and append it to *chunks*."""
     global chat_limiter
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     chunk = {
         "id": get_uuid(),
         "important_kwd": [ent_name],
@@ -471,7 +471,7 @@ async def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
 
 async def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunks):
     """Convert a graph edge (relation) to an embeddable chunk and append it to *chunks*."""
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
     chunk = {
         "id": get_uuid(),
         "from_entity_kwd": from_ent_name,

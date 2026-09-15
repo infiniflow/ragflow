@@ -23,7 +23,7 @@ from datetime import date
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
-from common.misc_utils import pip_install_torch
+from common.misc_utils import env_flag, pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
 import rag.utils
@@ -305,20 +305,6 @@ class StorageFactory:
     @classmethod
     def create(cls, storage: Storage):
         return cls.storage_mapping[storage]()
-
-
-def env_flag(name: str, default: bool) -> bool:
-    """Read a boolean environment variable the way the rest of the codebase does.
-
-    Unset keeps the documented default. Anything else is matched against the
-    truthy vocabulary used elsewhere in this file and in common/data_source, so
-    a switch written as "off" or "disabled" turns the feature off instead of
-    being read as its opposite.
-    """
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def init_settings():
