@@ -2956,48 +2956,142 @@ func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
 // TestMergeSlotPatchKeepsTheStrongestClaim is the behaviour the log above exists
 // to expose: a weaker branch candidate must NOT overwrite a stronger base, and a
 // stronger one must.
+// TestMergeSlotPatchKeepsTheStrongestClaim pins the rule for a slot that holds
+// ONE value: sessions fold in completion order, so a weak tentative claim must
+// not downgrade what another session already proved. Sets are exempt from this
+// rule on purpose — see TestMergeSlotPatchMergesSetCandidates.
 func TestMergeSlotPatchKeepsTheStrongestClaim(t *testing.T) {
 	strong, weak := 0.97, 0.85
 	base := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+		{ID: 1, Type: "entity", Candidate: strPtr("白马坡"), CandidateStrength: &strong},
 	}, 0, nil)
 	weaker := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+		{ID: 1, Type: "entity", Candidate: strPtr("延津"), CandidateStrength: &weak},
 	}, 0, nil)
-	// Whether the merge reports a change (it reports nil when the branch brings
-	// neither a stronger candidate nor a new clue) the INVARIANT is the same: the
-	// weaker list must not replace the stronger one.
 	if merged := MergeSlotPatch(base, weaker); merged != nil {
-		if got := *merged.ByID(1).Candidate; got != "孔秀、孟坦" {
+		if got := *merged.ByID(1).Candidate; got != "白马坡" {
 			t.Errorf("slot 1 = %q, want the stronger base candidate to stand", got)
 		}
 	}
 
 	stronger := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &strong},
+		{ID: 1, Type: "entity", Candidate: strPtr("延津"), CandidateStrength: &strong},
 	}, 0, nil)
 	base = harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &weak},
+		{ID: 1, Type: "entity", Candidate: strPtr("白马坡"), CandidateStrength: &weak},
 	}, 0, nil)
-	if merged := MergeSlotPatch(base, stronger); merged == nil || *merged.ByID(1).Candidate != "华雄、颜良、庞德" {
+	if merged := MergeSlotPatch(base, stronger); merged == nil || *merged.ByID(1).Candidate != "延津" {
 		t.Error("a strictly stronger branch candidate must be adopted")
 	}
 }
 
-// TestMergeSlotPatchKeepsTheLosingListAsAnAlternate pins D1: one slot holds one
-// candidate, so the claim that lost the comparison used to leave no trace — and
-// two sessions enumerating the same question from different angles produced
-// whichever list the model called stronger, while the other list was gone.
+// TestMergeSlotPatchMergesSetCandidates pins the set rule: a slot that holds a
+// SET is unioned, because "the stronger claim wins" DISCARDS the members only the
+// weaker list held.
 //
-// The framework may not decide which list is true, but it must stop discarding
-// the one that lost.
-func TestMergeSlotPatchKeepsTheLosingListAsAnAlternate(t *testing.T) {
+// Measured (2026-09-15, 三国演义/关羽): one session enumerated twelve members into
+// slot 0, a second had already written "10" there at strength 0.90, the twelve
+// lost at 0.85, and the answer was the 10 — while 管亥 and 车胄 (two of the
+// twelve) had each returned ten passages of their own.
+func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
+	strong, weak := 0.90, 0.85
+
+	// A list beats a NUMBER: the number is a claim ABOUT the list, and the list is
+	// the members. The number is not lost — it stays as an alternate clue.
+	base := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "count", Candidate: strPtr("10"), CandidateStrength: &strong},
+	}, 0, nil)
+	enumeration := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "count", Candidate: strPtr("华雄、颜良、管亥、车胄、蔡阳"), CandidateStrength: &weak},
+	}, 0, nil)
+	merged := MergeSlotPatch(base, enumeration)
+	if merged == nil {
+		t.Fatal("the enumeration must change the slot: five members are not a count of ten")
+	}
+	if got := *merged.ByID(1).Candidate; got != "华雄、颜良、管亥、车胄、蔡阳" {
+		t.Fatalf("slot 1 = %q, want the enumerated list to hold the slot", got)
+	}
+	if alts := alternateCandidatesOf(*merged.ByID(1)); len(alts) != 1 || alts[0] != "10" {
+		t.Fatalf("alternates = %v, want the losing count kept", alts)
+	}
+
+	// Two lists union, and neither side's members are dropped.
+	twoLists := MergeSlotPatch(
+		harness.NewState([]harness.Variable{
+			{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+		}, 0, nil),
+		harness.NewState([]harness.Variable{
+			{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+		}, 0, nil),
+	)
+	if twoLists == nil {
+		t.Fatal("two lists must union")
+	}
+	for _, want := range []string{"孔秀", "孟坦", "华雄", "颜良", "庞德"} {
+		if got := *twoLists.ByID(1).Candidate; !strings.Contains(got, want) {
+			t.Errorf("slot 1 = %q, want %s kept", got, want)
+		}
+	}
+
+	// Two numbers keep the larger: a set that shrinks when a second source agrees
+	// with it is a set that loses members.
+	numbers := MergeSlotPatch(
+		harness.NewState([]harness.Variable{
+			{ID: 1, Type: "count", Candidate: strPtr("10"), CandidateStrength: &strong},
+		}, 0, nil),
+		harness.NewState([]harness.Variable{
+			{ID: 1, Type: "count", Candidate: strPtr("12"), CandidateStrength: &weak},
+		}, 0, nil),
+	)
+	if numbers == nil || *numbers.ByID(1).Candidate != "12" {
+		t.Fatalf("two counts must keep the larger one, got %v", numbers)
+	}
+}
+
+// TestReconcileCountSlotsRaisesTheCountToTheEnumeratedSet pins the other half of
+// the same loss: the count slot and the list slots are written by different
+// sessions and nothing kept them in step. The number is only ever RAISED.
+func TestReconcileCountSlotsRaisesTheCountToTheEnumeratedSet(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("10")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥")},
+	}, 0, nil)
+	raised := reconcileCountSlots(&table)
+	if len(raised) != 1 || raised[0] != 0 {
+		t.Fatalf("raised = %v, want the count slot reconciled", raised)
+	}
+	if got := *table.ByID(0).Candidate; got != "12" {
+		t.Fatalf("count slot = %q, want 12 (the list's size)", got)
+	}
+
+	// Monotone: a claim larger than what the table enumerates stands.
+	bigger := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("16人")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福")},
+	}, 0, nil)
+	if raised := reconcileCountSlots(&bigger); len(raised) != 0 {
+		t.Fatalf("raised = %v, want the larger claim to stand", raised)
+	}
+	if got := *bigger.ByID(0).Candidate; got != "16人" {
+		t.Fatalf("count slot = %q, want the claim kept, unit included", got)
+	}
+}
+
+// TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate pins the bookkeeping that
+// survives every rule in MergeSlotPatch: one slot holds one candidate, so the
+// claim that lost the comparison used to leave no trace at all — not in the
+// table, not in the draft, not in the record. The framework does not decide which
+// claim is true; it stops discarding the one that lost.
+//
+// Sets no longer lose at all (they union, see
+// TestMergeSlotPatchMergesSetCandidates), so this pins the single-value case.
+func TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate(t *testing.T) {
 	strong, weak := 0.97, 0.85
 	base := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+		{ID: 1, Type: "entity", Candidate: strPtr("白马坡"), CandidateStrength: &strong},
 	}, 0, nil)
 	branch := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+		{ID: 1, Type: "entity", Candidate: strPtr("延津"), CandidateStrength: &weak},
 	}, 0, nil)
 
 	merged := MergeSlotPatch(base, branch)
@@ -3005,30 +3099,30 @@ func TestMergeSlotPatchKeepsTheLosingListAsAnAlternate(t *testing.T) {
 		t.Fatal("the losing claim must still change the state: it is kept as an alternate")
 	}
 	v := merged.ByID(1)
-	if v.Candidate == nil || *v.Candidate != "孔秀、孟坦" {
+	if v.Candidate == nil || *v.Candidate != "白马坡" {
 		t.Fatalf("slot 1 = %v, want the stronger claim to hold the slot", v.Candidate)
 	}
 	alts := alternateCandidatesOf(*v)
-	if len(alts) != 1 || alts[0] != "华雄、颜良、庞德" {
-		t.Fatalf("alternates = %v, want the losing list kept", alts)
+	if len(alts) != 1 || alts[0] != "延津" {
+		t.Fatalf("alternates = %v, want the losing claim kept", alts)
 	}
 
 	// It reaches the ANSWER-facing record, which is the whole point: the answer
-	// must be able to see that two lists exist.
+	// must be able to see that two claims exist.
 	rec := RenderSlotRecord(*merged, "")
-	if !strings.Contains(rec, "alternate") || !strings.Contains(rec, "华雄、颜良、庞德") {
+	if !strings.Contains(rec, "alternate") || !strings.Contains(rec, "延津") {
 		t.Fatalf("record = %q, want the alternate rendered", rec)
 	}
 
 	// And it survives a SECOND merge: alternates accumulate, they do not compete.
 	strongerAgain := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "entity", Candidate: strPtr("车胄、蔡阳"), CandidateStrength: &strong},
+		{ID: 1, Type: "entity", Candidate: strPtr("斜谷"), CandidateStrength: &strong},
 	}, 0, nil)
 	merged2 := MergeSlotPatch(*merged, strongerAgain)
 	if merged2 == nil {
 		t.Fatal("a third claim must fold in")
 	}
 	if got := alternateCandidatesOf(*merged2.ByID(1)); len(got) != 2 {
-		t.Fatalf("alternates = %v, want both losing lists kept", got)
+		t.Fatalf("alternates = %v, want both losing claims kept", got)
 	}
 }

@@ -1423,3 +1423,72 @@ func TestPatternRecallIsPerOperandAndWide(t *testing.T) {
 		}
 	}
 }
+
+// TestCallerBatchRecognisesTheBatchTheModelWrites pins the weave's trigger.
+//
+// The per-term seat allocation exists for the batches the model writes, and over
+// the runs of 2026-09-15 it wrote them with SPACES: `关羽 斩 华雄 颜良 文丑 蔡阳`,
+// never once with `|`. A trigger keyed on `|` therefore left the whole mechanism
+// dead code while precisely those batches went to a single ranked top-N — the
+// ranking that hands nearly every seat to the passages matching the most terms at
+// once, which is how four names the corpus carries came back with nothing.
+func TestCallerBatchRecognisesTheBatchTheModelWrites(t *testing.T) {
+	for _, q := range []string{
+		"关羽 斩 华雄 颜良 文丑 蔡阳",
+		"华雄|颜良|文丑",
+		"关公.*斩|云长.*斩",
+	} {
+		if !callerBatch(q) {
+			t.Errorf("callerBatch(%q) = false, want the batch recognised", q)
+		}
+	}
+	// A sentence is not a batch, in either language: that is what keeps the extra
+	// searches off the questions that are not enumerating anything.
+	for _, q := range []string{
+		"三国演义中，关羽杀了多少有姓名的人物？",
+		"What was the outcome of the battle at Red Cliffs?",
+		"关羽",
+	} {
+		if callerBatch(q) {
+			t.Errorf("callerBatch(%q) = true, want a sentence left on the single search", q)
+		}
+	}
+}
+
+// TestProbeItemsAreTheCallersOwnWords pins the reach ledger's reading of a call.
+//
+// The ledger is read back as the session's to-do list ("probed, came back with a
+// passage, not recorded"), so it may only hold what the call PROPOSED as items —
+// the pieces of a batch, or a query that is one word. Measured (2026-09-15): the
+// line read `FOUND BUT NOT RECORDED=三国、演义、关羽、五关…+15` in a run whose
+// sessions were missing six members, none of which was on the list, because the
+// windows an unbroken clause decomposes into had been probed AND recorded.
+func TestProbeItemsAreTheCallersOwnWords(t *testing.T) {
+	got := probeItemsOf([]string{"关羽 古城 蔡阳 斩 颜良 文丑 华雄 庞德 荀正", "韩福"})
+	for _, want := range []string{"蔡阳", "颜良", "华雄", "荀正", "韩福"} {
+		if !got[strings.ToLower(want)] {
+			t.Errorf("probeItemsOf missed the proposed item %q", want)
+		}
+	}
+	// A one-rune verb is stripped as a term edge, not proposed as an item.
+	if got["斩"] {
+		t.Error("a single-rune fragment must not count as a proposed item")
+	}
+
+	// A question is not a proposal, and an unbroken clause yields no item either.
+	if items := probeItemsOf([]string{"三国演义中关羽一共杀死多少有姓名的人物"}); len(items) != 0 {
+		t.Errorf("a sentence proposed %v as items, want nothing", items)
+	}
+
+	// The batch case that produced the junk: the windows of 关羽过五关斩六将 must
+	// not appear, while the caller's own words do.
+	batch := probeItemsOf([]string{"三国演义 关羽过五关斩六将 六将姓名"})
+	for _, window := range []string{"国演", "演义", "羽过", "过五", "关斩", "斩六"} {
+		if batch[window] {
+			t.Errorf("window %q must never reach the ledger", window)
+		}
+	}
+	if !batch["三国演义"] {
+		t.Error("the caller's own word 三国演义 must be a candidate item")
+	}
+}

@@ -3268,6 +3268,14 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		})
 	}
 
+	// One set, one answer: a table can hold the members in one slot and the count
+	// in another, written by different sessions, with nothing keeping them in step
+	// (measured 2026-09-15: count slot read 10 while the sessions had enumerated
+	// twelve). Raised here, before the draft the answer is written from.
+	if raised := reconcileCountSlots(&slotTable); len(raised) > 0 {
+		_LOG.Printf("[SlotResearch] count slot(s) %v raised to the enumerated set's size", raised)
+	}
+
 	draft := RenderSlotDraft(slotTable, collected, sessionEvidence)
 	_LOG.Printf("[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%v",
 		countFilled(slotTable), len(unresolvedOut), collected != "")
@@ -3350,33 +3358,46 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			merged = append(merged, v)
 			continue
 		}
-		// Adopt the branch candidate only when STRONGER. Sessions run
-		// concurrently and their branches fold in completion order, so an
-		// unconditional "branch wins" made the result both order-dependent and
-		// destructive: a weak session (0.3, tentative) could downgrade a slot
-		// another session had already proven (0.95).
-		adoptBranch := bv.Candidate != nil && *bv.Candidate != "" &&
-			(v.Candidate == nil || *v.Candidate == "" || strengthOf(bv) > strengthOf(v))
-		cand, strength := v.Candidate, v.CandidateStrength
-		if adoptBranch {
-			cand, strength = bv.Candidate, bv.CandidateStrength
-		}
-		// ONE slot holds ONE candidate, so the claim that lost the comparison used
-		// to leave no trace at all: not in the table, not in the draft, not in the
-		// record. Two sessions enumerating the same question from different angles
-		// therefore produced whichever LIST the model happened to call stronger,
-		// and the other list was silently gone (measured: runs of the same question
-		// returning 11 / 13 / 15 members, with no slot holding the complete list).
-		//
-		// The losing claim is kept as an ALTERNATE on the slot's clues — the one
-		// field MergeSlotPatch unions, never replaces. The framework does not decide
-		// which list is true; it stops discarding the one that lost.
+		// A slot holding a SET merges by UNION; a slot holding one VALUE is still
+		// settled by strength (see unionSetCandidates for why, and for the measured
+		// run where a count outvoted the members it was counting).
+		var cand *string
+		strength := v.CandidateStrength
 		var loser string
-		switch {
-		case adoptBranch && v.Candidate != nil && *v.Candidate != "" && *v.Candidate != *bv.Candidate:
-			loser = *v.Candidate
-		case !adoptBranch && bv.Candidate != nil && *bv.Candidate != "" && (v.Candidate == nil || *v.Candidate != *bv.Candidate):
-			loser = *bv.Candidate
+		if union, dropped, ok := unionSetCandidates(v.Candidate, bv.Candidate); ok {
+			cand = &union
+			if strengthOf(bv) > strengthOf(v) {
+				strength = bv.CandidateStrength
+			}
+			loser = dropped
+		} else {
+			// Adopt the branch candidate only when STRONGER. Sessions run
+			// concurrently and their branches fold in completion order, so an
+			// unconditional "branch wins" made the result both order-dependent and
+			// destructive: a weak session (0.3, tentative) could downgrade a slot
+			// another session had already proven (0.95).
+			adoptBranch := bv.Candidate != nil && *bv.Candidate != "" &&
+				(v.Candidate == nil || *v.Candidate == "" || strengthOf(bv) > strengthOf(v))
+			cand = v.Candidate
+			if adoptBranch {
+				cand, strength = bv.Candidate, bv.CandidateStrength
+			}
+			// ONE slot holds ONE candidate, so the claim that lost the comparison used
+			// to leave no trace at all: not in the table, not in the draft, not in the
+			// record. Two sessions enumerating the same question from different angles
+			// therefore produced whichever LIST the model happened to call stronger,
+			// and the other list was silently gone (measured: runs of the same question
+			// returning 11 / 13 / 15 members, with no slot holding the complete list).
+			//
+			// The losing claim is kept as an ALTERNATE on the slot's clues — the one
+			// field MergeSlotPatch unions, never replaces. The framework does not decide
+			// which list is true; it stops discarding the one that lost.
+			switch {
+			case adoptBranch && v.Candidate != nil && *v.Candidate != "" && *v.Candidate != *bv.Candidate:
+				loser = *v.Candidate
+			case !adoptBranch && bv.Candidate != nil && *bv.Candidate != "" && (v.Candidate == nil || *v.Candidate != *bv.Candidate):
+				loser = *bv.Candidate
+			}
 		}
 		clues := dedupe(append(append([]string(nil), v.DiscoveredClues...), bv.DiscoveredClues...))
 		if loser != "" {
@@ -3399,6 +3420,154 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 	}
 	out := harness.NewState(merged, base.Depth+1, append([]string(nil), base.RetrievedEvidenceIDs...))
 	return &out
+}
+
+// unionSetCandidates merges a SET-valued slot's two candidates the only way a set
+// may be merged: by UNION.
+//
+// "The stronger candidate wins" is right for a slot that holds ONE value and
+// wrong for a slot that holds a set. Two sessions enumerate the same question
+// from different angles, each writes its own list, and the merge keeps whichever
+// list the model happened to call stronger — the other list's members are gone
+// even when their passages are in the pool this same round. Measured
+// (2026-09-15, 三国演义/关羽): one session enumerated twelve members into slot 0,
+// a second session had already written "10" there at strength 0.90, the twelve
+// lost at 0.85, and the answer was the 10 — while two of the twelve (管亥, 车胄)
+// had each returned ten passages of their own.
+//
+// Three shapes union, and no claim is lost: two lists union; a list beats a bare
+// NUMBER (a number is a claim ABOUT the list, and it comes back as dropped so the
+// caller can keep it as an alternate); two numbers keep the larger, because a set
+// that shrinks when a second source agrees with it is a set that loses members.
+// Any other pair — a phrase, a single name, a date — stays with the strength rule.
+//
+// ok is false when nothing changed, so the caller falls back to that rule.
+func unionSetCandidates(base, branch *string) (union, dropped string, ok bool) {
+	if base == nil || branch == nil || *base == "" || *branch == "" || *base == *branch {
+		return "", "", false
+	}
+	baseItems, baseIsCount := setItems(*base)
+	branchItems, branchIsCount := setItems(*branch)
+	switch {
+	case baseIsCount && branchIsCount:
+		b, okB := countOf(*base)
+		c, okC := countOf(*branch)
+		if okB && okC && c > b {
+			return strings.TrimSpace(*branch), strings.TrimSpace(*base), true
+		}
+	case baseItems != nil && branchItems != nil:
+		merged := dedupe(append(append([]string(nil), baseItems...), branchItems...))
+		if len(merged) < 2 {
+			return "", "", false
+		}
+		out := strings.Join(merged, "、")
+		if out == strings.TrimSpace(*base) {
+			return "", "", false
+		}
+		return out, "", true
+	case baseIsCount && branchItems != nil:
+		return strings.Join(branchItems, "、"), strings.TrimSpace(*base), true
+	case branchIsCount && baseItems != nil:
+		return strings.Join(baseItems, "、"), strings.TrimSpace(*branch), true
+	}
+	return "", "", false
+}
+
+// setItems reads a candidate as a LIST of items, or reports that it is instead a
+// bare quantity. Anything that is neither (a phrase, one name) returns nil items
+// and isCount false, so the caller leaves it to the single-value rule.
+func setItems(candidate string) ([]string, bool) {
+	if harness.IsCountValue(candidate) {
+		return nil, true
+	}
+	items := harness.SplitCandidateNames(candidate)
+	if len(items) < 2 {
+		return nil, false
+	}
+	return items, false
+}
+
+// countOf reads the number out of a quantity-shaped candidate ("10", "13人").
+func countOf(candidate string) (int, bool) {
+	candidate = strings.TrimSpace(candidate)
+	if !harness.IsCountValue(candidate) {
+		return 0, false
+	}
+	n, digits := 0, 0
+	for _, r := range candidate {
+		if !unicode.IsDigit(r) {
+			continue
+		}
+		n = n*10 + int(r-'0')
+		digits++
+		if digits > 6 {
+			return 0, false
+		}
+	}
+	return n, digits > 0
+}
+
+// renderCountLike rewrites a quantity-shaped candidate with a new number, keeping
+// whatever unit it carried ("13人" → "16人").
+func renderCountLike(sample string, n int) string {
+	last := -1
+	for i, r := range sample {
+		if unicode.IsDigit(r) {
+			last = i
+		}
+	}
+	if last < 0 || last+1 >= len(sample) {
+		return strconv.Itoa(n)
+	}
+	return strconv.Itoa(n) + sample[last+1:]
+}
+
+// reconcileCountSlots raises every numeric slot to the size of the set the table
+// enumerated.
+//
+// A count slot holds a claim ABOUT the list slots, and the two are written by
+// different sessions, so nothing kept them in step: measured (2026-09-15), slot 0
+// [count] read 10 while the same table's sessions had enumerated twelve members,
+// and the answer was the 10. The number is only ever RAISED — the union of the
+// lists is what the framework can see, and a set that shrinks when a second
+// source agrees with it is a set that loses members.
+//
+// It returns the ids it changed, for the log.
+func reconcileCountSlots(table *harness.State) []int {
+	if table == nil || len(table.State) == 0 {
+		return nil
+	}
+	var items []string
+	for _, v := range table.State {
+		if v.Candidate == nil {
+			continue
+		}
+		if list, isCount := setItems(*v.Candidate); !isCount {
+			items = append(items, list...)
+		}
+	}
+	union := dedupe(items)
+	if len(union) < 2 {
+		return nil
+	}
+	var raised []int
+	for i := range table.State {
+		v := &table.State[i]
+		if v.Candidate == nil {
+			continue
+		}
+		n, ok := countOf(*v.Candidate)
+		if !ok || n >= len(union) {
+			continue
+		}
+		cand := renderCountLike(*v.Candidate, len(union))
+		if cand == *v.Candidate {
+			continue
+		}
+		v.Candidate = &cand
+		raised = append(raised, v.ID)
+	}
+	return raised
 }
 
 // pythonMessageListPrefix reproduces Python's `str(messages)[:n]` for a langchain

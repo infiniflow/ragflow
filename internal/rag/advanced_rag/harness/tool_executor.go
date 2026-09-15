@@ -861,15 +861,23 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			seatScope = toolDocScope(args)
 		}
 		unreached := termsNotCarried(reached, named)
+		// Every named term is PROBED (recall: its own window enters the pool), but
+		// only the ones the call proposed as ITEMS are RECORDED — the ledger is read
+		// back as the session's to-do list, and a question's words are not members
+		// it could record (see probeItemsOf).
+		proposed := probeItemsOf(allQueries)
 		seats, absent := 0, 0
 		for _, term := range unreached {
+			record := proposed[strings.ToLower(term)]
 			seat, found := TermSeat(ctx, e.deps, SearchParams{
 				KbIDs:    e.req.DatasetIDs,
 				DocScope: seatScope,
 			}, term)
 			if !found {
 				absent++
-				e.deps.KB.RecordProbedAbsent(term)
+				if record {
+					e.deps.KB.RecordProbedAbsent(term)
+				}
 				continue
 			}
 			// The seat's ids are collected here and recorded AFTER the batch: the
@@ -906,9 +914,11 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			})
 			// A seat IS the proof that this name is a member: record the pair
 			// (term, passage) so the round's record holds the members with their
-			// evidence, not just the count.
-			for _, cid := range seatedIDs {
-				e.deps.KB.RecordReachedTerm(term, cid)
+			// evidence, not just the count — again only for a proposed item.
+			if record {
+				for _, cid := range seatedIDs {
+					e.deps.KB.RecordReachedTerm(term, cid)
+				}
 			}
 		}
 		if len(unreached) > 0 {

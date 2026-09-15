@@ -165,6 +165,41 @@ func GrepTermsFromQuery(query string) []string {
 	return grepTermsFromQuery(query, true)
 }
 
+// probeItemsOf returns the terms a call proposed AS ITEMS — a string the model
+// wrote to ask about one individual.
+//
+// Two shapes qualify: the pieces of a batch (`关羽 斩 华雄 颜良`), and a query that
+// IS one word (`韩福`). Everything else is prose the model wrote to ask a
+// question, whose words belong to the question rather than to a member list; and
+// the two-rune windows an unbroken clause decomposes into are our guesses, not the
+// caller's words at all (see GrepWordsFromQuery).
+//
+// The distinction matters at the reach ledger. The ledger is read back as the
+// session's to-do list — "you probed this, it came back with a passage, it is in
+// no slot" — and a to-do list built from a question's words tells the model
+// nothing. Measured (2026-09-15): that line read `FOUND BUT NOT RECORDED=三国、
+// 演义、关羽、五关…+15` in a run whose sessions were missing six members, none of
+// which was on it, while the window fragments had cost a retrieval each.
+func probeItemsOf(queries []string) map[string]bool {
+	out := make(map[string]bool)
+	for _, q := range queries {
+		q = strings.TrimSpace(q)
+		if q == "" {
+			continue
+		}
+		items := GrepWordsFromQuery(q)
+		if !callerBatch(q) && len(items) != 1 {
+			continue
+		}
+		for _, it := range items {
+			if it = strings.TrimSpace(it); it != "" {
+				out[strings.ToLower(it)] = true
+			}
+		}
+	}
+	return out
+}
+
 // GrepWordsFromQuery is GrepTermsFromQuery restricted to the caller's OWN words:
 // the pieces of an alternation, and the tokens separated by whitespace or
 // punctuation. It has NO CJK-window fallback.

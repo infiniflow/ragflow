@@ -897,6 +897,37 @@ func isStructuralPattern(query string) bool {
 	return strings.Contains(query, ".*") || strings.Contains(query, ".+")
 }
 
+// callerBatch reports whether the caller wrote a BATCH — several terms in one
+// query — rather than a sentence.
+//
+// Three shapes count, and they are the three the model actually writes: an
+// alternation (`华雄|颜良|文丑`), a pattern (`关公.*斩`, whose operands are the
+// terms), and whitespace-separated CJK pieces (`关羽 斩 华雄 颜良 文丑 蔡阳`).
+// The last one is the reason this predicate exists rather than a `|` test: across
+// the runs of 2026-09-15 the model wrote that exact batch shape and never wrote a
+// `|`, so a `|`-only gate kept the per-term seat allocation permanently off.
+//
+// A sentence is excluded on purpose, in both languages: an English question
+// splits on whitespace but carries no CJK, and a Chinese question has no
+// whitespace to split on. Those are the questions that are not enumerating
+// anything, and they must not pay for per-term searches.
+func callerBatch(query string) bool {
+	if strings.Contains(query, "|") || grepPatternOf(query) != nil {
+		return true
+	}
+	pieces := 0
+	for _, field := range strings.Fields(query) {
+		if !hasCJK(field) {
+			continue
+		}
+		pieces++
+		if pieces >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
 // retrieveGrepCandidates fetches the candidate set the locate step then narrows.
 //
 // One ranked search answers "what does this query match", which is the wrong
@@ -919,9 +950,14 @@ func isStructuralPattern(query string) bool {
 // TopN, and the narrowing stage's char budget still decides how much of the
 // woven set survives.
 //
-// The trigger is the caller's own alternation and nothing else: a query without
-// `|` takes the single ranked search it always took, so no other question pays
-// for this.
+// The trigger is the CALLER's BATCH, not the `|` character. Measured over the
+// runs of 2026-09-15: the model wrote `关羽 斩 华雄 颜良 文丑 蔡阳` — a batch of
+// names separated by spaces, with no `|` anywhere in the run — so a `|`-only
+// trigger left this whole function dead code while the batches it was written
+// for went to a single ranked top-N. A batch is an alternation, a pattern, or two
+// or more CJK pieces separated by whitespace; a sentence in either language is
+// none of those, which is what keeps the extra searches off the questions that
+// are not enumerating anything.
 func retrieveGrepCandidates(
 	ctx context.Context,
 	deps SearchDeps,
@@ -929,7 +965,7 @@ func retrieveGrepCandidates(
 	query string,
 	terms []string,
 ) ([]map[string]any, []map[string]any) {
-	if (!strings.Contains(query, "|") && grepPatternOf(query) == nil) || len(terms) < 2 {
+	if !callerBatch(query) || len(terms) < 2 {
 		return BM25Search(ctx, deps, bp)
 	}
 
@@ -984,6 +1020,11 @@ func retrieveGrepCandidates(
 			break
 		}
 	}
+	// One line, only for a batch — this is the fingerprint that says the per-term
+	// seats were actually allocated, so a run can be read for whether the trigger
+	// fired at all (the failure mode this replaced was a mechanism that never ran).
+	searchLogger(deps).Printf("[Grep search] batch of %d term(s): each searched on its own, %d candidate(s) woven",
+		len(terms), len(out))
 	return out, aggs
 }
 
@@ -1069,6 +1110,25 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		// and lose half of it.
 		terms = GrepPatternOperands(query)
 	}
+	// The WEAVE searches the caller's own WORDS; `terms` above is the LOCATOR's
+	// list, and for an unbroken CJK clause it is a set of two-rune windows (see
+	// GrepWordsFromQuery).
+	//
+	// A window searched on its own spends a retrieval on a fragment nobody
+	// proposed — and, because a term searched on its own records what it reached,
+	// it also entered the reach ledger. The session then reads that ledger back as
+	// its to-do list. Measured (2026-09-15): the batch `三国演义 关羽过五关斩六将
+	// 六将姓名` searched 国演 / 羽过 / 过五 / 五关 / 关斩 / 斩六 / 六将, and the `[record]`
+	// line the session was told to trust read `FOUND BUT NOT RECORDED=三国、演义、
+	// 关羽、五关…` while the six names that question was actually missing were not
+	// on it at all.
+	//
+	// A pattern keeps its operands: those are already the caller's words, and its
+	// recall needs the long ones (`关公.*斩` searches 关公 and 斩).
+	weave := terms
+	if pattern == nil {
+		weave = GrepWordsFromQuery(query)
+	}
 	// Python then delegates to bm25_search with an explicit keywords hint
 	// (search.py:grep_search): `hint = keywords if keywords else " ".join(terms)`.
 	// A long question buries its proper nouns under stopwords; without the hint
@@ -1095,7 +1155,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		bp.Question = query
 		bp.Keywords = hint
 	}
-	chunks, docAggs := retrieveGrepCandidates(ctx, deps, bp, query, terms)
+	chunks, docAggs := retrieveGrepCandidates(ctx, deps, bp, query, weave)
 	// Python: `if not chunks or not terms: return res` (search.py:grep_search).
 	if len(chunks) == 0 || len(terms) == 0 {
 		return chunks, docAggs

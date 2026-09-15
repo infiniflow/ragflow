@@ -69,7 +69,7 @@ func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
 			// A count is not a member. The slot that holds the answer to "how
 			// many" is a number, and counting it here would both inflate the
 			// members and put a digit in the list the model reads.
-			if isCountValue(name) {
+			if IsCountValue(name) {
 				continue
 			}
 			key := strings.ToLower(name)
@@ -246,13 +246,17 @@ func trimMemberSuffix(s string) string {
 	return s
 }
 
-// isCountValue reports whether a candidate is a quantity rather than a name.
+// IsCountValue reports whether a candidate is a quantity rather than a name.
 //
 // It reads DIGITS, not language: the slot that answers "how many" holds a number
 // (13, 13人, 13个), and a number is not a member of the list it counts.
 // Non-numeric quantity words (十三) stay in, because recognising those needs the
 // corpus's language — which the framework does not have, and must not pretend to.
-func isCountValue(s string) bool {
+//
+// Exported because the merge (advanced_rag.MergeSlotPatch) needs the same
+// reading when it decides whether a candidate is a CLAIM about a set or a member
+// of it — the two must not disagree about what a number is.
+func IsCountValue(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return false

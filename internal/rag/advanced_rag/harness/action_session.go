@@ -2105,7 +2105,16 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 // patch now. The runtime keeps two hard bounds it does not delegate: the run cap
 // above (so an eager model cannot run away) and the session clock (below which no
 // further turn is offered, because the finalize/salvage step must still fit).
+//
+// The offer itself is gated on the SHAPE of the question (parentEnumerates): an
+// extra turn is an extra model call plus up to turnRunExtra more turns, and a
+// question that is not assembling a set has nothing for those turns to find. The
+// gate is the table, not a mode flag, so a single-value question runs on the
+// mode's floor exactly as it did before this mechanism existed.
 func (s *SessionState) offerContinuation() bool {
+	if !s.parentEnumerates() {
+		return false
+	}
 	if s.Attempts >= s.turnRunCap() || s.DeadlineLeft <= turnAskFloorS {
 		return false
 	}
@@ -2118,6 +2127,32 @@ func (s *SessionState) offerContinuation() bool {
 	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
 		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, trunc(ask, 700))
 	return true
+}
+
+// parentEnumerates reports whether the direction this session was sent on is an
+// ENUMERATION — a set the answer has to list or count.
+//
+// The tell is the table the session was handed, and it is the framework's own
+// vocabulary, not the corpus's: a slot the planner typed as a count/number, or a
+// slot whose candidate is a LIST of two or more items. A question about one value
+// has neither, so nothing about it changes when this mechanism exists.
+func (s *SessionState) parentEnumerates() bool {
+	for _, v := range s.ParentState.State {
+		switch strings.ToLower(strings.TrimSpace(v.Type)) {
+		case "count", "number", "quantity", "set", "list":
+			return true
+		}
+		if v.Candidate == nil || *v.Candidate == "" {
+			continue
+		}
+		if IsCountValue(*v.Candidate) {
+			continue
+		}
+		if len(SplitCandidateNames(*v.Candidate)) >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // continuationAsk is the offer the model decides on: it names the hard bound, the

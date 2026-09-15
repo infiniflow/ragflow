@@ -166,7 +166,7 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 // The cap is the part the runtime keeps: medium/high run 4 → 8, which is the
 // "maximum run" the session may never exceed however eager the model is.
 func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
-	s := &SessionState{Attempts: 4, DeadlineLeft: 90}
+	s := enumerationSession(4, 90)
 	if got := s.turnRunCap(); got != 8 {
 		t.Fatalf("run cap = %d, want 8 (the mode's floor 4 + the model's %d)", got, turnRunExtra)
 	}
@@ -199,7 +199,7 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 	}
 
 	// The hard cap: no offer, and the session finalizes.
-	capped := &SessionState{Attempts: 8, DeadlineLeft: 90}
+	capped := enumerationSession(8, 90)
 	if capped.offerContinuation() {
 		t.Fatal("the run cap must not be exceedable")
 	}
@@ -209,9 +209,56 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 
 	// The clock is the other hard bound: without room for the finalize step no
 	// further turn is offered, however willing the model is.
-	tight := &SessionState{Attempts: 4, DeadlineLeft: turnAskFloorS - 1}
+	tight := enumerationSession(4, turnAskFloorS-1)
 	if tight.offerContinuation() {
 		t.Fatal("no turn may be offered without room for the finalize step")
+	}
+}
+
+// enumerationSession is a session sent on a SET question — the parent table holds
+// a count slot, which is the shape the continuation offer is gated on.
+func enumerationSession(attempts int, deadlineLeft float64) *SessionState {
+	return &SessionState{
+		Attempts:     attempts,
+		DeadlineLeft: deadlineLeft,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("12")}}},
+	}
+}
+
+// TestOfferContinuationIsGatedOnTheQuestionsShape pins the cost rule. The offer is
+// an extra model call plus up to turnRunExtra more turns, and a question that is
+// not assembling a set has nothing for those turns to find: measured on
+// 2026-09-15, one enumeration question was offered four extra turns while the
+// sessions still recorded nothing, and every question in the mode paid for that
+// mechanism. The gate is the TABLE (a count/number slot, or a list candidate),
+// not a mode flag, so a single-value question runs on the mode's floor exactly as
+// it did before the mechanism existed.
+func TestOfferContinuationIsGatedOnTheQuestionsShape(t *testing.T) {
+	value := &SessionState{
+		Attempts:     4,
+		DeadlineLeft: 90,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}},
+	}
+	if value.offerContinuation() {
+		t.Fatal("a single-value question must not be offered extra turns")
+	}
+	if len(value.Messages) != 0 {
+		t.Fatal("no offer message may be appended for a value question")
+	}
+	// And the route at the floor finalizes it, exactly as the mode's turn count
+	// alone used to.
+	if got := value.route(); got != routeFinalize {
+		t.Fatalf("route at the floor on a value question = %v, want routeFinalize", got)
+	}
+
+	// A candidate that IS a list is the same tell as a count-typed slot.
+	set := &SessionState{
+		Attempts:     4,
+		DeadlineLeft: 90,
+		ParentState:  State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}},
+	}
+	if !set.offerContinuation() {
+		t.Fatal("a table that already holds a list must be offered the turn")
 	}
 }
 
@@ -219,7 +266,7 @@ func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
 // routes to another model turn WITH the offer attached, and the cap routes to
 // finalize with nothing attached.
 func TestRouteAtTheFloorOffersTheModelTheDecision(t *testing.T) {
-	s := &SessionState{Attempts: 4, DeadlineLeft: 90}
+	s := enumerationSession(4, 90)
 	if got := s.route(); got != routeRunAction {
 		t.Fatalf("route at the floor = %v, want routeRunAction (the model decides)", got)
 	}
@@ -227,19 +274,20 @@ func TestRouteAtTheFloorOffersTheModelTheDecision(t *testing.T) {
 		t.Fatalf("messages = %d, want the offer appended", len(s.Messages))
 	}
 
-	capped := &SessionState{Attempts: 8, DeadlineLeft: 90}
+	capped := enumerationSession(8, 90)
 	if got := capped.route(); got != routeFinalize {
 		t.Fatalf("route at the cap = %v, want routeFinalize", got)
 	}
 
 	// A terminal reply still ends the session immediately: the offer is for turns
 	// that have not already concluded.
-	done := &SessionState{Attempts: 4, DeadlineLeft: 90, Done: true}
+	done := enumerationSession(4, 90)
+	done.Done = true
 	if got := done.route(); got != routeEnd {
 		t.Fatalf("route after a terminal reply = %v, want routeEnd", got)
 	}
 	// ...and a spent clock finalizes rather than offering.
-	tight := &SessionState{Attempts: 4, DeadlineLeft: turnAskFloorS - 1}
+	tight := enumerationSession(4, turnAskFloorS-1)
 	if got := tight.route(); got != routeFinalize {
 		t.Fatalf("route without clock = %v, want routeFinalize", got)
 	}
