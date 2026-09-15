@@ -1611,6 +1611,28 @@ Example: Virtual Hosted Style`,
         'Email address that has access to the Drive content being synced',
       zendeskDescription:
         'Connect your Zendesk to sync tickets, articles, and other content.',
+      zoteroDescription:
+        'Connect your Zotero library to sync PDF attachments from papers and references.',
+      dataSourceFieldZoteroUserId: 'Zotero user ID',
+      dataSourceFieldZoteroApiKey: 'Zotero API key',
+      dataSourceFieldZoteroStorageMode: 'Attachment storage',
+      dataSourceOptionZoteroCloudStorage: 'Zotero cloud',
+      dataSourceOptionZoteroWebdav: 'WebDAV',
+      dataSourceFieldZoteroWebdavPassword: 'WebDAV password',
+      zoteroUserIdTip:
+        'Your numeric Zotero user ID from https://www.zotero.org/settings/keys (also used as the WebDAV username).',
+      zoteroApiKeyTip:
+        'Create a personal API key with library access at https://www.zotero.org/settings/keys.',
+      zoteroStorageModeTip:
+        'Choose Zotero cloud to download files via the Web API, or WebDAV if your attachments are stored on a WebDAV server (for example sync.zotero.org).',
+      zoteroWebdavUrlTip:
+        'Full WebDAV base URL where Zotero stores attachment ZIPs (for example https://webdav.example.com/zotero). Do not use api.zotero.org or a guessed sync.zotero.org URL.',
+      zoteroWebdavUrlRequired:
+        'WebDAV URL is required when attachment storage is WebDAV.',
+      zoteroWebdavPasswordTip:
+        'WebDAV password from Zotero storage settings (not your Zotero account password).',
+      zoteroWebdavPasswordRequired:
+        'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
