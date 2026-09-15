@@ -163,3 +163,93 @@ def test_find_codec_utf8_wins_over_confident_wrong_detection(find_codec, monkeyp
     )
     blob = "Ελληνικά".encode("utf-8")
     assert find_codec(blob) == "utf-8"
+
+
+@pytest.fixture
+def decode_text(find_codec):
+    from rag.nlp import decode_text as _decode_text
+
+    return _decode_text
+
+
+@pytest.mark.p2
+def test_decode_text_preserves_gbk_and_gb18030(decode_text):
+    gbk = "项目名称,核心系统重构".encode("gbk")
+    text, encoding = decode_text(gbk, document_type="CSV document")
+    assert text == "项目名称,核心系统重构"
+    assert encoding == "gb18030"
+
+    gb18030_only = "𠀀".encode("gb18030")
+    text, encoding = decode_text(gb18030_only, document_type="CSV document")
+    assert text == "𠀀"
+    assert encoding == "gb18030"
+
+
+@pytest.mark.p2
+def test_decode_text_rejects_undetectable_bytes_without_loss(decode_text):
+    with pytest.raises(UnicodeError, match="CSV document"):
+        decode_text(b"prefix\xc3suffix", document_type="CSV document")
+
+
+@pytest.mark.p2
+def test_decode_text_accepts_literal_replacement_character(decode_text):
+    text, encoding = decode_text("literal � content".encode("utf-8"))
+    assert text == "literal � content"
+    assert encoding == "utf-8"
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "bom, encoding, text",
+    [
+        # Each blob is the BOM bytes followed by the payload encoded in
+        # the matching codec (without its own BOM). `decode_text` matches
+        # the leading BOM against the table at the top of the function
+        # and returns before the chardet fall-through runs. The
+        # codec-name suffix (-be / -le / -sig) is the exact string the
+        # function passes to `bytes.decode`, so the returned encoding
+        # string is pinned too.
+        (b"\x00\x00\xfe\xff", "utf-32-be", "hello, world"),
+        (b"\xff\xfe\x00\x00", "utf-32-le", "hello, world"),
+        (b"\xfe\xff", "utf-16-be", "hello, world"),
+        (b"\xff\xfe", "utf-16-le", "hello, world"),
+        (b"\xef\xbb\xbf", "utf-8-sig", "hello, world"),
+    ],
+)
+def test_decode_text_matches_each_bom_branch(decode_text, bom, encoding, text):
+    # The function uses the BE/LE-suffixed codecs (e.g. "utf-32-be"),
+    # which preserve the BOM character on decode; only the BOM-stripping
+    # "utf-8-sig" branch returns the payload without the leading
+    # U+FEFF. The expected output reflects this per-encoding behavior.
+    # The payload is encoded in the BE/LE/utf-8 base codec (without its
+    # own BOM); the BOM is prepended by the test so the blob matches
+    # exactly what an upload of a BOM-prefixed file looks like on disk.
+    payload_encoding = "utf-8" if encoding == "utf-8-sig" else encoding
+    payload_bytes = text.encode(payload_encoding)
+    blob = bom + payload_bytes
+    result, returned_encoding = decode_text(blob)
+    if encoding == "utf-8-sig":
+        assert result == text
+    else:
+        assert result == "\ufeff" + text
+    assert returned_encoding == encoding
+
+
+@pytest.mark.p2
+def test_decode_text_reraises_lookup_error_as_unicode_error(decode_text, monkeypatch):
+    # Regression: chardet can return a codec name Python does not recognise
+    # (e.g. "not-a-real-codec"). The function catches the resulting
+    # `LookupError` (and the parallel `UnicodeDecodeError`) and re-raises
+    # a single `UnicodeError` with the document_type in the message, so
+    # callers can present a uniform error to the user. Without the
+    # catch, the raw `LookupError` would surface as a less actionable
+    # `LookupError: unknown encoding` from a parser.
+    nlp = sys.modules["rag.nlp"]
+    monkeypatch.setattr(
+        nlp.chardet,
+        "detect",
+        lambda blob: {"encoding": "not-a-real-codec", "confidence": 0.99},
+    )
+    blob = "Ελληνικά".encode("cp1253")
+    with pytest.raises(UnicodeError, match=r"Unable to decode text as not-a-real-codec"):
+        decode_text(blob)

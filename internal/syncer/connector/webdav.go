@@ -19,6 +19,8 @@ package connector
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -75,6 +77,10 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	remotePath := normalizeWebDAVPath(stringConfig(config["remote_path"]))
 	username := strings.TrimSpace(stringConfig(credentials["username"]))
 	password := stringConfig(credentials["password"])
+	httpClient, err := newWebDAVHTTPClient(strings.TrimSpace(stringConfig(config["ca_cert_path"])))
+	if err != nil {
+		return nil, err
+	}
 	connector := &WebDAVConnector{
 		baseURL:       baseURL,
 		remotePath:    remotePath,
@@ -84,10 +90,8 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 		password:      password,
 		sizeThreshold: webDAVSizeThreshold(),
 		client: &webdavClient{
-			baseURL: baseURL,
-			httpClient: &http.Client{
-				Timeout: webdavRequestTimeout,
-			},
+			baseURL:    baseURL,
+			httpClient: httpClient,
 		},
 	}
 	connector.client.username = username
@@ -95,6 +99,39 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	connector.listFiles = connector.client.listRecursive
 	connector.downloadFile = connector.client.download
 	return connector, nil
+}
+
+func newWebDAVHTTPClient(caCertPath string) (*http.Client, error) {
+	client := &http.Client{Timeout: webdavRequestTimeout}
+	if caCertPath == "" {
+		return client, nil
+	}
+
+	caPEM, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("failed to read WebDAV CA certificate %q: %v", caCertPath, err)}
+	}
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	if !rootCAs.AppendCertsFromPEM(caPEM) {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("WebDAV CA certificate %q contains no valid PEM certificates", caCertPath)}
+	}
+
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unsupported default HTTP transport type %T", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	} else {
+		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	}
+	transport.TLSClientConfig.RootCAs = rootCAs
+	client.Transport = transport
+	return client, nil
 }
 
 // Validate validates WebDAV settings and credentials by probing the remote path.
