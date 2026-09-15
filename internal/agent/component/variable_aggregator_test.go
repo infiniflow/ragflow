@@ -278,6 +278,7 @@ func TestNormalizeSelectorRef(t *testing.T) {
 		{"a@x", "a@x"},
 		{"  a@x  ", "a@x"},
 		{"{a@x}", "a@x"},
+		{" {a@x} ", "a@x"},
 		{map[string]any{"value": "a@x"}, "a@x"},
 		{"", ""},
 		{map[string]any{"value": ""}, ""},

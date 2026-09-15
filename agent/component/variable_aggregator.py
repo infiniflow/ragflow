@@ -62,7 +62,8 @@ def normalize_selector_ref(selector: Any) -> str:
     ref = selector.get("value") if isinstance(selector, dict) else selector
     if not isinstance(ref, str):
         return ""
-    return ref.strip("{}").strip()
+    # Outer whitespace first so " {a@x} " still yields "a@x".
+    return ref.strip().strip("{}").strip()
 
 
 class VariableAggregator(ComponentBase):

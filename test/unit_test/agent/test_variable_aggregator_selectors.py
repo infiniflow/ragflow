@@ -120,6 +120,7 @@ def test_normalize_selector_ref_shapes(aggregator_mod):
     assert n("a@x") == "a@x"
     assert n("  a@x  ") == "a@x"
     assert n("{a@x}") == "a@x"
+    assert n(" {a@x} ") == "a@x"
     assert n("") == ""
     assert n("   ") == ""
     assert n({"value": ""}) == ""

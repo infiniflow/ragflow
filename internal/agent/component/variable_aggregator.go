@@ -243,8 +243,10 @@ func normalizeSelectorRef(raw any) string {
 	default:
 		return ""
 	}
-	ref = strings.TrimSpace(strings.Trim(ref, "{}"))
-	return ref
+	// Outer whitespace first so " {a@x} " still yields "a@x".
+	ref = strings.TrimSpace(ref)
+	ref = strings.Trim(ref, "{}")
+	return strings.TrimSpace(ref)
 }
 
 // Stream mirrors Invoke; VariableAggregator is a single-shot reduce.
