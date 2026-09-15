@@ -17,6 +17,8 @@
 package harness
 
 import (
+	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"unicode"
@@ -160,6 +162,29 @@ const GrepOutTotalChars = 8000
 //     names in the clause still locate, and a window that occurs nowhere costs
 //     one failed lookup inside the narrowing pass and nothing else.
 func GrepTermsFromQuery(query string) []string {
+	return grepTermsFromQuery(query, true)
+}
+
+// GrepWordsFromQuery is GrepTermsFromQuery restricted to the caller's OWN words:
+// the pieces of an alternation, and the tokens separated by whitespace or
+// punctuation. It has NO CJK-window fallback.
+//
+// The distinction matters because the two answers are used for different jobs.
+// The windows exist to LOCATE a term inside an unbroken CJK clause — the thing
+// grep is for, and a failed lookup there costs nothing. As terms to SEARCH FOR,
+// they are our guesses rather than the caller's words, and each one would spend a
+// retrieval of its own. Measured (2026-09-15): a pass built from windows probed
+// 羽斩 / 杀的 / 的有 / 领名 / 单温 and reported 14 of 20 probes "absent" — fourteen
+// retrievals spent on fragments nobody asked about, while every name the question
+// was missing stayed out of the list entirely.
+//
+// So a caller that READS these (the named-term seat pass) uses the words; a
+// caller that LOCATES with them uses the terms.
+func GrepWordsFromQuery(query string) []string {
+	return grepTermsFromQuery(query, false)
+}
+
+func grepTermsFromQuery(query string, windows bool) []string {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil
@@ -198,10 +223,19 @@ func GrepTermsFromQuery(query string) []string {
 			if runes < 2 {
 				continue
 			}
-			// A long CJK token is a CLAUSE, not a term: its literal form rarely
-			// occurs in the corpus, so it locates nothing. Decompose it into the
-			// two-rune windows a name can actually be found in.
-			if runes >= cjkPhraseRunes {
+			// A CJK token past the name boundary is a CLAUSE, not a term: its
+			// literal form rarely occurs in the corpus, so it locates nothing.
+			// The two jobs part company here:
+			//
+			//   LOCATING (windows) — decompose the clause into the two-rune
+			//   windows a name can actually be found in;
+			//   the caller's WORDS (GrepWordsFromQuery) — drop it. A clause names
+			//   no individual, and its own phrase search already covers it.
+			if !windows {
+				if runes > cjkPhraseRunes {
+					continue
+				}
+			} else if runes >= cjkPhraseRunes {
 				full := len(terms) >= GrepTermsMax
 				for _, window := range cjkWindowsOf(token, GrepTermsMax) {
 					if add(window) {
@@ -221,7 +255,7 @@ func GrepTermsFromQuery(query string) []string {
 			break
 		}
 	}
-	if len(terms) > 0 {
+	if len(terms) > 0 || !windows {
 		return terms
 	}
 	return cjkWindowsOf(q, GrepTermsMax)
@@ -491,6 +525,196 @@ type NarrowStats struct {
 type NarrowResult struct {
 	Kept  []map[string]any
 	Stats NarrowStats
+}
+
+// grepPatternSyntax are the constructs that make a query a PATTERN rather than a
+// phrase: an alternation, an ordering constraint, or a word boundary.
+//
+// They are read from the model's own string and mean what they mean in every
+// regex dialect there is, so nothing has to be compiled, escaped or translated —
+// and none of them occurs in ordinary prose, which is what keeps the guard safe:
+// a plain question is not a pattern and takes the term-locate path it always took.
+var grepPatternSyntax = []string{"|", ".*", ".+", `\b`}
+
+// grepPatternOf compiles the query as a pattern, or returns nil when the query
+// carries no pattern syntax.
+func grepPatternOf(query string) *regexp.Regexp {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	patterned := false
+	for _, tok := range grepPatternSyntax {
+		if strings.Contains(q, tok) {
+			patterned = true
+			break
+		}
+	}
+	if !patterned {
+		return nil
+	}
+	re, err := regexp.Compile("(?i)" + q)
+	if err != nil {
+		return nil
+	}
+	return re
+}
+
+// grepPatternOperators are the characters a pattern uses as operators. They are
+// removed before the operands are derived, because a keyword leg cannot search
+// for syntax.
+var grepPatternOperators = []string{".*", ".+", "|", ".", "*", "+", "?", "^", "$", `\b`, `\d`, `\w`, `\s`, "(", ")", "[", "]", "{", "}", `\`}
+
+// GrepPatternOperands returns the literal runs a PATTERN asks the corpus for.
+//
+// A pattern's operands are what a keyword leg can search: "华雄|荀正" names two,
+// "关公.*斩" names two, and the operators between them are not terms. They cannot
+// go through the phrase path (GrepTermsFromQuery), which reads an unbroken CJK run
+// as a clause and decomposes it into windows — on "关公.*斩" that yielded 关公 alone
+// and dropped the 斩, so recall never asked about half the pattern.
+//
+// Single CJK runes are KEPT here, unlike the general two-rune floor: inside a
+// pattern the caller wrote that literal deliberately, so it is not the stray
+// particle the floor exists to drop.
+func GrepPatternOperands(query string) []string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+	for _, op := range grepPatternOperators {
+		q = strings.ReplaceAll(q, op, " ")
+	}
+	var out []string
+	seen := make(map[string]bool, GrepTermsMax)
+	for _, tok := range strings.Fields(q) {
+		tok = trimTermEdges(tok)
+		if tok == "" {
+			continue
+		}
+		low := strings.ToLower(tok)
+		if seen[low] {
+			continue
+		}
+		seen[low] = true
+		out = append(out, tok)
+		if len(out) >= GrepTermsMax {
+			break
+		}
+	}
+	return out
+}
+
+// matchGrepPattern is the grep: it runs the PATTERN over candidate content and
+// keeps the candidates that MATCH, each narrowed to the clause its match sits in.
+//
+// This is the half of grep_search that a term-locate pass cannot be: a candidate
+// the pattern does not match is not evidence, whatever its retrieval score, and
+// the pattern keeps its own semantics — `A|B` accepts either alternative, while
+// `A.*B` requires the written order, which is how one asks for the WAY a thing
+// was done instead of for its name.
+//
+// The haystack is the candidate set the keyword leg returned (see
+// retrieveGrepCandidates), so the pattern is applied to what the engine could
+// reach, exactly: a name the candidates carry is found even if the phrase's
+// ranking would have buried it, and no pattern syntax ever reaches the engine —
+// which is why `|` and `.*` need no escaping anywhere on this path.
+//
+// The window is the sentence around the FIRST match, so the model reads the
+// clause that carries the term instead of a whole chunk.
+//
+// Returns the matching candidates plus how many matched; the caller keeps the raw
+// candidates when nothing matched, so evidence is never dropped.
+func matchGrepPattern(chunks []map[string]any, re *regexp.Regexp, budget, maxOutTotalChars int) ([]map[string]any, int) {
+	if re == nil || len(chunks) == 0 {
+		return nil, 0
+	}
+	if budget <= 0 {
+		budget = contextCharBudget
+	}
+	var kept []map[string]any
+	used := 0
+	for _, c := range chunks {
+		text := ChunkTextOf(c)
+		if text == "" {
+			continue
+		}
+		span := re.FindStringIndex(text)
+		if span == nil {
+			continue
+		}
+		win := sentenceWindow(text, [2]int{span[0], span[1]}, budget)
+		fragment := text[win[0]:win[1]]
+		if maxOutTotalChars > 0 {
+			n := utf8.RuneCountInString(fragment)
+			if used+n > maxOutTotalChars && len(kept) > 0 {
+				break
+			}
+			used += n
+		}
+		kept = append(kept, withNarrowedText(cloneMap(c), fragment))
+	}
+	return kept, len(kept)
+}
+
+// logGrepReach prints what ONE grep reached, term by term, and what nothing
+// reached — the fact the model cannot read off the passages themselves.
+//
+// Every name in a batch looks the same whether the search found it or never
+// looked, and the wording matters: "not reached by THIS query" is not "absent
+// from the corpus". A model that reads a miss as absence stops enumerating, which
+// is the failure this line exists to prevent.
+func logGrepReach(logger *log.Logger, query string, candidates []map[string]any, terms []string) {
+	if logger == nil {
+		return
+	}
+	if body := reachBody(query, candidates, terms); body != "" {
+		logger.Printf("[Grep search] %s", body)
+	}
+}
+
+// GrepReachLine is reachBody, prefixed for the MODEL.
+//
+// The reach report was log-only, and that was the last piece of the loop missing:
+// a batch of names ("华雄|颜良|蔡阳") came back as passages, every name looking the
+// same whether the query reached it or never looked — so the loop could not do
+// what a search-driven loop does with it, act on WHICH alternative came back
+// empty. The engine, the pattern matcher and the per-term accounting already
+// existed; only the reader was missing.
+func GrepReachLine(query string, candidates []map[string]any, terms []string) string {
+	body := reachBody(query, candidates, terms)
+	if body == "" {
+		return ""
+	}
+	return "[reach] " + body
+}
+
+// reachBody renders what ONE query reached, term by term, and what nothing
+// reached. Empty when there are no terms to report on.
+func reachBody(query string, candidates []map[string]any, terms []string) string {
+	if len(terms) == 0 {
+		return ""
+	}
+	located, counts, absent := termReach(candidates, terms)
+	parts := make([]string, 0, len(located))
+	for i, t := range located {
+		parts = append(parts, fmt.Sprintf("%s(%d)", t, counts[i]))
+	}
+	line := fmt.Sprintf("%d candidate(s) for %q carry: %s", len(candidates), trunc(query, 60), strings.Join(parts, " "))
+	if len(absent) > 0 {
+		line += fmt.Sprintf(" | NOT reached by this query (not necessarily absent from the corpus): %s", strings.Join(absent, " "))
+	}
+	return line
+}
+
+// ReachTermsOf returns the terms a query's reach is reported over: the operands
+// for a PATTERN (its operands are what a keyword leg searched for), the extracted
+// terms otherwise. It mirrors the choice GrepSearch makes, so the line the model
+// reads and the line the log carries describe the same search.
+func ReachTermsOf(query string) []string {
+	if grepPatternOf(query) != nil {
+		return GrepPatternOperands(query)
+	}
+	return GrepTermsFromQuery(query)
 }
 
 // NarrowByTerms narrows retrieval chunks by locating grep terms, mirroring

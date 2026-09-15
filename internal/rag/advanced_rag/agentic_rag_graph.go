@@ -118,9 +118,19 @@ const (
 )
 
 // Verdict statuses.
+//
+// VerdictUnknown exists because the third case is not a judgement: when the
+// review could not run (timeout, unparsable reply, no model), that is "we did
+// not ask", not "the evidence is insufficient". Collapsing the two has a cost
+// that was measured (2026-09-15): the review timed out, the fallback verdict
+// INSUFFICIENT marked the answer PARTIAL ("some gaps remain") on no evidence at
+// all, and the same value was supposed to drive another research round it could
+// not afford. A verdict that is not a judgement must not read like one anywhere
+// downstream.
 const (
 	VerdictSufficient   = "SUFFICIENT"
 	VerdictInsufficient = "INSUFFICIENT"
+	VerdictUnknown      = "UNKNOWN"
 )
 
 // ---------------------------------------------------------------------------
@@ -501,7 +511,7 @@ type AgenticState struct {
 	PartialAnswer   bool
 	Abstain         bool
 	EmptyResult     bool
-	Verdict         string // VerdictSufficient / VerdictInsufficient
+	Verdict         string // VerdictSufficient / VerdictInsufficient / VerdictUnknown
 	SCA             map[string]any
 
 	// ── budgets & counters ──
@@ -511,6 +521,13 @@ type AgenticState struct {
 	SCAViewID    string    // identity of the last SCA review view
 	Attempted    []map[string]any
 	NoProgress   bool
+	// LastRoundNew is how many chunks the last research round ADDED to the pool.
+	//
+	// It is the loop's one non-subjective signal about whether to keep going: a
+	// round that is still adding evidence is still learning, whatever the
+	// reviewer thinks of the passages it holds (see routeSCA). Zero means the
+	// round learned nothing, which is what NoProgress already means.
+	LastRoundNew int
 }
 
 // NewAgenticState builds the initial state. It does NOT arm the global budget:
@@ -1428,6 +1445,13 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 
 	res := RunSlotResearchPass(callCtx, deps.sessionDeps(), st.Question, st, t)
 	if res == nil {
+		// "Nothing to do" is still a ROUND, and the round's growth fact belongs to
+		// this round, not the previous one: leaving LastRoundNew alone made the
+		// routing read a stale `grew` (measured: round 2 reported round 1's +40
+		// chunks and asked for a third round on evidence it had not gathered).
+		if st.KB != nil {
+			st.LastRoundNew = len(st.KB.Chunks) - poolBefore
+		}
 		return
 	}
 	st.SlotTable = res.SlotTable
@@ -1443,10 +1467,20 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	if res.SlotDraft != "" {
 		st.RagAnswer = res.SlotDraft
 	}
+	// The ANSWER prompt reads this one, not the draft: a draft carries the SCA's
+	// machine fields, and handing them over as a "summary" put the runtime's
+	// bookkeeping into the answer (see RenderSlotRecord).
+	if res.SlotRecord != "" && st.KB != nil {
+		st.KB.Record = res.SlotRecord
+	}
 	st.Attempted = res.Attempted
 
+	// The round's growth is the loop's continuation fact (see routeSCA): stored
+	// on the state rather than only printed, so the routing decision reads the
+	// same number the log shows.
+	st.LastRoundNew = len(st.KB.Chunks) - poolBefore
 	logger.Printf("[RAGAgent] ROUND %d end (+%d new chunks, pool=%d, unresolved=%d)",
-		roundNo, len(st.KB.Chunks)-poolBefore, len(st.KB.Chunks), len(res.UnresolvedSlots))
+		roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots))
 }
 
 // draftNode mirrors the `draft` node: the intermediate draft that the
@@ -1522,13 +1556,19 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 	st.SCAViewID = viewID
 	st.SCA = scaResultToMap(res)
 	if len(st.SCA) == 0 {
-		// sca — an unavailable SCA (timeout, unparsable reply, no
-		// model) is INSUFFICIENT, so the unresolved slots can drive another
-		// research round. Accepting the draft here would ship an unverified
-		// answer as if the review had passed it.
-		logger.Printf("[SCA] unavailable; marking INSUFFICIENT so unresolved slots can drive another research round.")
+		// sca — an unavailable SCA (timeout, unparsable reply, no model) is NOT a
+		// verdict: it is the absence of one. Marking it INSUFFICIENT used to be
+		// the fallback, and it read as a judgement everywhere downstream — the
+		// answer was labelled PARTIAL on no evidence (formalizeAnswerNode) and
+		// the loop was told to research again by a review that never ran
+		// (measured 2026-09-15: review timed out at 35s and the run closed out
+		// with zero seconds left, so the "insufficiency" was never actionable
+		// either). VerdictUnknown keeps the two apart; the loop's own record
+		// (growth + gaps) decides whether another round is worth its budget, and
+		// the deliverable is not dressed up as partly-unverified.
+		logger.Printf("[SCA] unavailable (no review could be completed); recording UNKNOWN — this is not a sufficiency judgement, so the round's own record drives the loop.")
 		st.SCA = map[string]any{}
-		st.Verdict = VerdictInsufficient
+		st.Verdict = VerdictUnknown
 		return
 	}
 	if res.IsSufficient {
@@ -1631,7 +1671,12 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	// Dual-track pursuit of the gap: (a) programmatically pre-fetch new snippets
 	// into the SCA pool; (b) the next slot research pass picks these up via the
 	// persisted slot_table + unresolved_slots.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, MaxSnippetPool)
+	// Room is measured against the EVIDENCE POOL's ceiling, the same number the
+	// admitter enforces. Sized against the smaller snippet-pool constant, a rich
+	// round got room <= 0 and admitted nothing, so the round reported "retrieval
+	// saturated" and discarded itself while the pool still had room to take the
+	// evidence it had just asked for.
+	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, harness.EvidencePoolCap())
 	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
 	// snippets means further full research passes just burn latency.
 	if added == 0 && st.SearchRounds >= 1 {
@@ -1703,7 +1748,17 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 // scope here — it needs the report prompt templates; the caller reads the
 // approved draft from st.KB.PreSummary.
 func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	if st.NoProgress || st.Verdict == VerdictInsufficient {
+	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
+	// than by a verdict that may not exist: unresolved slots are the table's own
+	// list of what it could not fill, NoProgress means the last round learned
+	// nothing, and INSUFFICIENT is the reviewer's judgement when it made one.
+	//
+	// A review that could not run (VerdictUnknown) says NOTHING about completeness,
+	// and treating it as insufficiency is how the 2026-09-15 run shipped
+	// "partial answer, some gaps remain" on no evidence at all: the SCA had timed
+	// out, and the only thing that knew about the gaps was the answer's own
+	// distance from the question.
+	if st.NoProgress || st.Verdict == VerdictInsufficient || len(st.UnresolvedSlots) > 0 {
 		// All research attempts exhausted without a satisfying context — surface
 		// the residual findings honestly instead of refusing.
 		st.PartialAnswer = true
@@ -2028,6 +2083,10 @@ func verdictStatusHint(verdict string) string {
 	switch verdict {
 	case VerdictInsufficient:
 		return "evidence is not yet sufficient"
+	case VerdictUnknown:
+		// Not a judgement: the review did not complete, so nothing here may claim
+		// the evidence was found wanting (nor that it was sufficient).
+		return "the evidence review did not complete, so sufficiency is unverified"
 	default:
 		return "sufficiency status: " + verdict
 	}
@@ -2072,8 +2131,25 @@ func renderResearchContext(st *AgenticState) string {
 		}
 		historyLines = append(historyLines, fmt.Sprintf("- %s (round %s: %s)", q, r, outcome))
 	}
+	// The passages behind the members already confirmed come FIRST, because they
+	// are the only place the rewriter can see (a) the wording this text uses for
+	// the relation and (b) the names that are still missing. Those passages are
+	// exactly the windows the seats were narrowed to (see
+	// Kbinfos.RecordReachedTerm), so a name inside one of them is readable.
+	//
+	// The pool-head lines below are the fallback for a round that has confirmed
+	// nothing yet. They are FIRST LINES only, so a name in the middle of a chunk
+	// is invisible through them — which is why they are the fallback and not the
+	// main channel.
+	var memberLines []string
+	for i, m := range memberLinesOf(st) {
+		if i >= MemberWindowMax {
+			break
+		}
+		memberLines = append(memberLines, "- "+m)
+	}
 	var poolLines []string
-	if st.KB != nil {
+	if len(memberLines) == 0 && st.KB != nil {
 		for i, c := range st.KB.Chunks {
 			if i >= PoolHeadLines {
 				break
@@ -2098,10 +2174,64 @@ func renderResearchContext(st *AgenticState) string {
 	if len(historyLines) > 0 {
 		parts = append(parts, "Previously searched queries and their outcomes:\n"+strings.Join(historyLines, "\n"))
 	}
+	if len(memberLines) > 0 {
+		parts = append(parts, "Passages that carry names the searches ALREADY confirmed (read them for the wording this text uses for the relation, and for other names they mention — any of those can be asked about directly):\n"+strings.Join(memberLines, "\n"))
+	}
 	if len(poolLines) > 0 {
 		parts = append(parts, "Evidence currently at hand (first lines of top stored snippets):\n"+strings.Join(poolLines, "\n"))
 	}
+	// The round's own record of what its probes ASKED and never reached. The
+	// rewriter reads it for one reason: re-asking a name the corpus already came
+	// back empty on is the loop's most common waste, and the productive move from
+	// a dead name is a different ANGLE (the act, the relationship, the place),
+	// which the rewriter cannot choose unless it knows the name is dead.
+	if absent := st.KB.ProbedAbsentTerms(); len(absent) > 0 {
+		parts = append(parts, "Terms already asked for and NOT reached by any passage (do NOT re-ask these on their own; ask for the act / relationship / place instead):\n"+strings.Join(absent, "、"))
+	}
 	return strings.Join(parts, "\n\n")
+}
+
+// MemberWindowMax bounds how many confirmed-member passages the rewrite context
+// carries, and MemberWindowChars how much of each.
+const (
+	MemberWindowMax   = 12
+	MemberWindowChars = 220
+)
+
+// memberLinesOf renders one line per confirmed member: the name, and the window
+// that carries it, looked up in the pool by the id the seat recorded.
+//
+// It reads the round's own record rather than re-searching anything: a seat IS a
+// probe of one individual that came back with a passage, so the pair (name,
+// passage) is already established by the time the rewrite runs.
+func memberLinesOf(st *AgenticState) []string {
+	if st == nil || st.KB == nil {
+		return nil
+	}
+	byID := make(map[string]map[string]any, len(st.KB.Chunks))
+	for _, c := range st.KB.Chunks {
+		if id := harness.ChunkIDOf(c); id != "" {
+			byID[id] = c
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range st.KB.ReachedTerms() {
+		if seen[m.ChunkID] {
+			continue
+		}
+		c, ok := byID[m.ChunkID]
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(harness.ChunkTextOf(c))
+		if text == "" {
+			continue
+		}
+		seen[m.ChunkID] = true
+		out = append(out, fmt.Sprintf("%s: %s", m.Term, truncateRunes(text, MemberWindowChars)))
+	}
+	return out
 }
 
 // routeSCA mirrors Python _route_sca.
@@ -2109,30 +2239,106 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 	if st.NoProgress {
 		return nodeFormalizeAnswer
 	}
-	// Evidence pool saturated at the SCA view cap: any further chunk lands
-	// beyond what the SCA can read, so another search round cannot flip the
-	// sufficiency verdict. Gated to SECOND-or-later reviews on THIS branch:
-	// claim pseudo-chunks bypass the pool cap (direct append in the claim
-	// prefetch), so a rewrite round can still add evidence — the FIRST SCA
-	// review must always get its rewrite round when insufficient, or hard
-	// multi-hop questions lose their only refinement pass and the retry moves
-	// to the outer agent as a whole new graph run (Python _route_sca:1411).
-	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap && st.SearchRounds >= 1 {
-		_LOG.Printf("[SCA] evidence pool FULL (%d chunks >= SCA view cap %d); early-stopping to finalize_answer.", len(st.KB.Chunks), SCAViewCap)
-		return nodeFormalizeAnswer
-	}
+	// There is deliberately NO pool-SIZE guard here.
+	//
+	// The question a stop has to answer is "can another round change the
+	// verdict?", and the pool size is not that question: what the SCA reads is
+	// the selected VIEW (ranked, capped at SCAViewCap), and a view made of 60
+	// usable passages is equally full whether the pool behind it holds 60 or 200
+	// chunks. The old guard used `len(chunks) >= SCAViewCap` as a proxy for
+	// "nothing readable can be added", and the two are different facts: a pool of
+	// 160 whose view CHANGED has new evidence the reviewer can read, while a pool
+	// of 59 whose new chunk ranks below the view has none.
+	//
+	// The real question is answered exactly, one node earlier: scaNode hashes the
+	// selected view and compares it with the previous review's, then sets
+	// NoProgress on a match ("same view twice despite new storage — further
+	// rounds cannot change the verdict"), which this function's first check
+	// honours. Measured (fixrecall, 2026-09-14): a round of batch name probing
+	// ended at 117 chunks — three short of the pool CAP — with the question's
+	// members still arriving, and the size guard finalized the run instead of
+	// letting the next round verify them.
+	//
+	// What still bounds the loop is unchanged: an INSUFFICIENT verdict, the
+	// round count, the round-headroom guard below, and NoProgress (which covers
+	// an unchanged view, no concrete gap, no actionable query, and a rewrite that
+	// retrieved nothing new).
 	if !enableSCA {
 		// medium: single research pass — the SCA verdict is informational only.
 		return nodeFormalizeAnswer
 	}
-	if st.Verdict == VerdictInsufficient &&
-		st.SearchRounds < scaMaxRounds &&
-		// Budget guard: only start another rewrite+research round when enough
-		// headroom remains for the whole round.
-		st.RemainingS() > MinRoundHeadroomS {
-		return nodeQueryRewrite
+	// Whether to spend another round is decided by the ROUND'S OWN RECORD, and the
+	// reviewer's verdict is only one of its inputs:
+	//
+	//   work left      — the slot table still lists unresolved slots. This is the
+	//                    framework's own statement that something is missing, and
+	//                    it is what keeps an ANCHORED rewrite possible at all.
+	//   still learning — the round added evidence (+N chunks). An empty
+	//                    unresolved list is NOT proof of completeness (the
+	//                    2026-09-15 run ended with unresolved=0 while the answer
+	//                    was six members short), and a satisfied reviewer is a
+	//                    judgement about the PASSAGES it read, not about whether
+	//                    the record is finished.
+	//
+	// The two combine into the rule this function applies:
+	//
+	//   work left AND still learning  → another round, even if the reviewer said
+	//                                   SUFFICIENT: it judged the passages, and
+	//                                   the table says the question is not done.
+	//   work left AND stalled         → the reviewer decides: an INSUFFICIENT
+	//                                   verdict with a concrete gap is a reason to
+	//                                   go round again; anything else closes out.
+	//   nothing left                  → close out (a settled table with no
+	//                                   verdict against it).
+	//   UNKNOWN                       → not a judgement either way: only the
+	//                                   record above can ask for another round.
+	//
+	// Every branch logs which fact decided, because "the loop ended" is otherwise
+	// indistinguishable from "the loop could not afford to continue" — and that
+	// silence already cost a run (2026-09-15: the reviewer returned INSUFFICIENT at
+	// confidence 1.00 with four concrete gaps, the run closed out with 60s and two
+	// rounds unspent, and nothing in the log said why).
+	//
+	// "Work" is the union of the TWO records that can name a direction: the slot
+	// table's unresolved slots, and the gaps the REVIEW extracted (SCAGapsToRewrite
+	// over its own sub_queries). Dropping the second one is what made an
+	// INSUFFICIENT verdict with concrete gaps unable to ask for the round it was
+	// pointing at.
+	gapList := SCAGapsToRewrite(st.SCA)
+	if len(gapList) == 0 {
+		gapList = unresolvedClueGaps(st)
 	}
-	return nodeFormalizeAnswer
+	gaps := len(gapList)
+	work := gaps > 0 || len(st.UnresolvedSlots) > 0
+	grew := st.LastRoundNew > 0
+	verdictAsks := st.Verdict == VerdictInsufficient && work
+	wants := work && (grew || verdictAsks)
+	if !wants {
+		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s).",
+			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict)
+		return nodeFormalizeAnswer
+	}
+	if st.SearchRounds >= scaMaxRounds {
+		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s) but the round budget is spent (%d/%d); closing out.",
+			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds)
+		return nodeFormalizeAnswer
+	}
+	if st.RemainingS() <= MinRoundHeadroomS {
+		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s) but only %.0fs left (need %.0fs); closing out.",
+			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.RemainingS(), MinRoundHeadroomS)
+		return nodeFormalizeAnswer
+	}
+	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap {
+		// The case the pool-size guard used to end silently: the pool is past what
+		// the view can hold, yet this round's view CHANGED (scaNode did not set
+		// NoProgress), so the new evidence is readable and a further round can act
+		// on it.
+		_LOG.Printf("[SCA] pool holds %d chunk(s) (>= view cap %d) but this round's review view CHANGED; the new evidence is readable, so another round is worth its budget.",
+			len(st.KB.Chunks), SCAViewCap)
+	}
+	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
+		len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
+	return nodeQueryRewrite
 }
 
 // routeRewrite mirrors Python _route_rewrite.
@@ -2205,6 +2411,132 @@ func RenderSlotDraft(slotTable harness.State, collectedAnswer string, slotEviden
 	return strings.Join(lines, "\n")
 }
 
+// RenderSlotRecord renders the slot table for the ANSWER prompt.
+//
+// It is deliberately NOT RenderSlotDraft. The draft exists for the SCA, which
+// verifies a candidate against the passages that produced it, so it carries the
+// machine fields that make that verification possible — the candidate strength,
+// the terminal type, the evidence ids. Handing those to the answer model is a
+// different act with a different failure mode, and it was measured: composing
+// with the draft as "Research Summary (primary evidence)" produced an answer that
+// quoted the bookkeeping verbatim ("slot 1 [entity] … (strength=0.90)
+// [terminal=state, evidence_ids=[…]]").
+//
+// So the answer sees the FACTS the research settled — which slot holds what —
+// with no strength, no evidence ids, no clue tails: the evidence ids are already
+// in the evidence block with their citation markers, and the strengths are the
+// runtime's business. The prompt labels the block as the model's own record and
+// tells it not to copy the lines (see answerPromptWithEvidence).
+func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
+	var lines []string
+	if collectedAnswer != "" {
+		lines = append(lines, "Candidate answer: "+collectedAnswer)
+		lines = append(lines, "")
+	}
+	for _, v := range slotTable.State {
+		vtype := v.Type
+		if vtype == "" {
+			vtype = "entity"
+		}
+		if v.Candidate == nil || *v.Candidate == "" {
+			lines = append(lines, fmt.Sprintf("- slot %d [%s]: NOT RESOLVED", v.ID, vtype))
+		} else {
+			lines = append(lines, fmt.Sprintf("- slot %d [%s]: %s", v.ID, vtype, *v.Candidate))
+		}
+		// Claims that lost the slot comparison (see MergeSlotPatch). They are not
+		// the slot's value, but they are not nothing either: a session produced
+		// them from the same corpus, and a name only in an alternate is a name the
+		// answer has to account for.
+		for _, alt := range alternateCandidatesOf(v) {
+			lines = append(lines, "    alternate (claimed by another session, not adopted): "+truncateRunes(alt, 400))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// composedRecord is the record block the ANSWER prompt carries: the slot record
+// plus the probe ledger.
+//
+// The prompt builder and the log both call it, because they disagreed once: the
+// log reported `record_len=225` (the slots alone) while the prompt carried the
+// ledger too, so the one line meant to show what the answer was given could not
+// answer the only question asked of it.
+func composedRecord(kb *harness.Kbinfos) string {
+	if kb == nil {
+		return ""
+	}
+	record := strings.TrimSpace(kb.Record)
+	if ledger := probeLedger(kb); ledger != "" {
+		if record != "" {
+			record += "\n"
+		}
+		record += ledger
+	}
+	return record
+}
+
+// probeLedger renders the names the research PROBED — the terms the model itself
+// asked the corpus about, with what came back.
+//
+// It exists because the slots are the model's own bookkeeping and the ledger is
+// the framework's: a run can probe twenty-four terms, get a passage for each, and
+// record eleven of them in a slot, and then the answer is composed from the
+// eleven while the other thirteen exist only inside the pool. Measured
+// (fixrecall2, 2026-09-15): `members=0 reached=24` at the last turn, eleven names
+// in the final record, and 车胄 / 管亥 both proven present by the run's own probes
+// (`carry: 车胄(7) 管亥(3)`) yet absent from the answer — which meanwhile anchored
+// on the model's own PRIOR, delivered through a slot nobody could verify.
+//
+// The wording keeps the two lists apart on purpose. "Reached" is a fact about the
+// corpus; "belongs in the answer" is a judgement the answer still has to make.
+// And a term that was probed with nothing back is a fact about the QUERY — the
+// distinction the whole loop depends on, since reading it as absence is what
+// stops an enumeration short.
+func probeLedger(kb *harness.Kbinfos) string {
+	if kb == nil {
+		return ""
+	}
+	var b strings.Builder
+	if reached := kb.ReachedTerms(); len(reached) > 0 {
+		terms := make([]string, 0, len(reached))
+		for _, rt := range reached {
+			terms = append(terms, rt.Term)
+		}
+		fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded): %s",
+			strings.Join(terms, "、"))
+	}
+	if absent := kb.ProbedAbsentTerms(); len(absent) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Probed with NOTHING back (a fact about the query, not about the corpus — re-word it or change the angle; this is not \"absent\"): %s",
+			strings.Join(absent, "、"))
+	}
+	return b.String()
+}
+
+// recordSource names which block the answer prompt carried, so a log reader can
+// tell "the model had a slot record" from "the model had a prose summary" without
+// inferring it from lengths.
+func recordSource(record string) string {
+	if strings.TrimSpace(record) == "" {
+		return "prose-summary"
+	}
+	return "slot-record"
+}
+
+// recordContract labels the answer prompt's slot-record block.
+//
+// The line exists because "Research Summary (primary evidence)" described a
+// runtime record as evidence: the model then treated its lines as findings and
+// copied them. A record is not evidence — it is what the research settled — and
+// the prompt has to say so, or the labels end up in the answer.
+const recordContract = "Research Record (INTERNAL — your own slot table plus the terms your probes " +
+	"reached, not evidence and not answer text). Use it only to check your answer against what the " +
+	"research settled. NEVER quote these lines, their `slot N [type]` labels, or any id into the answer. " +
+	"A name listed as probed-and-answered is one the corpus was asked about and produced: if the answer " +
+	"is a list or a count and that name is not in it, say why."
+
 // draftEvidenceSuffix renders Python's " [terminal=..., evidence_ids=['a', 'b']]"
 // suffix; empty when the session recorded neither.
 func draftEvidenceSuffix(ev SlotEvidence) string {
@@ -2276,7 +2608,11 @@ type SlotResearchResult struct {
 	UnresolvedSlots []map[string]any
 	SlotEvidence    map[string]SlotEvidence
 	SlotDraft       string
-	Attempted       []map[string]any
+	// SlotRecord is the same table rendered for the ANSWER prompt: the facts the
+	// research settled, without the machine fields the SCA needs (see
+	// RenderSlotRecord). The two are produced together so they cannot drift.
+	SlotRecord string
+	Attempted  []map[string]any
 }
 
 // BuildSlotTable mirrors Python _build_slot_table: decompose the question into
@@ -2743,10 +3079,6 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		question = st.Question
 	}
 	unresolved := slotTable.Unresolved()
-	if len(unresolved) == 0 {
-		_LOG.Printf("[SlotResearch] all slots filled; no session to run.")
-		return nil
-	}
 
 	// Evidence-row prefill（Python :1782-1790）: slots the pooled evidence
 	// already answers cost no action session at all — this is where whole
@@ -2757,9 +3089,61 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		// Python :1779 — `tools.kbinfos or state.kbinfos`.
 		kb = st.KB
 	}
-	if prefillN := PrefillSlotsFromEvidence(&slotTable, kb); prefillN > 0 {
+	prefillN := PrefillSlotsFromEvidence(&slotTable, kb)
+	if prefillN > 0 {
 		_LOG.Printf("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefillN)
 		unresolved = slotTable.Unresolved()
+	}
+
+	// The directions this round works: one per unresolved slot, and — when the
+	// table is already filled — the gaps the REVIEW named.
+	//
+	// A filled table is not a finished round for a question whose answer slot is
+	// DERIVED: a count computed from the members it found is filled by
+	// construction, however few members that is, so `unresolved == 0` silently
+	// cancelled rounds the routing had started precisely because the review named
+	// gaps. Measured (fixrecall2, 2026-09-15): round 2 rewrote the question into
+	// the right chapter-level queries, prefetched their evidence, logged "all slots
+	// filled; no session to run", and spent its budget with a draft byte-identical
+	// to round 1's — the passages it had just admitted were never read into the
+	// record, which is the step a session exists for.
+	type direction struct {
+		slotID int
+		text   string
+	}
+	var dirs []direction
+	for _, v := range unresolved {
+		text := question
+		if len(v.QuestionClues) > 0 {
+			text = v.QuestionClues[0]
+		}
+		dirs = append(dirs, direction{slotID: v.ID, text: text})
+	}
+	if len(dirs) == 0 {
+		for _, g := range SCAGapsToRewrite(st.SCA) {
+			text := strings.TrimSpace(g.SearchHint)
+			if text == "" {
+				text = strings.TrimSpace(g.What)
+			}
+			if text == "" {
+				continue
+			}
+			// slotID -1: a gap is not a slot, and whatever the session patches is
+			// applied by id in the fold, so nothing is attributed to a slot the
+			// review never named.
+			dirs = append(dirs, direction{slotID: -1, text: text})
+		}
+		if len(dirs) == 0 {
+			// Nothing for a session to do. A PREFILL still counts as work — it
+			// edited the table — so its result must travel back to the caller;
+			// only a round that changed nothing at all is a nil pass.
+			if prefillN == 0 {
+				_LOG.Printf("[SlotResearch] all slots filled and the review named no gap; no session to run.")
+				return nil
+			}
+		} else {
+			_LOG.Printf("[SlotResearch] all slots filled, but the review named %d gap(s); running session(s) on them.", len(dirs))
+		}
 	}
 
 	// Shared across sessions so duplicate retrievals are served from cache.
@@ -2775,28 +3159,24 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		result harness.Result
 	}
 	results := make([]outcome, 0, slotSessionsPerRound)
-	limit := min(len(unresolved), slotSessionsPerRound)
+	limit := min(len(dirs), slotSessionsPerRound)
 	sessionBudget := max(20.0, deadlineLeft-10.0)
 
 	for i := 0; i < limit; i++ {
-		v := unresolved[i]
+		d := dirs[i]
 		wg.Add(1)
-		go func(v harness.Variable) {
+		go func(d direction) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			direction := question
-			if len(v.QuestionClues) > 0 {
-				direction = v.QuestionClues[0]
-			}
 			// Sessions share ONE Toolset; DisableTool mutates it, so the call is
 			// guarded here. The Kbinfos merge happens inside the executor.
-			res := harness.RunActionSession(ctx, deps, direction, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
+			res := harness.RunActionSession(ctx, deps, d.text, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
 			mu.Lock()
-			results = append(results, outcome{slotID: v.ID, result: res})
+			results = append(results, outcome{slotID: d.slotID, result: res})
 			mu.Unlock()
-		}(v)
+		}(d)
 	}
 	wg.Wait()
 
@@ -2829,9 +3209,19 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 			}
 		}
 		for _, ns := range r.NewStates {
-			if merged := MergeSlotPatch(slotTable, ns); merged != nil {
+			before := slotTable
+			merged := MergeSlotPatch(slotTable, ns)
+			if merged != nil {
 				slotTable = *merged
 			}
+			// What this session CLAIMED, and whether the merge kept it.
+			//
+			// The merge is a tournament per slot: one candidate survives, chosen by
+			// the strength the MODEL reported (MergeSlotPatch:3304), and nothing
+			// logged the contestants — which is why three rounds of analysis here
+			// could only GUESS whether some session's list had been dropped. The log
+			// showed the merged table and never a single patch.
+			logSessionPatch(item.slotID, before, slotTable, ns)
 		}
 		// _run_slot_research_pass — a session without a found answer still logs a hint, taken
 		// from its message history (`(r.found_answer or str(r.messages))[:80]`).
@@ -2889,7 +3279,10 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		UnresolvedSlots: unresolvedOut,
 		SlotEvidence:    sessionEvidence,
 		SlotDraft:       draft,
-		Attempted:       ledger,
+		// The answer-facing record (no machine fields) is rendered here, next to
+		// the SCA-facing draft, so the two can never drift apart.
+		SlotRecord: RenderSlotRecord(slotTable, collected),
+		Attempted:  ledger,
 	}
 }
 
@@ -2898,6 +3291,49 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 //
 // Returns nil when nothing changed (mirrors Python's `if not changed: return
 // None`), so callers can skip no-op merges.
+// alternateCluePrefix marks a claim that LOST a slot comparison and is kept only
+// so it is not lost (see MergeSlotPatch). The prefix is what lets the renderers
+// tell an alternate candidate from an ordinary discovered clue.
+const alternateCluePrefix = "alt-candidate: "
+
+func alternateClue(candidate string) string { return alternateCluePrefix + candidate }
+
+// alternateCandidatesOf returns the candidates a slot lost to, in the order they
+// were kept.
+func alternateCandidatesOf(v harness.Variable) []string {
+	var out []string
+	for _, c := range v.DiscoveredClues {
+		if strings.HasPrefix(c, alternateCluePrefix) {
+			out = append(out, strings.TrimPrefix(c, alternateCluePrefix))
+		}
+	}
+	return out
+}
+
+// logSessionPatch reports one session's claims and what the merge did with them.
+//
+// One line per patched slot, because the losing side of MergeSlotPatch leaves no
+// trace anywhere else: a candidate that was dropped is not in the table, not in
+// the draft, not in the record — it is simply gone, and "gone" is the failure this
+// line makes visible.
+func logSessionPatch(directionSlot int, before, after, patch harness.State) {
+	for _, pv := range patch.State {
+		if pv.Candidate == nil || *pv.Candidate == "" {
+			continue
+		}
+		base := "(empty)"
+		if bv := before.ByID(pv.ID); bv != nil && bv.Candidate != nil && *bv.Candidate != "" {
+			base = fmt.Sprintf("%q (%.2f)", truncateRunes(*bv.Candidate, 80), strengthOf(*bv))
+		}
+		result := "NOT ADOPTED (the base stands)"
+		if av := after.ByID(pv.ID); av != nil && av.Candidate != nil && *av.Candidate == *pv.Candidate {
+			result = "adopted"
+		}
+		_LOG.Printf("[SlotResearch] patch (direction slot %d) → slot %d: %q (%.2f); base was %s; result: %s",
+			directionSlot, pv.ID, truncateRunes(*pv.Candidate, 120), strengthOf(pv), base, result)
+	}
+}
+
 func MergeSlotPatch(base, branch harness.State) *harness.State {
 	if len(branch.State) == 0 {
 		return nil
@@ -2919,16 +3355,33 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 		// unconditional "branch wins" made the result both order-dependent and
 		// destructive: a weak session (0.3, tentative) could downgrade a slot
 		// another session had already proven (0.95).
+		adoptBranch := bv.Candidate != nil && *bv.Candidate != "" &&
+			(v.Candidate == nil || *v.Candidate == "" || strengthOf(bv) > strengthOf(v))
 		cand, strength := v.Candidate, v.CandidateStrength
-		switch {
-		case bv.Candidate == nil:
-			// branch has no candidate: keep base
-		case v.Candidate == nil:
-			cand, strength = bv.Candidate, bv.CandidateStrength
-		case strengthOf(bv) > strengthOf(v):
+		if adoptBranch {
 			cand, strength = bv.Candidate, bv.CandidateStrength
 		}
+		// ONE slot holds ONE candidate, so the claim that lost the comparison used
+		// to leave no trace at all: not in the table, not in the draft, not in the
+		// record. Two sessions enumerating the same question from different angles
+		// therefore produced whichever LIST the model happened to call stronger,
+		// and the other list was silently gone (measured: runs of the same question
+		// returning 11 / 13 / 15 members, with no slot holding the complete list).
+		//
+		// The losing claim is kept as an ALTERNATE on the slot's clues — the one
+		// field MergeSlotPatch unions, never replaces. The framework does not decide
+		// which list is true; it stops discarding the one that lost.
+		var loser string
+		switch {
+		case adoptBranch && v.Candidate != nil && *v.Candidate != "" && *v.Candidate != *bv.Candidate:
+			loser = *v.Candidate
+		case !adoptBranch && bv.Candidate != nil && *bv.Candidate != "" && (v.Candidate == nil || *v.Candidate != *bv.Candidate):
+			loser = *bv.Candidate
+		}
 		clues := dedupe(append(append([]string(nil), v.DiscoveredClues...), bv.DiscoveredClues...))
+		if loser != "" {
+			clues = dedupe(append(clues, alternateClue(loser)))
+		}
 		if !equalStringPtr(cand, v.Candidate) || !equalStrings(clues, v.DiscoveredClues) {
 			changed = true
 		}
@@ -3912,11 +4365,18 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 	if kb != nil {
 		preSummary = kb.PreSummary
 	}
+	// Both the prompt and this log go through composedRecord, so the line below
+	// reports the record block the answer actually carried.
+	record := composedRecord(kb)
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 
 	// 3. Call the model.
 	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
 	defer cancel()
+
+	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
+		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		truncateRunes(record, 3000))
 
 	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
 		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
@@ -4063,6 +4523,7 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *harness.Kbinfos, question strin
 	evidence := strings.Join(prompts.KBPrompt(citeChunks, maxTokens), "\n")
 
 	summary := ""
+	record := composedRecord(kb)
 	if kb != nil {
 		summary = strings.TrimSpace(kb.PreSummary)
 	}
@@ -4082,7 +4543,12 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *harness.Kbinfos, question strin
 		}
 	}
 
-	if summary != "" {
+	if record != "" {
+		// The slot table of an agentic round: facts to check the answer against,
+		// explicitly NOT evidence and NOT answer text (see recordContract).
+		parts = append(parts, fmt.Sprintf("%s\n%s\n", recordContract, record))
+	} else if summary != "" {
+		// A prose summary (no slot table behind it): it stands in as findings.
 		parts = append(parts, fmt.Sprintf("Research Summary (primary evidence):\n%s\n", summary))
 	}
 	// _compose_answer_from_evidence: the partial preamble goes HERE — after the research
@@ -4131,15 +4597,19 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	if noEvidence && deps.EmptyResponse != "" {
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}, nil
 	}
-	// Python _compose_answer_from_evidence:938-944 — the pre_summary the compose
-	// prompt actually carries, content included (first 3000 chars), so a run
-	// that answered without the slot facts is diagnosable from the log alone.
+	// Python _compose_answer_from_evidence:938-944 — the record the compose prompt
+	// actually carries, content included (first 3000 chars), so a run that answered
+	// without the slot facts is diagnosable from the log alone.
 	preSummary := ""
 	if kb != nil {
 		preSummary = kb.PreSummary
 	}
-	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
-		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
+	// Both the prompt and this log go through composedRecord, so the line below
+	// reports the record block the answer actually carried.
+	record := composedRecord(kb)
+	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
+		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		truncateRunes(record, 3000))
 
 	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
 	defer cancel()

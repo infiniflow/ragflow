@@ -927,8 +927,9 @@ var (
 			Name: "retrieve",
 			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets.` +
 				`DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document.` +
-				`ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
-				`OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there.` +
+				`PATTERNS: a query may be a regular expression — "A|B|C" asks about several exact terms in ONE call (never one call per name); "A.*B" requires that written order. One missing alternative does not hide the others: the result names the terms it reached.` +
+				`ARGUMENTS: query — array of 1-3 strings (natural-language queries, or patterns as above). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
+				`OUTPUT: short exact-term snippets with doc_id and chunk id. ok = new evidence pooled; redundant = already there.` +
 				`IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch.`,
 			Parameters: arrayParam("", 1, 3),
 		},
@@ -1254,6 +1255,12 @@ type ToolOutcome struct {
 	Status      string         // one of the Status* constants
 	Reason      string         // one of the Reason* constants
 	Metrics     map[string]any // numeric signals: hits, new_evidence, top_score, ...
+	// Note is a line ABOUT this call, rendered into the tool result next to the
+	// passages (see toolNode). It carries what the passages cannot say: which of
+	// the terms the call asked about were reached and which were not, so a batch
+	// probe ("华雄|颜良|蔡阳") is actionable rather than four passages whose
+	// missing member looks exactly like a member nobody asked for.
+	Note string
 }
 
 // NewToolOutcome builds an OK outcome with an empty metric map.
@@ -1322,6 +1329,15 @@ const (
 	// converges to finalize instead of burning the remaining budget on
 	// paraphrases (Q30/Q759 timeout root cause).
 	skippedDupLimit = 2
+	// turnRunExtra is how many turns the MODEL may add beyond the mode's floor
+	// (see offerContinuation): medium/high run 4 → 8, ultra 6 → 10. It is the hard
+	// bound the runtime keeps while the decision itself is the model's, so an
+	// eager model cannot turn one session into a whole research programme.
+	turnRunExtra = 4
+	// turnAskFloorS is the session clock below which no further turn is offered:
+	// the finalize/salvage step must still fit, or the extra turn buys evidence
+	// that never reaches the slot table.
+	turnAskFloorS = 20.0
 	// finalizeTimeout bounds the salvage call in the finalize node.
 	finalizeTimeoutS = 150.0
 	// minFinalizeTimeout is the floor for the salvage call.
@@ -1690,6 +1706,17 @@ type SessionState struct {
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
 	ToolOutcomes []map[string]any
 
+	// KB is the shared evidence pool. The session reads it for the per-turn
+	// RECORD line (see SessionRecord) and for the names the evidence offers;
+	// the tools write it. Nil skips both.
+	KB *Kbinfos
+	// Record is the last turn's record — the facts the continuation decision is
+	// made from (see offerContinuation and SessionRecord).
+	Record SessionRecord
+	// ContinuationAsked is the Attempts value the continuation offer was appended
+	// for, so one turn never carries the offer twice.
+	ContinuationAsked int
+
 	Direction  string
 	RoutedDocs []string
 	// NavHint is the joined routed-doc summaries carried by the navigation
@@ -1828,6 +1855,9 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	if s.Tools == nil {
 		return nil
 	}
+	// ranAny: whether this node executed at least one call, i.e. whether a tool
+	// result exists to annotate with the turn's record line (appendRecordLine).
+	ranAny := len(s.PendingCalls) > 0
 	evidenceIDs := append([]string(nil), s.RetrievedEvidenceIDs...)
 	budgetChars := s.CtxBudget
 	if budgetChars <= 0 {
@@ -1930,7 +1960,14 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			"name": c.Name, "status": oc.Status, "reason": oc.Reason, "metrics": oc.Metrics,
 		})
 
+		// The payload stays the JSON document it always was; the call's own note
+		// rides BEHIND it, exactly like the turn's record line (appendRecordLine),
+		// so nothing that parses the payload has to learn about either.
 		payload := marshalPassages(chunks)
+		if oc.Note != "" {
+			payload += "\n" + oc.Note
+			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, trunc(oc.Note, 280))
+		}
 		// If the session is already heavy, cut this payload proportionally.
 		// Python :1509-1514 counts len() of a str — CODE POINTS, not bytes — so
 		// the budget and the cut must be rune-based too; a byte cap would hit
@@ -2008,7 +2045,93 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	s.SearchQueries = seenQueries
 	s.SkippedDup += skipped
 	s.ToolStrikes = strikes
+	s.appendRecordLine(ranAny)
 	return nil
+}
+
+// appendRecordLine appends the per-turn RECORD line to the last tool result.
+//
+// This is the loop's feedback channel: the model's next query was otherwise aimed
+// with no knowledge of what this session had already probed (and what came back
+// empty), which names the record already holds, which confirmed names are still
+// undecided, or which names the passages themselves offer. All of that is
+// computed here anyway — it was simply never shown.
+//
+// It rides on the last tool message instead of a message of its own: one line,
+// same turn, no extra role in the conversation, and nothing to do with Python's
+// message shape (which never had this feedback to begin with).
+//
+// The line is appended ONLY when this node ran at least one tool call, so a turn
+// with no calls cannot accumulate duplicates of the previous line.
+func (s *SessionState) appendRecordLine(ranAny bool) {
+	if !ranAny || len(s.Messages) == 0 {
+		return
+	}
+	rec := s.sessionRecordNow()
+	s.Record = rec
+	// The line the model steers by is message content, so the log could not show
+	// whether a mechanism fired at all: three rounds of analysis here ended up
+	// inferring it from side effects. One truncated line per turn ends that.
+	_LOG.Printf("[Action Session] record line: %s", trunc(rec.Line(), 320))
+	last := &s.Messages[len(s.Messages)-1]
+	if last.Role != schema.Tool || rec.Pool == 0 {
+		// No pool bound (or no tool result to annotate): keep the record, skip the
+		// line rather than inventing a message for it.
+		return
+	}
+	line := rec.Line()
+	last.Content = strings.TrimRight(last.Content, "\n") + "\n" + line
+}
+
+// turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the
+// turns the model may add on its own decision (see offerContinuation).
+func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExtra }
+
+// offerContinuation asks the MODEL whether the session takes another turn.
+//
+// The mode's turn count used to end the session outright (ActionMaxTurns: 4 on
+// medium/high), and the measured cost is in the log: at 18:09:49 a session still
+// turning named terms into evidence was finalized by `Attempts >= 4`
+// mid-enumeration, with 84s of its own clock unspent and a tool result the model
+// never read. Replacing that with a runtime heuristic ("did the record grow?")
+// fixed the cut-off but bought the wrong thing: the ledger grows whenever the
+// model PROBES, so the heuristic extended sessions that were piling up findings
+// without recording any (measured: four extensions in a row at
+// `members=0 reached=8 undecided=8`).
+//
+// So the floor is the floor and the decision is the model's: it is told the
+// budget state, handed the record line it just received, and asked to continue
+// only for something that line shows is missing — otherwise to emit the state
+// patch now. The runtime keeps two hard bounds it does not delegate: the run cap
+// above (so an eager model cannot run away) and the session clock (below which no
+// further turn is offered, because the finalize/salvage step must still fit).
+func (s *SessionState) offerContinuation() bool {
+	if s.Attempts >= s.turnRunCap() || s.DeadlineLeft <= turnAskFloorS {
+		return false
+	}
+	if s.ContinuationAsked == s.Attempts {
+		return true
+	}
+	s.ContinuationAsked = s.Attempts
+	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief())
+	s.Messages = appendMessages(s.Messages, *schema.UserMessage(ask))
+	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
+		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, trunc(ask, 700))
+	return true
+}
+
+// continuationAsk is the offer the model decides on: it names the hard bound, the
+// remaining turns, and the ONLY grounds on which another turn is granted — what
+// the record line shows is still missing. The record itself was appended to the
+// model's last tool result, so the decision is made on facts, not on appetite.
+func continuationAsk(taken, cap int, record string) string {
+	return fmt.Sprintf(
+		"TURN BUDGET: %d turn(s) taken, up to %d available. DECIDE NOW — your next reply decides it:\n"+
+			"- If the [record] line still shows something MISSING — a name you proved reachable and never recorded, a slot with no candidate, an angle you have not tried — call ONE more tool aimed at exactly that. %d turn(s) left.\n"+
+			"- Otherwise emit the state patch NOW with everything you have.\n"+
+			"An extra turn is only for something the record line shows is missing; re-running a search you already ran is not.\n"+
+			"Current record: %s",
+		taken, cap, cap-taken, record)
 }
 
 // finalizeNode mirrors Python _finalize_node: tool budget spent — ONE last call
@@ -2018,6 +2141,22 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		"<state>{\"new_states\": [{\"state\": [{\"id\": <slot_id>, \"candidate\": \"<value>\", " +
 		"\"candidate_strength\": <0..1>, \"discovered_clues\": [\"...\"]}]}]}</state>\n" +
 		"If NOTHING was learned use: <state>{\"new_states\": []}</state>")
+
+	// The patch written HERE is the one that lands in the record, so the record is
+	// part of the order.
+	//
+	// Measured (fixrecall2, 2026-09-15): a session probed 成何, the corpus returned
+	// three passages, and the terminal patch did not mention him — the run's own
+	// evidence, found and paid for, dropped at the last step. The record is the
+	// only place that fact exists, and this is the last call that can act on it, so
+	// the salvage order names the names it has to account for instead of asking for
+	// "whatever you have".
+	if rec := s.sessionRecordNow(); rec.Pool > 0 {
+		budgetPrompt += "\n\nAccount for the record below in the patch you write. Every name listed as " +
+			"FOUND BUT NOT RECORDED has a passage in the pool, so it is either a member this patch includes or " +
+			"a name this patch REJECTS with its clue. More searching is no longer possible, so an unmentioned " +
+			"name is simply lost.\n" + rec.Line()
+	}
 
 	// Defensive: strip any assistant.tool_calls that never got a tool response,
 	// else the provider rejects the history.
@@ -2140,6 +2279,11 @@ func (s *SessionState) route() routeTarget {
 		return routeTool
 	}
 	if s.Attempts >= s.actionMaxTurns() {
+		// The mode's turn count is a FLOOR: past it the MODEL decides whether the
+		// session takes another turn, up to the run cap (see offerContinuation).
+		if s.offerContinuation() {
+			return routeRunAction
+		}
 		return routeFinalize
 	}
 	// No-progress convergence: the model keeps re-issuing near-duplicate
@@ -2159,6 +2303,12 @@ func (s *SessionState) route() routeTarget {
 // route was never reached and the session burned the whole timeout.
 func (s *SessionState) routeAfterTool() routeTarget {
 	if s.Attempts >= s.actionMaxTurns() {
+		// Same rule as route: the tool result that just arrived is what the
+		// continuation offer is about, so the model decides with it in hand
+		// (measured: the run's last probe's result was never read by a turn).
+		if s.offerContinuation() {
+			return routeRunAction
+		}
 		return routeFinalize
 	}
 	return routeRunAction
@@ -3153,6 +3303,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ParentState:          parent,
 		Tools:                deps.Tools,
 		Model:                deps.Model,
+		KB:                   deps.KB,
 		PendingCalls:         nil,
 		Done:                 false,
 		NewStates:            nil,

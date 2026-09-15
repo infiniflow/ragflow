@@ -169,3 +169,158 @@ func cjkTermsContain(list []string, want string) bool {
 	}
 	return false
 }
+
+// TestGrepWordsAreTheCallersOwnWords pins the split between the two readings of
+// one query: the terms LOCATE (and may decompose an unbroken clause into CJK
+// windows), while the words are what the caller actually wrote — the only ones a
+// seat probe may spend a retrieval on.
+//
+// Measured (2026-09-15): a seat pass built from the locate reading probed 羽斩 /
+// 杀的 / 的有 / 领名 / 单温, reported 14 of 20 probes "absent", and never reached a
+// single name the question was missing.
+func TestGrepWordsAreTheCallersOwnWords(t *testing.T) {
+	// A caller-enumerated list is words in both readings — minus the single-rune
+	// particles ("斩" is a predicate, not something to probe as a name; the phrase
+	// search carries it).
+	listed := "关羽 斩 颜良 文丑 车胄"
+	if got := GrepWordsFromQuery(listed); strings.Join(got, "|") != "关羽|颜良|文丑|车胄" {
+		t.Errorf("GrepWordsFromQuery(%q) = %v, want the caller's own words (single-rune tokens are particles)", listed, got)
+	}
+
+	// An unbroken clause names no individual: the locate reading decomposes it
+	// into windows, the words reading yields nothing to probe.
+	clause := "关羽斩杀敌将名单温酒斩华雄"
+	if got := GrepWordsFromQuery(clause); len(got) != 0 {
+		t.Errorf("GrepWordsFromQuery(%q) = %v, want none: a clause is not a word to probe", clause, got)
+	}
+	terms := GrepTermsFromQuery(clause)
+	if len(terms) == 0 {
+		t.Fatalf("GrepTermsFromQuery(%q) = none, want the two-rune windows grep locates with", clause)
+	}
+	for _, term := range terms {
+		if term == clause {
+			t.Errorf("GrepTermsFromQuery(%q) returned the whole clause; the point of the windows is that the clause itself locates nothing", clause)
+		}
+	}
+
+	// The name boundary is the one this file already declares (cjkPhraseRunes):
+	// up to four runes is still a name, past it is prose.
+	for _, name := range []string{"孔秀", "夏侯存", "成吉思汗"} {
+		if got := GrepWordsFromQuery(name); len(got) != 1 || got[0] != name {
+			t.Errorf("GrepWordsFromQuery(%q) = %v, want the name itself", name, got)
+		}
+	}
+	if got := GrepWordsFromQuery("成吉思汗东征"); len(got) != 0 {
+		t.Errorf("GrepWordsFromQuery = %v, want none: past the name boundary a CJK token is prose", got)
+	}
+}
+
+// TestGrepPatternIsAMatchNotATermFilter pins the grep half of grep_search: the
+// pattern decides which candidates are evidence, and it keeps its own semantics
+// instead of being degraded into "does the text carry one of these words".
+//
+// The ordering case is the one a term-locate pass can never express: both chunks
+// carry 关公 and 斩, and only the written order distinguishes the clause that says
+// he killed from the one that says he killed and then went back to camp.
+func TestGrepPatternIsAMatchNotATermFilter(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "a", "content": "关公马快，早赶上文丑，脑后一刀，斩于马下。"},
+		{"chunk_id": "b", "content": "斩将之后，关公回营，众将皆来称贺。"},
+		{"chunk_id": "c", "content": "话说曹操引军而回，不在话下。"},
+		{"chunk_id": "d", "content": "荀正 引军来战，被云长一刀斩于马下。"},
+	}
+	re := grepPatternOf("关公.*斩")
+	if re == nil {
+		t.Fatal("关公.*斩 carries pattern syntax and must be read as a pattern")
+	}
+	kept, matched := matchGrepPattern(chunks, re, contextCharBudget, GrepOutTotalChars)
+	if matched != 1 || len(kept) != 1 {
+		t.Fatalf("matched=%d kept=%d, want exactly the chunk whose text has 关公 BEFORE 斩", matched, len(kept))
+	}
+	if id := ChunkIDOf(kept[0]); id != "a" {
+		t.Errorf("kept %q, want \"a\": the pattern's ORDER must be enforced, not just its words", id)
+	}
+	// The window is the clause around the match, not the whole chunk.
+	if txt := ChunkTextOf(kept[0]); !strings.Contains(txt, "斩") {
+		t.Errorf("window %q does not carry the match", txt)
+	}
+
+	// An alternation is a batch: it matches each alternative and reports per-term
+	// reach over the same candidate set, which is how "which of these did the
+	// corpus answer" becomes readable.
+	alt := grepPatternOf("华雄|荀正|管亥")
+	if alt == nil {
+		t.Fatal("华雄|荀正|管亥 must be a pattern")
+	}
+	keptAlt, matchedAlt := matchGrepPattern(chunks, alt, contextCharBudget, GrepOutTotalChars)
+	if matchedAlt != 1 || len(keptAlt) != 1 {
+		t.Fatalf("alternation matched=%d kept=%d, want the one candidate carrying one of the three names", matchedAlt, len(keptAlt))
+	}
+	if id := ChunkIDOf(keptAlt[0]); id != "d" {
+		t.Errorf("kept %q, want \"d\" (the only candidate carrying 荀正)", id)
+	}
+	located, counts, absent := termReach(chunks, []string{"华雄", "荀正", "管亥"})
+	if strings.Join(located, ",") != "荀正" || counts[0] != 1 {
+		t.Errorf("termReach located=%v counts=%v, want only 荀正 reached once", located, counts)
+	}
+	if strings.Join(absent, ",") != "华雄,管亥" {
+		t.Errorf("absent=%v, want 华雄 and 管亥 reported as NOT reached by this query", absent)
+	}
+}
+
+// TestPlainQueryStaysOnTheTermLocatePath guards the other direction: pattern
+// syntax is the ONLY trigger, so every ordinary question keeps the behaviour it
+// had (locate terms -> windows), and nothing about it changes.
+func TestPlainQueryStaysOnTheTermLocatePath(t *testing.T) {
+	for _, q := range []string{
+		"关羽 斩颜良",
+		"三国演义中关羽杀了多少有姓名的人物",
+		"华为2023年营收",
+		"partner of the 1984 Olympic keelboat competitor",
+	} {
+		if re := grepPatternOf(q); re != nil {
+			t.Errorf("grepPatternOf(%q) compiled a pattern; a plain query must take the term-locate path", q)
+		}
+	}
+}
+
+// TestReachLineNamesWhatTheBatchMissed pins the line the MODEL reads: a batch of
+// names comes back with per-term reach, so a member that was never reached is
+// visible as such instead of looking exactly like a member nobody asked about.
+//
+// The capability was already there (the pattern engine, the per-term accounting,
+// the log line); what was missing is that only the LOG could read it.
+func TestReachLineNamesWhatTheBatchMissed(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c1", "content": "云长手起一刀，斩华雄于马下"},
+		{"chunk_id": "c2", "content": "华雄又斩了潘凤"},
+	}
+	q := "华雄|荀正|管亥"
+	line := GrepReachLine(q, chunks, ReachTermsOf(q))
+	for _, want := range []string{"[reach]", "华雄(2)", "NOT reached by this query"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line %q missing %q", line, want)
+		}
+	}
+	// Both unanswered names are named, and the wording refuses to call them absent.
+	for _, missed := range []string{"荀正", "管亥"} {
+		if !strings.Contains(line, missed) {
+			t.Errorf("line %q must name %q as not reached", line, missed)
+		}
+	}
+
+	// A PATTERN reports on its OPERANDS: they are what the keyword leg searched
+	// for, so "关公.*斩" is reported as 关公 and 斩, not as one clause.
+	pq := "关公.*斩|云长.*斩"
+	pline := GrepReachLine(pq, []map[string]any{{"chunk_id": "c3", "content": "关公勒马，一刀斩之"}}, ReachTermsOf(pq))
+	for _, want := range []string{"关公(1)", "云长"} {
+		if !strings.Contains(pline, want) {
+			t.Errorf("pattern line %q missing %q", pline, want)
+		}
+	}
+
+	// No terms -> no line at all (never an empty "[reach]" heading).
+	if got := GrepReachLine("", chunks, nil); got != "" {
+		t.Errorf("empty reach = %q, want no line", got)
+	}
+}

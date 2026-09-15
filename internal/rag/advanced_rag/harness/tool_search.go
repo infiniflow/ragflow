@@ -873,6 +873,171 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	})
 }
 
+// patternRecallTopN is how wide ONE operand's recall goes when the query is a
+// STRUCTURAL pattern — `关公.*斩`, a question about how a thing is written rather
+// than about a name.
+//
+// A pattern is a LOCATOR, and a locator is only as good as the ground it is given:
+// recalling ten passages answers "does this pattern occur in those ten", not
+// "where does it occur". Measured (fixrecall2, 2026-09-15): every pattern query in
+// a run reported `10 candidate(s)` — the tool's own topN per operand — so
+// `关公.*斩|云长.*斩` could only ever match inside ~40 passages of a corpus where
+// the subject alone occurs in a large part of the text. That is the one retrieval
+// path that does not depend on the model already knowing the name, and it was
+// looking through a keyhole.
+//
+// It is the widest per-operand number the pipeline already uses elsewhere
+// (SCAViewCap), and only the MATCHED windows travel onwards — the grep output cap
+// (GrepOutTotalChars) still bounds what the model pays for.
+const patternRecallTopN = 60
+
+// isStructuralPattern reports whether a query asks for structure (any-wildcard
+// pattern) rather than listing terms: `关公.*斩` does, `华雄|颜良` does not.
+func isStructuralPattern(query string) bool {
+	return strings.Contains(query, ".*") || strings.Contains(query, ".+")
+}
+
+// retrieveGrepCandidates fetches the candidate set the locate step then narrows.
+//
+// One ranked search answers "what does this query match", which is the wrong
+// question for an alternation. "车胄|庞德|成何|夏侯存|荀正|管亥|杨龄" asks WHICH of
+// these the corpus carries, and a single top-N hands nearly every seat to the
+// passages that match many of the terms at once. Measured on that exact
+// seven-name probe (2026-09-14): ten chunks came back carrying 庞德 / 成何 /
+// 于禁, and NOT ONE chunk carrying 车胄, 荀正, 管亥 or 杨龄 — four members the
+// corpus does hold. They never reached the pool, and the round answered four
+// short while the probe itself had done its job.
+//
+// So an alternation searches each term on its own, and the results are woven
+// term-by-term, best hit first. The caller's per-query cap then keeps ONE hit
+// per term before it keeps a second hit for any single term — which is the
+// shape an enumeration needs: one passage per name, and a name that comes back
+// empty is a name the corpus does not carry. That empty answer is the point of
+// the probe, so it is returned, not filled with the hits the other terms found.
+//
+// The weave is bounded by the terms (GrepTermsMax) and by each search's own
+// TopN, and the narrowing stage's char budget still decides how much of the
+// woven set survives.
+//
+// The trigger is the caller's own alternation and nothing else: a query without
+// `|` takes the single ranked search it always took, so no other question pays
+// for this.
+func retrieveGrepCandidates(
+	ctx context.Context,
+	deps SearchDeps,
+	bp SearchParams,
+	query string,
+	terms []string,
+) ([]map[string]any, []map[string]any) {
+	if (!strings.Contains(query, "|") && grepPatternOf(query) == nil) || len(terms) < 2 {
+		return BM25Search(ctx, deps, bp)
+	}
+
+	perTerm := make([][]map[string]any, 0, len(terms))
+	aggs := make([]map[string]any, 0, len(terms))
+	perTopN := bp.TopN
+	if isStructuralPattern(query) && perTopN < patternRecallTopN {
+		perTopN = patternRecallTopN
+	}
+	for _, term := range terms {
+		// The term alone is the query: on a keyword leg one rare token is the
+		// strongest query there is, and the rest of the alternation can only
+		// dilute it.
+		sub := bp
+		sub.Question = term
+		sub.Keywords = term
+		sub.TopN = perTopN
+		chunks, docAggs := BM25Search(ctx, deps, sub)
+		perTerm = append(perTerm, chunks)
+		aggs = append(aggs, docAggs...)
+		// A term searched ON ITS OWN is the caller's probe of ONE individual, so
+		// a passage that carries it is a confirmed member with its evidence —
+		// recorded as such, because the round needs the members (and the passages
+		// behind them), not just the number of chunks it holds.
+		for _, c := range chunks {
+			if strings.Contains(strings.ToLower(ChunkTextOf(c)), strings.ToLower(term)) {
+				deps.KB.RecordReachedTerm(term, ChunkIDOf(c))
+				break
+			}
+		}
+	}
+
+	seen := make(map[string]bool)
+	out := make([]map[string]any, 0, len(terms))
+	for depth := 0; ; depth++ {
+		any := false
+		for _, chunks := range perTerm {
+			if depth >= len(chunks) {
+				continue
+			}
+			any = true
+			c := chunks[depth]
+			if id := ChunkIDOf(c); id != "" {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+			}
+			out = append(out, c)
+		}
+		if !any {
+			break
+		}
+	}
+	return out, aggs
+}
+
+// ProbeSeatTopN bounds how many candidates one term's seat search takes before
+// the window is picked: a seat exists to carry the name, not to rank it.
+const ProbeSeatTopN = 3
+
+// TermSeat runs ONE cheap keyword search for a single named term and returns the
+// passage that carries it, narrowed to that term's own window, or (nil, false)
+// when nothing reached it.
+//
+// This is the retrieval unit an enumeration needs, and it is deliberately not a
+// query SYNTAX: the caller's terms may arrive as an alternation ("A|B|C"), as a
+// space-separated list inside one string, or as a list of query strings, and the
+// seat is the same thing in all three cases. What it replaces is asking for
+// several individuals at once: one ranked search hands its seats to the passages
+// that match MANY of the named terms, so the rarest name — the reason the call
+// was made — is the one that loses. Measured (2026-09-15): a run named 29
+// queries, only 21 were executed (maxQ), every session query's candidates were
+// cut to `snippetsPerQuery`, and the answer stopped at twelve members with the
+// rare names missing while ES had returned 30-64 candidates per query.
+//
+// The term alone is the query, on the keyword leg only: no vector leg, no
+// compiled expansion, no model call — a few hundred milliseconds, which is what
+// lets the caller afford one per named term.
+//
+// The boolean is the OTHER half of the answer: false means this corpus reached
+// nothing for that term, which is a fact about the corpus the run must keep
+// (Kbinfos.RecordProbedAbsent) rather than a failed lookup to retry.
+func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term string) ([]map[string]any, bool) {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return nil, false
+	}
+	sub := base
+	sub.Question = term
+	sub.Keywords = term
+	sub.TopN = ProbeSeatTopN
+	sub.UseCompiled = false
+	chunks, _ := BM25Search(ctx, deps, sub)
+	if len(chunks) == 0 {
+		return nil, false
+	}
+	res := NarrowByTerms(chunks, []string{term}, nil, term,
+		NarrowContext{Before: 1, After: 0}, GrepOutCharsPerChunk, GrepOutTotalChars)
+	if len(res.Kept) > 0 {
+		return res.Kept[:1], true
+	}
+	// The keyword leg returned candidates that do not carry the term: on a
+	// keyword leg that is the corpus answering "not here", so the seat is empty
+	// rather than filled with the nearest passages.
+	return nil, false
+}
+
 // GrepSearch mirrors Python grep_search: a keyword-first locate
 // that runs bm25_search and then narrows the prose candidates to the term-grep
 // window (regex locate + short line-context, like Python's _narrow_by_terms).
@@ -897,6 +1062,13 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		return nil, nil
 	}
 	terms := GrepTermsFromQuery(query)
+	pattern := grepPatternOf(query)
+	if pattern != nil {
+		// The operands of a pattern ARE its recall terms (see GrepPatternOperands):
+		// the phrase reading of the same string would treat "关公.*斩" as one clause
+		// and lose half of it.
+		terms = GrepPatternOperands(query)
+	}
 	// Python then delegates to bm25_search with an explicit keywords hint
 	// (search.py:grep_search): `hint = keywords if keywords else " ".join(terms)`.
 	// A long question buries its proper nouns under stopwords; without the hint
@@ -910,9 +1082,20 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		hint = strings.Join(terms, " ")
 	}
 	bp := p
-	bp.Question = query
-	bp.Keywords = hint
-	chunks, docAggs := BM25Search(ctx, deps, bp)
+	if grepPatternOf(query) != nil {
+		// A pattern is an expression for the MATCHER, not for the engine: handed
+		// over, `|` and `.*` become either literals to escape or syntax of their
+		// own, and a batch probe that the engine echoes back empty is then read as
+		// "the corpus does not carry it". So recall gets the OPERANDS, which is
+		// what a keyword leg can actually search for, and the pattern stays here
+		// and decides which of the candidates are evidence.
+		bp.Question = strings.Join(terms, " ")
+		bp.Keywords = bp.Question
+	} else {
+		bp.Question = query
+		bp.Keywords = hint
+	}
+	chunks, docAggs := retrieveGrepCandidates(ctx, deps, bp, query, terms)
 	// Python: `if not chunks or not terms: return res` (search.py:grep_search).
 	if len(chunks) == 0 || len(terms) == 0 {
 		return chunks, docAggs
@@ -928,6 +1111,36 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	}
 	if len(prose) == 0 {
 		return chunks, docAggs
+	}
+
+	// A query that carries pattern syntax is read as a PATTERN and matched against
+	// the candidates the keyword leg returned (see matchGrepPattern): `A|B` is how
+	// a batch of names is asked about, `A.*B` is how the way a thing was done is
+	// asked about, and neither can be expressed by locating terms one at a time.
+	// The pattern itself never leaves this function — the engine only ever saw the
+	// operands — so `|` and `.*` are operators here rather than characters somebody
+	// has to escape.
+	if pattern != nil {
+		kept, matched := matchGrepPattern(prose, pattern, contextCharBudget, GrepOutTotalChars)
+		if matched == 0 {
+			// The pattern matched nothing in what was reached: keep the raw
+			// candidates so evidence is not dropped, and SAY what happened — a
+			// silent return is how "the pattern did not occur here" gets read as
+			// "the corpus does not carry it".
+			logGrepReach(logger, query, chunks, terms)
+			return chunks, docAggs
+		}
+		out := make([]map[string]any, 0, len(table)+len(kept))
+		out = append(out, table...)
+		out = append(out, kept...)
+		chars := 0
+		for _, c := range out {
+			chars += len(ChunkTextOf(c))
+		}
+		logger.Printf("[Grep search] pattern %q matched %d/%d candidate(s) -> %d chunk(s), %.1fK chars.",
+			trunc(query, 80), matched, len(prose), len(out), float64(chars)/1000.0)
+		logGrepReach(logger, query, chunks, terms)
+		return out, docAggs
 	}
 
 	res := NarrowByTerms(prose, terms, nil, query, NarrowContext{Before: 1, After: 0},

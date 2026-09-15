@@ -169,59 +169,153 @@ func TestRouteSCADisabledSCAClosesOut(t *testing.T) {
 	}
 }
 
-// TestRouteSCAFullPoolShortCircuits pins the PR: a pool at/over the SCA view cap
-// cannot flip the verdict, so routeSCA finalizes instead of researching — even
-// when the verdict is insufficient and headroom remains. Gated to SECOND-or-later
-// reviews (SearchRounds >= 1): claim pseudo-chunks bypass the pool cap, so the
-// FIRST review must always get its rewrite round when insufficient (Python
-// _route_sca:1411).
-func TestRouteSCAFullPoolShortCircuits(t *testing.T) {
-	st := &AgenticState{
-		Verdict:      VerdictInsufficient,
-		MaxLoops:     3,
-		SearchRounds: 1,
-		KB:           &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
+// TestRouteSCAPoolSizeIsNotTheStop pins the DECOUPLED stop: the pool's size is
+// not what ends the research loop — whether the SCA can READ anything new is, and
+// that fact is the view identity (scaNode sets NoProgress when the view matches
+// the previous review's, and routeSCA honours it on its first check).
+//
+// The old guard finalized as soon as the pool reached SCAViewCap on a
+// second-or-later review, which is a different claim: a pool past the view cap
+// whose view CHANGED has new evidence the reviewer can read, and it was being
+// thrown away (measured: a name-probe round ended at 117 chunks with members
+// still arriving).
+func TestRouteSCAPoolSizeIsNotTheStop(t *testing.T) {
+	full := func() *AgenticState {
+		st := &AgenticState{
+			Verdict:      VerdictInsufficient,
+			MaxLoops:     3,
+			SearchRounds: 1,
+			// Work left in the table AND evidence still arriving last round —
+			// the two facts the loop is driven by (see routeSCA).
+			LastRoundNew:    12,
+			UnresolvedSlots: []map[string]any{{"question_clues": []string{"who else"}}},
+			KB:              &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
+		}
+		st.Deadline = time.Now().Add(120 * time.Second)
+		return st
 	}
-	st.Deadline = time.Now().Add(120 * time.Second)
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("full pool: expected formalize, got %v", n)
+
+	// Full pool, view changed (scaNode did NOT set NoProgress) => research on.
+	if n := routeSCA(full(), true, 3); n != nodeQueryRewrite {
+		t.Fatalf("full pool with a changed view: expected rewrite, got %v", n)
 	}
-	// One chunk below the cap still takes the normal research path.
-	st.KB.Chunks = make([]map[string]any, SCAViewCap-1)
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Fatalf("below cap: expected rewrite, got %v", n)
+
+	// Full pool, view UNCHANGED: scaNode's detector owns this case, and routeSCA
+	// honours it before anything else.
+	stale := full()
+	stale.NoProgress = true
+	if n := routeSCA(stale, true, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("full pool with an unchanged view: expected formalize, got %v", n)
 	}
-	// FIRST review (SearchRounds == 0) with a full pool: claim pseudo-chunks
-	// bypass the pool cap, so the rewrite round must still run.
-	first := &AgenticState{
-		Verdict:      VerdictInsufficient,
-		MaxLoops:     3,
-		SearchRounds: 0,
-		KB:           &harness.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
+
+	// The loop is still bounded by the round count...
+	atMax := full()
+	atMax.SearchRounds = 3
+	if n := routeSCA(atMax, true, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("at max rounds with a full pool: expected formalize, got %v", n)
 	}
-	first.Deadline = time.Now().Add(120 * time.Second)
-	if n := routeSCA(first, true, 3); n != nodeQueryRewrite {
-		t.Fatalf("first review full pool: expected rewrite, got %v", n)
+	// ...and by the round-headroom guard.
+	tight := full()
+	tight.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
+	if n := routeSCA(tight, true, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("no headroom with a full pool: expected formalize, got %v", n)
 	}
 }
 
-func TestRouteSCAInsufficientStartsRewrite(t *testing.T) {
-	// Sufficient verdict closes out.
-	st := &AgenticState{Verdict: VerdictSufficient, MaxLoops: 3}
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("expected formalize on sufficient, got %v", n)
+// TestRouteSCARoundRecordDrivesTheLoop pins the DECOUPLED stop/continue rule: the
+// loop's own record (work left in the table + evidence still arriving) decides,
+// and the reviewer's verdict is one of its inputs rather than the switch.
+//
+// The distinction it encodes: a SUFFICIENT verdict is a judgement about the
+// PASSAGES the reviewer read. It is not a statement that the question is done —
+// measured 2026-09-15, a run ended with unresolved=0 while the answer was six
+// members short — so a table that still lists unresolved slots while the round is
+// still adding evidence keeps its next round, and a settled table closes out
+// however much evidence arrived.
+func TestRouteSCARoundRecordDrivesTheLoop(t *testing.T) {
+	base := func() *AgenticState {
+		st := &AgenticState{MaxLoops: 3, SearchRounds: 1}
+		st.Deadline = time.Now().Add(120 * time.Second)
+		return st
 	}
-	// Insufficient + rounds under cap + headroom remaining => rewrite.
-	st = &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3, SearchRounds: 0}
-	st.Deadline = time.Now().Add(120 * time.Second) // 120s remaining >> MinRoundHeadroomS
+	work := []map[string]any{{"question_clues": []string{"who else"}}}
+
+	// Work left + still learning + a SATISFIED reviewer: another round. The
+	// reviewer's view of the passages does not settle the table's own gaps.
+	st := base()
+	st.Verdict = VerdictSufficient
+	st.LastRoundNew = 9
+	st.UnresolvedSlots = work
 	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Fatalf("expected rewrite on insufficient+headroom, got %v", n)
+		t.Errorf("SUFFICIENT with work left and evidence still arriving: expected rewrite, got %v", n)
 	}
-	// At max rounds => formalize.
-	st = &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3, SearchRounds: 3}
-	st.Deadline = time.Now().Add(120 * time.Second)
+
+	// Nothing left in the table: growth alone is not a reason to keep going.
+	st = base()
+	st.Verdict = VerdictSufficient
+	st.LastRoundNew = 9
 	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("expected formalize at max rounds, got %v", n)
+		t.Errorf("settled table with nothing against it: expected formalize, got %v", n)
+	}
+
+	// Work left, stalled round, reviewer names a gap: another round.
+	st = base()
+	st.Verdict = VerdictInsufficient
+	st.UnresolvedSlots = work
+	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
+		t.Errorf("INSUFFICIENT with a concrete gap: expected rewrite, got %v", n)
+	}
+
+	// Work can ALSO come from the review's own gaps, with an empty unresolved
+	// table — the two records are independent. Ignoring the reviewer's gaps is
+	// what made a run close out with INSUFFICIENT (confidence 1.00) and four
+	// derived gaps while 60s and two rounds went unspent (2026-09-15).
+	st = base()
+	st.Verdict = VerdictInsufficient
+	st.SCA = map[string]any{"claims": map[string]any{
+		"c1": map[string]any{"missing_information": []any{
+			map[string]any{"what": "还有谁", "search_hint": "关羽 斩将 名单"},
+		}},
+	}}
+	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
+		t.Errorf("INSUFFICIENT with the review's own gaps and no unresolved slots: expected rewrite, got %v", n)
+	}
+
+	// Work left, stalled round, NO judgement (the review could not run): nothing
+	// names a direction and the round learned nothing — close out. This is the
+	// case a fallback INSUFFICIENT used to promise a round to.
+	st = base()
+	st.Verdict = VerdictUnknown
+	st.UnresolvedSlots = work
+	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
+		t.Errorf("UNKNOWN with a stalled round: expected formalize, got %v", n)
+	}
+
+	// Work left, stalled round, satisfied reviewer: close out.
+	st = base()
+	st.Verdict = VerdictSufficient
+	st.UnresolvedSlots = work
+	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
+		t.Errorf("SUFFICIENT with a stalled round: expected formalize, got %v", n)
+	}
+
+	// At max rounds => formalize, whatever the record says.
+	st = base()
+	st.Verdict = VerdictInsufficient
+	st.LastRoundNew = 3
+	st.UnresolvedSlots = work
+	st.SearchRounds = 3
+	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
+		t.Errorf("at max rounds: expected formalize, got %v", n)
+	}
+	// No headroom => formalize.
+	st = base()
+	st.Verdict = VerdictInsufficient
+	st.LastRoundNew = 3
+	st.UnresolvedSlots = work
+	st.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
+	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
+		t.Errorf("no headroom: expected formalize, got %v", n)
 	}
 }
 
@@ -263,10 +357,17 @@ func TestMergeSlotPatchAdoptsStronger(t *testing.T) {
 		{ID: 0, Type: "aspect", Candidate: strPtr("weak-candidate"), CandidateStrength: &weak},
 	}, 1, nil)
 	merged := MergeSlotPatch(base, branch)
-	// A weak branch does not downgrade the strong base, AND produces no change
-	// at all — MergeSlotPatch returns nil to signal "no new patch".
+	// A weak branch does not downgrade the strong base. It is no longer a no-op
+	// either: the claim that lost the comparison is kept as an alternate, so the
+	// list two sessions disagreed about does not vanish (see
+	// TestMergeSlotPatchKeepsTheLosingListAsAnAlternate).
 	if merged != nil {
-		t.Fatalf("weak branch over strong base should yield NO change (nil patch), got %+v", merged)
+		if got := merged.ByID(0).Candidate; got == nil || *got != "base" {
+			t.Fatalf("weak branch upgraded the slot: %v", got)
+		}
+		if alts := alternateCandidatesOf(*merged.ByID(0)); len(alts) != 1 || alts[0] != "weak-candidate" {
+			t.Fatalf("alternates = %v, want the weak claim kept as the loser", alts)
+		}
 	}
 
 	// A stronger branch wins.
@@ -1360,7 +1461,7 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 // produces no usable result (timeout, unparsable reply, no model) the verdict is
 // INSUFFICIENT so unresolved slots can drive another research round — NOT
 // SUFFICIENT, which would ship the unverified draft as if it had passed review.
-func TestSCAUnavailableMarksInsufficient(t *testing.T) {
+func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
 	st := NewAgenticState("When was it built?", "", 3, nil)
 	st.Draft = "Built in 1865."
 	st.KB = &harness.Kbinfos{Chunks: []map[string]any{
@@ -1372,11 +1473,22 @@ func TestSCAUnavailableMarksInsufficient(t *testing.T) {
 
 	scaNode(context.Background(), RAGTools{Model: mdl}, st, log.New(&bytes.Buffer{}, "", 0))
 
-	if st.Verdict != VerdictInsufficient {
-		t.Errorf("Verdict = %q, want INSUFFICIENT (Python marks an unavailable SCA insufficient)", st.Verdict)
+	if st.Verdict != VerdictUnknown {
+		t.Errorf("Verdict = %q, want UNKNOWN: a review that could not run is the ABSENCE of a verdict, not a judgement of insufficiency", st.Verdict)
+	}
+	if st.Verdict == VerdictInsufficient {
+		t.Error("an unavailable review must not read as INSUFFICIENT: that is what marked the answer partial on no evidence and promised a research round the budget could not pay for")
 	}
 	if st.SCA == nil {
 		t.Error("SCA payload must stay an (empty) map, like Python's sca={}")
+	}
+	// An un-run review must not make the answer PARTIAL either: with nothing
+	// unresolved and no stalled round, the deliverable is not dressed up as
+	// unverified.
+	st.Deadline = time.Now().Add(60 * time.Second)
+	formalizeAnswerNode(context.Background(), RAGTools{}, st, log.New(&bytes.Buffer{}, "", 0))
+	if st.PartialAnswer {
+		t.Error("PartialAnswer = true on an UNKNOWN verdict with no unresolved slots; partial is a statement about the evidence")
 	}
 }
 
@@ -2619,4 +2731,304 @@ func TestRecordConsecutiveUnanswerableNoCacheIsNoOp(t *testing.T) {
 	// Must not panic with a nil cache.
 	recordConsecutiveUnanswerable(nil, VerdictInsufficient)
 	recordConsecutiveUnanswerable(nil, VerdictSufficient)
+}
+
+// TestRewriteContextShowsThePassageBehindAConfirmedMember pins the input side of
+// the rewrite round: what the rewriter is shown is the PASSAGE that carries each
+// confirmed name, not the first line of a stored chunk.
+//
+// The difference is the whole point of that round. The wording a text uses for the
+// relation (and the other names it mentions) lives in the middle of a passage, so
+// a first-line digest cannot carry it — and a rewrite that cannot see it can only
+// re-ask what was already asked.
+func TestRewriteContextShowsThePassageBehindAConfirmedMember(t *testing.T) {
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.KB = &harness.Kbinfos{Chunks: []map[string]any{
+		{"chunk_id": "w1", "content": "荀正 引军来战，被关公一刀斩于马下。"},
+		{"chunk_id": "big", "content": "第一行与本题无关\n第二行才提到关公"},
+	}}
+	st.KB.RecordReachedTerm("荀正", "w1")
+
+	ctx := renderResearchContext(st)
+	if !strings.Contains(ctx, "荀正") || !strings.Contains(ctx, "斩于马下") {
+		t.Errorf("rewrite context does not carry the passage behind the confirmed member:\n%s", ctx)
+	}
+	if strings.Contains(ctx, "第一行与本题无关") {
+		t.Errorf("rewrite context fell back to first-line digests although a confirmed member's passage was available:\n%s", ctx)
+	}
+	if !strings.Contains(ctx, "ALREADY confirmed") {
+		t.Errorf("the member section is not labelled:\n%s", ctx)
+	}
+}
+
+// TestRewriteRoundCanStillAdmitOnARichPool pins the room a rewrite round is given:
+// it is measured against the EVIDENCE POOL's ceiling, the same number the admitter
+// enforces.
+//
+// Sized against the smaller snippet-pool constant, a pool past 60 chunks left the
+// round with room <= 0: it admitted nothing, declared "retrieval saturated" and
+// discarded the queries it had just built — on exactly the rich rounds where more
+// evidence was still arriving.
+func TestRewriteRoundCanStillAdmitOnARichPool(t *testing.T) {
+	pool := make([]map[string]any, 0, harness.EvidencePoolCap())
+	for i := 0; i < 71; i++ {
+		pool = append(pool, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled"})
+	}
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.KB = &harness.Kbinfos{Chunks: pool}
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"还有谁被关羽所杀"}}}
+	st.Deadline = time.Now().Add(60 * time.Second)
+
+	mdl := &scriptedModel{}
+	mdl.push(`{"queries": [{"query": "关羽 斩 名单 其余"}]}`)
+
+	queryRewriteNode(context.Background(), RAGTools{
+		Model:  mdl,
+		Search: harness.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
+	}, st, log.New(&bytes.Buffer{}, "", 0))
+
+	if st.NoProgress {
+		t.Fatal("NoProgress = true on a pool of 71 with room left: the round's room must be measured against the evidence pool's ceiling")
+	}
+	if len(st.KB.Chunks) <= 71 {
+		t.Errorf("pool = %d, want the rewrite's own query admitted (cap %d, pool was 71)", len(st.KB.Chunks), harness.EvidencePoolCap())
+	}
+}
+
+// TestRenderSlotRecordCarriesNoMachineFields pins the split between the record the
+// ANSWER is composed from and the draft the SCA reviews.
+//
+// The draft deliberately carries the machine fields that make verification
+// possible (strength, terminal type, evidence ids). Handing those to the answer
+// model as a "summary" is a different act with a different failure mode, and it
+// was measured: the composed answer quoted the bookkeeping verbatim
+// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
+func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
+	strong := 0.9
+	st := harness.NewState([]harness.Variable{
+		{
+			ID:                0,
+			Type:              "aspect",
+			Candidate:         strPtr("answer A"),
+			CandidateStrength: &strong,
+			DiscoveredClues:   []string{"clue one", "clue two"},
+		},
+		{ID: 1, Type: "aspect", QuestionClues: []string{"who opened it?"}},
+	}, 0, nil)
+	evidence := map[string]SlotEvidence{
+		"0": {EvidenceIDs: []string{"c1", "c2"}, TerminalType: "state"},
+	}
+
+	record := RenderSlotRecord(st, "the collected answer")
+	want := "Candidate answer: the collected answer\n" +
+		"\n" +
+		"- slot 0 [aspect]: answer A\n" +
+		"- slot 1 [aspect]: NOT RESOLVED"
+	if record != want {
+		t.Fatalf("record = %q\nwant   %q", record, want)
+	}
+	for _, banned := range []string{"strength=", "terminal=", "evidence_ids", "c1"} {
+		if strings.Contains(record, banned) {
+			t.Errorf("record %q must not carry the machine field %q", record, banned)
+		}
+	}
+	// The SCA's draft keeps them: the split must not disarm verification.
+	draft := RenderSlotDraft(st, "the collected answer", evidence)
+	for _, want := range []string{"strength=0.90", "terminal=state", "evidence_ids=['c1', 'c2']"} {
+		if !strings.Contains(draft, want) {
+			t.Errorf("draft %q must keep %q for the SCA", draft, want)
+		}
+	}
+}
+
+// TestAnswerPromptLabelsTheRecordAndForbidsQuoting pins the prompt contract: the
+// slot record reaches the answer labelled as an INTERNAL record (not evidence),
+// with an explicit instruction not to quote its lines and labels — and the
+// machine fields never reach the prompt at all.
+func TestAnswerPromptLabelsTheRecordAndForbidsQuoting(t *testing.T) {
+	strong := 0.9
+	record := RenderSlotRecord(harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良"), CandidateStrength: &strong},
+	}, 0, nil), "")
+
+	withRecord := &harness.Kbinfos{Record: record, PreSummary: "- slot 1 [entity]: 华雄、颜良 (strength=0.90)"}
+	prompt := AnswerDeps{}.answerPromptWithEvidence(withRecord, "q", false, false)
+	for _, want := range []string{recordContract, "Research Record (INTERNAL", "华雄、颜良"} {
+		if !strings.Contains(prompt.user, want) {
+			t.Errorf("prompt missing %q", want)
+		}
+	}
+	for _, banned := range []string{"strength=", "evidence_ids", "Research Summary (primary evidence)"} {
+		if strings.Contains(prompt.user, banned) {
+			t.Errorf("prompt must not carry %q when a slot record exists", banned)
+		}
+	}
+
+	// No slot record (a prose summary instead): the prose block is used, and the
+	// record contract stays out of it.
+	prose := &harness.Kbinfos{PreSummary: "the research found A and B"}
+	prompt = AnswerDeps{}.answerPromptWithEvidence(prose, "q", false, false)
+	if !strings.Contains(prompt.user, "Research Summary (primary evidence)") {
+		t.Errorf("prose prompt = %q, want the summary block", prompt.user)
+	}
+	if strings.Contains(prompt.user, recordContract) {
+		t.Error("the record contract must not label a prose summary")
+	}
+}
+
+// TestAnswerRecordCarriesTheProbeLedger pins the block that closes the measured
+// write-back gap: the slots are the model's own bookkeeping, so a run can probe
+// twenty-four terms, get a passage for every one, and record eleven — and the
+// answer then sees only the eleven while the rest exist merely inside the pool.
+//
+// The two lists stay apart on purpose: "reached" is a fact about the corpus,
+// "nothing back" is a fact about the QUERY (not an absence).
+func TestAnswerRecordCarriesTheProbeLedger(t *testing.T) {
+	kb := &harness.Kbinfos{Record: "- slot 0 [count]: 11"}
+	kb.RecordReachedTerm("车胄", "c1")
+	kb.RecordReachedTerm("管亥", "c2")
+	kb.RecordProbedAbsent("温酒")
+
+	prompt := AnswerDeps{}.answerPromptWithEvidence(kb, "q", false, false)
+	for _, want := range []string{
+		"- slot 0 [count]: 11", // the slots come first
+		"Probed and answered",
+		"车胄", "管亥",
+		"Probed with NOTHING back",
+		"温酒",
+	} {
+		if !strings.Contains(prompt.user, want) {
+			t.Errorf("answer prompt missing %q", want)
+		}
+	}
+	// "Nothing back" may not be described as absence: that reading is what stops
+	// an enumeration short.
+	if strings.Contains(prompt.user, "absent from the corpus") && !strings.Contains(prompt.user, "this is not \"absent\"") {
+		t.Error("the not-reached list must refuse the absence reading")
+	}
+	// The ledger belongs to the answer prompt, not to the SCA-facing draft.
+	if strings.Contains(kb.PreSummary, "Probed and answered") {
+		t.Error("the probe ledger must not leak into the SCA draft")
+	}
+}
+
+// TestSessionPatchLogNamesBothSidesOfTheTournament pins P13 for the one place a
+// list can vanish without a trace: MergeSlotPatch keeps ONE candidate per slot,
+// chosen by the strength the model reported, and the losing candidate is then in
+// no table, no draft and no record.
+//
+// The log line is the only place that fact can exist, so it has to name both the
+// claim and the base it lost to.
+func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
+	var buf bytes.Buffer
+	orig := _LOG
+	_LOG = log.New(&buf, "", 0)
+	defer func() { _LOG = orig }()
+
+	strong, weak := 0.97, 0.85
+	base := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+	}, 0, nil)
+	patch := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+	}, 0, nil)
+
+	// The weaker claim loses: the slot still holds the base afterwards.
+	logSessionPatch(2, base, base, patch)
+	got := buf.String()
+	for _, want := range []string{"华雄、颜良、庞德", "0.85", "孔秀、孟坦", "0.97", "NOT ADOPTED"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log %q missing %q", got, want)
+		}
+	}
+
+	// Adopted: the slot holds the patch's candidate afterwards.
+	buf.Reset()
+	merged := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+	}, 1, nil)
+	logSessionPatch(2, base, merged, patch)
+	if got := buf.String(); !strings.Contains(got, "adopted") || strings.Contains(got, "NOT ADOPTED") {
+		t.Errorf("log %q, want the adopted verdict", got)
+	}
+}
+
+// TestMergeSlotPatchKeepsTheStrongestClaim is the behaviour the log above exists
+// to expose: a weaker branch candidate must NOT overwrite a stronger base, and a
+// stronger one must.
+func TestMergeSlotPatchKeepsTheStrongestClaim(t *testing.T) {
+	strong, weak := 0.97, 0.85
+	base := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+	}, 0, nil)
+	weaker := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+	}, 0, nil)
+	// Whether the merge reports a change (it reports nil when the branch brings
+	// neither a stronger candidate nor a new clue) the INVARIANT is the same: the
+	// weaker list must not replace the stronger one.
+	if merged := MergeSlotPatch(base, weaker); merged != nil {
+		if got := *merged.ByID(1).Candidate; got != "孔秀、孟坦" {
+			t.Errorf("slot 1 = %q, want the stronger base candidate to stand", got)
+		}
+	}
+
+	stronger := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &strong},
+	}, 0, nil)
+	base = harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &weak},
+	}, 0, nil)
+	if merged := MergeSlotPatch(base, stronger); merged == nil || *merged.ByID(1).Candidate != "华雄、颜良、庞德" {
+		t.Error("a strictly stronger branch candidate must be adopted")
+	}
+}
+
+// TestMergeSlotPatchKeepsTheLosingListAsAnAlternate pins D1: one slot holds one
+// candidate, so the claim that lost the comparison used to leave no trace — and
+// two sessions enumerating the same question from different angles produced
+// whichever list the model called stronger, while the other list was gone.
+//
+// The framework may not decide which list is true, but it must stop discarding
+// the one that lost.
+func TestMergeSlotPatchKeepsTheLosingListAsAnAlternate(t *testing.T) {
+	strong, weak := 0.97, 0.85
+	base := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+	}, 0, nil)
+	branch := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+	}, 0, nil)
+
+	merged := MergeSlotPatch(base, branch)
+	if merged == nil {
+		t.Fatal("the losing claim must still change the state: it is kept as an alternate")
+	}
+	v := merged.ByID(1)
+	if v.Candidate == nil || *v.Candidate != "孔秀、孟坦" {
+		t.Fatalf("slot 1 = %v, want the stronger claim to hold the slot", v.Candidate)
+	}
+	alts := alternateCandidatesOf(*v)
+	if len(alts) != 1 || alts[0] != "华雄、颜良、庞德" {
+		t.Fatalf("alternates = %v, want the losing list kept", alts)
+	}
+
+	// It reaches the ANSWER-facing record, which is the whole point: the answer
+	// must be able to see that two lists exist.
+	rec := RenderSlotRecord(*merged, "")
+	if !strings.Contains(rec, "alternate") || !strings.Contains(rec, "华雄、颜良、庞德") {
+		t.Fatalf("record = %q, want the alternate rendered", rec)
+	}
+
+	// And it survives a SECOND merge: alternates accumulate, they do not compete.
+	strongerAgain := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "entity", Candidate: strPtr("车胄、蔡阳"), CandidateStrength: &strong},
+	}, 0, nil)
+	merged2 := MergeSlotPatch(*merged, strongerAgain)
+	if merged2 == nil {
+		t.Fatal("a third claim must fold in")
+	}
+	if got := alternateCandidatesOf(*merged2.ByID(1)); len(got) != 2 {
+		t.Fatalf("alternates = %v, want both losing lists kept", got)
+	}
 }

@@ -527,6 +527,71 @@ const evidencePoolCap = 120
 // the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
 // while another session appends.
 
+// probeTerms returns the terms of a PROBE query — the caller's own alternation,
+// "荀正|管亥|车胄" — and nil for every other query shape.
+//
+// An alternation is the one place the model states explicitly WHICH individuals
+// it is asking about, which makes its per-term result the batch's answer and not
+// just another search: a name that comes back empty is a name this corpus does
+// not carry, and a name that comes back with a window is a member. Both facts are
+// destroyed by a cap that drops the window (see PoolAdmitter.Novelty), so a probe
+// is exempt while a topic query is not — a topic query names no individuals, so
+// its hits compete for the cap like everything else.
+func probeTerms(q string) []string {
+	if !strings.Contains(q, "|") {
+		return nil
+	}
+	return GrepTermsFromQuery(q)
+}
+
+// namedTermsOf is the call's own statement of WHICH individuals it asked about:
+// the terms of the queries it carried, deduped and capped.
+//
+// Every shape the model uses lands here — an alternation ("A|B|C"), a
+// space-separated list inside one string, or a list of query strings — because
+// GrepTermsFromQuery already reads all three. That is the point: the seat
+// mechanism is attached to the FACT that the call named terms, not to a syntax
+// the model may never write. Measured (2026-09-15): fifteen calls, every one of
+// them naming people, zero of them using `|` — a `|`-triggered mechanism fires
+// never.
+//
+// The cap (GrepTermsMax) bounds the seat pass, which runs one cheap keyword
+// search per unreached term; the caller logs how many named terms were dropped
+// so the ceiling is visible in the run.
+//
+// The terms are the caller's OWN WORDS (GrepWordsFromQuery), not the CJK windows
+// the locate step derives from them: a window is our guess at where a name can be
+// found, and probing one spends a retrieval on a fragment nobody asked about
+// (measured 2026-09-15: 羽斩 / 杀的 / 的有 / 领名, fourteen of twenty probes
+// "absent").
+func namedTermsOf(queries []string) []string {
+	var out []string
+	seen := make(map[string]bool, len(queries)*2)
+	for _, q := range queries {
+		for _, t := range GrepWordsFromQuery(q) {
+			// A PIECE OF A PATTERN is a phrase, not a name: "关公.*斩" asks how a
+			// deed is written, and probing 关公 or 斩 as a name spends a retrieval
+			// on a word nobody proposed as a member (measured: a pass built from
+			// such fragments probed 羽斩 / 杀的 / 的有 and reported fourteen
+			// "absent"). An alternation of PLAIN words ("华雄|颜良|蔡阳") is exactly
+			// what the seat exists for, so the test is pattern OPERATORS, not "|".
+			if strings.ContainsAny(t, ".*+?()[]{}^$\\") {
+				continue
+			}
+			low := strings.ToLower(strings.TrimSpace(t))
+			if low == "" || seen[low] {
+				continue
+			}
+			seen[low] = true
+			out = append(out, t)
+			if len(out) >= GrepTermsMax {
+				return out
+			}
+		}
+	}
+	return out
+}
+
 // search runs one retrieval call for a tool invocation.
 //
 // Python's retrieve/search_chunks both funnel into tools/search.py, differing
@@ -553,6 +618,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	if e.deps.KB == nil {
 		e.deps.KB = &Kbinfos{}
 	}
+	logger := searchLogger(e.deps)
 
 	// Max queries per tool call mirrors Python action_session.execute_tool
 	// (_arg_query_list): retrieve=3, search_chunks=2. grep_search/grep_chunks
@@ -565,8 +631,16 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	case "search_chunks":
 		maxQ = 2
 	}
+	// The full list is kept: maxQ bounds how many EXPENSIVE queries run, but the
+	// terms of the dropped ones still get their own cheap seat below. Dropping a
+	// list item silently (as this cut used to) drops the individuals it named
+	// before any retrieval happens — measured (2026-09-15): a run named 29
+	// queries, 8 never executed, and those 8 included the only mentions of the
+	// names it was missing.
+	allQueries := queries
 	if len(queries) > maxQ {
 		queries = queries[:maxQ]
+		logger.Printf("[Action Session] %s asked %d quer(ies); running %d and taking named-term seats for the rest.", name, len(allQueries), maxQ)
 	}
 
 	var payload []any
@@ -578,6 +652,15 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// pool — a per-call snapshot of it (Python's `kb_seen`) is exact only while
 	// nothing can interleave, and another session appending makes it stale.
 	seen := map[string]bool{}
+	// reached accumulates every candidate the call's own searches returned. It is
+	// what the seat pass below asks "which of the named terms did this retrieval
+	// NOT reach?" — the question whose answer is a search of its own.
+	var reached []map[string]any
+	// Per-call reach notes: what each query reached term by term, and which of its
+	// terms nothing reached (see ToolOutcome.Note / GrepReachLine). A batch of
+	// names is exactly where this matters — the passages alone cannot say whether
+	// a member was missing or simply never asked about.
+	var reachNotes []string
 	// Claim-first, MUTUALLY EXCLUSIVE (Python _run_search: _claim_prefetch +
 	// _CLAIM_PREFETCH_EXCLUSIVE): when claim rows hit, their verbatim evidence
 	// IS the answer material — chunk snippets on top would echo the same
@@ -686,11 +769,26 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		if len(chunks) == 0 {
 			continue
 		}
-		// Only the first snippetsPerQuery (4) hits of each query are considered
-		// (Python cands[:_SNIPPETS_PER_QUERY]).
-		if len(chunks) > snippetsPerQuery {
-			chunks = chunks[:snippetsPerQuery]
+		// Computed on the LEG's candidates, not on the payload below: the payload is
+		// truncated to snippetsPerQuery, and a term whose window was cut is still a
+		// term this query reached.
+		if line := GrepReachLine(q, chunks, ReachTermsOf(q)); line != "" {
+			reachNotes = append(reachNotes, line)
 		}
+		// Only the first snippetsPerQuery hits of each query are considered
+		// (Python cands[:_SNIPPETS_PER_QUERY]) — EXCEPT for a query that NAMES
+		// terms, which keeps one candidate per named term first. The locate step
+		// hands back one window per term, and a flat cut of four is what turns a
+		// six-name call into "the four names that matched most": the two rarest
+		// lose their seat to the four the ranking already preferred.
+		limit := snippetsPerQuery
+		if n := len(namedTermsOf([]string{q})); n > limit {
+			limit = n
+		}
+		if len(chunks) > limit {
+			chunks = chunks[:limit]
+		}
+		reached = append(reached, chunks...)
 		// Admittance mirrors _admit_evidence exactly: per-call dedup by chunk
 		// id, the chunk ID as the evidence reference (Python's `ids` holds ids,
 		// not pool positions), and only chunks NEW to the shared pool appended
@@ -705,10 +803,17 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// LIVE pool once per call; compute it once per batch under the same
 			// critical section.
 			covered := p.ClaimCoveredIDs()
+			// The cap exemption for this batch, derived from the probe's own terms
+			// (see probeTerms / PoolAdmitter.Novelty): a full pool still takes the
+			// window that answers a name nothing in the pool has reached yet,
+			// because that window is the batch's result rather than one more
+			// passage.
+			novel := p.Novelty(probeTerms(q))
 			for _, c := range chunks {
 				// Python _admit_evidence early-stops at the top once the shared pool
-				// reaches the cap, BEFORE the per-call dedup.
-				if p.Full() {
+				// reaches the cap, BEFORE the per-call dedup — except for the probe
+				// window above, which IS the answer the caller asked for.
+				if p.Full() && !novel.Admits(c) {
 					continue
 				}
 				cid := ChunkIDOf(c)
@@ -737,6 +842,81 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		e.deps.KB.MergeDocAggs(aggs)
 	}
 
+	// ── Named-term seats ─────────────────────────────────────────────────────
+	// The individuals this call named are honored IN FULL, independent of the
+	// expensive leg's own limits: one cheap keyword search per term the call's
+	// retrievals did not reach, each keeping the window that carries it (see
+	// TermSeat). The terms of list items maxQ dropped are included — "the model
+	// already said the name" should mean the name was looked for, whatever
+	// syntax carried it and whichever leg ran.
+	//
+	// A term that reaches nothing is RECORDED, not retried (Kbinfos.RecordProbedAbsent):
+	// "this corpus has no 荀正" is the answer to a probe, and it is what the
+	// rewrite reads before choosing its next angle.
+	if named := namedTermsOf(allQueries); len(named) > 0 {
+		seatScope := []string(nil)
+		if name != "search_chunks" {
+			// doc_scope is a retrieve-family argument; search_chunks takes none
+			// (see the query loop above).
+			seatScope = toolDocScope(args)
+		}
+		unreached := termsNotCarried(reached, named)
+		seats, absent := 0, 0
+		for _, term := range unreached {
+			seat, found := TermSeat(ctx, e.deps, SearchParams{
+				KbIDs:    e.req.DatasetIDs,
+				DocScope: seatScope,
+			}, term)
+			if !found {
+				absent++
+				e.deps.KB.RecordProbedAbsent(term)
+				continue
+			}
+			// The seat's ids are collected here and recorded AFTER the batch: the
+			// ledger has its own lock, so writing it inside the critical section
+			// would be safe, but keeping the pool lock to pool work costs nothing
+			// and leaves the locking order (pool → ledger) exercised in one place
+			// only.
+			var seatedIDs []string
+			e.deps.KB.Admit(func(p *PoolAdmitter) {
+				// A seat is a probe's answer, so it is exempt from the pool cap
+				// on the same grounds as the weave above (see Novelty).
+				novel := p.Novelty([]string{term})
+				for _, c := range seat {
+					if p.Full() && !novel.Admits(c) {
+						continue
+					}
+					cid := ChunkIDOf(c)
+					if cid != "" && seen[cid] {
+						continue
+					}
+					if cid != "" {
+						seen[cid] = true
+					}
+					evidenceIDs = append(evidenceIDs, cid)
+					payload = append(payload, passageFromChunk(c))
+					if p.Add(c) {
+						newChunks++
+					}
+					if cid != "" {
+						seatedIDs = append(seatedIDs, cid)
+					}
+					seats++
+				}
+			})
+			// A seat IS the proof that this name is a member: record the pair
+			// (term, passage) so the round's record holds the members with their
+			// evidence, not just the count.
+			for _, cid := range seatedIDs {
+				e.deps.KB.RecordReachedTerm(term, cid)
+			}
+		}
+		if len(unreached) > 0 {
+			logger.Printf("[Action Session] named-term seats: %d named, %d unreached, %d seat(s) admitted, %d absent.",
+				len(named), len(unreached), seats, absent)
+		}
+	}
+
 	if len(payload) == 0 {
 		return ToolOutcome{
 			Payload:     []any{},
@@ -744,6 +924,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			Status:      StatusMiss,
 			Reason:      ReasonNoDoc,
 			Metrics:     map[string]any{"hits": 0, "new_evidence": 0},
+			Note:        strings.Join(reachNotes, "\n"),
 		}, nil
 	}
 	// Zero new evidence (every hit was already in the pool) is REDUNDANT, not
@@ -760,6 +941,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			Status:      StatusRedundant,
 			Reason:      ReasonNone,
 			Metrics:     map[string]any{"hits": len(payload), "new_evidence": 0},
+			Note:        strings.Join(reachNotes, "\n"),
 		}, nil
 	}
 	return ToolOutcome{
@@ -768,6 +950,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Status:      StatusOK,
 		Reason:      ReasonNone,
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
+		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
 }
 
