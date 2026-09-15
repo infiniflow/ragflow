@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 
 	"go.uber.org/zap"
@@ -83,7 +84,7 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
 		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get()},
+		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService()},
 		factory:        defaultDeduperFactory,
 		contributions:  newWikiContributionStore(engine.Get()),
 		ttl:            2 * time.Minute,

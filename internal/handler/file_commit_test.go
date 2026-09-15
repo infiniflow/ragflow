@@ -38,6 +38,7 @@ type mockFileCommitSvc struct {
 	createCommitFn          func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	listCommitsFn           func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	getCommitFn             func(ctx context.Context, commitID string) (*entity.FileCommit, error)
+	getPageCommitDetailFn   func(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
 	listCommitFilesFn       func(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error)
 	diffCommitsFn           func(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error)
 	getUncommittedChangesFn func(ctx context.Context, folderID string) ([]entity.DiffEntry, error)
@@ -76,6 +77,13 @@ func (m *mockFileCommitSvc) GetCommit(ctx context.Context, commitID string) (*en
 		return m.getCommitFn(ctx, commitID)
 	}
 	return &entity.FileCommit{ID: commitID, FolderID: "folder-1", Message: "test commit", AuthorID: "u1", FileCount: 1}, nil
+}
+
+func (m *mockFileCommitSvc) GetPageCommitDetail(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error) {
+	if m.getPageCommitDetailFn != nil {
+		return m.getPageCommitDetailFn(ctx, datasetID, commitID)
+	}
+	return &entity.WikiPageCommitDetail{ID: commitID, KBID: datasetID}, nil
 }
 
 func (m *mockFileCommitSvc) ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error) {
@@ -197,6 +205,10 @@ func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 		c.Params = append(c.Params, gin.Param{Key: "folder_id", Value: c.Param("dataset_id")})
 		c.Next()
 	}, h.ListCommits)
+	r.GET("/api/v1/datasets/:dataset_id/commits/:commit_id", func(c *gin.Context) {
+		c.Params = append(c.Params, gin.Param{Key: "folder_id", Value: "folder-1"})
+		c.Next()
+	}, h.GetCommit)
 	return r
 }
 
@@ -485,6 +497,52 @@ func TestFileCommit_GetCommit_NotFound(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if code, _ := resp["code"].(float64); code != float64(common.CodeNotFound) {
 		t.Errorf("expected 404, got code %v", code)
+	}
+}
+
+func TestFileCommit_GetDatasetPageCommit_Success(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	title := "page edit"
+	mock.getCommitFn = func(ctx context.Context, commitID string) (*entity.FileCommit, error) {
+		return &entity.FileCommit{
+			ID:       commitID,
+			FolderID: "kb-1", // Page-edit commits are scoped by dataset id.
+			Message:  title,
+			Title:    &title,
+		}, nil
+	}
+	mock.getPageCommitDetailFn = func(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error) {
+		if datasetID != "kb-1" || commitID != "commit-1" {
+			t.Fatalf("unexpected page commit lookup: dataset=%s commit=%s", datasetID, commitID)
+		}
+		return &entity.WikiPageCommitDetail{
+			ID:           commitID,
+			KBID:         datasetID,
+			Title:        title,
+			Comments:     "save note",
+			Diff:         "-old\n+new",
+			ContentAfter: "new",
+		}, nil
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/datasets/kb-1/commits/commit-1", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if code := decodeCode(t, w); code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v", common.CodeSuccess, code)
+	}
+	var resp struct {
+		Data entity.WikiPageCommitDetail `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Data.Title != title || resp.Data.Diff != "-old\n+new" || resp.Data.ContentAfter != "new" {
+		t.Fatalf("unexpected page commit detail: %+v", resp.Data)
 	}
 }
 
