@@ -44,12 +44,7 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
-	}
-	for k, v := range meta {
-		s.metaData[k] = v
-	}
+	s.metaData = meta
 	return nil
 }
 
@@ -282,3 +277,62 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
 }
+
+func TestDocStateUpdater_StripKeysOnReparse(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"author":     "Alice",
+		"status":     []string{"active", "pending"},
+		"department": "sales",
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:     "doc-1",
+		KbID:      "kb-1",
+		StripKeys: []string{"status", "department"},
+		Metadata: map[string]any{
+			"department": []string{"engineering"},
+		},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if !svc.setCalled {
+		t.Fatal("SetDocumentMetadata must be called")
+	}
+	if _, ok := svc.metaData["status"]; ok {
+		t.Errorf("status must be stripped, got %v", svc.metaData["status"])
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Errorf("author must be preserved, got %v", svc.metaData["author"])
+	}
+	if dept, ok := svc.metaData["department"].([]string); !ok || len(dept) != 1 || dept[0] != "engineering" {
+		t.Errorf("department should be updated to [engineering], got %v", svc.metaData["department"])
+	}
+}
+
+func TestDocStateUpdater_StripKeysWithEmptyMetadata(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"author": "Alice",
+		"status": []string{"active"},
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:            "doc-1",
+		KbID:             "kb-1",
+		StripKeys:        []string{"status"},
+		Metadata:         map[string]any{},
+		ChunkCount:       1,
+		TokenConsumption: 1,
+	})
+	if !svc.setCalled {
+		t.Fatal("SetDocumentMetadata must be called when StripKeys present even if Metadata empty")
+	}
+	if _, ok := svc.metaData["status"]; ok {
+		t.Errorf("status must be stripped, got %v", svc.metaData["status"])
+	}
+	if svc.metaData["author"] != "Alice" {
+		t.Errorf("author must be preserved, got %v", svc.metaData["author"])
+	}
+}
+

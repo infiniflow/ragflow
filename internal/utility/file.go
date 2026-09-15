@@ -85,7 +85,7 @@ func GetFileType(filename string) FileType {
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
-	case "csv":
+	case "csv", "tsv":
 		return FileTypeCSV
 	case "doc":
 		return FileTypeDOC

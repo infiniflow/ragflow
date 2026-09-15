@@ -137,9 +137,9 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 	}
 	if raw, ok := inputs["file_type"].(string); ok && raw != "" {
 		lower := strings.ToLower(raw)
-		// csv is a spreadsheet-family member but uses its own
+		// csv/tsv is a spreadsheet-family member but uses its own
 		// dedicated parser rather than the xlsx/xls path.
-		if lower == "csv" {
+		if lower == "csv" || lower == "tsv" {
 			return utility.FileTypeCSV
 		}
 		// Direct extension match first — handles exact hints like
@@ -221,7 +221,7 @@ func pythonFamilyName(raw string) string {
 		return "slides"
 	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"
-	case "csv":
+	case "csv", "tsv":
 		return "spreadsheet"
 	case "html", "htm":
 		return "html"

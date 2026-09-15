@@ -18,6 +18,7 @@ package parser
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -300,3 +301,23 @@ func TestDecodeTableColumnConfig(t *testing.T) {
 		t.Errorf("expected roles colC=both, got %v", roles2)
 	}
 }
+
+func TestRenderRowsToJSONChunks_SkipLeadingEmptyRows(t *testing.T) {
+	rows := [][]string{
+		{"", "  ", ""},
+		{"Name", "Age", "Role"},
+		{"Alice", "30", "Engineer"},
+	}
+	items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil)
+	if len(headers) != 3 || headers[0] != "Name" || headers[1] != "Age" || headers[2] != "Role" {
+		t.Fatalf("expected headers [Name Age Role], got %v", headers)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	text := items[0]["text"].(string)
+	if !strings.Contains(text, "Alice") {
+		t.Errorf("expected text to contain Alice, got %q", text)
+	}
+}
+
