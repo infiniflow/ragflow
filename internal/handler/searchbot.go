@@ -34,9 +34,11 @@ import (
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
-	Question string             `json:"question" binding:"required"`
-	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
-	SearchID string             `json:"search_id,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KbIDs    common.StringSlice       `json:"kb_ids" binding:"required"`
+	SearchID string                   `json:"search_id,omitempty"`
 }
 
 // SearchBotMindMapRequest is the request body for POST /api/v1/searchbots/mindmap.
@@ -52,6 +54,7 @@ type SearchBotRetrievalTestRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -235,6 +238,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.Question = question
 
 	// Filter empty kb_ids.
 	filtered := make(common.StringSlice, 0, len(req.KbIDs))
@@ -509,6 +519,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		Question:               h.Question,
 		Page:                   h.Page,
 		Size:                   h.Size,
+		RerankCandidatesCount:  h.RerankCandidatesCount,
 		DocIDs:                 h.DocIDs,
 		UseKG:                  h.UseKG,
 		TopK:                   h.TopK,

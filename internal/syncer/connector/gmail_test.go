@@ -17,7 +17,7 @@ func TestGmailConnectorOpenSync(t *testing.T) {
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-03T00:00:00Z")
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		return gmailTestThread(threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want thread-2", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -103,8 +103,17 @@ func TestGmailConnectorOpenSyncResumesWithinPage(t *testing.T) {
 	}
 }
 
-// TestGmailConnectorResumeUsesFilenameWhenOffsetChanged verifies page deletions resume from the current filename offset.
-func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
+func TestGmailConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := newFixtureGmailConnector()
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
+// TestGmailConnectorResumeRejectsMissingRemoteAnchor verifies a deleted list item invalidates the saved anchor.
+func TestGmailConnectorResumeRejectsMissingRemoteAnchor(t *testing.T) {
 	connector := newFixtureGmailConnector()
 	connector.GmailConnector.batchSize = 2
 	connector.GmailConnector.listThreadPage = func(ctx context.Context, userEmail, query, pageToken string, pageSize int) (gmailThreadListPage, error) {
@@ -115,7 +124,7 @@ func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 	connector.GmailConnector.getThread = func(ctx context.Context, userEmail, threadID string) (gmailThread, error) {
 		return gmailTestThreadWithSubject(threadID, threadID, "Fri, 02 Jan 2026 03:04:05 +0000")
 	}
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -137,19 +146,16 @@ func TestGmailConnectorResumeUsesFilenameWhenOffsetChanged(t *testing.T) {
 			ID string `json:"id"`
 		}{{ID: "thread-1"}, {ID: "thread-3"}}}, nil
 	}
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
-	second, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
+	_, err = resumed.NextBatch(context.Background())
+	if err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "thread-3" {
-		t.Fatalf("resume documents = %+v, want thread-3", second.Documents)
-	}
-	if resumeListCalls != 1 {
-		t.Fatalf("resume list calls = %d, want one checkpoint page", resumeListCalls)
+	if resumeListCalls == 0 {
+		t.Fatalf("resume should have listed the current remote page")
 	}
 }
 
@@ -219,7 +225,7 @@ func TestGmailOwnersMetadataSorted(t *testing.T) {
 // TestGmailConnectorOpenPrune verifies Gmail prune emits thread IDs only.
 func TestGmailConnectorOpenPrune(t *testing.T) {
 	connector := newFixtureGmailConnector()
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -241,15 +247,15 @@ func TestGmailConnectorClientForUserCachesByMailbox(t *testing.T) {
 		return &http.Client{}, nil
 	}
 
-	first, err := connector.clientForUser(context.Background(), "a@example.com")
+	first, err := connector.clientForUser(t.Context(), "a@example.com")
 	if err != nil {
 		t.Fatalf("first client: %v", err)
 	}
-	second, err := connector.clientForUser(context.Background(), "a@example.com")
+	second, err := connector.clientForUser(t.Context(), "a@example.com")
 	if err != nil {
 		t.Fatalf("second client: %v", err)
 	}
-	other, err := connector.clientForUser(context.Background(), "b@example.com")
+	other, err := connector.clientForUser(t.Context(), "b@example.com")
 	if err != nil {
 		t.Fatalf("other client: %v", err)
 	}

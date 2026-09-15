@@ -190,6 +190,7 @@ def _load_llm_app(monkeypatch):
             return []
 
     llm_service_mod.LLMService = _StubLLMService
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")

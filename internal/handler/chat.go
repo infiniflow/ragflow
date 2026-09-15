@@ -369,6 +369,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"similarity_threshold":     chat.SimilarityThreshold,
 		"vector_similarity_weight": chat.VectorSimilarityWeight,
 		"top_n":                    chat.TopN,
+		"rerank_candidates_count":  chat.RerankCandidatesCount,
 		"top_k":                    chat.TopK,
 		"do_refer":                 chat.DoRefer,
 		"rerank_id":                chat.RerankID,

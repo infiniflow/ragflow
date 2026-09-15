@@ -186,7 +186,7 @@ class BoxConnector(LoadConnector, PollConnector):
 # app = Flask(__name__)
 
 # AUTH = BoxOAuth(
-#     OAuthConfig(client_id="8suvn9ik7qezsq2dub0ye6ubox61081z", client_secret="QScvhLgBcZrb2ck1QP1ovkutpRhI2QcN")
+#     OAuthConfig(client_id="<your-client-id>", client_secret="<your-client-secret>")
 # )
 
 

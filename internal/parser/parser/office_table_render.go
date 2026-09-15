@@ -17,8 +17,12 @@
 package parser
 
 import (
+	"encoding/base64"
+	"fmt"
 	"html"
+	"log/slog"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -36,7 +40,323 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // value parsing.
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
-const defaultTableChunkRows = 256
+func recordsToSpreadsheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) []map[string]any {
+	if len(records) == 0 {
+		return nil
+	}
+	if headerRow <= 0 {
+		headerRow = 1
+	}
+	if len(dataRows) != len(records)-1 {
+		dataRows = make([]int, len(records)-1)
+		for i := range dataRows {
+			dataRows[i] = headerRow + i + 1
+		}
+	}
+	maxCols := 0
+	for _, row := range records {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+	if maxCols == 0 {
+		return nil
+	}
+	header := append([]string(nil), records[0]...)
+	if len(header) == 0 && maxCols > 0 {
+		header = padSpreadsheetRow(header, maxCols)
+	}
+	headerColEnd := len(header)
+	if headerColEnd == 0 {
+		headerColEnd = maxCols
+	}
+	if headerColEnd == 0 {
+		headerColEnd = 1
+	}
+	tableID := fmt.Sprintf("sheet-%d", sheetIndex)
+	items := make([]map[string]any, 0, len(records))
+	headerText := spreadsheetRowText(header, nil, sheet)
+	items = append(items, map[string]any{
+		"text":         headerText,
+		"doc_type_kwd": DocTypeTable,
+		"ck_type":      "table_header",
+		"table_id":     tableID,
+		"sheet":        sheet,
+		"sheet_index":  sheetIndex,
+		"cells":        header,
+		"row_start":    headerRow,
+		"row_end":      headerRow,
+		"col_start":    1,
+		"col_end":      headerColEnd,
+		"positions":    [][]float64{{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)}},
+	})
+	for i, sourceRow := range records[1:] {
+		cells := append([]string(nil), sourceRow...)
+		colStart, colEnd := nonEmptyColumnRange(cells)
+		if colStart == 0 {
+			continue
+		}
+		rowNumber := dataRows[i]
+		items = append(items, map[string]any{
+			"text":         spreadsheetRowText(header, cells, sheet),
+			"doc_type_kwd": DocTypeText,
+			"ck_type":      "table_row",
+			"table_id":     tableID,
+			"sheet":        sheet,
+			"sheet_index":  sheetIndex,
+			"headers":      header,
+			"cells":        cells,
+			"row_start":    rowNumber,
+			"row_end":      rowNumber,
+			"col_start":    colStart,
+			"col_end":      colEnd,
+			"positions":    [][]float64{{float64(sheetIndex), float64(rowNumber), float64(rowNumber), float64(colStart), float64(colEnd)}},
+		})
+	}
+	return items
+}
+
+func recordsToHTMLTableItem(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) map[string]any {
+	if len(records) == 0 {
+		return nil
+	}
+	if headerRow <= 0 {
+		headerRow = 1
+	}
+	colEnd := 1
+	for _, row := range records {
+		if len(row) > colEnd {
+			colEnd = len(row)
+		}
+	}
+	var builder strings.Builder
+	builder.WriteString("<table><caption>")
+	builder.WriteString(html.EscapeString(sheet))
+	builder.WriteString("</caption>\n<tr>")
+	for _, cell := range records[0] {
+		builder.WriteString("<th>")
+		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
+		builder.WriteString("</th>")
+	}
+	builder.WriteString("</tr>\n")
+	for _, row := range records[1:] {
+		builder.WriteString("<tr>")
+		for _, cell := range row {
+			builder.WriteString("<td>")
+			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
+			builder.WriteString("</td>")
+		}
+		builder.WriteString("</tr>\n")
+	}
+	builder.WriteString("</table>\n")
+	rowStart, rowEnd := headerRow, headerRow
+	if len(dataRows) > 0 {
+		rowStart, rowEnd = dataRows[0], dataRows[len(dataRows)-1]
+	}
+	return NewTableJSONItem(builder.String(), sheet, [][]float64{{
+		float64(sheetIndex), float64(rowStart), float64(rowEnd), 1, float64(colEnd),
+	}})
+}
+
+func padSpreadsheetRow(row []string, width int) []string {
+	padded := make([]string, width)
+	copy(padded, row)
+	return padded
+}
+
+func nonEmptyColumnRange(row []string) (int, int) {
+	start, end := 0, 0
+	for i, cell := range row {
+		if strings.TrimSpace(cell) == "" {
+			continue
+		}
+		col := i + 1
+		if start == 0 {
+			start = col
+		}
+		end = col
+	}
+	return start, end
+}
+
+func spreadsheetRowText(headers, cells []string, sheet string) string {
+	values := headers
+	if cells != nil {
+		values = cells
+	}
+	parts := make([]string, 0, len(values))
+	for i, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if cells == nil {
+			parts = append(parts, value)
+			continue
+		}
+		header := ""
+		if i < len(headers) {
+			header = strings.TrimSpace(headers[i])
+		}
+		if header != "" {
+			parts = append(parts, header+"："+value)
+		} else {
+			parts = append(parts, value)
+		}
+	}
+	text := strings.Join(parts, "; ")
+	if cells != nil && sheet != "" && !strings.Contains(strings.ToLower(sheet), "sheet") {
+		text += " ——" + sheet
+	}
+	return text
+}
+
+func sortSpreadsheetItems(items []map[string]any) {
+	sort.SliceStable(items, func(i, j int) bool {
+		headerI := items[i]["ck_type"] == "table_header"
+		headerJ := items[j]["ck_type"] == "table_header"
+		if headerI != headerJ {
+			return headerI
+		}
+		ri, ci := spreadsheetItemCoordinate(items[i])
+		rj, cj := spreadsheetItemCoordinate(items[j])
+		if ri != rj {
+			return ri < rj
+		}
+		if ci != cj {
+			return ci < cj
+		}
+		return spreadsheetItemKindRank(items[i]) < spreadsheetItemKindRank(items[j])
+	})
+}
+
+func spreadsheetItemCoordinate(item map[string]any) (int, int) {
+	row, _ := numericItemInt(item["row_start"])
+	col, _ := numericItemInt(item["col_start"])
+	return row, col
+}
+
+func spreadsheetItemKindRank(item map[string]any) int {
+	if item["ck_type"] == "image" {
+		return 1
+	}
+	return 0
+}
+
+func numericItemInt(value any) (int, bool) {
+	switch n := value.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+// deprecatedChunkRows reports the removed parser-side chunking option. Row
+// boundaries are now emitted as structured IR and the selected chunker owns
+// token-budget merging; silently accepting chunk_rows would make an existing
+// configuration look effective when it is not.
+func deprecatedChunkRows(setup map[string]any, parserName string) {
+	raw, exists := setup["chunk_rows"]
+	if !exists {
+		return
+	}
+	rows, ok := numericItemInt(raw)
+	if !ok {
+		slog.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", raw)
+		return
+	}
+	slog.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker", "parser", parserName, "chunk_rows", rows)
+}
+
+// extractXLSXImages returns the floating and in-cell images anchored to a
+// worksheet as structured parser items. Excelize exposes both kinds through
+// GetPictureCells/GetPictures; walking the reported anchor cells avoids
+// scanning the worksheet's entire coordinate space.
+func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []string) {
+	cells, err := f.GetPictureCells(sheet)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
+	}
+	if len(cells) == 0 {
+		return nil, nil
+	}
+
+	items := make([]map[string]any, 0, len(cells))
+	warnings := make([]string, 0)
+	for _, cell := range cells {
+		pictures, err := f.GetPictures(sheet, cell)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("XLSX image extraction failed for sheet %q cell %s: %v", sheet, cell, err))
+			continue
+		}
+		for _, picture := range pictures {
+			if len(picture.File) == 0 {
+				continue
+			}
+			mimeType, ok := xlsxImageMIMEType(picture.Extension)
+			if !ok {
+				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
+				continue
+			}
+			encoded := base64.StdEncoding.EncodeToString(picture.File)
+			alt := cell
+			if picture.Format != nil && picture.Format.AltText != "" {
+				alt = picture.Format.AltText
+			}
+			row, col := axisToRC(cell)
+			items = append(items, map[string]any{
+				"text":         alt,
+				"doc_type_kwd": "image",
+				"ck_type":      "image",
+				"image":        "data:" + mimeType + ";base64," + encoded,
+				"sheet":        sheet,
+				"cell":         cell,
+				"row_start":    row,
+				"row_end":      row,
+				"col_start":    col,
+				"col_end":      col,
+			})
+		}
+	}
+	return items, warnings
+}
+
+func xlsxImageMIMEType(extension string) (string, bool) {
+	switch strings.TrimPrefix(strings.ToLower(extension), ".") {
+	case "jpg", "jpeg":
+		return "image/jpeg", true
+	case "gif":
+		return "image/gif", true
+	case "bmp":
+		return "image/bmp", true
+	case "tif", "tiff":
+		return "image/tiff", true
+	case "svg":
+		return "image/svg+xml", true
+	case "png":
+		return "image/png", true
+	case "emf":
+		return "image/x-emf", true
+	case "emz":
+		return "image/x-emz", true
+	case "ico":
+		return "image/x-icon", true
+	case "wmf":
+		return "image/x-wmf", true
+	case "wmz":
+		return "image/x-wmz", true
+	default:
+		return "", false
+	}
+}
 
 // maxMergeExtentCols caps how far a merged range may widen the header row.
 // excelize's GetRows truncates each row at its last valued cell, so a merged
@@ -57,75 +377,6 @@ func cleanIllegalControlChars(records [][]string) [][]string {
 		}
 	}
 	return out
-}
-
-// buildHeaderRow renders a row as an HTML <th> header row.
-func buildHeaderRow(row []string) string {
-	var b strings.Builder
-	b.WriteString("<tr>")
-	for _, cell := range row {
-		b.WriteString("<th>")
-		b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		b.WriteString("</th>")
-	}
-	b.WriteString("</tr>\n")
-	return b.String()
-}
-
-// recordsToHTMLTableChunks renders records as one or more self-contained HTML
-// <table> chunks. The first row is always the header (<th>). Data rows are
-// split into chunks of chunkRows, each chunk being a complete <table> with
-// <caption> and a repeated header row. Chunks are joined with newlines.
-//
-// The tag schema is <table><caption>{caption}</caption><tr><th>…</th></tr>
-// <tr><td>…</td></tr>…</table>. Rows are intentionally NOT wrapped in
-// <thead>/<tbody>, so every <table> is one atomic chunk that downstream
-// chunkers can consume independently.
-func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
-	if len(records) == 0 {
-		return "<table><caption>" + html.EscapeString(caption) + "</caption></table>"
-	}
-
-	// Build the header row once — repeated in every chunk.
-	headerHTML := buildHeaderRow(records[0])
-	dataRows := records[1:]
-	nData := len(dataRows)
-
-	if nData == 0 {
-		// Only a header row exists.
-		return "<table><caption>" + html.EscapeString(caption) + "</caption>\n" + headerHTML + "</table>"
-	}
-
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-
-	nChunks := (nData + chunkRows - 1) / chunkRows
-	var b strings.Builder
-	for ci := 0; ci < nChunks; ci++ {
-		start := ci * chunkRows
-		end := start + chunkRows
-		if end > nData {
-			end = nData
-		}
-
-		b.WriteString("<table><caption>")
-		b.WriteString(html.EscapeString(caption))
-		b.WriteString("</caption>\n")
-		b.WriteString(headerHTML)
-
-		for _, row := range dataRows[start:end] {
-			b.WriteString("<tr>")
-			for _, cell := range row {
-				b.WriteString("<td>")
-				b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-				b.WriteString("</td>")
-			}
-			b.WriteString("</tr>\n")
-		}
-		b.WriteString("</table>\n")
-	}
-	return b.String()
 }
 
 // ──────────────────────────────────────────────────────────── axis helpers
@@ -188,11 +439,11 @@ type mergeRange struct {
 }
 
 // mergeRanges returns the merged-cell rectangles of a sheet.
-func mergeRanges(f *excelize.File, sheet string) []mergeRange {
+func mergeRanges(f *excelize.File, sheet string) ([]mergeRange, error) {
 	var out []mergeRange
-	cells, err := f.GetMergeCells(sheet)
+	cells, err := f.GetMergeCells(sheet, true)
 	if err != nil {
-		return out
+		return nil, err
 	}
 	for _, mc := range cells {
 		sr, sc := axisToRC(mc.GetStartAxis())
@@ -202,7 +453,7 @@ func mergeRanges(f *excelize.File, sheet string) []mergeRange {
 		}
 		out = append(out, mergeRange{sr, sc, er, ec})
 	}
-	return out
+	return out, nil
 }
 
 // mergeMaxCol returns the furthest merged column across all ranges, or 0 if
@@ -272,7 +523,7 @@ func mergeExtentCol(ranges []mergeRange) int {
 }
 
 // padRowToWidth grows a single row to at least maxCol, padding with empty
-// strings. Only the header row is padded (see renderSheetTables): merged-master
+// strings. Only the header row is padded: merged-master
 // text is inherited into the header alone, so data rows must not be widened —
 // widening them would emit a sea of empty <td> cells for every far merge in the
 // sheet and is the memory blow-up flagged in review.
@@ -326,14 +577,14 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
 //     header-on-row-1 sheet is left unchanged.
-func detectHeaderRow(f *excelize.File, sheet string, records [][]string) int {
+func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
 	n := len(records)
 	if n == 0 {
 		return 1
 	}
 
 	// 1) ListObject first.
-	if tables, err := f.GetTables(sheet); err == nil && len(tables) > 0 {
+	if len(tables) > 0 {
 		minTop := 0
 		for _, t := range tables {
 			tr := rangeTopRow(t.Range)
@@ -474,52 +725,26 @@ func isSubtotalRow(row []string) bool {
 	return false
 }
 
-// decodeChunkRows reads the "chunk_rows" setup knob, returning the default when
-// it is absent or non-positive.
-func decodeChunkRows(setup map[string]any) int {
-	if setup == nil {
-		return defaultTableChunkRows
-	}
-	v, ok := setup["chunk_rows"]
-	if !ok {
-		return defaultTableChunkRows
-	}
-	switch n := v.(type) {
-	case float64:
-		rows := int(n)
-		if rows <= 0 {
-			return defaultTableChunkRows
-		}
-		return rows
-	case int:
-		if n <= 0 {
-			return defaultTableChunkRows
-		}
-		return n
-	case int64:
-		rows := int(n)
-		if rows <= 0 {
-			return defaultTableChunkRows
-		}
-		return rows
-	}
-	return defaultTableChunkRows
-}
-
-// renderSheetTables renders a single workbook sheet into one or more
-// self-contained <table> chunks using the shared spreadsheet-HTML contract:
-// detect the header row, inherit merged-master text into the header, and split
-// data into chunkRows-sized atomic tables each repeating the header. An empty
-// or unreadable sheet yields an empty string.
-func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []string, error) {
 	rows, err := f.GetRows(sheet)
-	if err != nil || len(rows) == 0 {
-		return ""
+	if err != nil {
+		return nil, nil, 0, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+	}
+	if len(rows) == 0 {
+		return nil, nil, 0, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
 
-	ranges := mergeRanges(f, sheet)
-	headerRow := detectHeaderRow(f, sheet, rows)
+	var warnings []string
+	ranges, err := mergeRanges(f, sheet)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q merged cells: %v", sheet, err))
+	}
+	tables, err := f.GetTables(sheet)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
+	}
+	headerRow := detectHeaderRow(f, sheet, rows, tables)
 
 	// Inherit merged-master text into the header row. excelize's GetRows
 	// truncates each row at its last valued cell, so a merged slave beyond that
@@ -538,11 +763,14 @@ func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
 	// data. For the common case (header on row 1) this is a no-op.
 	records := make([][]string, 0, len(rows))
 	records = append(records, rows[headerRow-1])
+	absDataRows := make([]int, 0, len(rows)-1)
 	for i, r := range rows {
 		if i == headerRow-1 {
 			continue
 		}
 		records = append(records, r)
+		absDataRows = append(absDataRows, i+1)
 	}
-	return recordsToHTMLTableChunks(records, chunkRows, sheet)
+
+	return records, absDataRows, headerRow, warnings, nil
 }

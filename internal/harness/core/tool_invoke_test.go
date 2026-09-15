@@ -36,7 +36,7 @@ func TestToolWrapperChain_NoMiddleware(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestToolWrapperChain_MiddlewareOrder(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw1, mw2)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestNewTimeoutToolMiddleware_NoTimeout(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestNewTimeoutToolMiddleware_ToolExceedsTimeout(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Error("expected timeout error")
 	}
@@ -137,7 +137,7 @@ func TestNewTimeoutToolMiddleware_PerInvocationTimeout(t *testing.T) {
 	// Per-invocation timeout (shorter) should be used
 	ictx := &ToolInvocationContext{Timeout: 100 * time.Millisecond}
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), ictx)
+	result, err := chained(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestNewRetryToolMiddleware_SuccessFirstTry(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestNewRetryToolMiddleware_RetriesOnFailure(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestNewRetryToolMiddleware_Exhausted(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected retry exhausted error")
 	}
@@ -217,7 +217,7 @@ func TestNewRetryToolMiddleware_NonRetryableError(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -242,7 +242,7 @@ func TestNewFallbackToolMiddleware_PrimarySucceeds(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestNewFallbackToolMiddleware_FallbackOnFailure(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestNewFallbackToolMiddleware_NoFallbackConfigured(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	_, err := chained(context.Background(), &ToolInvocationContext{})
+	_, err := chained(t.Context(), &ToolInvocationContext{})
 	if err == nil {
 		t.Fatal("expected error when primary fails with no fallback")
 	}
@@ -312,7 +312,7 @@ func TestToolWrapperChain_TimeoutThenRetry(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, timeoutMw, retryMw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestToolToInvokeFn(t *testing.T) {
 		Arguments: &schema.ToolArgument{Arguments: `"hello"`},
 	}
 
-	result, err := invokeFn(context.Background(), ictx)
+	result, err := invokeFn(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestEnhancedToolToInvokeFn(t *testing.T) {
 		},
 	}
 
-	result, err := invokeFn(context.Background(), ictx)
+	result, err := invokeFn(t.Context(), ictx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestAutoApprovalMiddleware(t *testing.T) {
 	}
 
 	chained := ToolWrapperChain(fn, mw)
-	result, err := chained(context.Background(), &ToolInvocationContext{})
+	result, err := chained(t.Context(), &ToolInvocationContext{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

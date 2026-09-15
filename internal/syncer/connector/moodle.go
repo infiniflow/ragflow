@@ -125,7 +125,9 @@ func (c *MoodleConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		batchSize: c.batchSize,
 	}
 	if request.Resume != nil {
-		session.applyResume(request.Resume)
+		if err := session.applyResume(request.Resume); err != nil {
+			return nil, err
+		}
 	}
 	return session, nil
 }
@@ -668,6 +670,8 @@ type moodleSyncSession struct {
 	request             SyncRequest
 	batchSize           int
 	resumeAfterCourseID int64
+	resumeCourseSet     bool
+	resumeCourseChecked bool
 
 	coursesLoaded     bool
 	courses           []moodleCourse
@@ -691,6 +695,19 @@ func (s *moodleSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				}
 				s.courses = courses
 				s.coursesLoaded = true
+				if s.resumeCourseSet && !s.resumeCourseChecked {
+					found := false
+					for _, course := range s.courses {
+						if course.ID == s.resumeAfterCourseID {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return SyncBatch{}, fmt.Errorf("moodle resume course %d was not found in the current listing: %w", s.resumeAfterCourseID, ErrSyncResumeInvalid)
+					}
+					s.resumeCourseChecked = true
+				}
 			}
 			if s.courseIndex >= len(s.courses) {
 				s.done = true
@@ -743,17 +760,22 @@ func (s *moodleSyncSession) Close() error {
 	return nil
 }
 
-func (s *moodleSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *moodleSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	const prefix = "moodle_course_"
-	if !strings.HasPrefix(sourceID, prefix) {
-		return
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("moodle sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	courseID, err := strconv.ParseInt(strings.TrimPrefix(sourceID, prefix), 10, 64)
 	if err != nil {
-		return
+		return fmt.Errorf("moodle sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	s.resumeAfterCourseID = courseID
+	s.resumeCourseSet = true
+	return nil
 }
 
 type moodlePruneSession struct {
@@ -935,7 +957,7 @@ func moodleAssertURLSafe(ctx context.Context, rawURL, originURL string) (string,
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
+		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
 	}
 	if len(addrs) == 0 {
 		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)

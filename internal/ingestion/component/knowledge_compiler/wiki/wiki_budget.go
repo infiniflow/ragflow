@@ -6,27 +6,24 @@ import "sort"
 // wiki variant with Python's wiki.py:
 //
 //   - a global target_page_count derived from item count (clamp(8, total//3, 60));
-//   - a dynamic max_page_count derived from the model's context window that acts
+//   - a dynamic max_page_count derived from the model's configured output cap that acts
 //     as an unbreakable hard cap (output-token capacity vs page-token estimate);
 //   - per-batch page quotas distributed by largest-remainder so the quota sum
 //     equals the global target and no batch silently multiplies the page count;
 //   - a deterministic, mention-grounded truncation that selects the top pages
 //     under the global cap and reports how many were excluded.
 //
-// The provider receives an explicit output max_tokens on the wiki PLAN path
-// equal to outputTokens (below): without it, small-window models default to a
-// tiny completion cap and the large plan JSON gets truncated mid-stream,
-// producing "LLM response is not parseable JSON". The REFINE (page body)
-// step uses its own cap via wikiRefineMaxTokens. capacity (max page count) and
-// outputTokens (hard completion cap) both derive from the same model window.
+// The LLM request uses the selected model's max_output configuration. This
+// budget only uses that same value to keep the requested page count within the
+// configured output capacity.
 
 // Python alignment constants (wiki.py:1670-1674, 1783-1787).
 const (
-	wikiPlanMaxOutputTokens    = 4096
-	wikiPlanOutputSafetyTokens = 256
-	wikiPlanPageTokenEstimate  = 48
-	wikiPlanTargetPageCountMin = 8
-	wikiPlanTargetPageCountMax = 60
+	wikiPlanDefaultOutputTokens = 4096
+	wikiPlanOutputSafetyTokens  = 256
+	wikiPlanPageTokenEstimate   = 48
+	wikiPlanTargetPageCountMin  = 8
+	wikiPlanTargetPageCountMax  = 60
 )
 
 // wikiTargetPageCount mirrors Python _wiki_target_page_count:
@@ -57,11 +54,6 @@ type wikiPlanBudget struct {
 	// target; that is deliberate (never ask a small-window model for more pages
 	// than its output can hold).
 	Max int
-	// MaxTokens is the explicit completion cap sent to the provider for the
-	// PLAN step. It is the same outputTokens used to derive Max and prevents
-	// the large page JSON from being truncated mid-stream by a small default
-	// completion cap.
-	MaxTokens int
 }
 
 // Cap is the page budget the planner is actually allowed to emit. It is the
@@ -75,24 +67,15 @@ func (b wikiPlanBudget) Cap() int {
 	return b.Target
 }
 
-// deriveWikiPlanBudget computes the global page budget from the model's context
-// window and the reduced item count, mirroring Python's
-// output_tokens / output_page_capacity / max_page_count derivation
-// (wiki.py:2066-2078). modelContextLen is the chat model's context window in
-// tokens (0 means unknown).
-func deriveWikiPlanBudget(modelContextLen, totalItems int) wikiPlanBudget {
+// deriveWikiPlanBudget computes the global page budget from the model's
+// configured generation cap and the reduced item count. A missing generation
+// cap uses a conservative internal estimate without changing the LLM request.
+func deriveWikiPlanBudget(modelMaxOutput, totalItems int) wikiPlanBudget {
 	target := wikiTargetPageCount(totalItems)
 
-	if modelContextLen <= 0 {
-		modelContextLen = 8192
-	}
-	// output_tokens = min(4096, max(1024, int(model_context * 0.4))).
-	outputTokens := modelContextLen * 2 / 5 // 0.4
-	if outputTokens < 1024 {
-		outputTokens = 1024
-	}
-	if outputTokens > wikiPlanMaxOutputTokens {
-		outputTokens = wikiPlanMaxOutputTokens
+	outputTokens := modelMaxOutput
+	if outputTokens <= 0 {
+		outputTokens = wikiPlanDefaultOutputTokens
 	}
 
 	capacity := (outputTokens - wikiPlanOutputSafetyTokens) / wikiPlanPageTokenEstimate
@@ -111,7 +94,7 @@ func deriveWikiPlanBudget(modelContextLen, totalItems int) wikiPlanBudget {
 	// never be asked to emit more pages than its output capacity permits, or we
 	// reintroduce truncated-JSON risk. When capacity < Target, Max simply lands
 	// below Target and the achievable page count is capacity-bound.
-	return wikiPlanBudget{Target: target, Max: maxCount, MaxTokens: outputTokens}
+	return wikiPlanBudget{Target: target, Max: maxCount}
 }
 
 // wikiExtractItemCount counts the planning items in one reduced extract. It is

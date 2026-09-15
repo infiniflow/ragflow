@@ -196,7 +196,7 @@ func bytesToInt(data []byte) int64 {
 func GenerateSecretKey() (string, error) {
 	bytes := make([]byte, 32) // 32 bytes = 256 bits
 	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate random key: %v", err)
+		return "", fmt.Errorf("failed to generate random key: %w", err)
 	}
 	return hex.EncodeToString(bytes), nil
 }

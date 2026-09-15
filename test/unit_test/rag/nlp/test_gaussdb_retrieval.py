@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import sys
 import types
 from unittest.mock import AsyncMock, Mock
@@ -208,6 +209,128 @@ class FakeQueryer:
         return MatchTextExpr(["content_with_weight"], text, 1024), [text]
 
 
+class RetryStore(FakeGaussDBStore):
+    def __init__(self, totals, mutate=False):
+        self.totals = iter(totals)
+        self.calls = []
+        self.mutate = mutate
+
+    def search(self, *args, **kwargs):
+        self.calls.append(copy.deepcopy((args, kwargs)))
+        if self.mutate:
+            dense = next((expr for expr in args[3] if isinstance(expr, MatchDenseExpr)), None)
+            if dense:
+                dense.extra_options.pop("num_candidates", None)
+                dense.extra_options["filter"] = "connector-added"
+        return type("SearchResult", (), {"total": next(self.totals), "chunks": []})()
+
+
+async def run_retry_search(dealer_cls, totals, *, queryer=None, mutate=False, doc_ids=None):
+    dealer = make_dealer(dealer_cls)
+    dealer.qryr = queryer or FakeQueryer()
+    dealer.dataStore = RetryStore(totals, mutate)
+
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr(
+            "q_4_vec",
+            [0.1, 0.2, 0.3, 0.4],
+            "float",
+            "cosine",
+            top_k,
+            {"similarity": similarity, "num_candidates": num_candidates, "future_option": "kept"},
+        )
+
+    dealer.get_vector = fake_get_vector
+    req = {
+        "question": "ปัญหาแจ้งระบบภาษี",
+        "page": 1,
+        "size": 5,
+        "kb_ids": ["kb1"],
+        "available_int": 1,
+        "must_not": {"exists": "compile_kwd"},
+        "knn_top_k": 7,
+        "knn_num_candidates": 19,
+    }
+    if doc_ids:
+        req["doc_ids"] = doc_ids
+    await dealer.search(req, "ragflow_tenant", ["kb1"], emb_mdl=object(), highlight=True)
+    return dealer.dataStore.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("totals", "expected_calls", "final_expression_count"),
+    [([1], 1, 3), ([0, 1], 2, 3), ([0, 0, 1], 3, 1), ([0, 0, 0], 3, 1)],
+    ids=["one-weak-lexical-hit", "relaxed-hit", "dense-recovery", "dense-recovery-empty"],
+)
+async def test_dense_fallback_runs_only_after_empty_hybrid_attempts(dealer_cls, totals, expected_calls, final_expression_count):
+    calls = await run_retry_search(dealer_cls, totals)
+
+    assert len(calls) == expected_calls
+    assert len(calls[-1][0][3]) == final_expression_count
+    if expected_calls == 3:
+        args, kwargs = calls[-1]
+        dense = args[3][0]
+        assert args[1] == []
+        assert args[2] == {"kb_id": ["kb1"], "available_int": 1, "must_not": {"exists": "compile_kwd"}}
+        assert args[8] == ["kb1"]
+        assert kwargs == {"rank_feature": None}
+        assert dense.topn == 7
+        assert dense.extra_options == {"similarity": 0.17, "num_candidates": 19, "future_option": "kept"}
+
+
+@pytest.mark.asyncio
+async def test_dense_fallback_uses_pristine_expression(dealer_cls):
+    calls = await run_retry_search(dealer_cls, [0, 0, 1], mutate=True)
+
+    for index, (args, _) in enumerate(calls):
+        dense = next(expr for expr in args[3] if isinstance(expr, MatchDenseExpr))
+        assert dense.extra_options == {
+            "similarity": 0.1 if index == 0 else 0.17,
+            "num_candidates": 19,
+            "future_option": "kept",
+        }
+
+
+@pytest.mark.asyncio
+async def test_no_lexical_expression_stays_single_dense_search(dealer_cls):
+    calls = await run_retry_search(dealer_cls, [0, 0], queryer=types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, [])))
+
+    assert len(calls) == 2
+    assert len(calls[-1][0][3]) == 1
+    assert isinstance(calls[-1][0][3][0], MatchDenseExpr)
+    assert calls[-1][0][3][0].extra_options["similarity"] == 0.17
+
+
+@pytest.mark.asyncio
+async def test_dense_only_fallback_can_be_disabled(dealer_cls):
+    dealer = make_dealer(dealer_cls)
+    dealer.qryr = types.SimpleNamespace(question=lambda *_args, **_kwargs: (None, []))
+    dealer.dataStore = RetryStore([0])
+
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
+
+    dealer.get_vector = fake_get_vector
+    await dealer.search(
+        {"question": "query", "page": 1, "size": 5, "kb_ids": ["kb1"], "allow_dense_fallback": False},
+        "ragflow_tenant",
+        ["kb1"],
+        emb_mdl=object(),
+    )
+
+    assert len(dealer.dataStore.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_document_scope_keeps_existing_filter_only_retry(dealer_cls):
+    calls = await run_retry_search(dealer_cls, [0, 1], doc_ids=["doc-1"])
+
+    assert len(calls) == 2
+    assert calls[1][0][2]["doc_id"] == ["doc-1"]
+    assert calls[1][0][3] == []
+
+
 def retrieval_chunk(score, doc_id, doc_name, content="risk contract"):
     return {
         "_score": score,
@@ -233,8 +356,8 @@ async def test_tc_ret_801_dealer_search_uses_requested_gaussdb_fusion_weight(
     dealer = make_dealer(dealer_cls)
     dealer.qryr = FakeQueryer()
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     dealer.get_vector = fake_get_vector
 
@@ -243,7 +366,7 @@ async def test_tc_ret_801_dealer_search_uses_requested_gaussdb_fusion_weight(
             "question": "risk",
             "page": 1,
             "size": 10,
-            "topk": 10,
+            "knn_top_k": 10,
             "similarity": 0.2,
             "vector_similarity_weight": vector_weight,
         },
@@ -271,8 +394,8 @@ async def test_tc_ret_802_dealer_search_uses_default_gaussdb_fusion_weight(deale
     dealer = make_dealer(dealer_cls)
     dealer.qryr = FakeQueryer()
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     dealer.get_vector = fake_get_vector
 
@@ -308,12 +431,12 @@ async def test_tc_ret_306_retrieval_passes_threshold_with_original_similarity_ke
         page_size=10,
         similarity_threshold=0.2,
         vector_similarity_weight=0.75,
-        top=77,
+        knn_top_k=77,
         doc_ids=["doc1"],
     )
 
     assert captured["req"]["doc_ids"] == ["doc1"]
-    assert captured["req"]["topk"] == 77
+    assert captured["req"]["knn_top_k"] == 77
     assert captured["req"]["similarity"] == 0.2
     assert captured["req"]["available_int"] == 1
     assert captured["req"]["vector_similarity_weight"] == 0.75
@@ -331,8 +454,8 @@ async def _run_tc_ret_807_808_retrieval_scenario(dealer_cls):
         "mid": retrieval_chunk(0.4, "doc-mid", "Mid", "mid"),
     }
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     async def fake_prune(sres):
         return sres
@@ -379,7 +502,7 @@ async def test_tc_ret_807_retrieval_uses_gaussdb_fusion_weight_without_es_defaul
             "question": "risk",
             "page": 1,
             "size": 10,
-            "topk": 10,
+            "knn_top_k": 10,
             "similarity": 0.2,
             "vector_similarity_weight": 0.75,
         },
@@ -420,8 +543,8 @@ async def _run_gaussdb_rank_feature_retrieval(dealer_cls, fields, rank_feature):
     dealer.dataStore.ids = list(fields)
     dealer.dataStore.fields = fields
 
-    async def fake_get_vector(_text, _emb_mdl, topk=10, similarity=0.1):
-        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", topk, {"similarity": similarity})
+    async def fake_get_vector(_text, _emb_mdl, top_k=10, num_candidates=20, similarity=0.1):
+        return MatchDenseExpr("q_4_vec", [0.1, 0.2, 0.3, 0.4], "float", "cosine", top_k, {"similarity": similarity})
 
     async def fake_prune(sres):
         return sres
@@ -488,6 +611,7 @@ async def test_tc_ret_311_retrieval_keeps_term_only_gaussdb_scores_when_vector_w
             total=2,
             ids=["term-low", "term-zero"],
             query_vector=[0.1, 0.2],
+            highlight={},
             field={
                 "term-low": retrieval_chunk(0.1, "doc-low", "Low"),
                 "term-zero": retrieval_chunk(0.0, "doc-zero", "Zero"),

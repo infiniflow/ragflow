@@ -45,6 +45,7 @@ def _load_picture_module(tokenized_texts, ocr_text="", vision_error=""):
 
     llm_service = ModuleType("api.db.services.llm_service")
     llm_service.LLMBundle = FakeLLMBundle
+    llm_service.resolve_llm_setting = lambda *_args, **_kwargs: {}
 
     def resolve_default_model(*_args, **_kwargs):
         if vision_error:

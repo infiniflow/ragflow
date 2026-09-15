@@ -2,7 +2,6 @@
 package pregel
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -32,7 +31,7 @@ func TestDurabilitySync_Basic(t *testing.T) {
 		WithConfig(cfg),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "sync"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "sync"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -42,7 +41,7 @@ func TestDurabilitySync_Basic(t *testing.T) {
 	}
 
 	// Checkpoint should exist after Sync run.
-	cp, _ := ms.Get(context.Background(), map[string]interface{}{
+	cp, _ := ms.Get(t.Context(), map[string]interface{}{
 		constants.ConfigKeyThreadID: tid,
 	})
 	if cp == nil {
@@ -68,7 +67,7 @@ func TestDurabilitySync_WithInterrupt(t *testing.T) {
 		WithConfig(cfg),
 		WithInterrupts("node_a"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "sync"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "sync"})
 	_ = err
 }
 
@@ -90,7 +89,7 @@ func TestDurabilityAsync_Basic(t *testing.T) {
 		WithConfig(cfg),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "async"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "async"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -102,7 +101,7 @@ func TestDurabilityAsync_Basic(t *testing.T) {
 	// Wait briefly for async save.
 	time.Sleep(50 * time.Millisecond)
 
-	cp, _ := ms.Get(context.Background(), map[string]interface{}{
+	cp, _ := ms.Get(t.Context(), map[string]interface{}{
 		constants.ConfigKeyThreadID: tid,
 	})
 	if cp == nil {
@@ -132,7 +131,7 @@ func TestDurability_AllModes_SameOutput(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			result, err := engine.RunSync(context.Background(), map[string]any{"value": d})
+			result, err := engine.RunSync(t.Context(), map[string]any{"value": d})
 			if err != nil {
 				t.Fatalf("durability %s: %v", d, err)
 			}
@@ -163,7 +162,7 @@ func TestDurability_AllModes_LargeState(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "large"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "large"})
 			if err != nil {
 				t.Fatalf("durability %s: %v", d, err)
 			}
@@ -197,7 +196,7 @@ func TestDurability_ConcurrentEngines(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err != nil {
 				errCount.Add(1)
 				t.Errorf("engine %d (%s): %v", idx, d, err)
@@ -230,7 +229,7 @@ func TestDurability_InterruptEachMode(t *testing.T) {
 				WithConfig(cfg),
 				WithInterrupts("node_a"),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "int"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "int"})
 			_ = err
 		})
 	}
@@ -255,7 +254,7 @@ func TestDurability_RapidModeSwitch(t *testing.T) {
 			WithCheckpointer(ms),
 			WithConfig(cfg),
 		)
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "switch"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "switch"})
 		if err != nil {
 			t.Fatalf("run %d (%s): %v", i, d, err)
 		}
@@ -275,7 +274,7 @@ func TestDurability_NoCheckpointer(t *testing.T) {
 				WithRecursionLimit(10),
 				WithConfig(cfg),
 			)
-			result, err := engine.RunSync(context.Background(), map[string]any{"value": "no-cp"})
+			result, err := engine.RunSync(t.Context(), map[string]any{"value": "no-cp"})
 			if err != nil {
 				t.Fatalf("durability %s without CP: %v", d, err)
 			}
@@ -306,7 +305,7 @@ func TestDurability_ManySequentialRuns(t *testing.T) {
 			WithCheckpointer(ms),
 			WithConfig(cfg),
 		)
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "seq"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "seq"})
 		if err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
@@ -329,7 +328,7 @@ func TestDurability_DefaultConfig(t *testing.T) {
 		WithCheckpointer(ms),
 		WithConfig(cfg),
 	)
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "default"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "default"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}

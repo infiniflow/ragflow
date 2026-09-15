@@ -43,7 +43,7 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	baseName := "ragflow_chunk_readback_test"
 	datasetID := "kb-1"
 	chunkID := "readback-chunk-1"

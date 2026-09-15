@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -102,7 +103,7 @@ func TestRetry_NoTools_DirectError_Generate(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 5, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate after retry: %v", err)
@@ -120,7 +121,7 @@ func TestRetry_NoTools_DirectError_Stream(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	stream, err := wrapped.Stream(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Stream after retry: %v", err)
@@ -139,7 +140,7 @@ func TestRetry_NonRetryableError(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -153,7 +154,7 @@ func TestRetry_MaxRetriesExhausted(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 2, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -192,7 +193,7 @@ func TestRetry_BackoffFunction(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -210,7 +211,7 @@ func TestRetry_ErrStreamCanceled_NotRetried(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Logf("result: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestRetry_StreamError_NoTools(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3, IsRetryAble: func(_ context.Context, err error) bool { return true }}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	stream, err := wrapped.Stream(ctx, []Message{schema.UserMessage("stream test")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -243,7 +244,7 @@ func TestRetry_Stream_NonRetryableError_NoTools(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	stream, err := wrapped.Stream(ctx, []Message{schema.UserMessage("non-retry")})
 	if err != nil {
 		t.Logf("stream error passed through: %v", err)
@@ -265,7 +266,7 @@ func TestRetry_ShouldRetry_RejectMessage_Stream(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	stream, err := wrapped.Stream(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -284,7 +285,7 @@ func TestRetry_ShouldRetry_Generate_RewriteError(t *testing.T) {
 			if rc.Err != nil {
 				return &RetryDecision{
 					Retry:        false,
-					RewriteError: errors.New("rewritten: " + rc.Err.Error()),
+					RewriteError: fmt.Errorf("rewritten: %w", rc.Err),
 				}
 			}
 			return &RetryDecision{Retry: false}
@@ -292,7 +293,7 @@ func TestRetry_ShouldRetry_Generate_RewriteError(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Logf("Generate error: %v", err)
@@ -309,7 +310,7 @@ func TestRetry_ShouldRetry_Generate_ModifiedInput(t *testing.T) {
 	}
 	wrapped := WithModelRetry(model, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("original")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -320,7 +321,7 @@ func TestRetry_ShouldRetry_Generate_ModifiedInput(t *testing.T) {
 
 func TestRetry_DefaultBackoff(t *testing.T) {
 	for attempt := 1; attempt <= 10; attempt++ {
-		d := defaultBackoff(context.Background(), attempt)
+		d := defaultBackoff(t.Context(), attempt)
 		if d <= 0 {
 			t.Errorf("attempt %d: expected positive backoff, got %v", attempt, d)
 		}
@@ -360,14 +361,14 @@ func TestRetry_SequentialWorkflow_RetryableStream_SuccessfulRetry(t *testing.T) 
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1Wrapped}).WithName("agent_a")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b")
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "seq-retry", Description: "seq retry test", SubAgents: []Agent{a1, a2},
 	})
 	if err != nil {
 		t.Fatalf("NewSequential: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
@@ -387,14 +388,14 @@ func TestRetry_SequentialWorkflow_NonRetryableError_StopsFlow(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: wrapped}).WithName("fail_agent")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("never_agent")
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "seq-nonretry", Description: "non-retryable stops flow", SubAgents: []Agent{a1, a2},
 	})
 	if err != nil {
 		t.Fatalf("NewSequential: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 	var lastErr error
 	for {
@@ -416,10 +417,10 @@ func TestRetry_SequentialWorkflow_NonRetryableError_StopsFlow(t *testing.T) {
 // ======================== Tests: Edge Cases ========================
 
 func TestRetry_DefaultIsRetryAble(t *testing.T) {
-	if !defaultIsRetryAble(context.Background(), errors.New("any")) {
+	if !defaultIsRetryAble(t.Context(), errors.New("any")) {
 		t.Error("expected true for non-nil error")
 	}
-	if defaultIsRetryAble(context.Background(), nil) {
+	if defaultIsRetryAble(t.Context(), nil) {
 		t.Error("expected false for nil error")
 	}
 }
@@ -433,7 +434,7 @@ func TestRetry_WithTools_Generate(t *testing.T) {
 		Model: wrapped,
 	}).WithName("tool_retry")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("retry with tool context")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {

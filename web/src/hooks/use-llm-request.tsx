@@ -229,7 +229,11 @@ export const useFetchInstanceModels = (
   providerName: string,
   instanceName: string,
 ) => {
-  const { data, isFetching: loading } = useQuery<IInstanceModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isSuccess,
+  } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
     gcTime: 0,
@@ -239,11 +243,14 @@ export const useFetchInstanceModels = (
         { provider_name: providerName, instance_name: instanceName },
         true,
       );
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to fetch instance models');
+      }
       return data?.data ?? [];
     },
   });
 
-  return { data, loading };
+  return { data, loading, isSuccess };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
@@ -292,24 +299,8 @@ export const useAddProviderInstance = () => {
     ) => {
       try {
         await addProvider({ provider_name: params.llm_factory });
-
-        // When `id` is supplied the caller is updating an existing
-        // instance (blur-save on a saved card), so do not short-circuit
-        // on the "already exists" check — we *want* the server call.
-        if (!params.id) {
-          const { data: instancesRes } = await llmService.listProviderInstances(
-            { provider_name: params.llm_factory },
-            true,
-          );
-          const instanceExists = instancesRes?.data?.some(
-            (i: IProviderInstance) => i.instance_name === params.instance_name,
-          );
-          if (instanceExists && !params.verify) {
-            return { code: 0, data: null };
-          }
-        }
       } catch {
-        // ignore list failure and proceed to add
+        // ignore and proceed to add
       }
 
       // The provider is carried in the URL path
@@ -337,6 +328,9 @@ export const useAddProviderInstance = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
       }
       return data;
@@ -650,8 +644,15 @@ export const useUpdateProviderInstance = () => {
 export const useFetchDefaultModels = () => {
   const { data, isFetching: loading } = useQuery<IDefaultModel[]>({
     queryKey: LlmKeys.defaultModels(),
+    // Tenant default models change rarely, and every mutation that can change
+    // them invalidates this key explicitly, so hold the result for a while
+    // instead of refetching per observer — there is one per dataset row.
+    staleTime: 5 * 60 * 1000,
     initialData: [],
-    gcTime: 0,
+    // `initialData` alone would be timestamped as of now and so counted fresh
+    // for the whole stale window, meaning the seeded empty list would never be
+    // replaced by a real fetch. Backdate it so the first mount still fetches.
+    initialDataUpdatedAt: 0,
     queryFn: async () => {
       const { data } = await llmService.listDefaultModels({}, true);
       return data?.data?.models ?? [];

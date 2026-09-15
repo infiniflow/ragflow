@@ -74,8 +74,14 @@ class Serply:
                     }
                 )
             return normalized_results
+        except requests.HTTPError as error:
+            # requests builds the HTTPError message from the response URL, and
+            # the query is a URL parameter here, so the message must not be logged.
+            status = error.response.status_code if error.response is not None else "unknown"
+            logger.error("Serply search failed: HTTP %s", status)
+            return []
         except (requests.RequestException, TypeError, ValueError) as error:
-            logger.error("Serply search failed: %s", _safe_error_message(error, self.api_key))
+            logger.error("Serply search failed: %s", type(error).__name__)
             return []
 
     def retrieve_chunks(self, question: str) -> dict[str, list]:
@@ -116,8 +122,3 @@ class Serply:
 
 def _serply_text(value: Any) -> str:
     return "" if value is None else str(value)
-
-
-def _safe_error_message(error: Exception, api_key: str) -> str:
-    message = str(error) or error.__class__.__name__
-    return message.replace(api_key, "[REDACTED]") if api_key else message

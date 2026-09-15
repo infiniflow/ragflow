@@ -47,25 +47,26 @@
 //  1. For each memory id: look up the Memory (via MemoryService).
 //  2. Generate a raw_message_id from Redis auto-increment (namespace "memory").
 //  3. Build the raw_message envelope (mirrors Python:344-386).
-//  4. Call embed_and_save on the memory + [raw_message].
-//  5. Insert a Task row in the task table for the async extractor.
-//  6. Return not-found + failed lists.
+//  4. Insert the UI Task and durable MemoryTask rows atomically.
+//  5. Call embed_and_save on the memory + [raw_message].
+//  6. Publish a task-id wake-up for the async extractor.
+//  7. Return not-found + failed lists.
 package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
@@ -103,8 +104,11 @@ type QueueSaveResult struct {
 // MemoryMessageService is the Go port of
 // api.db.joint_services.memory_message_service.
 type MemoryMessageService struct {
-	memories *MemoryService
-	taskDAO  *dao.TaskDAO
+	memories      *MemoryService
+	taskDAO       *dao.TaskDAO
+	memoryTaskDAO *dao.MemoryTaskDAO
+	taskPublisher TaskPublisher
+	resumeTask    func(context.Context, *entity.MemoryTask, string) error
 }
 
 // NewMemoryMessageService constructs a service bound to the
@@ -113,8 +117,10 @@ type MemoryMessageService struct {
 // `component.SetMemorySaver(...)` at boot.
 func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 	return &MemoryMessageService{
-		memories: memories,
-		taskDAO:  dao.NewTaskDAO(),
+		memories:      memories,
+		taskDAO:       dao.NewTaskDAO(),
+		memoryTaskDAO: dao.NewMemoryTaskDAO(),
+		taskPublisher: NewMessageQueueTaskPublisher(),
 	}
 }
 
@@ -144,7 +150,14 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// (1) Look up the memory (no access control — trusted internal queue processing).
 		mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 		if err != nil {
-			res.NotFound = append(res.NotFound, memoryID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				res.NotFound = append(res.NotFound, memoryID)
+			} else {
+				res.Failed = append(res.Failed, MemoryFailure{
+					MemoryID: memoryID,
+					FailMsg:  err.Error(),
+				})
+			}
 			continue
 		}
 		// (2) + (3) build the raw_message envelope. The Go port
@@ -153,31 +166,65 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// schema changes.
 		rawMessageID := generateRawMessageID(ctx)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
-
-		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
-			res.Failed = append(res.Failed, MemoryFailure{
-				MemoryID: memoryID,
-				FailMsg:  err.Error(),
-			})
-			continue
-		}
-
-		task := buildTaskRow(rawMessageID, memoryID)
-		if err := s.insertTask(ctx, task); err != nil {
+		task, memoryTask := buildMemoryTaskRecords(rawMessageID, memoryID, msg)
+		if err := s.insertMemoryTask(ctx, task, memoryTask); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  fmt.Sprintf("task insert: %s", err.Error()),
 			})
 			continue
 		}
-		if err = queueMemoryTask(ctx, memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+
+		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
+			failure := fmt.Errorf("store raw memory message: %w", err)
+			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, dao.DB, task.ID, failure.Error())
+			if failErr != nil {
+				failure = errors.Join(failure, fmt.Errorf("mark memory task failed: %w", failErr))
+			} else if !failed {
+				failure = errors.Join(failure, errors.New("memory task was claimed before raw message storage completed"))
+			}
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
-				FailMsg:  err.Error(),
+				FailMsg:  failure.Error(),
 			})
+			continue
+		}
+
+		if err = publishMemoryTaskWakeup(s.taskPublisher, task.ID); err != nil {
+			common.Warn(fmt.Sprintf("memory: initial task wake-up failed; reconciler will retry: %v", err))
 		}
 	}
 	return res, nil
+}
+
+// ReconcileMemoryTasks publishes wake-ups for due, unleased durable memory
+// tasks. Publishing is idempotent because workers must claim the DB lease
+// before executing any stage.
+func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit int) error {
+	if s == nil {
+		return errors.New("memory: nil MemoryMessageService")
+	}
+	if s.memoryTaskDAO == nil {
+		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
+	}
+	if s.taskPublisher == nil {
+		return errors.New("memory task publisher is not initialized")
+	}
+
+	tasks, err := s.memoryTaskDAO.ListDue(ctx, dao.DB, memoryNow(), limit)
+	if err != nil {
+		return fmt.Errorf("memory: list due tasks: %w", err)
+	}
+	var reconcileErr error
+	for _, task := range tasks {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return errors.Join(reconcileErr, ctxErr)
+		}
+		if err = publishMemoryTaskWakeup(s.taskPublisher, task.TaskID); err != nil {
+			reconcileErr = errors.Join(reconcileErr, err)
+		}
+	}
+	return reconcileErr
 }
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
@@ -214,24 +261,45 @@ func buildRawMessage(
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      content,
-		"valid_at":     time.Now().UTC().Format("2006-01-02 15:04:05"),
-		"invalid_at":   nil,
-		"forget_at":    nil,
-		"status":       true,
+		// valid_at is stamped as server-local wall clock, not UTC.
+		"valid_at":   memoryNow().Format(memoryTimeLayout),
+		"invalid_at": nil,
+		"forget_at":  nil,
+		"status":     true,
 	}
 }
 
-// buildTaskRow constructs the Task row the async extractor polls.
-func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
-	return map[string]any{
-		"id":           newUUIDString(),
-		"doc_id":       memoryID,
-		"task_type":    "memory",
-		"progress":     0.0,
-		"progress_msg": "",
-		"begin_at":     time.Now(),
-		"digest":       fmt.Sprintf("%d", rawMessageID),
+// buildMemoryTaskRecords constructs the UI projection and authoritative
+// execution record that are inserted atomically before publishing a wake-up.
+func buildMemoryTaskRecords(rawMessageID int64, memoryID string, msg MemoryMessage) (*entity.Task, *entity.MemoryTask) {
+	taskID := newUUIDString()
+	progressMsg := ""
+	digest := fmt.Sprintf("%d", rawMessageID)
+	beginAt := time.Now()
+	task := &entity.Task{
+		ID:          taskID,
+		DocID:       memoryID,
+		TaskType:    common.TaskTypeMemory,
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+		BeginAt:     &beginAt,
+		Digest:      &digest,
 	}
+	memoryTask := &entity.MemoryTask{
+		TaskID:   taskID,
+		MemoryID: memoryID,
+		SourceID: rawMessageID,
+		Input: entity.JSONMap{
+			"user_id":        msg.UserID,
+			"agent_id":       msg.AgentID,
+			"session_id":     msg.SessionID,
+			"user_input":     msg.UserInput,
+			"agent_response": msg.AgentResponse,
+		},
+		State:     entity.MemoryTaskStatePending,
+		LastError: "",
+	}
+	return task, memoryTask
 }
 
 func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemoryResponse, rawMessage map[string]any) error {
@@ -277,7 +345,9 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		}
 		vectorDim = len(vector)
 		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
-		message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		if id, ok := message["id"].(string); !ok || id == "" {
+			message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		}
 		message["doc_id"] = message["memory_id"]
 	}
 
@@ -302,14 +372,15 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	return nil
 }
 
-func (s *MemoryMessageService) insertTask(ctx context.Context, row map[string]any) error {
+// insertMemoryTask persists both task records atomically.
+func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entity.Task, memoryTask *entity.MemoryTask) error {
 	if s == nil {
 		return errors.New("nil MemoryMessageService")
 	}
-	if s.taskDAO == nil {
-		s.taskDAO = dao.NewTaskDAO()
+	if s.memoryTaskDAO == nil {
+		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
-	return s.taskDAO.Create(ctx, dao.DB, taskFromRow(row))
+	return s.memoryTaskDAO.CreateWithTask(ctx, dao.DB, task, memoryTask)
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID
@@ -319,65 +390,17 @@ func newUUIDString() string {
 	return utility.GenerateUUID()
 }
 
-func taskFromRow(row map[string]any) *entity.Task {
-	digest := fmt.Sprint(row["digest"])
-	progressMsg := fmt.Sprint(row["progress_msg"])
-	beginAt, _ := row["begin_at"].(time.Time)
-	if beginAt.IsZero() {
-		now := time.Now()
-		beginAt = now
-	}
-	return &entity.Task{
-		ID:          fmt.Sprint(row["id"]),
-		DocID:       fmt.Sprint(row["doc_id"]),
-		TaskType:    fmt.Sprint(row["task_type"]),
-		Progress:    0,
-		ProgressMsg: &progressMsg,
-		BeginAt:     &beginAt,
-		Digest:      &digest,
-	}
-}
-
-func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
-	taskID := fmt.Sprint(task["id"])
-	message := map[string]any{
-		"id":        taskID,
-		"task_id":   taskID,
-		"task_type": task["task_type"],
-		"memory_id": memoryID,
-		"tenant_id": tenantID,
-		"source_id": rawMessageID,
-		"message_dict": map[string]any{
-			"user_id":        msg.UserID,
-			"agent_id":       msg.AgentID,
-			"session_id":     msg.SessionID,
-			"user_input":     msg.UserInput,
-			"agent_response": msg.AgentResponse,
-		},
-	}
-	// Publish the memory-extraction task to NATS (tasks.RAGFLOW) so it is
-	// consumed by the Ingestor's shared consumer + worker pool, dispatched by
-	// TaskType=="memory" in processMessage. This keeps Go out of the Python
-	// te.*.common Redis stream entirely, removing the cross-consumer
-	// contention that previously stole Python dataflow tasks.
-	mq := engine.GetMessageQueueEngine()
-	if mq == nil {
-		return errors.New("can't access message queue engine")
-	}
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("marshal memory task payload: %w", err)
+// publishMemoryTaskWakeup publishes only the durable task identity. Workers
+// load all execution input and checkpoints from memory_task.
+func publishMemoryTaskWakeup(publisher TaskPublisher, taskID string) error {
+	if publisher == nil {
+		return errors.New("memory task publisher is not initialized")
 	}
 	taskMessage := common.TaskMessage{
 		TaskID:   taskID,
 		TaskType: common.TaskTypeMemory,
-		Payload:  payload,
 	}
-	tmPayload, err := json.Marshal(taskMessage)
-	if err != nil {
-		return fmt.Errorf("marshal memory task message: %w", err)
-	}
-	if err = mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+	if err := publisher.PublishTaskMessage(common.TaskSubject, taskMessage); err != nil {
 		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil
