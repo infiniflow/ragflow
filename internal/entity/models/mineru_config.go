@@ -5,9 +5,7 @@
 package models
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"strings"
 )
@@ -55,21 +53,8 @@ func MinerUProviderConfigFromAPIKey(apiKey string) MinerUProviderAPIKeyConfig {
 	if trimmed == "" {
 		return MinerUProviderAPIKeyConfig{}
 	}
-	var raw map[string]interface{}
-	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
-		return MinerUProviderAPIKeyConfig{AccessToken: trimmed}
-	}
-	if nested, ok := raw["api_key"].(map[string]interface{}); ok {
-		raw = nested
-	}
-	isMinerUJSON := false
-	for key := range raw {
-		if strings.HasPrefix(key, "mineru_") {
-			isMinerUJSON = true
-			break
-		}
-	}
-	if !isMinerUJSON {
+	raw := providerJSONConfigMap(trimmed)
+	if raw == nil {
 		return MinerUProviderAPIKeyConfig{AccessToken: trimmed}
 	}
 	get := func(key string) string {
@@ -105,12 +90,6 @@ func ResolveMinerUBackend(setupBackend, apiKey string) string {
 		}
 	}
 	if backend == "" {
-		backend = ProviderJSONConfigValue(apiKey, "mineru_backend", common.EnvMineruBackend)
-	}
-	if backend == "" {
-		backend = strings.TrimSpace(os.Getenv(common.EnvMineruBackend))
-	}
-	if backend == "" {
 		backend = strings.TrimSpace(common.GetEnv(common.EnvMineruBackend))
 	}
 	if backend == "" {
@@ -126,12 +105,6 @@ func ResolveMinerUServerURL(setupServerURL, apiKey string) string {
 		if cfg.ServerURL != "" {
 			serverURL = cfg.ServerURL
 		}
-	}
-	if serverURL == "" {
-		serverURL = ProviderJSONConfigValue(apiKey, "mineru_server_url", common.EnvMineruServerURL)
-	}
-	if serverURL == "" {
-		serverURL = strings.TrimSpace(os.Getenv(common.EnvMineruServerURL))
 	}
 	if serverURL == "" {
 		serverURL = strings.TrimSpace(common.GetEnv(common.EnvMineruServerURL))

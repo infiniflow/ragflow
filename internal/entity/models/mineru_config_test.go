@@ -35,6 +35,28 @@ func TestMinerUProviderConfigFromAPIKey(t *testing.T) {
 			t.Fatalf("AccessToken = %q", cfg.AccessToken)
 		}
 	})
+
+	t.Run("access_token only JSON object", func(t *testing.T) {
+		raw := `{"access_token":"secret"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if !cfg.IsProviderJSON {
+			t.Fatal("expected provider JSON")
+		}
+		if cfg.AccessToken != "secret" {
+			t.Fatalf("AccessToken = %q, want secret", cfg.AccessToken)
+		}
+	})
+
+	t.Run("JSON object without token fields", func(t *testing.T) {
+		raw := `{"other_field":"value"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if !cfg.IsProviderJSON {
+			t.Fatal("expected provider JSON")
+		}
+		if cfg.AccessToken != "" {
+			t.Fatalf("AccessToken = %q, want empty", cfg.AccessToken)
+		}
+	})
 }
 
 func TestResolveMinerUBackendAndServerURL(t *testing.T) {

@@ -10,18 +10,27 @@ import (
 	"strings"
 )
 
-// ProviderJSONConfigValue reads string fields from a tenant provider api_key JSON blob.
-// keys are tried in order; env-style key names in the JSON are supported as fallbacks.
-func ProviderJSONConfigValue(apiKey string, keys ...string) string {
-	if strings.TrimSpace(apiKey) == "" {
-		return ""
+func providerJSONConfigMap(apiKey string) map[string]any {
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return nil
 	}
 	var config map[string]any
-	if err := json.Unmarshal([]byte(apiKey), &config); err != nil {
-		return ""
+	if err := json.Unmarshal([]byte(trimmed), &config); err != nil {
+		return nil
 	}
 	if nested, ok := config["api_key"].(map[string]any); ok {
 		config = nested
+	}
+	return config
+}
+
+// ProviderJSONConfigValue reads string fields from a tenant provider api_key JSON blob.
+// keys are tried in order.
+func ProviderJSONConfigValue(apiKey string, keys ...string) string {
+	config := providerJSONConfigMap(apiKey)
+	if config == nil {
+		return ""
 	}
 	for _, key := range keys {
 		if value, ok := config[key]; ok && value != nil {
