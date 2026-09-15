@@ -266,6 +266,22 @@ func tableRows(htmlStr string) [][]string {
 	return rows
 }
 
+// isTableHTML reports whether the text is a rendered HTML table. The byte
+// after the tag name must be one that ends a tag name, so item text such as
+// "<tableau>\tanswer" stays on the delimiter path.
+func isTableHTML(s string) bool {
+	const tag = "<table"
+	s = strings.TrimSpace(strings.ToLower(s))
+	if !strings.HasPrefix(s, tag) || len(s) == len(tag) {
+		return false
+	}
+	switch s[len(tag)] {
+	case ' ', '\t', '\n', '\f', '\r', '/', '>':
+		return true
+	}
+	return false
+}
+
 // cellText returns the visible text of a table cell. The parser hands text
 // nodes over already unescaped, nested markup contributes its text without
 // its tags (a nested table's cells are concatenated, not separated), and a
@@ -560,7 +576,13 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			}
 			// Non-spreadsheet table items may still carry HTML markup. Keep
 			// the HTML fallback for parsers that do not expose typed cells.
-			if itemDocType(item) == "table" {
+			//
+			// Route on the payload, not on doc_type_kwd. The type says what
+			// the producer meant, and the two disagree in both directions:
+			// pdf_postprocess.go:222 sets "table" from the layout class with
+			// plain text under it, and a docx or markdown table can arrive
+			// with no type at all.
+			if isTableHTML(txt) {
 				tmp = extractQATable(txt, strictCSV)
 			} else {
 				tmp = extractQAText(txt)
