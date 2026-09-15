@@ -60,7 +60,7 @@ def _envelope(data=None, message="", code=0):
 
 def _load_chat_api(monkeypatch, conv):
     repo_root = Path(__file__).resolve().parents[5]
-    updated = {}
+    update_calls = []
 
     monkeypatch.setitem(sys.modules, "quart", _module_stub("quart", Response=None, request=SimpleNamespace(args={})))
     monkeypatch.setitem(sys.modules, "werkzeug.exceptions", _module_stub("werkzeug.exceptions", BadRequest=Exception))
@@ -91,7 +91,7 @@ def _load_chat_api(monkeypatch, conv):
             "api.db.services.conversation_service",
             ConversationService=SimpleNamespace(
                 get_by_id=lambda session_id: (True, conv),
-                update_by_id=lambda cid, data: updated.update(data),
+                update_by_id=lambda cid, data: update_calls.append((cid, data)),
             ),
             structure_answer=lambda *a, **k: a[0] if a else None,
         ),
@@ -146,7 +146,7 @@ def _load_chat_api(monkeypatch, conv):
     spec.loader.exec_module(module)
     module._ensure_owned_chat = _owned
     module._build_session_response = lambda c: {"id": c["id"], "message": c["message"], "reference": c["reference"]}
-    return module, updated
+    return module, update_calls
 
 
 def _run(coro):
@@ -164,10 +164,11 @@ def _qa(mid):
 def test_delete_first_qa_pair_without_prologue_keeps_reference_alignment(monkeypatch):
     messages = _qa("m1") + _qa("m2")
     conv = _conv_obj(messages, [{"chunks": "ref-m1"}, {"chunks": "ref-m2"}])
-    module, updated = _load_chat_api(monkeypatch, conv)
+    module, update_calls = _load_chat_api(monkeypatch, conv)
     res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="m1"))
     assert res["data"]["reference"] == [{"chunks": "ref-m2"}]
     assert [m["id"] for m in res["data"]["message"]] == ["m2", "m2"]
+    assert update_calls == [("sess_1", res["data"])]
 
 
 @pytest.mark.p2
@@ -176,10 +177,11 @@ def test_delete_first_qa_pair_with_prologue(monkeypatch):
     # entries follow QA pairs only.
     messages = [{"role": "assistant", "id": "prologue", "content": "hi"}] + _qa("m1") + _qa("m2")
     conv = _conv_obj(messages, [{"chunks": "ref-m1"}, {"chunks": "ref-m2"}])
-    module, updated = _load_chat_api(monkeypatch, conv)
+    module, update_calls = _load_chat_api(monkeypatch, conv)
     res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="m1"))
     assert res["data"]["reference"] == [{"chunks": "ref-m2"}]
     assert [m["id"] for m in res["data"]["message"]] == ["prologue", "m2", "m2"]
+    assert update_calls == [("sess_1", res["data"])]
 
 
 @pytest.mark.p2
@@ -189,17 +191,26 @@ def test_delete_unpaired_message_id_returns_error_not_500(monkeypatch):
         {"role": "assistant", "id": "mX", "content": "a"},
     ]
     conv = _conv_obj(messages, [{"chunks": "ref-m1"}])
-    module, updated = _load_chat_api(monkeypatch, conv)
+    module, update_calls = _load_chat_api(monkeypatch, conv)
     res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="m1"))
     assert res["code"] == 102
-    assert updated == {}
+    assert update_calls == []
 
 
 @pytest.mark.p2
 def test_delete_with_empty_reference_does_not_raise(monkeypatch):
     messages = _qa("m1")
     conv = _conv_obj(messages, [])
-    module, updated = _load_chat_api(monkeypatch, conv)
+    module, update_calls = _load_chat_api(monkeypatch, conv)
     res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="m1"))
     assert res["data"]["message"] == []
     assert res["data"]["reference"] == []
+
+
+@pytest.mark.p2
+def test_delete_absent_message_id_returns_error_without_update(monkeypatch):
+    conv = _conv_obj(_qa("m1"), [{"chunks": "ref-m1"}])
+    module, update_calls = _load_chat_api(monkeypatch, conv)
+    res = _run(module.delete_session_message(chat_id="chat_1", session_id="sess_1", msg_id="missing"))
+    assert res["code"] == 102
+    assert update_calls == []

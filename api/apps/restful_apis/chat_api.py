@@ -1019,8 +1019,10 @@ async def delete_session_message(chat_id, session_id, msg_id):
             ref_index = i // 2
             if 0 <= ref_index < len(conv["reference"]):
                 conv["reference"].pop(ref_index)
+            ConversationService.update_by_id(conv["id"], conv)
             break
-        ConversationService.update_by_id(conv["id"], conv)
+        else:
+            return get_data_error_result(message="Message not found!")
         return get_json_result(data=_build_session_response(conv))
     except Exception as ex:
         return server_error_response(ex)
