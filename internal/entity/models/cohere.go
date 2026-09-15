@@ -374,10 +374,15 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, request Embe
 	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Embedding, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
+	inputType := "search_document"
+	if request.Query {
+		// Python CoHereEmbed.encode_queries uses input_type="search_query".
+		inputType = "search_query"
+	}
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
 		"texts":           request.Texts,
-		"input_type":      "search_document",
+		"input_type":      inputType,
 		"embedding_types": []string{"float"},
 	}
 	// This is only available for embed-v4 and newer models. Possible values are 256, 512, 1024, and 1536. The default is 1536.

@@ -19,7 +19,6 @@ import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
-import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
   const { data: canvasInfo, refetch } = useFetchAgent();
@@ -30,7 +29,7 @@ function AgentChatBox() {
     sendLoading,
     derivedMessages,
     handleInputChange,
-    handlePressEnter,
+    handlePressEnter: sendAgentPressEnter,
     stopOutputMessage,
     sendFormMessage,
     findReferenceByMessageId,
@@ -40,7 +39,6 @@ function AgentChatBox() {
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-  useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
   const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
@@ -63,6 +61,10 @@ function AgentChatBox() {
   }, [derivedMessages, setDerivedMessages]);
 
   const isTaskMode = useIsTaskMode();
+
+  const handlePressEnter = useCallback(() => {
+    sendAgentPressEnter();
+  }, [sendAgentPressEnter]);
 
   const inputWrapperRef = useRef<HTMLDivElement>(null);
 
@@ -97,10 +99,7 @@ function AgentChatBox() {
   return (
     <>
       <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
-        <div
-          className="flex-1 overflow-auto min-h-0"
-          ref={messageContainerRef}
-        >
+        <div className="flex-1 overflow-auto min-h-0" ref={messageContainerRef}>
           <div>
             {!sendLoading && <div data-testid="agent-run-idle" />}
             {/* <Spin spinning={sendLoading}> */}

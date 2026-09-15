@@ -271,7 +271,7 @@ class TestDocumentsUpdated:
             document.update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
@@ -321,7 +321,7 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
 
 
 class TestUpdateDocumentParserConfig:
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chunk_method, parser_config, expected_message",
         [
@@ -417,7 +417,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {"invalid_key": "invalid_value"},
-                "Extra inputs are not permitted",
+                "",
             ),
             (
                 "naive",
@@ -498,6 +498,9 @@ class TestUpdateDocumentParserConfig:
             updated_doc = [doc for doc in docs if doc.id == document.id][0]
             if parser_config:
                 for k, v in parser_config.items():
+                    if k in {"graphrag", "raptor"}:
+                        assert not hasattr(updated_doc.parser_config, k), str(updated_doc)
+                        continue
                     if isinstance(v, dict):
                         for kk, vv in v.items():
                             assert attrgetter(f"{k}.{kk}")(updated_doc.parser_config) == vv, str(updated_doc)

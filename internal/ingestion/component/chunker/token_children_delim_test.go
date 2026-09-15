@@ -1,7 +1,6 @@
 package chunker
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -17,7 +16,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.json",
 		"output_format": "json",
 		"json": []map[string]any{
@@ -60,7 +59,7 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "sec one###sec two###sec three",
@@ -85,7 +84,7 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 		"delimiters":          []string{"\n"},
 		"children_delimiters": []string{"`###`"},
 	})
-	out2, err := c2.Invoke(context.Background(), nil, map[string]any{
+	out2, err := c2.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "a `###` b",
@@ -110,7 +109,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "alpha one. alpha two. alpha three.",

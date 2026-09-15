@@ -67,6 +67,7 @@ func (n *NatsEngine) initSyncerStreamLocked() error {
 		Subjects:   []string{syncerSubjectPattern},
 		Retention:  jetstream.WorkQueuePolicy,
 		Storage:    jetstream.FileStorage,
+		Discard:    jetstream.DiscardNew,
 		MaxMsgs:    1024 * 128,
 		MaxBytes:   1024 * 1024 * 64,
 		Duplicates: 10 * time.Minute,

@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import copy
 import json
 import logging
 import re
@@ -45,6 +46,34 @@ def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> Fusio
 
 def index_name(uid):
     return f"ragflow_{uid}"
+
+
+def _chunk_scalar(value) -> str:
+    """Normalize a doc-store scalar that Infinity may return as a one-item list."""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def is_kb_scoped_chunk(chunk: dict | None) -> bool:
+    """True for compilation/graph rows keyed to the KB, not a source document.
+
+    Wiki persist stamps ``doc_id = kb_id``. Those rows must not be treated as
+    leftover chunks from a deleted ``document`` row. A missing ``doc_id`` is
+    not enough on its own: only an explicit compilation marker (``compile_kwd``)
+    or the KB-id sentinel bypasses deleted-document pruning. Otherwise stale
+    ordinary chunks without ``doc_id`` would stay retrievable after their
+    source document is deleted.
+    """
+    if not isinstance(chunk, dict):
+        return False
+    doc_id = _chunk_scalar(chunk.get("doc_id"))
+    kb_id = _chunk_scalar(chunk.get("kb_id"))
+    if kb_id and doc_id == kb_id:
+        return True
+    if doc_id:
+        return False
+    return bool(_chunk_scalar(chunk.get("compile_kwd")))
 
 
 class Dealer:
@@ -91,7 +120,7 @@ class Dealer:
         # Fast path: serve every doc_id from the short-lived cache if it is fresh.
         with self._doc_exists_lock:
             cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
-            hit = {d for d in unique_doc_ids if d in cached}
+            hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
             miss = [d for d in unique_doc_ids if d not in cached]
 
         if not miss:
@@ -124,12 +153,39 @@ class Dealer:
         # is removed but the vector record is not fully cleaned up. We filter those
         # chunks here so chat/retrieval does not surface content from deleted docs.
         # Keep this as a fallback, not as the primary delete mechanism.
-        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
-        if not chunk_doc_ids:
+        fields = sres.field or {}
+        aligned_ids = [chunk_id for chunk_id in sres.ids if fields.get(chunk_id)]
+        if len(aligned_ids) != len(sres.ids):
+            fields = {chunk_id: fields[chunk_id] for chunk_id in aligned_ids}
+            highlight = sres.highlight
+            if highlight:
+                highlight = {chunk_id: highlight[chunk_id] for chunk_id in aligned_ids if chunk_id in highlight}
+            sres = self.SearchResult(
+                total=len(aligned_ids),
+                ids=aligned_ids,
+                query_vector=sres.query_vector,
+                field=fields,
+                highlight=highlight,
+                aggregation=sres.aggregation,
+                keywords=sres.keywords,
+                group_docs=sres.group_docs,
+            )
+
+        chunk_doc_ids = []
+        unscoped_missing_doc_id = False
+        for chunk in fields.values():
+            if not chunk or is_kb_scoped_chunk(chunk):
+                continue
+            doc_id = _chunk_scalar(chunk.get("doc_id"))
+            if doc_id:
+                chunk_doc_ids.append(doc_id)
+            else:
+                unscoped_missing_doc_id = True
+        if not chunk_doc_ids and not unscoped_missing_doc_id:
             return sres
 
-        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
-        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids) if chunk_doc_ids else set()
+        if chunk_doc_ids and not unscoped_missing_doc_id and len(existing_doc_ids) == len(set(chunk_doc_ids)):
             return sres
 
         filtered_ids = []
@@ -138,8 +194,17 @@ class Dealer:
         removed = 0
 
         for chunk_id in sres.ids:
-            chunk = sres.field.get(chunk_id)
-            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+            chunk = fields.get(chunk_id)
+            if not chunk:
+                removed += 1
+                continue
+            if is_kb_scoped_chunk(chunk):
+                filtered_ids.append(chunk_id)
+                filtered_field[chunk_id] = chunk
+                if sres.highlight and chunk_id in sres.highlight:
+                    filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+                continue
+            if _chunk_scalar(chunk.get("doc_id")) not in existing_doc_ids:
                 removed += 1
                 continue
 
@@ -231,11 +296,7 @@ class Dealer:
             total = self.dataStore.get_total(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"]
-            if not highlight:
-                highlightFields = []
-            elif isinstance(highlight, list):
-                highlightFields = highlight
+            highlightFields = []
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
                 matchExprs = [matchText] if matchText else []
@@ -243,7 +304,8 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
-                matchDense = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                dense_template = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
+                matchDense = copy.deepcopy(dense_template)
                 q_vec = matchDense.embedding_data
                 # ES path no longer fetches chunk vectors here. The clean
                 # cosine score is recovered later via a second KNN-only call
@@ -273,13 +335,34 @@ class Dealer:
                 total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
-                # If result is empty, try again with lower min_match
+                # If result is empty, try again with lower min_match or, for
+                # dense-only queries, a lower vector threshold.
                 if total == 0:
-                    if filters.get("doc_id"):
+                    if not matchText:
+                        if req.get("allow_dense_fallback", True):
+                            matchDense = copy.deepcopy(dense_template)
+                            matchDense.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only fallback after empty initial search")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                highlightFields,
+                                filters,
+                                [matchDense],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
+                    elif filters.get("doc_id"):
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
+                        matchDense = copy.deepcopy(dense_template)
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
                             self.dataStore.search,
@@ -295,6 +378,25 @@ class Dealer:
                             rank_feature=rank_feature,
                         )
                         total = self.dataStore.get_total(res)
+                        # Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
+                        if total == 0 and matchText and req.get("allow_dense_fallback", True):
+                            matchDense = copy.deepcopy(dense_template)
+                            matchDense.extra_options["similarity"] = 0.17
+                            logging.debug("Dealer.search dense-only fallback after empty hybrid retries")
+                            res = await thread_pool_exec(
+                                self.dataStore.search,
+                                src,
+                                [],
+                                filters,
+                                [matchDense],
+                                orderBy,
+                                offset,
+                                limit,
+                                idx_names,
+                                kb_ids,
+                                rank_feature=rank_feature,
+                            )
+                            total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
@@ -309,9 +411,9 @@ class Dealer:
         logging.debug(f"TOTAL: {total}")
         ids = self.dataStore.get_doc_ids(res)
         keywords = list(kwds)
-        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
+        highlightDic = self.dataStore.get_highlight(res, keywords, "content_with_weight") if highlight else {}
         aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
-        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlight, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlightDic, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
 
     @staticmethod
     def trans2floats(txt):
@@ -513,7 +615,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -545,7 +647,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -566,21 +668,35 @@ class Dealer:
             if isinstance(sres.field[i].get("important_kwd", []), str):
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
+        rerank_docs = []
         for i in sres.ids:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = sres.field[i].get(cfield, "").split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
-            tks = content_ltks + title_tks + important_kwd
+            # Unlike rerank()/rerank_with_knn(), the fields are not repeated here:
+            # these tokens are joined back into `docs` for a cross-encoder, where
+            # duplicating a field would distort the model's own scoring.
+            tks = content_ltks + title_tks + important_kwd + question_tks
             ins_tw.append(tks)
-
-        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+            # Feed the reranker the natural chunk text (markup preserved), not the
+            # tokenized content_ltks. Neural rerankers score stemmed / accent-split
+            # tokens far lower, which collapses relevance scores and forces an
+            # artificially low similarity_threshold. The natural text is passed
+            # as-is: remove_redundant_spaces() is ASCII-oriented and mangles
+            # multilingual text ("sécurité des données" -> "sécuritédes données"),
+            # so it is only applied to the tokenized fallback used when
+            # content_with_weight is absent. Per-provider truncation to the model
+            # window stays the reranker connector's responsibility.
+            natural = str(sres.field[i].get("content_with_weight") or "")
+            rerank_docs.append(natural or remove_redundant_spaces(" ".join(tks)))
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
         # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
         # provider (see RerankModel.Base.similarity), so the blend below stays
         # on a single scale regardless of the configured reranker.
-        vtsim, _ = rerank_mdl.similarity(query, docs)
+        vtsim, _ = rerank_mdl.similarity(query, rerank_docs)
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
@@ -609,6 +725,7 @@ class Dealer:
         rerank_candidates_count=64,
         knn_top_k=1024,  # Advanced knn parameter
         knn_num_candidates=2048,  # Advanced knn parameter
+        allow_dense_fallback=True,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -643,6 +760,7 @@ class Dealer:
             "vector_similarity_weight": vector_similarity_weight,
             "knn_top_k": knn_top_k,
             "knn_num_candidates": knn_num_candidates,
+            "allow_dense_fallback": allow_dense_fallback,
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
@@ -762,7 +880,7 @@ class Dealer:
             # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
+                "content_ltks": chunk.get("content_ltks", ""),
                 "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
@@ -779,11 +897,8 @@ class Dealer:
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
             }
-            if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
+            if id in sres.highlight:
+                d["highlight"] = sres.highlight[id]
             ranks["chunks"].append(d)
 
         if aggs:

@@ -74,7 +74,7 @@ class Excel(ExcelParser):
         lang="English",
         **kwargs,
     ):
-        if not binary:
+        if binary is None:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
@@ -408,6 +408,7 @@ def column_data_type(arr):
         type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
         counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
+    conversion_failures = 0
     for i in range(len(arr)):
         if arr[i] is None:
             continue
@@ -418,13 +419,21 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
-        except Exception as e:
-            arr[i] = None
-            logging.warning(f"Column {i}: {e}")
+            converted = trans[ty](str(arr[i]))
+        except ValueError:
+            conversion_failures += 1
             # Keep original value from openpyxl/pandas instead of dropping to None.
             # This preserves cells (e.g. text in numeric columns) that would
             # otherwise be silently discarded by forced column-level conversion.
+            continue
+        if converted is None:
+            continue
+        arr[i] = converted
+    if conversion_failures:
+        # Aggregate rather than log per-cell: individual cell values must not
+        # be written to application logs, and per-cell warnings would flood
+        # logs on large uploads.
+        logging.warning(f"column_data_type: kept {conversion_failures} cell(s) that could not convert to {ty}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -626,14 +635,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
                             val = row[col_name]
-                            # If a string value ended up in a non-text column,
-                            # it was preserved from a failed conversion in
-                            # column_data_type. Skip storing in the typed ES
-                            # field to avoid type mapping errors; the value is
-                            # already in text_fields for chunk content.
-                            if isinstance(val, str):
-                                pass
-                            else:
+                            # Valid datetime and bool conversions are strings;
+                            # other strings in typed columns are failed conversions.
+                            valid_typed_string = isinstance(val, str) and (clmn_tys[j] == "datetime" and trans_datatime(val) or clmn_tys[j] == "bool" and trans_bool(val))
+                            if not isinstance(val, str) or valid_typed_string:
                                 stored[fld] = val
                         else:
                             cell = row[col_name]

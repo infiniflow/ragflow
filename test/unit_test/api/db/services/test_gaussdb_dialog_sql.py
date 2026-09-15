@@ -207,7 +207,7 @@ def _install_settings_import_stubs(monkeypatch):
         def atomic():
             return _Context()
 
-    install_module("api.db.services.user_service", UserService=_Dummy)
+    install_module("api.db.services.user_service", UserService=_Dummy, TenantService=_Dummy)
     install_module("api.db.services.file_service", FileService=_Dummy)
     install_module("api.db.services.common_service", CommonService=_Dummy)
     install_module("api.db.services.doc_metadata_service", DocMetadataService=_Dummy)

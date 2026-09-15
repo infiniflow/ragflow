@@ -452,8 +452,13 @@ func SetPreviewFileResponseHeaders(h http.Header, contentType, ext, filename str
 		} else {
 			h.Set("Content-Disposition", "attachment")
 		}
-	} else if filename != "" {
+		return
+	}
+
+	if filename != "" {
 		h.Set("Content-Disposition", FormatContentDisposition("inline", filename))
+	} else {
+		h.Set("Content-Disposition", "inline")
 	}
 }
 

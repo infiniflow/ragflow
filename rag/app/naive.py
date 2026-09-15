@@ -46,18 +46,21 @@ from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, Json
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, is_tenant_model_id, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
-    find_codec,
+    DEFAULT_DELIMITER,
+    decode_text,
     naive_merge,
     naive_merge_with_images,
     naive_merge_docx,
     rag_tokenizer,
     tokenize_chunks,
+    tokenize_chunks_with_positions,
     doc_tokenize_chunks_with_images,
     tokenize_table,
     append_context2table_image4pdf,
@@ -114,6 +117,53 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
     return normalized_sections
 
 
+def _merge_excel_items(items, chunk_token_num=128):
+    """Merge consecutive Excel rows within the same sheet by token budget.
+
+    Each item is (text, (sheet_idx, row_start, row_end, col_start, col_end)).
+    When chunk_token_num <= 0, items are returned unchanged (html4excel).
+    """
+    if not items:
+        return []
+    if chunk_token_num <= 0:
+        return items
+
+    merged = []
+    cur_text = ""
+    cur_pos = None
+    cur_tokens = 0
+
+    for text, pos in items:
+        sheet_idx, r1, r2, c1, c2 = pos
+        tok = num_tokens_from_string(text)
+        same_sheet = cur_pos is not None and cur_pos[0] == sheet_idx
+        if cur_text and (not same_sheet or cur_tokens + tok > chunk_token_num):
+            merged.append((cur_text, cur_pos))
+            cur_text = ""
+            cur_pos = None
+            cur_tokens = 0
+
+        if not cur_text:
+            cur_text = text
+            cur_pos = (sheet_idx, r1, r2, c1, c2)
+            cur_tokens = tok
+            continue
+
+        cur_text = cur_text + "\n" + text
+        cur_pos = (
+            sheet_idx,
+            min(cur_pos[1], r1),
+            max(cur_pos[2], r2),
+            min(cur_pos[3], c1),
+            max(cur_pos[4], c2),
+        )
+        cur_tokens += tok
+
+    if cur_text:
+        merged.append((cur_text, cur_pos))
+    return merged
+
+
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
     sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
@@ -164,21 +214,19 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     name = layout_recognizer.strip().lower()
     parser = PARSERS.get(name, by_plaintext)
 
-    # Closes #17114: when the document's layout_recognize is a model id
-    # (e.g. a TenantModel UUID) that does not match any known parser name,
-    # the previous dispatch fell through to by_plaintext, which tried to
-    # resolve the id as an IMAGE2TEXT vision model and failed with
-    # ``Provider <empty> not found for model <id>``. If mineru-specific
-    # options are set in parser_config, the operator clearly intended the
-    # MinerU parser, so route there instead and surface a clear log line
-    # rather than masking the misconfiguration silently.
-    # Guard: only fall back when the parser name is NOT a known keyword
-    # (e.g. "DeepDOC", "Plain Text"). A configuration like
-    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
-    # must keep honoring PlainText, not be silently rerouted to MinerU.
-    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
+    # Closes #17114: a *stale* TenantModel UUID (model deleted) that does not
+    # match any known parser name used to fall through to by_plaintext, which
+    # tried to resolve the id as an IMAGE2TEXT vision model and crashed.
+    # If mineru_* options are set, recover by routing to by_mineru.
+    #
+    # Only apply this for unresolved tenant_model ids. Frontend defaults often
+    # persist mineru_* even when the operator selected a vision LLM
+    # (e.g. ``qwen3.6-plus@tongyi@Tongyi-Qianwen``); those composite names must
+    # keep going to by_plaintext, not be silently rerouted to MinerU.
+    # Same for known keywords: ``{"layout_recognize": "Plain Text", "mineru_lang": ...}``.
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config) and is_tenant_model_id(str(layout_recognizer).strip()):
         logging.warning(
-            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
+            "[naive] layout_recognize=%r is an unresolved tenant model id; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
@@ -242,6 +290,15 @@ def by_mineru(
                 raise
 
     raise RuntimeError("MinerU model not found or not configured.")
+
+
+def by_monkeyocrv2(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+    server_url = kwargs.get("monkeyocrv2_server_url") or os.environ.get("MONKEYOCRV2_SERVER_URL", "")
+    if not server_url:
+        raise RuntimeError("MONKEYOCRV2_SERVER_URL is not configured")
+    parser = MonkeyOCRv2Parser(server_url)
+    sections, tables = parser.parse_pdf(filename, binary=binary, callback=callback, page_from=from_page, page_to=min(to_page, MAXIMUM_PAGE_NUMBER))
+    return sections, tables, parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -354,6 +411,9 @@ def by_paddleocr(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via PaddleOCR ({paddleocr_llm_name}): {e}")
+                raise
 
         return None, None, None
 
@@ -491,6 +551,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
 PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
+    "monkeyocrv2": by_monkeyocrv2,
     "docling": by_docling,
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
@@ -681,6 +742,7 @@ class Docx(DocxParser):
                     else:
                         current_image = self.get_picture(self.doc, p)
                         if current_image is not None:
+                            flush_last_image()
                             last_image = current_image
 
                 for run in p.runs:
@@ -952,8 +1014,7 @@ class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
         if binary is not None:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
+            txt, _ = decode_text(binary, document_type="Markdown document")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
@@ -1018,7 +1079,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
     child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
     cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
@@ -1084,7 +1145,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
+        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), table_context_size, image_context_size)
 
         vision_figure_parser_docx_wrapper_naive(
             chunks=chunks,
@@ -1157,7 +1218,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sections,
                 tables,
                 image_context_size,
-                section_page_offset=from_page if name == "mineru" else 0,
+                section_page_offset=from_page if name in {"mineru", "monkeyocrv2"} else 0,
             )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
@@ -1187,20 +1248,32 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english, language=lang)
+            sections = []
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
             excel_parser = ExcelParser()
             if parser_config.get("html4excel"):
-                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                excel_items = [item for item in excel_parser.html(binary, 12) if item and item[0]]
                 parser_config["chunk_token_num"] = 0
             else:
-                sections = [(_, "") for _ in excel_parser(binary) if _]
-            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+                excel_items = [item for item in excel_parser(binary) if item and item[0]]
+            excel_items = [(normalize_arabic_presentation_forms(text), pos) for text, pos in excel_items]
+            res.extend(
+                tokenize_chunks_with_positions(
+                    _merge_excel_items(excel_items, int(parser_config.get("chunk_token_num", 128))),
+                    doc,
+                    is_english,
+                    child_delimiters_pattern=child_deli,
+                    language=lang,
+                )
+            )
+            sections = []
+            callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
+        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", DEFAULT_DELIMITER))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         logging.info("TxtParser produced %d sections for %s", len(sections), filename)
         callback(0.8, "Finish parsing.")
@@ -1212,7 +1285,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             filename,
             binary,
             separate_tables=False,
-            delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
+            delimiter=parser_config.get("delimiter", DEFAULT_DELIMITER),
             return_section_images=True,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -1367,10 +1440,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 section_images = None
 
         if section_images:
-            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
 
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 

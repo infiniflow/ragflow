@@ -48,7 +48,7 @@ from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.agentic_rag_graph import _split_think_stream
 from rag.advanced_rag.harness.keywords import extract_weighted_keywords
 from rag.advanced_rag.harness.stats import CountingChatModel, LLMUsageStats, in_phase, using_stats
-from rag.advanced_rag.harness.tools.search import _compact_keywords
+from rag.advanced_rag.harness.tools.search import _compact_keywords, _resolve_rerank_candidates, _resolve_top_k, _setting
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -217,6 +217,61 @@ def _cache_similar(
     return shared / min(len(aw), len(bw)) >= _RAG_CACHE_MIN_OVERLAP
 
 
+_SLOT_CITATION_RE = re.compile(r"(?i)\[\s*ID\s*[:： ]*\s*slot\s*(\d+)\s*\]")
+_RANGE_CITATION_RE = re.compile(r"(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)\s*[-–—~～]\s*([0-9]+)\s*\]")
+
+
+def _repair_slot_citation_markers(answer, slot_evidence, cite_chunk_ids):
+    """Rewrite [ID:Slot N] markers into real [ID:k] citations.
+
+    DESIGN ENHANCEMENT (Go parity: internal/service/citation.go
+    RepairSlotCitations): the model occasionally cites slot-table rows —
+    internal markers that cannot be located in the source document. Each
+    marker is rewritten to the [ID:k] of the slot's first evidence chunk that
+    is present in the citation pool (1-based kb_prompt numbering); slots
+    without pool-resident evidence have the marker removed — an internal
+    marker must not reach the answer.
+    """
+    if not answer or not slot_evidence or not cite_chunk_ids:
+        return answer
+    pos_by_id = {}
+    for i, cid in enumerate(cite_chunk_ids):
+        if cid and cid not in pos_by_id:
+            pos_by_id[cid] = i + 1
+
+    def _repl(m):
+        meta = slot_evidence.get(m.group(1)) or {}
+        for eid in meta.get("evidence_ids") or []:
+            pos = pos_by_id.get(str(eid))
+            if pos is not None:
+                return f"[ID:{pos}]"
+        return ""  # unresolvable internal marker: drop
+
+    return _SLOT_CITATION_RE.sub(_repl, answer)
+
+
+def _expand_range_citation_markers(answer, pool_size):
+    """Expand range-merged citations back into individual ones.
+
+    DESIGN ENHANCEMENT (Go parity: ExpandRangeCitations): models sometimes
+    compress consecutive [ID:1][ID:2][ID:3] into [ID:1-3]; a range cannot be
+    resolved to a single source, so it is expanded when both bounds are valid
+    1-based citation-pool positions and dropped otherwise.
+    """
+    if not answer or pool_size <= 0:
+        return answer
+
+    def _repl(m):
+        a, b = int(m.group(1)), int(m.group(2))
+        if a > b:
+            a, b = b, a
+        if a < 1 or b > pool_size:
+            return ""  # out of range: unresolvable, drop
+        return "".join(f"[ID:{i}]" for i in range(a, b + 1))
+
+    return _RANGE_CITATION_RE.sub(_repl, answer)
+
+
 class RAGTools:
     def __init__(
         self,
@@ -235,8 +290,21 @@ class RAGTools:
         text_attachments_content: str = "",
         original_user_question: str = "",
         system_prompt: str = "",
+        similarity_threshold: float | None = None,
+        vector_similarity_weight: float | None = None,
+        top_n: int | None = None,
+        rerank_candidates_count: int | None = None,
+        top_k: int | None = None,
     ):
         self.tenant_ids = tenant_ids
+        # Retrieval settings from the caller (a chat assistant's dialog row, an
+        # agent's Retrieval component). The search tools fall back to their own
+        # defaults on None, so an unconfigured caller is unaffected.
+        self.similarity_threshold = similarity_threshold
+        self.vector_similarity_weight = vector_similarity_weight
+        self.top_n = top_n
+        self.rerank_candidates_count = rerank_candidates_count
+        self.top_k = top_k
         # The user's ORIGINAL, complete question as received from the chat layer
         # (before the outer smart agent may have rewritten/compressed it). The
         # outer LLM's `rag(question=...)` argument is model-generated and
@@ -582,8 +650,8 @@ class RAGTools:
         question: str,
         keywords: str | list = "",
         doc_scope: list[str] | None = None,
-        top_n: int = 6,
-        similarity_threshold: float = 0.2,
+        top_n: int | None = None,
+        similarity_threshold: float | None = None,
         using_embedding: bool = False,
     ) -> dict[str, list]:
         """Retrieve chunks from the unstructured KBs for one question.
@@ -596,6 +664,12 @@ class RAGTools:
             return {"chunks": [], "doc_aggs": []}
         if isinstance(keywords, list):
             keywords = ",".join(keywords)
+        # Explicit argument wins, then the caller's configuration, then this
+        # method's own defaults, which differ from the search tools' on purpose.
+        if top_n is None:
+            top_n = int(_setting(self, "top_n", 6))
+        if similarity_threshold is None:
+            similarity_threshold = _setting(self, "similarity_threshold", 0.2)
         logging.info(f"@retrieve: {question}@{keywords}")
 
         doc_scope = self.scoped_doc_ids(doc_scope)
@@ -622,7 +696,17 @@ class RAGTools:
             question = question + " " + search_terms
 
         embd_mdl = self.embed_mdl if using_embedding else None
-        vector_weight = 0.7 if embd_mdl else 0
+        vector_weight = _setting(self, "vector_similarity_weight", 0.7) if embd_mdl else 0
+        knn_top_k = _resolve_top_k(self)
+        rerank_candidates_count = _resolve_rerank_candidates(self, top_n)
+        logging.debug(
+            "retrieve: top_n=%s threshold=%s vector_weight=%s knn_top_k=%s rerank_candidates_count=%s",
+            top_n,
+            similarity_threshold,
+            vector_weight,
+            knn_top_k,
+            rerank_candidates_count,
+        )
         kbinfos = await settings.retriever.retrieval(
             question,
             embd_mdl,
@@ -632,10 +716,13 @@ class RAGTools:
             top_n,
             similarity_threshold,
             vector_similarity_weight=vector_weight,
+            knn_top_k=knn_top_k,
             aggs=True,
             highlight=True,
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
+            rerank_candidates_count=rerank_candidates_count,
+            allow_dense_fallback=False,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}
@@ -756,12 +843,21 @@ class RAGTools:
             )
             if not chunks:
                 break
+            budget_hit = False
             for ck in chunks:
                 num = num_tokens_from_string(str(ck["content_with_weight"]))
                 if tokens + num > self.chat_mdl.max_length:
+                    budget_hit = True
                     break
                 tokens += num
                 cks.append(ck)
+            if budget_hit:
+                # Break the OUTER paging loop too. The bare `break` above only
+                # exits the inner loop, so a document that hits the token budget
+                # still ran all ~79 pages — pure waste, and enough of it (one
+                # navigate_tree call used to fan this out over 8 documents) to
+                # overwhelm the doc store.
+                break
         if not cks:
             return {"chunks": [], "doc_aggs": []}
         doc_name = next((c.get("docnm_kwd") or "" for c in cks if c.get("docnm_kwd")), "")
@@ -843,6 +939,19 @@ class RAGTools:
                 if self.answer_sink is not None:
                     self.answer_sink(delta, kind == "think")
             final = re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", final)
+
+            # DESIGN ENHANCEMENT (Go parity: internal/service/citation.go
+            # RepairSlotCitations / ExpandRangeCitations): the model sometimes
+            # cites slot-table rows ("[ID:Slot 0]") — internal markers that
+            # cannot be located in the source document — and occasionally
+            # compresses consecutive [ID:n] citations into ranges. Both forms
+            # are unresolvable and must never reach the answer.
+            final = _repair_slot_citation_markers(
+                final,
+                getattr(self, "_rag_slot_evidence", None) or {},
+                getattr(self, "_rag_cite_chunk_ids", None) or [],
+            )
+            final = _expand_range_citation_markers(final, len(getattr(self, "_rag_cite_chunk_ids", None) or []))
 
             # Cache the freshly produced answer for later near-identical questions.
             if question and final and not self.text_attachments_content:

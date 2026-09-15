@@ -4,7 +4,7 @@ import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/u
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
-import { Form, FormControl, FormField, FormItem } from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
@@ -178,21 +178,14 @@ const TokenChunkerForm = ({
             <div className="mb-2 flex justify-between items-center gap-1">
               <span>{t('flow.enableChildrenDelimiters')}</span>
 
-              <FormField
-                control={form.control}
-                name="enable_children"
-                render={({ field: { value, onChange, ...restProps } }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Switch
-                        checked={value}
-                        onCheckedChange={onChange}
-                        {...restProps}
-                      />
-                    </FormControl>
-                  </FormItem>
+              <RAGFlowFormItem name="enable_children">
+                {(field) => (
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
                 )}
-              />
+              </RAGFlowFormItem>
             </div>
 
             {form.getValues('enable_children') && (

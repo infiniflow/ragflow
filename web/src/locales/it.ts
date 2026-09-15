@@ -519,7 +519,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 0.2. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
         'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
@@ -542,6 +542,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       runningStatus2: 'Annullato',
       runningStatus3: 'Successo',
       runningStatus4: 'Fallito',
+      runningStatusQueued: 'In coda',
       pageRanges: 'Intervallo pagine',
       pageRangesTip:
         'Intervallo di pagine da analizzare; le pagine al di fuori di questo intervallo non saranno elaborate.',
@@ -584,9 +585,9 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       html4excel: 'Excel in HTML',
       html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
-      autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Domande automatiche',
-      autoQuestionsTip: `Estrai automaticamente N domande per ogni chunk per aumentare il loro ranking per le query contenenti quelle domande. Puoi controllare o aggiornare le domande aggiunte per un chunk dalla lista dei chunk. Questa funzionalità non interromperà il processo di chunking se si verifica un errore, eccetto che potrebbe aggiungere un risultato vuoto al chunk originale. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Estrai automaticamente N domande per ogni chunk per aumentare il loro ranking per le query contenenti quelle domande. Puoi controllare o aggiornare le domande aggiunte per un chunk dalla lista dei chunk. Questa funzionalità non interromperà il processo di chunking se si verifica un errore, eccetto che potrebbe aggiungere un risultato vuoto al chunk originale. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       redo: 'Vuoi cancellare i {{chunkNum}} chunk esistenti?',
       setMetaData: 'Imposta metadati',
       pleaseInputJson: 'Inserisci JSON',
@@ -862,7 +863,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR può essere usato per attività di question-answering multi-hop. Naviga alla pagina File, clicca Genera > RAPTOR per abilitarlo. Vedi https://ragflow.io/docs/dev/enable_raptor per i dettagli.',
+        'RAPTOR può essere usato per attività di question-answering multi-hop. Naviga alla pagina File, clicca Genera > RAPTOR per abilitarlo. Vedi https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree per i dettagli.',
       prompt: 'Prompt',
       promptTip:
         "Usa il prompt di sistema per descrivere il compito per l'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.",
@@ -914,7 +915,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       addTag: 'Aggiungi tag',
       useGraphRag: 'Grafo della conoscenza',
       useGraphRagTip:
-        'Costruisci un grafo della conoscenza sui chunk di file del dataset corrente per migliorare il question-answering multi-hop che coinvolge logica annidata. Vedi https://ragflow.io/docs/dev/construct_knowledge_graph per i dettagli.',
+        'Costruisci un grafo della conoscenza sui chunk di file del dataset corrente per migliorare il question-answering multi-hop che coinvolge logica annidata. Vedi https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph per i dettagli.',
       graphRagMethod: 'Metodo',
       graphRagMethodTip: `
       Light: (Predefinito) Usa prompt forniti da github.com/HKUDS/LightRAG per estrarre entità e relazioni. Questa opzione consuma meno token, meno memoria e meno risorse computazionali.</br>
@@ -1283,6 +1284,8 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      sitemapDescription:
+        'Collega una sitemap.xml pubblica per sincronizzare nella tua knowledge base le pagine web e i documenti PDF che elenca.',
       azure_devopsDescription:
         'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:

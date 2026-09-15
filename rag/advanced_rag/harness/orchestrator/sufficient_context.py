@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import PROMPT_JINJA_ENV, gen_json
@@ -49,10 +50,28 @@ SCA_REVIEW = load_prompt("sca_select")
 #     evidence and query_check enforces grounded facts.
 # Total cap for the rendered claims context (all per-claim reports + the overall
 # intermediate draft) keeps the SCA prompt well inside the model window.
-_SCA_CLAIMS_CONTEXT_MAX = 9000
+# Enlarged 9000 -> 48000 so a table-bearing evidence anchor (full table text)
+# plus several claim reports fit; matches _MAX_TOOL_RESPONSE_CHARS * 4 used by
+# the action-session context budget. Table chunks were structurally invisible
+# at 9000 (Q86: rank row at ~62% of a 14.7K-char table never entered the view).
+_SCA_CLAIMS_CONTEXT_MAX = 48000
 # Max chars of each cited snippet's first line appended as an evidence anchor so
 # the SCA can verify a draft against real retrieved text without a token blow-up.
 _SCA_EVIDENCE_ANCHOR_CHARS = 300
+# Table-structured chunks get their FULL text as the evidence anchor (bounded
+# only by _SCA_CLAIMS_CONTEXT_MAX): hint-token windowing is unreliable for
+# tables (the draft rarely contains the row's entity names), and truncating from
+# the head hides the answer rows that sit mid/late-table (Q86 rank-19 row).
+_SCA_EVIDENCE_TABLE_CHARS = None  # None = keep the whole chunk text
+
+
+def _is_table_text(text: str) -> bool:
+    """Corpus-neutral table detector: HTML table markup or >=3 pipe rows."""
+    t = str(text or "")
+    if "<table" in t.lower() or "<tr" in t.lower():
+        return True
+    pipe_rows = sum(1 for line in t.splitlines() if line.count("|") >= 2)
+    return pipe_rows >= 3
 
 
 def _clamp(value, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -60,6 +79,27 @@ def _clamp(value, lo: float = 0.0, hi: float = 1.0) -> float:
         return max(lo, min(hi, float(value)))
     except (TypeError, ValueError):
         return 1.0
+
+
+_TRUE_STRINGS = frozenset({"true", "1", "yes", "y", "on"})
+
+
+def _coerce_bool(value) -> bool:
+    """Read an LLM-reported boolean, tolerating string drift.
+
+    ``bool()`` alone treats the literal strings ``"false"`` and ``"0"`` as True
+    (they are non-empty), which silently INVERTS a verdict — marking insufficient
+    context sufficient, or an ungrounded claim grounded. Read the recognised
+    spellings by meaning instead; empty/unrecognised values fail CLOSED (False),
+    matching this module's convention that an unusable verdict is INSUFFICIENT.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_STRINGS
+    if isinstance(value, (int, float)):
+        return value != 0
+    return False
 
 
 def _coerce_dict(result) -> dict | None:
@@ -94,6 +134,42 @@ def _render_reports(reports: list[tuple[str, str]]) -> str:
     return "\n".join(f"Claim {cid}: {rpt}" for cid, rpt in reports if rpt)
 
 
+def _bounded_excerpt(text: str, hints: str, max_chars: int = 300) -> str:
+    """Keep a bounded evidence window around a term from the current draft.
+
+    Table-structured text returns its FULL content (bounded only by the caller's
+    overall budget): hint-token windowing fails for tables because the draft
+    rarely contains the row's entity names, and head-truncation hides answer
+    rows in the mid/late table. Plain text keeps the bounded window.
+    """
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    if _is_table_text(text):
+        return text
+    max_chars = max(80, int(max_chars))
+    hint_tokens = [t for t in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{3,}", str(hints or ""))]
+    lower = text.lower()
+    start = None
+    for token in hint_tokens:
+        pos = lower.find(token.lower())
+        if pos >= 0:
+            start = pos
+            break
+    if start is None:
+        if len(text) <= max_chars:
+            return text
+        tail = max_chars // 2
+        return text[: max_chars - tail] + " … " + text[-tail:]
+    half = max_chars // 2
+    left = max(0, start - half)
+    right = min(len(text), left + max_chars)
+    left = max(0, right - max_chars)
+    prefix = "…" if left else ""
+    suffix = "…" if right < len(text) else ""
+    return prefix + text[left:right] + suffix
+
+
 def _render_claim_context(claims, question: str = "", kbinfos: dict | None = None) -> str:
     """Render per-claim context: each claim's report PLUS a brief evidence anchor.
 
@@ -120,27 +196,35 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
         if not rpt:
             continue
         block = f"Claim {cid} (draft):\n{rpt}"
-        used += len(block) + 2
         # Evidence anchor: first line of each cited snippet (guards the draft).
+        # Table chunks contribute their FULL text (see _bounded_excerpt).
         if eids:
             anchors: list[str] = []
             for eid in eids:
                 ck = id2chunk.get(str(eid)) or id2chunk.get(eid)
                 if not ck:
                     continue
-                txt = str(ck.get("chunk") or "").strip()
+                txt = str(ck.get("content_with_weight") or ck.get("content") or ck.get("chunk") or "").strip()
                 if not txt:
                     continue
-                first = txt.split("\n")[0].strip()
-                if len(first) > _SCA_EVIDENCE_ANCHOR_CHARS:
-                    first = first[:_SCA_EVIDENCE_ANCHOR_CHARS] + "…"
-                anchors.append(first)
-                if len(anchors) >= 2:
+                excerpt = _bounded_excerpt(txt, rpt, max_chars=_SCA_EVIDENCE_ANCHOR_CHARS)
+                if excerpt:
+                    anchors.append(excerpt)
+                if len(anchors) >= 3:
                     break
             if anchors:
                 block += "\n  Evidence: " + " | ".join(anchors)
-                used += len(anchors) * (_SCA_EVIDENCE_ANCHOR_CHARS + 4)
+        # Apply the budget to the COMPLETE block before appending it, trimming it to
+        # what remains: accounting the block only AFTER appending let a single
+        # oversized claim blow straight past _SCA_CLAIMS_CONTEXT_MAX (the cap the
+        # comment claims bounds the whole rendered context).
+        remaining = _SCA_CLAIMS_CONTEXT_MAX - used
+        if remaining <= 0:
+            break
+        if len(block) > remaining:
+            block = block[:remaining]
         blocks.append(block)
+        used += len(block) + 2  # the block plus the "\n\n" join separator
         if used >= _SCA_CLAIMS_CONTEXT_MAX:
             break
     return "\n\n".join(blocks) if blocks else "(no claim drafts)"
@@ -249,7 +333,7 @@ async def sufficient_context_agent(
             elif m:
                 missing_info.append({"what": str(m).strip(), "search_hint": ""})
         claims_out[cid] = {
-            "grounded": bool(item.get("grounded")),
+            "grounded": _coerce_bool(item.get("grounded")),
             "ungrounded": [a for a in ungrounded if a],
             "missing_information": missing_info,
         }
@@ -268,14 +352,14 @@ async def sufficient_context_agent(
             continue
         sq_out: dict = {
             "sub_query": sq_text,
-            "satisfied": bool(sq.get("satisfied")),
+            "satisfied": _coerce_bool(sq.get("satisfied")),
         }
         if not sq_out["satisfied"]:
             sq_out["missing_fact"] = str(sq.get("missing_fact") or "").strip()
             sq_out["search_hint"] = str(sq.get("search_hint") or "").strip()
         sub_queries.append(sq_out)
 
-    is_sufficient = bool(result.get("is_sufficient"))
+    is_sufficient = _coerce_bool(result.get("is_sufficient"))
     # Failsafe: when the SCA judges the context insufficient but returned an EMPTY
     # claims array (a known degradation on very long prompts), we must still give
     # the orchestrator something to re-search. Otherwise it abandons with
@@ -339,7 +423,7 @@ def to_boost(sca: dict, verdict, fallback_followups: list | None = None) -> dict
     if missing:
         feedback = "missing: " + "; ".join(missing[:_FEEDBACK_MAX])
     return {
-        "is_sufficient": bool(sca.get("is_sufficient")),
+        "is_sufficient": _coerce_bool(sca.get("is_sufficient")),
         "confidence": _clamp(sca.get("confidence")),
         "missing": missing,
         "contradictions": contradictions,

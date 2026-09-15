@@ -31,7 +31,9 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -198,7 +200,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone))
 	}
 
 	return result, nil
@@ -276,7 +278,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	applyDocumentAvailability(chunks, docStatus)
 
-	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
+	oldCompiledProductIDs, oldCompiledVariants, oldCompiledTaskTypes, err := s.loadDocumentCompiledState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -308,8 +310,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
 	// consumer retract stale merged products when a template is removed.
 	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	eventTaskTypes := mergeTaskTypes(oldCompiledTaskTypes, compiledTaskTypes(chunks))
 	if len(eventVariants) > 0 {
-		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants, eventTaskTypes); err != nil {
 			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 		}
 	}
@@ -321,6 +324,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
 		s.taskCtx.Doc.ParserConfig,
 	)
+
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
@@ -423,30 +438,36 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-// markCompiledProductsHidden sets available_int=0 on the per-document compiled
-// knowledge products so they are hidden from the retriever until the dataset-level
-// post-processing consumer merges them into available_int=1 products (§11). A
-// chunk is a compiled product iff it carries the compile_kwd discriminator the
-// KnowledgeCompiler component stamps; ordinary source chunks (no compile_kwd)
-// keep the index default available_int=1 and remain immediately searchable.
-// Merged dataset-level products are written by the consumer, never here, so they are
-// never double-marked.
+// markCompiledProductsHidden stages wiki per-document page rows as
+// available_int=0. Only the wiki variant is hidden: its per-document page rows
+// are intermediate state for the consumer's merged pages (available_int=1) and
+// every wiki read path selects merged rows only.
+//
+// Tree / structure (page_index) / mindmap rows are the FINAL per-document
+// products — Python writes them visible at compile time
+// (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
+// claim recall / hybrid retrieval filter on available_int=1, so they stay
+// searchable here too. Merged dataset-level products are written by the
+// consumer, never here, so they are never double-marked.
 func markCompiledProductsHidden(chunks []map[string]any) {
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; !ok {
+		kwd := asCompiledKwd(ck)
+		if kwd == "" {
 			continue
 		}
-		ck["available_int"] = 0
+		if v, err := knowledge_compile.KwdToVariant(kwd); err == nil && v == kccommon.VariantWiki {
+			ck["available_int"] = 0
+		}
 	}
 }
 
 // loadDocumentCompiledState snapshots the previous successful document
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
-func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, []string, error) {
 	docEngine := engine.Get()
 	if docEngine == nil || s == nil || s.taskCtx == nil {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
@@ -462,7 +483,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
+			return nil, nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
 		if result == nil || len(result.Chunks) == 0 {
 			break
@@ -480,7 +501,7 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			break
 		}
 	}
-	return oldIDs, compiledVariants(oldProducts), nil
+	return oldIDs, compiledVariants(oldProducts), compiledTaskTypes(oldProducts), nil
 }
 
 // reconcileDocumentCompiledProducts advances the document-level compiler
@@ -522,18 +543,19 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	return nil
 }
 
-// applyDocumentAvailability stamps ordinary source chunks with available_int=0
-// when Document.status is "0" (disabled). Disabling before any chunks exist only
-// updates MySQL; without this, later parsing would still write searchable
-// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+// applyDocumentAvailability stamps every chunk — ordinary source chunks and
+// compiled products alike — with available_int=0 when Document.status is "0"
+// (disabled). Disabling before any chunks exist only updates MySQL; without
+// this, later parsing would still write searchable available_int=1 rows.
+// Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
+// so the stamp is a no-op for them; tree / structure rows become hidden
+// together with their document, matching Python's doc_id-scoped availability
+// toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
 		return
 	}
 	for _, ck := range chunks {
-		if _, ok := ck["compile_kwd"]; ok {
-			continue
-		}
 		ck["available_int"] = 0
 	}
 }
@@ -580,6 +602,54 @@ func compiledVariants(chunks []map[string]any) []string {
 	out := make([]string, 0, len(seen))
 	for k := range seen {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// compiledTaskTypes returns the sorted, de-duplicated frontend categories of
+// the compiled products in chunks. The raw template kind is preferred because
+// several kinds intentionally share the structure execution variant.
+func compiledTaskTypes(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		taskType := ""
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && strings.TrimSpace(kind) != "" {
+			if mapped, err := kccommon.KindToTaskType(kind); err == nil {
+				taskType = mapped
+			}
+		}
+		if taskType == "" {
+			if mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck)); err == nil {
+				taskType = kccommon.VariantToTaskType(mapped)
+			}
+		}
+		if taskType != "" {
+			seen[taskType] = struct{}{}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func mergeTaskTypes(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	for _, group := range groups {
+		for _, taskType := range group {
+			if taskType = strings.TrimSpace(taskType); taskType != "" {
+				seen[taskType] = struct{}{}
+			}
+		}
+	}
+	return sortedTaskTypes(seen)
+}
+
+func sortedTaskTypes(seen map[string]struct{}) []string {
+	out := make([]string, 0, len(seen))
+	for taskType := range seen {
+		out = append(out, taskType)
 	}
 	sort.Strings(out)
 	return out
@@ -699,11 +769,21 @@ type PipelineLogInput struct {
 	DSL        string
 	Status     string
 	Document   entity.Document
+	// PipelineLogID is the id of the pipeline_operation_log row this run owns
+	// (ingestion_task.pipeline_log_id). When set, the terminal write updates
+	// exactly that row and never creates a second one — so a superseded run
+	// whose row was deleted cannot adopt the replacement run's row. Empty for
+	// legacy, debug-adjacent, or non-ingestion callers.
+	PipelineLogID string
 }
 
 // RecordPipelineLog persists a pipeline operation log without requiring
-// executor setup. Callers that already know a terminal state should pass it in
-// Status; otherwise the writer falls back to the latest document.run value.
+// executor setup. Callers should pass the status in Status.
+//
+// When the run created a queued row (CREATED/SCHEDULED), the terminal write
+// advances that same row so the dataset detail page shows one entry per run.
+// Without a bound row (legacy runs, debug-adjacent paths) it adopts the
+// document's open row, or creates a new row when none exists.
 func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
@@ -755,13 +835,16 @@ func recordPipelineLog(
 	// selection runs on a builtin registry pipeline: its canvasID is the
 	// parser_id, not a canvas row, so the log is titled with the document's
 	// parser_id, reuses the document thumbnail as avatar, and leaves
-	// pipeline_id empty.
+	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
+	// failure/cancel logs are recorded without a DSL, and their pipeline title
+	// and avatar must still resolve from the canvas row (mirrors the Python
+	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
 	if input.PipelineID != "" {
 		pipelineID = &input.PipelineID
-		if db != nil && strings.TrimSpace(input.DSL) != "" {
+		if db != nil {
 			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title
@@ -774,9 +857,6 @@ func recordPipelineLog(
 	}
 
 	operationStatus := input.Status
-	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
-		operationStatus = *doc.Run
-	}
 	statusValue := "1"
 	if doc.Status != nil && *doc.Status != "" {
 		statusValue = *doc.Status
@@ -788,6 +868,13 @@ func recordPipelineLog(
 	documentName := ""
 	if doc.Name != nil {
 		documentName = *doc.Name
+	}
+	if db != nil {
+		if handled, err := updateOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
+			common.Warn(fmt.Sprintf("failed to advance open pipeline log for document %s: %v", input.DocumentID, err))
+		} else if handled {
+			return nil
+		}
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
@@ -814,19 +901,98 @@ func recordPipelineLog(
 	return createFunc(ctx, db, log)
 }
 
+// updateOpenLogRow advances the row this run already owns to its terminal
+// state, filling in the DSL, the pipeline identity, and the final progress
+// snapshot. It reports whether the caller must stop (true) or insert a new row
+// (false).
+//
+// The row is targeted by PipelineLogID when the caller has one, so a superseded run
+// whose row was deleted with the task can never reach into the replacement
+// run's row. Only when the caller has no bound row (legacy, debug-adjacent, or
+// non-ingestion callers) does it adopt the document's newest unowned open row,
+// so a stray open row is closed rather than left queued; a row a live run owns
+// is never adopted, because that run's own terminal write would then be lost.
+// RowsAffected is not used to decide whether to create: once a target row is
+// known, the write is final — a lost CAS means another writer already finalized
+// this run or the row was dropped with a superseded run, and neither may
+// produce a second entry.
+func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
+	targetID := input.PipelineLogID
+	if targetID == "" {
+		open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, input.DocumentID)
+		if err != nil {
+			return false, err
+		}
+		if open == nil {
+			return false, nil
+		}
+		owned, err := dao.NewPipelineOperationLogDAO().HasLiveTaskOwner(ctx, db, open.ID)
+		if err != nil {
+			return false, err
+		}
+		if owned {
+			return false, nil
+		}
+		targetID = open.ID
+	}
+	updates := map[string]interface{}{
+		"operation_status": operationStatus,
+		"status":           statusValue,
+		"dsl":              dslMap,
+		"pipeline_id":      pipelineID,
+		"pipeline_title":   pipelineTitle,
+		"avatar":           pipelineAvatar,
+		"progress":         doc.Progress,
+		"progress_msg":     doc.ProgressMsg,
+		"process_duration": doc.ProcessDuration,
+		"parser_id":        doc.ParserID,
+		"source_from":      strings.SplitN(doc.SourceType, "/", 2)[0],
+		"document_suffix":  doc.Suffix,
+		"document_type":    doc.Type,
+	}
+	if doc.Name != nil {
+		updates["document_name"] = *doc.Name
+	}
+	// The open row was created with a timestamp. Keep it when the reloaded
+	// document carries none (a run that never reached the progress sink), so
+	// the queued entry does not lose its start time.
+	if doc.ProcessBeginAt != nil {
+		updates["process_begin_at"] = doc.ProcessBeginAt
+	}
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", targetID, dao.OpenPipelineOperationStatuses()).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	// No second entry is created for a known target, so a row that is gone or
+	// already finalized means this run's outcome is not recorded anywhere. That
+	// is the intended outcome for a run whose row was dropped with a superseded
+	// task; log it so the missing entry is not silent.
+	if result.RowsAffected == 0 {
+		common.Warn(fmt.Sprintf("pipeline log %s for document %s is gone or already terminal; %s entry dropped", targetID, input.DocumentID, operationStatus))
+	}
+	return true, nil
+}
+
 func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	pipelineID := ""
 	if s.taskCtx.PipelineID != "" {
 		pipelineID = s.canvasID
 	}
+	pipelineLogID := ""
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.PipelineLogID != nil {
+		pipelineLogID = *s.taskCtx.IngestionTask.PipelineLogID
+	}
 	if err := recordPipelineLog(ctx, db, PipelineLogInput{
-		TenantID:   s.Tenant().ID,
-		KbID:       s.KB().ID,
-		DocumentID: docID,
-		PipelineID: pipelineID,
-		DSL:        dsl,
-		Status:     status,
-		Document:   s.taskCtx.Doc,
+		TenantID:      s.Tenant().ID,
+		KbID:          s.KB().ID,
+		DocumentID:    docID,
+		PipelineID:    pipelineID,
+		DSL:           dsl,
+		Status:        status,
+		Document:      s.taskCtx.Doc,
+		PipelineLogID: pipelineLogID,
 	}, s.logCreateFunc); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
@@ -959,6 +1125,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -1039,3 +1213,20 @@ func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
+	}
+	return inputs
+}

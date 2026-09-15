@@ -1,10 +1,7 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { LargeModelFormField } from '@/components/large-model-form-field';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
-import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { TFunction } from 'i18next';
 import { memo } from 'react';
@@ -27,7 +24,6 @@ export function buildCompilationFormSchema(t: TFunction) {
       .string()
       .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
     llm_id: z.string().optional(),
-    mode: z.enum(['entity', 'topic']),
   });
 }
 
@@ -50,9 +46,7 @@ const CompilationForm = ({
 }: INextOperatorForm) => {
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
-  const { t } = useTranslation();
   const FormSchema = useFormSchema();
-  const isGo = useIsGoBackend();
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
@@ -73,30 +67,6 @@ const CompilationForm = ({
           name="llm_id"
           ownerTenantId={ownerTenantId}
         ></LargeModelFormField>
-        {isGo && (
-          <RAGFlowFormItem
-            name="mode"
-            label={t('knowledgeCompilation.wikiMode')}
-            tooltip={t('knowledgeCompilation.wikiModeTip')}
-          >
-            {(field) => (
-              <SelectWithSearch
-                value={field.value}
-                onChange={field.onChange}
-                options={[
-                  {
-                    label: t('knowledgeCompilation.entityMode'),
-                    value: 'entity',
-                  },
-                  {
-                    label: t('knowledgeCompilation.topicMode'),
-                    value: 'topic',
-                  },
-                ]}
-              />
-            )}
-          </RAGFlowFormItem>
-        )}
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

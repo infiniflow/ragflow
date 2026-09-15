@@ -25,6 +25,10 @@ npm run test       # Jest tests
 
 ## Development Conventions
 
+### Test File Placement
+
+When tests are grouped in a dedicated directory, that directory is always named `__tests__/` — never `tests/`. Example: `src/pages/agent/utils/__tests__/extractor-transform.test.ts` for `src/pages/agent/utils/extractor-transform.ts`. Co-located `foo.test.ts(x)` files next to the source file are also fine. When you find an existing test under a `tests/` directory, move it into `__tests__/` (keep git history via `git mv`) rather than adding new tests there.
+
 ### Dual-Backend Variant Conventions (Go / Python)
 
 The frontend serves two backends, Go and Python. The active one is detected at runtime by `src/utils/backend-runtime.ts` (`/api/v1/language`, fetched once; `src/main.tsx` gates first render on it, so below the gate the variant never changes for the session lifetime). In dev, `API_PROXY_SCHEME` in `.env.development` selects which backend the dev server proxies to.

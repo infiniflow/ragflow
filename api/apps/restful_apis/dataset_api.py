@@ -26,8 +26,6 @@ from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
-    SearchDatasetReq,
-    SearchDatasetsReq,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
@@ -116,6 +114,11 @@ async def create(tenant_id: str = None):
             description:
               type: string
               description: Optional dataset description.
+            language:
+              type: string
+              minLength: 1
+              maxLength: 32
+              description: Optional document language (e.g. "English", "Chinese"); leading/trailing whitespace is stripped and the trimmed value must contain 1 to 32 characters. If omitted, the server/database default is used.
             embedding_model:
               type: string
               description: Optional embedding model name; if omitted, the tenant's default embedding model is used.
@@ -258,6 +261,11 @@ async def update(tenant_id, dataset_id):
             description:
               type: string
               description: Updated description of the dataset.
+            language:
+              type: string
+              minLength: 1
+              maxLength: 32
+              description: Optional document language (e.g. "English", "Chinese"); leading/trailing whitespace is stripped and the trimmed value must contain 1 to 32 characters. If omitted, the existing language is unchanged.
             embedding_model:
               type: string
               description: Updated embedding model Name.
@@ -506,63 +514,6 @@ async def rename_tag(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/search", methods=["POST"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def search_datasets(tenant_id):
-    """Search (retrieval test) across multiple datasets.
-
-    POST /api/v1/datasets/search
-    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
-               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool, "highlight": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
-    The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
-    "knn_num_candidates" currently applies only to Elasticsearch.
-    Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
-    Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
-    """
-    req, err = await validate_and_parse_json_request(request, SearchDatasetsReq)
-    if err is not None:
-        return get_error_argument_result(err)
-    success, result = await dataset_api_service.search_datasets(tenant_id, req)
-    if success:
-        return get_result(data=result)
-    else:
-        return get_error_data_result(message=result)
-
-
-@manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-async def search(tenant_id, dataset_id):
-    """Search (retrieval test) within a dataset.
-
-    POST /api/v1/datasets/<dataset_id>/search
-    JSON body: {"question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
-               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
-               "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
-    The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
-    "knn_num_candidates" currently applies only to Elasticsearch.
-    Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
-    Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
-    """
-    req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
-    if err is not None:
-        return get_error_argument_result(err)
-    req["dataset_ids"] = [dataset_id]
-    try:
-        success, result = await dataset_api_service.search_datasets(tenant_id, req)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        if "not_found" in str(e):
-            return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/datasets/<dataset_id>/graph", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -699,7 +650,9 @@ async def get_wiki_graph(tenant_id, dataset_id):
     - ``top_n`` (a.k.a. ``topN``): override the entity budget (default 128).
 
     Only entities referenced by at least one relation are returned.
-    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…]}}``.
+    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…],
+    "total_entities":int,"total_relations":int,
+    "returned_entities":int,"returned_relations":int}}``.
     """
     try:
         node = request.args.get("node", None)
@@ -748,9 +701,17 @@ async def get_dataset_structure(tenant_id, dataset_id):
     dataset (written when a template has ``dataset_merge`` enabled). Response
     mirrors the per-document structure graph so the frontend reuses its view::
 
-        {"code": 0, "data": {"kind": "<kind>", "templates": [
-            {"template_id", "template_name", "kind", "entities", "relations"}
-        ]}}
+        {"code": 0, "data": {
+            "kind": "<kind>",
+            "total_entities": 100,
+            "total_relations": 200,
+            "returned_entities": 80,
+            "returned_relations": 150,
+            "templates": [{
+                "template_id": "<template_id>", "template_name": "<template_name>",
+                "kind": "<kind>", "entities": [], "relations": [],
+            }],
+        }}
     """
     try:
         kind = request.args.get("kind", "")
