@@ -43,7 +43,8 @@ const componentNameVariableAggregator = "VariableAggregator"
 // It mirrors the Python VariableAggregatorParam surface.
 type variableAggregatorParam struct {
 	// Groups is a list of {group_name, variables} dicts. Each
-	// group.variables entry is itself a {value: <ref-string>} dict.
+	// group.variables entry may be a plain ref string or a
+	// {value: <ref-string>} dict.
 	Groups []map[string]any `json:"groups"`
 }
 
