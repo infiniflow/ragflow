@@ -131,10 +131,10 @@ func (f *fakeUploadStorage) Close() error { return nil }
 
 type fakeChatDocEngine struct{}
 
-func (fakeChatDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (fakeChatDocEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (fakeChatDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (fakeChatDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {

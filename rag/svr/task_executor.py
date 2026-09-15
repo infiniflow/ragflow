@@ -737,7 +737,7 @@ def build_TOC(task, docs, progress_callback):
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
     parser_id = row.get("parser_id", None)
-    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size, parser_id)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size, parser_id, row.get("language", None))
 
 
 @timed_with_recording

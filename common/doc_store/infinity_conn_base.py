@@ -165,6 +165,86 @@ def _retry_on_meta_contention(
     raise last_exc
 
 
+# Dataset languages that need their own RAG analyzer. Infinity's analyzer folds
+# their diacritics to ASCII and skips stemming, so a dataset in one of them has
+# to be indexed and queried through "rag-<language>" instead of the default
+# "rag-coarse"/"rag-fine" pair.
+#
+# They are the only two languages whose analyzer differs from the default:
+# every other name either selects a Snowball stemmer (english, dutch, german,
+# ... -- SNOWBALL_LANGUAGE_MAP in Infinity's rag_analyzer) or is a no-op
+# (Chinese, Japanese, Korean, ... use dictionary segmentation, not stemming).
+# Naming a stemmer here would switch it for every newly created dataset in
+# that language, which is a behaviour change of its own.
+_ANALYZER_LANGUAGES = frozenset({"czech", "slovak"})
+
+# The analyzer family whose behaviour the dataset language changes. Fields
+# indexed with "whitespace-#" or "rankfeatures" carry keywords, not prose.
+_RAG_ANALYZER = "rag"
+
+
+def _analyzer_for_language(analyzer: str, language: str | None) -> str:
+    """The analyzer to index and query a dataset in ``language`` with.
+
+    Infinity analyzes the query with the analyzer of the fulltext index it
+    matches against, so the language has to be baked into the index when it is
+    created -- there is no per-query analyzer to pass. Chunk tables are
+    per-dataset (``{index_name}_{dataset_id}``), which is what makes a
+    per-dataset analyzer possible in the first place.
+
+    Languages outside :data:`_ANALYZER_LANGUAGES`, and analyzers outside the
+    ``rag`` family, are returned unchanged.
+    """
+    key = (language or "").strip().lower()
+    if key not in _ANALYZER_LANGUAGES:
+        return analyzer
+    if analyzer.split("-", 1)[0] != _RAG_ANALYZER:
+        return analyzer
+    return f"{analyzer}-{key}"
+
+
+def _fulltext_index_name(field_name: str, analyzer: str) -> str:
+    return f"ft_{_index_name_part(field_name)}_{_index_name_part(analyzer)}"
+
+
+def _index_name_part(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]", "_", value)
+
+
+def _field_analyzers(field_info: dict) -> list[str]:
+    analyzers = field_info["analyzer"]
+    if isinstance(analyzers, str):
+        return [analyzers]
+    return analyzers
+
+
+def _wanted_fulltext_indexes(field_name: str, field_info: dict, language: str | None) -> dict[str, str]:
+    """The fulltext indexes ``field_name`` should have: name -> analyzer."""
+    wanted = {}
+    for configured in _field_analyzers(field_info):
+        analyzer = _analyzer_for_language(configured, language)
+        wanted[_fulltext_index_name(field_name, analyzer)] = analyzer
+    return wanted
+
+
+def _has_foreign_rag_index(index_names: list[str], field_name: str, wanted: dict[str, str]) -> bool:
+    """Whether the field already carries a rag index under another language.
+
+    A table's rag analyzer is settled when its first fulltext index is built:
+    Infinity analyzes a query with the field's first index by name, so adding
+    "ft_content_rag_coarse" next to "ft_content_rag_coarse_slovak" would win on
+    name order and silently undo the dataset's language -- and adding the
+    slovak one next to an existing default would silently do nothing. Either
+    way the table keeps what it has, and a dataset that needs the other
+    analyzer has to be reindexed into a fresh table.
+
+    Indexes this language *does* want are not foreign, so a field that is
+    missing one of its variants still gets it.
+    """
+    prefix = f"ft_{_index_name_part(field_name)}_{_RAG_ANALYZER}"
+    return any(name.startswith(prefix) and name not in wanted for name in index_names)
+
+
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn", table_name_prefix: str = "ragflow_"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
@@ -247,12 +327,15 @@ class InfinityConnectionBase(DocStoreConnection):
                     self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
 
                 if field_info["type"] == "varchar" and "analyzer" in field_info:
-                    analyzers = field_info["analyzer"]
-                    if isinstance(analyzers, str):
-                        analyzers = [analyzers]
-                    for analyzer in analyzers:
+                    # No dataset language here: this walks every table in the
+                    # database, so it can only ask for the defaults and must
+                    # leave a table that was built for another language alone.
+                    wanted = _wanted_fulltext_indexes(field_name, field_info, None)
+                    if _has_foreign_rag_index(index_names, field_name, wanted):
+                        continue
+                    for idx_name, analyzer in wanted.items():
                         inf_table.create_index(
-                            f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                            idx_name,
                             IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
                             ConflictType.Ignore,
                         )
@@ -488,9 +571,9 @@ class InfinityConnectionBase(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         table_name = f"{index_name}_{dataset_id}"
-        self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}")
+        self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}, language: {language}")
 
         inf_conn = self.connPool.get_conn()
         try:
@@ -544,14 +627,22 @@ class InfinityConnectionBase(DocStoreConnection):
                 ),
                 logger=self.logger,
             )
+            # create_table above is ConflictType.Ignore, so this may be an
+            # existing table whose analyzer was settled under another language.
+            existing_indexes = inf_table.list_indexes().index_names
             for field_name, field_info in schema.items():
                 if field_info["type"] != "varchar" or "analyzer" not in field_info:
                     continue
-                analyzers = field_info["analyzer"]
-                if isinstance(analyzers, str):
-                    analyzers = [analyzers]
-                for analyzer in analyzers:
-                    idx_name = f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}"
+                wanted = _wanted_fulltext_indexes(field_name, field_info, language)
+                if _has_foreign_rag_index(existing_indexes, field_name, wanted):
+                    self.logger.info(
+                        "INFINITY %s keeps its existing analyzer on %s; language %r needs a fresh table",
+                        table_name,
+                        field_name,
+                        language,
+                    )
+                    continue
+                for idx_name, analyzer in wanted.items():
                     _retry_on_meta_contention(
                         f"create_index({idx_name}, {table_name})",
                         lambda fn=field_name, an=analyzer, name=idx_name: inf_table.create_index(

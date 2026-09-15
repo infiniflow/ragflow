@@ -67,8 +67,8 @@ func TestWikiKeywordFilter_Integration(t *testing.T) {
 		row["kb_id"] = kbID
 	}
 	// Best effort: the store may already exist from a previous run.
-	_ = de.CreateChunkStore(ctx, idx, kbID, 1024, "naive")
-	if _, err := de.InsertChunks(ctx, rows, idx, kbID); err != nil {
+	_ = de.CreateChunkStore(ctx, idx, kbID, 1024, "naive", "")
+	if _, err := de.InsertChunks(ctx, rows, idx, kbID, ""); err != nil {
 		t.Fatalf("seed wiki rows: %v", err)
 	}
 	t.Cleanup(func() {

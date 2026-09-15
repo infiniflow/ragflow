@@ -327,7 +327,7 @@ def test_async_chat_uses_all_docs_when_no_doc_ids_selected(monkeypatch):
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog, **_kwargs: ([SimpleNamespace(tenant_id="tenant-id")], object(), None, chat_model, None),
+        lambda _dialog, **_kwargs: ([SimpleNamespace(tenant_id="tenant-id", language="English")], object(), None, chat_model, None),
     )
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {})
     monkeypatch.setattr(dialog_service, "label_question", lambda _question, _kbs: None)
@@ -508,8 +508,8 @@ def test_async_chat_skips_sql_retrieval_for_mixed_tenant_field_map_datasets(monk
     is skipped entirely and the flow falls back to vector search, instead of
     querying only one tenant's index and dropping the other tenants' data.
     """
-    kb_a = SimpleNamespace(id="kb-a", tenant_id="tenant-a", parser_config={"field_map": {"product": "Product Name"}})
-    kb_b = SimpleNamespace(id="kb-b", tenant_id="tenant-b", parser_config={"field_map": {"product": "Product Name"}})
+    kb_a = SimpleNamespace(id="kb-a", tenant_id="tenant-a", language="English", parser_config={"field_map": {"product": "Product Name"}})
+    kb_b = SimpleNamespace(id="kb-b", tenant_id="tenant-b", language="English", parser_config={"field_map": {"product": "Product Name"}})
 
     retriever = _StubAsyncRetriever(
         {

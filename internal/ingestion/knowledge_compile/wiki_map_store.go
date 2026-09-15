@@ -80,7 +80,7 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 		"content_with_weight": string(state.Payload),
 		"available_int":       0,
 	}
-	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID)
+	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID, "")
 	return err
 }
 
@@ -173,7 +173,7 @@ func (s *wikiMapVersionStore) PutWikiMapVersions(ctx context.Context, versions [
 			if len(rows) == 0 {
 				continue
 			}
-			if _, err := s.engine.InsertChunks(ctx, rows, fmt.Sprintf("ragflow_%s", batch[0].TenantID), batch[0].DatasetID); err != nil {
+			if _, err := s.engine.InsertChunks(ctx, rows, fmt.Sprintf("ragflow_%s", batch[0].TenantID), batch[0].DatasetID, ""); err != nil {
 				return fmt.Errorf("save Wiki MAP versions: %w", err)
 			}
 		}

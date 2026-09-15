@@ -592,6 +592,8 @@ def _empty_response_applies(knowledges: list, text_attachments_content: str, ima
 
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
+    from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     session_id = kwargs.get("session_id")
@@ -769,6 +771,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(" ".join(questions), kbs),
                 rerank_candidates_count=rerank_candidates_count,
+                language=dataset_language(kbs),
             )
             if prompt_config.get("toc_enhance"):
                 cks = await retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
@@ -1703,6 +1706,8 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
+    from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1776,6 +1781,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         rank_feature=label_question(question, kbs),
         trace_id=search_id,
         rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
+        language=dataset_language(kbs),
     )
     if include_reference_metadata:
         logging.debug(
@@ -1831,6 +1837,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
 
 async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
+    from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
@@ -1878,6 +1886,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
         rerank_candidates_count=search_config.get("rerank_candidates_count", 100),
+        language=dataset_language(kbs),
     )
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
