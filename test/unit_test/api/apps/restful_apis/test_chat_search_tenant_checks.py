@@ -392,7 +392,7 @@ class TestAskAboutEmbeddedTenantChecks:
         res = asyncio.run(module.ask_about_embedded(tenant_id="tenant-1"))
 
         assert res["code"] == 102, res
-        assert res["message"] == "You don't own the dataset kb-foreign", res
+        assert res["message"] == "You don't own the requested dataset", res
         assert "async_ask" not in calls
 
     def test_search_config_override_kb_rejected(self, monkeypatch):
@@ -410,7 +410,7 @@ class TestAskAboutEmbeddedTenantChecks:
         res = asyncio.run(module.ask_about_embedded(tenant_id="tenant-1"))
 
         assert res["code"] == 102, res
-        assert res["message"] == "You don't own the dataset kb-hidden-foreign", res
+        assert res["message"] == "You don't own the requested dataset", res
         assert "async_ask" not in calls
 
     def test_accessible_kbs_stream_and_forwarded(self, monkeypatch):
@@ -450,7 +450,7 @@ class TestBotMindmapTenantChecks:
         res = asyncio.run(module.mindmap(tenant_id="tenant-1"))
 
         assert res["code"] == 102, res
-        assert res["message"] == "You don't own the dataset kb-foreign", res
+        assert res["message"] == "You don't own the requested dataset", res
         assert "gen_mindmap" not in calls
 
     def test_foreign_search_app_rejected(self, monkeypatch):

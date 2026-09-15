@@ -1138,10 +1138,6 @@ def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
         {"tenant_id": "current-user", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
     )
 
-    # set_tenant_info validates ownership via get_info_by before updating;
-    # let that check pass so the update failure below is exercised.
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _uid: [{"tenant_id": "tenant-1"}])
-
     def _raise_update(_tenant_id, _payload):
         raise RuntimeError("tenant update boom")
 
@@ -1681,18 +1677,17 @@ def test_set_tenant_info_rejects_foreign_tenant_unit(monkeypatch):
     updated = []
     monkeypatch.setattr(module.TenantService, "update_by_id", lambda tid, payload: updated.append((tid, payload)) or True)
 
-    # A tenant_id from the body that the caller does not own must be rejected
-    # instead of updating another tenant's model bindings.
-    monkeypatch.setattr(module.TenantService, "get_info_by", lambda _user_id: [{"tenant_id": "tenant-mine"}])
+    # A tenant_id from the body that is not the caller's own tenant id must be
+    # rejected instead of updating another tenant's model bindings.
     _set_request_json(monkeypatch, module, {"tenant_id": "tenant-other", "llm_id": "llm-x", "embd_id": "embd-x", "asr_id": "asr-x", "img2txt_id": "img-x"})
     res = _run(module.set_tenant_info())
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "no authorization", res
+    assert res["message"] == "No authorization.", res
     assert updated == []
 
     # The caller's own tenant is still updatable.
-    _set_request_json(monkeypatch, module, {"tenant_id": "tenant-mine", "llm_id": "llm-x", "embd_id": "embd-x", "asr_id": "asr-x", "img2txt_id": "img-x"})
+    _set_request_json(monkeypatch, module, {"tenant_id": "current-user", "llm_id": "llm-x", "embd_id": "embd-x", "asr_id": "asr-x", "img2txt_id": "img-x"})
     res = _run(module.set_tenant_info())
     assert res["code"] == 0, res
-    assert updated and updated[0][0] == "tenant-mine", updated
+    assert updated and updated[0][0] == "current-user", updated
     assert updated[0][1]["llm_id"] == "llm-x", updated

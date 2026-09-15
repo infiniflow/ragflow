@@ -590,12 +590,6 @@ async def mindmap(tenant_id=None):
             return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
         search_app = await thread_pool_exec(SearchService.get_detail, search_id)
 
-    # check if the kb_ids is accessible for this user
-    for kb_id in req["kb_ids"]:
-        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=tenant_id):
-            logging.warning("Access denied: user=%s resource=%s", tenant_id, kb_id)
-            return get_error_data_result(message=f"You don't own the dataset {kb_id}")
-
     mind_map = await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
