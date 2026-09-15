@@ -2377,6 +2377,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       version: {
         details: '版本详情',
         download: '下载',
+        loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
       },
       cite: '引用',
