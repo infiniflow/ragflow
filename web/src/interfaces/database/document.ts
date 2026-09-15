@@ -1,4 +1,4 @@
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 
 export interface IDocumentInfo {
   // chunk_num: number;
@@ -18,7 +18,10 @@ export interface IDocumentInfo {
   process_duration: number;
   progress: number;
   progress_msg: string;
-  run: RunningStatus;
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus;
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string;

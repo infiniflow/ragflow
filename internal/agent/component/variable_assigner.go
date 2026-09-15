@@ -284,6 +284,17 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 				}
 			}
 			return param, ""
+		case bool:
+			// Accept yes/true and no/false spellings case-insensitively.
+			if s, ok := param.(string); ok {
+				switch strings.ToLower(s) {
+				case "yes", "true":
+					return true, ""
+				case "no", "false":
+					return false, ""
+				}
+			}
+			return param, ""
 		default:
 			return param, ""
 		}

@@ -25,7 +25,7 @@ from elastic_transport import ConnectionTimeout
 from common.decorator import singleton
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from common.doc_store.es_conn_base import ESConnectionBase
-from common.float_utils import get_float
+from common.float_utils import format_minimum_should_match_percent, get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
 
@@ -171,7 +171,7 @@ class ESConnection(ESConnectionBase):
             if isinstance(m, MatchTextExpr):
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                 bool_query.must.append(
                     Q(
                         "query_string",

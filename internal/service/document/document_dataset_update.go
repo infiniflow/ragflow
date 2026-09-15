@@ -94,6 +94,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			}
 		}
 		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
+		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
 
@@ -234,26 +235,67 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		metaFields, _ = s.GetDocumentMetadataByID(ctx, updatedDoc.ID)
 	}
 
-	return s.toUpdateDatasetDocumentResponse(updatedDoc, metaFields), common.CodeSuccess, nil
+	resp, err := s.toUpdateDatasetDocumentResponse(ctx, updatedDoc, metaFields)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return resp, common.CodeSuccess, nil
+}
+
+// validateDocumentModifiable rejects configuration edits while the document is
+// actively parsing or scheduled.
+func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
+	if s.ingestionTaskDAO == nil {
+		return common.CodeServerError, errors.New("ingestion task DAO not initialized")
+	}
+	if doc == nil || doc.ID == "" {
+		return common.CodeDataError, errors.New("document is nil or has empty ID")
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+	}
+	if task == nil {
+		return common.CodeSuccess, nil
+	}
+	switch {
+	case common.IsActiveTaskStatus(task.Status):
+		return common.CodeDataError, fmt.Errorf(
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+	case common.IsTerminalTaskStatus(task.Status):
+		return common.CodeSuccess, nil
+	default:
+		return common.CodeDataError, fmt.Errorf("document has unrecognized task status %q", task.Status)
+	}
 }
 
 func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
-	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
-		return common.CodeDataError, errors.New("can't change `chunk_count`")
-	}
-	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
-		return common.CodeDataError, errors.New("can't change `token_count`")
+
+	// Reject any configuration edit while the document is parsing or scheduled.
+	// This guard is field-agnostic: every editable field (name, parser_config,
+	// chunk_method, pipeline_id, enabled, meta_fields) is blocked so the
+	// in-flight parser never reads a config that changed underneath it.
+	if len(present) > 0 {
+		if code, err := s.validateDocumentModifiable(ctx, doc); err != nil {
+			return code, err
+		}
 	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
 			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%s>", pythonFloatRepr(*req.Progress))
 		}
-		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-			return common.CodeDataError, errors.New("can't change `progress`")
-		}
+	}
+	if err := validateImmutableDocumentFields(doc, immutableDocumentFields{
+		chunkNum:            requestField(req.ChunkCount, present["chunk_count"]),
+		chunkNumRequestName: "chunk_count",
+		tokenNum:            requestField(req.TokenCount, present["token_count"]),
+		tokenNumRequestName: "token_count",
+		progress:            requestField(req.Progress, present["progress"]),
+	}); err != nil {
+		return common.CodeDataError, err
 	}
 
 	if present["enabled"] {
@@ -306,6 +348,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func requestField[T any](value *T, present bool) *T {
+	if !present {
+		return nil
+	}
+	return value
 }
 
 // validateDocumentName mirrors Python's validate_document_name: length check
@@ -424,9 +473,19 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	})
 }
 
-func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, metaFields map[string]interface{}) *UpdateDatasetDocumentResponse {
+func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
 	if metaFields == nil {
 		metaFields = map[string]interface{}{}
+	}
+	ingestionStatus := "UNSTART"
+	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+		}
+		if task != nil && task.Status != "" {
+			ingestionStatus = task.Status
+		}
 	}
 	return &UpdateDatasetDocumentResponse{
 		ID:              doc.ID,
@@ -450,31 +509,13 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(doc *entity.Document, 
 		ContentHash:     doc.ContentHash,
 		MetaFields:      metaFields,
 		Suffix:          doc.Suffix,
-		Run:             mapDocumentRunStatus(doc.Run),
+		IngestionStatus: ingestionStatus,
 		Status:          doc.Status,
 		CreateTime:      doc.CreateTime,
 		CreateDate:      doc.CreateDate,
 		UpdateTime:      doc.UpdateTime,
 		UpdateDate:      doc.UpdateDate,
-	}
-}
-
-func mapDocumentRunStatus(run *string) string {
-	if run == nil {
-		return "UNSTART"
-	}
-	switch *run {
-	case string(entity.TaskStatusRunning):
-		return "RUNNING"
-	case string(entity.TaskStatusCancel):
-		return "CANCEL"
-	case string(entity.TaskStatusDone):
-		return "DONE"
-	case string(entity.TaskStatusFail):
-		return "FAIL"
-	default:
-		return "UNSTART"
-	}
+	}, nil
 }
 
 // validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.

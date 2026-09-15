@@ -9,7 +9,7 @@ import {
   useDatasetGenerate,
   useGenerateStatus,
 } from '@/hooks/use-dataset-generate';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 import {
   GenerableViewMode,
@@ -57,7 +57,7 @@ export function CompilationEmptyState({
   }, [pauseGenerate, data?.id, generateType]);
 
   const showProgress = status === 'running' || status === 'failed';
-  const isGo = isGoDatasetBackend();
+  const isGo = useIsGoBackend();
 
   return (
     <div className="flex-1 min-h-0 flex flex-col items-center justify-center border border-dashed border-border-button rounded-xl">
@@ -85,7 +85,7 @@ export function CompilationEmptyState({
           <div />
           <div className="flex flex-col items-center gap-5">
             {isGo ? (
-              // Go/hybrid: no stable percentage and no scheduler cancel, so show
+              // Go: no stable percentage and no scheduler cancel, so show
               // the MySQL inflight/backlog counts (or the error diagnostic).
               status === 'failed' ? (
                 <div className="flex flex-col items-center gap-2 text-state-error">

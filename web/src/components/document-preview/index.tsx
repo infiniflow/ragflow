@@ -19,6 +19,7 @@ import { memo } from 'react';
 import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
+import { EpubPreviewer } from './epub-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
 import { Md } from './md';
@@ -31,6 +32,7 @@ type PreviewProps = {
   fileType: string;
   className?: string;
   url: string;
+  positions?: number[][];
 };
 const DocumentPreview = function ({
   fileType,
@@ -38,6 +40,7 @@ const DocumentPreview = function ({
   highlights,
   setWidthAndHeight,
   url,
+  positions,
 }: PreviewProps & Partial<IProps>) {
   const isPdf = fileType === 'pdf';
 
@@ -90,9 +93,13 @@ const DocumentPreview = function ({
           <PptPreviewer className={className} url={url} />
         </section>
       )}
-      {['xlsx'].indexOf(fileType) > -1 && (
-        <section>
-          <ExcelCsvPreviewer className={className} url={url} />
+      {['xlsx', 'xls'].indexOf(fileType) > -1 && (
+        <section className="h-full">
+          <ExcelCsvPreviewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['csv'].indexOf(fileType) > -1 && (
@@ -103,6 +110,11 @@ const DocumentPreview = function ({
       {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
+        </section>
+      )}
+      {['epub'].indexOf(fileType) > -1 && (
+        <section>
+          <EpubPreviewer className={className} url={url} />
         </section>
       )}
     </>

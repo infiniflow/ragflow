@@ -16,7 +16,15 @@
 
 package connector
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrSyncResumeInvalid reports that a saved sync resume anchor no longer exists
+// in the current source listing. The runner treats this as invalid progress and
+// restarts the current task window instead of silently guessing a new offset.
+var ErrSyncResumeInvalid = errors.New("sync resume checkpoint is no longer valid")
 
 // SourceDocument is the normalized document emitted by datasource connectors.
 type SourceDocument struct {
@@ -54,6 +62,7 @@ type SyncCheckpointState struct {
 	WindowEnd     time.Time       `json:"window_end"`
 	NextCommitSeq int64           `json:"next_commit_seq"`
 	Checkpoint    *SyncCheckpoint `json:"checkpoint,omitempty"`
+	RestartCount  int             `json:"restart_count,omitempty"`
 	Added         int64           `json:"added,omitempty"`
 	Updated       int64           `json:"updated,omitempty"`
 	Skipped       int64           `json:"skipped,omitempty"`

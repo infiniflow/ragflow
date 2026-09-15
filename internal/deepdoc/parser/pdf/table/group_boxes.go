@@ -185,6 +185,26 @@ func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 		}
 	} else if b.SP > 0 {
 		label = "table spanning cell"
+		// A pure-SP box (H==0) still carries the span's full extent in
+		// HLeft/HRight/HTop/HBott, copied together from the TSR spanning cell
+		// by AnnotateTableBoxes (PR #18707). Rebuild the cell from those bounds
+		// so CalSpans covers every column/row the span crosses — matching
+		// Python's _annotate_table_boxes. Without this, the span cell falls
+		// back to the box's own narrow text bounds, under-covers by one
+		// column, and the header row keeps an extra empty cell (real_pdfs/1.pdf
+		// row0 = 4 vs Python's 3; see known_diffs rule
+		// table-1pdf-colspan-assembly-loss, resolved).
+		//
+		// HLeft/HRight (and HTop/HBott) are set together, so treat an axis as
+		// propagated whenever either edge is set. This preserves a real edge at
+		// coordinate 0 (a nonzero check would mistake it for "unset" and fall
+		// back to the box's own bounds, dropping the span's left/top edge).
+		if b.HLeft != 0 || b.HRight != 0 {
+			x0, x1 = b.HLeft, b.HRight
+		}
+		if b.HTop != 0 || b.HBott != 0 {
+			y0, y1 = b.HTop, b.HBott
+		}
 	}
 	return
 }
@@ -269,46 +289,52 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[in
 	return cmap, maxCols
 }
 
-// rowBox is a helper for compressColIndices.
-type rowBox struct {
-	c, idx int
-	x0, x1 float64
-	txt    string
-}
-
-// compressColIndices compresses column indices per row based on X0 ordering and overlap.
-// Returns cCompressed (row → original C → compressed C) and cMaxCol (max compressed C per row).
+// compressColIndices assigns every box a column from a GLOBAL rank of the
+// table's distinct C labels, mirroring Python's construct_table which groups
+// boxes into columns by their per-char C assignment (each distinct C yields a
+// column, in C order; a box whose C is the previous box's C+1 always starts a
+// new column — Python never merges adjacent C values by X overlap).
+//
+// A table-wide mapping keeps the same C in the same column across ALL rows: a
+// per-row re-compression would misalign cell text (a C=4 box landing in
+// column 3 in one row and column 4 in another). Every row is sized to the
+// table-wide column count, matching Python's uniform-width construct_table
+// output (rows missing a C render empty cells).
 func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int) (map[int]map[int]int, map[int]int) {
-	cCompressed := make(map[int]map[int]int) // row → (original C → compressed col)
-	cMaxCol := make(map[int]int)
-	for ri := 0; ri <= compressed; ri++ {
-		// Collect all boxes in this row, sorted by X0.
-		var rowBoxes []rowBox
-		for i, b := range boxes {
-			if rowMap[b.R] == ri && (strings.TrimSpace(b.Text) != "" || b.H > 0 || b.SP > 0) {
-				rowBoxes = append(rowBoxes, rowBox{c: b.C, idx: i, x0: b.X0, x1: b.X1, txt: b.Text})
-			}
+	distinctC := make(map[int]bool)
+	for _, b := range boxes {
+		if b.C >= 0 {
+			distinctC[b.C] = true
 		}
-		sort.Slice(rowBoxes, func(i, j int) bool { return rowBoxes[i].x0 < rowBoxes[j].x0 })
-		// Assign compressed column by X-order (disjoint X → new col).
-		cMap := make(map[int]int) // original C → compressed col
-		right := 0.0
-		nCols := 0
-		for _, rb := range rowBoxes {
-			if len(cMap) == 0 || rb.x0 >= right {
-				cMap[rb.c] = nCols
-				nCols++
-				right = rb.x1
-			} else {
-				// Overlapping X → merge into last column.
-				cMap[rb.c] = nCols - 1
-				if rb.x1 > right {
-					right = rb.x1
-				}
+	}
+	cs := make([]int, 0, len(distinctC))
+	for c := range distinctC {
+		cs = append(cs, c)
+	}
+	sort.Ints(cs)
+	rank := make(map[int]int, len(cs))
+	for i, c := range cs {
+		rank[c] = i
+	}
+	maxCol := len(cs) - 1
+
+	cCompressed := make(map[int]map[int]int) // row → (original C → compressed col)
+	cMaxCol := make(map[int]int)             // every row spans the table-wide column count
+	for ri := 0; ri <= compressed; ri++ {
+		cMap := make(map[int]int)
+		for _, b := range boxes {
+			if rowMap[b.R] != ri {
+				continue
+			}
+			if strings.TrimSpace(b.Text) == "" && b.H <= 0 && b.SP <= 0 {
+				continue
+			}
+			if cr, ok := rank[b.C]; ok {
+				cMap[b.C] = cr
 			}
 		}
 		cCompressed[ri] = cMap
-		cMaxCol[ri] = nCols - 1
+		cMaxCol[ri] = maxCol
 	}
 	return cCompressed, cMaxCol
 }

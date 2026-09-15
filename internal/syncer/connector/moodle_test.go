@@ -365,6 +365,40 @@ func TestMoodleConnectorOpenSyncResumesFromCheckpoint(t *testing.T) {
 	}
 }
 
+func TestMoodleConnectorOpenSyncResumeRejectsMissingCourse(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, fullSyncMoodleFixtures)
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   "moodle_course_999",
+			SourceID: "moodle_course_999",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
+func TestMoodleConnectorOpenSyncResumeRejectsMalformedCursor(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, fullSyncMoodleFixtures)
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor: "moodle_course_not-a-number",
+		},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestMoodleConnectorOpenSyncDeferredCoursesUntilNextBatch(t *testing.T) {
 	withMoodleTestHooks(t)
 	var courseListCount atomic.Int64

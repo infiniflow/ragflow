@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import {
   Box,
@@ -11,6 +10,8 @@ import {
   Route,
   Sparkle,
 } from 'lucide-react';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 export enum MenuItemKey {
   Recommended = 'Recommended',
   Agent = 'Agent',
@@ -20,53 +21,6 @@ export enum MenuItemKey {
   Pipeline = 'Ingestion Pipeline',
   Other = 'Other',
 }
-const menuItems = [
-  {
-    // section: 'All Templates',
-    section: '',
-    items: [
-      {
-        icon: Sparkle,
-        label: t('flow.' + lowerFirst(MenuItemKey.Recommended)),
-        key: MenuItemKey.Recommended,
-      },
-      {
-        icon: Box,
-        label: t('flow.' + lowerFirst(MenuItemKey.Agent)),
-        key: MenuItemKey.Agent,
-      },
-      {
-        icon: MessageCircleCode,
-        label: t(
-          'flow.' + lowerFirst(MenuItemKey.CustomerSupport).replace(' ', ''),
-        ),
-        key: MenuItemKey.CustomerSupport,
-      },
-      {
-        icon: ChartPie,
-        label: t('flow.' + lowerFirst(MenuItemKey.Marketing)),
-        key: MenuItemKey.Marketing,
-      },
-      {
-        icon: Component,
-        label: t(
-          'flow.' + lowerFirst(MenuItemKey.ConsumerApp.replace(' ', '')),
-        ),
-        key: MenuItemKey.ConsumerApp,
-      },
-      {
-        icon: Route,
-        label: t('flow.' + lowerFirst(MenuItemKey.Pipeline.replace(' ', ''))),
-        key: MenuItemKey.Pipeline,
-      },
-      {
-        icon: PencilRuler,
-        label: t('flow.' + lowerFirst(MenuItemKey.Other)),
-        key: MenuItemKey.Other,
-      },
-    ],
-  },
-];
 
 export function SideBar({
   change,
@@ -75,9 +29,65 @@ export function SideBar({
   change: (keyword: string) => void;
   selected?: string;
 }) {
+  const { t } = useTranslation();
+
   const handleMenuClick = (key: string) => {
     change(key);
   };
+
+  const menuItems = useMemo(
+    () => [
+      {
+        // section: 'All Templates',
+        section: '',
+        items: [
+          {
+            icon: Sparkle,
+            label: t('flow.' + lowerFirst(MenuItemKey.Recommended)),
+            key: MenuItemKey.Recommended,
+          },
+          {
+            icon: Box,
+            label: t('flow.' + lowerFirst(MenuItemKey.Agent)),
+            key: MenuItemKey.Agent,
+          },
+          {
+            icon: MessageCircleCode,
+            label: t(
+              'flow.' +
+                lowerFirst(MenuItemKey.CustomerSupport).replace(' ', ''),
+            ),
+            key: MenuItemKey.CustomerSupport,
+          },
+          {
+            icon: ChartPie,
+            label: t('flow.' + lowerFirst(MenuItemKey.Marketing)),
+            key: MenuItemKey.Marketing,
+          },
+          {
+            icon: Component,
+            label: t(
+              'flow.' + lowerFirst(MenuItemKey.ConsumerApp.replace(' ', '')),
+            ),
+            key: MenuItemKey.ConsumerApp,
+          },
+          {
+            icon: Route,
+            label: t(
+              'flow.' + lowerFirst(MenuItemKey.Pipeline.replace(' ', '')),
+            ),
+            key: MenuItemKey.Pipeline,
+          },
+          {
+            icon: PencilRuler,
+            label: t('flow.' + lowerFirst(MenuItemKey.Other)),
+            key: MenuItemKey.Other,
+          },
+        ],
+      },
+    ],
+    [t],
+  );
 
   return (
     <aside className="w-[303px] bg-text-title-invert border-r flex flex-col">

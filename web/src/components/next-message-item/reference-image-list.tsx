@@ -26,6 +26,7 @@ import { IReferenceChunk } from '@/interfaces/database/chat';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
 
@@ -52,13 +53,14 @@ const getButtonVisibilityClass = (imageCount: number) => {
 
 function ImagePhotoView({ id, index }: ImageItem) {
   const src = useDocumentImageUrl(id);
+  const { t } = useTranslation();
 
   return (
     <PhotoView src={src}>
       <Image
         id={id}
         className="h-40 w-full"
-        label={`Fig. ${(index + 1).toString()}`}
+        label={`${t('common.figure')} ${(index + 1).toString()}`}
       />
     </PhotoView>
   );
