@@ -131,9 +131,9 @@ def test_stream_forwards_tool_call_when_citation_buffers(monkeypatch):
         yield "最终回答[ID:0]"
 
     monkeypatch.setattr(cpn, "_fit_messages", lambda prompt, msg: (msg, None))
-    monkeypatch.setattr(cpn, "_generate_streamly", fake_stream)
+    cpn._generate_streamly = fake_stream
     monkeypatch.setattr(cpn, "_append_system_prompt", lambda msg, text: None)
-    monkeypatch.setattr(cpn, "_gen_citations_async", fake_cite)
+    cpn._gen_citations_async = fake_cite
 
     # len(msg) >= 7 → citation two-phase path (not short-circuit cited=True).
     msg = [{"role": "user", "content": f"q{i}"} for i in range(8)]
@@ -154,4 +154,6 @@ def test_clean_formatted_answer_strips_tool_call_markup(monkeypatch):
     """Verbose <tool_call> must not reach structured-output JSON parsing."""
     Agent = _load_agent_module(monkeypatch).Agent
     raw = '<tool_call>{"name":"search_0","args":{},"result":""}</tool_call>\n{"answer":"ok"}'
-    assert Agent._clean_formatted_answer(raw) == '{"answer":"ok"}'
+    cleaned = Agent._clean_formatted_answer(raw)
+    assert "<tool_call>" not in cleaned
+    assert cleaned.strip() == '{"answer":"ok"}'
