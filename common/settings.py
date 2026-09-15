@@ -182,6 +182,9 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# Allow OAuth/OIDC just-in-time user provisioning (independent of local signup).
+OAUTH_AUTO_REGISTER = True
+
 # SSO-only mode: hide password login form
 DISABLE_PASSWORD_LOGIN = False
 
@@ -321,6 +324,13 @@ def init_settings():
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
     except Exception:
         pass
+
+    global OAUTH_AUTO_REGISTER
+    env_val = os.environ.get("OAUTH_AUTO_REGISTER", "").lower()
+    if env_val in ("0", "false", "no"):
+        OAUTH_AUTO_REGISTER = False
+    elif env_val in ("1", "true", "yes"):
+        OAUTH_AUTO_REGISTER = True
 
     global DISABLE_PASSWORD_LOGIN
     try:

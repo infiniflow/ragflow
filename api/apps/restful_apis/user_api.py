@@ -223,6 +223,9 @@ async def oauth_callback(channel):
         user_id = get_uuid()
 
         if not users:
+            if not settings.OAUTH_AUTO_REGISTER:
+                logging.warning("OAuth/OIDC JIT registration blocked: email=%s, channel=%s", user_info.email, channel)
+                return redirect("/?error=registration_disabled")
             try:
                 try:
                     avatar = await download_img(user_info.avatar_url)
