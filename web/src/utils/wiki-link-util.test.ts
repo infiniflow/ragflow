@@ -1,4 +1,4 @@
-import { parseWikiLinkHref } from './parse-wiki-link';
+import { parseWikiLinkHref } from './wiki-link-util';
 
 describe('parseWikiLinkHref', () => {
   it('preserves nested typed slugs in artifact links', () => {

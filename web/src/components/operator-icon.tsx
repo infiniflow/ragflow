@@ -93,6 +93,7 @@ export const LucideIconMap = {
   [Operator.File]: LucideFile,
   [Operator.Parser]: LucideFilePlay,
   [Operator.Tokenizer]: LucideListPlus,
+  [Operator.GeneralChunker]: LucideBlocks,
   [Operator.TokenChunker]: LucideBlocks,
   [Operator.TitleChunker]: LucideHeading,
   [Operator.Extractor]: LucideFileStack,

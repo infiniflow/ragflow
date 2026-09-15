@@ -83,8 +83,6 @@ export const useFetchDatasetSettingOnMount = (
         'pagerank',
         'avatar',
         'pipeline_id',
-        'pipeline_name',
-        'pipeline_avatar',
         'parser_id',
       ]),
       embedding_model: knowledgeDetails.embedding_model,

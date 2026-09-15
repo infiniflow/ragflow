@@ -51,8 +51,10 @@ func ContextFitBudget(maxLength int) int {
 }
 
 // validateFittedMessages checks that the fitted message list is non-empty
-// and the last message is a non-empty user turn (content or multi-modal
-// parts). Returns an error string on failure, empty string on success.
+// and the last message is a user turn that still carries something usable —
+// non-empty text, or a real media payload. Returns an error string on failure,
+// empty string on success.
+//
 // Python requires len >= 2 because the system prompt is always injected
 // upstream; Go allows len >= 1 because the system message may be embedded
 // inside msgs (from buildMessagesWithImages) or absent entirely.
@@ -64,10 +66,53 @@ func validateFittedMessages(msgFit []schema.Message) string {
 	if last.Role != schema.User {
 		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
 	}
-	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
+	if strings.TrimSpace(last.Content) == "" && !hasUsableContent(last.UserInputMultiContent) {
 		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
 	}
 	return ""
+}
+
+// hasUsableContent reports whether the multi-modal parts still give the model
+// something to work with: non-empty text, or a media payload with a url or
+// inline data. Parts merely EXISTING is not enough — a text-only turn whose
+// text the fitting trimmed away leaves a non-empty slice holding an empty text
+// part, and sending that turn would ask the model to answer nothing (Python's
+// validate_fitted_messages rejects an empty user content the same way).
+func hasUsableContent(parts []schema.MessageInputPart) bool {
+	for _, p := range parts {
+		if p.Type == schema.ChatMessagePartTypeText {
+			if strings.TrimSpace(p.Text) != "" {
+				return true
+			}
+			continue
+		}
+		for _, c := range payloadCommons(p) {
+			hasURL := c.URL != nil && strings.TrimSpace(*c.URL) != ""
+			hasData := c.Base64Data != nil && strings.TrimSpace(*c.Base64Data) != ""
+			if hasURL || hasData {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// payloadCommons returns the media payloads a part carries, if any.
+func payloadCommons(p schema.MessageInputPart) []*schema.MessagePartCommon {
+	out := make([]*schema.MessagePartCommon, 0, 4)
+	if p.Image != nil {
+		out = append(out, &p.Image.MessagePartCommon)
+	}
+	if p.Audio != nil {
+		out = append(out, &p.Audio.MessagePartCommon)
+	}
+	if p.Video != nil {
+		out = append(out, &p.Video.MessagePartCommon)
+	}
+	if p.File != nil {
+		out = append(out, &p.File.MessagePartCommon)
+	}
+	return out
 }
 
 // FitMessages applies message_fit_in semantics to the given messages and
@@ -76,24 +121,15 @@ func validateFittedMessages(msgFit []schema.Message) string {
 // Mirrors Python's LLM.fit_messages in PR #16413.
 func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
 	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
+	// Copy the WHOLE message first: the fitted history must keep every field the
+	// model layer relies on (tool calls, tool ids, reasoning, extras, ...), which
+	// a Role/Content/parts literal would silently drop. Then deep-copy only the
+	// reference-backed fields fitting rewrites.
 	copied := make([]schema.Message, len(msgs))
 	for i, m := range msgs {
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		copied[i] = schema.Message{
-			Role:                  m.Role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		}
+		cloned := m
+		cloned.UserInputMultiContent = deepCopyInputParts(m.UserInputMultiContent)
+		copied[i] = cloned
 	}
 
 	// Convert to messagefit.Message. Track where each entry's text lives
@@ -175,4 +211,48 @@ func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 		result = append(result, m)
 	}
 	return result, validateFittedMessages(result)
+}
+
+// deepCopyInputParts clones the multi-modal parts — the slice, the media
+// payload structs and their url/base64 pointers — so fitting can rewrite a
+// part's text or drop parts without touching the caller's message.
+func deepCopyInputParts(parts []schema.MessageInputPart) []schema.MessageInputPart {
+	out := slices.Clone(parts)
+	for j, p := range out {
+		if p.Image != nil {
+			img := *p.Image
+			img.MessagePartCommon = clonePartCommon(img.MessagePartCommon)
+			out[j].Image = &img
+		}
+		if p.Audio != nil {
+			audio := *p.Audio
+			audio.MessagePartCommon = clonePartCommon(audio.MessagePartCommon)
+			out[j].Audio = &audio
+		}
+		if p.Video != nil {
+			video := *p.Video
+			video.MessagePartCommon = clonePartCommon(video.MessagePartCommon)
+			out[j].Video = &video
+		}
+		if p.File != nil {
+			file := *p.File
+			file.MessagePartCommon = clonePartCommon(file.MessagePartCommon)
+			out[j].File = &file
+		}
+	}
+	return out
+}
+
+// clonePartCommon copies a payload's pointer-backed fields so the fitted message
+// never aliases the caller's payload.
+func clonePartCommon(c schema.MessagePartCommon) schema.MessagePartCommon {
+	if c.URL != nil {
+		u := *c.URL
+		c.URL = &u
+	}
+	if c.Base64Data != nil {
+		d := *c.Base64Data
+		c.Base64Data = &d
+	}
+	return c
 }

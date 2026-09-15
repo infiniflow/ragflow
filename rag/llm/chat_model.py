@@ -286,6 +286,17 @@ def _apply_model_family_policies(
         elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
+        elif provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax reasoning models (MiniMax-M1/M3) read `thinking` in the
+            # request body and ignore `reasoning_effort`. `thinking` is NOT a
+            # standard OpenAI-compatible param, so LiteLLM's drop_params=True
+            # would drop a top-level key; it must ride in extra_body (merged
+            # verbatim into the body). Without this, MiniMax keeps
+            # chain-of-thought on, which slows extraction and can hang a batch
+            # on a long COT.
+            if thinking_type:
+                _pop_thinking_controls()
+                _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type}})
 
         return sanitized_gen_conf, sanitized_kwargs
 
@@ -298,6 +309,7 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
         SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
         SupportedLiteLLMProvider.Moonshot: {"thinking"},
         SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+        SupportedLiteLLMProvider.MiniMax: {"thinking"},
     }.get(provider, set())
 
     body = completion_args.get("extra_body")
@@ -2075,6 +2087,41 @@ class SynthoraiChat(Base):
         super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 
+class AnonRouterChat(Base):
+    """AnonRouter OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. AnonRouter is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the AnonRouter API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
+class ApiRouteChat(Base):
+    """API-Route OpenAI-compatible chat adapter.
+
+    The endpoint is fixed to global.api-route.com rather than configurable.
+    API-Route is a hosted aggregation platform, so a tenant-supplied
+    ``base_url`` would have no legitimate use and would send the API-Route
+    key elsewhere.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Initialize the API-Route chat model."""
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -2115,10 +2162,31 @@ class LiteLLMBase(ABC):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
-        self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
+        # #19262: the Tongyi-Qianwen / Dashscope factory default base URL is
+        # ``dashscope.aliyuncs.com/compatible-mode/v1`` (the OpenAI-compatible
+        # endpoint). LiteLLM's ``dashscope/`` prefix routes to the *native*
+        # DashScope SDK instead, which rejects the request format with a
+        # generic 102. Both the default and any user-supplied alternative
+        # that targets the OpenAI-compatible endpoint must therefore skip
+        # the prefix; only requests to the native endpoint
+        # (``/api/v1``) keep it.
+        #
+        # Restrict the prefix-skip to the two DashScope-family
+        # providers — a non-DashScope provider with a custom URL ending
+        # in ``/compatible-mode/v1`` would lose its required LiteLLM
+        # prefix and send an invalid model name.
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
+        if self._is_dashscope_family_provider() and self._targets_openai_compatible_endpoint(self.base_url):
+            logger.debug(
+                "DashScope-family provider=%s targeting OpenAI-compatible endpoint — dropping dashscope/ prefix on model_name=%s",
+                self.provider,
+                model_name,
+            )
+            self.prefix = ""
+        else:
+            self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -2152,6 +2220,36 @@ class LiteLLMBase(ABC):
                 self.group_id = ""
         else:
             self.group_id = ""
+
+    def _is_dashscope_family_provider(self) -> bool:
+        """True iff ``self.provider`` is the DashScope / Tongyi-Qianwen
+        family — the two providers whose LiteLLM prefix (``dashscope/``)
+        routes through the same ``dashscope.aliyuncs.com`` endpoint and
+        must be skipped for the OpenAI-compatible base URL to work.
+
+        Restrict the OpenAI-compatible prefix-skip to this family: a
+        non-DashScope provider with a custom URL ending in
+        ``/compatible-mode/v1`` would lose its required LiteLLM prefix
+        and send an invalid model name.
+        """
+        return self.provider in (
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        )
+
+    @staticmethod
+    def _targets_openai_compatible_endpoint(base_url: str) -> bool:
+        """True iff ``base_url`` looks like the DashScope OpenAI-compatible
+        endpoint (``*/compatible-mode/v1``).
+
+        Issue #19262: the Tongyi-Qianwen / Dashscope factory default base
+        URL is the OpenAI-compatible endpoint, so the bare model name
+        (e.g. ``qwen-turbo``) must reach LiteLLM. The native DashScope
+        SDK path (``dashscope/...`` to ``*/api/v1``) keeps the prefix.
+        """
+        if not base_url:
+            return True
+        return base_url.rstrip("/").endswith("/compatible-mode/v1")
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -2965,6 +3063,24 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class DaoXEChat(Base):
+    """DaoXE OpenAI-compatible chat adapter.
+
+    DaoXE is a hosted multi-model gateway speaking the OpenAI wire format, so
+    the standard OpenAI client path covers every call. The base URL is
+    tenant-configurable because DaoXE is also self-hostable behind custom
+    domains.
+    """
+
+    _FACTORY_NAME = "DaoXE"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
 
 

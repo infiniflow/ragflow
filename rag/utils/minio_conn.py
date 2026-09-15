@@ -143,7 +143,7 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def put(self, bucket, fnm, binary, tenant_id=None):
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 # Note: bucket must already exist - we don't have permission to create buckets
                 if not self.bucket and not self.conn.bucket_exists(bucket):
@@ -153,8 +153,10 @@ class RAGFlowMinio:
                 return r
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
 
     @use_default_bucket
     @use_prefix_path
@@ -167,14 +169,16 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get(self, bucket, filename, tenant_id=None):
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
             except Exception:
                 logging.exception(f"Fail to get {bucket}/{filename}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return
 
     @use_default_bucket
@@ -211,13 +215,15 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return
 
     @use_default_bucket

@@ -38,7 +38,6 @@ import {
   initialLoopValues,
   initialMessageValues,
   initialNoteValues,
-  initialParserValues,
   initialPubMedValues,
   initialBGPTValues,
   initialQueritContentsValues,
@@ -52,6 +51,7 @@ import {
   initialTavilyValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
+  initialGeneralChunkerValues,
   initialTokenizerValues,
   initialUserFillUpValues,
   initialVariableAggregatorValues,
@@ -61,7 +61,7 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from '../constant';
-import { withDefaultParserModels } from '../form/parser-form/utils';
+import { buildInitialParserValues } from '../form/parser-form/utils';
 import useGraphStore from '../store';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -183,12 +183,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.TavilyExtract]: initialTavilyExtractValues,
       [Operator.Placeholder]: {},
       [Operator.File]: {},
-      [Operator.Parser]: withDefaultParserModels(
-        initialParserValues,
-        defaultModelDictionary,
-      ),
+      [Operator.Parser]: buildInitialParserValues(defaultModelDictionary),
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.TokenChunker]: initialTokenChunkerValues,
+      [Operator.GeneralChunker]: initialGeneralChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
         ...getInitialExtractorValues(),

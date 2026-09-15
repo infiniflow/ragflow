@@ -94,6 +94,7 @@ export const initialRetrievalValues = {
   ...initialKeywordsSimilarityWeightValue,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
+  document_ids: '',
   outputs: {
     formalized_content: {
       type: 'string',
@@ -824,6 +825,7 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
+  [Operator.GeneralChunker]: [Operator.Begin],
   [Operator.TokenChunker]: [Operator.Begin],
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
@@ -880,6 +882,7 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.GeneralChunker]: 'chunkerNode',
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
@@ -927,6 +930,7 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
@@ -939,6 +943,7 @@ export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,

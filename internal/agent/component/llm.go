@@ -735,6 +735,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
+		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
 			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
@@ -1399,6 +1402,12 @@ func validateFittedMessages(msgFit []schema.Message) string {
 		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
 	}
 	return ""
+}
+
+// FitMessages exposes message_fit_in semantics (LLM.fit_messages, PR #16413)
+// for packages that compose final-answer prompts outside the agent loop.
+func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
+	return fitMessages(systemPrompt, msgs, maxLength)
 }
 
 // fitMessages calls message_fit_in semantics on the given messages and

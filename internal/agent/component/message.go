@@ -442,6 +442,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if err != nil {
 			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %w", err)
 		}
+		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %s", resultErr)
+		}
 		finalText := visible.String()
 		if result != nil {
 			if completedContent, ok := result["content"].(string); ok {

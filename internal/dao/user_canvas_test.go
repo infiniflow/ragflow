@@ -290,7 +290,7 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "finance", "", "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "finance", nil, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}
@@ -299,6 +299,48 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 	}
 	if results[0].ID != "c1" {
 		t.Errorf("matched canvas id = %s, want c1", results[0].ID)
+	}
+}
+
+// TestUserCanvasDAOListByTenantIDsCategoryUnion verifies that a multi-category
+// canvas_category filter matches the union of the selected categories.
+func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("failed to migrate user: %v", err)
+	}
+	pushDB(t, db)
+	ctx := t.Context()
+	d := NewUserCanvasDAO()
+
+	if err := db.Create(&entity.User{ID: "u1", Nickname: "Owner", Email: "o@example.com"}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	canvases := []entity.UserCanvas{
+		{ID: "c-wf-1", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Workflow")},
+		{ID: "c-wf-2", UserID: "u1", Permission: "me", CanvasCategory: "agent_canvas", Title: stringPtr("Workflow Two")},
+		{ID: "c-df-1", UserID: "u1", Permission: "me", CanvasCategory: "dataflow_canvas", Title: stringPtr("Pipeline")},
+	}
+	for i := range canvases {
+		if err := db.Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("create canvas: %v", err)
+		}
+	}
+
+	rows, total, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "", []string{"dataflow_canvas", "agent_canvas"}, "", nil)
+	if err != nil {
+		t.Fatalf("ListByTenantIDs: %v", err)
+	}
+	if total != 3 || len(rows) != 3 {
+		t.Fatalf("category union returned total=%d rows=%d, want 3/3", total, len(rows))
+	}
+
+	rows, total, err = d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "", []string{"agent_canvas"}, "", nil)
+	if err != nil {
+		t.Fatalf("ListByTenantIDs (single category): %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("single category returned total=%d rows=%d, want 2/2", total, len(rows))
 	}
 }
 
@@ -327,7 +369,7 @@ func TestUserCanvasDAOOrderByTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "tags", false, "", "", "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "tags", false, "", nil, "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}

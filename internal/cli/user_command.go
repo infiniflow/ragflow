@@ -2895,95 +2895,6 @@ func (c *CLI) APIAddCustomModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "add custom model")
 }
 
-// DevInsertChunksFromFileCommand inserts chunks from a JSON file
-func (c *CLI) DevInsertChunksFromFileCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-	filePath, ok := cmd.Params["file_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("file_path not provided")
-	}
-
-	payload := map[string]interface{}{
-		"file_path": filePath,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", "/tenant/dev_insert_chunks_from_file", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to insert dataset from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to insert dataset from file: %s", filePath)
-	} else {
-		result.Message = fmt.Sprintf("Failed to insert dataset from file: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
-// DevInsertMetadataFromFileCommand inserts metadata from a JSON file
-func (c *CLI) DevInsertMetadataFromFileCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != APIMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	filePath, ok := cmd.Params["file_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("file_path not provided")
-	}
-
-	payload := map[string]interface{}{
-		"file_path": filePath,
-	}
-
-	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", "/tenant/dev_insert_metadata_from_file", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to insert metadata from file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to insert metadata from file: %s", filePath)
-	} else {
-		result.Message = fmt.Sprintf("Failed to insert metadata from file: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
 // DevUpdateChunkCommand updates a chunk in a dataset
 func (c *CLI) DevUpdateChunkCommand(cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -4153,9 +4064,6 @@ func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, erro
 	}
 
 	// Optional flags — only emit when explicitly set
-	if isSet(cmd, "pass_all_history") && cmd.Params["pass_all_history"].(bool) {
-		body["pass_all_history_messages"] = true
-	}
 	if isSet(cmd, "legacy") && cmd.Params["legacy"].(bool) {
 		body["legacy"] = true
 	}

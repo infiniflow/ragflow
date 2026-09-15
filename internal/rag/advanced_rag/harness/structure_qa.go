@@ -39,6 +39,10 @@ import (
 // store access, and because both callers would otherwise import it from a file
 // that in turn imports them.
 
+// structureQATemperature pins Python structure_qa.py:79's
+// {"temperature": 0.2} for the outline-verdict call.
+const structureQATemperature = 0.2
+
 // RenderStructure renders a compiled structure (entities + relations) as a
 // compact outline for the prompt. Mirrors Python _render_structure:
 //
@@ -140,16 +144,18 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	msgs := make([]schema.Message, 0, 1+len(fitted))
 	msgs = append(msgs, *schema.SystemMessage(system))
 	msgs = append(msgs, fitted...)
-	// Python hardcodes {"temperature": 0.2} for this node — a stable verdict on
-	// a mechanical render, so it must not sample hot. Go mirrors that exactly
-	// when the model implements TemperatureModel; models without per-call
-	// temperature fall back to the plain Complete and run at their own default.
-	// (Documented seam, not a bug — see HARNESS.md and keywords.go.)
+	// Python hardcodes {"temperature": 0.2} for this node (structure_qa.py:79)
+	// — a stable verdict on a mechanical render, so it must not sample hot. The
+	// value is a pinned constant: every production carrier implements
+	// TemperatureModel (compile-time assertion on InvokerSessionModel), so the
+	// temperature is always sent; a carrier without per-call temperature
+	// support falls back to its own default (Go-only provider limitation).
 	var resp *ModelReply
 	var err error
 	if tm, ok := model.(TemperatureModel); ok {
-		resp, err = tm.CompleteWithTemperature(ctx, msgs, nil, 0.2)
+		resp, err = tm.CompleteWithTemperature(ctx, msgs, nil, structureQATemperature)
 	} else {
+		_LOG.Printf("[%s] model %T cannot carry per-call temperature; using its default (Python would send %v)", label, model, structureQATemperature)
 		resp, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {

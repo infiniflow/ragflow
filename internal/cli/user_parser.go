@@ -2396,7 +2396,7 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 			//	continue
 			//}
 
-			return nil, fmt.Errorf("unknow parameter: %s", p.curToken.Value)
+			return nil, fmt.Errorf("unknown parameter: %s", p.curToken.Value)
 		} else if p.curToken.Type == TokenIdentifier {
 			if cmd.Params["path"] == nil {
 				cmd.Params["path"] = p.curToken.Value
@@ -2685,8 +2685,6 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseAPIListCommands()
 	case TokenImport:
 		return p.parseAPIImport()
-	case TokenInsert:
-		return p.parseDevInsertCommand()
 	case TokenRetrieve:
 		return p.parseAPIRetrieve()
 	default:
@@ -3918,7 +3916,7 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 			cmd.Params["max_tokens"] = v
 			p.nextToken()
 			markSet(cmd, "max_tokens")
-		case "stream", "pass_all_history", "legacy":
+		case "stream", "legacy":
 			v, err := p.parseBool()
 			if err != nil {
 				return fmt.Errorf("CHAT COMPLETIONS %s: expected true|false, got %s", name, p.curToken.Value)
@@ -3940,7 +3938,7 @@ func (p *Parser) parseChatCompletionsBody() (*Command, error) {
 			cmd.Params["history_delimiter"] = v
 			p.nextToken()
 		default:
-			return fmt.Errorf("CHAT COMPLETIONS: unknown option %q (valid: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, pass_all_history, legacy)", name)
+			return fmt.Errorf("CHAT COMPLETIONS: unknown option %q (valid: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, legacy)", name)
 		}
 		return nil
 	}
@@ -3967,7 +3965,7 @@ optionsLoop:
 
 		default:
 			if !isKeyword(p.curToken.Type) {
-				return nil, fmt.Errorf("CHAT COMPLETIONS: unexpected token %q in option list (valid options: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, pass_all_history, legacy)", p.curToken.Value)
+				return nil, fmt.Errorf("CHAT COMPLETIONS: unexpected token %q in option list (valid options: chat_id, session, llm, system, history, history_delimiter, temperature, max_tokens, stream, top_p, frequency_penalty, presence_penalty, legacy)", p.curToken.Value)
 			}
 			name := p.curToken.Value
 			p.nextToken()

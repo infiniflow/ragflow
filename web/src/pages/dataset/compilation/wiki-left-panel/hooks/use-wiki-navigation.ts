@@ -6,8 +6,6 @@ import { IArtifactTopic } from '@/interfaces/database/dataset';
 import { useDebounce } from 'ahooks';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-export type WikiPageType = 'concept' | 'entity' | 'topic';
-
 const normalizeTopicPath = (topic: string) =>
   topic
     .split('/')

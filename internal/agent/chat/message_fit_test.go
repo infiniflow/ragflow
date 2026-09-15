@@ -209,3 +209,111 @@ func TestFitMessages_ImageOnlyLastTurnOverBudget(t *testing.T) {
 		t.Fatalf("image-only turn lost or modified after over-budget fitting: %+v", last)
 	}
 }
+
+// TestFitMessages_RejectsTextOnlyTurnTrimmedToEmpty pins the validation rule: a
+// multi-modal turn whose only part is text that the fitting trimmed away has
+// nothing left to send, so the non-empty parts slice must not pass it as a valid
+// user turn (Python's validate_fitted_messages rejects empty user content too).
+func TestFitMessages_RejectsTextOnlyTurnTrimmedToEmpty(t *testing.T) {
+	// The system share absorbs the whole (small) budget, so the user turn is
+	// trimmed to nothing. A zero budget would be clamped to 8192 by the fitter.
+	msgs := []schema.Message{
+		{Role: schema.System, Content: strings.Repeat("sys ", 100)},
+		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: strings.Repeat("question ", 400)},
+		}},
+	}
+	fitted, fitErr := FitMessages("", msgs, 60)
+	if fitErr == "" {
+		t.Fatalf("an empty user turn was accepted: %+v", fitted)
+	}
+	if !strings.Contains(fitErr, "user message is empty") {
+		t.Errorf("fit error = %q, want the empty-user-message error", fitErr)
+	}
+}
+
+// TestFitMessages_KeepsTurnWithImageWhenTextTrimsToEmpty is the counterpart: the
+// text part is trimmed away but the turn still carries an image payload, which
+// IS usable — so it stays a valid user turn and the image is preserved.
+func TestFitMessages_KeepsTurnWithImageWhenTextTrimsToEmpty(t *testing.T) {
+	imgURL := "data:image/png;base64,AAAA"
+	msgs := []schema.Message{
+		{Role: schema.System, Content: strings.Repeat("sys ", 100)},
+		{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: strings.Repeat("question ", 400)},
+			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
+			}},
+		}},
+	}
+	fitted, fitErr := FitMessages("", msgs, 60)
+	if fitErr != "" {
+		t.Fatalf("turn with an image payload was rejected: %s", fitErr)
+	}
+	last := fitted[len(fitted)-1]
+	if len(last.UserInputMultiContent) != 2 || last.UserInputMultiContent[1].Type != schema.ChatMessagePartTypeImageURL {
+		t.Fatalf("image part lost: %+v", last.UserInputMultiContent)
+	}
+	if got := strings.TrimSpace(last.UserInputMultiContent[0].Text); got != "" {
+		t.Errorf("text part = %q, want it trimmed away by the zero budget", got)
+	}
+}
+
+// TestFitMessages_PreservesAllMessageFields pins the deep copy: fitting rewrites
+// only the text it touches, so the returned messages must still carry every
+// other schema.Message field (tool calls, tool ids, reasoning, generated parts,
+// extras, name) — and the caller's payload must not be aliased.
+func TestFitMessages_PreservesAllMessageFields(t *testing.T) {
+	imgURL := "data:image/png;base64,AAAA"
+	msgs := []schema.Message{
+		{Role: schema.System, Content: "sys"},
+		{
+			Role:             schema.Assistant,
+			Content:          "calling a tool",
+			ReasoningContent: "because",
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "generated"},
+			},
+			ToolCalls: []schema.ToolCall{{
+				ID: "call-1", Type: "function",
+				Function: schema.FunctionCall{Name: "rag", Arguments: "{}"},
+			}},
+			Extra: map[string]any{"k": "v"},
+		},
+		{Role: schema.Tool, Content: "tool result", ToolCallID: "call-1", ToolName: "rag"},
+		{Role: schema.User, Name: "u", UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: "question"},
+			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{URL: &imgURL},
+			}},
+		}},
+	}
+	fitted, fitErr := FitMessages("", msgs, 100000)
+	if fitErr != "" {
+		t.Fatalf("unexpected fit error: %s", fitErr)
+	}
+	if len(fitted) != 4 {
+		t.Fatalf("got %d messages, want 4", len(fitted))
+	}
+
+	assistant := fitted[1]
+	if assistant.ReasoningContent != "because" || len(assistant.AssistantGenMultiContent) != 1 ||
+		len(assistant.ToolCalls) != 1 || assistant.ToolCalls[0].ID != "call-1" ||
+		assistant.ToolCalls[0].Function.Name != "rag" || assistant.Extra["k"] != "v" {
+		t.Errorf("assistant message lost fields after fitting: %+v", assistant)
+	}
+	if tool := fitted[2]; tool.ToolCallID != "call-1" || tool.ToolName != "rag" {
+		t.Errorf("tool message lost fields after fitting: %+v", tool)
+	}
+	user := fitted[3]
+	if user.Name != "u" || len(user.UserInputMultiContent) != 2 {
+		t.Errorf("user message lost fields after fitting: %+v", user)
+	}
+	img := user.UserInputMultiContent[1].Image
+	if img == nil || img.URL == nil || *img.URL != imgURL {
+		t.Fatalf("image payload lost after fitting: %+v", img)
+	}
+	if img.URL == &imgURL {
+		t.Error("image url was not deep-copied: the fitted message aliases the caller's payload")
+	}
+}

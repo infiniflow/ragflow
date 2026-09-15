@@ -689,6 +689,17 @@ class SILICONFLOWCV(GptV4):
         super().__init__(key, model_name, lang, base_url, **kwargs)
 
 
+class AnonRouterCV(GptV4):
+    """AnonRouter vision adapter bound to the hosted compatibility endpoint."""
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
+        super().__init__(key, model_name, lang, self._BASE_URL, **kwargs)
+
+
 class OpenRouterCV(GptV4):
     _FACTORY_NAME = "OpenRouter"
 
@@ -832,6 +843,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -845,6 +857,7 @@ class OllamaCV(Base):
                 model=self.model_name,
                 prompt=vision_prompt[0]["content"],
                 images=[image],
+                think=False,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -1343,7 +1356,7 @@ class RAGconCV(GptV4):
     RAGcon CV Provider - routes through LiteLLM proxy
 
     Supports vision models through LiteLLM.
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
