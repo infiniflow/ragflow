@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
+
+	"ragflow/internal/tokenizer"
 )
 
 // SessionRecord is what a session has DONE so far, expressed as facts the ReAct
@@ -273,4 +276,265 @@ func IsCountValue(s string) bool {
 		}
 	}
 	return digits > 0
+}
+
+// poolExcerptRunes bounds how much pool text one turn may add to the model's
+// context: about one sentence plus its neighbours, which is where a name and the
+// deed that makes it a member sit together.
+const poolExcerptRunes = 220
+
+// poolScanMax bounds how many pool chunks one turn examines while choosing that
+// excerpt. The scan is local — one substring test and one token count per chunk —
+// so this bound is about latency discipline, not about money.
+const poolScanMax = 60
+
+// subjectWordsMax bounds the words used to recognise "a passage about the same
+// subject". They select a passage to READ; they never decide anything.
+const subjectWordsMax = 8
+
+// unreadPoolExcerpt returns a short excerpt from ONE pool passage this session has
+// never been shown, chosen for what it says that the record does not.
+//
+// The pool is text the round has ALREADY paid for, and a session only ever sees
+// the parts its own queries returned — everything else sat in hand, unread. That
+// gap is where members are lost without anyone noticing. Measured (2026-09-15,
+// 三国演义/关羽, mode=high): the passage naming 管亥 was fetched into the round's
+// evidence at 21:09:13 and no session ever named it, because nothing had shown it;
+// the sessions' own enumeration reached 11 and 12 members, and the five names the
+// answer was missing were all in passages of exactly that kind.
+//
+// The framework does not name anybody here. It reads the unread passages that
+// mention a word THIS SESSION has used — the direction it was sent on, the slot's
+// clues, the candidates, and its own queries, which is what carries the corpus's
+// own aliases (a session that asked about 关公 gets passages that say 关公) — and
+// hands over a bounded excerpt around the first term of that passage the record
+// does not contain. The division of labour is the usual one: the runtime supplies
+// a fact (this text exists, you have not read it), the model decides what is in it.
+//
+// Mentioning one of those words is a FILTER, not a preference. Measured
+// (2026-09-15, the first version of this, which ranked every unread passage by how
+// much of its vocabulary was new): all eight excerpts it delivered were passages
+// the question had nothing to do with — a chapter heading, 曹操's youth, 张角
+// receiving the book — because "says the most you have not seen" and "is about
+// this question" are anti-correlated: the passages that carry the subject share
+// their vocabulary with what the session already read, so they score LOW. The
+// words the session itself used are what tells the two apart, and they are the
+// model's words, not a lexicon.
+func (s *SessionState) unreadPoolExcerpt() string {
+	// ONE per session, and that is deliberate. Across the first two runs of this
+	// mechanism (2026-09-15) it delivered twelve excerpts — a chapter heading, 曹操's
+	// youth, 张角 receiving the book, a 文丑 passage — and none of them carried a
+	// member the record was missing. The premise still holds (the passage naming
+	// 管亥 was in the pool for the whole of those runs), but the selection is not
+	// good enough to spend context on every flat turn, so it stays available as the
+	// session's last resort rather than a routine.
+	if s.KB == nil || s.PoolRead {
+		return ""
+	}
+	subject := s.subjectWords()
+	if len(subject) == 0 {
+		return ""
+	}
+	seen := make(map[string]bool, len(s.RetrievedEvidenceIDs))
+	for _, id := range s.RetrievedEvidenceIDs {
+		seen[id] = true
+	}
+	known := s.recordVocabulary()
+	chunks := s.KB.ChunksFrom(s.PoolWalk, poolScanMax)
+	s.PoolWalk += len(chunks)
+
+	var bestID, bestText, bestAnchor string
+	bestNovel := 0
+	for _, c := range chunks {
+		text := ChunkTextOf(c)
+		if text == "" {
+			continue
+		}
+		if id := ChunkIDOf(c); id != "" && seen[id] {
+			continue
+		}
+		if !mentionsAny(text, subject) {
+			continue
+		}
+		anchor, novel := novelAnchor(text, known)
+		if novel == 0 {
+			continue
+		}
+		if novel > bestNovel {
+			bestID, bestText, bestAnchor, bestNovel = ChunkIDOf(c), text, anchor, novel
+		}
+	}
+	if bestNovel == 0 {
+		return ""
+	}
+	s.PoolRead = true
+	return fmt.Sprintf("[pool] unread passage already in evidence, never shown to you (id=%s): %s",
+		bestID, excerptAround(bestText, bestAnchor, poolExcerptRunes))
+}
+
+// mentionsAny reports whether text carries any of the words — the relevance test
+// the excerpt is gated on.
+func mentionsAny(text string, words []string) bool {
+	for _, w := range words {
+		if strings.Contains(text, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// subjectWords returns the words that stand for what this session is working on:
+// the direction it was sent on, the slot's own question clues, the candidates so
+// far, and the queries the session itself wrote.
+//
+// They are the model's (or the planner's) own words, read with the corpus's own
+// tokenizer, so no list of names or verbs is involved anywhere.
+func (s *SessionState) subjectWords() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(text string) {
+		if text == "" || len(out) >= subjectWordsMax {
+			return
+		}
+		for _, w := range append(GrepWordsFromQuery(text), tokenizerWords(text)...) {
+			w = strings.TrimSpace(w)
+			if r := utf8.RuneCountInString(w); r < 2 || r > cjkPhraseRunes {
+				continue
+			}
+			low := strings.ToLower(w)
+			if seen[low] {
+				continue
+			}
+			seen[low] = true
+			out = append(out, w)
+			if len(out) >= subjectWordsMax {
+				return
+			}
+		}
+	}
+	// The session's OWN queries first: they are the most specific thing it has
+	// said, and they are where the corpus's aliases enter (a session that asked
+	// about 关公 gets passages that say 关公, while the direction may only say 关羽).
+	for _, q := range s.SearchQueries {
+		add(q)
+	}
+	for _, v := range s.ParentState.State {
+		if v.Candidate != nil {
+			add(*v.Candidate)
+		}
+		for _, clue := range v.QuestionClues {
+			add(clue)
+		}
+	}
+	add(s.Direction)
+	return out
+}
+
+// grewFrom reports whether this record knows something the previous turn's did.
+//
+// It is the same signal the continuation offer is built on (see
+// offerContinuation), used for the opposite decision: an enumeration session whose
+// record is still growing is already finding things, so the pool read stays out of
+// its way and only steps in when the record has gone flat.
+func (r SessionRecord) grewFrom(prev SessionRecord) bool {
+	return len(r.Members) > len(prev.Members) ||
+		len(r.Reached) > len(prev.Reached) ||
+		len(r.Absent) > len(prev.Absent)
+}
+
+// tokenizerWords runs the corpus's own tokenizer over a text (see
+// tokenizer.Tokenize): the same segmentation the index was built with, which is
+// what makes it usable without a lexicon.
+//
+// When that tokenizer is not available — a unit test, an engine configured
+// differently — it falls back to the two-rune windows the grep path uses to
+// LOCATE a term inside unbroken text. As a vocabulary that is noisier, but it needs
+// nothing but the text, and a passage is only ever SELECTED by this score, never
+// decided on it.
+func tokenizerWords(text string) []string {
+	if toks, err := tokenizer.Tokenize(text); err == nil && strings.TrimSpace(toks) != "" {
+		return strings.Fields(toks)
+	}
+	return cjkWindowsOf(text, tokenWindowsMax)
+}
+
+// tokenWindowsMax bounds the fallback vocabulary of one passage.
+const tokenWindowsMax = 400
+
+// novelAnchor returns the first term of the text that the record does not contain,
+// and how many such terms the text has. The anchor is what the excerpt is centred
+// on — the part of the passage that is new to this session is the part worth
+// reading.
+func novelAnchor(text string, known map[string]bool) (string, int) {
+	anchor, n := "", 0
+	seen := map[string]bool{}
+	for _, t := range tokenizerWords(text) {
+		if r := utf8.RuneCountInString(t); r < 2 || r > cjkPhraseRunes {
+			continue
+		}
+		low := strings.ToLower(t)
+		if seen[low] || known[low] {
+			continue
+		}
+		seen[low] = true
+		if anchor == "" {
+			anchor = t
+		}
+		n++
+	}
+	return anchor, n
+}
+
+// recordVocabulary is everything the record already accounts for: its members, the
+// terms probes reached, and the terms probes asked about and did not find. A term
+// in here is not new information.
+func (s *SessionState) recordVocabulary() map[string]bool {
+	out := map[string]bool{}
+	for _, group := range [][]string{s.Record.Members, s.Record.Reached, s.Record.Absent, s.Record.Undecided} {
+		for _, t := range group {
+			if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+				out[t] = true
+			}
+		}
+	}
+	for _, q := range s.SearchQueries {
+		for _, w := range GrepWordsFromQuery(q) {
+			out[strings.ToLower(w)] = true
+		}
+	}
+	return out
+}
+
+// excerptAround returns a one-line window of at most maxRunes runes around the
+// first occurrence of word, so the excerpt carries both the mention and the
+// sentence around it.
+func excerptAround(text, word string, maxRunes int) string {
+	flat := []rune(strings.Join(strings.Fields(text), " "))
+	at := []rune(word)
+	pos := -1
+	for i := 0; i+len(at) <= len(flat); i++ {
+		if string(flat[i:i+len(at)]) == word {
+			pos = i
+			break
+		}
+	}
+	if pos < 0 {
+		pos = 0
+	}
+	start := pos - maxRunes/3
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxRunes
+	if end > len(flat) {
+		end = len(flat)
+	}
+	out := string(flat[start:end])
+	if start > 0 {
+		out = "…" + out
+	}
+	if end < len(flat) {
+		out += "…"
+	}
+	return out
 }

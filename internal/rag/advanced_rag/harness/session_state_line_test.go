@@ -294,3 +294,45 @@ func TestRouteAtTheFloorOffersTheModelTheDecision(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen pins the pool read.
+//
+// The pool is text the round has already paid for, and a session only ever sees
+// the parts its own queries returned: everything else sits in hand, unread. That
+// is where members are lost without anyone noticing — measured (2026-09-15,
+// 三国演义/关羽): the passage naming 管亥 was fetched into the round's evidence and
+// no session ever named it, because nothing had shown it.
+func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
+	kb := &Kbinfos{}
+	kb.Admit(func(p *PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "seen01", "content": "关公温酒斩华雄，其酒尚温。"})
+		p.Add(map[string]any{"chunk_id": "offtopic", "content": "那张角本是个不第秀才，因入山采药，遇一老人，碧眼童颜，手执藜杖，唤角至一洞中，以天书三卷授之。"})
+		p.Add(map[string]any{"chunk_id": "unread01", "content": "关公大怒，拍马舞刀，直取管亥，管亥措手不及，被关公一刀劈于马下。"})
+	})
+	s := &SessionState{
+		KB:                   kb,
+		Direction:            "关羽斩杀了哪些有名有姓的人物",
+		SearchQueries:        []string{"关公 斩 管亥"},
+		RetrievedEvidenceIDs: []string{"seen01"},
+	}
+	got := s.unreadPoolExcerpt()
+	if !strings.Contains(got, "unread01") {
+		t.Fatalf("excerpt = %q, want the unread passage this session's own words point at", got)
+	}
+	if strings.Contains(got, "华雄") {
+		t.Fatalf("excerpt = %q, want the passage this session has seen skipped", got)
+	}
+	// The passage that says the most the session has not seen is NOT the passage to
+	// show: "most novel" and "about this question" are anti-correlated, and the
+	// first version of this delivered nothing but chapter headings, 曹操's youth and
+	// 张角 receiving the book. Only the session's own words tell the two apart.
+	if strings.Contains(got, "张角") {
+		t.Fatalf("excerpt = %q, want a passage the session's own words exclude", got)
+	}
+	// One excerpt per session: across the first two runs of this mechanism it
+	// delivered twelve excerpts and none of them carried a member the record was
+	// missing, so it stays a last resort rather than a per-turn routine.
+	if again := s.unreadPoolExcerpt(); again != "" {
+		t.Fatalf("a second excerpt was offered: %q", again)
+	}
+}

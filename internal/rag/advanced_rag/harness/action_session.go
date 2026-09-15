@@ -1713,6 +1713,14 @@ type SessionState struct {
 	// Record is the last turn's record — the facts the continuation decision is
 	// made from (see offerContinuation and SessionRecord).
 	Record SessionRecord
+	// PoolWalk is how many pool chunks this session has already looked at while
+	// choosing an excerpt to show (see unreadPoolExcerpt). The pool only ever
+	// appends, so the watermark is what keeps a session from being shown the same
+	// passage twice.
+	PoolWalk int
+	// PoolRead is whether this session has already been given its one pool excerpt
+	// (see unreadPoolExcerpt): the read is a last resort, not a routine.
+	PoolRead bool
 	// ContinuationAsked is the Attempts value the continuation offer was appended
 	// for, so one turn never carries the offer twice.
 	ContinuationAsked int
@@ -2068,6 +2076,7 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 		return
 	}
 	rec := s.sessionRecordNow()
+	grew := rec.grewFrom(s.Record)
 	s.Record = rec
 	// The line the model steers by is message content, so the log could not show
 	// whether a mechanism fired at all: three rounds of analysis here ended up
@@ -2081,6 +2090,19 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 	}
 	line := rec.Line()
 	last.Content = strings.TrimRight(last.Content, "\n") + "\n" + line
+	// An ENUMERATION session whose record has gone FLAT also gets one excerpt from a
+	// pool passage it has never been shown (see unreadPoolExcerpt): the round has
+	// already paid for that text, unread text is where unnoticed members live, and a
+	// session that is still finding things does not need rescuing. Gated on the
+	// shape so no other question pays for it at all, and one excerpt per turn.
+	if s.parentEnumerates() && !grew {
+		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
+			// Logged as well as delivered: whether the mechanism fired is otherwise
+			// only visible inside the message content.
+			_LOG.Printf("[Action Session] pool excerpt: %s", trunc(excerpt, 240))
+			last.Content += "\n" + excerpt
+		}
+	}
 }
 
 // turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the

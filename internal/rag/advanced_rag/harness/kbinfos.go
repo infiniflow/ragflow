@@ -155,6 +155,27 @@ func (k *Kbinfos) PoolSize() int {
 	return len(k.Chunks)
 }
 
+// ChunksFrom returns up to limit chunks starting at from, as a copy of the slice
+// header.
+//
+// It exists so a READER can walk the pool the round has already paid for without
+// holding the pool lock (chunks are only ever appended, never rewritten in place,
+// so the header it copies is stable). The maps themselves stay shared and must be
+// read only. Readers are also why this is a copy of the header and not the pool:
+// the pool keeps growing under them while they scan.
+func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
+	if k == nil || limit <= 0 {
+		return nil
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if from < 0 || from >= len(k.Chunks) {
+		return nil
+	}
+	end := min(from+limit, len(k.Chunks))
+	return append([]map[string]any(nil), k.Chunks[from:end]...)
+}
+
 // Admit runs fn as ONE critical section over the evidence pool.
 //
 // The granularity is the caller's, and it must span the stretch Python leaves

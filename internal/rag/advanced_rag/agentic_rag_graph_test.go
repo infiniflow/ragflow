@@ -2820,12 +2820,14 @@ func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
 	}
 
 	record := RenderSlotRecord(st, "the collected answer")
-	want := "Candidate answer: the collected answer\n" +
-		"\n" +
-		"- slot 0 [aspect]: answer A\n" +
-		"- slot 1 [aspect]: NOT RESOLVED"
-	if record != want {
-		t.Fatalf("record = %q\nwant   %q", record, want)
+	// The slots come first and the session's own draft comes LAST, labelled as the
+	// claim it is — see TestSlotRecordLeadsWithFactsNotWithASessionsProse for why.
+	if !strings.HasPrefix(record, "- slot 0 [aspect]: answer A\n- slot 1 [aspect]: NOT RESOLVED") {
+		t.Fatalf("record = %q, want the slot facts first", record)
+	}
+	at := strings.Index(record, "the collected answer")
+	if at < 0 || !strings.Contains(record[:at], "UNVERIFIED") {
+		t.Fatalf("record = %q, want the draft last and labelled", record)
 	}
 	for _, banned := range []string{"strength=", "terminal=", "evidence_ids", "c1"} {
 		if strings.Contains(record, banned) {
@@ -3124,5 +3126,45 @@ func TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate(t *testing.T) {
 	}
 	if got := alternateCandidatesOf(*merged2.ByID(1)); len(got) != 2 {
 		t.Fatalf("alternates = %v, want both losing claims kept", got)
+	}
+}
+
+// TestSlotRecordLeadsWithFactsNotWithASessionsProse pins the answer-layer fix.
+//
+// The record used to LEAD with one session's prose draft answer, and the answer
+// copied it: measured twice (2026-09-15, 三国演义/关羽) — a record whose slots
+// enumerated seventeen members produced a fifteen-member answer, and a record
+// enumerating fourteen produced a ten-member answer, in both cases exactly the
+// number written in that prose. The prose is one session's recollection, written
+// before the other sessions were merged; it is a claim to reconcile with the
+// members, not the record.
+func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("10")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德")},
+		// A second slot of the same table holds REFERENCES, not members. Counting
+		// them as members is how this record once answered its own count with a
+		// nineteen on a twelve-member list.
+		{ID: 2, Type: "dataset", Candidate: strPtr("第5回(华雄)、第21回(车胄)、第25回(颜良)、第27回(五关六将)、第74回(庞德)")},
+	}, 0, nil)
+	rec := RenderSlotRecord(table, "关羽在《三国演义》中斩杀的有姓名人物共10人，名单如下：……")
+
+	if !strings.Contains(rec, "enumerated members across the slots above: 14") {
+		t.Fatalf("record = %q, want the enumerated size stated as a fact", rec)
+	}
+	// A count that disagrees with the members has to be SAID, not left for the
+	// answer to reconcile: this record once produced a nineteen-person answer out of
+	// a count slot reading 19, which the answer explained as seven more people "the
+	// material does not list".
+	if !strings.Contains(rec, "slot 0 [count] says 10 while the slots above enumerate 14") {
+		t.Fatalf("record = %q, want the disagreement stated", rec)
+	}
+	facts := strings.Index(rec, "slot 1 [person]")
+	draft := strings.Index(rec, "One session's own draft answer")
+	if facts < 0 || draft < 0 || facts > draft {
+		t.Fatalf("record = %q, want the slots BEFORE the session's own draft", rec)
+	}
+	if !strings.Contains(rec, "UNVERIFIED") {
+		t.Fatalf("record = %q, want the draft labelled as a claim", rec)
 	}
 }

@@ -2429,10 +2429,6 @@ func RenderSlotDraft(slotTable harness.State, collectedAnswer string, slotEviden
 // tells it not to copy the lines (see answerPromptWithEvidence).
 func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	var lines []string
-	if collectedAnswer != "" {
-		lines = append(lines, "Candidate answer: "+collectedAnswer)
-		lines = append(lines, "")
-	}
 	for _, v := range slotTable.State {
 		vtype := v.Type
 		if vtype == "" {
@@ -2451,7 +2447,63 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 			lines = append(lines, "    alternate (claimed by another session, not adopted): "+truncateRunes(alt, 400))
 		}
 	}
+	// The size of the set the slots above ENUMERATE — a fact the answer can take a
+	// number from without trusting anybody's prose.
+	//
+	// A count slot is written by whichever session last touched it, and that
+	// candidate can be a sentence ("约 14 人（华雄、程远志…）"), a stale number, or
+	// one session's claim written before the other sessions' findings were merged.
+	// The members are here in the table either way, so their union is the number
+	// the record can stand behind.
+	if n := enumeratedSize(slotTable); n > 0 {
+		lines = append(lines, fmt.Sprintf("- enumerated members across the slots above: %d", n))
+		// A count larger than the members it counts is a claim about members that
+		// are NOT in the record, and the answer has to be told that rather than left
+		// to reconcile it. Measured (2026-09-15): a record whose count slot read 19
+		// while its slots enumerated 12 produced an answer of nineteen people, which
+		// then explained the gap as "seven more whose details the material does not
+		// list" — seven members that never existed.
+		for _, v := range slotTable.State {
+			if v.Candidate == nil {
+				continue
+			}
+			if claimed, ok := countOf(*v.Candidate); ok && claimed != n {
+				lines = append(lines, fmt.Sprintf(
+					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — a count of members that are not listed is not evidence of them; take the number from the enumerated members.",
+					v.ID, v.Type, claimed, n))
+			}
+		}
+	}
+	// A session's own draft answer goes LAST and is labelled for what it is.
+	//
+	// It used to lead the record, and the answer copied it: measured twice
+	// (2026-09-15, 三国演义/关羽) — a record whose slots enumerated seventeen
+	// members produced a fifteen-member answer, and a record enumerating fourteen
+	// produced a ten-member answer, in both cases exactly the number written in the
+	// session's own prose. The prose is one session's recollection, written before
+	// the other sessions' findings were merged into the table above; it is a claim
+	// to reconcile with the members, not the record.
+	if collectedAnswer != "" {
+		lines = append(lines, "")
+		lines = append(lines, "One session's own draft answer (UNVERIFIED, written before the other sessions were merged — reconcile it with the slots above, and where it disagrees with the enumerated members, the members stand): "+collectedAnswer)
+	}
 	return strings.Join(lines, "\n")
+}
+
+// enumeratedSize is how many distinct members the table's slots enumerate: the
+// union of every list-valued candidate, count values excluded (a number is a claim
+// about the set, not a member of it).
+func enumeratedSize(table harness.State) int {
+	var items []string
+	for _, v := range table.State {
+		if v.Candidate == nil {
+			continue
+		}
+		if list, isCount := setItems(*v.Candidate); !isCount {
+			items = append(items, list...)
+		}
+	}
+	return len(dedupe(items))
 }
 
 // composedRecord is the record block the ANSWER prompt carries: the slot record
@@ -3476,15 +3528,39 @@ func unionSetCandidates(base, branch *string) (union, dropped string, ok bool) {
 // setItems reads a candidate as a LIST of items, or reports that it is instead a
 // bare quantity. Anything that is neither (a phrase, one name) returns nil items
 // and isCount false, so the caller leaves it to the single-value rule.
+//
+// An item carrying a DIGIT is a reference or a quantity, not a member. Measured
+// (2026-09-15): one question's table held `第5回(华雄) / 第21回(车胄) / …` in a
+// dataset slot beside a twelve-member list in another, the union counted those
+// seven references as members, and the record then answered its own count with
+// nineteen — a number the answer had to reconcile against nothing.
 func setItems(candidate string) ([]string, bool) {
 	if harness.IsCountValue(candidate) {
 		return nil, true
 	}
-	items := harness.SplitCandidateNames(candidate)
+	items := make([]string, 0, 8)
+	for _, item := range harness.SplitCandidateNames(candidate) {
+		if carriesDigit(item) {
+			continue
+		}
+		items = append(items, item)
+	}
 	if len(items) < 2 {
 		return nil, false
 	}
 	return items, false
+}
+
+// carriesDigit reports whether a string carries a decimal digit — the one shape
+// test that separates a member from a reference ("第27回(五关六将)") or a quantity
+// ("12人"), without asking what the corpus's language calls anything.
+func carriesDigit(s string) bool {
+	for _, r := range s {
+		if unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // countOf reads the number out of a quantity-shaped candidate ("10", "13人").
