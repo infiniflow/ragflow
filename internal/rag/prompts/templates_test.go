@@ -27,6 +27,7 @@ import (
 func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 	names := []string{
 		"action_run",
+		"action_set",
 		"action_initialize_state",
 		"sca_select",
 		"sca_query_rewrite",
@@ -161,3 +162,33 @@ func (s stubLoader) Load(string) (string, error) { return s.text, nil }
 // now resolves the canonical embedded .md (1:1 with rag/prompts/sca_select.md)
 // rather than the condensed constant — the whole point of the orchestration
 // parity fix.
+
+// TestEnumerationProtocolIsNotInTheSystemPrompt pins the split: the enumeration
+// protocol lives in its own template, which the harness appends to the seed of a
+// SET direction only.
+//
+// It was briefly a section of action_run.md, and it did its job there (the answer
+// went from ten-to-thirteen members to sixteen), but a system prompt is paid for
+// by EVERY question: a strategy that only helps an enumeration is a tax on the
+// single-value questions it cannot help — the same mistake that slowed a whole
+// benchmark down when an earlier branch raised the turn count and the pool cap
+// globally.
+func TestEnumerationProtocolIsNotInTheSystemPrompt(t *testing.T) {
+	run, err := (EmbeddedPromptLoader{}).Load("action_run")
+	if err != nil {
+		t.Fatalf("Load(action_run): %v", err)
+	}
+	if strings.Contains(run, "SET / COUNT directions") {
+		t.Error("the enumeration protocol must not be part of the system prompt")
+	}
+
+	set, err := (EmbeddedPromptLoader{}).Load("action_set")
+	if err != nil {
+		t.Fatalf("Load(action_set): %v", err)
+	}
+	for _, want := range []string{"SET / COUNT directions", "batches of four to six", "two consecutive batches"} {
+		if !strings.Contains(set, want) {
+			t.Errorf("action_set is missing %q", want)
+		}
+	}
+}

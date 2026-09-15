@@ -927,7 +927,7 @@ var (
 			Name: "retrieve",
 			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets.` +
 				`DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document.` +
-				`PATTERNS: a query may be a regular expression — "A|B|C" asks about several exact terms in ONE call (never one call per name); "A.*B" requires that written order. One missing alternative does not hide the others: the result names the terms it reached.` +
+				`PATTERNS: a query may be a regular expression — "A|B|C" asks about several exact terms in ONE call (never one call per name); "A.*B" requires that written order, which is how to reach a relation whose object (or subject) you cannot name. The words are what reach the index and the expression is matched locally, so neither form is syntax the index must understand. One missing alternative does not hide the others: the result names the terms it reached.` +
 				`ARGUMENTS: query — array of 1-3 strings (natural-language queries, or patterns as above). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
 				`OUTPUT: short exact-term snippets with doc_id and chunk id. ok = new evidence pooled; redundant = already there.` +
 				`IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch.`,
@@ -2158,8 +2158,12 @@ func (s *SessionState) offerContinuation() bool {
 // vocabulary, not the corpus's: a slot the planner typed as a count/number, or a
 // slot whose candidate is a LIST of two or more items. A question about one value
 // has neither, so nothing about it changes when this mechanism exists.
-func (s *SessionState) parentEnumerates() bool {
-	for _, v := range s.ParentState.State {
+func (s *SessionState) parentEnumerates() bool { return enumerates(s.ParentState) }
+
+// enumerates reports whether a slot table describes a SET — a question whose
+// answer is a list or a count of named things.
+func enumerates(table State) bool {
+	for _, v := range table.State {
 		switch strings.ToLower(strings.TrimSpace(v.Type)) {
 		case "count", "number", "quantity", "set", "list":
 			return true
@@ -3330,6 +3334,24 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
+	// A SET direction gets the enumeration protocol IN ITS SEED, and only there.
+	//
+	// The protocol is what turned this question's answer from ten-thirteen members
+	// into sixteen (see the measured note in the template), and it is method, not
+	// corpus knowledge: guess more names than you expect, probe them in batches,
+	// read the returned passages for members the batch did not name, stop only
+	// after two flat batches. But strategy text that is ALWAYS in the prompt is
+	// paid for by every question — including the single-value ones it cannot help,
+	// which is exactly how an earlier attempt at this slowed a whole benchmark
+	// down. So it rides the seed, gated on the shape the runtime can see for
+	// itself: a slot the planner typed as count/number, or a slot that already
+	// holds a list (see enumerates).
+	if enumerates(parent) {
+		if set := loadOptionalPrompt(deps.Prompts, "action_set"); set != "" {
+			seedUser += "\n\n" + set
+		}
+	}
+
 	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
 	// surface the evidence already in the shared pool so the model fills slots
 	// from it instead of re-retrieving the same ground. Without this the ReAct
@@ -3728,6 +3750,20 @@ func loadPrompt(p PromptLoader, name string) string {
 	t, err := resolveLoader(p).Load(name)
 	if err != nil {
 		panic(fmt.Sprintf("loadPrompt(%q): %v", name, err))
+	}
+	return t
+}
+
+// loadOptionalPrompt loads a template a given loader may not carry, and returns ""
+// instead of panicking.
+//
+// action_set is optional by design: a loader that predates it (or a test's
+// in-memory loader) simply gets no enumeration protocol, and its session runs
+// exactly as it did before the protocol existed.
+func loadOptionalPrompt(p PromptLoader, name string) string {
+	t, err := resolveLoader(p).Load(name)
+	if err != nil {
+		return ""
 	}
 	return t
 }

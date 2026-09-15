@@ -336,3 +336,22 @@ func TestUnreadPoolExcerptShowsTextTheSessionHasNotSeen(t *testing.T) {
 		t.Fatalf("a second excerpt was offered: %q", again)
 	}
 }
+
+// TestEnumeratesDrivesTheEnumerationProtocol pins the shape gate the protocol is
+// injected on: a slot the planner typed as a count, or a slot that already holds a
+// list. A single-value question has neither, so its seed carries no protocol and
+// its prompt is byte-for-byte what it was before the protocol existed.
+func TestEnumeratesDrivesTheEnumerationProtocol(t *testing.T) {
+	value := State{State: []Variable{{ID: 0, Type: "entity", Candidate: strPtr("白马坡")}}}
+	if enumerates(value) {
+		t.Error("a single-value table must not be given the enumeration protocol")
+	}
+	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("10")}}}
+	if !enumerates(counted) {
+		t.Error("a count slot is an enumeration")
+	}
+	listed := State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}
+	if !enumerates(listed) {
+		t.Error("a slot that already holds a list is an enumeration")
+	}
+}
