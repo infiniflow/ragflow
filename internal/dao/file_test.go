@@ -147,3 +147,32 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 		}
 	}
 }
+
+func TestFileDAO_GetByIDAndTenant(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFileTree(t, db) // f-t2 belongs to tenant t2
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	got, err := d.GetByIDAndTenant(ctx, db, "f-t2", "t2")
+	if err != nil {
+		t.Fatalf("owner tenant lookup failed: %v", err)
+	}
+	if got.ID != "f-t2" {
+		t.Fatalf("id = %q, want f-t2", got.ID)
+	}
+
+	// Another tenant, an empty tenant (fail closed) and a case-different tenant
+	// must all miss.
+	for _, tenantID := range []string{"t1", "", "T2"} {
+		if _, err := d.GetByIDAndTenant(ctx, db, "f-t2", tenantID); !IsNotFoundErr(err) {
+			t.Fatalf("tenant %q: err = %v, want gorm.ErrRecordNotFound", tenantID, err)
+		}
+	}
+
+	// The unscoped GetByID still returns the row across tenants: that is exactly
+	// the lookup the tag-source loader must not use with a user-supplied ID.
+	if _, err := d.GetByID(ctx, db, "f-t2"); err != nil {
+		t.Fatalf("unscoped GetByID should still see the row: %v", err)
+	}
+}

@@ -2362,6 +2362,13 @@ func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
 	}
 }
 
+func TestAgentRunQueryUsesConversationQueryFromNamedInputs(t *testing.T) {
+	query := agentRunQuery(map[string]any{"name": "Alice", "query": "Hello"})
+	if query != "Hello" {
+		t.Fatalf("query = %v, want Hello", query)
+	}
+}
+
 func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 	messages := []map[string]interface{}{
 		{"role": "system", "content": "Be concise."},

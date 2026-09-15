@@ -173,6 +173,7 @@ _common_mod = sys.modules["rag.advanced_rag.knowlege_compile._common"]
 _common_mod.build_chunk_batches = lambda *a, **k: ([], {})
 _common_mod.bulk_dedup_items = lambda items, *a, **k: items
 _common_mod.ensure_llm_bundle = lambda model: model
+_common_mod.env_int = lambda _name, default, **_kwargs: default
 _common_mod.knowledge_compile_gen_conf = lambda *a, **k: {}
 _common_mod.run_chunked_pipeline = MagicMock(return_value={})
 _common_mod.stable_row_id = lambda *a, **k: ""

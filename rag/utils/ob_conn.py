@@ -34,6 +34,7 @@ from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, 
 from common.doc_store.ob_conn_base import (
     OBConnectionBase,
     get_value_str,
+    validate_column_name,
     vector_search_template,
     vector_column_pattern,
     fulltext_index_name_template,
@@ -1201,6 +1202,7 @@ class OBConnection(OBConnectionBase):
         for k, v in new_value.items():
             if k == "remove":
                 if isinstance(v, str):
+                    validate_column_name(v, _VALID_FILTER_COLUMNS, vector_column_pattern)
                     set_values.append(f"{v} = NULL")
                 else:
                     if not isinstance(v, dict):
@@ -1230,6 +1232,7 @@ class OBConnection(OBConnectionBase):
                     if title:
                         set_values.append(f"docnm_kwd = {get_value_str(title)}")
             else:
+                validate_column_name(k, _VALID_FILTER_COLUMNS, vector_column_pattern)
                 set_values.append(f"{k} = {get_value_str(v)}")
 
         if not set_values:

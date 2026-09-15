@@ -530,7 +530,7 @@ func TestNormalizeForCanvas_RepairsLeakedParallelShape(t *testing.T) {
 }
 
 // TestNormalize_DoesNotMutateInput pins the documented
-// "never mutates its input" contract. The original DSL map's
+// "never mutates its input"  The original DSL map's
 // graph.edges[*].sourceHandle / targetHandle, components
 // entries, and components[*].obj.component_name must all be
 // unchanged after NormalizeForCanvas returns.

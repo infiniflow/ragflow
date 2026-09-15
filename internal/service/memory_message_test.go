@@ -175,6 +175,8 @@ func setupMemoryMessageTestDB(t *testing.T) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.Task{},
+		&entity.MemoryTask{},
 	); err != nil {
 		t.Fatalf("failed to migrate memory test tables: %v", err)
 	}
