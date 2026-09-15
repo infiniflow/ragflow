@@ -2046,8 +2046,8 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 	in := map[string]any{
 		"chunks": []map[string]any{
 			{
-				"docnm_kwd":           "Tender_Notice.pdf",
-				"text": "General bidding notice content.",
+				"docnm_kwd": "Tender_Notice.pdf",
+				"text":      "General bidding notice content.",
 			},
 		},
 	}

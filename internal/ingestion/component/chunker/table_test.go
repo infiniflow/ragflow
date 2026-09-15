@@ -47,12 +47,12 @@ func TestTableChunker_OneChunkPerRow(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			{
-				"text":           "- name: Alice\n- age: 30",
-				"doc_type_kwd":   "table",
+				"text":         "- name: Alice\n- age: 30",
+				"doc_type_kwd": "table",
 			},
 			{
-				"text":           "- name: Bob\n- age: 25",
-				"doc_type_kwd":   "table",
+				"text":         "- name: Bob\n- age: 25",
+				"doc_type_kwd": "table",
 			},
 		},
 	})

@@ -554,8 +554,8 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 		{
 			name: "content present ignores docnm_kwd",
 			chunk: map[string]any{
-				"docnm_kwd":           "2026_Engineering_Bidding_Doc.pdf",
-				"text": "contract guidelines",
+				"docnm_kwd": "2026_Engineering_Bidding_Doc.pdf",
+				"text":      "contract guidelines",
 			},
 			want: "contract guidelines",
 		},
@@ -577,33 +577,33 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 		{
 			name: "important_kwd string slice",
 			chunk: map[string]any{
-				"important_kwd":       []string{"Bidding", "Tender"},
-				"text": "body",
+				"important_kwd": []string{"Bidding", "Tender"},
+				"text":          "body",
 			},
 			want: "body Bidding Tender",
 		},
 		{
 			name: "important_kwd any slice",
 			chunk: map[string]any{
-				"important_kwd":       []any{"Alpha", "Beta"},
-				"text": "body",
+				"important_kwd": []any{"Alpha", "Beta"},
+				"text":          "body",
 			},
 			want: "body Alpha Beta",
 		},
 		{
 			name: "important_kwd string",
 			chunk: map[string]any{
-				"important_kwd":       "SingleKey",
-				"text": "body",
+				"important_kwd": "SingleKey",
+				"text":          "body",
 			},
 			want: "body SingleKey",
 		},
 		{
 			name: "all sources combined ignores title when content present",
 			chunk: map[string]any{
-				"docnm_kwd":           "Project_Tender_Specification.pdf",
-				"important_kwd":       []string{"Procurement", "Compliance"},
-				"text": "All bidders must follow instructions.",
+				"docnm_kwd":     "Project_Tender_Specification.pdf",
+				"important_kwd": []string{"Procurement", "Compliance"},
+				"text":          "All bidders must follow instructions.",
 			},
 			want: "All bidders must follow instructions. Procurement Compliance",
 		},
@@ -617,9 +617,9 @@ func TestGetChunkText_Enrichment(t *testing.T) {
 		{
 			name: "all fields empty or whitespace",
 			chunk: map[string]any{
-				"docnm_kwd":           "   ",
-				"important_kwd":       []string{"  ", ""},
-				"text": "   ",
+				"docnm_kwd":     "   ",
+				"important_kwd": []string{"  ", ""},
+				"text":          "   ",
 			},
 			want: "",
 		},
@@ -1005,8 +1005,8 @@ func TestMatchAndTagChunk_RankDecayScoreDistribution(t *testing.T) {
 func TestGetChunkText_NoTitlePollution(t *testing.T) {
 	// Case 1: When canonical text is present, docnm_kwd should NOT be prepended
 	chunkWithContent := map[string]any{
-		"docnm_kwd":           "Financial_Report_2026.pdf",
-		"text": "Quarterly revenue increased by 15 percent.",
+		"docnm_kwd": "Financial_Report_2026.pdf",
+		"text":      "Quarterly revenue increased by 15 percent.",
 	}
 	got := getChunkText(chunkWithContent)
 	want := "Quarterly revenue increased by 15 percent."
@@ -1027,9 +1027,9 @@ func TestGetChunkText_NoTitlePollution(t *testing.T) {
 
 	// Case 3: When important_kwd is present alongside content, keywords are appended but title is ignored
 	chunkWithKwds := map[string]any{
-		"docnm_kwd":           "Internal_Guidelines.pdf",
-		"important_kwd":       []string{"Security", "Compliance"},
-		"text": "All employees must follow access protocols.",
+		"docnm_kwd":     "Internal_Guidelines.pdf",
+		"important_kwd": []string{"Security", "Compliance"},
+		"text":          "All employees must follow access protocols.",
 	}
 	gotKwds := getChunkText(chunkWithKwds)
 	wantKwds := "All employees must follow access protocols. Security Compliance"
