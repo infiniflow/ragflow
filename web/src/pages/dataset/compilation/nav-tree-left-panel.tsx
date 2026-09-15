@@ -73,6 +73,12 @@ type NavTreeLeftPanelProps = {
   navLoading: boolean;
   navError?: boolean;
   keywords: string;
+  // The debounced filter applied to the nav/children/graph requests. Used as
+  // the TreeView key so a filter change remounts the tree: expansion state is
+  // uncontrolled per node and onExpand only fires on opening, so without a
+  // remount an already-open node whose cached children were dropped would sit
+  // on the loading placeholder forever.
+  activeKeywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
   childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
@@ -91,6 +97,7 @@ export function NavTreeLeftPanel({
   navLoading,
   navError = false,
   keywords,
+  activeKeywords,
   childrenMap,
   childrenErrorParents = {},
   structureMap,
@@ -195,6 +202,7 @@ export function NavTreeLeftPanel({
               </div>
             ) : null}
             <TreeView
+              key={activeKeywords}
               data={treeData}
               expandOnRowClick={false}
               defaultNodeIcon={Folder}
