@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import ipaddress
 import io
 import json
 import logging
@@ -108,6 +109,44 @@ class GPTSeq2txt(Base):
         self.base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
+
+
+class OpenAI_APISeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "OpenAI-API-Compatible"
+
+    # Plain HTTP would send the API key and the audio payload in cleartext, so it
+    # is only accepted for self-hosted endpoints on trusted local hosts.
+    _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
+    _LOCAL_HOST_SUFFIXES = (".local", ".internal")
+
+    def __init__(self, key, model_name="whisper-1", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self._ensure_https_or_local_base_url(base_url)
+        model_name = model_name.split("___")[0]
+        logger.debug("Initializing OpenAI-API-Compatible ASR model %s at %s", model_name, base_url)
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+    @classmethod
+    def _ensure_https_or_local_base_url(cls, base_url):
+        parsed = urlparse(base_url.strip())
+        if parsed.scheme == "https":
+            return
+        if parsed.scheme == "http" and cls._is_trusted_local_host(parsed.hostname or ""):
+            return
+        raise ValueError(f"OpenAI-API-Compatible ASR base URL must use HTTPS; plain HTTP is only accepted for trusted local endpoints such as http://localhost:8000/v1, got: {base_url}")
+
+    @classmethod
+    def _is_trusted_local_host(cls, host):
+        host = host.lower().rstrip(".")
+        if host in cls._LOOPBACK_HOSTS:
+            return True
+        if host.endswith(cls._LOCAL_HOST_SUFFIXES):
+            return True
+        try:
+            return ipaddress.ip_address(host).is_private
+        except ValueError:
+            return False
 
 
 class StepFunSeq2txt(GPTSeq2txt):
