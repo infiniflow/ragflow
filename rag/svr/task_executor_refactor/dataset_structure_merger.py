@@ -557,7 +557,12 @@ async def _cleanup_deleted_docs(
             )
             fm = settings.docStoreConn.get_fields(res, ["id", "deleted_doc_id"]) or {}
         except Exception:
-            break
+            # A failed page read must NOT be treated as end-of-results: the
+            # cursor would be partial, Pass 2 would delete the markers seen so
+            # far, and the merge would report success while later markers are
+            # lost. Abort loudly; markers stay in place for the retry.
+            logging.exception("structure_merge: deletion-marker scan failed for kb=%s", kb_id)
+            raise
         if not fm:
             break
         for row in fm.values():
