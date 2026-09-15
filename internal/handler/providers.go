@@ -1466,6 +1466,9 @@ type ParseFileRequest struct {
 	ModelID      *string `json:"model_id"`
 	Content      []byte  `json:"content"`
 	URL          *string `json:"url"`
+	// Optional MinerU async /file/parse overrides (setup → provider api_key JSON → env).
+	Backend   *string `json:"backend"`
+	ServerURL *string `json:"server_url"`
 }
 
 func (h *ProviderHandler) ParseFile(c *gin.Context) {
@@ -1507,6 +1510,12 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 	}
 
 	parseFileConfig := models.ParseFileConfig{}
+	if req.Backend != nil {
+		parseFileConfig.Backend = strings.TrimSpace(*req.Backend)
+	}
+	if req.ServerURL != nil {
+		parseFileConfig.ServerURL = strings.TrimRight(strings.TrimSpace(*req.ServerURL), "/")
+	}
 
 	// Non-stream response
 	var response *models.ParseFileResponse

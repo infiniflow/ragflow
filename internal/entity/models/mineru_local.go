@@ -126,18 +126,28 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("failed to write file content: %w", err)
 	}
 
-	backend := "pipeline"
+	apiKeyRaw := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	setupBackend := ""
 	if modelName != nil && strings.TrimSpace(*modelName) != "" {
-		backend = strings.TrimSpace(*modelName)
-	} else if parseFileConfig != nil && strings.TrimSpace(parseFileConfig.Backend) != "" {
-		backend = strings.TrimSpace(parseFileConfig.Backend)
+		setupBackend = strings.TrimSpace(*modelName)
+	} else if parseFileConfig != nil {
+		setupBackend = strings.TrimSpace(parseFileConfig.Backend)
+	}
+	setupServerURL := ""
+	if parseFileConfig != nil {
+		setupServerURL = parseFileConfig.ServerURL
+	}
+	backend := ResolveMinerUBackend(setupBackend, apiKeyRaw)
+	serverURL := ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
+	if err := ValidateMinerUConfig(backend, serverURL); err != nil {
+		return nil, err
 	}
 	_ = writer.WriteField("backend", backend)
-
-	if parseFileConfig != nil {
-		if serverURL := strings.TrimSpace(parseFileConfig.ServerURL); serverURL != "" {
-			_ = writer.WriteField("server_url", strings.TrimRight(serverURL, "/"))
-		}
+	if serverURL != "" {
+		_ = writer.WriteField("server_url", serverURL)
 	}
 
 	if err = writer.Close(); err != nil {

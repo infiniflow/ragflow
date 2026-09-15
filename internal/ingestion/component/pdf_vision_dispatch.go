@@ -201,7 +201,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			}
 			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
 				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
-			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_server_url", common.EnvMonkeyOCRv2ServerURL); configuredURL != "" {
+			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_server_url"); configuredURL != "" {
 				baseURL = strings.TrimRight(configuredURL, "/")
 			}
 			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
@@ -311,7 +311,7 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 		value = strings.TrimSpace(fmt.Sprint(raw))
 	}
 	if value == "" {
-		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_timeout", common.EnvMonkeyOCRv2Timeout)
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_timeout")
 	}
 	if value == "" {
 		value = os.Getenv(common.EnvMonkeyOCRv2Timeout)
@@ -500,7 +500,7 @@ func dispatchMinerUPDF(
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
 	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
-		return parserDispatchResult{}, err
+		return parser.ParseResult{}, err
 	}
 
 	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
