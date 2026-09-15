@@ -178,7 +178,6 @@ export const useUpdateChunk = () => {
   };
 };
 
-
 export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   const timelineNodes: TimelineNode[] = useMemo(() => {
     const nodes: Array<

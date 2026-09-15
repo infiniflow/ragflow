@@ -16,13 +16,7 @@ interface IProps {
   summaryInfo: string;
 }
 const ParserContainer = (props: IProps) => {
-  const {
-    step,
-    data,
-    clickChunk,
-    isReadonly,
-    summaryInfo,
-  } = props;
+  const { step, data, clickChunk, isReadonly, summaryInfo } = props;
   const { t } = useTranslation();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const [newChunkIndex, setNewChunkIndex] = useState<number | undefined>();
