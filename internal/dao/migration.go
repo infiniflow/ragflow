@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"regexp"
 	"strings"
 
