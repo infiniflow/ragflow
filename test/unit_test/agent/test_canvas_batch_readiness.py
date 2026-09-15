@@ -45,6 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 def _load_canvas_stack(monkeypatch):
     """Load the agent canvas stack with lightweight stubs for isolated batch testing."""
+
     def _pkg(name, path):
         """Register an isolated mock package module in sys.modules."""
         mod = ModuleType(name)
@@ -145,6 +146,7 @@ class _Trace:
 
 def _make_components(base, aggregator, trace, switch=None, assigner=None, iteration=None, list_operations=None):
     """Create instrumented test component classes wired to trace recording."""
+
     class BeginParam(base.ComponentParamBase):
         """Parameter specification for test Begin component."""
 
@@ -227,6 +229,7 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
     }
 
     if switch:
+
         class TracedSwitch(switch.Switch):
             """Traced subclass of Switch recording execution timestamps."""
 
@@ -242,6 +245,7 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
         components["SwitchParam"] = switch.SwitchParam
 
     if assigner:
+
         class TracedVariableAssigner(assigner.VariableAssigner):
             """Traced subclass of VariableAssigner recording execution timestamps."""
 
@@ -257,6 +261,7 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
         components["VariableAssignerParam"] = assigner.VariableAssignerParam
 
     if iteration:
+
         class TracedIteration(iteration.Iteration):
             """Traced subclass of Iteration recording execution timestamps."""
 
@@ -272,6 +277,7 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
         components["IterationParam"] = iteration.IterationParam
 
     if list_operations:
+
         class TracedListOperations(list_operations.ListOperations):
             """Traced subclass of ListOperations recording execution timestamps."""
 
@@ -511,6 +517,7 @@ def canvas_stack(monkeypatch):
 
 def _run(canvas_module, dsl):
     """Execute Canvas workflow synchronously and return the graph."""
+
     async def _drain():
         """Drain the asynchronous Canvas generator to completion."""
         graph = canvas_module.Canvas(dsl, tenant_id="t", task_id="task")
