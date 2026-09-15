@@ -514,7 +514,7 @@ func migrateTenantModels(ctx context.Context, db *gorm.DB) error {
 				continue
 			}
 			if err := tx.Exec(
-				"INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type, status, extra, create_time, create_date, update_time, update_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				"INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type, status, extra, create_time, create_date, update_time, update_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				modelMigrationNewID(), group.modelName, group.providerID, group.instanceID,
 				group.modelType, "active", group.extra, nowMs, now, nowMs, now,
 			).Error; err != nil {
