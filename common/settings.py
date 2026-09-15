@@ -327,10 +327,7 @@ def init_settings():
 
     global OAUTH_AUTO_REGISTER
     env_val = os.environ.get("OAUTH_AUTO_REGISTER", "").lower()
-    if env_val in ("0", "false", "no"):
-        OAUTH_AUTO_REGISTER = False
-    elif env_val in ("1", "true", "yes"):
-        OAUTH_AUTO_REGISTER = True
+    OAUTH_AUTO_REGISTER = env_val not in ("0", "false", "no")
 
     global DISABLE_PASSWORD_LOGIN
     try:
