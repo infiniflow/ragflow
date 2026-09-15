@@ -24,12 +24,14 @@ task should be logged with the actual pipeline parser, not the
 without re-decoding the DSL twice.
 """
 
+import importlib
 import json
 
+from api.db.services import pipeline_operation_log_service as _pol_service
 from api.db.services.pipeline_operation_log_service import (
-    _PARSER_SETUP_KEY_BY_SUFFIX,
     _load_dsl_mapping,
     _parser_for_document_from_dsl,
+    _parser_setup_key_by_suffix,
 )
 
 
@@ -77,6 +79,20 @@ def test_load_dsl_mapping_returns_none_for_empty_string():
 
 def test_load_dsl_mapping_returns_none_for_none_input():
     assert _load_dsl_mapping(None) is None  # type: ignore[arg-type]
+
+
+def test_load_dsl_mapping_returns_dict_for_dict_input():
+    """The pipeline DSL column may be persisted as a dict (peewee
+    ``JSONField`` round-trips through Python objects). Decoding must
+    accept a dict passthrough instead of raising on ``json.loads`` — see
+    #19009 follow-up."""
+    dsl = {"components": {"p": {"obj": {"component_name": "Parser", "params": {"setups": {"pdf": {"parse_method": "docling"}}}}}}}
+    assert _load_dsl_mapping(dsl) == dsl
+
+
+def test_load_dsl_mapping_returns_dict_for_empty_dict_input():
+    """An empty dict is a valid mapping — same contract as ``{}`` JSON."""
+    assert _load_dsl_mapping({}) == {}
 
 
 def test_load_dsl_mapping_returns_none_for_json_array():
@@ -316,15 +332,13 @@ def test_setup_key_map_matches_parser_param_setups():
     from rag.flow.parser.parser import ParserParam
 
     runtime_setups = ParserParam().setups
+    suffix_map = _parser_setup_key_by_suffix()
 
     # Every runtime suffix must appear in the map with the correct setup key.
     for setup_key, conf in runtime_setups.items():
         for suffix in conf.get("suffix", []):
-            assert _PARSER_SETUP_KEY_BY_SUFFIX[suffix] == setup_key, (
-                f"suffix {suffix!r} in ParserParam.setups[{setup_key!r}] is "
-                f"mapped to {_PARSER_SETUP_KEY_BY_SUFFIX.get(suffix)!r}; "
-                f"the runtime dispatch at parser.py:1425-1426 will route "
-                f"{suffix!r} to {setup_key!r}."
+            assert suffix_map[suffix] == setup_key, (
+                f"suffix {suffix!r} in ParserParam.setups[{setup_key!r}] is mapped to {suffix_map.get(suffix)!r}; the runtime dispatch at parser.py:1425-1426 will route {suffix!r} to {setup_key!r}."
             )
 
     # The map must contain ONLY suffixes that exist in ParserParam.setups.
@@ -332,5 +346,34 @@ def test_setup_key_map_matches_parser_param_setups():
     # suffix would log the parser for a file family the runtime would
     # reject — that would be a silent regression.
     allowed = {suffix for conf in runtime_setups.values() for suffix in conf.get("suffix", [])}
-    stale = set(_PARSER_SETUP_KEY_BY_SUFFIX.keys()) - allowed
-    assert not stale, f"_PARSER_SETUP_KEY_BY_SUFFIX has stale entries (not in ParserParam.setups): {sorted(stale)}. Remove them so we never log a parse_method for a suffix the runtime would reject."
+    stale = set(suffix_map.keys()) - allowed
+    assert not stale, f"_parser_setup_key_by_suffix has stale entries (not in ParserParam.setups): {sorted(stale)}. Remove them so we never log a parse_method for a suffix the runtime would reject."
+
+
+def test_setup_key_map_is_lazy():
+    """The suffix map must not be built at module import time. Importing
+    ``pipeline_operation_log_service`` must not pull in
+    ``rag.flow.parser.parser`` (which transitively imports deepdoc,
+    numpy, PIL) — the heavy import is deferred to first lookup.
+
+    Verified by ``lru_cache.cache_info()``: after a fresh module reload
+    ``currsize`` is zero, then 1 after the first call. A regression to
+    eager construction would have ``currsize`` already at 1 after the
+    reload completes.
+    """
+    # lru_cache lives across the whole test session — force a fresh
+    # module load so the cache state reflects the import-time behavior,
+    # not prior tests in this file.
+    importlib.reload(_pol_service)
+    fresh = _pol_service._parser_setup_key_by_suffix
+    fresh.cache_clear()
+    info_before = fresh.cache_info()
+    assert info_before.currsize == 0, (
+        f"suffix map was built at import time (cache has {info_before.currsize} entries); "
+        f"expected lazy construction so api.db.services.pipeline_operation_log_service "
+        f"can be imported in slim environments without deepdoc/numpy/PIL."
+    )
+
+    fresh()  # first lookup
+    info_after = fresh.cache_info()
+    assert info_after.currsize == 1, "first lookup must populate the cache"

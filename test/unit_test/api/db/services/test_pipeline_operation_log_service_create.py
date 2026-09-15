@@ -29,19 +29,23 @@ import importlib.util
 import json
 import sys
 import types
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # --------------------------------------------------------------------------- #
-# Helper: load pipeline_operation_log_service with heavy dependencies stubbed
+# Module load: stub transitive imports the service module pulls in at top level
 # --------------------------------------------------------------------------- #
 #
-# ``create()`` pulls in DocumentService, UserCanvasService,
+# ``create()`` reaches DocumentService, UserCanvasService,
 # KnowledgebaseService, and the peewee-backed DB. Stubbing those lets us
 # exercise the real create() flow without standing up the full stack.
+# Per-method behavior is patched with ``patch.object`` (and
+# ``monkeypatch.setattr`` where pytest's patcher is more ergonomic) so
+# the test stays close to ``unittest.mock`` conventions and avoids a
+# custom spec-loader dance.
 
 
 def _install_stubs(monkeypatch):
@@ -50,12 +54,12 @@ def _install_stubs(monkeypatch):
     peewee_mod.fn = lambda *a, **kw: None
     monkeypatch.setitem(sys.modules, "peewee", peewee_mod)
 
-    # Common settings/config_utils import chain — keep minimal.
+    # The service's transitive import chain pulls in api.db, common.*,
+    # and rag.flow.parser.parser — stub each module before exec so the
+    # real service module loads against synthetic bindings.
     for mod in [
         "common",
         "common.constants",
-        "common.settings",
-        "common.config_utils",
         "common.misc_utils",
         "common.time_utils",
         "api",
@@ -70,72 +74,61 @@ def _install_stubs(monkeypatch):
     ]:
         monkeypatch.setitem(sys.modules, mod, types.ModuleType(mod))
 
-    # Peewee DB stub with the @connection_context decorator the create()
-    # method uses. The decorator must preserve the wrapped function's
-    # return value so the create() flow runs to completion.
-    import contextlib
-
-    @contextlib.contextmanager
+    @contextmanager
     def _noop_connection_context(*a, **kw):
         yield
 
     DB = MagicMock()
     DB.connection_context = _noop_connection_context
     sys.modules["api.db.db_models"].DB = DB
-
     sys.modules["api.db.db_models"].Document = object
-    # Use a MagicMock for PipelineOperationLog so cls.model.select(),
-    # cls.model.delete(), etc. don't blow up the create() flow after
-    # our fake cls.save captures the log payload.
-    _PolModel = MagicMock()
-    _PolModel.select.return_value.where.return_value.count.return_value = 0
-    sys.modules["api.db.db_models"].PipelineOperationLog = _PolModel
+    sys.modules["api.db.db_models"].PipelineOperationLog = MagicMock()
 
-    sys.modules["api.db.services.canvas_service"].UserCanvasService = MagicMock()
-    sys.modules["api.db.services.document_service"].DocumentService = MagicMock()
-    sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = MagicMock()
+    # Build class stubs with the methods the service calls, so
+    # ``patch.object`` can target them without fighting ``object``'s
+    # read-only namespace.
+    def _class_stub(methods):
+        return type(
+            "_Stub",
+            (object,),
+            {m: classmethod(lambda cls, *a, **kw: None) for m in methods},
+        )
+
+    sys.modules["api.db.services.canvas_service"].UserCanvasService = _class_stub(["get_by_id"])
+    sys.modules["api.db.services.document_service"].DocumentService = _class_stub(["get_by_id", "update_progress_immediately"])
+    sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _class_stub(["get_by_id"])
+    sys.modules["api.db.services.task_service"].TaskService = _class_stub(["get_by_id"])
     sys.modules["api.db.services.task_service"].GRAPH_RAPTOR_FAKE_DOC_ID = "fake"
-    sys.modules["api.db.services.task_service"].TaskService = MagicMock()
-    sys.modules["api.db.services.common_service"].CommonService = MagicMock()
+    sys.modules["api.db.services.common_service"].CommonService = _class_stub(["save"])
     sys.modules["common.misc_utils"].get_uuid = lambda: "uuid"
     sys.modules["common.time_utils"].current_timestamp = lambda: "ts"
     sys.modules["common.time_utils"].datetime_format = lambda x: "dt"
 
     # rag.flow.parser.parser is required for the suffix map derivation.
-    import enum
+    # Build a minimal ParserParam stub with the same shape the runtime
+    # uses for dispatch (issue #18306 review: tests must validate the
+    # helper, not a hand-maintained copy of the suffix list).
+    class _ParserParam:
+        def __init__(self):
+            self.setups = {
+                "pdf": {"suffix": ["pdf"]},
+                "markdown": {"suffix": ["md", "markdown", "mdx"]},
+                "image": {"suffix": ["jpg", "jpeg", "png", "gif"]},
+                "text&code": {"suffix": ["txt", "py", "js"]},
+            }
 
-    class _PP:
-        setups = {
-            "pdf": {"suffix": ["pdf"]},
-            "markdown": {"suffix": ["md", "markdown", "mdx"]},
-            "image": {"suffix": ["jpg", "jpeg", "png", "gif"]},
-        }
-
-    rag_mod = types.ModuleType("rag")
-    sys.modules["rag"] = rag_mod
-    flow_mod = types.ModuleType("rag.flow")
-    sys.modules["rag.flow"] = flow_mod
     parser_pkg = types.ModuleType("rag.flow.parser")
     parser_pkg.__path__ = ["/dev/null"]
-    sys.modules["rag.flow.parser"] = parser_pkg
     parser_sub = types.ModuleType("rag.flow.parser.parser")
-    parser_sub.ParserParam = _PP
-    sys.modules["rag.flow.parser.parser"] = parser_sub
+    parser_sub.ParserParam = _ParserParam
+    monkeypatch.setitem(sys.modules, "rag", types.ModuleType("rag"))
+    monkeypatch.setitem(sys.modules, "rag.flow", types.ModuleType("rag.flow"))
+    monkeypatch.setitem(sys.modules, "rag.flow.parser", parser_pkg)
+    monkeypatch.setitem(sys.modules, "rag.flow.parser.parser", parser_sub)
 
-    # Build proper class stubs so monkeypatch.setattr can target
-    # ``class.method`` without hitting ``object``'s read-only namespace.
-    # Pre-declare methods so monkeypatch has something to replace.
-    def _make_class_stub(name, methods):
-        cls = type(name, (object,), {m: classmethod(lambda cls, *a, **kw: None) for m in methods})
-        return cls
+    # Stub PipelineTaskType/TaskStatus so the create() branching works.
+    import enum
 
-    sys.modules["api.db.services.canvas_service"].UserCanvasService = _make_class_stub("UserCanvasService", ["get_by_id"])
-    sys.modules["api.db.services.document_service"].DocumentService = _make_class_stub("DocumentService", ["get_by_id", "update_progress_immediately"])
-    sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _make_class_stub("KnowledgebaseService", ["get_by_id"])
-    sys.modules["api.db.services.task_service"].TaskService = _make_class_stub("TaskService", ["get_by_id"])
-    sys.modules["api.db.services.common_service"].CommonService = _make_class_stub("CommonService", ["save"])
-
-    # Stub PipelineTaskType so the create() branching works.
     class PipelineTaskType(str, enum.Enum):
         PARSE = "Parse"
         DOWNLOAD = "Download"
@@ -161,26 +154,25 @@ def _install_stubs(monkeypatch):
     sys.modules["common.constants"].TaskStatus = TaskStatus
     sys.modules["api.db"].VALID_PIPELINE_TASK_TYPES = {
         PipelineTaskType.PARSE,
+        PipelineTaskType.DOWNLOAD,
         PipelineTaskType.RAPTOR,
         PipelineTaskType.GRAPH_RAG,
+        PipelineTaskType.MINDMAP,
+        PipelineTaskType.ARTIFACT,
+        PipelineTaskType.SKILL,
     }
 
-    # Load the actual module under test. Build the path from this test
-    # file's location so the test works regardless of the developer's
-    # checkout layout — never chdir() the process (that affects later
-    # tests and breaks for checkouts outside /tmp/opencode/repos/ragflow).
-    # Layout: <repo>/test/unit_test/api/db/services/<this_file>
+    # Load the module under test. Build the path from this test file's
+    # location so the test works regardless of the developer's checkout
+    # layout. Layout:
+    #   <repo>/test/unit_test/api/db/services/<this_file>
     #         ^^^^^^^^ ^^^^^^                  ^^^^^^
-    #         parents[5]   parents[4]            parents[0]
-    import importlib.util
-
+    #         parents[5]  parents[4]           parents[0]
     service_path = Path(__file__).resolve().parents[5] / "api" / "db" / "services" / "pipeline_operation_log_service.py"
-    spec = importlib.util.spec_from_file_location(
-        "_pol_test",
-        str(service_path),
-    )
+    spec = importlib.util.spec_from_file_location("_pol_test", str(service_path))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module._parser_setup_key_by_suffix.cache_clear()
     return module
 
 
@@ -251,7 +243,6 @@ def captured_log(monkeypatch, pol_module):
 
     def _fake_save(cls, **kwargs):
         captured["log"] = kwargs
-        # Return a MagicMock to satisfy the caller.
         return MagicMock()
 
     monkeypatch.setattr(pol_module.PipelineOperationLogService, "save", classmethod(_fake_save))
@@ -264,21 +255,18 @@ def test_create_prefers_pipeline_parser_for_parse_task(pol_module, captured_log,
     inherited KB default ("DeepDOC")."""
     document = _make_document(suffix="pdf", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
-    monkeypatch.setattr(pol_module.DocumentService, "get_by_id", MagicMock(return_value=(True, document)))
-    monkeypatch.setattr(pol_module.UserCanvasService, "get_by_id", MagicMock(return_value=(True, user_pipeline)))
 
-    dsl = _parse_dsl("pdf", "docling")
-    pol_module.PipelineOperationLogService.create(
-        document_id="doc-1",
-        pipeline_id="pipe-1",
-        task_type=pol_module.PipelineTaskType.PARSE,
-        task_id="task-1",
-        referred_document_id="doc-1",
-        dsl=dsl,
-    )
+    with patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)), patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            task_id="task-1",
+            referred_document_id="doc-1",
+            dsl=_parse_dsl("pdf", "docling"),
+        )
 
-    log = captured_log["log"]
-    assert log["parser_id"] == "docling", f"create() must prefer the pipeline's Parser choice over document.parser_id; got parser_id={log['parser_id']!r}"
+    assert captured_log["log"]["parser_id"] == "docling", f"create() must prefer the pipeline's Parser choice over document.parser_id; got parser_id={captured_log['log']['parser_id']!r}"
 
 
 def test_create_uses_document_parser_id_when_dsl_has_no_parser(pol_module, captured_log, monkeypatch):
@@ -287,25 +275,22 @@ def test_create_uses_document_parser_id_when_dsl_has_no_parser(pol_module, captu
     where a Parser is configured."""
     document = _make_document(suffix="pdf", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
-    monkeypatch.setattr(pol_module.DocumentService, "get_by_id", MagicMock(return_value=(True, document)))
-    monkeypatch.setattr(pol_module.UserCanvasService, "get_by_id", MagicMock(return_value=(True, user_pipeline)))
 
     # DSL with no Parser component at all.
     dsl = json.dumps({"components": {"some-other-node": {"obj": {"component_name": "Begin"}}}, "path": []})
 
-    pol_module.PipelineOperationLogService.create(
-        document_id="doc-1",
-        pipeline_id="pipe-1",
-        task_type=pol_module.PipelineTaskType.PARSE,
-        task_id="task-1",
-        referred_document_id="doc-1",
-        dsl=dsl,
-    )
+    with patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)), patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            task_id="task-1",
+            referred_document_id="doc-1",
+            dsl=dsl,
+        )
 
     log = captured_log["log"]
     assert log["parser_id"] == "DeepDOC"
-    # Demoted to DEBUG — no warning line expected in the captured log
-    # record, but the parser_id fallback must still happen silently.
     assert log["parser_id"] == document.parser_id
 
 
@@ -315,8 +300,6 @@ def test_create_persists_sanitized_dsl(pol_module, captured_log, monkeypatch):
     log payload, not via a DB write."""
     document = _make_document(suffix="md", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
-    monkeypatch.setattr(pol_module.DocumentService, "get_by_id", MagicMock(return_value=(True, document)))
-    monkeypatch.setattr(pol_module.UserCanvasService, "get_by_id", MagicMock(return_value=(True, user_pipeline)))
 
     dsl_with_vectors = json.dumps(
         {
@@ -341,23 +324,64 @@ def test_create_persists_sanitized_dsl(pol_module, captured_log, monkeypatch):
         }
     )
 
-    pol_module.PipelineOperationLogService.create(
-        document_id="doc-1",
-        pipeline_id="pipe-1",
-        task_type=pol_module.PipelineTaskType.PARSE,
-        task_id="task-1",
-        referred_document_id="doc-1",
-        dsl=dsl_with_vectors,
-    )
+    with patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)), patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            task_id="task-1",
+            referred_document_id="doc-1",
+            dsl=dsl_with_vectors,
+        )
 
     log = captured_log["log"]
     persisted_dsl = log["dsl"]
-    # The q_1024_vec key must have been stripped by _remove_embedding_vectors.
     chunk = persisted_dsl["components"]["Tokenizer:0"]["obj"]["params"]["outputs"]["chunks"]["value"][0]
     assert "q_1024_vec" not in chunk
     assert chunk == {"text": "x"}
-    # Parser resolution still worked.
     assert log["parser_id"] == "docling"
+
+
+def test_create_accepts_dict_dsl(pol_module, captured_log, monkeypatch):
+    """A pipeline DSL stored as a dict (peewee JSONField round-trip)
+    must not crash create() and must still resolve the pipeline's
+    Parser choice. Before the dict-input fix, ``json.loads(dict)``
+    raised TypeError, the DSL was dropped, and the WARNING fired
+    spuriously on every PARSE task."""
+    document = _make_document(suffix="pdf", parser_id="DeepDOC")
+    user_pipeline = _make_user_pipeline()
+
+    dsl_dict = {
+        "components": {
+            "parser-node": {
+                "obj": {
+                    "component_name": "Parser",
+                    "params": {"setups": {"pdf": {"parse_method": "docling"}}},
+                },
+            },
+        },
+        "path": [],
+    }
+
+    with (
+        patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)),
+        patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)),
+        pol_module.assertLogs(level="WARNING") as cm,
+    ):
+        pol_module.PipelineOperationLogService.create(
+            document_id="doc-1",
+            pipeline_id="pipe-1",
+            task_type=pol_module.PipelineTaskType.PARSE,
+            task_id="task-1",
+            referred_document_id="doc-1",
+            dsl=dsl_dict,
+        )
+
+    log = captured_log["log"]
+    assert log["parser_id"] == "docling", "dict DSL must still resolve the pipeline's parser"
+    # The "Pipeline DSL is missing or malformed" WARNING must NOT fire
+    # for a valid dict input.
+    assert not any("Pipeline DSL is missing or malformed" in rec.message for rec in cm.records)
 
 
 def test_create_falls_back_to_empty_dsl_for_malformed_dsl(pol_module, captured_log, monkeypatch, caplog):
@@ -366,25 +390,24 @@ def test_create_falls_back_to_empty_dsl_for_malformed_dsl(pol_module, captured_l
     parser_id falls back to document.parser_id."""
     document = _make_document(suffix="pdf", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
-    monkeypatch.setattr(pol_module.DocumentService, "get_by_id", MagicMock(return_value=(True, document)))
-    monkeypatch.setattr(pol_module.UserCanvasService, "get_by_id", MagicMock(return_value=(True, user_pipeline)))
 
-    with caplog.at_level(pol_module.logging.WARNING, logger="root"):
+    with (
+        caplog.at_level(pol_module.logging.WARNING, logger="root"),
+        patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)),
+        patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)),
+    ):
         pol_module.PipelineOperationLogService.create(
             document_id="doc-1",
             pipeline_id="pipe-1",
             task_type=pol_module.PipelineTaskType.PARSE,
             task_id="task-1",
             referred_document_id="doc-1",
-            dsl="not-json",  # malformed
+            dsl="not-json",
         )
 
     log = captured_log["log"]
-    # Malformed DSL yields {} (not None / not a crash).
     assert log["dsl"] == {}
-    # Fall back to document.parser_id.
     assert log["parser_id"] == "DeepDOC"
-    # The "Pipeline DSL is missing or malformed" WARNING must fire.
     assert any("Pipeline DSL is missing or malformed" in rec.message for rec in caplog.records)
 
 
@@ -396,12 +419,14 @@ def test_create_demotes_debug_log_when_dsl_has_no_parser(pol_module, captured_lo
     is at DEBUG."""
     document = _make_document(suffix="pdf", parser_id="DeepDOC")
     user_pipeline = _make_user_pipeline()
-    monkeypatch.setattr(pol_module.DocumentService, "get_by_id", MagicMock(return_value=(True, document)))
-    monkeypatch.setattr(pol_module.UserCanvasService, "get_by_id", MagicMock(return_value=(True, user_pipeline)))
 
     dsl = json.dumps({"components": {"some-other-node": {"obj": {"component_name": "Begin"}}}, "path": []})
 
-    with caplog.at_level(pol_module.logging.DEBUG, logger="root"):
+    with (
+        caplog.at_level(pol_module.logging.DEBUG, logger="root"),
+        patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)),
+        patch.object(pol_module.UserCanvasService, "get_by_id", return_value=(True, user_pipeline)),
+    ):
         pol_module.PipelineOperationLogService.create(
             document_id="doc-1",
             pipeline_id="pipe-1",
@@ -411,8 +436,6 @@ def test_create_demotes_debug_log_when_dsl_has_no_parser(pol_module, captured_lo
             dsl=dsl,
         )
 
-    # DEBUG-level: must NOT appear in the warning channel.
     assert not any(rec.levelno >= pol_module.logging.WARNING and "Could not resolve pipeline parser from DSL" in rec.message for rec in caplog.records)
-    # But the parser_id fallback still happened.
     log = captured_log["log"]
     assert log["parser_id"] == "DeepDOC"
