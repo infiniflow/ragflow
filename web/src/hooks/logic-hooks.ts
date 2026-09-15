@@ -705,6 +705,12 @@ export const useSelectDerivedMessages = () => {
 
   const addPrologue = useCallback((prologue: string) => {
     setDerivedMessages((pre) => {
+      // The prologue is the conversation opener. Once the user has said
+      // something, the first message is real history — never overwrite or
+      // retro-inject the prologue into it.
+      if (pre.some((x) => x.role === MessageType.User)) {
+        return pre;
+      }
       if (pre.length > 0) {
         return [
           {

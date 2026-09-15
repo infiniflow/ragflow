@@ -103,6 +103,19 @@ python3 ragflow_deps/download_go_deps.py
 > startup, so the remedy is always to seed the static lib above, never to build
 > without it.
 
+> **Note**: The ONNX Runtime native version is pinned in several Go-side places
+> that must stay in sync. Bumping it in one spot and not the others fails the
+> build with `Error: ONNX Runtime version is inconsistent`:
+> - `internal/common/environments.go` — `DeepDocORTVersion`
+> - `Dockerfile_go` — `ARG ORT_VERSION`
+> - `ragflow_deps/download_go_deps.py` and `ragflow_deps/download_deps.py` — `ORT_VERSION`
+>
+> `build.sh` runs this consistency check automatically before the Go build
+> (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
+> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
+> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> `pyproject.toml` is versioned independently and is intentionally not part of
+> this check.
 
 ### 1.5 Build RAGFlow
 
@@ -198,8 +211,8 @@ Note: admin server must be started first; otherwise, api server will encounter e
 ```
 
 ```bash
-# Start admin server and migrate database
-./bin/ragflow_server --admin --migrate
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
 ```
 
 ```bash
@@ -646,11 +659,6 @@ RAGFlow(api/default)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/t
 RAGFlow(api/default)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 ```
 
-- Insert data from JSON files
-```
-RAGFlow(api/default)> INSERT CHUNKS FROM FILE 'insert_kb.json'
-```
-
 - Update a chunk's content
 ```
 RAGFlow(api/default)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
@@ -693,10 +701,6 @@ RAGFlow(api/default)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'b
 RAGFlow(api/default)> CREATE METADATA STORE
 ```
 
-- Insert metadata from JSON files
-```
-RAGFlow(api/default)> INSERT METADATA FROM FILE 'insert_metadata.json'
-```
 - Set metadata for a document
 ```
 RAGFlow(api/default)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';

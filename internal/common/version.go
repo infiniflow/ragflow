@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"golang.org/x/mod/semver"
 )
 
 var (
@@ -74,4 +76,43 @@ func getClosestTagAndCount() string {
 		return "unknown"
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// IsOlderReleaseThan reports whether codeVersion is an earlier release than
+// targetVersion, comparing only MAJOR.MINOR.PATCH.
+//
+// git describe reports a build made from a commit after a tag as
+// "v0.27.1-14-g<sha>". semver ranks that pre-release string below "v0.27.1"
+// even though the code is newer than the tag, so pre-release and build suffixes
+// are stripped before comparing.
+//
+// The second result is false when either version cannot be parsed, in which
+// case there is no evidence of a downgrade and the caller must not block.
+func IsOlderReleaseThan(codeVersion, targetVersion string) (older, comparable bool) {
+	code := releaseVersion(codeVersion)
+	target := releaseVersion(targetVersion)
+	if code == "" || target == "" {
+		return false, false
+	}
+	return semver.Compare(code, target) < 0, true
+}
+
+// releaseVersion normalizes a version string to the "vMAJOR.MINOR.PATCH" form
+// semver accepts, dropping any pre-release or build suffix. It returns an empty
+// string when the result is not a valid semver tag.
+func releaseVersion(version string) string {
+	normalized := strings.TrimSpace(version)
+	normalized = strings.TrimPrefix(normalized, "v")
+	normalized = strings.TrimPrefix(normalized, "V")
+	if normalized == "" {
+		return ""
+	}
+	if i := strings.IndexAny(normalized, "-+"); i >= 0 {
+		normalized = normalized[:i]
+	}
+	normalized = "v" + normalized
+	if !semver.IsValid(normalized) {
+		return ""
+	}
+	return normalized
 }

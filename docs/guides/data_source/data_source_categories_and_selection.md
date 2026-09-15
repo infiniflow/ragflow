@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 RAGFlow supports many data sources. It is recommended to first select a major category according to the content source, and then go to the corresponding data source configuration. The following categories help users quickly determine which connection method to choose.
 
-**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
+**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
 
 **Object storage**: Used to synchronize large numbers of files in buckets or containers. This category is suitable for historical data archiving, batch file import, and centralized management of cloud files. It includes S3, Google Cloud Storage, Oracle Storage, R2, and Azure Blob Storage.
 

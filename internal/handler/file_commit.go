@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,13 +34,14 @@ type fileCommitService interface {
 	CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error)
+	GetPageCommitDetail(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
 	ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error)
 	DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error)
 	GetUncommittedChanges(ctx context.Context, folderID string) ([]entity.DiffEntry, error)
 	GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error)
 	GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
 	GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
-	ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error)
+	ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error)
 }
 
 // FileCommitHandler file commit handler
@@ -257,11 +259,13 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Python's list_commits supports ?slug=<page_slug> to filter audit commits
-	// for a specific wiki/skill page (written by record_page_edit). These page
-	// commits are scoped to the dataset and page file key, so route them through
-	// the page-commit path instead of the folder-based ListCommits. This only
-	// applies to the /datasets/{dataset_id}/commits route.
+	// Python's list_commits supports ?slug=<page_type>/<slug> to filter audit
+	// commits for a specific wiki/skill page (written by record_page_edit).
+	// The slug carries the full "<page_type>/<slug>" form shared with the
+	// Python API and the frontend, while RecordPageEdit scopes the stored file
+	// key by page type plus the bare slug — split the prefix so both sides
+	// agree on the same key. This only applies to the
+	// /datasets/{dataset_id}/commits route.
 	if slug := c.Query("slug"); slug != "" {
 		datasetID := c.Param("dataset_id")
 		if datasetID == "" {
@@ -269,32 +273,23 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 			return
 		}
 		pageType := c.Query("page_type")
+		if prefix := pageType + "/"; pageType != "" && strings.HasPrefix(slug, prefix) {
+			slug = strings.TrimPrefix(slug, prefix)
+		} else if pageType == "" {
+			if idx := strings.Index(slug, "/"); idx >= 0 {
+				pageType, slug = slug[:idx], slug[idx+1:]
+			}
+		}
 		commits, total, err := h.commitService.ListPageCommits(ctx, datasetID, pageType, slug, page, pageSize)
 		if err != nil {
 			jsonInternalError(c, err)
 			return
 		}
-		var commitList []entity.CommitResponse
-		for _, commit := range commits {
-			var ct int64
-			if commit.CreateTime != nil {
-				ct = *commit.CreateTime
-			}
-			commitList = append(commitList, entity.CommitResponse{
-				ID:         commit.ID,
-				FolderID:   commit.FolderID,
-				ParentID:   commit.ParentID,
-				Message:    commit.Message,
-				AuthorID:   commit.AuthorID,
-				FileCount:  commit.FileCount,
-				CreateTime: &ct,
-			})
-		}
 		common.SuccessWithData(c, gin.H{
 			"total":     total,
 			"page":      page,
 			"page_size": pageSize,
-			"commits":   commitList,
+			"commits":   commits,
 		}, common.CodeSuccess.Message())
 		return
 	}
@@ -365,8 +360,21 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		return
 	}
 
-	if commit.FolderID != folderID {
+	// Workspace commits store the workspace folder id. Wiki/skill page audit
+	// commits are scoped by dataset instead, so the dataset route must accept
+	// the dataset id as the commit scope after the resolver has authorized it.
+	datasetID := c.Param("dataset_id")
+	if commit.FolderID != folderID && (datasetID == "" || commit.FolderID != datasetID) {
 		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
+		return
+	}
+	if datasetID != "" && commit.Title != nil {
+		detail, err := h.commitService.GetPageCommitDetail(ctx, datasetID, commitID)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
+			return
+		}
+		common.SuccessWithData(c, detail, common.CodeSuccess.Message())
 		return
 	}
 

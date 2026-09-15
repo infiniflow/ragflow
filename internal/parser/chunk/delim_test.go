@@ -40,6 +40,14 @@ func TestHasWrappedDelimiter(t *testing.T) {
 	}
 }
 
+func TestParseDelimiterField(t *testing.T) {
+	got := ParseDelimiterField("\n!?;。；！？`---`")
+	want := []string{"\n", "!", "?", ";", "。", "；", "！", "？", "`---`"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ParseDelimiterField = %#v, want %#v", got, want)
+	}
+}
+
 func TestCompileDelimiterPattern(t *testing.T) {
 	if CompileDelimiterPattern(nil) != nil {
 		t.Fatal("empty list should yield nil")

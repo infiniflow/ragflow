@@ -23,6 +23,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -386,6 +387,67 @@ func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
 	}
 	if config["tenant_id"] != "tenant1" || config["embd_id"] != "kb-embd1" {
 		t.Fatalf("unexpected joined config: %#v", config)
+	}
+}
+
+func TestDocumentDAOGetParsingStatusByKBID(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(&entity.IngestionTask{}); err != nil {
+		t.Fatalf("migrate IngestionTask: %v", err)
+	}
+
+	// doc-unstart: no task
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-1: %v", err)
+	}
+	// doc-running: task RUNNING
+	if err := db.Create(&entity.Document{ID: "doc-2", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-2: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-2", DocumentID: "doc-2", Status: common.RUNNING}).Error; err != nil {
+		t.Fatalf("create task-2: %v", err)
+	}
+	// doc-completed: task COMPLETED
+	if err := db.Create(&entity.Document{ID: "doc-3", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-3: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-3", DocumentID: "doc-3", Status: common.COMPLETED}).Error; err != nil {
+		t.Fatalf("create task-3: %v", err)
+	}
+	// doc-failed: task FAILED
+	if err := db.Create(&entity.Document{ID: "doc-4", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-4: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-4", DocumentID: "doc-4", Status: common.FAILED}).Error; err != nil {
+		t.Fatalf("create task-4: %v", err)
+	}
+	// doc-stopped: task STOPPED
+	if err := db.Create(&entity.Document{ID: "doc-5", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-5: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-5", DocumentID: "doc-5", Status: common.STOPPED}).Error; err != nil {
+		t.Fatalf("create task-5: %v", err)
+	}
+
+	dao := NewDocumentDAO()
+	counts, err := dao.GetParsingStatusByKBID(t.Context(), db, "kb-status")
+	if err != nil {
+		t.Fatalf("GetParsingStatusByKBID failed: %v", err)
+	}
+	if counts["unstart_count"] != 1 {
+		t.Errorf("unstart_count = %d, want 1", counts["unstart_count"])
+	}
+	if counts["running_count"] != 1 {
+		t.Errorf("running_count = %d, want 1", counts["running_count"])
+	}
+	if counts["done_count"] != 1 {
+		t.Errorf("done_count = %d, want 1", counts["done_count"])
+	}
+	if counts["fail_count"] != 1 {
+		t.Errorf("fail_count = %d, want 1", counts["fail_count"])
+	}
+	if counts["cancel_count"] != 1 {
+		t.Errorf("cancel_count = %d, want 1", counts["cancel_count"])
 	}
 }
 
