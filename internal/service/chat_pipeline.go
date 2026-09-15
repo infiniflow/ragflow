@@ -153,7 +153,7 @@ type AsyncChatResult struct {
 //
 // Parameters:
 //   - chat: the chat/chat entity with KBs, prompt_config, etc.
-//   - messages: pre-filtered user/assistant messages (system already stripped).
+//   - messages: saved user/assistant history, or the full payload for non-storing model tests.
 //   - stream: if true, yields content deltas as they arrive.
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
@@ -761,7 +761,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
-				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt)
+				var history []map[string]interface{}
+				if kwargs["store_history_messages"] == false {
+					history = messages
+				}
+				hk, slotCites, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, harnessSystemPrompt, history)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -1038,7 +1042,7 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		for _, m := range messages {
 			role, _ := m["role"].(string)
-			if role == "system" {
+			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
@@ -1485,11 +1489,11 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		}
 
-		// 3. Strip citation markers and drop system messages from history.
+		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
 		for _, m := range messages {
 			role, _ := m["role"].(string)
-			if role == "system" {
+			if role == "system" && config["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
@@ -4699,6 +4703,7 @@ func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
 type HarnessRequest struct {
 	Question   string
 	DatasetIDs []string
+	Messages   []map[string]interface{}
 	// DocIDs scopes the agentic search to these document ids (Python
 	// dialog_service.py doc_scope). chat_pipeline folds the chat-level
 	// meta_data_filter into docIDs before calling, so forwarding this alone
@@ -4807,7 +4812,7 @@ func toolLoopLine(sink func(delta string, isThink bool), line string) {
 	sink(line+thinkLineBreak, true)
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string) (map[string]interface{}, map[string][]string, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, string, error) {
 	if harnessRetriever == nil {
 		return nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
@@ -4821,6 +4826,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 	}
 	res, err := harnessRetriever(ctx, HarnessRequest{
 		Question:        question,
+		Messages:        messages,
 		DatasetIDs:      kbIDs,
 		DocIDs:          docIDs,
 		ThinkingMode:    thinkingMode,

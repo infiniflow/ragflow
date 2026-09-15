@@ -13,7 +13,10 @@ import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialTokenChunkerValues } from '../../constant/pipeline';
+import {
+  initialGeneralChunkerValues,
+  initialTokenChunkerValues,
+} from '../../constant/pipeline';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
@@ -26,7 +29,9 @@ const outputList = buildOutputList(initialTokenChunkerValues.outputs);
 
 export const FormSchema = z.object({
   chunk_token_size: z.number(),
-  image_table_context_window: z.number(),
+  image_table_context_window: z.number().optional(),
+  table_context_size: z.number().optional(),
+  image_context_size: z.number().optional(),
   delimiters: z.array(
     z.object({
       value: z.string().optional(),
@@ -44,13 +49,21 @@ export const FormSchema = z.object({
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
 
+type TokenChunkerFormProps = INextOperatorForm & {
+  isGeneralChunker?: boolean;
+};
+
 const TokenChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
   externalErrors,
-}: INextOperatorForm) => {
-  const defaultValues = useFormValues(initialTokenChunkerValues, node);
+  isGeneralChunker = false,
+}: TokenChunkerFormProps) => {
+  const initialValues = isGeneralChunker
+    ? initialGeneralChunkerValues
+    : initialTokenChunkerValues;
+  const defaultValues = useFormValues(initialValues, node);
   const { t } = useTranslation();
 
   // Normalize legacy values: 'token_size' (removed tab) and empty fall back
@@ -92,17 +105,19 @@ const TokenChunkerForm = ({
   return (
     <Form {...form}>
       <FormWrapper>
-        <RenderField
-          field={{
-            name: 'delimiter_mode',
-            type: FormFieldType.Segmented,
-            label: '',
-            options: [
-              { label: t('flow.delimiters'), value: 'delimiter' },
-              { label: t('flow.one'), value: 'one' },
-            ],
-          }}
-        />
+        {!isGeneralChunker && (
+          <RenderField
+            field={{
+              name: 'delimiter_mode',
+              type: FormFieldType.Segmented,
+              label: '',
+              options: [
+                { label: t('flow.delimiters'), value: 'delimiter' },
+                { label: t('flow.one'), value: 'one' },
+              ],
+            }}
+          />
+        )}
 
         {delimiterMode === 'delimiter' && (
           <>
@@ -120,14 +135,35 @@ const TokenChunkerForm = ({
               integer
               label={t('flow.overlappedPercent')}
             />
-            <SliderInputFormField
-              name="image_table_context_window"
-              max={256}
-              min={0}
-              integer
-              label={t('knowledgeConfiguration.imageTableContextWindow')}
-              tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
-            />
+            {isGeneralChunker ? (
+              <>
+                <SliderInputFormField
+                  name="table_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.tableContextWindow')}
+                  tooltip={t('knowledgeConfiguration.tableContextWindowTip')}
+                />
+                <SliderInputFormField
+                  name="image_context_size"
+                  max={256}
+                  min={0}
+                  integer
+                  label={t('knowledgeConfiguration.imageContextWindow')}
+                  tooltip={t('knowledgeConfiguration.imageContextWindowTip')}
+                />
+              </>
+            ) : (
+              <SliderInputFormField
+                name="image_table_context_window"
+                max={256}
+                min={0}
+                integer
+                label={t('knowledgeConfiguration.imageTableContextWindow')}
+                tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
+              />
+            )}
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">

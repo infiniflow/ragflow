@@ -212,19 +212,16 @@ describe('findMissingParserModel', () => {
     });
   });
 
-  it('flags image when parse_method is a static method like ocr', () => {
-    // The default image setup uses ocr — no vision model configured
-    expect(findMissingParserModel(FileType.Image, DefaultSetups)).toEqual({
-      fileType: FileType.Image,
-      modelKind: 'vision',
-    });
-  });
-
-  it('passes image when parse_method is a vision model', () => {
-    const setups = [
-      { fileFormat: FileType.Image, parse_method: 'gpt-4o@OpenAI' },
-    ];
-    expect(findMissingParserModel(FileType.Image, setups)).toBeNull();
+  it('never flags image — ocr-only parsing needs no model', () => {
+    // The image parser always runs OCR; the vision model (picked as
+    // parse_method) is an optional supplement, so neither ocr nor a model
+    // id constitutes a gap.
+    expect(findMissingParserModel(FileType.Image, DefaultSetups)).toBeNull();
+    expect(
+      findMissingParserModel(FileType.Image, [
+        { fileFormat: FileType.Image, parse_method: 'gpt-4o@OpenAI' },
+      ]),
+    ).toBeNull();
   });
 
   it('ignores file types without model requirements', () => {
@@ -241,7 +238,6 @@ describe('findFilesMissingParserModels', () => {
     );
     expect(gaps).toEqual([
       { name: 'song.mp3', fileType: FileType.Audio, modelKind: 'asr' },
-      { name: 'photo.jpg', fileType: FileType.Image, modelKind: 'vision' },
     ]);
   });
 });
