@@ -131,6 +131,24 @@ export function replaceRetrievingToSection(text: string = '') {
   return result;
 }
 
+export function replaceToolCallToSection(text: string = '') {
+  return text.replace(
+    /<tool_call>([\s\S]*?)<\/tool_call>/g,
+    (_match, body: string) => {
+      let summary = 'Tool call';
+      try {
+        const obj = JSON.parse(body);
+        if (obj?.name) {
+          summary = `Tool call: ${String(obj.name)}`;
+        }
+      } catch {
+        // keep default summary
+      }
+      return `<details class="tool_call"><summary>${summary}</summary><pre>${body.trim()}</pre></details>`;
+    },
+  );
+}
+
 // Placeholder markers used internally to protect standalone < and > from
 // DOMPurify stripping. These Unicode symbols (U+27E8/U+27E9) are extremely
 // unlikely to appear in normal user input.

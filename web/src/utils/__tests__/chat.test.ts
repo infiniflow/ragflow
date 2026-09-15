@@ -1,4 +1,8 @@
-import { preprocessLaTeX, replaceThinkToSection } from '../chat';
+import {
+  preprocessLaTeX,
+  replaceThinkToSection,
+  replaceToolCallToSection,
+} from '../chat';
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
@@ -83,5 +87,20 @@ describe('replaceThinkToSection', () => {
 
   it('leaves text without think markers unchanged', () => {
     expect(replaceThinkToSection('plain answer')).toBe('plain answer');
+  });
+});
+
+describe('replaceToolCallToSection', () => {
+  it('renders tool_call blocks as collapsible details with tool name', () => {
+    const body = JSON.stringify({ name: 'search_0', args: { q: 'x' }, result: 'ok' });
+    expect(replaceToolCallToSection(`before<tool_call>${body}</tool_call>after`)).toBe(
+      `before<details class="tool_call"><summary>Tool call: search_0</summary><pre>${body}</pre></details>after`,
+    );
+  });
+
+  it('falls back when body is not JSON', () => {
+    expect(replaceToolCallToSection('<tool_call>not-json</tool_call>')).toBe(
+      '<details class="tool_call"><summary>Tool call</summary><pre>not-json</pre></details>',
+    );
   });
 });

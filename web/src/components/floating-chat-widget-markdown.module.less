@@ -65,7 +65,8 @@
   }
 
   :global(details.think),
-  :global(details.retrieving) {
+  :global(details.retrieving),
+  :global(details.tool_call) {
     padding-inline-start: 0px;
     margin-bottom: 10px;
     font-size: 12px;
@@ -87,6 +88,10 @@
   }
 
   :global(details.retrieving) {
+    border-inline-start: 2px solid var(--border-button);
+  }
+
+  :global(details.tool_call) {
     border-inline-start: 2px solid var(--border-button);
   }
 

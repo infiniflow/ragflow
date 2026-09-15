@@ -92,7 +92,9 @@ class Agent(LLM, ToolBase):
             max_retries=self._param.max_retries,
             retry_interval=self._param.delay_after_error,
             max_rounds=self._param.max_rounds,
-            verbose_tool_use=False,
+            # Emit <tool_call> into the SSE body so the web UI can render
+            # collapsible tool sections (see replaceToolCallToSection).
+            verbose_tool_use=True,
         )
         self.tool_meta = []
         for indexed_name, tool_obj in self.tools.items():
@@ -328,7 +330,9 @@ class Agent(LLM, ToolBase):
                     self.set_output("content", delta)
                     yield delta
                 return
-            if not need2cite or cited:
+            # Citation rewrite may buffer the first pass, but frontends render
+            # <tool_call> from the SSE body — always forward those chunks.
+            if (not need2cite or cited) or "<tool_call>" in delta:
                 yield delta
             answer += delta
 

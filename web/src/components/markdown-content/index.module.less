@@ -49,6 +49,27 @@
       }
     }
   }
+  :global(details.tool_call) {
+    padding-inline-start: 10px;
+    color: #8b8b8b;
+    border-inline-start: 2px solid #7aa6d6;
+    margin-bottom: 10px;
+    font-size: 12px;
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+      color: #5b8fbf;
+      user-select: none;
+      &:hover {
+        color: #3f719e;
+      }
+    }
+    pre {
+      margin: 6px 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
   :global(blockquote) {
     padding-inline-start: 10px;
     border-inline-start: 4px solid #ccc;

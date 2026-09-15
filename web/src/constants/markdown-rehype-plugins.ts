@@ -18,12 +18,15 @@ export const MarkdownSanitizeSchema = {
   ...defaultSchema,
   tagNames: [
     ...(defaultSchema.tagNames ?? []),
-    // wrappers injected by replaceThinkToSection / replaceRetrievingToSection
+    // wrappers injected by replaceThinkToSection / replaceRetrievingToSection /
+    // replaceToolCallToSection
     'think',
     'retrieving',
+    'tool_call',
     'section',
     'details',
     'summary',
+    'pre',
   ],
   attributes: {
     ...defaultSchema.attributes,
