@@ -1254,6 +1254,12 @@ type ToolOutcome struct {
 	Status      string         // one of the Status* constants
 	Reason      string         // one of the Reason* constants
 	Metrics     map[string]any // numeric signals: hits, new_evidence, top_score, ...
+	// Note is a line ABOUT this call, rendered into the tool result next to the
+	// passages (see toolNode). It carries what the passages cannot say: which of
+	// the terms the call asked about were reached and which were not, so a batch
+	// probe ("华雄|颜良|蔡阳") is actionable rather than four passages whose
+	// missing member looks exactly like a member nobody asked for.
+	Note string
 }
 
 // NewToolOutcome builds an OK outcome with an empty metric map.
@@ -1322,6 +1328,15 @@ const (
 	// converges to finalize instead of burning the remaining budget on
 	// paraphrases (Q30/Q759 timeout root cause).
 	skippedDupLimit = 2
+	// turnRunExtra is how many turns the MODEL may add beyond the mode's floor
+	// (see offerContinuation): medium/high run 4 → 8, ultra 6 → 10. It is the hard
+	// bound the runtime keeps while the decision itself is the model's, so an
+	// eager model cannot turn one session into a whole research programme.
+	turnRunExtra = 4
+	// turnAskFloorS is the session clock below which no further turn is offered:
+	// the finalize/salvage step must still fit, or the extra turn buys evidence
+	// that never reaches the slot table.
+	turnAskFloorS = 20.0
 	// finalizeTimeout bounds the salvage call in the finalize node.
 	finalizeTimeoutS = 150.0
 	// minFinalizeTimeout is the floor for the salvage call.
@@ -1690,6 +1705,33 @@ type SessionState struct {
 	// ToolOutcomes is the audit trail of (name, status, reason, metrics).
 	ToolOutcomes []map[string]any
 
+	// KB is the shared evidence pool. The session reads it for the per-turn
+	// RECORD line (see SessionRecord) and for the names the evidence offers;
+	// the tools write it. Nil skips both.
+	KB *Kbinfos
+	// Record is the last turn's record — the facts the continuation decision is
+	// made from (see offerContinuation and SessionRecord).
+	Record SessionRecord
+	// PoolWalk is how many pool chunks this session has already looked at while
+	// choosing an excerpt to show (see unreadPoolExcerpt). The pool only ever
+	// appends, so the watermark is what keeps a session from being shown the same
+	// passage twice.
+	PoolWalk int
+	// PoolRead is whether this session has already been given its one pool excerpt
+	// (see unreadPoolExcerpt): the read is a last resort, not a routine.
+	PoolRead bool
+	// ContinuationAsked is the Attempts value the continuation offer was appended
+	// for, so one turn never carries the offer twice.
+	ContinuationAsked int
+	// EnumerationProtocol is the SET-direction protocol this session MAY be handed,
+	// once it has shown that it is enumerating (see appendBatchProtocol). The text,
+	// not a loader: it is resolved at seed time, and appending one paragraph must not
+	// need the prompt loader.
+	EnumerationProtocol string
+	// BatchProtocolShown is whether that paragraph has been appended. Once per
+	// session: the protocol is method, and method repeated is prompt noise.
+	BatchProtocolShown bool
+
 	Direction  string
 	RoutedDocs []string
 	// NavHint is the joined routed-doc summaries carried by the navigation
@@ -1828,6 +1870,9 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	if s.Tools == nil {
 		return nil
 	}
+	// ranAny: whether this node executed at least one call, i.e. whether a tool
+	// result exists to annotate with the turn's record line (appendRecordLine).
+	ranAny := len(s.PendingCalls) > 0
 	evidenceIDs := append([]string(nil), s.RetrievedEvidenceIDs...)
 	budgetChars := s.CtxBudget
 	if budgetChars <= 0 {
@@ -1930,7 +1975,14 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 			"name": c.Name, "status": oc.Status, "reason": oc.Reason, "metrics": oc.Metrics,
 		})
 
+		// The payload stays the JSON document it always was; the call's own note
+		// rides BEHIND it, exactly like the turn's record line (appendRecordLine),
+		// so nothing that parses the payload has to learn about either.
 		payload := marshalPassages(chunks)
+		if oc.Note != "" {
+			payload += "\n" + oc.Note
+			_LOG.Printf("[Action Session] result note (%s): %s", c.Name, trunc(oc.Note, 280))
+		}
 		// If the session is already heavy, cut this payload proportionally.
 		// Python :1509-1514 counts len() of a str — CODE POINTS, not bytes — so
 		// the budget and the cut must be rune-based too; a byte cap would hit
@@ -2008,7 +2060,228 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	s.SearchQueries = seenQueries
 	s.SkippedDup += skipped
 	s.ToolStrikes = strikes
+	s.appendBatchProtocol(ranAny)
+	s.appendRecordLine(ranAny)
 	return nil
+}
+
+// appendBatchProtocol hands the enumeration protocol to a session that has SHOWN it
+// is enumerating, and only then.
+//
+// The protocol used to ride the SEED of every direction whose table looked like a
+// set, and that gate cannot be made to work: measured (2026-09-15) 11 of 20 FRAMES
+// sessions were handed it — 1644 characters each, budget exception included — for
+// questions whose answer is one number, and that run's rounds went 60 → 92 against
+// its own baseline. What survives contact instead is the caller's own writing: the
+// model writes a batch of names exactly when the direction is a set (measured the
+// same day, same server: 0 batches over 20 FRAMES questions, 15 over ONE 三国
+// question) and never on an English question.
+//
+// It rides the tool result the model is about to read, like the record line, and is
+// appended at most once per session — the protocol is method, and method repeated is
+// prompt noise.
+func (s *SessionState) appendBatchProtocol(ranAny bool) {
+	if s.BatchProtocolShown || !ranAny || s.EnumerationProtocol == "" || len(s.Messages) == 0 {
+		return
+	}
+	if !s.wroteBatch() {
+		return
+	}
+	last := &s.Messages[len(s.Messages)-1]
+	if last.Role != schema.Tool {
+		return
+	}
+	s.BatchProtocolShown = true
+	last.Content = strings.TrimRight(last.Content, "\n") + "\n\n" + s.EnumerationProtocol
+	_LOG.Printf("[Action Session] the caller wrote a batch — set-direction protocol appended to the turn (%d char(s))",
+		len(s.EnumerationProtocol))
+}
+
+// appendRecordLine appends the per-turn RECORD line to the last tool result.
+//
+// This is the loop's feedback channel: the model's next query was otherwise aimed
+// with no knowledge of what this session had already probed (and what came back
+// empty), which names the record already holds, which confirmed names are still
+// undecided, or which names the passages themselves offer. All of that is
+// computed here anyway — it was simply never shown.
+//
+// It rides on the last tool message instead of a message of its own: one line,
+// same turn, no extra role in the conversation, and nothing to do with Python's
+// message shape (which never had this feedback to begin with).
+//
+// The line is appended ONLY when this node ran at least one tool call, so a turn
+// with no calls cannot accumulate duplicates of the previous line.
+func (s *SessionState) appendRecordLine(ranAny bool) {
+	if !ranAny || len(s.Messages) == 0 {
+		return
+	}
+	rec := s.sessionRecordNow()
+	grew := rec.grewFrom(s.Record)
+	s.Record = rec
+	// A session that is not ENUMERATING gets no line at all (see enumerating).
+	//
+	// The line reports members, probed names and reached names — the set's to-do
+	// list. On a single-value question every field of it is empty or meaningless
+	// (`members=0 | probed-reached=0`), it is recomputed and appended on every turn,
+	// and the model then spends turns on it: measured (2026-09-15, FRAMES) 214
+	// lines across 20 questions while the same benchmark without them scored
+	// 0/1/2 zeros and had 60 rounds against this run's 68. The record itself is
+	// still kept on the session (the continuation ask reads it), only the line the
+	// model sees is skipped.
+	if !s.enumerating() {
+		return
+	}
+	// The line the model steers by is message content, so the log could not show
+	// whether a mechanism fired at all: three rounds of analysis here ended up
+	// inferring it from side effects. One truncated line per turn ends that.
+	_LOG.Printf("[Action Session] record line: %s", trunc(rec.Line(), 320))
+	last := &s.Messages[len(s.Messages)-1]
+	if last.Role != schema.Tool || rec.Pool == 0 {
+		// No pool bound (or no tool result to annotate): keep the record, skip the
+		// line rather than inventing a message for it.
+		return
+	}
+	line := rec.Line()
+	last.Content = strings.TrimRight(last.Content, "\n") + "\n" + line
+	// An ENUMERATION session whose record has gone FLAT also gets one excerpt from a
+	// pool passage it has never been shown (see unreadPoolExcerpt): the round has
+	// already paid for that text, unread text is where unnoticed members live, and a
+	// session that is still finding things does not need rescuing. Gated on the
+	// shape so no other question pays for it at all, and one excerpt per turn.
+	if s.enumerating() && !grew {
+		if excerpt := s.unreadPoolExcerpt(); excerpt != "" {
+			// Logged as well as delivered: whether the mechanism fired is otherwise
+			// only visible inside the message content.
+			_LOG.Printf("[Action Session] pool excerpt: %s", trunc(excerpt, 240))
+			last.Content += "\n" + excerpt
+		}
+	}
+}
+
+// turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the
+// turns the model may add on its own decision (see offerContinuation).
+func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExtra }
+
+// offerContinuation asks the MODEL whether the session takes another turn.
+//
+// The mode's turn count used to end the session outright (ActionMaxTurns: 4 on
+// medium/high), and the measured cost is in the log: at 18:09:49 a session still
+// turning named terms into evidence was finalized by `Attempts >= 4`
+// mid-enumeration, with 84s of its own clock unspent and a tool result the model
+// never read. Replacing that with a runtime heuristic ("did the record grow?")
+// fixed the cut-off but bought the wrong thing: the ledger grows whenever the
+// model PROBES, so the heuristic extended sessions that were piling up findings
+// without recording any (measured: four extensions in a row at
+// `members=0 reached=8 undecided=8`).
+//
+// So the floor is the floor and the decision is the model's: it is told the
+// budget state, handed the record line it just received, and asked to continue
+// only for something that line shows is missing — otherwise to emit the state
+// patch now. The runtime keeps two hard bounds it does not delegate: the run cap
+// above (so an eager model cannot run away) and the session clock (below which no
+// further turn is offered, because the finalize/salvage step must still fit).
+//
+// The offer is gated on this session ENUMERATING (see enumerating): an extra turn is
+// an extra model call plus up to turnRunExtra more turns, and a question that is not
+// assembling a set has nothing for those turns to find.
+//
+// Measured (2026-09-15): while the gate read the shape of the planner's table, 24
+// offers went to FRAMES questions doing arithmetic over two values — 68 rounds
+// against that benchmark's own baseline of 60 — while the caller's own batch, which
+// this reads, was written ZERO times by the same 20 questions.
+func (s *SessionState) offerContinuation() bool {
+	if !s.enumerating() {
+		return false
+	}
+	if s.Attempts >= s.turnRunCap() || s.DeadlineLeft <= turnAskFloorS {
+		return false
+	}
+	if s.ContinuationAsked == s.Attempts {
+		return true
+	}
+	s.ContinuationAsked = s.Attempts
+	ask := continuationAsk(s.Attempts, s.turnRunCap(), s.Record.Brief())
+	s.Messages = appendMessages(s.Messages, *schema.UserMessage(ask))
+	_LOG.Printf("[Action Session] turn %d/%d — the floor is spent; offered the model one more turn while the record says something is missing (%s, %.0fs left).\noffer=%q",
+		s.Attempts, s.turnRunCap(), s.Record.Brief(), s.DeadlineLeft, trunc(ask, 700))
+	return true
+}
+
+// parentSetShaped reports whether the direction this session was sent on ASKS FOR
+// A SET — what the planner DECLARED, never what a candidate looks like (see
+// SetShaped).
+func (s *SessionState) parentSetShaped() bool { return SetShaped(s.ParentState) }
+
+// wroteBatch reports whether the CALLER wrote a batch of terms in one query — the
+// signal that it is enumerating rather than asking a question.
+//
+// The gate is the caller's own writing, not a guess about the question, because the
+// guess is measurably wrong: measured (2026-09-15, one server session, two workloads)
+// a 20-question FRAMES run wrote ZERO batches while ONE 三国 question wrote fifteen,
+// and the shape test misfired on eleven FRAMES sessions — a slot TYPE cannot tell
+// "how many people did X kill" from "how many times larger is A than B", and a single
+// phrase's commas make it look like two members.
+func (s *SessionState) wroteBatch() bool {
+	for _, q := range s.SearchQueries {
+		if callerBatch(q) {
+			return true
+		}
+	}
+	return false
+}
+
+// enumerating reports whether this session is assembling a SET: the caller wrote a
+// batch (the tell that survives contact), or the direction's own table asks for a
+// count/list.
+//
+// The table stays as the second half on purpose: a session may enumerate without ever
+// writing a two-name batch (one probe per member), and then the record line is
+// exactly what it needs. That half's false positives are bounded and counted — over
+// one 20-question FRAMES run it opened once (a sentence written into a count-typed
+// slot); the batch half opened zero times.
+func (s *SessionState) enumerating() bool {
+	return s.wroteBatch() || s.parentSetShaped()
+}
+
+// SetShaped reports whether the table ASKS FOR A SET, and nothing broader: a slot
+// the planner typed count / set / list.
+//
+// This — not enumerates — is what the RUNTIME gates on (the per-turn line, the pool
+// excerpt, the continuation offer). A question can hold a list-shaped CANDIDATE
+// without asking for a set: measured (2026-09-15, FRAMES) a slot typed "dataset"
+// carried `Grace's、High、Falls、Colonial、Creek` — ONE waterfall's name cut at its
+// separators — and the permissive test read that as five members, rendering
+// "enumerated members across the slots above: 16" into the answer's record of a
+// "how much shorter" question. A false positive here is paid on every turn of every
+// session on that question, so the runtime asks only what the planner declared.
+func SetShaped(table State) bool {
+	for _, v := range table.State {
+		switch strings.ToLower(strings.TrimSpace(v.Type)) {
+		case "count", "set", "list":
+			return true
+		}
+	}
+	return false
+}
+
+// enumerates is gone: the protocol's gate is the caller's own batch now (see
+// appendBatchProtocol). It read a slot table for a count/set/list type or a
+// list-shaped candidate, and both halves were measured wrong on FRAMES — the type
+// fired on "how much shorter is A than B" (a `[count]` slot), and the candidate half
+// fired on `San Antonio, Texas` (a comma, not a member list).
+
+// continuationAsk is the offer the model decides on: it names the hard bound, the
+// remaining turns, and the ONLY grounds on which another turn is granted — what
+// the record line shows is still missing. The record itself was appended to the
+// model's last tool result, so the decision is made on facts, not on appetite.
+func continuationAsk(taken, cap int, record string) string {
+	return fmt.Sprintf(
+		"TURN BUDGET: %d turn(s) taken, up to %d available. DECIDE NOW — your next reply decides it:\n"+
+			"- If the [record] line still shows something MISSING — a name you proved reachable and never recorded, a slot with no candidate, an angle you have not tried — call ONE more tool aimed at exactly that. %d turn(s) left.\n"+
+			"- Otherwise emit the state patch NOW with everything you have.\n"+
+			"An extra turn is only for something the record line shows is missing; re-running a search you already ran is not.\n"+
+			"Current record: %s",
+		taken, cap, cap-taken, record)
 }
 
 // finalizeNode mirrors Python _finalize_node: tool budget spent — ONE last call
@@ -2018,6 +2291,22 @@ func (s *SessionState) finalizeNode(ctx context.Context) error {
 		"<state>{\"new_states\": [{\"state\": [{\"id\": <slot_id>, \"candidate\": \"<value>\", " +
 		"\"candidate_strength\": <0..1>, \"discovered_clues\": [\"...\"]}]}]}</state>\n" +
 		"If NOTHING was learned use: <state>{\"new_states\": []}</state>")
+
+	// The patch written HERE is the one that lands in the record, so the record is
+	// part of the order.
+	//
+	// Measured (fixrecall2, 2026-09-15): a session probed 成何, the corpus returned
+	// three passages, and the terminal patch did not mention him — the run's own
+	// evidence, found and paid for, dropped at the last step. The record is the
+	// only place that fact exists, and this is the last call that can act on it, so
+	// the salvage order names the names it has to account for instead of asking for
+	// "whatever you have".
+	if rec := s.sessionRecordNow(); rec.Pool > 0 {
+		budgetPrompt += "\n\nAccount for the record below in the patch you write. Every name listed as " +
+			"FOUND BUT NOT RECORDED has a passage in the pool, so it is either a member this patch includes or " +
+			"a name this patch REJECTS with its clue. More searching is no longer possible, so an unmentioned " +
+			"name is simply lost.\n" + rec.Line()
+	}
 
 	// Defensive: strip any assistant.tool_calls that never got a tool response,
 	// else the provider rejects the history.
@@ -2140,6 +2429,11 @@ func (s *SessionState) route() routeTarget {
 		return routeTool
 	}
 	if s.Attempts >= s.actionMaxTurns() {
+		// The mode's turn count is a FLOOR: past it the MODEL decides whether the
+		// session takes another turn, up to the run cap (see offerContinuation).
+		if s.offerContinuation() {
+			return routeRunAction
+		}
 		return routeFinalize
 	}
 	// No-progress convergence: the model keeps re-issuing near-duplicate
@@ -2159,6 +2453,12 @@ func (s *SessionState) route() routeTarget {
 // route was never reached and the session burned the whole timeout.
 func (s *SessionState) routeAfterTool() routeTarget {
 	if s.Attempts >= s.actionMaxTurns() {
+		// Same rule as route: the tool result that just arrived is what the
+		// continuation offer is about, so the model decides with it in hand
+		// (measured: the run's last probe's result was never read by a turn).
+		if s.offerContinuation() {
+			return routeRunAction
+		}
 		return routeFinalize
 	}
 	return routeRunAction
@@ -3123,6 +3423,15 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
+	// The enumeration protocol is NOT part of the seed — see appendBatchProtocol,
+	// which hands it to a session that has written a batch of names. Seeding it here
+	// could only be gated on the shape of the DIRECTION, and that gate cannot be made
+	// to work: measured (2026-09-15) 11 of 20 FRAMES sessions were handed 1644
+	// characters of set strategy for questions whose answer is one number, and that
+	// run's rounds went 60 → 92 against its own baseline. The protocol text is
+	// resolved here and carried by the session (EnumerationProtocol) so the decision
+	// to spend it is made where the evidence for it exists.
+
 	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
 	// surface the evidence already in the shared pool so the model fills slots
 	// from it instead of re-retrieving the same ground. Without this the ReAct
@@ -3153,6 +3462,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ParentState:          parent,
 		Tools:                deps.Tools,
 		Model:                deps.Model,
+		KB:                   deps.KB,
 		PendingCalls:         nil,
 		Done:                 false,
 		NewStates:            nil,
@@ -3168,6 +3478,9 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ToolStrikes:          map[string]int{},
 		ToolOutcomes:         nil,
 		Direction:            direction,
+		// Resolved once, spent only if the session shows it is enumerating
+		// (see appendBatchProtocol). Empty when the loader carries no action_set.
+		EnumerationProtocol: loadOptionalPrompt(deps.Prompts, "action_set"),
 	}
 	if st.ToolCache == nil {
 		st.ToolCache = NewToolCache()
@@ -3520,6 +3833,20 @@ func loadPrompt(p PromptLoader, name string) string {
 	t, err := resolveLoader(p).Load(name)
 	if err != nil {
 		panic(fmt.Sprintf("loadPrompt(%q): %v", name, err))
+	}
+	return t
+}
+
+// loadOptionalPrompt loads a template a given loader may not carry, and returns ""
+// instead of panicking.
+//
+// action_set is optional by design: a loader that predates it (or a test's
+// in-memory loader) simply gets no enumeration protocol, and its session runs
+// exactly as it did before the protocol existed.
+func loadOptionalPrompt(p PromptLoader, name string) string {
+	t, err := resolveLoader(p).Load(name)
+	if err != nil {
+		return ""
 	}
 	return t
 }

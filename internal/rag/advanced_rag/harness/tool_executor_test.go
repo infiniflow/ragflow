@@ -454,6 +454,53 @@ func TestEvidencePoolCapStopsAdmitting(t *testing.T) {
 	}
 }
 
+// TestEvidencePoolCapExemptsTheProbeWindow pins the cap EXEMPTION at the tool
+// boundary: a FULL pool still takes the window that answers a name the pool has
+// not reached, because that window is the probe's own RESULT.
+//
+// The contrasting case is the test above: the same full pool, a query that is not
+// a probe, and nothing is admitted. Both behaviours are needed — the exemption is
+// what keeps a name batch from turning a found member into "nothing new", and the
+// cap is what keeps everything else from bloating storage.
+func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
+	pre := make([]map[string]any, 0, evidencePoolCap)
+	for i := 0; i < evidencePoolCap; i++ {
+		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled prose"})
+	}
+	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "content": "荀正 被关公一刀斩于马下"},
+	}})
+	kb.Chunks = pre
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "车胄|荀正|管亥"})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if oc.Status != StatusOK {
+		t.Errorf("status = %s, want %s (the probe window answered an unanswered name)", oc.Status, StatusOK)
+	}
+	if len(kb.Chunks) != evidencePoolCap+1 {
+		t.Errorf("kb.Chunks = %d, want %d (one seat for the unanswered name)", len(kb.Chunks), evidencePoolCap+1)
+	}
+	if len(oc.Payload) != 1 {
+		t.Errorf("payload = %d, want the probe's window", len(oc.Payload))
+	}
+
+	// The same probe again: the pool now carries the window, so the cap is back
+	// in charge and the outcome is REDUNDANT, not another seat.
+	oc, err = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "车胄|荀正|管亥"})
+	if err != nil {
+		t.Fatalf("retrieve (second): %v", err)
+	}
+	if len(kb.Chunks) != evidencePoolCap+1 {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), evidencePoolCap+1)
+	}
+	if oc.Status != StatusMiss && oc.Status != StatusRedundant {
+		t.Errorf("status = %s, want MISS/REDUNDANT on the repeated probe", oc.Status)
+	}
+}
+
 // TestWebSearchAdmitsToPool pins the web_search parity fix: web results merge
 // into the SAME shared evidence pool as corpus hits (Python _exec_web_search →
 // _admit_evidence), so downstream formalize/compose can cite them, and the
@@ -872,5 +919,129 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 	// id must live under "id", which is what the drill merge reads back.
 	if p["doc_id"] != "d1" || p["id"] != "c1" {
 		t.Errorf("passage = %v", p)
+	}
+}
+
+// seatRetriever answers a search by its query string, normalized to the DISTINCT
+// tokens it carries: the engine receives "question keywords" (a seat search sends
+// the same term twice), so a fixture must not depend on how that string is
+// assembled.
+type seatRetriever struct {
+	byQuery map[string][]map[string]any
+	calls   []string
+}
+
+func (s *seatRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	s.calls = append(s.calls, req.Query)
+	seen := map[string]bool{}
+	var tokens []string
+	for _, tok := range strings.Fields(req.Query) {
+		if seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		tokens = append(tokens, tok)
+	}
+	return s.byQuery[strings.Join(tokens, " ")], nil
+}
+
+// TestNamedTermSeatsReachTermsThePhraseSearchMissed pins the seat pass: every
+// individual a call NAMES gets its own cheap keyword search, so the names the
+// call's own phrase queries cannot reach still arrive with a passage.
+//
+// Three things are asserted, and each one is a measured loss from the 2026-09-15
+// run: (a) a name the phrase query's ranking stranded (荀正) still gets a
+// passage; (b) a name in a list item maxQ DROPPED (杨龄 — the run left 8 of 29
+// named queries unexecuted) still gets one; (c) a name nothing reaches is
+// recorded as probed-and-absent rather than silently dropped (庞德).
+func TestNamedTermSeatsReachTermsThePhraseSearchMissed(t *testing.T) {
+	famous := map[string]any{"chunk_id": "c-famous", "content": "关羽 斩华雄 于马下。"}
+	rare := map[string]any{"chunk_id": "c-rare", "content": "荀正 引军来战，关羽一刀斩之。"}
+	predicate := map[string]any{"chunk_id": "c-pred", "content": "云长 斩颜良 于白马，文丑心怯。"}
+	third := map[string]any{"chunk_id": "c-third", "content": "杨龄 出马，关羽手起刀落。"}
+	r := &seatRetriever{byQuery: map[string][]map[string]any{
+		// The phrase batch returns ONLY the passage matching several names at
+		// once — the ranking that strands the rare ones.
+		"关羽 斩华雄 荀正": {famous},
+		"关羽 斩颜良":    {},
+		"关羽":        {famous},
+		"斩华雄":       {famous},
+		"荀正":        {rare},
+		"斩颜良":       {predicate},
+		"杨龄":        {third},
+		// 庞德 reaches nothing anywhere: the corpus does not carry it.
+		"庞德": {},
+	}}
+	deps, kb := newTestSearchDeps(r)
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{
+		"query": []any{"关羽 斩华雄 荀正", "关羽 斩颜良", "杨龄", "庞德"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	pool := map[string]bool{}
+	for _, c := range kb.Chunks {
+		pool[ChunkIDOf(c)] = true
+	}
+	for _, want := range []string{"c-famous", "c-rare", "c-pred", "c-third"} {
+		if !pool[want] {
+			t.Errorf("pool lacks %s: %v — a named term lost its seat (phrase ranking, maxQ cut, or the flat per-query cap)", want, pool)
+		}
+	}
+	if oc.Status != StatusOK {
+		t.Errorf("status = %s, want %s (the seats are new evidence)", oc.Status, StatusOK)
+	}
+	absent := kb.ProbedAbsentTerms()
+	if !containsString(absent, "庞德") {
+		t.Errorf("ProbedAbsent = %v, want 庞德 recorded: a probe that reaches nothing is a fact about the corpus, not a failed lookup", absent)
+	}
+	if containsString(absent, "荀正") || containsString(absent, "杨龄") {
+		t.Errorf("ProbedAbsent = %v: a term that got a seat must not be recorded as unreached", absent)
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSearchOutcomeCarriesTheReachLine pins the delivery: the per-term reach the
+// grep leg computes reaches the MODEL through ToolOutcome.Note (rendered behind
+// the payload by the session tool node), not only the log.
+//
+// This is what makes a batch probe iterable: "华雄|荀正|管亥" either answers all
+// three or says which of them nothing reached, and the next call can be aimed.
+func TestSearchOutcomeCarriesTheReachLine(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "content": "云长手起一刀，斩华雄于马下"},
+	}})
+	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
+	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "华雄|荀正|管亥"})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if oc.Note == "" {
+		t.Fatal("Note is empty: the reach of a batch probe must reach the model")
+	}
+	for _, want := range []string{"华雄(1)", "荀正", "管亥", "NOT reached by this query"} {
+		if !strings.Contains(oc.Note, want) {
+			t.Errorf("Note %q missing %q", oc.Note, want)
+		}
+	}
+
+	// A query with nothing to report on carries no note at all.
+	plain, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "云长"})
+	if err != nil {
+		t.Fatalf("retrieve (plain): %v", err)
+	}
+	if strings.HasPrefix(plain.Note, "[reach]") && !strings.Contains(plain.Note, "carry:") {
+		t.Errorf("Note = %q, want no half-formed reach line", plain.Note)
 	}
 }

@@ -21,6 +21,7 @@ Rewrite each missing piece into a concrete search query that the retriever can h
 6. ONE QUERY PER MISSING PIECE. Do not emit multiple near-duplicate queries for the same gap ("What teams"/"For each team"/"Complete enumeration" of the same thing are duplicates — keep exactly one, the most concretely anchored). The number of output queries should equal the number of distinct, genuinely-different missing pieces.
 7. Drop any missing piece that cannot be turned into a searchable query.
 8. DIVERSITY: consult the "Research history and evidence at hand" section. Do NOT output any query that paraphrases an already-tried one (listed there WITH its outcome — a previous search that yielded nothing new means that angle is dead). Aim each new query at aspects the current evidence does NOT yet cover, possibly combining the bridge values with different entity/relation combinations.
+9. WHEN THE PASSAGES NAME INDIVIDUALS: the "Passages that carry names the searches ALREADY confirmed" section shows the passage behind each confirmed name. Read those passages for (a) other names they mention that are not confirmed yet and (b) the wording this text uses for the relation (e.g. how the act is narrated). Any of those names may be asked about directly — put SEVERAL of them into ONE query separated by `|` (e.g. `nameA|nameB|nameC`), which the retriever reads as an alternation and answers per name in a single call; never spend one query per name. The same alternation form takes the wording you found: `phraseA|phraseB`.
 
 Output format (JSON):
 ```json
