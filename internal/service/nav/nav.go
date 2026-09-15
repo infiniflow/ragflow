@@ -84,9 +84,8 @@ type NavService interface {
 	// UpsertDoc places one document summary into the nav tree (incremental,
 	// ES-backed read-modify-write; deterministic placement in the minimal loop).
 	UpsertDoc(ctx context.Context, in UpsertDocInput) error
-	// RemoveDoc removes a document's nav rows for the given doc. The minimal-loop
-	// implementation deletes the nav_doc row(s) for the doc; empty-cluster
-	// cascade cleanup is NOT yet implemented.
+	// RemoveDoc removes a document's nav rows for the given doc and prunes empty
+	// clusters from the dataset navigation tree.
 	RemoveDoc(ctx context.Context, tenantID, kbID, docID string) error
 
 	// Search runs query KNN over nav rows and returns the routed doc ids.
@@ -97,10 +96,12 @@ type NavService interface {
 	// returned coverage is trimmed to the scope so no out-of-scope document
 	// surfaces under a cluster that merely overlaps it.
 	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]NavHit, error)
-	// ListClusters returns the depth-0 clusters (parent_kwd=root).
-	ListClusters(ctx context.Context, tenantID, kbID string, page, pageSize int) ([]NavNode, int64, error)
-	// ListChildren returns the direct children of a cluster (parent_kwd=name).
-	ListChildren(ctx context.Context, tenantID, kbID, name string, page, pageSize int) ([]NavNode, int64, error)
+	// ListClusters returns the depth-0 clusters (parent_kwd=root). When
+	// keywords is non-empty, it returns matching navigation nodes instead.
+	ListClusters(ctx context.Context, tenantID, kbID, keywords string, page, pageSize int) ([]NavNode, int64, error)
+	// ListChildren returns the direct children of a cluster (parent_kwd=name),
+	// optionally filtered by keywords.
+	ListChildren(ctx context.Context, tenantID, kbID, name, keywords string, page, pageSize int) ([]NavNode, int64, error)
 	// SummariesByDocIDs returns the nav_doc summary (preferred readable name, else
 	// the payload description) keyed by doc_id for the given documents. It mirrors
 	// Python dataset_api_service._nav_doc_summaries and backs the chunk_agg

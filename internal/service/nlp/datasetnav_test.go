@@ -326,7 +326,7 @@ func TestNavService_ListClusters_FiltersRoot(t *testing.T) {
 	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, total, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
+	clusters, total, err := ns.ListClusters(t.Context(), "t1", "kb1", "", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
 		t.Fatal(err)
 	}
-	clusters, _, err := ns.ListClusters(t.Context(), "t1", "kb1", 0, 10)
+	clusters, _, err := ns.ListClusters(t.Context(), "t1", "kb1", "", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -663,7 +663,7 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 		t.Fatalf("cluster doc_count = %d, want 2 (both docs merged into the cluster)", clusters[0].DocCount)
 	}
 	name := clusters[0].Name
-	children, total, err := ns.ListChildren(t.Context(), "t1", "kb1", name, 0, 10)
+	children, total, err := ns.ListChildren(t.Context(), "t1", "kb1", name, "", 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

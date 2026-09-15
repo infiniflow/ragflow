@@ -148,18 +148,24 @@ func (s *NavService) navSearch(ctx context.Context, tenantID, kbID string, filte
 	return res.Chunks, res.Total, nil
 }
 
-// ListClusters returns the depth-0 clusters (parent_kwd=root).
-func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID string, page, pageSize int) ([]nav.NavNode, int64, error) {
+// ListClusters returns the depth-0 clusters (parent_kwd=root). When keywords
+// is non-empty, it searches all navigation rows by their indexed summary and
+// returns matching nodes, mirroring the Python endpoint's search mode.
+func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID, keywords string, page, pageSize int) ([]nav.NavNode, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 100
 	}
 	offset := page * pageSize
-	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{
-			"type_kwd":   []string{"nav_cluster"},
-			"parent_kwd": []string{navRootParent},
-		}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd"}, offset, pageSize, nil)
+	filter := navFilter(map[string]interface{}{
+		"type_kwd":   []string{"nav_cluster"},
+		"parent_kwd": []string{navRootParent},
+	})
+	if strings.TrimSpace(keywords) != "" {
+		filter = navFilter(nil)
+	}
+	matchExpressions := navKeywordExpressions(keywords)
+	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter,
+		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize, matchExpressions)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -170,15 +176,17 @@ func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID string, pa
 	return nodes, total, nil
 }
 
-// ListChildren returns the direct children of a cluster (parent_kwd=name).
-func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name string, page, pageSize int) ([]nav.NavNode, int64, error) {
+// ListChildren returns the direct children of a cluster (parent_kwd=name),
+// optionally filtered by keywords.
+func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, keywords string, page, pageSize int) ([]nav.NavNode, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 100
 	}
 	offset := page * pageSize
 	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
 		navFilter(map[string]interface{}{"parent_kwd": []string{name}}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize, nil)
+		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize,
+		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -192,6 +200,21 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name stri
 		nodes = append(nodes, s.nodeFromRow(c, nodeType))
 	}
 	return nodes, total, nil
+}
+
+// navKeywordExpressions builds the lexical search expression used by the REST
+// navigation endpoints. These are the same indexed summary fields used by the
+// Python navigation search, with a stronger weight on the main content field.
+func navKeywordExpressions(keywords string) []interface{} {
+	keywords = strings.TrimSpace(keywords)
+	if keywords == "" {
+		return nil
+	}
+	return []interface{}{&types.MatchTextExpr{
+		Fields:       []string{"content_ltks^10", "content_sm_ltks"},
+		MatchingText: keywords,
+		TopN:         10000,
+	}}
 }
 
 // nodeFromRow converts an engine row into a NavNode.
