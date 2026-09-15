@@ -571,18 +571,25 @@ PARSERS = {
 # Word marks TOC entries with the built-in styles ``toc 1`` / ``TOC 1`` / ...
 # When a document loses its styles (e.g. converted from PDF), an entry usually
 # still looks like "1.1<TAB>title<TAB>1" — section number, tab, page number.
-_TOC_STYLE_PREFIXES = ("toc",)
-_TOC_LINE_RE = re.compile(r"^[\d.]+[\s\u3000]*[^\t]*\t\s*\d+\s*$")
+_TOC_STYLE_RE = re.compile(r"^toc(?:[\s\d]|$)")
+_TOC_LINE_RE = re.compile(r"^[\d.]+[\s\u3000]*(?:[^\t]*\t)?[^\t]*\t\s*\d+\s*$")
 
 
-def _is_toc_paragraph(text: str, style_name: str) -> bool:
+def _is_toc_paragraph(text: str, style_name: str, paragraph=None) -> bool:
     """Return True when a paragraph looks like a table-of-contents entry."""
     if not text:
         return False
-    if style_name and style_name.strip().lower().startswith(_TOC_STYLE_PREFIXES):
+    if style_name and _TOC_STYLE_RE.match(style_name.strip().lower()):
         return True
-    # Fallback: section number + tab + page number (styles missing/renamed).
-    return bool(_TOC_LINE_RE.match(text))
+    # Fallback for documents whose TOC styles were renamed or dropped. The text
+    # shape alone cannot tell an entry ("1.1 Introduction<TAB>1") from a
+    # tab-separated data row ("1. Price<TAB>100"), and dropping the latter loses
+    # real content, so require the PAGEREF field Word writes into every TOC
+    # entry. The cheap shape check runs first so body text never pays for the
+    # XML scan.
+    if paragraph is None or not _TOC_LINE_RE.match(text):
+        return False
+    return "PAGEREF" in paragraph._element.xml
 
 
 class Docx(DocxParser):
@@ -731,7 +738,7 @@ class Docx(DocxParser):
                     if text:
                         # Skip table-of-contents entries: they are navigation
                         # noise that pollutes retrieval (see _is_toc_paragraph).
-                        if _is_toc_paragraph(text, style_name):
+                        if _is_toc_paragraph(text, style_name, p):
                             pass
 
                         elif style_name == "Caption":
