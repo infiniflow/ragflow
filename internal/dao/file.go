@@ -75,6 +75,24 @@ func (dao *FileDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 	return &file, nil
 }
 
+// GetByIDAndTenant gets a file by ID scoped to the given tenant. Callers that
+// resolve a user-supplied file ID (e.g. parser_config.tags.tag_file_id, which
+// the dataset update API accepts from the client) MUST use this instead of
+// GetByID: an unscoped ID lookup crosses tenant boundaries and is an IDOR
+// (CWE-639). An empty id or tenantID fails closed with gorm.ErrRecordNotFound
+// so callers see the same "not found" as a missing row.
+func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenantID string) (*entity.File, error) {
+	if id == "" || tenantID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var file entity.File
+	err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 // GetByPfID gets files by parent folder ID with pagination and filtering.
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so

@@ -326,7 +326,7 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
           fill: isTimestamp
             ? 'rgb(var(--accent-primary))'
             : 'rgb(var(--text-primary))',
-          fontSize: 12,
+          fontSize: 24,
           ...(isTimestamp && {
             refX: '50%',
             refY: 0,
@@ -371,7 +371,10 @@ export function adaptMindMapToIndentedTree(
   const roots = buildUniqueTreeDataItems(
     template.entities,
     template.relations,
-    ['has_branch', 'has_sub_branch'],
+    // Python's mindmap structure-graph projection stores parent-child edges
+    // as generic "related" relations. Keep the branch spellings for older
+    // data, but accept the canonical Python form as well.
+    ['related', 'has_branch', 'has_sub_branch'],
   );
 
   const g6Roots = roots.map(treeDataItemToG6TreeData);
