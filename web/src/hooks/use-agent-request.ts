@@ -18,6 +18,7 @@ import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
   AgentListItem,
@@ -52,6 +53,7 @@ import agentService, {
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, isEmpty, set } from 'lodash';
@@ -101,7 +103,7 @@ export const enum AgentApiAction {
   FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
-const AgentKeys = {
+export const AgentKeys = {
   templates: () => [AgentApiAction.FetchAgentTemplates] as const,
   list: (params?: unknown) =>
     params === undefined
@@ -170,10 +172,12 @@ const buildAgentListParams = ({
 };
 
 export const useFetchAgentListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit, checkValue } =
+    useHandleFilterSubmit();
   const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
     ? (filterValue.canvasCategory as string[])
     : undefined;
@@ -229,31 +233,47 @@ export const useFetchAgentListByPage = () => {
     data: data?.canvas ?? [],
     loading,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
+    checkValue,
   };
+};
+
+export const fetchAllAgents = async (): Promise<AgentListItem[]> => {
+  const all: AgentListItem[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (all.length < total) {
+    const { data } = await agentService.listAgents(
+      {
+        params: buildAgentListParams({
+          page,
+          pageSize: 100,
+          canvasCategoryIds: [AgentCategory.AgentCanvas],
+        }),
+      },
+      true,
+    );
+    const canvas: AgentListItem[] = data?.data?.canvas ?? [];
+    all.push(...canvas);
+    total = data?.data?.total ?? all.length;
+    if (canvas.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+  return all;
 };
 
 export function useFetchAllAgentList() {
   const { data, isFetching: loading } = useQuery<AgentListItem[]>({
     queryKey: AgentKeys.all(),
-    queryFn: async () => {
-      const { data } = await agentService.listAgents(
-        {
-          params: buildAgentListParams({
-            page: 1,
-            pageSize: 100000,
-            canvasCategory: AgentCategory.AgentCanvas,
-          }),
-        },
-        true,
-      );
-
-      return data?.data?.canvas;
-    },
+    queryFn: fetchAllAgents,
   });
 
   return { data, loading };
@@ -361,6 +381,10 @@ export const useDeleteAgent = () => {
         queryClient.invalidateQueries({
           queryKey: AgentKeys.filters(),
         });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.tags(),
+        });
+        markListItemsDeleted(ListDeletionKey.AgentList);
       }
       return data?.data ?? false;
     },
@@ -693,8 +717,6 @@ export const useTestDbConnect = () => {
       const ret = await agentService.testDbConnect(params);
       if (ret?.data?.code === 0) {
         message.success(ret?.data?.data);
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret;
     },

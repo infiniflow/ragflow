@@ -397,7 +397,7 @@ func (d *DataOperationsComponent) opCombine(items []map[string]any) map[string]a
 				}
 			default:
 				if vl, ok := v.([]any); ok {
-					out[k] = []any{ex, vl}
+					out[k] = append([]any{ex}, vl...)
 				} else {
 					out[k] = []any{ex, v}
 				}

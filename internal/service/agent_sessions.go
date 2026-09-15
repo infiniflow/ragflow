@@ -417,6 +417,25 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
+	// Shared-session readonly rule (same design as the owner-only batch
+	// delete below): deleting a session is a write, so it is limited to the
+	// canvas owner or the session's creator. Team members who can read the
+	// shared agent see the session readonly.
+	conv, cerr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
+	if cerr != nil {
+		return false, common.CodeServerError, cerr
+	}
+	if conv == nil {
+		return false, common.CodeSuccess, nil
+	}
+	canvasOwned, oerr := s.canvasOwnedByUser(ctx, userID, agentID)
+	if oerr != nil {
+		return false, common.CodeServerError, oerr
+	}
+	if !canvasOwned && conv.UserID != userID {
+		return false, common.CodeAuthenticationError, errors.New("shared session is readonly")
+	}
+
 	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
@@ -425,6 +444,20 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 		return false, common.CodeSuccess, nil
 	}
 	return true, common.CodeSuccess, nil
+}
+
+// canvasOwnedByUser reports whether the canvas is directly owned by userID
+// (canvas.user_id), ignoring team sharing. Companion of CheckCanvasAccess,
+// which authorizes the wider team-read scope.
+func (s *AgentService) canvasOwnedByUser(ctx context.Context, userID, canvasID string) (bool, error) {
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return canvas.UserID == userID, nil
 }
 
 // DeleteAgentSessions removes multiple conversations owned by agentID.

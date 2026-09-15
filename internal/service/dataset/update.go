@@ -88,9 +88,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["description"] = *req.Description
 	}
 	if req.Language != nil {
-		language := strings.TrimSpace(*req.Language)
-		if len(language) > 32 {
-			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
+		language, err := normalizeDatasetLanguage(*req.Language)
+		if err != nil {
+			return nil, common.CodeDataError, err
 		}
 		simpleUpdates["language"] = language
 	}

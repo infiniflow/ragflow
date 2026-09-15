@@ -12,7 +12,7 @@
   "models": [
     {
       "name": "sonar",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -20,7 +20,7 @@
     },
     {
       "name": "sonar-pro",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -28,7 +28,7 @@
     },
     {
       "name": "sonar-reasoning-pro",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -40,7 +40,7 @@
     },
     {
       "name": "sonar-deep-research",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"

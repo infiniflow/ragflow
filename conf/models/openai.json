@@ -15,7 +15,7 @@
   "models": [
     {
       "name": "gpt-5.5",
-      "content_length": 1050000,
+      "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -27,7 +27,7 @@
     },
     {
       "name": "gpt-5.4",
-      "content_length": 1050000,
+      "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -39,7 +39,7 @@
     },
     {
       "name": "gpt-5.4-mini",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -51,7 +51,7 @@
     },
     {
       "name": "gpt-5.4-nano",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -63,7 +63,7 @@
     },
     {
       "name": "gpt-5.2-pro",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -75,7 +75,7 @@
     },
     {
       "name": "gpt-5.2",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -87,7 +87,7 @@
     },
     {
       "name": "gpt-5.1",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -99,7 +99,7 @@
     },
     {
       "name": "gpt-5.1-chat-latest",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat",
@@ -111,7 +111,7 @@
     },
     {
       "name": "gpt-5",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -123,7 +123,7 @@
     },
     {
       "name": "gpt-5-mini",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -135,7 +135,7 @@
     },
     {
       "name": "gpt-5-nano",
-      "content_length": 400000,
+      "context_length": 400000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -147,7 +147,7 @@
     },
     {
       "name": "gpt-5-chat-latest",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat",
@@ -159,7 +159,7 @@
     },
     {
       "name": "gpt-4.1",
-      "content_length": 1047576,
+      "context_length": 1047576,
       "max_output": 32768,
       "model_types": [
         "chat",
@@ -171,7 +171,7 @@
     },
     {
       "name": "gpt-4.1-mini",
-      "content_length": 1047576,
+      "context_length": 1047576,
       "max_output": 32768,
       "model_types": [
         "chat",
@@ -183,7 +183,7 @@
     },
     {
       "name": "gpt-4.1-nano",
-      "content_length": 1047576,
+      "context_length": 1047576,
       "max_output": 32768,
       "model_types": [
         "chat",
@@ -195,7 +195,7 @@
     },
     {
       "name": "gpt-4.5-preview",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -206,7 +206,7 @@
     },
     {
       "name": "gpt-4o-mini",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat",
@@ -218,7 +218,7 @@
     },
     {
       "name": "gpt-4o",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 16384,
       "model_types": [
         "chat",
@@ -230,7 +230,7 @@
     },
     {
       "name": "gpt-3.5-turbo",
-      "content_length": 16385,
+      "context_length": 16385,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -241,7 +241,7 @@
     },
     {
       "name": "gpt-3.5-turbo-16k-0613",
-      "content_length": 16385,
+      "context_length": 16385,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -283,7 +283,7 @@
     },
     {
       "name": "gpt-4",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -294,7 +294,7 @@
     },
     {
       "name": "gpt-4-turbo",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -305,7 +305,7 @@
     },
     {
       "name": "gpt-4-32k",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 4096,
       "model_types": [
         "chat"

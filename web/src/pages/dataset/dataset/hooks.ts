@@ -1,11 +1,11 @@
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useCallback, useMemo, useState } from 'react';
 import { ILogInfo } from '../process-log-modal';
-import { RunningStatus } from './constant';
-import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
+import { getDocumentRunningStatus } from './utils';
 
 const PollIntervalMs = 5000;
 
@@ -43,7 +43,9 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         processBeginAt: formatDate(source.process_begin_at),
         chunkNumber: source.chunk_count,
         duration: formatSecondsToHumanReadable(source.process_duration || 0),
-        status: source.run as RunningStatus,
+        // Go derives status from ingestion_status (queued included);
+        // Python reads the legacy run field.
+        status: getDocumentRunningStatus(source),
         details: source.progress_msg,
       };
     }

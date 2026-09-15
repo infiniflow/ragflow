@@ -161,6 +161,9 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		zap.Int("script_len", len(req.Script)))
 	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
+		// Providers return user-code failures as non-zero SandboxResponses.
+		// An error here is a sandbox or transport failure and must stop the
+		// ReAct loop instead of prompting retries against broken infrastructure.
 		return codeExecStubResult(err.Error()), err
 	}
 	out, mErr := codeExecResultJSON(resp)
