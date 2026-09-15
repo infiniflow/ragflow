@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/runtimeconfig"
 	"ragflow/internal/utility"
 )
 
@@ -26,12 +27,6 @@ import (
 // mutex (not a per-Parser limiter) is the correct guard. See
 // pdfsync/pdfsync.go.
 
-const (
-	// defaultdeepInfCapacity bounds DeepDoc (deepdoc) inference calls
-	// (DLA, TSR, OCR).
-	defaultdeepInfCapacity = 8
-)
-
 // deepInfLimiter bounds concurrent DeepDoc (deepdoc) inference calls emitted
 // by per-page workers. acquire blocks until a slot is available or the
 // context is cancelled; release must be called in a defer.
@@ -40,11 +35,10 @@ type deepInfLimiter struct {
 }
 
 func newdeepInfLimiter(capacity int) *deepInfLimiter {
-	if capacity <= 0 {
-		capacity = defaultdeepInfCapacity
-	}
 	return &deepInfLimiter{sem: make(chan struct{}, capacity)}
 }
+
+var processInferenceLimiter = newdeepInfLimiter(runtimeconfig.InferenceConcurrency())
 
 func (l *deepInfLimiter) acquire(ctx context.Context) error {
 	if l == nil {
@@ -93,9 +87,13 @@ var (
 	pagePool     *utility.WorkerPool[pageTask, pageResult]
 )
 
+func defaultPageWorkerCount() int {
+	return min(runtime.GOMAXPROCS(0), runtimeconfig.InferenceConcurrency()*2)
+}
+
 func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
 	pagePoolOnce.Do(func() {
-		workers := runtime.GOMAXPROCS(0) * 2
+		workers := defaultPageWorkerCount()
 		if workers <= 0 {
 			workers = 1
 		}
@@ -118,16 +116,11 @@ func SetPageWorkerPoolSize(workers int) {
 	parserPageWorkerPool().Resize(workers)
 }
 
-// limiters returns the parser's lazily-initialized DeepDoc inference
-// limiter. The returned limiter is shared across ParseRaw calls (and
-// per-page workers) so test or production callers that reuse a Parser
-// do not pile up extra slots. Creation is guarded by deepInfOnce so a
-// Parser shared across goroutines initializes the slot channel once.
+// limiters returns the process-wide DeepDoc inference limiter. Sharing one
+// budget across parsers prevents concurrent documents from multiplying the
+// number of ONNX calls competing for the same CPUs.
 func (p *Parser) limiters() *deepInfLimiter {
-	p.deepInfOnce.Do(func() {
-		p.deepInf = newdeepInfLimiter(0)
-	})
-	return p.deepInf
+	return processInferenceLimiter
 }
 
 // ── Wrapped calls used by the parser pipeline ─────────────────────────────

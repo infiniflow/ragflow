@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/runtimeconfig"
 )
 
 type recordingAnalyzer struct {
@@ -86,6 +87,22 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 		if r.PageNumber != pages[i] {
 			t.Errorf("results[%d].PageNumber = %d, want %d", i, r.PageNumber, pages[i])
 		}
+	}
+}
+
+func TestParsersShareInferenceLimiter(t *testing.T) {
+	first := NewParser(pdf.DefaultParserConfig())
+	second := NewParser(pdf.DefaultParserConfig())
+
+	if first.limiters() != second.limiters() {
+		t.Fatal("parsers have independent inference limiters; process concurrency is unbounded")
+	}
+}
+
+func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
+	maxUsefulWorkers := runtimeconfig.InferenceConcurrency() * 2
+	if got := defaultPageWorkerCount(); got > maxUsefulWorkers {
+		t.Fatalf("got %d page workers, want at most %d", got, maxUsefulWorkers)
 	}
 }
 

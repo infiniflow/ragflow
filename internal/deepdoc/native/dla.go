@@ -57,11 +57,10 @@ var (
 // RunDLA runs layout detection on a page image.
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the DLA Run path).
+	// defaultIntraOpThreads() (0 = all cores by default, overridable by DEEPDOC_ORT_NUM_THREADS).
 	sess, release, err := getModelSession(filepath.Join(modelDir, "layout.ort"), "images",
 		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0",
-		[]int64{1, dlaMaxBoxes, 6}, 0)
+		[]int64{1, dlaMaxBoxes, 6}, defaultIntraOpThreads())
 	if err != nil {
 		return DLAResult{}, err
 	}
