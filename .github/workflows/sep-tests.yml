@@ -592,7 +592,7 @@ jobs:
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
@@ -629,7 +629,7 @@ jobs:
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
+                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -668,7 +668,6 @@ jobs:
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
-                 -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
       - name: Start ragflow:nightly for Infinity
@@ -1139,7 +1138,7 @@ jobs:
                MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
                REDIS_PORT=$((6379 + PORT_OFFSET))
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
-               NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+               EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
                KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
@@ -1176,7 +1175,7 @@ jobs:
                  echo "REDIS_PORT=${REDIS_PORT}"
                  echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
-                 echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
+                 echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
                  echo "KIBANA_PORT=${KIBANA_PORT}"
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
@@ -1215,7 +1214,6 @@ jobs:
 
                sed -i \
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
-                 -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
       - name: Start ragflow:nightly for Elasticsearch
