@@ -333,8 +333,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
 
-	normalizeChunkTextFallback(chunks)
-
 	// chunk_order_int is the position of the chunk in the (post-filter) reading
 	// sequence. It is set unconditionally on every surviving chunk so that all
 	// retrievable chunks carry a stable reading-order index on every path, not
@@ -649,15 +647,13 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 		raw = cloneChunkDocs(in.JSONResult)
 	}
 	// Keep only chunks that have retrievable content: a chunk is dropped only
-	// when text, content_with_weight, and both media-context fields are empty.
+	// when canonical text and both media-context fields are empty.
 	// Context-bearing media chunks may intentionally have no display text, but
 	// their surrounding prose is still searchable and must survive to the
-	// tokenizer. The ContentWithWeight guard preserves the Parser path, whose
-	// blocks carry content_with_weight without text; normalizeChunkTextFallback
-	// backfills text afterwards, so this guard is required before that pass.
+	// tokenizer.
 	filtered := raw[:0]
 	for _, ck := range raw {
-		if ck.Text == "" && ck.ContentWithWeight == "" &&
+		if strings.TrimSpace(ck.Text) == "" &&
 			strings.TrimSpace(ck.ContextAbove) == "" && strings.TrimSpace(ck.ContextBelow) == "" {
 			continue
 		}
@@ -711,27 +707,6 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
 	}
 	return out
-}
-
-// normalizeChunkTextFallback populates each chunk's "text" key
-// from "content_with_weight" when "text" is absent or empty. Mirrors
-// the python rag/flow/tokenizer.py:111 fallback so a chunk that
-// arrives from the parser path with only the structured
-// content_with_weight field still tokenizes.
-//
-// The function mutates the input slice in place; callers should
-// not retain separate copies of the chunks map. If both fields
-// are present, the existing "text" wins — preserves the python
-// contract where the chunker's emitted text is authoritative.
-func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
-	for i := range chunks {
-		if chunks[i].Text != "" {
-			continue
-		}
-		if chunks[i].ContentWithWeight != "" {
-			chunks[i].Text = chunks[i].ContentWithWeight
-		}
-	}
 }
 
 // tokenizeChunks annotates each chunk with title_tks, content_ltks,
@@ -847,8 +822,6 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 		switch f {
 		case "text":
 			b.WriteString(contextualChunkText(ck))
-		case "content_with_weight":
-			b.WriteString(ck.ContentWithWeight)
 		case "questions":
 			b.WriteString(ck.Questions)
 		case "keywords":

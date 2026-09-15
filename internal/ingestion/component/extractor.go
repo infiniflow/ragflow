@@ -293,7 +293,7 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 // self.chat_mdl; the Go port exposes it explicitly).
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
+		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' field. Optional — when absent the LLM is called once with the resolved args.",
 		"llm_id": "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 	}
 }
@@ -1025,15 +1025,9 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 
 // extractorChunkText resolves the body an extraction is run against.
 //
-// "text" wins over context and "content_with_weight": every chunker writes the
-// authoritative body to "text" (and derives the chunk id from it), while
-// "content_with_weight" may survive as pass-through metadata from an upstream
-// parser block. Preferring the latter would send the LLM a different body than
-// the one the chunk id — and therefore the cache entry — stands for. This is
-// the same priority the Tokenizer applies (normalizeChunkTextFallback) and the
-// chunkers apply (itemText). Media-only chunks use their surrounding parser
-// context as the extraction body; chunks with neither body nor context are
-// skipped by the extraction schedulers.
+// Canonical text wins. Media-only chunks may use their explicit surrounding
+// context; chunks with neither body nor context are skipped by the extraction
+// schedulers.
 func extractorChunkText(ck map[string]any) string {
 	if v, _ := ck["text"].(string); strings.TrimSpace(v) != "" {
 		return v
@@ -1047,8 +1041,7 @@ func extractorChunkText(ck map[string]any) string {
 	if len(contextParts) > 0 {
 		return strings.Join(contextParts, " ")
 	}
-	v, _ := ck["content_with_weight"].(string)
-	return v
+	return ""
 }
 
 // chunkCacheID returns the chunk's stable per-chunk id, assigned by the chunker

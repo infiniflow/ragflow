@@ -99,42 +99,41 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text              string                     `json:"text,omitempty"`
-	ContentWithWeight string                     `json:"content_with_weight,omitempty"`
-	DocType           string                     `json:"doc_type_kwd,omitempty"`
-	CKType            string                     `json:"ck_type,omitempty"`
-	TKNums            *int                       `json:"tk_nums,omitempty"`
-	Mom               string                     `json:"mom,omitempty"`
-	ImgID             string                     `json:"img_id,omitempty"`
-	Layout            string                     `json:"layout,omitempty"`
-	LayoutType        string                     `json:"layout_type,omitempty"`
-	LayoutNo          string                     `json:"layoutno,omitempty"`
-	Image             string                     `json:"image,omitempty"`
-	ContextAbove      string                     `json:"context_above,omitempty"`
-	ContextBelow      string                     `json:"context_below,omitempty"`
-	Questions         string                     `json:"questions,omitempty"`
-	Keywords          string                     `json:"keywords,omitempty"`
-	Summary           string                     `json:"summary,omitempty"`
-	ChunkOrderInt     *int                       `json:"chunk_order_int,omitempty"`
-	TitleTks          string                     `json:"title_tks,omitempty"`
-	TitleSmTks        string                     `json:"title_sm_tks,omitempty"`
-	ContentLtks       string                     `json:"content_ltks,omitempty"`
-	ContentSmLtks     string                     `json:"content_sm_ltks,omitempty"`
-	TagKwd            []string                   `json:"tag_kwd,omitempty"`
-	PageNumber        *int                       `json:"page_number,omitempty"`
-	TopInt            []int                      `json:"top_int,omitempty"`
-	PDFPositions      json.RawMessage            `json:"_pdf_positions,omitempty"`
-	Positions         json.RawMessage            `json:"positions,omitempty"`
-	TableID           string                     `json:"table_id,omitempty"`
-	Sheet             string                     `json:"sheet,omitempty"`
-	SheetIndex        *int                       `json:"sheet_index,omitempty"`
-	Headers           []string                   `json:"headers,omitempty"`
-	Cells             []string                   `json:"cells,omitempty"`
-	RowStart          *int                       `json:"row_start,omitempty"`
-	RowEnd            *int                       `json:"row_end,omitempty"`
-	ColStart          *int                       `json:"col_start,omitempty"`
-	ColEnd            *int                       `json:"col_end,omitempty"`
-	Extra             map[string]json.RawMessage `json:"-"`
+	Text          string                     `json:"text,omitempty"`
+	DocType       string                     `json:"doc_type_kwd,omitempty"`
+	CKType        string                     `json:"ck_type,omitempty"`
+	TKNums        *int                       `json:"tk_nums,omitempty"`
+	Mom           string                     `json:"mom,omitempty"`
+	ImgID         string                     `json:"img_id,omitempty"`
+	Layout        string                     `json:"layout,omitempty"`
+	LayoutType    string                     `json:"layout_type,omitempty"`
+	LayoutNo      string                     `json:"layoutno,omitempty"`
+	Image         string                     `json:"image,omitempty"`
+	ContextAbove  string                     `json:"context_above,omitempty"`
+	ContextBelow  string                     `json:"context_below,omitempty"`
+	Questions     string                     `json:"questions,omitempty"`
+	Keywords      string                     `json:"keywords,omitempty"`
+	Summary       string                     `json:"summary,omitempty"`
+	ChunkOrderInt *int                       `json:"chunk_order_int,omitempty"`
+	TitleTks      string                     `json:"title_tks,omitempty"`
+	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
+	ContentLtks   string                     `json:"content_ltks,omitempty"`
+	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
+	TagKwd        []string                   `json:"tag_kwd,omitempty"`
+	PageNumber    *int                       `json:"page_number,omitempty"`
+	TopInt        []int                      `json:"top_int,omitempty"`
+	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
+	Positions     json.RawMessage            `json:"positions,omitempty"`
+	TableID       string                     `json:"table_id,omitempty"`
+	Sheet         string                     `json:"sheet,omitempty"`
+	SheetIndex    *int                       `json:"sheet_index,omitempty"`
+	Headers       []string                   `json:"headers,omitempty"`
+	Cells         []string                   `json:"cells,omitempty"`
+	RowStart      *int                       `json:"row_start,omitempty"`
+	RowEnd        *int                       `json:"row_end,omitempty"`
+	ColStart      *int                       `json:"col_start,omitempty"`
+	ColEnd        *int                       `json:"col_end,omitempty"`
+	Extra         map[string]json.RawMessage `json:"-"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -148,7 +147,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	for _, key := range []string{
-		"text", "content_with_weight", "doc_type_kwd", "mom", "img_id",
+		"text", "doc_type_kwd", "mom", "img_id",
 		"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
@@ -247,6 +246,11 @@ func (d ChunkDoc) ToMap() map[string]any {
 	for k, raw := range d.Extra {
 		out[k] = decodeExtraValue(raw)
 	}
+	// Every pre-index chunk has one canonical text field. Keep the key even
+	// for media-only chunks so chunk identity and image upload use the same
+	// wire contract; contextual text remains explicit retrieval metadata.
+	out["text"] = d.Text
+	delete(out, "content_with_weight")
 	if len(d.PDFPositions) > 0 {
 		out["_pdf_positions"] = decodeStructuredValue(d.PDFPositions)
 	}

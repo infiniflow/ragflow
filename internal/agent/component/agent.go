@@ -860,6 +860,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
@@ -888,6 +889,11 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			if rerr != nil {
 				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
 			}
+		}
+	}
+	if state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
 		}
 	}
 	if hasRuntimeUserPrompt {
