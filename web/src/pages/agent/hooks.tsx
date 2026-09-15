@@ -7,6 +7,7 @@ import { get, lowerFirst, omit } from 'lodash';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Operator, RestrictedUpstreamMap } from './constant';
+import { useIsPipeline } from './hooks/use-is-pipeline';
 import useGraphStore, { RFState } from './store';
 import { buildCategorizeObjectFromList, replaceIdWithText } from './utils';
 
@@ -128,6 +129,7 @@ export const useHandleFormValuesChange = (
 export const useValidateConnection = () => {
   const { getOperatorTypeFromId, getParentIdById, edges, nodes } =
     useGraphStore((state) => state);
+  const isPipeline = useIsPipeline();
 
   const isSameNodeChild = useCallback(
     (connection: Connection | Edge) => {
@@ -162,19 +164,37 @@ export const useValidateConnection = () => {
     [edges, nodes],
   );
 
+  // A pipeline canvas is a linear chain: every node feeds at most one node and
+  // is fed by at most one node, matching the single-terminal runtime contract.
+  const keepsPipelineLinearChain = useCallback(
+    (connection: Connection | Edge) => {
+      const placeholderNodeIds = new Set(
+        nodes
+          .filter((node) => node.data?.label === Operator.Placeholder)
+          .map((node) => node.id),
+      );
+      const sourceHasDownstream = edges.some(
+        (edge) =>
+          edge.source === connection.source &&
+          !placeholderNodeIds.has(edge.target),
+      );
+      const targetHasUpstream = edges.some(
+        (edge) => edge.target === connection.target,
+      );
+      return !sourceHasDownstream && !targetHasUpstream;
+    },
+    [edges, nodes],
+  );
+
   // restricted lines cannot be connected successfully.
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       // node cannot connect to itself
       const isSelfConnected = connection.target === connection.source;
 
-      // limit the connection between two nodes to only one connection line in one direction
-      // const hasLine = edges.some(
-      //   (x) => x.source === connection.source && x.target === connection.target,
-      // );
-
       const ret =
         !isSelfConnected &&
+        (!isPipeline || keepsPipelineLinearChain(connection)) &&
         RestrictedUpstreamMap[
           getOperatorTypeFromId(connection.source) as Operator
         ]?.every((x) => x !== getOperatorTypeFromId(connection.target)) &&
@@ -182,7 +202,13 @@ export const useValidateConnection = () => {
         hasCanvasCycle(connection);
       return ret;
     },
-    [getOperatorTypeFromId, hasCanvasCycle, isSameNodeChild],
+    [
+      getOperatorTypeFromId,
+      hasCanvasCycle,
+      isPipeline,
+      keepsPipelineLinearChain,
+      isSameNodeChild,
+    ],
   );
 
   return isValidConnection;

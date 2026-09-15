@@ -49,6 +49,8 @@ export function CommonHandle({
       <Handle
         {...props}
         isConnectable={isConnectable}
+        isConnectableStart={props.isConnectableStart ?? isConnectable}
+        isConnectableEnd={props.isConnectableEnd ?? isConnectable}
         className={cn(
           'inline-flex justify-center items-center !bg-accent-primary !border-none group-hover:!size-4 group-hover:!rounded-sm',
           className,
