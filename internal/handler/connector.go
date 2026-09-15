@@ -36,7 +36,7 @@ import (
 type connectorServiceIface interface {
 	ListConnectors(ctx context.Context, userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
-	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error)
@@ -100,12 +100,16 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	switch {
 	case err == nil:
 		return false
+	case errors.Is(err, service.ErrConnectorIDRequired):
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 	case errors.Is(err, service.ErrConnectorNoAuth):
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
+		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
 	default:
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
@@ -128,9 +132,8 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	connector, code, err := h.connectorService.GetConnector(ctx, c.Param("connector_id"), user.ID)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+	connector, err := h.connectorService.GetConnector(ctx, c.Param("connector_id"), user.ID)
+	if connectorErrorResponse(c, err) {
 		return
 	}
 
@@ -381,7 +384,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	}
 
 	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
-	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+	if errors.Is(err, service.ErrConnectorTestUnsupported) || errors.Is(err, service.ErrConnectorSourceNotImplemented) {
 		connectorErrorResponse(c, err)
 		return
 	}
@@ -397,7 +400,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "REST API connector validation failed, please check logs.")
+		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {

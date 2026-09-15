@@ -92,7 +92,7 @@ func TestRunTask_RedeliveryOfCompletedTaskCountsOnce(t *testing.T) {
 	defer cleanup()
 	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// First delivery: parse succeeds, counters applied once, task -> COMPLETED.
@@ -115,7 +115,7 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	defer cleanup()
 	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// Prior run: counters applied, but the task never completed (crash before

@@ -27,7 +27,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/pipeline"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
@@ -68,8 +67,8 @@ type progressSink struct {
 // full DocumentService surface.
 type docProgressSvc interface {
 	GetDocumentByID(ctx context.Context, docID string) (*documentpkg.DocumentResponse, error)
-	UpdateRunState(ctx context.Context, docID string, progress float64, run string) error
-	UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error
+	UpdateRunState(ctx context.Context, docID string, progress float64) error
+	UpdateRunProgress(ctx context.Context, docID string, progress float64, progressMsg string) error
 }
 
 func newProgressSink(ctx context.Context, taskSvc *servicepkg.IngestionTaskService) *progressSink {
@@ -108,8 +107,8 @@ func (s *progressSink) OnComponentProgress(ctx context.Context, ev pipeline.Prog
 	if agg == nil || total <= 0 {
 		return
 	}
-	progress, run := deriveDocumentProgress(agg, int(total))
-	if err = s.updateDocumentProgress(ctx, ev.DocumentID, progress, run, ev.Message); err != nil {
+	progress := deriveDocumentProgress(agg, int(total))
+	if err = s.updateDocumentProgress(ctx, ev.DocumentID, progress, ev.Message); err != nil {
 		common.Error(fmt.Sprintf("progressSink: mirror progress to document %s for task %s failed: %v", ev.DocumentID, ev.TaskID, err), err)
 	}
 }
@@ -132,16 +131,12 @@ func (s *progressSink) OnComponentMessage(ctx context.Context, taskID, docID, co
 	if doc == nil {
 		return
 	}
-	run := ""
-	if doc.Run != nil {
-		run = *doc.Run
-	}
 	log, err := s.accumulateLogLocked(ctx, docID, fmt.Sprintf("%s: %s", component, message))
 	if err != nil {
 		common.Error(fmt.Sprintf("progressSink: append detail for document %s failed", docID), err)
 		return
 	}
-	if err := s.docSvc.UpdateRunProgress(ctx, docID, doc.Progress, run, log); err != nil {
+	if err := s.docSvc.UpdateRunProgress(ctx, docID, doc.Progress, log); err != nil {
 		common.Error(fmt.Sprintf("progressSink: persist detail for document %s failed", docID), err)
 	}
 }
@@ -150,17 +145,17 @@ func (s *progressSink) OnComponentMessage(ctx context.Context, taskID, docID, co
 // document write. Without holding the same lock across both operations, a
 // slower database write can store an older snapshot after a newer event has
 // already been persisted.
-func (s *progressSink) updateDocumentProgress(ctx context.Context, docID string, progress float64, run, msg string) error {
+func (s *progressSink) updateDocumentProgress(ctx context.Context, docID string, progress float64, msg string) error {
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 	log, err := s.accumulateLogLocked(ctx, docID, msg)
 	if err != nil {
 		// Keep the current run state durable even when the existing log cannot
 		// be seeded. The next event will retry the seed and persist the log.
-		stateErr := s.docSvc.UpdateRunState(ctx, docID, progress, run)
+		stateErr := s.docSvc.UpdateRunState(ctx, docID, progress)
 		return errors.Join(err, stateErr)
 	}
-	return s.docSvc.UpdateRunProgress(ctx, docID, progress, run, log)
+	return s.docSvc.UpdateRunProgress(ctx, docID, progress, log)
 }
 
 // accumulateLog appends one component lifecycle line to the run log. It is
@@ -235,23 +230,12 @@ func trimLogHead(text string, maxChars int) string {
 	return text
 }
 
-// deriveDocumentProgress computes the document-level progress (0..1) and run
-// label ("0".."4", matching Python's document.run enum) from the aggregated
-// ingestion_task_log. This logic is owned by the sink (the document-table
-// writer), not the pipeline.
-func deriveDocumentProgress(agg *dao.TaskProgress, total int) (float64, string) {
-	run := string(entity.TaskStatusUnstart)
-	switch {
-	case agg.Failed > 0:
-		run = string(entity.TaskStatusFail)
-	case agg.Done == total:
-		run = string(entity.TaskStatusDone)
-	case agg.Done > 0 || agg.Running > 0:
-		run = string(entity.TaskStatusRunning)
-	}
+// deriveDocumentProgress computes the document-level progress (0..1) from the
+// aggregated ingestion_task_log.
+func deriveDocumentProgress(agg *dao.TaskProgress, total int) float64 {
 	progress := agg.Percent / 100
 	if progress > 1 {
 		progress = 1
 	}
-	return progress, run
+	return progress
 }

@@ -235,9 +235,8 @@ func TestWarpCropRespectsNonZeroOrigin(t *testing.T) {
 // non-finite coordinate would drive an undefined-size allocation.
 //
 // This is a regression guard for the untrusted-boundary contract: OCRDetect
-// accepts coordinates from a configured DocAnalyzer / DEEPDOC_URL, and the
-// first-party Python detector clips its points, but that invariant is not
-// enforced at this Go boundary.
+// accepts coordinates from the DocAnalyzer backend, and the detector clips its
+// points, but that invariant is not enforced at this Go boundary.
 func TestWarpCropRejectsMalformedQuad(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 10, 10))
 

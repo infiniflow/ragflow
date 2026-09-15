@@ -139,9 +139,9 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // "⽂章中提到"). Byte-wise matching would miss the fragment relation and the
 // inner box survives to NaiveVerticalMerge, which concatenates it into the
 // paragraph — duplicating text (the ocr_real text gaps: plugin-daemon,
-// RAG分词, 三国人物). Geometry (boxInside) remains the actual containment
-// proof; whitespace normalization only makes the fragment check robust to the
-// char-vs-OCR space divergence.
+// RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
+// containment proof; whitespace normalization only makes the fragment check
+// robust to the char-vs-OCR space divergence.
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
 	// Precompute the whitespace-normalized text once per box. The inner loop
@@ -175,6 +175,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 				continue
 			}
 			ni, nj := norm[i], norm[j]
+			// Never collapse a substring across columns. OCR double-detection
+			// fragments always share the SAME column as their container; a
+			// substring in a DIFFERENT column (e.g. the opposite column of a
+			// two-column page whose wide OCR box spans the gutter, or a left
+			// column short line whose text happens to be a substring of a right
+			// column paragraph) is independent document text and must be kept.
+			// ColID is assigned by AssignColumn, which now runs before dedup;
+			// boxes without column info (ColID==0, the single-column default, or
+			// unset) keep the original geometry-only behaviour so legacy tests
+			// and single-column docs are unaffected.
+			if boxes[i].ColID != boxes[j].ColID {
+				continue
+			}
 			// Collapse only when the SUBSTRING-text box is geometrically CONTAINED
 			// in the text-containing box. Binding the geometry to the actual
 			// substring (not merely the shorter-height box) avoids silently
@@ -183,12 +196,12 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 			// the smaller, contained box, so the taller container is kept.
 			if len(ni) >= len(nj) && strings.Contains(ni, nj) {
 				// j's text is a substring of i's -> drop j only if j sits inside i.
-				if boxInside(boxes[j], boxes[i]) {
+				if boxInsideTolerant(boxes[j], boxes[i]) {
 					drop[j] = true
 				}
 			} else if len(nj) > len(ni) && strings.Contains(nj, ni) {
 				// i's text is a substring of j's -> drop i only if i sits inside j.
-				if boxInside(boxes[i], boxes[j]) {
+				if boxInsideTolerant(boxes[i], boxes[j]) {
 					drop[i] = true
 					break
 				}
@@ -220,18 +233,152 @@ func dedupNormText(s string) string {
 	return b.String()
 }
 
-// boxInside reports whether inner is FULLY contained within outer on BOTH
-// axes. It confirms an OCR substring fragment sits inside the box whose text
-// contains it — not merely sharing a Y band at a different column, nor poking
-// out horizontally beyond the container. Requiring horizontal containment
-// stops a whitespace-normalized substring match from dropping a box that
-// extends past the container's X range (e.g. an adjacent-column line whose
-// text happens to be a substring of the paragraph's).
-func boxInside(inner, outer pdf.TextBox) bool {
-	if inner.Top < outer.Top || inner.Bottom > outer.Bottom {
+// FilterWatermarkBoxes drops single-character ASCII boxes whose text repeats
+// verbatim many times on the SAME page. This targets the "tiled watermark on a
+// rotated glyph string" pattern reported in #18145:
+//
+//   - Resume / template PDFs plant a watermark string (e.g. "ce1a60…ZH1c56f")
+//     repeated diagonally across the page. The string is rotated so each
+//     glyph fails the layout line-overlap check and ends up in its own
+//     single-character box.
+//   - Naive chunker then interleaves those garbage boxes into every chunk.
+//
+// This runs at the POST-PROCESS level (after char→box and OCR→box have both
+// converged into the same `[]pdf.TextBox` slice), so it covers both the
+// direct-text and OCR-merge code paths that the issue reproduces. An earlier
+// attempt to filter at the char-stage in `CharsToBoxes` was a dead branch
+// for the OCR-merge path and operated at the wrong granularity (multi-char
+// tokens), per the review on PR #18308.
+//
+// Scope is intentionally tight so legitimate content is never dropped:
+//
+//   - Only boxes whose Text is exactly one ASCII letter or digit, classified
+//     against raw Text (no normalization). This excludes multi-token
+//     repetition (e.g. repeated SKU "ABC123"), CJK glyphs (always ≥3 UTF-8
+//     bytes → len>1), punctuation, and whitespace.
+//   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
+//     times on the page. A real "Q" or "1" appears at most once per page
+//     outside a watermark tiling.
+//   - Page-local, so a watermark on page 3 cannot affect page 1. This also
+//     keeps the O(n) cost bounded by page size.
+//
+// CJK is unconstrained: a single box's bytes may be ≥1 even when the rune
+// count is 1, so `len(box.Text) == 1` already excludes CJK fonts (which are
+// typically 3 bytes per glyph). A box that 姓名 — the canonical Chinese name
+// field — survives verbatim even when the rest of the document is contaminated.
+func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+	// Pass 1: per-page count of single-char ASCII boxes. Use the raw
+	// box.Text for both classification and the promotion key so no
+	// normalization collapses distinct bytes.
+	type key struct {
+		page int
+		text string
+	}
+	counts := make(map[key]int, len(boxes))
+	for _, b := range boxes {
+		if !isSingleAsciiAlnum(b.Text) {
+			continue
+		}
+		counts[key{b.PageNumber, b.Text}]++
+	}
+	// Promote any (page, text) that meets the watermark threshold.
+	promoted := make(map[key]struct{}, len(counts))
+	for k, n := range counts {
+		if n >= watermarkBoxesMinOccurrences {
+			promoted[k] = struct{}{}
+		}
+	}
+	if len(promoted) == 0 {
+		return boxes
+	}
+	// Pass 2: drop boxes whose (page, text) was promoted.
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, b := range boxes {
+		if isSingleAsciiAlnum(b.Text) {
+			if _, drop := promoted[key{b.PageNumber, b.Text}]; drop {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// watermarkBoxesMinOccurrences is the per-page repetition threshold for a
+// single-char ASCII box to be considered a watermark glyph. Legitimate short
+// content ("1.", "Q.", "A.") rarely appears more than once per page outside
+// of dense content (table rows, list items), and even there the same label
+// rarely reaches this threshold. A watermark tile places the same glyph at
+// 10+ x-intercepts across the page, so the threshold is set conservatively
+// above that floor to keep false-positive rate negligible.
+const watermarkBoxesMinOccurrences = 4
+
+// isSingleAsciiAlnum reports whether s is exactly one ASCII letter or digit
+// (no whitespace, no CJK, no punctuation, no multibyte UTF-8). Used by
+// FilterWatermarkBoxes to limit the watermark signal to the rotated-glyph
+// shape rather than the broader "any short token" case, which would
+// collide with repeated SKUs and part numbers.
+func isSingleAsciiAlnum(s string) bool {
+	if len(s) != 1 {
 		return false
 	}
+	c := s[0]
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+	}
+	return false
+}
+
+// dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
+// double-detection fragment's BOTTOM edge (and the height-match slack for the
+// top-overshoot case, see boxInsideTolerant). Such fragments sit on the SAME
+// text line as their container but their detected Y bounds jitter by ~0.5-2pt
+// of detection noise (observed on Rag Flow Usage / 三国人物); strict Y
+// containment then misses them and the duplicate text leaks into the output
+// after TextMerge. We only relax Y (never X) and only inside
+// DedupSubstringOverlaps, where the text-substring precondition already proves
+// the box is an OCR duplicate — so a few points of Y noise must not keep it.
+const dedupYTolerancePt = 3.0
+
+// boxInsideTolerant reports whether inner is contained within outer: X is
+// strict, inner's bottom may extend up to dedupYTolerancePt past outer's
+// bottom, and inner's top may overshoot only when the two boxes are the SAME
+// text line (their heights match within dedupYTolerancePt). It confirms an OCR
+// substring fragment sits inside the box whose text contains it — not merely
+// sharing a Y band at a different column, nor poking out horizontally beyond
+// the container. Requiring horizontal containment stops a whitespace-
+// normalized substring match from dropping a box that extends past the
+// container's X range (e.g. an adjacent-column line whose text happens to be a
+// substring of the paragraph's). The top-overshoot height-match requirement is
+// what tells a same-line double-detection fragment (Rag Flow Usage's
+// "toseeyou again", top 0.5pt above its line) apart from an ADJACENT line
+// whose top rises past the container but whose height differs (eval_one_
+// indented_block's indented line, top 1pt above a two-line container — kept).
+func boxInsideTolerant(inner, outer pdf.TextBox) bool {
 	if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+		return false
+	}
+	if inner.Top < outer.Top-dedupYTolerancePt {
+		return false
+	}
+	if inner.Top < outer.Top {
+		// Top overshoot: only tolerable when the fragment is the SAME line as
+		// the container — i.e. the two heights match within the tolerance. An
+		// adjacent line that pokes above the container is taller/shorter in
+		// height, so it is kept.
+		if math.Abs((inner.Bottom-inner.Top)-(outer.Bottom-outer.Top)) > dedupYTolerancePt {
+			return false
+		}
+	}
+	if inner.Bottom > outer.Bottom+dedupYTolerancePt {
 		return false
 	}
 	return true

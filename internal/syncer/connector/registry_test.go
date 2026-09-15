@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"strings"
@@ -23,7 +24,7 @@ func TestRegistryOpenFromConfig(t *testing.T) {
 	}
 
 	_, err = registry.OpenFromConfig("missing", map[string]any{})
-	if err == nil || !strings.Contains(err.Error(), `unsupported connector source "missing"`) {
+	if err == nil || !errors.Is(err, ErrUnsupportedSource) || !strings.Contains(err.Error(), `unsupported connector source "missing"`) {
 		t.Fatalf("unsupported source error = %v", err)
 	}
 }

@@ -36,13 +36,13 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
+	"github.com/bytedance/sonic"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
 
-var jsonIterator = jsoniter.Config{
+var jsonIterator = sonic.Config{
 	SortMapKeys: false,
 }.Froze()
 
@@ -209,6 +209,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
+			docCopy["tag_feas"] = raw
+		}
 		if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
@@ -608,6 +611,9 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	// Update document fields if any remain
 	if len(doc) > 0 {
+		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+			doc["tag_feas"] = raw
+		}
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
 		req := esapi.UpdateRequest{
@@ -632,12 +638,59 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 	return nil
 }
 
+// conditionTermsList normalizes a condition or new-value field into the value
+// list a `terms` query / stored array field needs. Callers hand over either
+// []interface{} (decoded JSON payloads) or a typed slice such as []string
+// (internal callers, e.g. the document availability switch). A typed slice the
+// builder does not recognize silently drops the field, which turns a bounded
+// update/delete by query into an unfiltered one over the whole index.
+func conditionTermsList(value interface{}) ([]interface{}, bool) {
+	items, ok := value.([]interface{})
+	if ok {
+		return items, true
+	}
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		return nil, false
+	}
+	if rv.Type().Elem().Kind() == reflect.Uint8 {
+		// []byte is a scalar blob, not a list of ids/keywords.
+		return nil, false
+	}
+	out := make([]interface{}, 0, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		out = append(out, rv.Index(i).Interface())
+	}
+	return out, true
+}
+
+// mustNotExistsClauses renders the `must_not` exclusions a condition carries.
+// The only form RAGFlow produces is must_not={"exists": <field>} (e.g.
+// hybrid_search excluding compiled products); any other shape yields nothing.
+func mustNotExistsClauses(value interface{}) []map[string]interface{} {
+	exclusions, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	clauses := make([]map[string]interface{}, 0, len(exclusions))
+	for field, value := range exclusions {
+		if field != "exists" {
+			continue
+		}
+		clauses = append(clauses, map[string]interface{}{
+			"exists": map[string]interface{}{"field": value},
+		})
+	}
+	return clauses
+}
+
 // updateChunksByQuery handles multi-document update
 func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
 
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
+	var mustNotClauses []map[string]interface{}
 	for k, v := range condition {
 		if k == "exists" {
 			mustClauses = append(mustClauses, map[string]interface{}{
@@ -645,29 +698,46 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 			})
 			continue
 		}
+		if k == "must_not" {
+			mustNotClauses = append(mustNotClauses, mustNotExistsClauses(v)...)
+			continue
+		}
 		if v == nil || v == "" {
 			continue
 		}
-		if listVal, ok := v.([]interface{}); ok {
+		if items, ok := conditionTermsList(v); ok {
 			mustClauses = append(mustClauses, map[string]interface{}{
-				"terms": map[string]interface{}{k: listVal},
+				"terms": map[string]interface{}{k: items},
 			})
-		} else if _, ok := v.(string); ok {
+			continue
+		}
+		if _, ok := v.(string); ok {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{k: v},
 			})
-		} else if _, ok := v.(int); ok {
+			continue
+		}
+		if _, ok := v.(int); ok {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{k: v},
 			})
 		}
 	}
-
-	boolQuery := map[string]interface{}{
-		"bool": map[string]interface{}{
-			"filter": mustClauses,
-		},
+	if len(mustClauses) == 0 && len(mustNotClauses) == 0 && len(condition) > 0 {
+		// Every condition key was dropped (empty value or unsupported type).
+		// update-by-query without a filter rewrites the whole index, so refuse
+		// instead — mirrors DeleteChunks.
+		return fmt.Errorf("ES update aborted: non-empty condition yielded unfiltered update on index %s", indexName)
 	}
+
+	boolClauses := map[string]interface{}{}
+	if len(mustClauses) > 0 {
+		boolClauses["filter"] = mustClauses
+	}
+	if len(mustNotClauses) > 0 {
+		boolClauses["must_not"] = mustNotClauses
+	}
+	boolQuery := map[string]interface{}{"bool": boolClauses}
 
 	// Build painless scripts from newValue
 	var scripts []string
@@ -706,6 +776,11 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 			continue
 		}
 
+		if items, ok := conditionTermsList(v); ok {
+			params[fmt.Sprintf("pp_%s", k)] = items
+			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
+			continue
+		}
 		switch val := v.(type) {
 		case string:
 			// Sanitize: replace ' \n \r with space
@@ -714,9 +789,6 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 		case int, int8, int16, int32, int64, float32, float64:
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=%v;", k, val))
-		case []interface{}:
-			params[fmt.Sprintf("pp_%s", k)] = val
-			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 		}
 	}
 
@@ -782,6 +854,90 @@ func copyFields(m map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+// formatOrderedTagFeas formats tag_feas as json.RawMessage with keys ordered
+// strictly descending by score, preventing jsoniter map-key randomized output.
+func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
+	if v == nil {
+		return nil, false
+	}
+	if raw, ok := v.(json.RawMessage); ok {
+		return raw, true
+	}
+	if marshaler, ok := v.(json.Marshaler); ok {
+		b, err := marshaler.MarshalJSON()
+		if err == nil {
+			return json.RawMessage(b), true
+		}
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	var kvs []kv
+	roundScore := func(f float64) int {
+		if f < 0 {
+			return int(f - 0.5)
+		}
+		return int(f + 0.5)
+	}
+
+	switch m := v.(type) {
+	case map[string]int:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, val})
+		}
+	case map[string]float64:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			kvs = append(kvs, kv{k, roundScore(val)})
+		}
+	case map[string]any:
+		kvs = make([]kv, 0, len(m))
+		for k, val := range m {
+			switch score := val.(type) {
+			case int:
+				kvs = append(kvs, kv{k, score})
+			case float64:
+				kvs = append(kvs, kv{k, roundScore(score)})
+			case int64:
+				kvs = append(kvs, kv{k, int(score)})
+			case json.Number:
+				if f, err := score.Float64(); err == nil {
+					kvs = append(kvs, kv{k, roundScore(f)})
+				}
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	if len(kvs) == 0 {
+		return json.RawMessage("{}"), true
+	}
+
+	sort.Slice(kvs, func(i, j int) bool {
+		if kvs[i].v != kvs[j].v {
+			return kvs[i].v > kvs[j].v
+		}
+		return kvs[i].k < kvs[j].k
+	})
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, item := range kvs {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		kb, _ := json.Marshal(item.k)
+		buf.Write(kb)
+		buf.WriteByte(':')
+		buf.WriteString(strconv.Itoa(item.v))
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes()), true
+}
+
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
@@ -805,12 +961,15 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 	// Handle chunk IDs - use terms query on "id" field instead of ids query on _id
 	if idVal, ok := condition["id"]; ok && idVal != nil {
-		switch v := idVal.(type) {
-		case []interface{}:
-			ids := make([]string, 0, len(v))
-			for _, id := range v {
-				if s, ok := id.(string); ok {
-					ids = append(ids, s)
+		if id, isString := idVal.(string); isString {
+			mustClauses = append(mustClauses, map[string]interface{}{
+				"term": map[string]interface{}{"id": id},
+			})
+		} else if items, isList := conditionTermsList(idVal); isList {
+			ids := make([]interface{}, 0, len(items))
+			for _, item := range items {
+				if id, isString := item.(string); isString {
+					ids = append(ids, id)
 				}
 			}
 			if len(ids) > 0 {
@@ -818,20 +977,6 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 					"terms": map[string]interface{}{"id": ids},
 				})
 			}
-		case []string:
-			// A typed []string must be handled here; the generic loop below
-			// skips the "id" key, so without this branch a caller passing
-			// map[string]interface{}{"id": []string{...}} would build a query
-			// with no id filter and DeleteChunks could match every document.
-			if len(v) > 0 {
-				mustClauses = append(mustClauses, map[string]interface{}{
-					"terms": map[string]interface{}{"id": v},
-				})
-			}
-		case string:
-			mustClauses = append(mustClauses, map[string]interface{}{
-				"term": map[string]interface{}{"id": v},
-			})
 		}
 	}
 
@@ -852,23 +997,11 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 				"exists": map[string]interface{}{"field": v},
 			})
 		} else if k == "must_not" {
-			if m, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range m {
-					if kk == "exists" {
-						mustNotClauses = append(mustNotClauses, map[string]interface{}{
-							"exists": map[string]interface{}{"field": vv},
-						})
-					}
-				}
-			}
+			mustNotClauses = append(mustNotClauses, mustNotExistsClauses(v)...)
 		} else if v != nil {
-			if listVal, ok := v.([]interface{}); ok {
+			if items, ok := conditionTermsList(v); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
-					"terms": map[string]interface{}{k: listVal},
-				})
-			} else if listVal, ok := v.([]string); ok {
-				mustClauses = append(mustClauses, map[string]interface{}{
-					"terms": map[string]interface{}{k: listVal},
+					"terms": map[string]interface{}{k: items},
 				})
 			} else if _, ok := v.(string); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
@@ -1085,12 +1218,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if k <= 0 {
 			k = 1024
 		}
-		numCandidates := k * 2
+		k = min(k, 10000)
+		numCandidates := min(k*2, 10000)
 
 		similarity := 0.0
 		if matchDense.ExtraOptions != nil {
 			if sim, ok := matchDense.ExtraOptions["similarity"].(float64); ok {
 				similarity = sim
+			}
+			if n, ok := common.GetInt(matchDense.ExtraOptions["num_candidates"]); ok {
+				numCandidates = max(k, min(n, 10000))
 			}
 		}
 
@@ -1771,6 +1908,11 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
 					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
 				)
+			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
+				shouldClauses = append(shouldClauses,
+					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
+					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
+				)
 			} else if strVal, ok := v.(string); ok && strVal != "" {
 				shouldClauses = append(shouldClauses,
 					map[string]interface{}{"term": map[string]interface{}{"id": strVal}},
@@ -1856,7 +1998,7 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 	minimumShouldMatch := "0%"
 	if matchText.ExtraOptions != nil {
 		if msm, ok := matchText.ExtraOptions["minimum_should_match"].(float64); ok {
-			minimumShouldMatch = fmt.Sprintf("%d%%", int(msm*100))
+			minimumShouldMatch = common.FormatMinimumShouldMatchPercent(msm)
 		}
 	}
 
@@ -2892,51 +3034,6 @@ func getDefaultSkillMapping() map[string]interface{} {
 			},
 		},
 	}
-}
-
-// rerankWindow returns the candidate-window size shared by retrieval's
-// block fetch and slice. Mirrors Dealer._rerank_window in rag/nlp/search.py.
-//
-// `size` is the per-page size; the window MUST be an exact multiple of it,
-// otherwise the block fetched (offset // window) and the in-block page slice
-// (offset % window) drift apart and deep pagination silently drops results.
-//
-// The window targets a provider-friendly pool of ~64 candidates, bounded by
-// `topK` when given (i.e. when an external reranker is active), and is always
-// rounded UP to a whole number of pages to preserve the alignment invariant.
-func rerankWindow(size, topK int) int {
-	if size <= 1 {
-		if topK > 0 {
-			return min(30, topK)
-		}
-		return 30
-	}
-	window := ((64 + size - 1) / size) * size // ceil(64/size) * size
-	if topK > 0 {
-		if aligned := ((topK + size - 1) / size) * size; window > aligned {
-			window = aligned
-		}
-	}
-	return window
-}
-
-// calculatePagination calculates offset and limit based on page, size and topK
-func calculatePagination(page, size, topK int) (int, int) {
-	if page < 1 {
-		page = 1
-	}
-	if size <= 0 {
-		size = 30
-	}
-	if topK <= 0 {
-		topK = 1024
-	}
-
-	window := rerankWindow(size, topK)
-
-	offset := max((page-1)*window, 0)
-
-	return offset, window
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format

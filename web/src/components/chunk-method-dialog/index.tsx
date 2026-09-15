@@ -39,7 +39,7 @@ import {
   AutoMetadata,
   ChunkMethodItem,
   ImageContextWindow,
-} from '@/pages/dataset/dataset-setting/configuration/common-item';
+} from '@/pages/dataset/setting/python/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import omit from 'lodash/omit';
 import { useEffect, useMemo } from 'react';
@@ -245,7 +245,7 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    const parserConfig = data.parser_config;
+    const parserConfig = { ...data.parser_config };
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
     );

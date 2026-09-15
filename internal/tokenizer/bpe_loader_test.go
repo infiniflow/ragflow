@@ -41,8 +41,12 @@ func writeBpeTable(t *testing.T, path string, marker int) {
 	}
 	// Register this synthetic table's digest so the SHA-1 integrity gate in
 	// bpe_loader.go accepts it. This also exercises the verification path
-	// instead of disabling it.
+	// instead of disabling it. Restore the prior value afterwards so the
+	// mutation does not leak into sibling tests (which would otherwise read a
+	// stale digest for the same URL).
+	prev := expectedBpeHashes[testBpeURL]
 	expectedBpeHashes[testBpeURL] = fmt.Sprintf("%x", sha1.Sum([]byte(line)))
+	t.Cleanup(func() { expectedBpeHashes[testBpeURL] = prev })
 }
 
 func cacheFileName(url string) string {
@@ -52,13 +56,17 @@ func cacheFileName(url string) string {
 // isolate moves the process into an empty directory and clears both cache
 // environment variables, so a test sees only the files it creates itself.
 // Without this the real repository checkout — which does ship the table — would
-// satisfy every lookup and hide ordering bugs.
+// satisfy every lookup and hide ordering bugs. It also scopes the loader's
+// search roots to this directory so a tiktoken cache leaked into an ancestor
+// (e.g. /tmp) can't be picked up and make "missing table" tests flaky.
 func isolate(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("TIKTOKEN_CACHE_DIR", "")
 	t.Setenv("DATA_GYM_CACHE_DIR", "")
 	t.Chdir(dir)
+	SetBpeSearchRootsForTest([]string{dir})
+	t.Cleanup(func() { SetBpeSearchRootsForTest(nil) })
 	return dir
 }
 

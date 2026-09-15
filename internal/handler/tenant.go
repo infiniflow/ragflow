@@ -17,14 +17,11 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -320,160 +317,6 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	common.SuccessNoData(c, "success")
-}
-
-// InsertChunksFromFileRequest request for inserting chunks from file
-type InsertChunksFromFileRequest struct {
-	FilePath string `json:"file_path" binding:"required"`
-}
-
-// InsertChunksFromFile @Summary Insert chunks into dataset from JSON file
-// @Description Internal: Insert chunks into dataset table from a JSON file
-// @Tags tenants
-// @Security ApiKeyAuth
-// @Param request body InsertChunksFromFileRequest true "insert chunks request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/dev_insert_chunks_from_file [post]
-func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req InsertChunksFromFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	if req.FilePath == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
-		return
-	}
-
-	// Read the JSON file
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	// JSON file path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	data, err := os.ReadFile(req.FilePath)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
-		return
-	}
-
-	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
-	var debugFormat struct {
-		IndexName       string                   `json:"index_name"`
-		TableName       string                   `json:"table_name"`
-		KnowledgebaseID string                   `json:"knowledgebase_id"`
-		Chunks          []map[string]interface{} `json:"chunks"`
-	}
-
-	if err = json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}")
-		return
-	}
-
-	if len(debugFormat.Chunks) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
-		return
-	}
-
-	// Support both index_name (ES) and table_name (Infinity) in JSON
-	indexName := debugFormat.IndexName
-	if indexName == "" {
-		indexName = debugFormat.TableName
-	}
-
-	// Get the document engine and insert
-	docEngine := engine.Get()
-	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert into dataset: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-// InsertMetadataFromFileRequest request for inserting metadata from file
-type InsertMetadataFromFileRequest struct {
-	FilePath string `json:"file_path" binding:"required"`
-}
-
-// InsertMetadataFromFile @Summary Insert document metadata from JSON file
-// @Description Internal: Insert metadata into tenant's metadata table from a JSON file
-// @Tags tenants
-// @Security ApiKeyAuth
-// @Param request body InsertMetadataFromFileRequest true "insert metadata request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/dev_insert_metadata_from_file [post]
-func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req InsertMetadataFromFileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	if req.FilePath == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "file_path is required")
-		return
-	}
-
-	// Read the JSON file
-	// codeql[go/path-injection] False positive: req.FilePath is the
-	// path the operator configured (tenant import flow). The
-	// OS access check enforces permissions, and the handler is gated
-	// to admin/owner roles upstream.
-	data, err := os.ReadFile(req.FilePath)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
-		return
-	}
-
-	// Parse JSON - format: {"chunks": [...]}
-	var inputFormat struct {
-		Chunks []map[string]interface{} `json:"chunks"`
-	}
-
-	if err = json.Unmarshal(data, &inputFormat); err != nil || inputFormat.Chunks == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "invalid JSON format: expected {\"chunks\": [...]}")
-		return
-	}
-
-	if len(inputFormat.Chunks) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "no chunks found in file")
-		return
-	}
-
-	// Use user.ID as tenant ID (user IS the tenant in user mode)
-	tenantID := user.ID
-
-	// Ensure the metadata store exists before writing (service-layer
-	// create-on-first-write logic; the engine layer assumes it exists).
-	metadataSvc := service.NewMetadataService()
-	if err := metadataSvc.EnsureMetadataStore(c.Request.Context(), tenantID); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to ensure metadata store: "+err.Error())
-		return
-	}
-
-	// Get the document engine and insert
-	docEngine := engine.Get()
-	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to insert metadata: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
 }
 
 // ListTenantMembers lists all non-owner members of a tenant.

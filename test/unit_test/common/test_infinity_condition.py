@@ -135,6 +135,30 @@ _VARCHAR_COLS = {
 }
 
 
+@pytest.mark.parametrize("negated", [False, True])
+@pytest.mark.parametrize(
+    "column_type,default,literal",
+    [
+        ("Float", 0.0, "0.0"),
+        ("Float", "0.000000", "0.000000"),
+        ("Integer", 0, "0"),
+        ("Integer", 1, "1"),
+        ("Varchar", "", "''"),
+        ("Varchar", "don't", "'don''t'"),
+        ("Json", "[]", "'[]'"),
+    ],
+)
+def test_exists_compares_the_requested_field_to_its_typed_default(negated, column_type, default, literal):
+    """Check typed default literals for positive and negated existence filters."""
+    condition = {"exists": "target"}
+    if negated:
+        condition = {"must_not": condition}
+    result = _translate(condition, {"target": (column_type, default)})
+    predicate = f"target!={literal}"
+    expected = f"NOT ({predicate})" if negated else predicate
+    assert " ".join(result.split()).replace("( ", "(").replace(" )", ")") == expected
+
+
 # ---------------------------------------------------------------------------
 # JSON (post-#17288) columns
 # ---------------------------------------------------------------------------
@@ -259,6 +283,31 @@ class TestLegacyVarcharColumnsUseFilterFulltext:
         # No predicate should be emitted, so the empty condition yields
         # the ``1=1`` default.
         assert result == "1=1"
+
+
+# ---------------------------------------------------------------------------
+# String literal escaping
+# ---------------------------------------------------------------------------
+
+
+class TestStringLiteralEscaping:
+    """Every condition branch must keep apostrophes inside SQL literals."""
+
+    def test_field_keyword_list_escapes_apostrophes(self):
+        result = _translate({"source_id": ["o'brien"]}, {})
+        assert result == "(filter_fulltext('source_id', 'o''brien'))"
+
+    def test_field_keyword_scalar_escapes_apostrophes(self):
+        result = _translate({"source_id": "o'brien"}, {})
+        assert result == "filter_fulltext('source_id', 'o''brien')"
+
+    def test_plain_list_escapes_apostrophes(self):
+        result = _translate({"status": ["o'brien"]}, {})
+        assert result == "status IN ('o''brien')"
+
+    def test_plain_string_escapes_apostrophes(self):
+        result = _translate({"status": "o'brien"}, {})
+        assert result == "status='o''brien'"
 
 
 # ---------------------------------------------------------------------------

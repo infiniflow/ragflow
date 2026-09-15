@@ -110,6 +110,17 @@ func TestScanAllStreamForToolCallAllowsDirectAnswer(t *testing.T) {
 	}
 }
 
+func TestHasCodeExecTool(t *testing.T) {
+	for _, name := range []string{"CodeExec", "code_exec", "execute_code"} {
+		if !hasCodeExecTool([]string{name}) {
+			t.Fatalf("hasCodeExecTool(%q) = false, want true", name)
+		}
+	}
+	if hasCodeExecTool([]string{"Retrieval"}) {
+		t.Fatal("hasCodeExecTool(Retrieval) = true, want false")
+	}
+}
+
 type textThenToolCallModel struct {
 	turn       int
 	boundTools []*schema.ToolInfo

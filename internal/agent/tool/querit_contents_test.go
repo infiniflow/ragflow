@@ -42,7 +42,7 @@ func TestQueritContentsBuildsRequestAndPreservesResponse(t *testing.T) {
 
 	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 	contents := newQueritContentsTool(helper, func() string { return "" }, queritContentsParams{APIKey: "key-test"}, nil)
-	out, err := contents.InvokableRun(context.Background(), `{"urls":["https://example.com"],"format":"html","crawl_timeout":20,"extras_meta":true}`)
+	out, err := contents.InvokableRun(t.Context(), `{"urls":["https://example.com"],"format":"html","crawl_timeout":20,"extras_meta":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestQueritContentsMergesDefaultsAndExplicitFalse(t *testing.T) {
 		CrawlTimeout: 30,
 		ExtrasMeta:   true,
 	}, nil)
-	_, err := contents.InvokableRun(context.Background(), `{"urls":"https://runtime.example","extras_meta":false}`)
+	_, err := contents.InvokableRun(t.Context(), `{"urls":"https://runtime.example","extras_meta":false}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestQueritContentsValidatesInputsAndAPIKey(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			contents := NewQueritContentsToolWithEnvKey(NewHTTPHelper(), func() string { return "key-test" })
-			out, err := contents.InvokableRun(context.Background(), test.args)
+			out, err := contents.InvokableRun(t.Context(), test.args)
 			if err != nil || !strings.Contains(out, "_ERROR") || !strings.Contains(out, test.want) {
 				t.Fatalf("result = %s, err = %v", out, err)
 			}
@@ -116,7 +116,7 @@ func TestQueritContentsValidatesInputsAndAPIKey(t *testing.T) {
 	}
 
 	contents := NewQueritContentsToolWithEnvKey(NewHTTPHelper(), func() string { return "" })
-	out, err := contents.InvokableRun(context.Background(), `{"urls":["https://example.com"]}`)
+	out, err := contents.InvokableRun(t.Context(), `{"urls":["https://example.com"]}`)
 	if err != nil || !strings.Contains(out, "api_key is required") {
 		t.Fatalf("missing key result = %s, err = %v", out, err)
 	}
@@ -140,7 +140,7 @@ func TestQueritContentsRejectsMalformedResponses(t *testing.T) {
 			defer server.Close()
 			helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 			contents := NewQueritContentsToolWithEnvKey(helper, func() string { return "key-test" })
-			out, err := contents.InvokableRun(context.Background(), `{"urls":["https://example.com"]}`)
+			out, err := contents.InvokableRun(t.Context(), `{"urls":["https://example.com"]}`)
 			if err != nil || !strings.Contains(out, test.want) {
 				t.Fatalf("result = %s, err = %v", out, err)
 			}
@@ -154,7 +154,7 @@ func TestQueritContentsRedactsAPIKey(t *testing.T) {
 		return errors.New("failed with " + secret)
 	})})
 	contents := NewQueritContentsToolWithEnvKey(helper, func() string { return secret })
-	out, err := contents.InvokableRun(context.Background(), `{"urls":["https://example.com"]}`)
+	out, err := contents.InvokableRun(t.Context(), `{"urls":["https://example.com"]}`)
 	if err != nil || strings.Contains(out, secret) || !strings.Contains(out, "[REDACTED]") {
 		t.Fatalf("result = %s, err = %v", out, err)
 	}

@@ -1,7 +1,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -59,7 +58,7 @@ func TestCompile_OverrideParams(t *testing.T) {
 		},
 	}
 
-	ctx := WithComponentFactory(context.Background(), factory)
+	ctx := WithComponentFactory(t.Context(), factory)
 	if _, err := Compile(ctx, dsl, WithOverrideParams(override)); err != nil {
 		t.Fatalf("Compile: %v", err)
 	}

@@ -18,6 +18,15 @@ Reasoning procedure (do this step-by-step before answering):
 5. Note any internally conflicting figures/statements in the context ("contradictions").
 6. Decide whether a plausible answer can be inferred; give your confidence in that decision.
 
+Derived/computed answers — APPLY ONLY IF the question actually asks for a computed/derived result:
+- The rules below are STRICTLY CONDITIONAL. They apply ONLY when the question explicitly asks for a DERIVED result (e.g. "how many more/fewer", "what is the difference", "how many years between", "X% of", "how much older/younger", "how many more letters", "how many times larger").
+- If the question is a PLAIN FACTUAL question (e.g. "what year", "what is the name", "who was X", "when did X happen") — NOT a computation — do NOT apply these rules. Answer the sufficiency judgment normally, and do NOT mark the context insufficient merely because two figures are present without being combined. Over-conservative abstaining on factual questions must be avoided: a context that supports a single, unambiguous factual answer is SUFFICIENT even if it also contains unrelated numbers.
+- HOW TO TELL: scan the question for computation intent (a difference/ratio/percentage/timespan/letter-count being requested). No computation intent → skip this section entirely.
+- WHEN APPLICABLE, you MUST actually WORK THE CALCULATION yourself, step by step, from the values present in the context, and only mark the context sufficient if the computation can be carried out AND resolves to a definite result.
+- WORK STEP BY STEP: (a) identify the exact operands and their source values in the context (the specific entities/figures the question references); (b) run the arithmetic; (c) confirm the result is well-defined and not ambiguous.
+- This is the crux: a context that contains the numbers is NOT sufficient if the operands are the WRONG entities (e.g. using Providence/Park City when the question needs a different city pair), or if the calculation cannot be resolved. If the computation cannot be completed to a definite answer, mark `is_sufficient` false and list exactly what is missing or wrong in `missing_information`.
+- Also surface ASSUMPTIONS implicit in the question: if the question implies a specific pairing/interpretation (e.g. "the director's birthplace city vs the premiere city"), check the context supports that exact interpretation before declaring sufficient.
+
 Output format (JSON):
 ```json
 {

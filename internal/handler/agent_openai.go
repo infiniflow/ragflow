@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +56,7 @@ type openAICompatStreamDelta struct {
 	ToolCalls      any    `json:"tool_calls"`
 	Reference      any    `json:"reference,omitempty"`
 	Error          any    `json:"error,omitempty"`
+	Cancelled      any    `json:"cancelled,omitempty"`
 	WaitingForUser any    `json:"waiting_for_user,omitempty"`
 }
 
@@ -148,7 +148,7 @@ func (h *AgentHandler) streamOpenAICompat(
 	for ev := range events {
 		switch ev.Type {
 		case "error":
-			message := openAICompatRunEventMessage(ev, "Agent run failed.")
+			message := agentRunEventMessage(ev, "Agent run failed.")
 			chunk := newOpenAICompatStreamChunk(completionID, model, "**ERROR**: "+message, "error")
 			chunk.Choices[0].Delta.Error = map[string]string{
 				"message": message,
@@ -159,7 +159,14 @@ func (h *AgentHandler) streamOpenAICompat(
 			return
 		case "waiting_for_user":
 			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "waiting_for_user")
-			chunk.Choices[0].Delta.WaitingForUser = openAICompatWaitingForUser(ev)
+			chunk.Choices[0].Delta.WaitingForUser = agentWaitingForUser(ev)
+			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
+			_ = writeOpenAICompatSSE(c, chunk)
+			return
+		case "cancelled":
+			message := agentRunEventMessage(ev, "Agent run was cancelled.")
+			chunk := newOpenAICompatStreamChunk(completionID, model, nil, "cancelled")
+			chunk.Choices[0].Delta.Cancelled = map[string]string{"message": message}
 			chunk.Usage = openAICompatUsageForCompletion(promptTokens, completionTokens)
 			_ = writeOpenAICompatSSE(c, chunk)
 			return
@@ -218,19 +225,17 @@ func collectOpenAICompatCompletion(
 		if ev.Type == "error" {
 			return openAICompatCompletion{}, common.NewCodedError(
 				common.CodeServerError,
-				openAICompatRunEventMessage(ev, "Agent run failed."),
+				agentRunEventMessage(ev, "Agent run failed."),
 			)
 		}
 		if ev.Type == "waiting_for_user" {
-			waiting := openAICompatWaitingForUser(ev)
-			message := "Agent is waiting for user input."
-			if waiting.CpnID != "" {
-				message += " cpn_id: " + waiting.CpnID
-			}
-			if waiting.Tips != "" {
-				message += " " + waiting.Tips
-			}
-			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, message)
+			return openAICompatCompletion{}, common.NewCodedError(common.CodeConflict, agentWaitingForUserMessage(ev))
+		}
+		if ev.Type == "cancelled" {
+			return openAICompatCompletion{}, common.NewCodedError(
+				common.CodeConflict,
+				agentRunEventMessage(ev, "Agent run was cancelled."),
+			)
 		}
 		if ev.Type != "message" && ev.Type != "message_end" {
 			continue
@@ -310,25 +315,6 @@ func openAICompatUsageForCompletion(promptTokens, completionTokens int) *openAIC
 	}
 }
 
-func openAICompatRunEventMessage(ev canvas.RunEvent, fallback string) string {
-	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Message != "" {
-		return payload.Message
-	}
-	if message := strings.TrimSpace(ev.Data); message != "" {
-		return message
-	}
-	return fallback
-}
-
-func openAICompatWaitingForUser(ev canvas.RunEvent) canvas.WaitingForUserEvent {
-	var waiting canvas.WaitingForUserEvent
-	if err := json.Unmarshal([]byte(ev.Data), &waiting); err != nil {
-		return canvas.WaitingForUserEvent{}
-	}
-	return waiting
-}
-
 func writeOpenAICompatSSE(c *gin.Context, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -355,7 +341,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	if errors.As(err, &codedErr) {
 		code, message = codedErr.Code, codedErr.Message
 	}
-	status, errorType := openAICompatErrorResponse(code, err)
+	status, errorType := openAICompatErrorResponse(code)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"message": message,
@@ -364,11 +350,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	})
 }
 
-func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return http.StatusConflict, "invalid_request_error"
-	}
-
+func openAICompatErrorResponse(code common.ErrorCode) (int, string) {
 	switch code {
 	case common.CodeArgumentError, common.CodeDataError, common.CodeBadRequest, common.CodeParamError:
 		return http.StatusBadRequest, "invalid_request_error"

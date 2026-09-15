@@ -25,7 +25,7 @@ func TestTimeTravel_Fork_Basic(t *testing.T) {
 
 	// Run on source thread.
 	runOrFail(t, cg, tid)
-	snap, err := insp.GetState(context.Background(), cfg(tid))
+	snap, err := insp.GetState(t.Context(), cfg(tid))
 	if err != nil {
 		t.Fatalf("GetState source: %v", err)
 	}
@@ -36,14 +36,14 @@ func TestTimeTravel_Fork_Basic(t *testing.T) {
 
 	// Fork to new thread.
 	forkTID := tid + "-fork"
-	forkCfg, err := insp.ForkThread(context.Background(), tid, forkTID, "")
+	forkCfg, err := insp.ForkThread(t.Context(), tid, forkTID, "")
 	if err != nil {
 		t.Fatalf("ForkThread: %v", err)
 	}
 
 	// Run on forked thread.
 	runOrFail(t, cg, forkTID)
-	forkSnap, err := insp.GetState(context.Background(), forkCfg)
+	forkSnap, err := insp.GetState(t.Context(), forkCfg)
 	if err != nil {
 		t.Fatalf("GetState fork: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestTimeTravel_Fork_ThenModify(t *testing.T) {
 
 	tidA := "fork-modify-a"
 	tidB := "fork-modify-b"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run thread A twice (count should be 2).
 	runOrFail(t, cg, tidA)
@@ -109,7 +109,7 @@ func TestTimeTravel_Replay_Basic(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run 3 times.
 	runOrFail(t, cg, tid)
@@ -153,7 +153,7 @@ func TestTimeTravel_Replay_AfterInject(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run once.
 	runOrFail(t, cg, tid)
@@ -193,7 +193,7 @@ func TestTimeTravel_UpdateThenResume(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	runOrFail(t, cg, tid)
 
@@ -226,7 +226,7 @@ func TestTimeTravel_MultiStep_InjectionChain(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	runOrFail(t, cg, tid)
 
@@ -257,7 +257,7 @@ func TestTimeTravel_Fork_FromSpecificCheckpoint(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run 3 times.
 	runOrFail(t, cg, tid)
@@ -332,7 +332,7 @@ func TestTimeTravel_InterruptThenFork(t *testing.T) {
 	}
 
 	tid := "tt-interrupt-fork"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run (interrupted at "target").
 	_, err = cg.Invoke(ctx, map[string]any{}, cfg(tid))
@@ -365,7 +365,7 @@ func TestTimeTravel_Replay_AllCheckpoints(t *testing.T) {
 	b, ms, tid := newCounterGraph(t)
 	cg := compileOrFail(t, b, ms)
 	insp := getInspector(t, cg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run 5 times.
 	for i := 0; i < 5; i++ {
@@ -422,7 +422,7 @@ func TestTimeTravel_SchemaEvolution(t *testing.T) {
 	}
 
 	tidV1 := "tt-evolve-v1"
-	ctx := context.Background()
+	ctx := t.Context()
 	runOrFail(t, v1c, tidV1)
 
 	// V2 graph: adds a new field.
@@ -488,7 +488,7 @@ func compileOrFail(t *testing.T, b types.StateGraph, ms *checkpoint.MemorySaver)
 
 func runOrFail(t *testing.T, cg types.CompiledGraph, tid string) {
 	t.Helper()
-	_, err := cg.Invoke(context.Background(), map[string]any{}, cfg(tid))
+	_, err := cg.Invoke(t.Context(), map[string]any{}, cfg(tid))
 	if err != nil {
 		t.Fatalf("Invoke(%s): %v", tid, err)
 	}

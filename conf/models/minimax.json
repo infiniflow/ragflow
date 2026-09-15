@@ -15,7 +15,7 @@
   "models": [
     {
       "name": "MiniMax-M3",
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -27,7 +27,7 @@
     },
     {
       "name": "minimax-m2.7",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -39,7 +39,7 @@
     },
     {
       "name": "minimax-m2.7-highspeed",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -51,7 +51,7 @@
     },
     {
       "name": "minimax-m2.5",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -63,7 +63,7 @@
     },
     {
       "name": "minimax-m2.5-highspeed",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -75,7 +75,7 @@
     },
     {
       "name": "minimax-m2.1",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -87,7 +87,7 @@
     },
     {
       "name": "minimax-m2.1-highspeed",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -99,7 +99,7 @@
     },
     {
       "name": "minimax-m2",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -111,7 +111,7 @@
     },
     {
       "name": "minimax-m2-her",
-      "content_length": 65536,
+      "context_length": 65536,
       "max_output": 16384,
       "model_types": [
         "chat"
