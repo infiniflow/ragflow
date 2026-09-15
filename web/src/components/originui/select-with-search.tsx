@@ -55,6 +55,8 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   allowCustomValue?: boolean;
+  // Always show the search input even with few options
+  alwaysShowSearch?: boolean;
   // Return false to veto selecting the custom value on Enter
   onNoMatchEnter?(searchValue: string): boolean | void;
   disableAutoSelectOnEnter?: boolean;
@@ -130,6 +132,7 @@ export const SelectWithSearch = forwardRef<
       placeholder,
       emptyData,
       allowCustomValue = false,
+      alwaysShowSearch = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
       testId,
@@ -168,7 +171,7 @@ export const SelectWithSearch = forwardRef<
     }, [options, value]);
 
     const showSearch = useMemo(() => {
-      if (allowCustomValue) {
+      if (allowCustomValue || alwaysShowSearch) {
         return true;
       }
       if (Array.isArray(options) && options.length > 5) {
@@ -181,7 +184,7 @@ export const SelectWithSearch = forwardRef<
         return optionsNum > 5;
       }
       return false;
-    }, [allowCustomValue, options]);
+    }, [allowCustomValue, alwaysShowSearch, options]);
 
     const hasCustomSearchValue = useMemo(() => {
       const customValue = searchValue.trim();

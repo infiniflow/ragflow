@@ -142,6 +142,10 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   - `1`: (Default) Enable user registration.
   - `0`: Disable user registration.
 
+- `OAUTH_AUTO_REGISTER`
+  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login.
+  - `false`: Require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
+
 ## Service Configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.

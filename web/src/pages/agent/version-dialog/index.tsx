@@ -38,7 +38,11 @@ export function VersionDialog({
   const { t } = useTranslation();
   const { data, loading } = useFetchVersionList();
   const [selectedId, setSelectedId] = useState<string>('');
-  const { data: agent, loading: versionLoading } = useFetchVersion(selectedId);
+  const {
+    data: agent,
+    loading: versionLoading,
+    isError: versionLoadFailed,
+  } = useFetchVersion(selectedId);
 
   const { page, pageSize, onPaginationChange, pagedList } =
     useClientPagination(data);
@@ -56,11 +60,13 @@ export function VersionDialog({
     }
   }, [agent?.dsl, agent?.title]);
 
+  // Keep the current selection across list refreshes; only fall back to the
+  // newest version when the selected one was pruned server-side.
   useEffect(() => {
-    if (data.length > 0) {
+    if (data.length > 0 && !data.some((x) => x.id === selectedId)) {
       setSelectedId(data[0].id);
     }
-  }, [data]);
+  }, [data, selectedId]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -96,6 +102,10 @@ export function VersionDialog({
           <div className="relative flex-1 ">
             {versionLoading ? (
               <Spin className="top-1/2" />
+            ) : versionLoadFailed ? (
+              <div className="h-full flex items-center justify-center text-sm text-text-secondary">
+                {t('flow.version.loadFailed')}
+              </div>
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">

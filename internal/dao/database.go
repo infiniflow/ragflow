@@ -173,20 +173,26 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 
 	if migrateDB {
+		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
+		// the ORM creates and converges the schema: the manual migrations have to see
+		// the legacy tables as they are. Running them after AutoMigrate would let
+		// AutoMigrate rewrite tenant_model.model_type from text to int before the
+		// model_type_merge step can read what the Python migration wrote.
+		if err = RunMigrations(ctx, DB); err != nil {
+			return fmt.Errorf("failed to run manual migrations: %w", err)
+		}
+
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
 			if err = autoMigrateSafely(ctx, DB, m); err != nil {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-
-		// Run manual migrations for complex schema changes
-		if err = RunMigrations(ctx, DB); err != nil {
-			return fmt.Errorf("failed to run manual migrations: %w", err)
-		}
 		common.Info("Database schema migrated successfully")
 	} else {
-		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
+		// Ensure the Go-exclusive runtime tables exist. The manual migrations are
+		// performed by the standalone --migrate action, so a server-mode process
+		// only converges the tables it needs itself.
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
@@ -316,8 +322,9 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 	return err
 }
 
-// autoMigrateRuntimeModels ensures Go-exclusive runtime tables exist even if
-// the server starts without --migrate.
+// autoMigrateRuntimeModels ensures the Go-exclusive runtime tables exist. The
+// manual migrations run as the standalone --migrate action, so a server-mode
+// process never runs them itself.
 func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
