@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"regexp"
 	"strings"
 
 	"go.uber.org/zap"
@@ -68,89 +69,108 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
 	}
 
+	if err := migrateGeneralChunkerParserConfigs(ctx, db); err != nil {
+		return fmt.Errorf("failed to migrate general chunker parser configs: %w", err)
+	}
+
+	// Backfill the tenant model tables from the legacy tenant_llm table.
+	if err := migrateModelData(ctx, db); err != nil {
+		return fmt.Errorf("failed to migrate tenant model data: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
 
-// migrateTenantLLMPrimaryKey migrates tenant_llm from composite primary key to ID primary key
-// This corresponds to Python's update_tenant_llm_to_id_primary_key function
+// migrateTenantLLMPrimaryKey migrates tenant_llm from its legacy composite
+// primary key (tenant_id, llm_factory, llm_name) to a surrogate auto-increment
+// "id" column.
+//
+// MySQL allows a single PRIMARY KEY per table, so the composite key has to be
+// dropped before the new key column can be promoted. The legacy uniqueness
+// guarantee is preserved by a unique index on the old key columns.
 func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
-	// Check if tenant_llm table exists
 	if !db.WithContext(ctx).Migrator().HasTable("tenant_llm") {
 		return nil
 	}
 
-	// Check if 'id' column already exists using raw SQL
-	var idColumnExists int64
-	err := db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'id'
-	`).Scan(&idColumnExists).Error
+	// Idempotency: an auto_increment "id" means the table is already migrated.
+	idIsAutoIncrement, err := isAutoIncrementColumn(ctx, db, "tenant_llm", "id")
 	if err != nil {
 		return err
 	}
-
-	if idColumnExists > 0 {
-		// Check if id is already a primary key with auto_increment
-		var count int64
-		err = db.WithContext(ctx).Raw(`
-			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = 'tenant_llm'
-			AND COLUMN_NAME = 'id'
-			AND EXTRA LIKE '%auto_increment%'
-		`).Scan(&count).Error
-		if err != nil {
-			return err
-		}
-		if count > 0 {
-			// Already migrated
-			return nil
-		}
+	if idIsAutoIncrement {
+		return nil
 	}
 
 	common.Info("Migrating tenant_llm to use ID primary key...")
 
-	// Start transaction
+	// MySQL commits DDL implicitly, so this transaction groups the statements
+	// rather than making them atomic. Every step is therefore written to be
+	// re-runnable after an interrupted attempt.
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Check for temp_id column and drop it if exists
-		var tempIdExists int64
-		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
-		if tempIdExists > 0 {
-			if err = tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
-				common.Warn("Failed to drop temp_id column", zap.Error(err))
-			}
+		// A leftover temp_id can only come from an interrupted run.
+		if err := dropColumnIfExists(ctx, tx, "tenant_llm", "temp_id"); err != nil {
+			return err
 		}
 
-		// Check if there's already an 'id' column
-		if idColumnExists > 0 {
-			// Modify existing id column to be auto_increment primary key
-			if err = tx.Exec(`
-				ALTER TABLE tenant_llm
-				MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY
-			`).Error; err != nil {
-				return fmt.Errorf("failed to modify id column: %w", err)
+		idExists, err := columnExists(ctx, tx, "tenant_llm", "id")
+		if err != nil {
+			return err
+		}
+
+		if idExists {
+			alreadyKey, err := dropLegacyPrimaryKey(ctx, tx, "tenant_llm", "id")
+			if err != nil {
+				return err
+			}
+			// Re-declaring the primary key on a column that already holds it is
+			// rejected as a second primary key definition.
+			definition := "BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY"
+			if alreadyKey {
+				definition = "BIGINT NOT NULL AUTO_INCREMENT"
+			}
+			if err = tx.Exec("ALTER TABLE tenant_llm MODIFY COLUMN id " + definition).Error; err != nil {
+				return fmt.Errorf("failed to make tenant_llm.id auto_increment: %w", err)
 			}
 		} else {
-			// Add id column as auto_increment primary key
-			if err = tx.Exec(`
-				ALTER TABLE tenant_llm
-				ADD COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
-			`).Error; err != nil {
-				return fmt.Errorf("failed to add id column: %w", err)
+			if err = tx.Exec(`ALTER TABLE tenant_llm ADD COLUMN temp_id BIGINT NULL`).Error; err != nil {
+				return fmt.Errorf("failed to add temp_id column: %w", err)
+			}
+			// Number the rows explicitly instead of relying on assignment order,
+			// so the resulting primary key is stable across runs.
+			if err = tx.Exec(`SET @ragflow_tenant_llm_row = 0`).Error; err != nil {
+				return fmt.Errorf("failed to initialize the row counter: %w", err)
+			}
+			if err = tx.Exec(`UPDATE tenant_llm
+				SET temp_id = (@ragflow_tenant_llm_row := @ragflow_tenant_llm_row + 1)
+				ORDER BY tenant_id, llm_factory, llm_name`).Error; err != nil {
+				return fmt.Errorf("failed to number tenant_llm rows: %w", err)
+			}
+			if _, err = dropLegacyPrimaryKey(ctx, tx, "tenant_llm", "temp_id"); err != nil {
+				return err
+			}
+			if err = tx.Exec(`ALTER TABLE tenant_llm
+				MODIFY COLUMN temp_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY`).Error; err != nil {
+				return fmt.Errorf("failed to make temp_id the primary key: %w", err)
 			}
 		}
 
-		// Add unique index on (tenant_id, llm_factory, llm_name)
-		var idxExists int64
-		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
-		if idxExists == 0 {
-			if err = tx.Exec(`
-				ALTER TABLE tenant_llm
-				ADD UNIQUE INDEX idx_tenant_llm_unique (tenant_id, llm_factory, llm_name)
-			`).Error; err != nil {
-				common.Warn("Failed to add unique index idx_tenant_llm_unique", zap.Error(err))
+		// Preserve the uniqueness contract of the legacy composite primary key.
+		legacyKey := []string{"tenant_id", "llm_factory", "llm_name"}
+		hasUnique, err := hasUniqueIndex(ctx, tx, "tenant_llm", legacyKey)
+		if err != nil {
+			return err
+		}
+		if !hasUnique {
+			if err = addUniqueIndex(ctx, tx, "tenant_llm", "uk_tenant_llm", legacyKey); err != nil {
+				return err
+			}
+		}
+
+		if !idExists {
+			if err = tx.Exec(`ALTER TABLE tenant_llm RENAME COLUMN temp_id TO id`).Error; err != nil {
+				return fmt.Errorf("failed to rename temp_id to id: %w", err)
 			}
 		}
 
@@ -159,49 +179,38 @@ func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
 	})
 }
 
-// migrateAddUniqueEmail adds unique index on user.email
+// migrateAddUniqueEmail enforces uniqueness on user.email.
+//
+// Rows that already share an address are resolved before the index is created:
+// the superuser - or the oldest account when the address has none - keeps it,
+// and the remaining rows are renamed to "<email>_DUPLICATE_<id prefix>".
+// Renaming is what makes the index creatable on installations that accumulated
+// duplicates before the constraint existed.
 func migrateAddUniqueEmail(ctx context.Context, db *gorm.DB) error {
 	if !db.WithContext(ctx).Migrator().HasTable("user") {
 		return nil
 	}
 
-	// Check if unique index already exists using raw SQL
-	var count int64
-	db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_email_unique'`).Scan(&count)
-	if count > 0 {
-		return nil
-	}
-
-	// Check if there's a duplicate email issue first
-	var duplicateCount int64
-	err := db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT email FROM user GROUP BY email HAVING COUNT(*) > 1
-		) AS duplicates
-	`).Scan(&duplicateCount).Error
+	hasUnique, err := hasUniqueIndex(ctx, db, "user", []string{"email"})
 	if err != nil {
 		return err
 	}
-
-	if duplicateCount > 0 {
-		common.Warn("Found duplicate emails in user table, cannot add unique index", zap.Int64("count", duplicateCount))
+	if hasUnique {
 		return nil
 	}
 
-	common.Info("Adding unique index on user.email...")
-	if err = db.WithContext(ctx).Exec(`ALTER TABLE user ADD UNIQUE INDEX idx_user_email_unique (email)`).Error; err != nil {
-
-		// Check if error is MySQL duplicate index error (Error 1061)
-		errStr := err.Error()
-		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-			common.Info("Index already exists, skipping", zap.String("error", errStr))
-			return nil
-		}
-		return fmt.Errorf("failed to add unique index on email: %w", err)
+	if err = renameDuplicateEmails(ctx, db); err != nil {
+		return err
 	}
 
-	return nil
+	// Reaching this point means any existing index on the address is not unique,
+	// and a same-named non-unique index would block the unique one.
+	if err = dropIndexIfExists(ctx, db, "user", "idx_user_email"); err != nil {
+		return err
+	}
+
+	common.Info("Adding unique index on user.email...")
+	return addUniqueIndex(ctx, db, "user", "idx_user_email", []string{"email"})
 }
 
 func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) error {
@@ -210,23 +219,18 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	}
 
 	const indexName = "idx_ingestion_task_document_id"
+	columns := []string{"document_id"}
 
-	var uniqueCount int64
-	if err := db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'ingestion_task'
-		  AND INDEX_NAME = ?
-		  AND COLUMN_NAME = 'document_id'
-		  AND NON_UNIQUE = 0
-	`, indexName).Scan(&uniqueCount).Error; err != nil {
+	hasUnique, err := hasUniqueIndex(ctx, db, "ingestion_task", columns)
+	if err != nil {
 		return err
 	}
-	if uniqueCount > 0 {
+	if hasUnique {
 		return nil
 	}
 
 	var duplicateCount int64
-	if err := db.WithContext(ctx).Raw(`
+	if err = db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
 			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
 		) AS duplicates
@@ -238,29 +242,49 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 		return nil
 	}
 
-	var existingIndexCount int64
-	if err := db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'ingestion_task'
-		  AND INDEX_NAME = ?
-	`, indexName).Scan(&existingIndexCount).Error; err != nil {
+	// A non-unique index under the same name would block the unique one.
+	if err = dropIndexIfExists(ctx, db, "ingestion_task", indexName); err != nil {
 		return err
 	}
-	if existingIndexCount > 0 {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE ingestion_task DROP INDEX ` + indexName).Error; err != nil {
-			return fmt.Errorf("failed to drop existing index %s: %w", indexName, err)
-		}
-	}
 
-	if err := db.WithContext(ctx).Exec(`ALTER TABLE ingestion_task ADD UNIQUE INDEX ` + indexName + ` (document_id)`).Error; err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-			common.Info("Index already exists, skipping", zap.String("error", errStr))
+	return addUniqueIndex(ctx, db, "ingestion_task", indexName, columns)
+}
+
+// migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when
+// the column is missing.
+//
+// It cannot be left to AutoMigrate. The model declares document_id's unique key
+// as a named unique index (uniqueIndex:idx_ingestion_task_document_id), while
+// the column is UNIQUE at the database level. GORM's MigrateColumnUnique reads
+// that pairing as a stray unique constraint: it issues
+// `ALTER TABLE ingestion_task DROP FOREIGN KEY uni_ingestion_task_document_id`
+// for the default constraint name, which does not exist, so MySQL fails with
+// 1091. AutoMigrate aborts on the first error, and because autoMigrateSafely
+// treats 1091 as a benign "already dropped" case, the failure is swallowed and
+// the migration reports success -- before ever reaching the missing column.
+// A column added to this table would therefore never be created, and every
+// ingestion_task query (the DAO selects all columns) would fail with
+// Error 1054.
+func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
+	// Use the model, not the bare table name: HasColumn resolves the field
+	// against the statement schema and dereferences it, which a plain string
+	// does not provide (the SQLite migrator tolerates it, the MySQL one panics).
+	migrator := db.WithContext(ctx).Migrator()
+	if !migrator.HasTable(&entity.IngestionTask{}) {
+		return nil
+	}
+	if migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
+		return nil
+	}
+	if err := db.WithContext(ctx).Exec(
+		"ALTER TABLE ingestion_task ADD COLUMN pipeline_log_id varchar(32) NULL",
+	).Error; err != nil {
+		if strings.Contains(err.Error(), "Error 1060") && strings.Contains(err.Error(), "Duplicate column name") {
 			return nil
 		}
-		return fmt.Errorf("failed to add unique index on ingestion_task.document_id: %w", err)
+		return fmt.Errorf("failed to add ingestion_task.pipeline_log_id: %w", err)
 	}
-
+	common.Info("Added ingestion_task.pipeline_log_id")
 	return nil
 }
 
@@ -380,69 +404,64 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// modifyColumnTypes modifies column types that need explicit ALTER statements
+// modifyColumnTypes aligns columns whose stored type must match the Python
+// models in api/db/db_models.py. The target types are also declared on the Go
+// entities, so AutoMigrate converges on the same definition and the two paths
+// cannot fight over the column.
 func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
-	columnExists := func(table, column string) bool {
-		var count int64
-		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, table, column).Scan(&count)
-		return count > 0
+	specs := []columnSpec{
+		// dialog.top_k mirrors Python's IntegerField(default=1024).
+		{
+			table: "dialog", column: "top_k",
+			columnType: "int", nullable: false,
+			definition: "int NOT NULL DEFAULT 1024",
+		},
+		// tenant_llm.api_key mirrors Python's TextField(null=True).
+		{
+			table: "tenant_llm", column: "api_key",
+			columnType: "text", nullable: true,
+			definition: "text",
+		},
+		// api_token.dialog_id mirrors Python's CharField(max_length=32, null=True).
+		{
+			table: "api_token", column: "dialog_id",
+			columnType: "varchar(32)", nullable: true,
+			definition: "varchar(32)",
+		},
+		// canvas_template.title/description mirror Python's JSONField, which is a
+		// nullable LONGTEXT.
+		{
+			table: "canvas_template", column: "title",
+			columnType: "longtext", nullable: true,
+			definition: "longtext NULL",
+		},
+		{
+			table: "canvas_template", column: "description",
+			columnType: "longtext", nullable: true,
+			definition: "longtext NULL",
+		},
+		// system_settings.value mirrors Python's EmptyStringTextField(null=False).
+		{
+			table: "system_settings", column: "value",
+			columnType: "text", nullable: false,
+			definition: "text NOT NULL",
+		},
+		// knowledgebase task timestamps mirror Python's DateTimeField.
+		{
+			table: "knowledgebase", column: "raptor_task_finish_at",
+			columnType: "datetime", nullable: true,
+			definition: "datetime",
+		},
+		{
+			table: "knowledgebase", column: "mindmap_task_finish_at",
+			columnType: "datetime", nullable: true,
+			definition: "datetime",
+		},
 	}
 
-	// dialog.top_k: ensure its INTEGER with default 1024
-	if db.WithContext(ctx).Migrator().HasTable("dialog") && columnExists("dialog", "top_k") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE dialog MODIFY COLUMN top_k BIGINT NOT NULL DEFAULT 1024`).Error; err != nil {
-			common.Warn("Failed to modify dialog.top_k", zap.Error(err))
-		}
-	}
-
-	// tenant_llm.api_key: ensure it's TEXT type
-	if db.WithContext(ctx).Migrator().HasTable("tenant_llm") && columnExists("tenant_llm", "api_key") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE tenant_llm MODIFY COLUMN api_key VARCHAR(8192)`).Error; err != nil {
-			common.Warn("Failed to modify tenant_llm.api_key", zap.Error(err))
-		}
-	}
-
-	// api_token.dialog_id: ensure it's varchar(32)
-	if db.WithContext(ctx).Migrator().HasTable("api_token") && columnExists("api_token", "dialog_id") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE api_token MODIFY COLUMN dialog_id VARCHAR(32)`).Error; err != nil {
-			common.Warn("Failed to modify api_token.dialog_id", zap.Error(err))
-		}
-	}
-
-	// canvas_template.title and description: ensure they're LONGTEXT type (same as Python JSONField)
-	// Note: Python's JSONField uses null=True with application-level default, not database DEFAULT
-	if db.WithContext(ctx).Migrator().HasTable("canvas_template") {
-		if columnExists("canvas_template", "title") {
-			if err := db.WithContext(ctx).Exec(`ALTER TABLE canvas_template MODIFY COLUMN title LONGTEXT NULL`).Error; err != nil {
-				common.Warn("Failed to modify canvas_template.title", zap.Error(err))
-			}
-		}
-		if columnExists("canvas_template", "description") {
-			if err := db.WithContext(ctx).Exec(`ALTER TABLE canvas_template MODIFY COLUMN description LONGTEXT NULL`).Error; err != nil {
-				common.Warn("Failed to modify canvas_template.description", zap.Error(err))
-			}
-		}
-	}
-
-	// system_settings.value: ensure it's LONGTEXT
-	if db.WithContext(ctx).Migrator().HasTable("system_settings") && columnExists("system_settings", "value") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE system_settings MODIFY COLUMN value LONGTEXT NOT NULL`).Error; err != nil {
-			common.Warn("Failed to modify system_settings.value", zap.Error(err))
-		}
-	}
-
-	// knowledgebase.raptor_task_finish_at: ensure it's DateTime
-	if db.WithContext(ctx).Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "raptor_task_finish_at") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE knowledgebase MODIFY COLUMN raptor_task_finish_at DATETIME`).Error; err != nil {
-			common.Warn("Failed to modify knowledgebase.raptor_task_finish_at", zap.Error(err))
-		}
-	}
-
-	// knowledgebase.mindmap_task_finish_at: ensure it's DateTime
-	if db.WithContext(ctx).Migrator().HasTable("knowledgebase") && columnExists("knowledgebase", "mindmap_task_finish_at") {
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE knowledgebase MODIFY COLUMN mindmap_task_finish_at DATETIME`).Error; err != nil {
-			common.Warn("Failed to modify knowledgebase.mindmap_task_finish_at", zap.Error(err))
+	for _, spec := range specs {
+		if err := applyColumnSpec(ctx, db, spec); err != nil {
+			return err
 		}
 	}
 
@@ -455,21 +474,19 @@ func renameColumnIfExists(ctx context.Context, db *gorm.DB, tableName, oldName, 
 		return nil
 	}
 
-	// Helper to check if column exists
-	columnExists := func(column string) bool {
-		var count int64
-		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, column).Scan(&count)
-		return count > 0
+	oldExists, err := columnExists(ctx, db, tableName, oldName)
+	if err != nil {
+		return err
 	}
-
-	// Check if old column exists
-	if !columnExists(oldName) {
+	if !oldExists {
 		return nil
 	}
 
-	// Check if new column already exists
-	if columnExists(newName) {
+	newExists, err := columnExists(ctx, db, tableName, newName)
+	if err != nil {
+		return err
+	}
+	if newExists {
 		// Both exist, drop the old one
 		common.Warn("Both old and new columns exist, dropping old one",
 			zap.String("table", tableName),
@@ -491,11 +508,11 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 		return nil
 	}
 
-	// Check if column exists using raw SQL
-	var count int64
-	db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count)
-	if count > 0 {
+	exists, err := columnExists(ctx, db, tableName, columnName)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return nil
 	}
 
@@ -506,174 +523,281 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 	return db.WithContext(ctx).Exec(sql).Error
 }
 
-// migrateSkillSearchTables creates skill search related tables
-func migrateSkillSearchTables(ctx context.Context, db *gorm.DB) error {
-	// Create skill_search_configs table only
-	if !db.WithContext(ctx).Migrator().HasTable("skill_search_configs") {
-		common.Info("Creating skill_search_configs table...")
-		sql := `
-		CREATE TABLE IF NOT EXISTS skill_search_configs (
-			id VARCHAR(32) PRIMARY KEY,
-			tenant_id VARCHAR(32) NOT NULL,
-			space_id VARCHAR(128) NOT NULL DEFAULT 'default',
-			embd_id VARCHAR(128) NOT NULL,
-			vector_similarity_weight FLOAT DEFAULT 0.3,
-			similarity_threshold FLOAT DEFAULT 0.2,
-			field_config JSON,
-			rerank_id VARCHAR(128),
-			tenant_rerank_id BIGINT,
-			top_k BIGINT DEFAULT 10,
-			index_version VARCHAR(32) DEFAULT '1.0.0',
-			status VARCHAR(1) DEFAULT '1',
-			create_time BIGINT,
-			create_date DATETIME,
-			update_time BIGINT,
-			update_date DATETIME,
-			INDEX idx_tenant_id (tenant_id),
-			INDEX idx_space_id (space_id),
-			UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)
-		)
-		`
-		if err := db.WithContext(ctx).Exec(sql).Error; err != nil {
-			common.Warn("Failed to create skill_search_configs table with MySQL dialect, trying generic", zap.Error(err))
-			if err = db.WithContext(ctx).AutoMigrate(&entity.SkillSearchConfig{}); err != nil {
-				return err
-			}
-			// AutoMigrate doesn't create unique indexes, so create them explicitly
-			common.Info("Creating unique indexes for skill_search_configs...")
-			if err = db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
-				return fmt.Errorf("failed to create unique index idx_tenant_space_embd: %w", err)
-			}
-		}
-	} else {
-		// Add space_id for existing installations.
-		if err := addColumnIfNotExists(ctx, db, "skill_search_configs", "space_id", "VARCHAR(128) NOT NULL DEFAULT 'default'"); err != nil {
-			return fmt.Errorf("failed to add space_id column to skill_search_configs: %w", err)
-		}
-		if err := addColumnIfNotExists(ctx, db, "skill_search_configs", "create_date", "DATETIME"); err != nil {
-			return fmt.Errorf("failed to add create_date column to skill_search_configs: %w", err)
-		}
-		if err := addColumnIfNotExists(ctx, db, "skill_search_configs", "update_date", "DATETIME"); err != nil {
-			return fmt.Errorf("failed to add update_date column to skill_search_configs: %w", err)
-		}
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs MODIFY COLUMN update_time BIGINT`).Error; err != nil {
-			common.Warn("Failed to modify skill_search_configs.update_time", zap.Error(err))
-		}
-
-		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
-		var legacyIndexExists int64
-		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
-		if legacyIndexExists > 0 {
-			common.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
-			if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
-				return fmt.Errorf("failed to drop legacy unique index idx_tenant_embd: %w", err)
-			}
-		}
-
-		// Table exists, check if unique index exists
-		var indexExists int64
-		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
-		if indexExists == 0 {
-			common.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
-			if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs
-				ADD UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)`).Error; err != nil {
-				return fmt.Errorf("failed to add unique index idx_tenant_space_embd: %w", err)
-			}
-		}
+// columnExists reports whether the current database already has the column.
+// TABLE_SCHEMA is pinned to DATABASE() so that a MySQL server hosting more than
+// one RAGFlow database never matches another schema's tables.
+//
+// It replaces gorm's Migrator.HasColumn, which panics when the table is passed
+// as a string: HasColumn only fills Statement.Table for strings and then
+// dereferences the unparsed Statement.Schema.
+func columnExists(ctx context.Context, db *gorm.DB, table, column string) (bool, error) {
+	var count int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+	`, table, column).Scan(&count).Error; err != nil {
+		return false, err
 	}
+	return count > 0, nil
+}
 
+// columnDefinition returns the stored COLUMN_TYPE and whether the column accepts
+// NULL. ok is false when the column does not exist.
+func columnDefinition(ctx context.Context, db *gorm.DB, table, column string) (columnType string, nullable, ok bool, err error) {
+	var row struct {
+		ColumnType string
+		IsNullable string
+	}
+	if err = db.WithContext(ctx).Raw(`
+		SELECT COLUMN_TYPE AS column_type, IS_NULLABLE AS is_nullable
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+	`, table, column).Scan(&row).Error; err != nil {
+		return "", false, false, err
+	}
+	return row.ColumnType, strings.EqualFold(row.IsNullable, "YES"), row.ColumnType != "", nil
+}
+
+// isAutoIncrementColumn reports whether the column is declared AUTO_INCREMENT.
+func isAutoIncrementColumn(ctx context.Context, db *gorm.DB, table, column string) (bool, error) {
+	var count int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+		  AND EXTRA LIKE '%auto_increment%'
+	`, table, column).Scan(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// primaryKeyColumns lists the current PRIMARY KEY columns in key order.
+func primaryKeyColumns(ctx context.Context, db *gorm.DB, table string) ([]string, error) {
+	var columns []string
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+		ORDER BY ORDINAL_POSITION
+	`, table).Scan(&columns).Error; err != nil {
+		return nil, err
+	}
+	return columns, nil
+}
+
+// dropLegacyPrimaryKey removes the table's PRIMARY KEY unless it is already the
+// single-column key being migrated to. MySQL rejects a second PRIMARY KEY
+// definition, so the legacy key must be dropped first. It reports whether
+// keepColumn is the primary key once it returns.
+func dropLegacyPrimaryKey(ctx context.Context, db *gorm.DB, table, keepColumn string) (bool, error) {
+	columns, err := primaryKeyColumns(ctx, db, table)
+	if err != nil {
+		return false, err
+	}
+	if len(columns) == 1 && columns[0] == keepColumn {
+		return true, nil
+	}
+	if len(columns) == 0 {
+		return false, nil
+	}
+	common.Info("Dropping legacy primary key", zap.String("table", table), zap.Strings("columns", columns))
+	if err = db.WithContext(ctx).Exec("ALTER TABLE " + table + " DROP PRIMARY KEY").Error; err != nil {
+		return false, fmt.Errorf("failed to drop the legacy primary key on %s: %w", table, err)
+	}
+	return false, nil
+}
+
+// hasUniqueIndex reports whether a unique index spans exactly the given columns.
+// Matching on the column set rather than on the index name keeps the migrations
+// idempotent when an equivalent index already exists under another name.
+func hasUniqueIndex(ctx context.Context, db *gorm.DB, table string, columns []string) (bool, error) {
+	// The column names come from this file's call sites, never from input.
+	quoted := "'" + strings.Join(columns, "', '") + "'"
+	var count int64
+	// An index only qualifies when its whole column set is the requested one: a
+	// broader unique index such as (email, tenant_id) does not make email unique
+	// on its own. Prefix indexes are excluded because they only constrain a
+	// leading substring.
+	if err := db.WithContext(ctx).Raw(fmt.Sprintf(`
+		SELECT COUNT(*) FROM (
+			SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+			  AND NON_UNIQUE = 0 AND INDEX_NAME <> 'PRIMARY'
+			  AND SUB_PART IS NULL
+			GROUP BY INDEX_NAME
+			HAVING COUNT(*) = %d
+			   AND COUNT(CASE WHEN COLUMN_NAME IN (%s) THEN 1 END) = %d
+		) AS equivalent
+	`, len(columns), quoted, len(columns)), table).Scan(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// addUniqueIndex creates a unique index over the given columns.
+func addUniqueIndex(ctx context.Context, db *gorm.DB, table, indexName string, columns []string) error {
+	sql := fmt.Sprintf("ALTER TABLE %s ADD UNIQUE INDEX %s (%s)", table, indexName, strings.Join(columns, ", "))
+	if err := db.WithContext(ctx).Exec(sql).Error; err != nil {
+		if isDuplicateIndexErr(err) {
+			common.Info("Index already exists, skipping", zap.String("index", indexName))
+			return nil
+		}
+		return fmt.Errorf("failed to add unique index %s on %s: %w", indexName, table, err)
+	}
 	return nil
 }
 
-// migrateSkillSpaceTables creates skill space related tables
-func migrateSkillSpaceTables(ctx context.Context, db *gorm.DB) error {
-	if !db.WithContext(ctx).Migrator().HasTable("skill_spaces") {
-		common.Info("Creating skill_spaces table...")
-		sql := `
-		CREATE TABLE IF NOT EXISTS skill_spaces (
-			id VARCHAR(32) PRIMARY KEY,
-			tenant_id VARCHAR(32) NOT NULL,
-			name VARCHAR(128) NOT NULL,
-			folder_id VARCHAR(32) NOT NULL,
-			description TEXT,
-			embd_id VARCHAR(128),
-			rerank_id VARCHAR(128),
-			top_k INT DEFAULT 10,
-			status VARCHAR(1) DEFAULT '1',
-			create_time BIGINT,
-			create_date DATETIME,
-			update_time BIGINT,
-			update_date DATETIME,
-			INDEX idx_tenant_id (tenant_id),
-			UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)
-		)
-		`
-		if err := db.WithContext(ctx).Exec(sql).Error; err != nil {
-			common.Warn("Failed to create skill_spaces table with MySQL dialect, trying generic", zap.Error(err))
-			// Try with AutoMigrate as fallback
-			if err = db.WithContext(ctx).AutoMigrate(&entity.SkillSpace{}); err != nil {
-				return err
-			}
-			// AutoMigrate doesn't create unique indexes, so create them explicitly
-			common.Info("Creating unique indexes for skill_spaces...")
-			if err = db.WithContext(ctx).Exec(`ALTER TABLE skill_spaces ADD UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)`).Error; err != nil {
-				return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
-			}
-		}
-	} else {
-		// Migrate existing table: add status column first, then update index
-		if err := addColumnIfNotExists(ctx, db, "skill_spaces", "status", "VARCHAR(1) NOT NULL DEFAULT '1'"); err != nil {
-			return fmt.Errorf("failed to add status column to skill_spaces: %w", err)
-		}
-		if err := addColumnIfNotExists(ctx, db, "skill_spaces", "create_date", "DATETIME"); err != nil {
-			return fmt.Errorf("failed to add create_date column to skill_spaces: %w", err)
-		}
-		if err := addColumnIfNotExists(ctx, db, "skill_spaces", "update_date", "DATETIME"); err != nil {
-			return fmt.Errorf("failed to add update_date column to skill_spaces: %w", err)
-		}
-		if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_spaces MODIFY COLUMN update_time BIGINT`).Error; err != nil {
-			common.Warn("Failed to modify skill_spaces.update_time", zap.Error(err))
-		}
-		// Migrate index after status column exists
-		if err := migrateSkillSpaceIndex(ctx, db); err != nil {
-			return fmt.Errorf("failed to migrate skill_space index: %w", err)
-		}
+// dropIndexIfExists removes a named index when it is present.
+func dropIndexIfExists(ctx context.Context, db *gorm.DB, table, indexName string) error {
+	var count int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+	`, table, indexName).Scan(&count).Error; err != nil {
+		return err
 	}
-
+	if count == 0 {
+		return nil
+	}
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("ALTER TABLE %s DROP INDEX %s", table, indexName)).Error; err != nil {
+		return fmt.Errorf("failed to drop index %s on %s: %w", indexName, table, err)
+	}
 	return nil
 }
 
-// migrateSkillSpaceIndex migrates the unique index to include status
-func migrateSkillSpaceIndex(ctx context.Context, db *gorm.DB) error {
-	// Check if old index exists and drop it
-	var oldIndexExists int64
-	db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
-	`).Scan(&oldIndexExists)
+// dropColumnIfExists removes a column when it is present.
+func dropColumnIfExists(ctx context.Context, db *gorm.DB, table, column string) error {
+	exists, err := columnExists(ctx, db, table, column)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	common.Info("Dropping column", zap.String("table", table), zap.String("column", column))
+	if err = db.WithContext(ctx).Exec(fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", table, column)).Error; err != nil {
+		return fmt.Errorf("failed to drop column %s on %s: %w", column, table, err)
+	}
+	return nil
+}
 
-	if oldIndexExists > 0 {
-		common.Info("Dropping old idx_tenant_name index from skill_spaces...")
-		if err := db.WithContext(ctx).Exec(`DROP INDEX idx_tenant_name ON skill_spaces`).Error; err != nil {
-			return fmt.Errorf("failed to drop old index idx_tenant_name: %w", err)
-		}
+// isDuplicateIndexErr reports whether the error is MySQL error 1061 (duplicate
+// key name), which means the index already exists.
+func isDuplicateIndexErr(err error) bool {
+	return strings.Contains(err.Error(), "Error 1061") || strings.Contains(err.Error(), "Duplicate key name")
+}
+
+// renameDuplicateEmails renames every user row that shares an address with
+// another row, leaving the address on the superuser - or on the oldest row when
+// the address has no superuser. The unique index is only creatable once no
+// duplicates remain.
+func renameDuplicateEmails(ctx context.Context, db *gorm.DB) error {
+	var duplicates []string
+	if err := db.WithContext(ctx).Raw(`
+		SELECT email FROM user GROUP BY email HAVING COUNT(*) > 1
+	`).Scan(&duplicates).Error; err != nil {
+		return err
+	}
+	if len(duplicates) == 0 {
+		return nil
 	}
 
-	// Check if new index exists
-	var newIndexExists int64
-	db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
-	`).Scan(&newIndexExists)
-
-	if newIndexExists == 0 {
-		common.Info("Creating new idx_tenant_name_status index on skill_spaces...")
-		if err := db.WithContext(ctx).Exec(`CREATE UNIQUE INDEX idx_tenant_name_status ON skill_spaces(tenant_id, name, status)`).Error; err != nil {
-			return fmt.Errorf("failed to create unique index idx_tenant_name_status: %w", err)
+	common.Warn("Renaming duplicate user emails before adding the unique index", zap.Int("addresses", len(duplicates)))
+	for _, email := range duplicates {
+		var ids []string
+		if err := db.WithContext(ctx).Raw(`
+			SELECT id FROM user WHERE email = ?
+			ORDER BY is_superuser DESC, create_time ASC
+		`, email).Scan(&ids).Error; err != nil {
+			return err
+		}
+		if len(ids) < 2 {
+			continue
+		}
+		for _, id := range ids[1:] {
+			if err := db.WithContext(ctx).Exec(
+				`UPDATE user SET email = ? WHERE id = ?`,
+				duplicateEmailAddress(email, id), id,
+			).Error; err != nil {
+				return fmt.Errorf("failed to rename duplicate email %q: %w", email, err)
+			}
 		}
 	}
+	return nil
+}
 
+// duplicateEmailAddress builds the placeholder address for a shadowed duplicate
+// row, clamped to the column width so the rename cannot fail on length.
+func duplicateEmailAddress(email, id string) string {
+	const (
+		maxEmailLength = 255
+		duplicateTag   = "_DUPLICATE_"
+		idPrefixLength = 8
+	)
+	if len(id) > idPrefixLength {
+		id = id[:idPrefixLength]
+	}
+	suffix := duplicateTag + id
+	runes := []rune(email)
+	if keep := maxEmailLength - len(suffix); len(runes) > keep {
+		runes = runes[:keep]
+	}
+	return string(runes) + suffix
+}
+
+// integerDisplayWidth matches the deprecated integer display width emitted by
+// MySQL 5.7 ("int(11)"), which MySQL 8 accepts but no longer reports.
+var integerDisplayWidth = regexp.MustCompile(`^(tinyint|smallint|mediumint|int|bigint)\(\d+\)$`)
+
+// normalizeColumnType strips integer display widths so a stored type compares
+// equal to its canonical name.
+func normalizeColumnType(columnType string) string {
+	lowered := strings.ToLower(strings.TrimSpace(columnType))
+	if match := integerDisplayWidth.FindStringSubmatch(lowered); match != nil {
+		return match[1]
+	}
+	return lowered
+}
+
+// columnSpec is the definition a column is expected to have.
+type columnSpec struct {
+	table      string
+	column     string
+	columnType string // compared against INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE
+	nullable   bool
+	definition string // used verbatim when an ALTER is required
+}
+
+// applyColumnSpec aligns a column with its expected definition, issuing DDL only
+// when the stored definition differs so that a steady-state startup runs no
+// ALTER at all.
+func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
+	if !db.WithContext(ctx).Migrator().HasTable(spec.table) {
+		return nil
+	}
+
+	currentType, nullable, exists, err := columnDefinition(ctx, db, spec.table, spec.column)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if normalizeColumnType(currentType) == normalizeColumnType(spec.columnType) && nullable == spec.nullable {
+		return nil
+	}
+
+	common.Info("Modifying column type",
+		zap.String("table", spec.table),
+		zap.String("column", spec.column),
+		zap.String("from", currentType),
+		zap.String("to", spec.columnType))
+	if err = db.WithContext(ctx).Exec(
+		fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", spec.table, spec.column, spec.definition),
+	).Error; err != nil {
+		common.Warn("Failed to modify column",
+			zap.String("table", spec.table),
+			zap.String("column", spec.column),
+			zap.Error(err))
+	}
 	return nil
 }

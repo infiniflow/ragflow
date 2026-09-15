@@ -326,7 +326,7 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
           fill: isTimestamp
             ? 'rgb(var(--accent-primary))'
             : 'rgb(var(--text-primary))',
-          fontSize: 12,
+          fontSize: 24,
           ...(isTimestamp && {
             refX: '50%',
             refY: 0,

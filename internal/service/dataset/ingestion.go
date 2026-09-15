@@ -39,7 +39,7 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -63,9 +63,9 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 		err   error
 	)
 	if logType == "file" {
-		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
+		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, keywords, documentID, operationStatus, createDateFrom, createDateTo)
 	} else {
-		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords, documentID)
 	}
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("list ingestion logs: %w", err)
