@@ -79,11 +79,26 @@ class SearXNG(ToolBase, ABC):
             self.set_output("formalized_content", "")
             return ""
 
-        searxng_url = (getattr(self._param, "searxng_url", "") or kwargs.get("searxng_url") or "").strip()
+        # Resolve the SearXNG URL by precedence: per-tool param > kwargs > env.
+        # Each candidate is stripped first so a whitespace-only earlier source
+        # doesn't shadow a real value from a later one.
+        _url_sources = (
+            ("param",  getattr(self._param, "searxng_url", "")),
+            ("kwargs", kwargs.get("searxng_url", "")),
+            ("env",    os.environ.get("SEARXNG_URL", "")),
+        )
+        searxng_url = ""
+        _url_source = "none"
+        for _name, _value in _url_sources:
+            if isinstance(_value, str) and _value.strip():
+                searxng_url = _value.strip()
+                _url_source = _name
+                break
         # In try-run, if no URL configured, just return empty instead of raising
         if not searxng_url:
             self.set_output("formalized_content", "")
             return ""
+        logging.debug("[SearXNG] URL resolved from %s", _url_source)
 
         try:
             _ssrf_hostname, _ssrf_ip = assert_url_is_safe(searxng_url)
