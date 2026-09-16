@@ -30,7 +30,8 @@
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -45,7 +46,8 @@
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -60,7 +62,8 @@
       "context_length": 200000,
       "max_output": 64000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "tools": {
         "support": true
@@ -153,7 +156,8 @@
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -273,7 +277,8 @@
       "context_length": 1048576,
       "max_output": 384000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -288,7 +293,8 @@
       "context_length": 1048576,
       "max_output": 65535,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "tools": {
         "support": true
@@ -299,7 +305,8 @@
       "context_length": 1000000,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "tools": {
         "support": true
@@ -325,7 +332,8 @@
       "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "tools": {
         "support": true
@@ -336,7 +344,8 @@
       "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -366,7 +375,8 @@
       "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -497,7 +507,8 @@
       "context_length": 1048576,
       "max_output": 131072,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -587,7 +598,8 @@
       "context_length": 400000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -602,7 +614,8 @@
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -617,7 +630,8 @@
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -632,7 +646,8 @@
       "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -647,7 +662,8 @@
       "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -662,7 +678,8 @@
       "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -677,7 +694,8 @@
       "context_length": 1050000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -692,7 +710,8 @@
       "context_length": 500000,
       "max_output": 128000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -707,7 +726,8 @@
       "context_length": 1000000,
       "max_output": 131072,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -737,7 +757,8 @@
       "context_length": 1048576,
       "max_output": 943718,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -752,7 +773,8 @@
       "context_length": 262144,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -797,7 +819,8 @@
       "context_length": 262144,
       "max_output": 262144,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -812,7 +835,8 @@
       "context_length": 256000,
       "max_output": 32768,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
