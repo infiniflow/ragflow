@@ -31,8 +31,6 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
 
-import pytest
-
 
 def _load_variable_aggregator_module(monkeypatch):
     """Load `agent.component.variable_aggregator` with heavy deps stubbed."""
@@ -87,9 +85,7 @@ def _load_variable_aggregator_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "agent.component.base", base_mod)
     base_spec.loader.exec_module(base_mod)
 
-    spec = importlib.util.spec_from_file_location(
-        "agent.component.variable_aggregator", repo_root / "agent" / "component" / "variable_aggregator.py"
-    )
+    spec = importlib.util.spec_from_file_location("agent.component.variable_aggregator", repo_root / "agent" / "component" / "variable_aggregator.py")
     mod = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "agent.component.variable_aggregator", mod)
     spec.loader.exec_module(mod)
