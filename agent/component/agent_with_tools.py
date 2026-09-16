@@ -17,13 +17,10 @@ import asyncio
 import json
 import logging
 import os
-import re
 from copy import deepcopy
 from functools import partial
 from timeit import default_timer as timer
 from typing import Any
-
-import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
@@ -32,7 +29,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
 from common.connection_utils import timeout
 from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession, mcp_tool_metadata_to_openai_tool
-from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
+from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, structured_output_prompt
 
 _logger = logging.getLogger(__name__)
 
@@ -128,12 +125,6 @@ class Agent(LLM, ToolBase):
         if extra_prompt and msg and msg[0]["role"] == "system":
             msg[0]["content"] += "\n" + extra_prompt
 
-    @staticmethod
-    def _clean_formatted_answer(ans: str) -> str:
-        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-
     def _load_tool_obj(self, cpn: dict) -> object:
         from agent.component import component_class
 
@@ -181,13 +172,15 @@ class Agent(LLM, ToolBase):
 
         return None
 
-    async def _force_format_to_schema_async(self, text: str, schema_prompt: str) -> str:
-        fmt_msgs = [
-            {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
-            {"role": "user", "content": text},
-        ]
-        _, fmt_msgs = message_fit_in(fmt_msgs, LLM.context_fit_budget(self.chat_mdl.max_length))
-        return await self._generate_async(fmt_msgs)
+    async def _force_format_to_schema_async(self, text: str, schema_prompt: str, error: str) -> str:
+        fmt_msgs, fit_error = self.fit_messages(
+            schema_prompt + "\n请修复答案并仅返回符合 Schema 的 JSON。",
+            [{"role": "user", "content": json.dumps({"answer": text, "validation_error": error}, ensure_ascii=False)}],
+            self.chat_mdl.max_length,
+        )
+        if fit_error:
+            raise ValueError(fit_error)
+        return await self._generate_async(fmt_msgs, use_tools=False)
 
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
@@ -231,7 +224,9 @@ class Agent(LLM, ToolBase):
         output_schema = self._get_output_schema()
         schema_prompt = ""
         if output_schema:
-            schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
+            self.set_output("structured", None)
+            validator = self._structured_output_validator(output_schema)
+            schema = json.dumps(validator.schema, ensure_ascii=False, indent=2)
             schema_prompt = structured_output_prompt(schema)
 
         component = self._canvas.get_component(self._id)
@@ -265,16 +260,21 @@ class Agent(LLM, ToolBase):
 
         if output_schema:
             error = ""
-            for _ in range(self._param.max_retries + 1):
+            for attempt in range(self._param.max_retries + 1):
+                if self.check_if_canceled("Agent structured output"):
+                    return
+                if "**ERROR**" in ans:
+                    self.set_output("_ERROR", ans)
+                    return
                 try:
-                    obj = json_repair.loads(self._clean_formatted_answer(ans))
-                    self.set_output("structured", obj)
-                    return obj
-                except Exception:
-                    error = "The answer cannot be parsed as JSON"
-                    ans = await self._force_format_to_schema_async(ans, schema_prompt)
-                    if ans.find("**ERROR**") >= 0:
-                        continue
+                    obj = self._parse_structured_output(ans, validator)
+                except ValueError as exc:
+                    error = str(exc)
+                    if attempt < self._param.max_retries:
+                        ans = await self._force_format_to_schema_async(ans, schema_prompt, error)
+                    continue
+                self.set_output("structured", obj)
+                return obj
 
             self.set_output("_ERROR", error)
             return

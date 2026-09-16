@@ -24,6 +24,10 @@ from functools import partial
 from typing import Any
 
 import json_repair
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError, ValidationError
+from jsonschema.validators import validator_for
+from referencing import Registry
 
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.db.joint_services.tenant_model_service import (
@@ -381,6 +385,29 @@ class LLM(ComponentBase):
             return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
+    @staticmethod
+    def _structured_output_validator(schema):
+        schema = {key: value for key, value in schema.items() if key != "value"}
+        validator_cls = validator_for(schema, default=None) if "$schema" in schema else Draft202012Validator
+        if validator_cls is None:
+            raise SchemaError(f"不支持的结构化输出 Schema 版本：{schema['$schema']}")
+        validator_cls.check_schema(schema)
+        # 仅解析当前 Schema 内的引用，禁止自动读取网络或文件资源。
+        return validator_cls(schema, registry=Registry())
+
+    @staticmethod
+    def _parse_structured_output(answer, validator):
+        answer = re.sub(r"^.*</think>", "", answer, flags=re.DOTALL)
+        answer = re.sub(r"^.*```json", "", answer, flags=re.DOTALL)
+        answer = re.sub(r"```\n*$", "", answer, flags=re.DOTALL)
+        value = json_repair.loads(answer)
+        json.dumps(value, allow_nan=False)
+        try:
+            validator.validate(value)
+        except ValidationError as error:
+            raise ValueError(f"结构化输出 {error.json_path}: {error.message}") from error
+        return value
+
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str]:
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
         stream_kwargs.update(kwargs)
@@ -427,11 +454,6 @@ class LLM(ComponentBase):
         if self.check_if_canceled("LLM processing"):
             return
 
-        def clean_formated_answer(ans: str) -> str:
-            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-            ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-            return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-
         prompt, msg, _ = self._prepare_prompt_variables()
         extra_chat_kwargs = self._get_chat_template_kwargs()
         error: str = ""
@@ -441,7 +463,9 @@ class LLM(ComponentBase):
         except Exception:
             pass
         if output_structure and isinstance(output_structure, dict) and output_structure.get("properties") and len(output_structure["properties"]) > 0:
-            schema = json.dumps(output_structure, ensure_ascii=False, indent=2)
+            self.set_output("structured", None)
+            validator = self._structured_output_validator(output_structure)
+            schema = json.dumps(validator.schema, ensure_ascii=False, indent=2)
             prompt_with_schema = prompt + structured_output_prompt(schema)
             for _ in range(self._param.max_retries + 1):
                 if self.check_if_canceled("LLM processing"):
@@ -454,17 +478,20 @@ class LLM(ComponentBase):
                     return
                 error = ""
                 ans = await self._generate_async(msg_fit, **extra_chat_kwargs)
-                msg_fit.pop(0)
+                if self.check_if_canceled("LLM structured output"):
+                    return
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
                     error = ans
                     continue
                 try:
-                    self.set_output("structured", json_repair.loads(clean_formated_answer(ans)))
-                    return
-                except Exception:
-                    msg_fit.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
-                    error = "The answer can't not be parsed as JSON"
+                    value = self._parse_structured_output(ans, validator)
+                except ValueError as exc:
+                    error = str(exc)
+                    msg = [*msg, {"role": "assistant", "content": ans}, {"role": "user", "content": f"请修复以下错误并仅返回符合 Schema 的 JSON：{error}"}]
+                    continue
+                self.set_output("structured", value)
+                return
             if error:
                 self.set_output("_ERROR", error)
             return
