@@ -118,7 +118,12 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	decoded, encName := DecodeToUTF8(data, "text/csv")
-	text := string(decoded)
+	// Python decodes text with utf-8-sig (rag/nlp/__init__.py decode_text), so a
+	// UTF-8 BOM never reaches the first header cell. Column names are the keys
+	// of table_column_names and of the column-role map, and the schema probe
+	// drops the BOM as well, so the parser must drop it too or every discovered
+	// name would carry a leading U+FEFF that no configured role matches.
+	text := strings.TrimPrefix(string(decoded), "\uFEFF")
 	if strings.TrimSpace(text) == "" {
 		if strings.EqualFold(p.OutputFormat, "json") {
 			return ParseResult{

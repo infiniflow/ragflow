@@ -33,6 +33,67 @@ var standardTableRows = [][]string{
 	{"Doc C", "Third document text", "Spain", "Tech", "2024"},
 }
 
+// Case: row bookkeeping columns are dropped before rendering, mirroring
+// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
+// Keeping them would index the primary key into the chunk text and into
+// chunk_data, and would give the chunk a different id than Python's.
+func TestParity_ReservedColumnsDropped(t *testing.T) {
+	rows := [][]string{
+		{"id", "_id", "index", "idx", "name", "amount"},
+		{"1", "2", "3", "4", "alice", "10"},
+	}
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+
+	if !reflect.DeepEqual(headers, []string{"name", "amount"}) {
+		t.Fatalf("headers = %#v, want name/amount only", headers)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if text := items[0]["text"]; text != "- name: alice\n- amount: 10" {
+		t.Errorf("text = %q", text)
+	}
+	cd, _ := items[0]["chunk_data"].(map[string]any)
+	if len(cd) != 2 || cd["name"] != "alice" || cd["amount"] != "10" {
+		t.Errorf("chunk_data = %#v", cd)
+	}
+}
+
+// Only the exact reserved names are dropped: a similarly named column and an
+// empty header (renamed Column_N from its original position) both survive, and
+// the surviving columns keep the values of their own source cells.
+func TestParity_ReservedColumnsOnlyExactMatch(t *testing.T) {
+	rows := [][]string{
+		{"id", "", "id_number"},
+		{"1", "kept", "42"},
+	}
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+
+	if !reflect.DeepEqual(headers, []string{"Column_2", "id_number"}) {
+		t.Fatalf("headers = %#v, want Column_2/id_number", headers)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if text := items[0]["text"]; text != "- Column_2: kept\n- id_number: 42" {
+		t.Errorf("text = %q", text)
+	}
+}
+
+// Case: every header is a reserved name — the rows render to nothing, matching
+// Python's empty-DataFrame branch (no text fields, no stored fields).
+func TestParity_OnlyReservedColumnsProducesNoItems(t *testing.T) {
+	rows := [][]string{
+		{"id", "index"},
+		{"1", "2"},
+	}
+	items, headers := RenderRowsToJSONChunks(rows, "", "auto", nil)
+
+	if len(headers) != 0 || len(items) != 0 {
+		t.Fatalf("headers = %#v, items = %#v; want both empty", headers, items)
+	}
+}
+
 // Case 1: Auto mode (all columns default to "both", matching Python)
 func TestParity_AutoMode(t *testing.T) {
 	items, headers := RenderRowsToJSONChunks(standardTableRows, "", "auto", nil)

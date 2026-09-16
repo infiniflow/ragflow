@@ -111,12 +111,23 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 	}
 
 	headerRow := rows[headerRowIdx]
-	rawHeaders := make([]string, len(headerRow))
+	// Spreadsheet bookkeeping columns are dropped before rendering, mirroring
+	// rag/app/table.py (`for n in ["id", "_id", "index", "idx"]: del df[n]`).
+	// They carry no content, and keeping them would index the row's primary key
+	// into the chunk text and into chunk_data.
+	rawHeaders := make([]string, 0, len(headerRow))
+	headerIndexes := make([]int, 0, len(headerRow))
 	for i, h := range headerRow {
-		rawHeaders[i] = strings.TrimSpace(h)
-		if rawHeaders[i] == "" {
-			rawHeaders[i] = fmt.Sprintf("Column_%d", i+1)
+		name := strings.TrimSpace(h)
+		if name == "" {
+			name = fmt.Sprintf("Column_%d", i+1)
 		}
+		switch name {
+		case "id", "_id", "index", "idx":
+			continue
+		}
+		rawHeaders = append(rawHeaders, name)
+		headerIndexes = append(headerIndexes, i)
 	}
 	headers := DeduplicateColumnNames(rawHeaders)
 
@@ -131,8 +142,8 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 		for j := 0; j < len(headers); j++ {
 			col := headers[j]
 			var val string
-			if j < len(row) {
-				val = strings.TrimSpace(row[j])
+			if src := headerIndexes[j]; src < len(row) {
+				val = strings.TrimSpace(row[src])
 			}
 			if val == "" {
 				continue

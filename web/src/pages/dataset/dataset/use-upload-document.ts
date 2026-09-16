@@ -11,6 +11,7 @@ import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildParserGapModalContent } from './parser-gap-content';
+import { buildTableUploadParserConfig } from './table-upload-parser-config';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
 
@@ -37,41 +38,13 @@ export const useHandleUploadDocument = () => {
       }: UploadFormSchemaType,
       failingFileTypes: Set<FileType>,
     ) => {
-      // Only table files carry column settings, and only those files get a
-      // per-file entry — never emit names/roles for mixed non-table uploads.
-      const tableIndexes = (fileList as any[])
-        .map((f: any, i: number) => {
-          const file = f instanceof File ? f : f?.file;
-          const name =
-            file instanceof File
-              ? file.name
-              : typeof f?.name === 'string'
-                ? f.name
-                : '';
-          return /\.(csv|xlsx?|txt)$/i.test(name) ? i : -1;
-        })
-        .filter((i: number) => i >= 0);
       // Build parser_config if column settings are configured
-      let parserConfig: Record<string, any> | undefined;
-      if (tableIndexes.length > 0 && tableColumnMode) {
-        parserConfig = {
-          table_column_mode: tableColumnMode,
-        };
-        if (tableColumnNames?.length) {
-          parserConfig.table_column_names = tableColumnNames;
-        }
-        if (Array.isArray(tableColumnNamesByFile)) {
-          const byFile = tableIndexes.map(
-            (i: number) => tableColumnNamesByFile[i] ?? [],
-          );
-          if (byFile.some((cols: string[]) => cols.length > 0)) {
-            parserConfig.table_column_names_by_file = byFile;
-          }
-        }
-        if (tableColumnMode === 'manual' && tableColumnRoles) {
-          parserConfig.table_column_roles = tableColumnRoles;
-        }
-      }
+      const parserConfig = buildTableUploadParserConfig(fileList, {
+        tableColumnMode,
+        tableColumnNames,
+        tableColumnNamesByFile,
+        tableColumnRoles,
+      });
 
       const ret = await uploadDocument(fileList as File[], parserConfig);
 

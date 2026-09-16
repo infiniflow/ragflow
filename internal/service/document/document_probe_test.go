@@ -40,6 +40,22 @@ func TestProbeTable_CSV(t *testing.T) {
 	}
 }
 
+func TestProbeTable_CSVStripsBOM(t *testing.T) {
+	svc := &DocumentService{}
+
+	cols, err := svc.ProbeTable(strings.NewReader("\ufeffName,City\nAlice,Paris\n"), "bom.csv")
+	if err != nil {
+		t.Fatalf("ProbeTable: %v", err)
+	}
+
+	// The parser strips the BOM too (csv_parser.go), so the probe must report
+	// the same names; a leading U+FEFF would never match a column role.
+	want := []string{"Name", "City"}
+	if !reflect.DeepEqual(cols, want) {
+		t.Fatalf("got %#v, want %#v", cols, want)
+	}
+}
+
 func TestProbeTable_TSV(t *testing.T) {
 	svc := &DocumentService{}
 

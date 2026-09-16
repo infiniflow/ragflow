@@ -17,6 +17,8 @@
 package document
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -49,7 +51,17 @@ func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, er
 }
 
 func probeCSV(r io.Reader, isTSV bool) ([]string, error) {
-	reader := csv.NewReader(r)
+	// A leading UTF-8 BOM must not become part of the first column name. The
+	// Python probe decodes with utf-8-sig (api/apps/restful_apis/document_api.py)
+	// and the CSV parser strips the BOM as well, so all three paths agree on the
+	// discovered names — otherwise a configured column role stops matching the
+	// column the parser actually emits.
+	buffered := bufio.NewReader(r)
+	if prefix, err := buffered.Peek(3); err == nil && bytes.Equal(prefix, []byte{0xEF, 0xBB, 0xBF}) {
+		_, _ = buffered.Discard(3)
+	}
+
+	reader := csv.NewReader(buffered)
 	if isTSV {
 		reader.Comma = '\t'
 	}

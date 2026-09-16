@@ -1139,9 +1139,11 @@ func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map
 // mergeKBTableColumnFallback fills the table column keys a document does not
 // already define from the knowledgebase config, so an older document (uploaded
 // before column mode existed) still picks up dataset-level settings at task
-// time. Column discovery stays per-document: any document-level key wins outright,
-// only wholly-absent keys fall back — mirroring Python's
-// merge_table_parser_config_from_kb (rag/utils/table_es_metadata.py).
+// time. Column discovery stays per-document: any document-level key wins
+// outright, only wholly-absent keys fall back. Document-level precedence is
+// intentional and differs from Python's merge_table_parser_config_from_kb
+// (rag/utils/table_es_metadata.py), which lets the dataset value override the
+// document's.
 func mergeKBTableColumnFallback(docConfig, kbConfig map[string]interface{}) map[string]interface{} {
 	if kbConfig == nil {
 		return docConfig

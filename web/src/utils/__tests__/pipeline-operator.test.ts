@@ -175,7 +175,11 @@ describe('buildOperatorNode spreadsheet column_mode priority', () => {
   it('root-level table_column_mode wins over DSL component column_mode:"auto"', () => {
     const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
       'Parser:HipSignsRhyme': {
-        spreadsheet: { column_mode: 'auto', column_names: [], column_roles: {} },
+        spreadsheet: {
+          column_mode: 'auto',
+          column_names: [],
+          column_roles: {},
+        },
       },
       table_column_mode: 'manual',
       table_column_names: ['col_a', 'col_b'],
@@ -265,7 +269,9 @@ describe('buildOperatorNode spreadsheet column_mode priority', () => {
     const spreadsheetSetup = form.setups?.find(
       (s: any) => s.fileFormat === 'spreadsheet',
     );
-    expect(spreadsheetSetup.column_names).toEqual(['fresh_col_a', 'fresh_col_b']);
+    expect(spreadsheetSetup.column_names).toEqual([
+      'fresh_col_a',
+      'fresh_col_b',
+    ]);
   });
 });
-

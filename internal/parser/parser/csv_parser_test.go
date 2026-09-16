@@ -2,9 +2,37 @@ package parser
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// A UTF-8 BOM must not leak into the first column name: Python decodes with
+// utf-8-sig (rag/nlp/__init__.py decode_text) and the schema probe strips it,
+// so keeping it here would make every configured column role miss its column.
+func TestCSVParser_ColumnModeStripsBOM(t *testing.T) {
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "json",
+		"column_mode":   "auto",
+	})
+
+	res := p.ParseWithResult(context.Background(), "bom.csv", []byte("\ufeffName,City\nAlice,Paris\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+
+	headers, _ := res.File["table_column_names"].([]string)
+	if !reflect.DeepEqual(headers, []string{"Name", "City"}) {
+		t.Fatalf("table_column_names = %#v, want Name/City without U+FEFF", headers)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %#v, want one row", res.JSON)
+	}
+	if text := res.JSON[0]["text"]; text != "- Name: Alice\n- City: Paris" {
+		t.Errorf("row text = %v", text)
+	}
+}
 
 func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	csvData := []byte("Name,Age,City\nAlice,30,New York\nBob,25,San Francisco\n")
