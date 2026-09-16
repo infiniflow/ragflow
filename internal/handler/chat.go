@@ -95,19 +95,24 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		}
 	}
 
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
 	orderby := c.DefaultQuery("orderby", "create_time")
-	switch orderby {
-	case "create_time", "update_time", "name":
-	default:
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
-		return
+	if len(sortTerms) == 0 {
+		switch orderby {
+		case "create_time", "update_time", "name":
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			return
+		}
 	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
-	terms := orderTermsFromQuery(c, orderby, desc)
+	terms := orderTerms(sortTerms, orderby, desc)
 
 	ownerIDs := getOwnerIDs(c)
 	ctx := c.Request.Context()

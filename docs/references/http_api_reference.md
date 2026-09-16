@@ -952,7 +952,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*)
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*)
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*)
   The name of the dataset to retrieve.
 - `id`: (*Filter parameter*)
@@ -3202,7 +3202,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*), `string`
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `keywords`: (*Filter parameter*), `string`
   Case-insensitive fuzzy match against chat assistant names.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
@@ -3473,7 +3473,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*), `string`
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*) `string`
   The name of the chat session to retrieve.
 - `id`: (*Filter parameter*), `string`
@@ -5220,7 +5220,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*), `string`
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `keywords`: (*Filter parameter*), `string`
   Fuzzy-searches agents by title.
 - `canvas_category`: (*Filter parameter*), `string`
@@ -6919,7 +6919,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*), `string`
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 
 #### Response
 
@@ -8031,7 +8031,7 @@ curl --request GET \
 - `desc`: (*Filter parameter*), `boolean`
   Whether to sort in descending order. Defaults to `true`.
 - `sort`: (*Filter parameter*), `string`
-  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped, and a `sort` with no usable term leaves `orderby` and `desc` in charge.
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
   Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
 

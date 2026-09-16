@@ -85,14 +85,19 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		}
 	}
 
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
 	orderby := "create_time"
 	if queryOrderby := c.Query("orderby"); queryOrderby != "" {
 		switch queryOrderby {
 		case "create_time", "update_time", "name":
 			orderby = queryOrderby
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", queryOrderby))
-			return
+			if len(sortTerms) == 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", queryOrderby))
+				return
+			}
 		}
 	}
 
@@ -100,7 +105,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
-	terms := orderTermsFromQuery(c, orderby, desc)
+	terms := orderTerms(sortTerms, orderby, desc)
 
 	// Call service to list chat sessions
 	ctx := c.Request.Context()

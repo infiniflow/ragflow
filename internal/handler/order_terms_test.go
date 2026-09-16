@@ -77,3 +77,34 @@ func TestOrderTermsFromQuery(t *testing.T) {
 		})
 	}
 }
+
+// A handler that rejects an unrecognised `orderby` reads the sort terms first, so
+// this is the signal it gates that check on.
+func TestSortTermsFromQuerySignalsWhoDecides(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	newContext := func(rawQuery string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/v1/list?"+rawQuery, nil)
+		return c
+	}
+
+	if terms := sortTermsFromQuery(newContext("orderby=nonsense&desc=maybe")); len(terms) != 0 {
+		t.Fatalf("a request without sort reported terms: %+v", terms)
+	}
+	if terms := sortTermsFromQuery(newContext("sort=:asc,")); len(terms) != 0 {
+		t.Fatalf("an unusable sort reported terms: %+v", terms)
+	}
+	terms := sortTermsFromQuery(newContext("sort=name:desc&orderby=nonsense"))
+	if len(terms) != 1 || terms[0] != (dao.OrderTerm{Column: "name", Desc: true}) {
+		t.Fatalf("sort terms = %+v, want one name DESC term", terms)
+	}
+
+	// The same terms decide the order, and the older pair is only read without them.
+	if got := orderTerms(terms, "create_time", false); len(got) != 1 || got[0] != terms[0] {
+		t.Fatalf("orderTerms dropped the sort terms: %+v", got)
+	}
+	got := orderTerms(nil, "create_time", true)
+	if len(got) != 1 || got[0] != (dao.OrderTerm{Column: "create_time", Desc: true}) {
+		t.Fatalf("orderTerms = %+v, want the older pair", got)
+	}
+}

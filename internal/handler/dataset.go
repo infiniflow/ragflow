@@ -119,25 +119,34 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		pageSize = ps
 	}
 
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` or `desc` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
 	orderby := "create_time"
 	if queryOrderby, exists := c.GetQuery("orderby"); exists {
 		if queryOrderby != "create_time" && queryOrderby != "update_time" {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be 'create_time' or 'update_time'")
-			return
+			if len(sortTerms) == 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be 'create_time' or 'update_time'")
+				return
+			}
+		} else {
+			orderby = queryOrderby
 		}
-		orderby = queryOrderby
 	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
 		parsed, ok := parsePythonBool(descStr)
 		if !ok {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid boolean, unable to interpret input")
-			return
+			if len(sortTerms) == 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid boolean, unable to interpret input")
+				return
+			}
+		} else {
+			desc = parsed
 		}
-		desc = parsed
 	}
-	terms := orderTermsFromQuery(c, orderby, desc)
+	terms := orderTerms(sortTerms, orderby, desc)
 
 	keywords := c.Query("keywords")
 	parserID := c.Query("parser_id")
@@ -354,7 +363,7 @@ func pythonJSONTypeName(v interface{}) string {
 // before validation in the Python endpoint).
 var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
-	"orderby": true, "desc": true, "include_parsing_status": true,
+	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
 }
 
