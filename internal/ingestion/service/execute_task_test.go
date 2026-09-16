@@ -12,64 +12,6 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-// TestExecuteTask_CheckpointParseFailureDoesNotKillProcess verifies that checkpoint
-// parse failures do not call fatal exit (which would kill the whole worker process).
-// Instead, the task should be marked as FAILED and return gracefully.
-// This tests the fix for issue 1 from the code review.
-func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-
-	_, _, docID, taskID := testutil.SeedTestData(t, db,
-		testutil.WithPipelineID("flow-1"),
-		testutil.WithTenantID("tenant-1"),
-	)
-
-	// Create a task log with invalid checkpoint (run_count is a string instead of number)
-	err := db.Create(&entity.IngestionTaskLog{
-		TaskID: taskID,
-		Checkpoint: entity.JSONMap{
-			"run_count": "not-a-number", // intentionally wrong type
-		},
-	}).Error
-	if err != nil {
-		t.Fatalf("create bad task log: %v", err)
-	}
-
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	// Replace runDocumentTask to ensure it doesn't get called
-	var runDocumentTaskCalled bool
-	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		runDocumentTaskCalled = true
-		return nil
-	}
-
-	taskCtx := taskpkg.NewTaskContextForScheduling(
-		t.Context(),
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
-	)
-
-	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
-	ctx := t.Context()
-	ingestor.executeTask(ctx, taskCtx)
-
-	// Corrupted run_count values are skipped by IncrementRunCount, so the task
-	// proceeds to runDocumentTask and completes normally.
-	if !runDocumentTaskCalled {
-		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
-	}
-
-	// Verify task status was set to COMPLETED
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
-	if err != nil {
-		t.Fatalf("load final ingestion task: %v", err)
-	}
-	if finalTask.Status != common.COMPLETED {
-		t.Fatalf("final status = %s, want %s", finalTask.Status, common.COMPLETED)
-	}
-}
-
 func TestDefaultRunDocumentTask_BothPipelineAndParserMissing(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)

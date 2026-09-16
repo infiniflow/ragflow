@@ -342,10 +342,24 @@ func TestIngestionTaskServiceListAllForAdminIncludesRunAndUserEmail(t *testing.T
 		t.Fatalf("insert user: %v", err)
 	}
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	if err := dao.DB.Create(&entity.IngestionTaskLog{
-		TaskID:     "task-1",
-		Checkpoint: entity.JSONMap{"run_count": 3},
+	runCount := 3
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+		RunCount:        &runCount,
 	}).Error; err != nil {
+		t.Fatalf("insert pipeline operation log: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind pipeline operation log: %v", err)
+	}
+	if err := dao.DB.Exec(`INSERT INTO ingestion_task_log
+		(task_id, pipeline_log_id, checkpoint, event_type, component, phase, message)
+		VALUES (?, ?, '{}', ?, ?, ?, ?)`, "task-1", "run-1", dao.EventTypeLifecycle, "Parser", 1, "Parser Done").Error; err != nil {
 		t.Fatalf("insert task log: %v", err)
 	}
 
@@ -1037,32 +1051,6 @@ func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.
 	}
 }
 
-func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("RecordComponentProgress failed: %v", err)
-	}
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, "task-1")
-	if err != nil {
-		t.Fatalf("list logs: %v", err)
-	}
-	if len(logs) != 1 {
-		t.Fatalf("expected 1 log row, got %d", len(logs))
-	}
-	row := logs[0]
-	if row.Component != "Parser" || row.Phase != 1 || row.Message != "Parser Done" {
-		t.Fatalf("unexpected log row: %+v", row)
-	}
-	if len(row.Checkpoint) != 0 {
-		t.Fatalf("component progress row must have empty checkpoint, got %v", row.Checkpoint)
-	}
-}
-
 func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1072,7 +1060,7 @@ func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *t
 	if err := svc.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("RecordLifecycle failed: %v", err)
 	}
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(t.Context(), db, "task-1")
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, "run-1")
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -1088,181 +1076,31 @@ func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *t
 	}
 }
 
-func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T) {
+func TestIngestionTaskServiceAggregateTaskProgressByRunClassifiesByPhase(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
+	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 0, "Chunker Started"); err != nil {
+	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Chunker", 0, "Chunker Started"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
-	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
+	if err := svc.RecordLifecycle(ctx, "run-2", "task-1", "Parser", 0, "other run"); err != nil {
+		t.Fatalf("record other run: %v", err)
+	}
+	agg, err := svc.AggregateTaskProgressByPipelineLogID(ctx, "run-1", 2)
 	if err != nil {
-		t.Fatalf("AggregateTaskProgress failed: %v", err)
+		t.Fatalf("AggregateTaskProgressByPipelineLogID failed: %v", err)
 	}
 	if agg.Done != 1 || agg.Running != 1 || agg.Failed != 0 {
 		t.Fatalf("aggregate = %+v, want Done=1 Running=1 Failed=0", agg)
 	}
 	if agg.Percent != 50 {
 		t.Fatalf("percent = %v, want 50", agg.Percent)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountInitializesAndBumps(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount (first call) failed: %v", err)
-	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-
-	// Second call bumps the existing counter to 2.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount (second call) failed: %v", err)
-	}
-	run, _ = svc.lastRunCount(ctx, "task-1")
-	if run != 2 {
-		t.Fatalf("run_count after second bump = %v, want 2", run)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountSkippedCorruptedRunCount(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	if err := dao.DB.Create(&entity.IngestionTaskLog{
-		TaskID:     "task-1",
-		Checkpoint: entity.JSONMap{"run_count": "not-a-number"},
-	}).Error; err != nil {
-		t.Fatalf("insert bad task log: %v", err)
-	}
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	// Corrupted value is skipped; a fresh run_count=1 row is created.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount should skip corrupted value, got: %v", err)
-	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	// Simulate a previous run that created some component-progress logs
-	// but died before recording a run_count row. The latest log has no run_count.
-	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-	// Verify latest log has empty checkpoint (no run_count).
-	latest, err := dao.NewIngestionTaskLogDAO().LatestLogByTaskID(ctx, db, "task-1")
-	if err != nil {
-		t.Fatalf("load latest: %v", err)
-	}
-	if len(latest.Checkpoint) != 0 {
-		t.Fatalf("component-progress row should have empty checkpoint, got %v", latest.Checkpoint)
-	}
-
-	// IncrementRunCount should create a new row with run_count=1.
-	if err = svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount failed: %v", err)
-	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-
-	// AggregateProgress should still work (run_count row with component=""
-	// has phase=0, which doesn't affect counts).
-	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
-	if err != nil {
-		t.Fatalf("AggregateTaskProgress: %v", err)
-	}
-	if agg.Done != 2 {
-		t.Fatalf("Done = %d, want 2 (run_count row didn't interfere)", agg.Done)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-
-	svc := NewIngestionTaskService()
-	ctx := t.Context()
-
-	// First attempt: IncrementRunCount creates run_count=1.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("first IncrementRunCount: %v", err)
-	}
-	// Simulate first run: some components progress, then failure.
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-
-	// Second attempt (retry): should find previous run_count=1 and create row with run_count=2.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("second IncrementRunCount: %v", err)
-	}
-	// More progress, then failure.
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-
-	// Third attempt (retry): should find previous run_count=2 and create row with run_count=3.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("third IncrementRunCount: %v", err)
-	}
-
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 3 {
-		t.Fatalf("run_count = %v (ok=%v), want 3", run, ok)
-	}
-
-	// ListAllForAdmin should still pick up the correct run_count.
-	status := "1"
-	if err := dao.DB.Create(&entity.User{
-		ID:              "user-1",
-		Email:           "user-1@test.com",
-		Nickname:        "user-1",
-		IsAuthenticated: "1",
-		IsActive:        "1",
-		IsAnonymous:     "0",
-		Status:          &status,
-	}).Error; err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	adminTasks, err := svc.ListAllForAdmin(ctx)
-	if err != nil {
-		t.Fatalf("ListAllForAdmin: %v", err)
-	}
-	if len(adminTasks) != 1 || adminTasks[0]["id"] != "task-1" {
-		t.Fatalf("ListAllForAdmin = %+v, want single task task-1", adminTasks)
-	}
-	if adminTasks[0]["run_count"] != 3 {
-		t.Fatalf("ListAllForAdmin run_count = %v, want 3", adminTasks[0]["run_count"])
 	}
 }
 

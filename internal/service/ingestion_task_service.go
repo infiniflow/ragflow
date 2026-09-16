@@ -15,11 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Run-count key for IngestionTaskLog.Checkpoint, consumed by
-// ListAllForAdmin and IncrementRunCount to track how many times
-// the task has been picked up by a worker.
-const stepKeyRunCount = "run_count"
-
 // ingestionEventKind intentionally has an invalid zero value. The persisted
 // event protocol starts at zero for lifecycle events, so callers cannot pass a
 // Go zero value and silently create a lifecycle row.
@@ -212,13 +207,20 @@ func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[strin
 			"status":      task.Status,
 		}
 
-		if count, ok := s.lastRunCount(ctx, task.ID); ok {
-			showTask["run_count"] = count
+		if task.PipelineLogID != nil && *task.PipelineLogID != "" {
+			if run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID); runErr == nil && run.RunCount != nil && *run.RunCount > 0 {
+				showTask["run_count"] = *run.RunCount
+			}
 		}
 
 		showTask["component_total"] = task.ComponentTotal
 		if task.ComponentTotal > 0 {
-			progress, err := s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, task.ID, task.ComponentTotal)
+			progress := (*dao.TaskProgress)(nil)
+			if task.PipelineLogID != nil && *task.PipelineLogID != "" {
+				progress, err = s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, *task.PipelineLogID, task.ComponentTotal)
+			} else {
+				err = errors.New("task has no pipeline log identity")
+			}
 			if err == nil {
 				showTask["component_done"] = progress.Done
 			} else {
@@ -859,21 +861,6 @@ func (s *IngestionTaskService) UpdateComponentTotal(ctx context.Context, taskID 
 	return s.ingestionTaskDAO.UpdateComponentTotal(ctx, dao.DB, taskID, total)
 }
 
-// RecordComponentProgress appends a component lifecycle row to
-// ingestion_task_log (phase: 0 started / 1 done / 2 errored). The row's
-// Checkpoint is empty; component progress and step checkpoints are distinct
-// row models sharing the same table.
-func (s *IngestionTaskService) RecordComponentProgress(ctx context.Context, taskID, component string, phase int, message string) error {
-	entry := &entity.IngestionTaskLog{
-		TaskID:     taskID,
-		Checkpoint: entity.JSONMap{},
-		Phase:      phase,
-		Component:  component,
-		Message:    message,
-	}
-	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
-}
-
 // RecordLifecycle writes one component lifecycle event for an already
 // validated run. The worker supplies the captured pipeline log ID, never a
 // value reloaded from the mutable task row.
@@ -941,56 +928,8 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 	}).Error
 }
 
-// ClearComponentProgress removes lifecycle rows left by a previous attempt of
-// the same reusable ingestion task. Run-count checkpoint rows are retained.
-func (s *IngestionTaskService) ClearComponentProgress(ctx context.Context, taskID string) error {
-	_, err := s.ingestionTaskLogDAO.DeleteComponentLogsByTaskID(ctx, dao.DB, taskID)
-	return err
-}
-
-// AggregateTaskProgress returns the SQL-aggregated component progress for a
-// task (done/failed/running/percent against the given total denominator).
-func (s *IngestionTaskService) AggregateTaskProgress(ctx context.Context, taskID string, total int) (*dao.TaskProgress, error) {
-	return s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, taskID, total)
-}
-
 // AggregateTaskProgressByPipelineLogID returns component progress for one
 // immutable ingestion run.
 func (s *IngestionTaskService) AggregateTaskProgressByPipelineLogID(ctx context.Context, pipelineLogID string, total int) (*dao.TaskProgress, error) {
 	return s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, pipelineLogID, total)
-}
-
-// lastRunCount scans all task logs (newest first) for a run_count entry,
-// skipping component-progress rows whose Checkpoint is empty. It returns
-// the counter and whether one was found.
-func (s *IngestionTaskService) lastRunCount(ctx context.Context, taskID string) (int, bool) {
-	logs, err := s.ingestionTaskLogDAO.ListLogsByTaskID(ctx, dao.DB, taskID)
-	if err != nil {
-		return 0, false
-	}
-	for i := len(logs) - 1; i >= 0; i-- {
-		if count, ok := common.GetInt(logs[i].Checkpoint[stepKeyRunCount]); ok {
-			return count, true
-		}
-	}
-	return 0, false
-}
-
-// IncrementRunCount scans existing task logs for the previous run_count
-// (skipping component-progress rows that have no run_count), then INSERTS a
-// new row with the bumped counter. This avoids the race where the latest log
-// is a component-progress row whose empty Checkpoint would cause a parse
-// failure. ListAllForAdmin reads run_count back to render the attempt number.
-//
-// A corrupted run_count value in an existing row is skipped (the row is
-// ignored). A failure to persist the new row is returned so the caller can
-// fail the task before running the pipeline.
-func (s *IngestionTaskService) IncrementRunCount(ctx context.Context, taskID string) error {
-	prevCount, _ := s.lastRunCount(ctx, taskID)
-
-	entry := &entity.IngestionTaskLog{
-		TaskID:     taskID,
-		Checkpoint: entity.JSONMap{stepKeyRunCount: prevCount + 1},
-	}
-	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
 }

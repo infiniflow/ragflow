@@ -181,7 +181,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		Message:    "Parser Done",
 	})
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestProgressSinkWritesLifecycleEventForCapturedRun(t *testing.T) {
 		Message:   "Parser Done",
 	})
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(t.Context(), db, taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, "run-1")
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 		Message:   "Chunker Done",
 	})
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, "run-1")
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}

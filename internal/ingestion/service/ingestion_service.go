@@ -26,7 +26,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -137,8 +136,6 @@ type Ingestor struct {
 	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
 	// override this to simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
-
-	checkpointExists func(ctx context.Context, taskID string) (bool, error)
 }
 
 type worker struct {
@@ -181,7 +178,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
 	ingestor.reconcileMemoryTasks = ingestor.defaultReconcileMemoryTasks
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
-	ingestor.checkpointExists = canvas.RedisCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
 	return ingestor
 }
@@ -792,9 +788,9 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 	return true
 }
 
-// runTask executes the task's business logic — run-count advance, document
-// pipeline, and completion — behind the heartbeat. It returns whether the
-// task reached a durably-persisted terminal status.
+// runTask executes the task's business logic — document pipeline and
+// completion — behind the heartbeat. It returns whether the task reached a
+// durably-persisted terminal status.
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
@@ -812,48 +808,8 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	default:
 	}
 
-	// The three DB/Redis lookups below must survive a context cancelled
-	// between the pre-check and the call (cancel poll races the pipeline
-	// start): detach the caller's ctx with a short timeout so a cancelled
-	// run fails through markFailed with a real error, not a context error.
-	dbCtx, dbCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer dbCancel()
-	if err := e.ingestionTaskSvc.IncrementRunCount(dbCtx, task.ID); err != nil {
-		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
-		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
-		}
-		return ok
-	}
-	checkpointExists := e.checkpointExists
-	if checkpointExists == nil {
-		checkpointExists = canvas.RedisCheckpointExists
-	}
-	resumeCheckpoint, checkpointErr := checkpointExists(dbCtx, task.ID)
-	if checkpointErr != nil {
-		common.Error(fmt.Sprintf("Failed to check checkpoint for task %s", task.ID), checkpointErr)
-		ok := e.markFailed(ctx, task.ID)
-		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
-		}
-		return ok
-	}
-	if !resumeCheckpoint {
-		if err := e.ingestionTaskSvc.ClearComponentProgress(dbCtx, task.ID); err != nil {
-			common.Error(fmt.Sprintf("Failed to clear previous component progress for task %s", task.ID), err)
-			ok := e.markFailed(ctx, task.ID)
-			if ok {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
-			}
-			return ok
-		}
-	} else {
-		common.Info(fmt.Sprintf("Preserving component progress for checkpoint resume of task %s", task.ID))
-	}
-
-	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
-	// that exists now is stale — a leftover from a previous run whose
+	// Any Redis cancel flag that exists now is stale — a leftover from a previous
+	// run whose
 	// markStopped failed to delete it. The current run's cancel is signalled
 	// by the DB status (STOPPING), which defaultCancelCheck falls back to
 	// when the Redis flag is absent. Clearing a stale flag here is safe:

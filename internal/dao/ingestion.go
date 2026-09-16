@@ -332,15 +332,12 @@ func (dao *IngestionTaskLogDAO) Update(ctx context.Context, db *gorm.DB, ingesti
 	return db.WithContext(ctx).Save(ingestionLog).Error
 }
 
-// ListLogsByTaskID returns the task's logs in chronological (write) order.
-// Ordering is by auto-increment `id ASC` (NOT `create_time`) because
-// create_time has only second-level resolution and would tie-break
-// arbitrarily; `id` is monotonic and always reflects write order. This
-// feeds the frontend log stream (GET .../logs), which renders each row by
-// phase (0 started / 1 done / -1 failed).
-func (dao *IngestionTaskLogDAO) ListLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) ([]*entity.IngestionTaskLog, error) {
+// ListLogsByPipelineLogID returns one run's events in chronological write
+// order. The pipeline log id is the immutable run identity; task ids are
+// reusable across retries and must not be used to reconstruct a run.
+func (dao *IngestionTaskLogDAO) ListLogsByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
+	err := db.WithContext(ctx).Where("pipeline_log_id = ?", pipelineLogID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
 }
 
@@ -353,53 +350,6 @@ type TaskProgress struct {
 	Failed  int     `json:"failed"`
 	Running int     `json:"running"`
 	Percent float64 `json:"percent"`
-}
-
-// AggregateProgress computes {total, done, failed, running, percent} for a
-// task purely in SQL. It takes each component's latest row (max id per
-// component) and classifies by its phase:
-//
-//	done    = latest phase is exit/success   (1)
-//	failed  = latest phase is error/failure  (-1 legacy, or 2 after 1c)
-//	running = anything else (started, 0)
-//
-// `total` is the authoritative denominator from ingestion_task.component_total.
-// The classification is forward-compatible with the §5.1 ProgressPhase
-// renumbering (exit=1 stays; error moves -1 -> 2).
-func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.DB, taskID string, total int) (*TaskProgress, error) {
-	// Latest row id per component for this task.
-	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
-		Select("MAX(id)").
-		Where("task_id = ?", taskID).
-		Group("component")
-
-	type phaseRow struct {
-		Phase int
-	}
-	var rows []phaseRow
-	err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
-		Select("phase").
-		Where("id IN (?)", latestIDs).
-		Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-
-	progress := &TaskProgress{Total: total}
-	for _, r := range rows {
-		switch {
-		case r.Phase == 1:
-			progress.Done++
-		case r.Phase < 0 || r.Phase == 2:
-			progress.Failed++
-		default:
-			progress.Running++
-		}
-	}
-	if total > 0 {
-		progress.Percent = float64(progress.Done) / float64(total) * 100
-	}
-	return progress, nil
 }
 
 // AggregateProgressByPipelineLogID computes component progress for one run.
@@ -440,39 +390,8 @@ func (dao *IngestionTaskLogDAO) AggregateProgressByPipelineLogID(ctx context.Con
 	return progress, nil
 }
 
-func (dao *IngestionTaskLogDAO) LatestLogByTaskID(ctx context.Context, db *gorm.DB, taskID string) (*entity.IngestionTaskLog, error) {
-	var task *entity.IngestionTaskLog
-	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
-	return task, err
-}
-
 func (dao *IngestionTaskLogDAO) GetLogByLogID(ctx context.Context, db *gorm.DB, logID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
 	err := db.WithContext(ctx).Where("id = ?", logID).First(&task).Error
 	return task, err
-}
-
-func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteComponentLogsByTaskID removes component lifecycle rows from a new run
-// while preserving checkpoint rows such as run_count for task history.
-func (dao *IngestionTaskLogDAO) DeleteComponentLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
-	var logs []*entity.IngestionTaskLog
-	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
-		return 0, err
-	}
-	ids := make([]int, 0, len(logs))
-	for _, log := range logs {
-		if log != nil && len(log.Checkpoint) == 0 {
-			ids = append(ids, log.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.IngestionTaskLog{})
-	return result.RowsAffected, result.Error
 }
