@@ -496,8 +496,7 @@ export function buildOperatorNode(
           // column_* on the spreadsheet setup, Python saves table_column_*
           // at the parser_config root. Accept both so the role selector
           // initializes on either backend without clobbering explicit values.
-          const columnModeValue =
-            setup.column_mode || setup.table_column_mode;
+          const columnModeValue = setup.column_mode || setup.table_column_mode;
           const columnNamesValue =
             setup.column_names?.length > 0
               ? setup.column_names
@@ -513,15 +512,11 @@ export function buildOperatorNode(
                 ? setup.table_column_roles
                 : undefined;
           const column_names =
-            columnNamesValue ??
-            (pipelineParserConfig.table_column_names ?? []);
+            columnNamesValue ?? pipelineParserConfig.table_column_names ?? [];
           const column_mode =
-            columnModeValue ||
-            pipelineParserConfig.table_column_mode ||
-            'auto';
+            columnModeValue || pipelineParserConfig.table_column_mode || 'auto';
           const column_roles =
-            columnRolesValue ??
-            (pipelineParserConfig.table_column_roles ?? {});
+            columnRolesValue ?? pipelineParserConfig.table_column_roles ?? {};
           return {
             ...setup,
             column_names,

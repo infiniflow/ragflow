@@ -47,7 +47,9 @@ describe('table-column-extract', () => {
     });
 
     it('falls back to local parsing if server probe errors', async () => {
-      (request.post as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+      (request.post as jest.Mock).mockRejectedValueOnce(
+        new Error('Network error'),
+      );
 
       const csvContent = 'Name,Age,Name\nAlice,30,Bob\n';
       const file = new File([csvContent], 'test.csv', { type: 'text/csv' });
@@ -57,10 +59,14 @@ describe('table-column-extract', () => {
     });
 
     it('falls back to local TSV parsing with tab delimiter', async () => {
-      (request.post as jest.Mock).mockRejectedValueOnce(new Error('Probe disabled'));
+      (request.post as jest.Mock).mockRejectedValueOnce(
+        new Error('Probe disabled'),
+      );
 
       const tsvContent = 'ID\tProduct\tPrice\n1\tWidget\t10\n';
-      const file = new File([tsvContent], 'test.tsv', { type: 'text/tab-separated-values' });
+      const file = new File([tsvContent], 'test.tsv', {
+        type: 'text/tab-separated-values',
+      });
       const columns = await extractTableColumns(file);
 
       expect(columns).toEqual(['ID', 'Product', 'Price']);
