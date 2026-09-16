@@ -276,6 +276,7 @@ class _FakeRDBMSConnector:
         id_column=None,
         timestamp_column=None,
         batch_size=2,
+        file_extension=None,
     ):
         self.db_type = db_type
         self.host = host
@@ -287,6 +288,7 @@ class _FakeRDBMSConnector:
         self.id_column = id_column
         self.timestamp_column = timestamp_column
         self.batch_size = batch_size
+        self.file_extension = file_extension if file_extension else ".txt"
         self.load_from_state_called = False
         self.retrieve_all_slim_docs_perm_sync_called = False
         self.prepare_sync_state_called = False
@@ -929,3 +931,14 @@ async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
     assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert connector.poll_source_called is False
+
+
+def test_redact_url_strips_credentials_query_and_fragment():
+    _redact_url = sync_data_source._redact_url
+
+    assert _redact_url("https://user:pass@tfs.corp.local:8080/tfs/DefaultCollection?test=1#frag") == "https://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert _redact_url("http://user:pass@host/path") == "http://host/path"
+    assert _redact_url(None) == ""
+    assert _redact_url("") == ""
+    assert _redact_url("organization(myorg)") == "organization(myorg)"
+    assert _redact_url("http://[invalid") == "<invalid URL>"

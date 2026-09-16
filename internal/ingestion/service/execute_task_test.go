@@ -239,9 +239,6 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	if doc.Progress != -1 {
 		t.Fatalf("document.progress = %v, want -1 (cancelled)", doc.Progress)
 	}
-	if doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
-		t.Fatalf("document.run = %v, want %s (CANCEL)", doc.Run, entity.TaskStatusCancel)
-	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg == "" {
 		t.Fatal("document.progress_msg should contain cancel marker, got empty")
 	}

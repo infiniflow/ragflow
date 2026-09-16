@@ -1,6 +1,20 @@
 {
     "factory_llm_infos": [
         {
+            "name": "AnonRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "API-Route",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Synthorai",
             "logo": "",
             "tags": "LLM",
@@ -583,7 +597,8 @@
                     "llm_name": "qwen3.8-max",
                     "max_tokens": 128000,
                     "model_type": [
-                        "chat", "image2text"
+                        "chat",
+                        "image2text"
                     ],
                     "is_tools": true
                 },
@@ -2031,6 +2046,14 @@
             "tags": "SPEECH2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "DaoXE",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [],
+            "rank": "885"
         },
         {
             "name": "DeepSeek",
@@ -5381,6 +5404,13 @@
             "name": "Google Cloud",
             "logo": "",
             "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "Hubris",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": []
         },

@@ -9,6 +9,7 @@ import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
 import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
 import { useDebounce } from 'ahooks';
+import { trim } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 
 export interface SelectedNavNode {
@@ -26,6 +27,9 @@ export function useCompilationNav() {
   const kbId = useKnowledgeBaseId();
   const [keywords, setKeywords] = useState('');
   const debouncedKeywords = useDebounce(keywords, { wait: 500 });
+  // The filter actually applied to requests; the input value lags behind it by
+  // the debounce window.
+  const activeKeywords = trim(debouncedKeywords);
   const {
     data: navList,
     loading: navLoading,
@@ -51,9 +55,13 @@ export function useCompilationNav() {
   );
 
   const { data: childrenData, isError: childrenError } =
-    useFetchDatasetNavChildren(loadingParent);
+    useFetchDatasetNavChildren(loadingParent, activeKeywords);
   const { data: structureData, isPlaceholderData: structurePlaceholder } =
-    useFetchDocumentStructureGraphById(kbId, loadingDocId ?? '');
+    useFetchDocumentStructureGraphById(
+      kbId,
+      loadingDocId ?? '',
+      activeKeywords || undefined,
+    );
 
   useEffect(() => {
     if (!loadingParent || !childrenData) {
@@ -105,6 +113,20 @@ export function useCompilationNav() {
       }));
     }
   }, [loadingDocId, structureData, structurePlaceholder]);
+
+  const clearExpandedData = useCallback(() => {
+    setChildrenMap({});
+    setChildrenErrorParents({});
+    setLoadingParent(null);
+    setStructureMap({});
+    setLoadingDocId(null);
+  }, []);
+
+  useEffect(() => {
+    // Loaded children/graphs were fetched under the previous keywords filter;
+    // drop them so re-expansion refetches under the active filter.
+    clearExpandedData();
+  }, [activeKeywords, clearExpandedData]);
 
   const loadChildren = useCallback(
     (name: string) => {
@@ -177,12 +199,8 @@ export function useCompilationNav() {
 
   const resetNav = useCallback(() => {
     setSelectedNode(null);
-    setChildrenMap({});
-    setChildrenErrorParents({});
-    setLoadingParent(null);
-    setStructureMap({});
-    setLoadingDocId(null);
-  }, []);
+    clearExpandedData();
+  }, [clearExpandedData]);
 
   const handleKeywordsChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,6 +298,7 @@ export function useCompilationNav() {
     navLoading,
     navError,
     keywords,
+    activeKeywords,
     childrenMap,
     childrenErrorParents,
     structureMap,

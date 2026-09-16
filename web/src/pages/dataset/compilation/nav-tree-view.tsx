@@ -16,6 +16,7 @@ export function NavTreeView() {
     navLoading,
     navError,
     keywords,
+    activeKeywords,
     childrenMap,
     childrenErrorParents,
     structureMap,
@@ -39,6 +40,7 @@ export function NavTreeView() {
             navLoading={navLoading}
             navError={navError}
             keywords={keywords}
+            activeKeywords={activeKeywords}
             childrenMap={childrenMap}
             childrenErrorParents={childrenErrorParents}
             structureMap={structureMap}

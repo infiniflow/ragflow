@@ -493,7 +493,73 @@ class RaptorService:
             clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
 
+        # Extract claims first so every cluster is summarized from the claims of
+        # its member chunks rather than from truncated raw text. Chunks that
+        # yield no claims silently fall back to their raw text, so a failed
+        # extraction degrades to the previous behavior instead of breaking the
+        # build.
+        claims_by_chunk: Dict[str, list] = {}
         raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
+        if raptor_config.get("extract_claims", True):
+            try:
+                from rag.advanced_rag.knowlege_compile.raptor import extract_claims_for_chunks
+
+                claims_by_chunk = await extract_claims_for_chunks(
+                    raptor_input,
+                    chat_mdl,
+                    task_id=self._task_context.id,
+                    callback=self._task_context.progress_cb,
+                    claim_prompt=raptor_config.get("claim_prompt"),
+                )
+                logging.info(
+                    "build_doc_tree: claims extracted for %d/%d chunk(s)",
+                    len(claims_by_chunk),
+                    len(raptor_input),
+                )
+            except Exception:
+                logging.exception("build_doc_tree: claim extraction failed; summarizing from raw text")
+                claims_by_chunk = {}
+
+        # Claim-view clustering vectors: each chunk is represented to the
+        # clustering layer by the merge of its claims + verbatim evidence, not
+        # by its raw-text vector. Claims are the chunk's semantics stripped of
+        # layout noise, so topic clusters form around what the chunks actually
+        # assert, and the cluster labels the summarizer produces are readable.
+        # Chunks without claims keep their raw vector; a claim vector whose
+        # dimension disagrees with the chunk vectors is ignored rather than
+        # fed into AHC.
+        if claims_by_chunk and embd_mdl is not None:
+            try:
+                from rag.advanced_rag.knowlege_compile.raptor import format_claims_for_summary
+
+                keys: List[str] = []
+                digest_texts: List[str] = []
+                for cid, claims in claims_by_chunk.items():
+                    digest = format_claims_for_summary(claims)
+                    if digest.strip():
+                        keys.append(str(cid))
+                        digest_texts.append(digest)
+                if digest_texts:
+                    embds, _ = await thread_pool_exec(embd_mdl.encode, digest_texts)
+                    claim_view = {cid: np.array(vec) for cid, vec in zip(keys, embds) if vec is not None and len(vec) > 0}
+                    replaced = 0
+                    for i, (content, vctr, src) in enumerate(raptor_input):
+                        cid = src[0] if src else ""
+                        view = claim_view.get(cid)
+                        if view is None:
+                            continue
+                        if vctr is not None and len(vctr) > 0 and len(view) != len(vctr):
+                            continue  # mixed-model guard: never feed AHC mixed dimensions
+                        raptor_input[i] = (content, view, src)
+                        replaced += 1
+                    logging.info(
+                        "build_doc_tree: %d/%d chunk(s) clustered on claim-view embeddings",
+                        replaced,
+                        len(raptor_input),
+                    )
+            except Exception:
+                logging.exception("build_doc_tree: claim-view embedding failed; clustering on raw chunk vectors")
+
         try:
             tree, _ = await raptor(
                 raptor_input,
@@ -501,6 +567,7 @@ class RaptorService:
                 self._task_context.progress_cb,
                 self._task_context.id,
                 is_tree=True,
+                claims_by_chunk=claims_by_chunk,
             )
         except NotImplementedError:
             # PSI builder — not supported in tree mode; surface as None
@@ -509,6 +576,8 @@ class RaptorService:
                 "build_doc_tree: PSI builder doesn't support is_tree; skipping",
             )
             return None
+        if isinstance(tree, dict) and claims_by_chunk:
+            tree["claims_by_chunk"] = claims_by_chunk
         return tree if isinstance(tree, dict) else None
 
     async def _generate_raptor_legacy_rows(
@@ -617,188 +686,3 @@ class RaptorService:
         except Exception:
             logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
             raise
-
-    @staticmethod
-    def _build_raptor_graph(rows: List[Dict]) -> Dict:
-        """Project loaded RAPTOR summary rows onto the canvas graph shape.
-
-        Each row contributes one entity::
-
-            {
-              "id":          xxh128(content)           # 32-char hex
-              "name":        first 16 whitespace tokens
-              "description": content_with_weight
-              "source_chunk_ids": row.source_chunk_ids
-            }
-
-        Relations: full bipartite layer-by-layer fan-out — every node at
-        layer K gets an edge to every node at layer K-1 (because we only
-        loaded ``content_with_weight`` + ``raptor_layer_int`` we don't
-        have the specific parent linkage). Self-edges and dangling
-        targets are dropped (the latter only matters if the layer-int
-        values are non-contiguous).
-        """
-        # Build entities. Dedup by id so two identical-content summaries
-        # collapse to one node — the canvas can't render multiple nodes
-        # at the same id anyway, and identical content is a defensible
-        # collapse.
-        by_id: Dict[str, Dict] = {}
-        by_layer: Dict[int, List[str]] = {}
-
-        for row in rows:
-            content = row.get("content_with_weight")
-            if not isinstance(content, str) or not content.strip():
-                continue
-            try:
-                layer = int(row.get("raptor_layer_int") or 0)
-            except (TypeError, ValueError):
-                layer = 0
-            if layer <= 0:
-                # Layer 0 would be the original leaf chunks; RAPTOR
-                # summaries start at layer 1. Anything claiming layer 0
-                # here is malformed; skip.
-                continue
-
-            name = " ".join(content.split()[:16])
-            nid = xxhash.xxh128(
-                content.encode("utf-8", "surrogatepass"),
-            ).hexdigest()  # 32-char hex
-            if nid in by_id:
-                continue
-            source_chunk_ids = row.get("source_chunk_ids") or []
-            if not isinstance(source_chunk_ids, list):
-                source_chunk_ids = []
-            by_id[nid] = {
-                "id": nid,
-                "name": name,
-                "description": content,
-                "source_chunk_ids": list(source_chunk_ids),
-            }
-            by_layer.setdefault(layer, []).append(nid)
-
-        # Layered fan-out from parent (higher layer) → child (lower layer).
-        relations: List[Dict] = []
-        layers_sorted = sorted(by_layer.keys())
-        for layer in layers_sorted:
-            child_layer = layer - 1
-            if child_layer not in by_layer:
-                continue
-            for parent in by_layer[layer]:
-                for child in by_layer[child_layer]:
-                    if parent == child:
-                        continue
-                    relations.append({"from": parent, "to": child})
-
-        return {"entities": list(by_id.values()), "relations": relations}
-
-    async def _persist_raptor_graph_to_es(self, doc_id: str) -> None:
-        """Load the just-inserted RAPTOR summaries for ``doc_id`` and
-        persist a single graph row that the dataset structure-graph
-        endpoint can surface as a tree.
-
-        Loads only ``content_with_weight`` + ``raptor_layer_int`` +
-        ``source_chunk_ids`` (per
-        the smallest-payload contract) and writes one row with::
-
-            compile_kwd:                  "raptor_graph"
-            compilation_template_kind_kwd:"raptor"
-            doc_id:                       <doc_id>
-
-        The row id is deterministic per ``(kb_id, doc_id)`` so re-runs
-        delete-and-replace cleanly through the same primary key.
-        ``knowledge_graph_kwd`` is intentionally NOT set — that field
-        belongs to the KG feature; this row is identified via
-        ``compile_kwd`` so the two paths stay semantically distinct.
-        """
-        from common.doc_store.doc_store_base import OrderByExpr
-
-        ctx = self._task_context
-        tenant_id = ctx.tenant_id
-        kb_id_str = str(ctx.kb_id)
-        index_nm = search.index_name(tenant_id)
-        select_fields = ["content_with_weight", "raptor_layer_int", "source_chunk_ids"]
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                {"raptor_kwd": ["raptor"], "doc_id": [doc_id]},
-                [],
-                OrderByExpr(),
-                0,
-                10000,
-                index_nm,
-                [kb_id_str],
-            )
-            field_map = settings.docStoreConn.get_fields(res, select_fields)
-        except Exception:
-            logging.exception(
-                "raptor_graph: load failed for kb=%s doc=%s",
-                kb_id_str,
-                doc_id,
-            )
-            return
-
-        rows = list((field_map or {}).values())
-        if not rows:
-            logging.info(
-                "raptor_graph: no summaries to render for kb=%s doc=%s",
-                kb_id_str,
-                doc_id,
-            )
-            return
-
-        graph = self._build_raptor_graph(rows)
-        if not graph["entities"]:
-            logging.info(
-                "raptor_graph: projection produced no entities for kb=%s doc=%s",
-                kb_id_str,
-                doc_id,
-            )
-            return
-
-        row_id = xxhash.xxh64(
-            f"raptor_graph:{kb_id_str}:{doc_id}".encode("utf-8", "surrogatepass"),
-        ).hexdigest()
-        row = {
-            "id": row_id,
-            "kb_id": kb_id_str,
-            "doc_id": doc_id,
-            "compile_kwd": "raptor_graph",
-            "compilation_template_kind_kwd": "raptor",
-            "content_with_weight": json.dumps(graph, ensure_ascii=False),
-            "available_int": 0,
-        }
-        try:
-            await thread_pool_exec(
-                settings.docStoreConn.delete,
-                {"compile_kwd": "raptor_graph", "doc_id": [doc_id]},
-                index_nm,
-                ctx.kb_id,
-            )
-        except Exception:
-            logging.debug(
-                "raptor_graph: prior delete failed for kb=%s doc=%s; relying on id-upsert",
-                kb_id_str,
-                doc_id,
-            )
-        try:
-            await thread_pool_exec(
-                settings.docStoreConn.insert,
-                [row],
-                index_nm,
-                ctx.kb_id,
-            )
-            logging.info(
-                "raptor_graph: stored %d entities / %d relations for kb=%s doc=%s",
-                len(graph["entities"]),
-                len(graph["relations"]),
-                kb_id_str,
-                doc_id,
-            )
-        except Exception:
-            logging.exception(
-                "raptor_graph: insert failed for kb=%s doc=%s",
-                kb_id_str,
-                doc_id,
-            )

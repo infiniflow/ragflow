@@ -400,3 +400,26 @@ func TestBuildFilterFromCondition_UnconstrainedFilter(t *testing.T) {
 		t.Errorf("non-empty condition with blank values: got %q, want '1=1'", got)
 	}
 }
+
+// TestBuildFilterFromCondition_StringSliceIDPreservesScope pins the shape the
+// document availability switch relies on: updateSourceChunkAvailability passes a
+// typed []string id list, and Infinity must render it as an IN clause. Dropping
+// it leaves whatever other clauses the caller passed (none, for that path), i.e.
+// an update scoped to the whole dataset table.
+func TestBuildFilterFromCondition_StringSliceIDPreservesScope(t *testing.T) {
+	clmns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"id": {"Varchar", ""},
+	}
+	got := buildFilterFromCondition(map[string]interface{}{"id": []string{"chunk-a", "chunk-b"}}, clmns)
+	if got != "id IN ('chunk-a', 'chunk-b')" {
+		t.Errorf("condition []string id: got %q, want %q", got, "id IN ('chunk-a', 'chunk-b')")
+	}
+	// An empty list contributes no clause, so the caller is left with an
+	// unconstrained filter — the case UpdateChunks/DeleteChunks refuse.
+	if got := buildFilterFromCondition(map[string]interface{}{"id": []string{}}, clmns); got != "1=1" {
+		t.Errorf("empty []string id: got %q, want '1=1'", got)
+	}
+}

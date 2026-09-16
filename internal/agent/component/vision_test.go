@@ -17,7 +17,9 @@
 package component
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -405,6 +407,26 @@ func TestBuildAgentInputMessagesInjectsSysFiles(t *testing.T) {
 	if imagePart.Type != schema.ChatMessagePartTypeImageURL ||
 		imagePart.Image == nil || imagePart.Image.URL == nil || *imagePart.Image.URL != uri {
 		t.Errorf("image part = %+v, want image_url part carrying the upload URI", imagePart)
+	}
+}
+
+func TestAgentRejectsImageForKnownTextOnlyModel(t *testing.T) {
+	called := false
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		called = true
+		return &schema.Message{Role: schema.Assistant, Content: "unexpected"}, nil
+	})
+	state := runtime.NewCanvasState("run-agent-text-only-image", "task-agent-text-only-image")
+	state.Sys["files"] = []string{"data:image/png;base64,iVBORw0KGgo="}
+
+	_, err := NewAgentComponent(AgentParam{ModelID: "glm-4.7@ZHIPU-AI"}).Invoke(
+		runtime.WithState(t.Context(), state), nil, map[string]any{"user_prompt": "describe this"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "Image input is not supported by the selected model") {
+		t.Fatalf("Invoke error = %v, want clear unsupported-image error", err)
+	}
+	if called {
+		t.Fatal("text-only model must be rejected before agentRunner")
 	}
 }
 

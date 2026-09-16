@@ -41,8 +41,21 @@ func NewNavEmbedder(modelSvc *ModelProviderService, embdModelName string) *NavEm
 	return &NavEmbedder{modelSvc: modelSvc, embdModelName: embdModelName}
 }
 
-// Encode embeds texts for the tenant and returns float32 vectors.
+// Encode embeds texts as DOCUMENTS for the tenant and returns float32 vectors.
 func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
+	return e.encode(ctx, tenantID, texts, false)
+}
+
+// EncodeQueries is the query-side counterpart of Encode (Python
+// LLMBundle.encode_queries). Providers that embed queries and documents
+// asymmetrically — Cohere search_query, Voyage query, Jina retrieval.query,
+// NVIDIA query — only apply their query encoding when this method is used, so
+// every caller embedding a SEARCH QUERY must prefer it over Encode.
+func (e *NavEmbedder) EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
+	return e.encode(ctx, tenantID, texts, true)
+}
+
+func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []string, query bool) ([][]float32, error) {
 	if e.modelSvc == nil {
 		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
 	}
@@ -73,7 +86,7 @@ func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty}, model.APIConfig, nil, nil)
+	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
 	if err != nil {
 		return nil, err
 	}

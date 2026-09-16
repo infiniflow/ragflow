@@ -113,7 +113,6 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 				return common.CodeDataError, err
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"run":      string(entity.TaskStatusCancel),
 				"progress": 0,
 			}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
@@ -125,7 +124,6 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		// Delete-only: user asked to remove prior parse results without
 		// starting a new parse. RUNNING already continued above.
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-			"run":      run,
 			"progress": 0,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
@@ -133,11 +131,22 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
+			// Capture the run's own log row before its task is removed. The
+			// cleanup must drop only that row: a concurrent re-parse may
+			// already own a newer one for the same document.
+			var pipelineLogID string
+			if task, taskErr := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); taskErr != nil {
+				common.Error(fmt.Sprintf("go side, doc %s, load ingestion task for pipeline log cleanup failed", doc.ID), taskErr)
+			} else if task != nil && task.PipelineLogID != nil {
+				pipelineLogID = *task.PipelineLogID
+			}
 			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
 				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
 				}
 				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			} else if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, pipelineLogID); err != nil {
+				common.Error(fmt.Sprintf("go side, doc %s, delete open pipeline log failed", doc.ID), err)
 			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
