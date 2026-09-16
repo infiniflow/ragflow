@@ -49,19 +49,23 @@ func TestDriverHTTPClientLogsProviderRequestAndResponseWhenEnabled(t *testing.T)
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	entries := logs.FilterMessage(providerLogMessage).All()
+	entries := logs.All()
 	if len(entries) != 1 {
 		t.Fatalf("provider log count = %d, want 1", len(entries))
 	}
-	fields := entries[0].ContextMap()
-	if fields["response_code"] != int64(http.StatusOK) {
-		t.Errorf("response_code = %#v, want %d", fields["response_code"], http.StatusOK)
+	message := entries[0].Message
+	if strings.Contains(message, `\"`) {
+		t.Errorf("provider log contains escaped JSON: %q", message)
 	}
-	if strings.Contains(fields["provider_url"].(string), "request-secret") {
-		t.Errorf("provider_url contains the unredacted API key: %q", fields["provider_url"])
+	if !strings.Contains(message, `payload={"api_key":"[REDACTED]","query":"hello"}`) {
+		t.Errorf("provider log payload is not raw redacted JSON: %q", message)
 	}
-	assertRedactedJSONField(t, fields["payload"].(string), "api_key")
-	assertRedactedJSONField(t, fields["response_body"].(string), "access_token")
+	if !strings.Contains(message, `response_code=200 response_body={"access_token":"[REDACTED]","answer":"ok"}`) {
+		t.Errorf("provider log response is not raw redacted JSON: %q", message)
+	}
+	if strings.Contains(message, "request-secret") || strings.Contains(message, "payload-secret") || strings.Contains(message, "response-secret") {
+		t.Errorf("provider log contains an unredacted secret: %q", message)
+	}
 }
 
 func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
@@ -98,7 +102,7 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	if payload.reads != 0 {
 		t.Fatalf("request body reads = %d, want 0 while LLM_DEBUG is disabled", payload.reads)
 	}
-	if count := logs.FilterMessage(providerLogMessage).Len(); count != 0 {
+	if count := logs.Len(); count != 0 {
 		t.Fatalf("provider log count = %d, want 0", count)
 	}
 }
@@ -118,8 +122,8 @@ func TestIsLLMDebugEnabled(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.value, func(t *testing.T) {
 			t.Setenv(common.EnvLLMDebug, test.value)
-			if got := isLLMDebugEnabled(); got != test.want {
-				t.Errorf("isLLMDebugEnabled() = %v, want %v", got, test.want)
+			if got := common.IsLLMDebugEnabled(); got != test.want {
+				t.Errorf("IsLLMDebugEnabled() = %v, want %v", got, test.want)
 			}
 		})
 	}
@@ -143,17 +147,6 @@ func (r *trackingReadCloser) Read(p []byte) (int, error) {
 
 func (r *trackingReadCloser) Close() error {
 	return nil
-}
-
-func assertRedactedJSONField(t *testing.T, body, key string) {
-	t.Helper()
-	var value map[string]any
-	if err := json.Unmarshal([]byte(body), &value); err != nil {
-		t.Fatalf("Unmarshal(%q) error = %v", body, err)
-	}
-	if got := value[key]; got != redactedLogValue {
-		t.Errorf("%s = %#v, want %q", key, got, redactedLogValue)
-	}
 }
 
 func TestBaseModelDoRequestAuthorizationHeader(t *testing.T) {

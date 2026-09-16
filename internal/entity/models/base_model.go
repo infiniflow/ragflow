@@ -29,17 +29,13 @@ import (
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/utility"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 const (
-	providerLogMessage = "\x1b[32mProvider HTTP call\x1b[0m"
-	redactedLogValue   = "[REDACTED]"
+	redactedLogValue = "[REDACTED]"
 )
 
 type BaseModel struct {
@@ -495,7 +491,7 @@ func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	if !isLLMDebugEnabled() {
+	if !common.IsLLMDebugEnabled() {
 		return base
 	}
 	return &providerLoggingTransport{base: base}
@@ -562,11 +558,6 @@ func (b *providerResponseBody) logOnce() {
 	b.once.Do(func() {
 		b.log(b.body.Bytes())
 	})
-}
-
-func isLLMDebugEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(common.GetEnv(common.EnvLLMDebug)))
-	return err == nil && enabled
 }
 
 func readAndRestoreRequestBody(req *http.Request) ([]byte, error) {
@@ -667,16 +658,12 @@ func isSensitiveLogKey(key string) bool {
 }
 
 func logProviderCall(providerURL, payload string, statusCode int, responseBody string, err error) {
-	fields := []zap.Field{
-		zap.String("provider_url", providerURL),
-		zap.String("payload", payload),
-		zap.Int("response_code", statusCode),
-		zap.String("response_body", responseBody),
-	}
+	request := fmt.Sprintf("url=%s payload=%s", providerURL, payload)
+	response := fmt.Sprintf("response_code=%d response_body=%s", statusCode, responseBody)
 	if err != nil {
-		fields = append(fields, zap.Error(err))
+		response += " error=" + err.Error()
 	}
-	common.Info(providerLogMessage, fields...)
+	common.LogCyanGreenInfo(request, response)
 }
 
 // schemeSafeTransport wraps an http.RoundTripper so every outgoing request is

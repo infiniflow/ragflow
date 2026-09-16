@@ -17,7 +17,9 @@
 package common
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -65,7 +67,44 @@ const (
 	defaultMaxSizeMB  = 100
 	defaultMaxBackups = 10
 	defaultMaxAgeDays = 30
+	cyanLogMarker     = "[[RAGFLOW_CYAN_LOG]]"
+	greenLogMarker    = "[[RAGFLOW_GREEN_LOG]]"
+	resetLogMarker    = "[[RAGFLOW_RESET_LOG]]"
+	ansiBrightCyan    = "\x1b[96m"
+	ansiGreen         = "\x1b[32m"
+	ansiReset         = "\x1b[0m"
 )
+
+type coloredLineWriteSyncer struct {
+	zapcore.WriteSyncer
+	color bool
+}
+
+func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) {
+		return s.WriteSyncer.Write(p)
+	}
+
+	line := bytes.Clone(p)
+	if s.color {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), []byte(ansiBrightCyan))
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), []byte(ansiGreen))
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), []byte(ansiReset))
+	} else {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), nil)
+	}
+
+	n, err := s.WriteSyncer.Write(line)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(line) {
+		return 0, io.ErrShortWrite
+	}
+	return len(p), nil
+}
 
 func parseZapLevel(level string) (zapcore.Level, error) {
 	switch strings.ToLower(strings.TrimSpace(level)) {
@@ -144,7 +183,6 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		maxAge = defaultMaxAgeDays
 	}
 
-	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
 	ljLogger := &lumberjack.Logger{
 		Filename:   filepath.Join(file.Path, file.Filename),
 		MaxSize:    maxSize,
@@ -153,13 +191,29 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		Compress:   file.Compress,
 		LocalTime:  true,
 	}
-	syncers = append(syncers, zapcore.AddSync(ljLogger))
-
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zap.CombineWriteSyncers(syncers...),
-		atomicLevel,
-	)
+	stdoutSyncer := zapcore.AddSync(os.Stdout)
+	fileSyncer := zapcore.AddSync(ljLogger)
+	var core zapcore.Core
+	if IsLLMDebugEnabled() {
+		core = zapcore.NewTee(
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: stdoutSyncer, color: true},
+				atomicLevel,
+			),
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: fileSyncer},
+				atomicLevel,
+			),
+		)
+	} else {
+		core = zapcore.NewCore(
+			zapcore.NewConsoleEncoder(encoderConfig),
+			zap.CombineWriteSyncers(stdoutSyncer, fileSyncer),
+			atomicLevel,
+		)
+	}
 
 	if serviceName != "" {
 		Logger = zap.New(core,
@@ -196,6 +250,15 @@ func Info(msg string, fields ...zap.Field) {
 		return
 	}
 	Logger.Info(msg, fields...)
+}
+
+// LogCyanGreenInfo writes the request portion in bright cyan and the response
+// portion in green on stdout. File output remains uncolored.
+func LogCyanGreenInfo(request, response string) {
+	if Logger == nil {
+		return
+	}
+	Logger.Info(cyanLogMarker + request + greenLogMarker + " " + response + resetLogMarker)
 }
 
 func Error(msg string, err error, fields ...zap.Field) {
