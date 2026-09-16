@@ -2050,7 +2050,7 @@
         {
             "name": "Cheaper Inference",
             "logo": "",
-            "tags": "LLM",
+            "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "rank": "885",
             "url": "https://api.cheaperinference.com/v1",
@@ -2068,9 +2068,12 @@
                 },
                 {
                     "llm_name": "claude-fable-5",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2079,9 +2082,12 @@
                 },
                 {
                     "llm_name": "claude-fable-5.1",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2090,9 +2096,12 @@
                 },
                 {
                     "llm_name": "claude-haiku-4.5",
-                    "tags": "LLM,CHAT,200K",
+                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools"
@@ -2164,9 +2173,12 @@
                 },
                 {
                     "llm_name": "claude-opus-5-fast",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2252,9 +2264,12 @@
                 },
                 {
                     "llm_name": "deepseek-v4.1-flash",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2263,9 +2278,12 @@
                 },
                 {
                     "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools"
@@ -2273,9 +2291,12 @@
                 },
                 {
                     "llm_name": "gemini-3-5-flash",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools"
@@ -2294,9 +2315,12 @@
                 },
                 {
                     "llm_name": "gemini-3.1-flash-lite",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools"
@@ -2304,9 +2328,12 @@
                 },
                 {
                     "llm_name": "gemini-3.1-pro",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2326,9 +2353,12 @@
                 },
                 {
                     "llm_name": "gemini-3.7-flash",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2424,9 +2454,12 @@
                 },
                 {
                     "llm_name": "glm-5.3-flash",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2490,9 +2523,12 @@
                 },
                 {
                     "llm_name": "gpt-5.4-nano",
-                    "tags": "LLM,CHAT,400K",
+                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
                     "max_tokens": 400000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2501,9 +2537,12 @@
                 },
                 {
                     "llm_name": "gpt-5.5",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2512,9 +2551,12 @@
                 },
                 {
                     "llm_name": "gpt-5.5-pro",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2523,9 +2565,12 @@
                 },
                 {
                     "llm_name": "gpt-5.6-luna",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1050000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2534,9 +2579,12 @@
                 },
                 {
                     "llm_name": "gpt-5.6-sol",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1050000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2545,9 +2593,12 @@
                 },
                 {
                     "llm_name": "gpt-5.6-terra",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1050000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2556,9 +2607,12 @@
                 },
                 {
                     "llm_name": "gpt-6-astra",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1050000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2567,9 +2621,12 @@
                 },
                 {
                     "llm_name": "grok-4.5",
-                    "tags": "LLM,CHAT,500K",
+                    "tags": "LLM,CHAT,500K,IMAGE2TEXT",
                     "max_tokens": 500000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2578,9 +2635,12 @@
                 },
                 {
                     "llm_name": "kimi-k3",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2600,9 +2660,12 @@
                 },
                 {
                     "llm_name": "muse-spark-1.2",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2611,9 +2674,12 @@
                 },
                 {
                     "llm_name": "qwen-3-8-27b",
-                    "tags": "LLM,CHAT,262K",
+                    "tags": "LLM,CHAT,262K,IMAGE2TEXT",
                     "max_tokens": 262144,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2644,9 +2710,12 @@
                 },
                 {
                     "llm_name": "qwen3-6-35b-a3b",
-                    "tags": "LLM,CHAT,262K",
+                    "tags": "LLM,CHAT,262K,IMAGE2TEXT",
                     "max_tokens": 262144,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2655,9 +2724,12 @@
                 },
                 {
                     "llm_name": "qwen3.6-27b",
-                    "tags": "LLM,CHAT,256K",
+                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
                     "max_tokens": 256000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
