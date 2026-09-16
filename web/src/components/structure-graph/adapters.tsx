@@ -165,6 +165,11 @@ function buildUniqueTreeDataItems(
 
   for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
+    // Self-referencing relation records the node as its own parent, and the
+    // cycle walk below then spins on it forever (cursor never advances).
+    // This is a backend data integrity issue but we defend against it in the
+    // frontend so the UI never hangs.
+    if (relation.from === relation.to) continue;
 
     const parent = map.get(relation.from);
     const child = map.get(relation.to);
