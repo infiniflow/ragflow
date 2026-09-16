@@ -95,6 +95,7 @@ const svgIcons = [
   LLMFactory.RAGcon,
   LLMFactory.SoMark,
   LLMFactory.NewAPI,
+  LLMFactory.DaoXE,
   LLMFactory.Astraflow,
   LLMFactory.AstraflowCN,
   LLMFactory.FuturMix,

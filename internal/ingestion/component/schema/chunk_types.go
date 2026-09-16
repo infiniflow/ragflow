@@ -124,6 +124,15 @@ type ChunkDoc struct {
 	TopInt        []int                      `json:"top_int,omitempty"`
 	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
 	Positions     json.RawMessage            `json:"positions,omitempty"`
+	TableID       string                     `json:"table_id,omitempty"`
+	Sheet         string                     `json:"sheet,omitempty"`
+	SheetIndex    *int                       `json:"sheet_index,omitempty"`
+	Headers       []string                   `json:"headers,omitempty"`
+	Cells         []string                   `json:"cells,omitempty"`
+	RowStart      *int                       `json:"row_start,omitempty"`
+	RowEnd        *int                       `json:"row_end,omitempty"`
+	ColStart      *int                       `json:"col_start,omitempty"`
+	ColEnd        *int                       `json:"col_end,omitempty"`
 	Extra         map[string]json.RawMessage `json:"-"`
 }
 
@@ -143,6 +152,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
+		"table_id", "sheet", "sheet_index", "headers", "cells", "row_start", "row_end", "col_start", "col_end",
 	} {
 		delete(raw, key)
 	}
@@ -236,6 +246,10 @@ func (d ChunkDoc) ToMap() map[string]any {
 	for k, raw := range d.Extra {
 		out[k] = decodeExtraValue(raw)
 	}
+	// Every pre-index chunk has one canonical text field. Keep the key even
+	// for media-only chunks so chunk identity and image upload use the same
+	// wire contract; contextual text remains explicit retrieval metadata.
+	out["text"] = d.Text
 	delete(out, "content_with_weight")
 	if len(d.PDFPositions) > 0 {
 		out["_pdf_positions"] = decodeStructuredValue(d.PDFPositions)
@@ -253,6 +267,15 @@ func ChunkDocsToMaps(in []ChunkDoc) []map[string]any {
 		out = append(out, doc.ToMap())
 	}
 	return out
+}
+
+// ContextualText joins a chunk's body with its surrounding media context in
+// the order Python materializes it (rag/flow/chunker/token_chunker.py:343):
+// context_above, text, context_below, concatenated as they are. No separator
+// is inserted: Python's finalize concatenates directly, and the context
+// collectors keep their own boundary punctuation and newlines.
+func ContextualText(d ChunkDoc) string {
+	return d.ContextAbove + d.Text + d.ContextBelow
 }
 
 func (d *ChunkDoc) SetExtraValue(key string, value any) error {

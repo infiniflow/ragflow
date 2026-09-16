@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	textparser "ragflow/internal/parser/parser"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -66,6 +67,69 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	}
 	if out["_ERROR"] == nil {
 		t.Fatalf("_ERROR missing: %v", out)
+	}
+}
+
+func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 1},
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2},
+			{"text": "ID: B-1; Status: open", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want one row chunk per sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "ID: B-1; Status: open" {
+		t.Fatalf("row chunks = %#v", chunks)
+	}
+	for i, chunk := range chunks {
+		if chunk["ck_type"] != "table_row" {
+			t.Errorf("chunk[%d] ck_type = %v, want table_row", i, chunk["ck_type"])
+		}
+	}
+}
+
+func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "orders.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1},
+			{"text": "Name; Owner", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want data row and header-only sheet", chunks)
+	}
+	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "Name; Owner" {
+		t.Fatalf("chunks = %#v, want row followed by header-only sheet", chunks)
 	}
 }
 
@@ -228,6 +292,33 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+func TestTokenChunkerTextParserJSONKeepsSentenceBoundaries(t *testing.T) {
+	parsed := textparser.NewTextParser().ParseWithResult(t.Context(), "doc.txt", []byte("first!second!"))
+	if parsed.Err != nil {
+		t.Fatalf("TextParser.ParseWithResult: %v", parsed.Err)
+	}
+
+	c, err := NewTokenChunker(map[string]any{
+		"chunk_token_size": 128,
+		"delimiters":       []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.txt",
+		"file_type":     "txt",
+		"output_format": "json",
+		"json":          parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("TokenChunker.Invoke: %v", err)
+	}
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!\nsecond!"}) {
+		t.Fatalf("text parser JSON chunks = %q, want sentence boundary between parser units", texts)
+	}
+}
+
 func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode": "delimiter",
@@ -331,6 +422,100 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 	}
 	if got, _ := chunks[4]["text"].(string); !strings.Contains(got, "Gamma") {
 		t.Errorf("chunk 4 text = %q, want it to contain Gamma", got)
+	}
+}
+
+// TestTokenChunkerMediaContextSpansUpstreamItems pins the flat attach contract
+// on the canvas path: Python collects a media chunk's context from the flat
+// chunk list (token_chunker.py:537, :545), so the text units of *other*
+// upstream items are in scope. The context is also what keeps a caption-less
+// media chunk alive — its own body is empty — and what that chunk indexes.
+func TestTokenChunkerMediaContextSpansUpstreamItems(t *testing.T) {
+	cases := []struct {
+		name      string
+		params    map[string]any
+		mediaItem map[string]any
+		mediaType string
+		wantText  string
+	}{
+		{
+			name:      "image without a body",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "image_context_size": 20},
+			mediaItem: map[string]any{"text": "", "image": "figure-bytes", "doc_type_kwd": "image"},
+			mediaType: "image",
+			wantText:  "abovebelow",
+		},
+		{
+			name:      "table",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "table_context_size": 20},
+			mediaItem: map[string]any{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			mediaType: "table",
+			wantText:  "above<table><tr><td>A</td></tr></table>below",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenChunker(tc.params)
+			if err != nil {
+				t.Fatalf("NewTokenChunker: %v", err)
+			}
+			out, err := c.Invoke(context.Background(), nil, map[string]any{
+				"name":          "fig.pdf",
+				"file_type":     "pdf",
+				"output_format": "json",
+				"json": []map[string]any{
+					{"text": "above", "doc_type_kwd": "text"},
+					tc.mediaItem,
+					{"text": "below", "doc_type_kwd": "text"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			var media map[string]any
+			for _, ck := range chunks {
+				if ck["ck_type"] == tc.mediaType {
+					media = ck
+					break
+				}
+			}
+			if media == nil {
+				t.Fatalf("%s chunk missing from %d chunks: %+v", tc.mediaType, len(chunks), chunks)
+			}
+			assertMaterializedMediaContext(t, media, tc.wantText)
+		})
+	}
+}
+
+// TestTokenChunkerDropsMediaChunkWithTagOnlyContext pins the drop filter
+// against Python's finalize, which strips parser position tags from the merged
+// body before the empty check (token_chunker.py:343). A media chunk whose only
+// surrounding context is a position tag has nothing retrievable left, so it
+// must not survive — the fold would otherwise emit a chunk with an empty body.
+func TestTokenChunkerDropsMediaChunkWithTagOnlyContext(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":     "delimiter",
+		"chunk_token_size":   512,
+		"table_context_size": 20,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if chunks := outputChunks(t, out); len(chunks) != 0 {
+		t.Fatalf("chunks = %+v, want none: the media chunk's only context is a position tag", chunks)
 	}
 }
 

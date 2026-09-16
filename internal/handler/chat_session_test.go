@@ -77,6 +77,24 @@ func TestChatSessionHandlerUpdateMessageFeedback_RejectsEmptyJSONObject(t *testi
 
 func TestChatSessionHandlerChatCompletionsRejectsNonPositiveMaxTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	for _, value := range []string{"true", `"false"`, "null", "0", "{}"} {
+		t.Run("store_history_messages="+value, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{"store_history_messages":`+value+`,"messages":[{"role":"user","content":"hi"}]}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Set("user", &entity.User{ID: "user-1"})
+			handler := NewChatSessionHandler(service.NewChatSessionService(), nil)
+			handler.ChatCompletions(ctx)
+			var body map[string]interface{}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode response body: %v", err)
+			}
+			if body["code"] != float64(common.CodeBadRequest) || body["message"] != "`store_history_messages` only supports false." {
+				t.Fatalf("unexpected response: %#v", body)
+			}
+		})
+	}
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

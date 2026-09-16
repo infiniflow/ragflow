@@ -646,10 +646,15 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	default:
 		raw = cloneChunkDocs(in.JSONResult)
 	}
-	// Keep only chunks that carry canonical pre-index text.
+	// Keep only chunks that have retrievable content: a chunk is dropped only
+	// when canonical text and both media-context fields are empty.
+	// Context-bearing media chunks may intentionally have no display text, but
+	// their surrounding prose is still searchable and must survive to the
+	// tokenizer.
 	filtered := raw[:0]
 	for _, ck := range raw {
-		if strings.TrimSpace(ck.Text) == "" {
+		if strings.TrimSpace(ck.Text) == "" &&
+			strings.TrimSpace(ck.ContextAbove) == "" && strings.TrimSpace(ck.ContextBelow) == "" {
 			continue
 		}
 		filtered = append(filtered, ck)
@@ -786,7 +791,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 				smt = st
 			}
 			ck.ContentSmLtks = smt
-		} else if t := ck.Text; strings.TrimSpace(t) != "" {
+		} else if t := schema.ContextualText(*ck); strings.TrimSpace(t) != "" {
 			tt, err := tok.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("tokenizer: text tokenize: %w", err)
@@ -816,7 +821,7 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 	for _, f := range fields {
 		switch f {
 		case "text":
-			b.WriteString(ck.Text)
+			b.WriteString(schema.ContextualText(ck))
 		case "questions":
 			b.WriteString(ck.Questions)
 		case "keywords":
@@ -871,7 +876,7 @@ func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []
 }
 
 func requiresFullTextTokens(ck schema.ChunkDoc) bool {
-	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(ck.Text) != ""
+	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(schema.ContextualText(ck)) != ""
 }
 
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
