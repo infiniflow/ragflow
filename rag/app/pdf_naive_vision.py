@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+
 def _bbox_positions_for_naive_tables(box):
     positions = []
     for pos in box.get("positions") or []:
@@ -30,7 +31,30 @@ def _bbox_positions_for_naive_tables(box):
     return positions
 
 
+def _apply_document_vertical_coords(box, page_cum_height):
+    """Convert page-local top/bottom from pdfplumber into DeepDOC cumulative coordinates."""
+    if not box.get("_embedded_supplement"):
+        return box
+    pn = box.get("page_number")
+    if pn is None or page_cum_height is None:
+        return box
+    try:
+        idx = int(pn) - 1
+    except (TypeError, ValueError):
+        return box
+    if idx < 0 or idx >= len(page_cum_height) - 1:
+        return box
+    offset = float(page_cum_height[idx])
+    updated = dict(box)
+    for key in ("top", "bottom"):
+        if updated.get(key) is not None:
+            updated[key] = float(updated[key]) + offset
+    updated.pop("_embedded_supplement", None)
+    return updated
+
+
 def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parser, zoomin=3):
+    """Merge VLM-enhanced bbox text back into naive PDF sections and tables."""
     sections = list(sections or [])
     tables = list(tables or [])
 
@@ -88,6 +112,7 @@ def enhance_naive_deepdoc_pdf_media(
     lang="English",
     **kwargs,
 ):
+    """Run VLM figure enhancement for naive DeepDOC PDF chunks and merge results."""
     tenant_id = kwargs.get("tenant_id")
     if not tenant_id or not binary:
         return sections, tables
@@ -99,9 +124,23 @@ def enhance_naive_deepdoc_pdf_media(
     parser_config = kwargs.get("parser_config") or {}
     vlm_conf = parser_config.get("vlm")
 
+    zoomin = 3
     bbox_parser = RAGFlowPdfParser()
-    bboxes = bbox_parser.parse_into_bboxes(binary, callback=callback, from_page=from_page, to_page=to_page)
-    bboxes = supplement_deepdoc_bboxes_with_embedded_images(binary, bboxes)
+    bboxes = bbox_parser.parse_into_bboxes(
+        binary,
+        callback=callback,
+        zoomin=zoomin,
+        from_page=from_page,
+        to_page=to_page,
+    )
+    bboxes = supplement_deepdoc_bboxes_with_embedded_images(
+        binary,
+        bboxes,
+        from_page=from_page,
+        to_page=to_page,
+    )
+    page_cum_height = getattr(bbox_parser, "page_cum_height", None)
+    bboxes = [_apply_document_vertical_coords(box, page_cum_height) for box in bboxes]
 
     for box in bboxes:
         if box.get("image") is not None:
@@ -118,4 +157,4 @@ def enhance_naive_deepdoc_pdf_media(
         lang=lang,
     )
 
-    return merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parser)
+    return merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, bbox_parser, zoomin=zoomin)

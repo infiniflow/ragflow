@@ -2,11 +2,14 @@
 #  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-from rag.app.pdf_naive_vision import merge_vlm_enhanced_bboxes_into_naive_pdf
+from rag.app.pdf_naive_vision import (
+    _apply_document_vertical_coords,
+    merge_vlm_enhanced_bboxes_into_naive_pdf,
+)
 
 @pytest.mark.p1
 def test_merge_updates_matching_section_text():
@@ -41,4 +44,19 @@ def test_merge_adds_table_when_no_section_match():
     sections, tables = merge_vlm_enhanced_bboxes_into_naive_pdf([], [], bboxes, pdf_parser)
     assert len(tables) == 1
     assert tables[0][0][1] == ["only vlm"]
+
+
+@pytest.mark.p1
+def test_apply_document_vertical_coords_for_supplemented_box():
+    box = {
+        "page_number": 2,
+        "top": 10.0,
+        "bottom": 20.0,
+        "_embedded_supplement": True,
+    }
+    page_cum_height = [0, 100, 250]
+    out = _apply_document_vertical_coords(box, page_cum_height)
+    assert out["top"] == 110.0
+    assert out["bottom"] == 120.0
+    assert "_embedded_supplement" not in out
 

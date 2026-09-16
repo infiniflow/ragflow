@@ -110,8 +110,20 @@ def normalize_pdf_items_metadata(items):
     return items
 
 
-def supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes, zoom=PDF_PREVIEW_ZOOM):
-    """Recover figure boxes when DeepDOC layout finds no text (image-only PDFs)."""
+def supplement_deepdoc_bboxes_with_embedded_images(
+    blob,
+    bboxes,
+    zoom=PDF_PREVIEW_ZOOM,
+    from_page=0,
+    to_page=10**9,
+):
+    """Recover figure boxes when DeepDOC layout finds no text (image-only PDFs).
+
+    Merges pdfplumber embedded-image boxes with existing DeepDOC bboxes instead of
+    replacing them. Page bounds follow ``parse_into_bboxes`` (0-based ``from_page``,
+    ``to_page`` is an exclusive end index; 1-based PDF page numbers are included when
+    ``from_page + 1 <= page_number <= to_page``).
+    """
     if bboxes and any(b.get("image") is not None for b in bboxes):
         return bboxes
 
@@ -125,6 +137,8 @@ def supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes, zoom=PDF_PREVIE
     with sys.modules[lock_key]:
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
             for page_number, page in enumerate(pdf.pages, start=1):
+                if not (from_page + 1 <= page_number <= to_page):
+                    continue
                 if page.images:
                     for im in page.images:
                         x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
@@ -142,6 +156,7 @@ def supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes, zoom=PDF_PREVIE
                                 "text": "",
                                 "image": cropped,
                                 "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
+                                "_embedded_supplement": True,
                             }
                         )
                 elif not page.chars:
@@ -154,10 +169,15 @@ def supplement_deepdoc_bboxes_with_embedded_images(blob, bboxes, zoom=PDF_PREVIE
                             "text": "",
                             "image": pil,
                             "positions": [[page_number, 0, width, 0, height]],
+                            "_embedded_supplement": True,
                         }
                     )
 
-    return supplemented if supplemented else (bboxes or [])
+    if not supplemented:
+        return bboxes or []
+    if not bboxes:
+        return supplemented
+    return list(bboxes) + supplemented
 
 
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):

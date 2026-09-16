@@ -44,6 +44,41 @@ def test_supplement_embedded_images_for_image_only_pdf(monkeypatch):
 
 
 @pytest.mark.p1
+def test_supplement_merges_text_bboxes_with_embedded_images(monkeypatch):
+    module = _load_pdf_chunk_metadata(monkeypatch)
+    text_bbox = {"layout_type": "text", "text": "body", "page_number": 1}
+    fake_page = SimpleNamespace(
+        images=[{"x0": 0, "top": 0, "x1": 10, "bottom": 10}],
+        chars=[object()],
+        crop=lambda rect: SimpleNamespace(
+            to_image=lambda resolution, antialias: SimpleNamespace(original=object())
+        ),
+    )
+    fake_pdf = SimpleNamespace(pages=[fake_page])
+
+    class FakePlumber:
+        @staticmethod
+        def open(_blob):
+            return FakeContext(fake_pdf)
+
+    class FakeContext:
+        def __init__(self, pdf):
+            self.pdf = pdf
+
+        def __enter__(self):
+            return self.pdf
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(module.pdfplumber, "open", FakePlumber.open)
+    out = module.supplement_deepdoc_bboxes_with_embedded_images(b"pdf", [text_bbox])
+    assert len(out) == 2
+    assert out[0]["text"] == "body"
+    assert out[1].get("image") is not None
+
+
+@pytest.mark.p1
 def test_enhance_media_runs_for_title_block_with_image(monkeypatch):
     utils_path = REPO_ROOT / "rag/flow/parser/utils.py"
     for package_name in (
