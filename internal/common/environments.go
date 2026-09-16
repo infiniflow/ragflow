@@ -99,6 +99,7 @@ const (
 	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
+	EnvLLMDebug                          = "LLM_DEBUG"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
