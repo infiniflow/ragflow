@@ -134,11 +134,6 @@ var (
 	restAPI429DefaultWait = 30 * time.Second
 )
 
-// restAPISSRFAllowLoopback is a test hook that lets unit tests exercise the
-// real HTTP path against httptest servers bound to loopback. Production code
-// keeps it false so loopback/private endpoints stay blocked.
-var restAPISSRFAllowLoopback bool
-
 // NewRestAPIConnector parses a connector config and returns a connector. It
 // performs schema validation and the base-URL SSRF check but performs no
 // network I/O. Credentials are read from config["credentials"].
@@ -934,119 +929,14 @@ func restAPIStripAuthHeaders(headers map[string]string) map[string]string {
 // resolution. Resolution failure is logged and tolerated because the
 // per-request check re-validates.
 func validateRestAPIURLForSSRF(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return &ConnectorValidationError{Message: "REST API connector URL must include a hostname."}
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return &ConnectorValidationError{Message: fmt.Sprintf("Unsupported URL scheme for REST API connector: %q. Only http/https are allowed.", parsed.Scheme)}
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return &ConnectorValidationError{Message: "REST API connector URL must include a hostname."}
-	}
-	if strings.EqualFold(hostname, "localhost") {
-		return &ConnectorValidationError{Message: fmt.Sprintf("REST API connector URL hostname %q is not allowed (localhost is blocked).", hostname)}
-	}
-	if restAPISSRFAllowLoopback {
-		return nil
-	}
-	addrs, err := net.LookupIP(hostname)
-	if err != nil {
-		// DNS failure is not an SSRF condition by itself; the per-request
-		// check will surface it if it matters.
-		return nil
-	}
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr)) {
-			return &ConnectorValidationError{Message: fmt.Sprintf(
-				"REST API connector URL %q resolves to disallowed address %s (localhost, private, link-local, reserved, or multicast addresses are blocked).",
-				rawURL, addr)}
-		}
-	}
-	return nil
+	return validateConnectorURL(rawURL)
 }
 
 // assertRestAPIURLSafe mirrors ssrf_guard.assert_url_is_safe: every resolved
 // address must be globally routable. It returns the hostname and the first
 // validated IP so the caller can pin DNS.
-func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", nil, fmt.Errorf("URL is missing a host.")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", nil, fmt.Errorf("Disallowed URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return "", nil, fmt.Errorf("URL is missing a host.")
-	}
-	if restAPISSRFAllowLoopback {
-		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-		if err != nil {
-			return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
-		}
-		if len(addrs) == 0 {
-			return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-		}
-		return hostname, addrs[0].IP, nil
-	}
-
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
-	}
-	var first net.IP
-	for _, addr := range addrs {
-		eff := restAPIEffectiveIP(addr.IP)
-		if !restAPIIPIsGlobal(eff) {
-			return "", nil, fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
-		}
-		if first == nil {
-			first = addr.IP
-		}
-	}
-	if first == nil {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	return hostname, first, nil
-}
-
-// restAPIEffectiveIP returns the IPv4 equivalent for IPv4-mapped IPv6
-// addresses, mirroring ssrf_guard._effective_ip.
-func restAPIEffectiveIP(ip net.IP) net.IP {
-	if v4 := ip.To4(); v4 != nil && len(ip) == net.IPv6len {
-		return v4
-	}
-	return ip
-}
-
-// restAPIIPIsGlobal mirrors ipaddress.is_global for the address classes that
-// matter in practice.
-func restAPIIPIsGlobal(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
-		return false
-	}
-	if v4 := ip.To4(); v4 != nil {
-		first := v4[0]
-		// 0.0.0.0/8, 100.64.0.0/10 (CGNAT), 192.0.0.0/24 (IETF protocol
-		// assignments), 198.18.0.0/15 (benchmarking), 240.0.0.0/4, broadcast.
-		if first == 0 || first == 100 || (first == 192 && v4[1] == 0) ||
-			(first == 198 && v4[1]&0xfe == 18) || first >= 240 {
-			return false
-		}
-		return true
-	}
-	// IPv6 documentation range (2001:db8::/32) is not globally routable.
-	if len(ip) == net.IPv6len && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
-		return false
-	}
-	return true
+func assertRestAPIURLSafe(_ context.Context, rawURL string) (string, net.IP, error) {
+	return assertConnectorURLSafe(rawURL)
 }
 
 // ---------------------------------------------------------------------------

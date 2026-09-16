@@ -133,6 +133,9 @@ func (c *JiraConnector) Validate(ctx context.Context) error {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return &ConnectorValidationError{Message: "invalid Jira base URL"}
 	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return &ConnectorValidationError{Message: err.Error()}
+	}
 	if c.apiToken == "" && (c.userEmail == "" || c.password == "") {
 		return &ConnectorMissingCredentialError{Message: "Jira credentials must include either an API token or username/password."}
 	}
@@ -492,6 +495,10 @@ func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, 
 		}
 		reader = bytes.NewReader(data)
 	}
+	client, err := pinnedConnectorClient(apiURL, c.client, jiraRequestTimeout, c.checkRedirect)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, apiURL, reader)
 	if err != nil {
 		return nil, err
@@ -501,7 +508,7 @@ func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, 
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -534,12 +541,16 @@ func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte,
 	if !sameJiraOrigin(parsed, base) {
 		return nil, fmt.Errorf("Jira attachment origin %q does not match the configured base URL", parsed.Scheme+"://"+parsed.Host)
 	}
+	client, err := pinnedConnectorClient(rawURL, c.client, jiraRequestTimeout, c.checkRedirect)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	c.authorize(req)
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

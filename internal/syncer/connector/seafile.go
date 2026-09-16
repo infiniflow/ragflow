@@ -837,98 +837,15 @@ func classifySeaFileError(err error) error {
 }
 
 func validateSeaFileURLForSSRF(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return &ConnectorValidationError{Message: "Invalid SeaFile server URL."}
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return &ConnectorValidationError{Message: fmt.Sprintf("Unsupported SeaFile server URL scheme %q. Only http/https are allowed.", parsed.Scheme)}
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return &ConnectorValidationError{Message: "SeaFile server URL must include a hostname."}
-	}
-	if strings.EqualFold(hostname, "localhost") && !restAPISSRFAllowLoopback {
-		return &ConnectorValidationError{Message: "SeaFile server URL hostname \"localhost\" is not allowed."}
-	}
-	addrs, err := net.LookupIP(hostname)
-	if err != nil {
-		return nil
-	}
-	if restAPISSRFAllowLoopback {
-		allLoopback := true
-		for _, addr := range addrs {
-			if !addr.IsLoopback() {
-				allLoopback = false
-				break
-			}
-		}
-		if allLoopback {
-			return nil
-		}
-	}
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr)) {
-			return &ConnectorValidationError{Message: fmt.Sprintf(
-				"SeaFile server URL %q resolves to disallowed address %s (localhost, private, link-local, reserved, or multicast addresses are blocked).",
-				rawURL, addr)}
-		}
-	}
-	return nil
+	return validateConnectorURL(rawURL)
 }
 
 // seafileAssertURLSafe validates a per-request SeaFile URL for SSRF and
 // returns the hostname plus the first validated IP so the caller can pin DNS
 // for the actual dial, preventing DNS rebinding between validation and the
 // connection.
-func seafileAssertURLSafe(ctx context.Context, rawURL string) (string, net.IP, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", nil, fmt.Errorf("SeaFile URL is missing a host.")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", nil, fmt.Errorf("Disallowed SeaFile URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return "", nil, fmt.Errorf("SeaFile URL is missing a host.")
-	}
-	if strings.EqualFold(hostname, "localhost") && !restAPISSRFAllowLoopback {
-		return "", nil, fmt.Errorf("SeaFile URL hostname %q is not allowed (localhost is blocked).", hostname)
-	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %w", hostname, err)
-	}
-	if len(addrs) == 0 {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	if restAPISSRFAllowLoopback {
-		allLoopback := true
-		for _, addr := range addrs {
-			if !addr.IP.IsLoopback() {
-				allLoopback = false
-				break
-			}
-		}
-		if allLoopback {
-			return hostname, addrs[0].IP, nil
-		}
-		// Not all loopback — fall through to normal validation.
-	}
-	var first net.IP
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr.IP)) {
-			return "", nil, fmt.Errorf("SeaFile URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
-		}
-		if first == nil {
-			first = addr.IP
-		}
-	}
-	if first == nil {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	return hostname, first, nil
+func seafileAssertURLSafe(_ context.Context, rawURL string) (string, net.IP, error) {
+	return assertConnectorURLSafe(rawURL)
 }
 
 type seafileSyncSession struct {

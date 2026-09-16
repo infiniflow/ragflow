@@ -142,6 +142,9 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	if c.baseURL == "" {
 		return fmt.Errorf("WebDAV base URL is required")
 	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return err
+	}
 	if c.username == "" || c.password == "" {
 		return fmt.Errorf("WebDAV requires username and password credentials")
 	}
@@ -406,6 +409,10 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if err != nil {
 		return nil, err
 	}
+	client, err := pinnedConnectorClient(resolved, c.httpClient, webdavRequestTimeout, nil)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, "PROPFIND", resolved, bytes.NewReader([]byte(webdavPropfindBody)))
 	if err != nil {
 		return nil, err
@@ -415,7 +422,7 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if c.username != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +439,10 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 
 // download fetches a file body over GET.
 func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
+	client, err := pinnedConnectorClient(fileURL, c.httpClient, webdavRequestTimeout, nil)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 	if err != nil {
 		return nil, err
@@ -439,7 +450,7 @@ func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, er
 	if c.username != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

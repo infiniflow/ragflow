@@ -113,6 +113,9 @@ func (c *ConfluenceConnector) Validate(ctx context.Context) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("Confluence wiki_base must use HTTP or HTTPS")
 	}
+	if err := validateConnectorURL(c.wikiBase); err != nil {
+		return err
+	}
 	if c.accessToken == "" {
 		return fmt.Errorf("Confluence access token is required")
 	}
@@ -419,6 +422,10 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
+	client, err := pinnedConnectorClient(resolved, c.client, confluenceRequestTimeout, nil)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, resolved, nil)
 	if err != nil {
 		return nil, err
@@ -429,7 +436,7 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	} else {
 		req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	}
-	res, err := c.client.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

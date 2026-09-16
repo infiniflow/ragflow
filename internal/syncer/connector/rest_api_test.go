@@ -32,7 +32,7 @@ import (
 
 func withRestAPITestHooks(t *testing.T) {
 	t.Helper()
-	origLoopback := restAPISSRFAllowLoopback
+	origLoopback := connectorAllowLoopbackForTest
 	origTries := restAPIRetryTries
 	origBaseDelay := restAPIRetryBaseDelay
 	origMaxDelay := restAPIRetryMaxDelay
@@ -40,7 +40,7 @@ func withRestAPITestHooks(t *testing.T) {
 	origJitter := restAPIRetryJitter
 	orig429Waits := restAPI429MaxWaits
 	orig429Wait := restAPI429DefaultWait
-	restAPISSRFAllowLoopback = true
+	connectorAllowLoopbackForTest = true
 	restAPIRetryTries = 3
 	restAPIRetryBaseDelay = time.Millisecond
 	restAPIRetryMaxDelay = 10 * time.Millisecond
@@ -49,7 +49,7 @@ func withRestAPITestHooks(t *testing.T) {
 	restAPI429MaxWaits = 3
 	restAPI429DefaultWait = time.Millisecond
 	t.Cleanup(func() {
-		restAPISSRFAllowLoopback = origLoopback
+		connectorAllowLoopbackForTest = origLoopback
 		restAPIRetryTries = origTries
 		restAPIRetryBaseDelay = origBaseDelay
 		restAPIRetryMaxDelay = origMaxDelay
@@ -144,7 +144,7 @@ func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 		{name: "missing content fields", config: map[string]any{"url": "https://example.com"}, want: "At least one content field must be configured (content_fields)."},
 		{name: "zero max_pages", config: map[string]any{"url": "https://example.com", "max_pages": 0, "content_fields": "title"}, want: "max_pages must be a positive integer"},
 		{name: "negative max_pages", config: map[string]any{"url": "https://example.com", "max_pages": -1, "content_fields": "title"}, want: "max_pages must be a positive integer"},
-		{name: "bad scheme", config: map[string]any{"url": "ftp://example.com/x", "content_fields": "title"}, want: "Unsupported URL scheme"},
+		{name: "bad scheme", config: map[string]any{"url": "ftp://example.com/x", "content_fields": "title"}, want: "disallowed URL scheme"},
 		{name: "localhost", config: map[string]any{"url": "http://localhost/x", "content_fields": "title"}, want: "localhost is blocked"},
 	}
 	for _, tt := range tests {
@@ -162,13 +162,13 @@ func TestNewRestAPIConnectorValidationErrors(t *testing.T) {
 }
 
 func TestNewRestAPIConnectorBlocksPrivateAddress(t *testing.T) {
-	restAPISSRFAllowLoopback = false
-	defer func() { restAPISSRFAllowLoopback = false }()
+	connectorAllowLoopbackForTest = false
+	defer func() { connectorAllowLoopbackForTest = false }()
 	_, err := NewRestAPIConnector(map[string]any{
 		"url":            "http://127.0.0.1:8080/api",
 		"content_fields": "title",
 	})
-	if err == nil || !strings.Contains(err.Error(), "resolves to disallowed address") {
+	if err == nil || !strings.Contains(err.Error(), "resolves to a non-public address") {
 		t.Fatalf("err=%v want private address rejection", err)
 	}
 }
