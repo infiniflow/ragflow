@@ -377,17 +377,23 @@ export const traceIndex = (datasetId: string, indexType: string) =>
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
 // (GET /datasets/:id/compilation/status), used on the Go backend to
-// replace the legacy traceIndex task-progress endpoint. Route it through the
+// replace the legacy traceIndex task-progress endpoint. The `kind` query param
+// scopes the status to one compile type, mirroring the per-type scoping the
+// Python branch gets from traceIndex's `type=` param. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.
 const compilationStatusProxy = registerNextServer({
   getDatasetCompilationStatus: {
-    url: (datasetId: string) => api.compilationStatus(datasetId),
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.compilationStatus(datasetId),
     method: 'get',
   },
 } as const);
-export const getDatasetCompilationStatus = (datasetId: string) =>
-  compilationStatusProxy.getDatasetCompilationStatus(datasetId);
+export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
+  compilationStatusProxy.getDatasetCompilationStatus(
+    { datasetId, params: { kind } },
+    true,
+  );
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (

@@ -397,18 +397,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
-      goToConfiguration: 'Go to configuration',
+      reselectParser: 'Reselect parse method',
       uploadMissingModelsTitle: 'Some files lack a required model',
       fileModelMissing:
         '{{name}} ({{fileType}}) requires a configured {{model}} model',
       missingModelAsr: 'audio (ASR)',
       missingModelVision: 'vision',
-      configureInDatasetSettingHint:
-        'You can configure it in the dataset Configuration page (Parser operator), or continue anyway.',
+      uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
+      fileTypeUnsupported:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      reselectParserAfterUploadHint:
+        'Continue uploading, then reselect a parse method for these files in the file list.',
+      reselectParserToParseHint:
+        'Reselect a parse method for the affected files, then parse again.',
       parseBlockedTitle: 'Cannot parse',
       parseBlockedPartialTitle: 'Some files cannot be parsed',
-      parseBlockedHint:
-        'Configure the model in the dataset Configuration page (Parser operator), then try again.',
       parseValidFiles: 'Parse valid files',
       parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {

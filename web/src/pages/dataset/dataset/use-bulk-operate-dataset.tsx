@@ -24,8 +24,8 @@ import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DocumentType } from './constant';
-import { buildMissingModelModalContent } from './parser-model-gap-content';
-import { useParserModelValidation } from './use-parser-model-validation';
+import { buildParserGapModalContent } from './parser-gap-content';
+import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
 
 export function useBulkOperateDataset({
@@ -46,8 +46,7 @@ export function useBulkOperateDataset({
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
   const { visible, showModal, hideModal } = useSetModalState();
-  const { findFilesMissingModels, goToDatasetConfiguration } =
-    useParserModelValidation();
+  const { findDocumentParseGaps } = useParserGapValidation();
   const { knowledgeBase } = useKnowledgeBaseContext();
 
   const chunkNum = useMemo(() => {
@@ -73,15 +72,14 @@ export function useBulkOperateDataset({
         return;
       }
 
-      // Starting a parse requires the models of each file type to be
-      // configured; cancelling is always allowed.
+      // Starting a parse requires each file type to be supported by the
+      // Parser operator its document actually runs with; cancelling is
+      // always allowed.
       if (run === 1) {
         const selectedDocuments = documents.filter((x) =>
           nonVirtualKeys.includes(x.id),
         );
-        const gaps = findFilesMissingModels(
-          selectedDocuments.map((x) => x.name),
-        );
+        const gaps = findDocumentParseGaps(selectedDocuments);
         if (gaps.length > 0) {
           hideModal();
           const failingNames = new Set(gaps.map((gap) => gap.name));
@@ -92,15 +90,14 @@ export function useBulkOperateDataset({
           if (validIds.length === 0) {
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
-              content: buildMissingModelModalContent(
+              content: buildParserGapModalContent(
                 t,
                 gaps,
-                'knowledgeDetails.parseBlockedHint',
+                'knowledgeDetails.reselectParserToParseHint',
               ),
-              okText: t('knowledgeDetails.goToConfiguration'),
-              cancelText: t('common.cancel'),
+              showCancel: false,
+              okText: t('common.cancel'),
               closable: false,
-              onOk: goToDatasetConfiguration,
             });
             return;
           }
@@ -109,10 +106,10 @@ export function useBulkOperateDataset({
             title: t('knowledgeDetails.parseBlockedPartialTitle'),
             content: (
               <div className="space-y-2">
-                {buildMissingModelModalContent(
+                {buildParserGapModalContent(
                   t,
                   gaps,
-                  'knowledgeDetails.parseBlockedHint',
+                  'knowledgeDetails.reselectParserToParseHint',
                 )}
                 <p>
                   {t('knowledgeDetails.parseValidFilesNote', {
@@ -145,8 +142,7 @@ export function useBulkOperateDataset({
       selectedRowKeys,
       hideModal,
       t,
-      findFilesMissingModels,
-      goToDatasetConfiguration,
+      findDocumentParseGaps,
     ],
   );
 

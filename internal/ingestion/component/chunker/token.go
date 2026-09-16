@@ -519,7 +519,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
-		ch.Text = removeTag(strings.TrimSpace(ch.Text))
+		setChunkText(&ch, removeTag(strings.TrimSpace(ch.Text)))
 		if ch.Text == "" {
 			continue
 		}
@@ -628,7 +628,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
-		m.Text = removeTag(m.Text)
+		setChunkText(&m, removeTag(m.Text))
 		// Drop a chunk only when nothing about it is retrievable. A media chunk
 		// may carry no body of its own and still be indexed through its
 		// surrounding context: Python's _finalize_json_chunks strips the merged
@@ -866,6 +866,8 @@ func attachMediaContext(chunks []schema.ChunkDoc, tableCtx, imageCtx int) []sche
 // collectContext walks chunks around `i` (above when direction==true,
 // below when false), pulling text chunks while remaining token budget
 // stays positive. Matches token_chunker.py:_attach_context_to_media_chunks.
+// A neighbour that does not fit is truncated on a sentence boundary
+// (takeContextSentences), not at an arbitrary rune.
 func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) string {
 	var parts []string
 	remain := ctxTokens
@@ -877,7 +879,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append([]string{takeFromEnd(txt, remain)}, parts...)
+					parts = append([]string{takeContextSentences(txt, remain, true)}, parts...)
 					remain = 0
 					break
 				}
@@ -893,7 +895,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append(parts, takeFromStart(txt, remain))
+					parts = append(parts, takeContextSentences(txt, remain, false))
 					remain = 0
 					break
 				}
@@ -904,39 +906,6 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 		}
 	}
 	return strings.Join(parts, "")
-}
-
-// takeFromEnd returns the smallest tail of text whose token count is >=
-// tokens, counted exactly via tokenizeStr  The previous
-// 4-bytes-per-token heuristic over-counted for CJK text.
-func takeFromEnd(text string, tokens int) string {
-	runes := []rune(text)
-	// The tail runes[i:] grows as i decreases, so the first (largest i,
-	// i.e. smallest tail) that meets the budget is the answer.
-	for i := len(runes); i > 0; i-- {
-		cand := string(runes[i:])
-		if tokenizeStr(cand) >= tokens {
-			return cand
-		}
-	}
-	return text
-}
-
-// takeFromStart returns the smallest prefix of text whose token count is >=
-// tokens, counted exactly via tokenizeStr
-func takeFromStart(text string, tokens int) string {
-	runes := []rune(text)
-	best := text
-	// Prefix grows as i increases; the first (smallest) qualifying prefix
-	// is the answer.
-	for i := 1; i <= len(runes); i++ {
-		cand := string(runes[:i])
-		if tokenizeStr(cand) >= tokens {
-			best = cand
-			break
-		}
-	}
-	return best
 }
 
 // mergeUnits is the single, unified token-merge core shared by BOTH the text
@@ -1399,12 +1368,123 @@ func splitSentencesLossless(text string) []string {
 }
 
 // hardSplitPiece hard token-splits a boundary-less run into <= target pieces.
-// Each piece is a true character prefix of the remaining text (U+FFFD tail
-// trimmed), so the concatenated pieces reproduce the input exactly. A token
-// cut never lands inside a @@...## coordinate tag: the cut is extended past
-// the closing "##" when the budget allows, otherwise backed off to before the
-// "@@" — so a tag is never split across two pieces.
+// The run is encoded once and the token array walked in target-sized steps,
+// each slice decoded straight back to its exact byte range — O(L) overall,
+// where the former loop re-encoded a shrinking remainder every round and went
+// quadratic on long boundary-less inputs. Pieces concatenate back to the input
+// exactly, and every cut lands on an original token boundary, so a piece is a
+// true byte prefix of the remainder (a cut may leave raw UTF-8 continuation
+// bytes at the tail when the boundary splits a multibyte rune; the next
+// piece's head repairs them). A token cut never lands inside a @@...##
+// coordinate tag: the cut is extended past the closing "##" when the budget
+// allows, otherwise backed off to before the "@@" — so a tag is never split
+// across two pieces.
+//
+// When the encoder is unavailable, hardSplitPieceByteLoop (the former
+// per-round-trim loop) takes over and degrades to byte-length trimming.
 func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
+	if text == "" {
+		return nil
+	}
+	tokens, ok := encodeTokens(text)
+	if !ok {
+		return hardSplitPieceByteLoop(text, docType, target)
+	}
+	if target <= 0 || len(tokens) <= target {
+		// target <= 0 is unreachable from validated configs; the byte loop
+		// would emit the whole text as one piece, so mirror that here.
+		return []schema.ChunkDoc{{Text: text, DocType: docType, TKNums: intPtr(tokenizeStr(text)), CKType: "text"}}
+	}
+
+	// offsets[i] = byte length of the first i tokens decoded. Token ids repeat
+	// heavily in natural text, so per-id byte lengths are memoized.
+	offsets := make([]int, len(tokens)+1)
+	lens := make(map[int]int, len(tokens)/2)
+	for i, tok := range tokens {
+		l, seen := lens[tok]
+		if !seen {
+			l = len(decodeTokens(tokens[i : i+1]))
+			lens[tok] = l
+		}
+		offsets[i+1] = offsets[i] + l
+	}
+	if offsets[len(tokens)] != len(text) {
+		// Unreachable with a byte-level BPE (decode∘encode is the identity on
+		// the byte string); a mismatch here would corrupt every piece, so
+		// degrade to the byte loop instead of emitting it.
+		return hardSplitPieceByteLoop(text, docType, target)
+	}
+
+	// @@...## tag spans in byte offsets. The leftmost-first scan with the
+	// resume index mirrors adjustCutPastTag's paired-tag search; spans come
+	// out sorted and non-overlapping.
+	type tagSpan struct{ start, end int }
+	var tags []tagSpan
+	for i := 0; i < len(text); {
+		s := strings.Index(text[i:], "@@")
+		if s < 0 {
+			break
+		}
+		s += i
+		eRel := strings.Index(text[s+2:], "##")
+		if eRel < 0 {
+			break
+		}
+		tags = append(tags, tagSpan{s, s + 2 + eRel + 2})
+		i = tags[len(tags)-1].end
+	}
+
+	var out []schema.ChunkDoc
+	p, tagIdx := 0, 0
+	for p < len(tokens) {
+		q := p + target
+		if q > len(tokens) {
+			q = len(tokens)
+		}
+		// Consume tags that end at or before the cut; they can no longer
+		// matter. A tag the cut lands inside is resolved below and
+		// deliberately not consumed: after a back-off the next cut can
+		// re-enter the same tag.
+		for tagIdx < len(tags) && tags[tagIdx].end <= offsets[q] {
+			tagIdx++
+		}
+		if tagIdx < len(tags) && tags[tagIdx].start < offsets[q] && offsets[q] < tags[tagIdx].end {
+			tag := tags[tagIdx]
+			endTok := q
+			for endTok < len(tokens) && offsets[endTok] < tag.end {
+				endTok++
+			}
+			startTok := q
+			for startTok > p && offsets[startTok] > tag.start {
+				startTok--
+			}
+			// Extend past the tag when the piece stays within budget, or when
+			// the tag starts the piece and backing off would stall; otherwise
+			// back off to the last token boundary at or before the "@@".
+			// startTok == p exactly when the piece begins at (or inside) the
+			// tag, so the forced extension of adjustCutPastTag's leading-tag
+			// case is preserved.
+			if endTok-p <= target || startTok == p {
+				q = endTok
+			} else {
+				q = startTok
+			}
+		}
+		if q <= p {
+			q = p + 1 // never stall (defensive; unreachable above)
+		}
+		piece := text[offsets[p]:offsets[q]]
+		out = append(out, schema.ChunkDoc{Text: piece, DocType: docType, TKNums: intPtr(tokenizeStr(piece)), CKType: "text"})
+		p = q
+	}
+	return out
+}
+
+// hardSplitPieceByteLoop is the pre-O(L) body of hardSplitPiece, kept as the
+// encoder-unavailable fallback. With the encoder dead, trimToTokenLimit
+// degrades to a UTF-8-safe byte-length trim and the loop still emits bounded,
+// lossless pieces.
+func hardSplitPieceByteLoop(text string, docType string, target int) []schema.ChunkDoc {
 	var out []schema.ChunkDoc
 	rest := text
 	for {
@@ -1589,7 +1669,11 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 				continue
 			}
 			cp := cloneChunkDoc(ck)
-			cp.Text = p
+			// The count describes the child's own text. The delimiter branch
+			// attaches the media context after this split, and that walk is
+			// charged with TKNums, so an inherited parent count would spend the
+			// configured window on the first neighbour.
+			setChunkText(&cp, p)
 			cp.Mom = mom
 			out = append(out, cp)
 		}
@@ -1625,15 +1709,13 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitDroppingDelim(t, pattern) {
-			if strings.TrimSpace(child) == "" {
+		for _, text := range splitDroppingDelim(t, pattern) {
+			if strings.TrimSpace(text) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{
-				Text:   child,
-				CKType: d.CKType,
-				Mom:    strings.TrimPrefix(t, "\n"),
-			})
+			child := schema.ChunkDoc{CKType: d.CKType, Mom: strings.TrimPrefix(t, "\n")}
+			setChunkText(&child, text)
+			out = append(out, child)
 		}
 	}
 	return out

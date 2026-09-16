@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // Service admin service layer
@@ -475,22 +476,27 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 }
 
 // GetUserDetails get user details
-func (s *Service) GetUserDetails(username string) (map[string]interface{}, error) {
-	// Query user by email/username
-	var user entity.User
-	err := dao.DB.Where("email = ?", username).First(&user).Error
+func (s *Service) GetUserDetails(ctx context.Context, username string) (map[string]interface{}, error) {
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
-		return nil, common.ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	return map[string]interface{}{
-		"id":           user.ID,
-		"email":        user.Email,
-		"nickname":     user.Nickname,
-		"is_active":    user.IsActive,
-		"is_superuser": user.IsSuperuser,
-		"create_time":  user.CreateTime,
-		"update_time":  user.UpdateTime,
+		"avatar":          user.Avatar,
+		"email":           user.Email,
+		"language":        user.Language,
+		"last_login_time": user.LastLoginTime,
+		"is_active":       user.IsActive,
+		"is_anonymous":    user.IsAnonymous,
+		"login_channel":   user.LoginChannel,
+		"status":          user.Status,
+		"is_superuser":    user.IsSuperuser,
+		"create_date":     user.CreateDate,
+		"update_date":     user.UpdateDate,
 	}, nil
 }
 
@@ -871,18 +877,6 @@ func (s *Service) RevokeAdmin(ctx context.Context, username string) error {
 	}
 
 	return nil
-}
-
-// GetUserDatasets get user datasets
-func (s *Service) GetUserDatasets(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user datasets
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserAgents get user agents
-func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user agents
-	return []map[string]interface{}{}, nil
 }
 
 // API Key methods

@@ -3,13 +3,12 @@ package chunker
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
-// tagSlackTokens bounds how far past target a piece may legitimately go when
-// adjustCutPastTag swallows a leading @@...## coordinate tag whole instead of
-// splitting it: the trim result is within target, and the extension past the
-// closing "##" adds at most the tag's own tokens (corpus tags measure <= 6).
+// tagSlackTokens bounds how far past target a piece may legitimately go when a
+// leading @@...## coordinate tag is swallowed whole instead of split: the
+// extension past the closing "##" adds at most the tag's own tokens (corpus
+// tags measure <= 6).
 const tagSlackTokens = 16
 
 // TestHardSplitPieceInvariants pins the output contract of hardSplitPiece that
@@ -18,11 +17,12 @@ const tagSlackTokens = 16
 // maintenance liability, while these invariants hold for any correct
 // token-splitting of this shape.
 //
-//  1. Bounded pieces: each piece is at most target tokens plus the documented
-//     one-token drift a re-encoded continuation piece can carry (cl100k is
-//     byte-level; a cut trimmed off a mid-multibyte boundary is re-absorbed by
-//     the next piece). Inputs without coordinate tags get the strict bound;
-//     tag inputs additionally allow the leading-tag-whole extension slack.
+//  1. Bounded pieces: every cut lands on an original token boundary and pieces
+//     are at most target original tokens (plus the leading-tag-whole
+//     extension slack for tag inputs). Re-encoded piece token counts can
+//     overshoot only at the two boundary tokens, whose BPE merges depended on
+//     now-removed neighbors; the test self-calibrates that overshoot from the
+//     longest token in the input instead of hardcoding a vocabulary fact.
 //  2. Lossless at the byte level: the pieces concatenate back to the input
 //     exactly. Pieces are byte-prefixes, not rune-prefixes — a cut may land
 //     mid-multibyte and leave raw continuation bytes at a piece's tail
@@ -31,6 +31,8 @@ const tagSlackTokens = 16
 //  3. Monotone progress: pieces are non-empty and each is a true byte prefix
 //     of the not-yet-emitted remainder — the split never revisits or reorders
 //     bytes.
+//  4. Tags stay whole: every complete @@...## span lies entirely inside one
+//     piece — never split across a piece boundary.
 func TestHardSplitPieceInvariants(t *testing.T) {
 	inputs := []string{ // plain, CJK, coordinate tags, emoji, degenerate
 		strings.Repeat("boundary-less run of text with no sentence delimiter ", 60),
@@ -47,6 +49,17 @@ func TestHardSplitPieceInvariants(t *testing.T) {
 			hasTags := strings.Contains(in, "@@")
 			got := hardSplitPiece(in, "", target)
 
+			// Longest single token in the input bounds the re-encode overshoot
+			// at a piece's two boundary tokens (see invariant 1).
+			maxTokBytes := 1
+			if toks, ok := encodeTokens(in); ok {
+				for i := range toks {
+					if n := len(decodeTokens(toks[i : i+1])); n > maxTokBytes {
+						maxTokBytes = n
+					}
+				}
+			}
+
 			var joined strings.Builder
 			progress := 0
 			for i, p := range got {
@@ -58,11 +71,11 @@ func TestHardSplitPieceInvariants(t *testing.T) {
 				}
 				progress += len(p.Text)
 
-				// +utf8.UTFMax: a cut landing mid-multibyte leaves up to
-				// UTFMax-1 dangling raw bytes at the tail, which re-encode as
-				// individual single-byte tokens (cl100k is byte-level), plus
-				// the one-token continuation drift.
-				bound := target + utf8.UTFMax
+				// +2*(maxTokBytes-1): the piece's first and last tokens were
+				// BPE-merged with neighbors outside the slice; re-encoded
+				// alone they can decompose into up to maxTokBytes single-byte
+				// tokens each.
+				bound := target + 2*(maxTokBytes-1)
 				if hasTags {
 					bound += tagSlackTokens
 				}
@@ -74,6 +87,33 @@ func TestHardSplitPieceInvariants(t *testing.T) {
 			if joined.String() != in {
 				t.Fatalf("target=%d in=%d bytes: pieces do not reproduce input (%d != %d bytes)",
 					target, len(in), joined.Len(), len(in))
+			}
+
+			// Every complete @@...## span sits inside a single piece.
+			for i := 0; i < len(in); {
+				sRel := strings.Index(in[i:], "@@")
+				if sRel < 0 {
+					break
+				}
+				s := i + sRel
+				eRel := strings.Index(in[s+2:], "##")
+				if eRel < 0 {
+					break
+				}
+				e := s + 2 + eRel + 2
+				whole := false
+				pos := 0
+				for _, p := range got {
+					if pos <= s && e <= pos+len(p.Text) {
+						whole = true
+						break
+					}
+					pos += len(p.Text)
+				}
+				if !whole {
+					t.Fatalf("target=%d in=%d bytes: tag span [%d,%d) is split across pieces", target, len(in), s, e)
+				}
+				i = e
 			}
 		}
 	}

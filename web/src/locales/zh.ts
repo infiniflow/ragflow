@@ -356,17 +356,19 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
-      goToConfiguration: '前往配置',
+      reselectParser: '重新选择解析方法',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
       fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
       missingModelAsr: '音频（ASR）',
       missingModelVision: '视觉',
-      configureInDatasetSettingHint:
-        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
+      fileTypeUnsupported:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      reselectParserAfterUploadHint:
+        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+      reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       parseBlockedTitle: '无法解析',
       parseBlockedPartialTitle: '部分文件无法解析',
-      parseBlockedHint:
-        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
       parseValidFiles: '解析有效文件',
       parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {

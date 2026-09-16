@@ -269,6 +269,15 @@ def test_list_files_validation_error(monkeypatch):
 
 
 @pytest.mark.p2
+def test_list_files_success_offloads_to_thread_pool(monkeypatch):
+    module = _load_file_api_module(monkeypatch)
+
+    res = _run(module.list_files("tenant1"))
+    assert res["code"] == 0
+    assert res["data"] == {"files": [], "total": 0}
+
+
+@pytest.mark.p2
 def test_move_uses_new_payload_shape(monkeypatch):
     module = _load_file_api_module(monkeypatch)
 
@@ -899,6 +908,51 @@ def test_create_folder_rejects_slash_in_name(monkeypatch):
     ok, message = _run(module.create_folder("tenant1", "/", "pf1", module.FileType.FOLDER.value))
     assert ok is False
     assert message == 'Folder name cannot contain "/"'
+
+
+@pytest.mark.p2
+def test_create_folder_success_offloads_sync_work(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+
+    ok, data = _run(module.create_folder("tenant1", "new-folder", "pf1", module.FileType.FOLDER.value))
+    assert ok is True
+    assert data["name"] == "new-folder"
+    assert data["parent_id"] == "pf1"
+    assert data["type"] == module.FileType.FOLDER.value
+
+
+@pytest.mark.p2
+def test_upload_file_uses_root_folder_when_parent_missing(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    seen_ids = []
+
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda file_id: (True, SimpleNamespace(id=file_id, name=str(file_id))),
+    )
+    monkeypatch.setattr(module.FileService, "get_id_list_by_id", lambda *_args, **_kwargs: ["root"])
+    monkeypatch.setattr(
+        module.FileService,
+        "create_folder",
+        lambda _file, parent_id, _names, _len_id, *_args: SimpleNamespace(id=parent_id),
+    )
+    monkeypatch.setattr(
+        module.settings,
+        "STORAGE_IMPL",
+        SimpleNamespace(
+            obj_exist=lambda *_args, **_kwargs: False,
+            put=lambda bucket, location, blob: seen_ids.append((bucket, location, blob)),
+            rm=lambda *_args, **_kwargs: None,
+            move=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    ok, data = _run(module.upload_file("tenant1", "", [_DummyUploadFile("a.txt", b"hello")]))
+    assert ok is True
+    assert data[0]["name"] == "a.txt"
+    assert data[0]["parent_id"] == "root"
+    assert seen_ids == [("root", "a.txt", b"hello")]
 
 
 @pytest.mark.p2

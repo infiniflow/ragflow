@@ -120,6 +120,24 @@ describe('Sitemap data source', () => {
   });
 });
 
+describe.each([
+  ['MySQL', DataSourceKey.MYSQL],
+  ['PostgreSQL', DataSourceKey.POSTGRESQL],
+])('%s data source', (_label, key) => {
+  it('exposes a bounded batch size for large table syncs', () => {
+    const fields = getDataSourceFieldsWithExtras(translate, key) as Array<{
+      name: string;
+      validation?: { min?: number };
+    }>;
+    const batchSize = fields.find((f) => f.name === 'config.batch_size');
+
+    expect(batchSize?.validation?.min).toBe(1);
+    expect(DataSourceFormDefaultValues[key].config).toMatchObject({
+      batch_size: 2,
+    });
+  });
+});
+
 describe('Azure DevOps data source', () => {
   it('registers its catalog entry and defaults', () => {
     const info = generateDataSourceInfo(translate)[DataSourceKey.AZURE_DEVOPS];

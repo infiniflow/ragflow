@@ -223,7 +223,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 	stats := deduper.Stats()
-	prods := deduper.Rows()
+	prods := filterSelfLoopRelations(deduper.Rows())
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: dedup done: %d row(s), %d duplicate(s) dropped",
 		compileType, len(prods), stats.DuplicatesDropped))

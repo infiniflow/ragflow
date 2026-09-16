@@ -318,12 +318,12 @@ func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) 
 	}
 }
 
-func TestTakeGeneralContextSentencePreservesBoundarySelection(t *testing.T) {
+func TestTakeContextSentencesPreservesBoundarySelection(t *testing.T) {
 	text := "one!two!three!"
-	if got, want := takeGeneralContextSentence(text, tokenizeStr("two!three!"), true), "two!three!"; got != want {
+	if got, want := takeContextSentences(text, tokenizeStr("two!three!"), true), "two!three!"; got != want {
 		t.Fatalf("suffix context = %q, want %q", got, want)
 	}
-	if got, want := takeGeneralContextSentence(text, tokenizeStr("one!two!"), false), "one!two!"; got != want {
+	if got, want := takeContextSentences(text, tokenizeStr("one!two!"), false), "one!two!"; got != want {
 		t.Fatalf("prefix context = %q, want %q", got, want)
 	}
 }
