@@ -17,11 +17,13 @@
 package dao
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -52,14 +54,14 @@ func pushDocDB(t *testing.T, testDB *gorm.DB) {
 
 func TestDocumentGetByIDs_Success(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc2", KbID: "kb1", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc3", KbID: "kb2", Name: sp("Doc 3"), CreatedBy: "user2", ParserConfig: entity.JSONMap{}})
 
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{"doc1", "doc3"})
+	docs, err := dao.GetByIDs(ctx, db, []string{"doc1", "doc3"})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -78,10 +80,9 @@ func TestDocumentGetByIDs_Success(t *testing.T) {
 
 func TestDocumentGetByIDs_EmptyIDs(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{})
+	docs, err := dao.GetByIDs(ctx, db, []string{})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -92,10 +93,9 @@ func TestDocumentGetByIDs_EmptyIDs(t *testing.T) {
 
 func TestDocumentGetByIDs_NilIDs(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs(nil)
+	docs, err := dao.GetByIDs(ctx, db, nil)
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -106,12 +106,11 @@ func TestDocumentGetByIDs_NilIDs(t *testing.T) {
 
 func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{"nonexistent"})
+	docs, err := dao.GetByIDs(ctx, db, []string{"nonexistent"})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -122,7 +121,6 @@ func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 
 func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	createTime10 := int64(10)
 	createTime20 := int64(20)
@@ -130,10 +128,11 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	db.Create(&entity.Document{ID: "doc-later", KbID: "kb1", Name: sp("Doc Later"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime30}})
 	db.Create(&entity.Document{ID: "doc-other", KbID: "kb2", Name: sp("Doc Other"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime10}})
 	db.Create(&entity.Document{ID: "doc-earlier", KbID: "kb1", Name: sp("Doc Earlier"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime20}})
-
-	docs, total, err := NewDocumentDAO().GetByKBID("kb1")
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	docs, total, err := dao.GetByKBID(ctx, db, "kb1")
 	if err != nil {
-		t.Fatalf("GetByKBID failed: %v", err)
+		t.Fatalf("fail to get document by dataset id: %v", err)
 	}
 	if total != 2 {
 		t.Fatalf("expected total=2, got %d", total)
@@ -146,14 +145,181 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	}
 }
 
+func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-scheduled",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "document",
+		CreatedBy:    "user-1",
+		Name:         sp("scheduled.pdf"),
+		Suffix:       "pdf",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "file-scheduled",
+		ParentID:  "parent-1",
+		TenantID:  "tenant-1",
+		CreatedBy: "user-1",
+		Name:      "scheduled.pdf",
+		Type:      "document",
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := db.Create(&entity.File2Document{
+		ID:         "link-scheduled",
+		FileID:     sp("file-scheduled"),
+		DocumentID: sp("doc-scheduled"),
+	}).Error; err != nil {
+		t.Fatalf("link file to document: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{
+		ID:         "task-scheduled",
+		UserID:     "user-1",
+		DocumentID: "doc-scheduled",
+		DatasetID:  "kb-1",
+		Status:     "SCHEDULED",
+	}).Error; err != nil {
+		t.Fatalf("create scheduled ingestion task: %v", err)
+	}
+
+	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID:    "kb-1",
+		OrderBy: "create_time",
+		Desc:    true,
+		Offset:  0,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != 1 || len(documents) != 1 {
+		t.Fatalf("listed %d documents (total %d), want 1", len(documents), total)
+	}
+
+	raw, err := json.Marshal(documents[0])
+	if err != nil {
+		t.Fatalf("marshal document list item: %v", err)
+	}
+	var listed map[string]interface{}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatalf("unmarshal document list item: %v", err)
+	}
+	if got := listed["ingestion_status"]; got != "SCHEDULED" {
+		t.Fatalf("ingestion_status = %v, want %q", got, "SCHEDULED")
+	}
+}
+
+func TestDocumentListDeduplicatesHistoricalIngestionTasks(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	if err := db.Create(&entity.Document{
+		ID:           "doc-duplicate-tasks",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "document",
+		CreatedBy:    "user-1",
+		Name:         sp("duplicate-tasks.pdf"),
+		Suffix:       "pdf",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "file-duplicate-tasks",
+		ParentID:  "parent-1",
+		TenantID:  "tenant-1",
+		CreatedBy: "user-1",
+		Name:      "duplicate-tasks.pdf",
+		Type:      "document",
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := db.Create(&entity.File2Document{
+		ID:         "link-duplicate-tasks",
+		FileID:     sp("file-duplicate-tasks"),
+		DocumentID: sp("doc-duplicate-tasks"),
+	}).Error; err != nil {
+		t.Fatalf("link file to document: %v", err)
+	}
+
+	oldTaskTime := int64(100)
+	newTaskTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate-tasks",
+			DatasetID:  "kb-1",
+			Status:     "FAILED",
+			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate-tasks",
+			DatasetID:  "kb-1",
+			Status:     "SCHEDULED",
+			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create ingestion task %s: %v", task.ID, err)
+		}
+	}
+
+	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID:    "kb-1",
+		OrderBy: "create_time",
+		Desc:    true,
+		Offset:  0,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != 1 || len(documents) != 1 {
+		t.Fatalf("listed %d documents (total %d), want 1", len(documents), total)
+	}
+	if documents[0].IngestionStatus == nil || *documents[0].IngestionStatus != "SCHEDULED" {
+		t.Fatalf("ingestion status = %v, want %q", documents[0].IngestionStatus, "SCHEDULED")
+	}
+}
+
 func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc1-other", KbID: "kb2", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
-
-	doc, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb1")
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	doc, err := dao.GetByDocumentIDAndDatasetID(ctx, db, "doc1", "kb1")
 	if err != nil {
 		t.Fatalf("GetByDocumentIDAndDatasetID failed: %v", err)
 	}
@@ -161,14 +327,13 @@ func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 		t.Fatalf("unexpected document: id=%s kb_id=%s", doc.ID, doc.KbID)
 	}
 
-	if _, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb2"); err == nil {
+	if _, err = dao.GetByDocumentIDAndDatasetID(ctx, db, "doc1", "kb2"); err == nil {
 		t.Fatal("expected no match when document does not belong to dataset")
 	}
 }
 
 func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	if err := db.Create(&entity.Tenant{
 		ID:        "tenant1",
@@ -207,8 +372,9 @@ func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create document: %v", err)
 	}
-
-	config, err := NewDocumentDAO().GetChunkingConfig("doc1")
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	config, err := dao.GetChunkingConfig(ctx, db, "doc1")
 	if err != nil {
 		t.Fatalf("GetChunkingConfig failed: %v", err)
 	}
@@ -221,6 +387,67 @@ func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
 	}
 	if config["tenant_id"] != "tenant1" || config["embd_id"] != "kb-embd1" {
 		t.Fatalf("unexpected joined config: %#v", config)
+	}
+}
+
+func TestDocumentDAOGetParsingStatusByKBID(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(&entity.IngestionTask{}); err != nil {
+		t.Fatalf("migrate IngestionTask: %v", err)
+	}
+
+	// doc-unstart: no task
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-1: %v", err)
+	}
+	// doc-running: task RUNNING
+	if err := db.Create(&entity.Document{ID: "doc-2", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-2: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-2", DocumentID: "doc-2", Status: common.RUNNING}).Error; err != nil {
+		t.Fatalf("create task-2: %v", err)
+	}
+	// doc-completed: task COMPLETED
+	if err := db.Create(&entity.Document{ID: "doc-3", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-3: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-3", DocumentID: "doc-3", Status: common.COMPLETED}).Error; err != nil {
+		t.Fatalf("create task-3: %v", err)
+	}
+	// doc-failed: task FAILED
+	if err := db.Create(&entity.Document{ID: "doc-4", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-4: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-4", DocumentID: "doc-4", Status: common.FAILED}).Error; err != nil {
+		t.Fatalf("create task-4: %v", err)
+	}
+	// doc-stopped: task STOPPED
+	if err := db.Create(&entity.Document{ID: "doc-5", KbID: "kb-status", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create doc-5: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{ID: "task-5", DocumentID: "doc-5", Status: common.STOPPED}).Error; err != nil {
+		t.Fatalf("create task-5: %v", err)
+	}
+
+	dao := NewDocumentDAO()
+	counts, err := dao.GetParsingStatusByKBID(t.Context(), db, "kb-status")
+	if err != nil {
+		t.Fatalf("GetParsingStatusByKBID failed: %v", err)
+	}
+	if counts["unstart_count"] != 1 {
+		t.Errorf("unstart_count = %d, want 1", counts["unstart_count"])
+	}
+	if counts["running_count"] != 1 {
+		t.Errorf("running_count = %d, want 1", counts["running_count"])
+	}
+	if counts["done_count"] != 1 {
+		t.Errorf("done_count = %d, want 1", counts["done_count"])
+	}
+	if counts["fail_count"] != 1 {
+		t.Errorf("fail_count = %d, want 1", counts["fail_count"])
+	}
+	if counts["cancel_count"] != 1 {
+		t.Errorf("cancel_count = %d, want 1", counts["cancel_count"])
 	}
 }
 

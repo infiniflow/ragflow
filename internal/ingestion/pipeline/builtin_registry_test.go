@@ -20,8 +20,11 @@ func TestRegistryLoadsSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistryFromDir: %v", err)
 	}
-	if got := len(r.List()); got != 2 {
+	if got := len(r.List().BuiltinPipelines); got != 2 {
 		t.Fatalf("len(List()) = %d, want 2", got)
+	}
+	if got := r.List().Total; got != 2 {
+		t.Fatalf("Total = %d, want 2", got)
 	}
 	tpl, ok := r.Get("general")
 	if !ok {
@@ -55,8 +58,35 @@ func TestRegistryRefsMatchList(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("len(Refs()) = %d, want 2", len(refs))
 	}
-	if refs[0] != "book" || refs[1] != "general" {
-		t.Fatalf("refs = %#v, want sorted builtin refs", refs)
+	if refs[0] != "general" || refs[1] != "book" {
+		t.Fatalf("refs = %#v, want Python-compatible builtin order", refs)
+	}
+}
+
+func TestRegistryCanonicalOrderAppendsUnknownTemplates(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	for _, id := range []string{"email", "book", "general", "qa", "manual", "table", "paper", "laws", "presentation", "picture", "one", "audio", "custom"} {
+		mustWrite("ingestion_pipeline_"+id+".json", `{"title":{"en":"`+id+`"},"dsl":{"components":{}}}`)
+	}
+
+	r, err := NewRegistryFromDir(dir)
+	if err != nil {
+		t.Fatalf("NewRegistryFromDir: %v", err)
+	}
+	want := []string{"general", "qa", "manual", "table", "paper", "book", "laws", "presentation", "picture", "one", "audio", "email", "custom"}
+	if got := r.Refs(); len(got) != len(want) {
+		t.Fatalf("Refs() length = %d, want %d (%#v)", len(got), len(want), want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("Refs()[%d] = %q, want %q; full order %#v", i, got[i], want[i], got)
+			}
+		}
 	}
 }
 
@@ -85,9 +115,7 @@ func TestRegistryVsHardcodedList(t *testing.T) {
 		"picture":      true,
 		"presentation": true,
 		"qa":           true,
-		"resume":       true,
 		"table":        true,
-		"tag":          true,
 	}
 	for h := range hardcoded {
 		t.Logf("Hardcoded has: %s", h)
@@ -164,7 +192,7 @@ func TestRegistryAliasNaiveResolvesGeneral(t *testing.T) {
 			t.Error("Refs() contains alias naive; aliases must be hidden from listing")
 		}
 	}
-	for _, meta := range r.List() {
+	for _, meta := range r.List().BuiltinPipelines {
 		if meta.ParserID == "naive" {
 			t.Error("List() contains alias naive; aliases must be hidden from listing")
 		}

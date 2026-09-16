@@ -104,4 +104,44 @@ func TestLineToTextBox(t *testing.T) {
 			t.Errorf("Text = %q, want 'X'", box.Text)
 		}
 	})
+	// Word boundaries must be recovered for non-Latin scripts too. Before the fix
+	// the gap rule was gated on an ASCII-only regex, so Cyrillic chars never got a
+	// space regardless of the gap between them (a whole page welded into one token).
+	t.Run("cyrillic word gap", func(t *testing.T) {
+		chars := []pdf.TextChar{
+			// "Ок" — kern-sized gap (2, ~0.25 width): same word
+			{X0: 50, X1: 58, Top: 100, Bottom: 112, Text: "О"},
+			{X0: 60, X1: 68, Top: 100, Bottom: 112, Text: "к"},
+			// large gap before "н": a word boundary
+			{X0: 120, X1: 128, Top: 100, Bottom: 112, Text: "н"},
+		}
+		box := LineToTextBox(chars)
+		if box.Text != "Ок н" {
+			t.Errorf("Text = %q, want 'Ок н' (space inserted only at the word gap)", box.Text)
+		}
+	})
+	// CJK does not separate words with spaces, so a gap between CJK glyphs is
+	// ordinary tracking and must NOT become one, however wide.
+	t.Run("cjk gap is not a word boundary", func(t *testing.T) {
+		chars := []pdf.TextChar{
+			{X0: 12, X1: 18, Top: 100, Bottom: 112, Text: "乙"},
+			// gap of 4 on 6-wide glyphs — far over the 0.25*mean threshold
+			{X0: 22, X1: 28, Top: 100, Bottom: 112, Text: "丙"},
+		}
+		box := LineToTextBox(chars)
+		if box.Text != "乙丙" {
+			t.Errorf("Text = %q, want '乙丙' (no space between CJK glyphs)", box.Text)
+		}
+	})
+	// A CJK/Latin boundary is likewise not a space the geometry may invent.
+	t.Run("cjk adjacent to latin gets no invented space", func(t *testing.T) {
+		chars := []pdf.TextChar{
+			{X0: 12, X1: 18, Top: 100, Bottom: 112, Text: "乙"},
+			{X0: 22, X1: 28, Top: 100, Bottom: 112, Text: "A"},
+		}
+		box := LineToTextBox(chars)
+		if box.Text != "乙A" {
+			t.Errorf("Text = %q, want '乙A'", box.Text)
+		}
+	})
 }

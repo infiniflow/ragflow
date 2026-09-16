@@ -84,7 +84,7 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 			continue
 		}
 		var firstAlias string
-		for _, raw := range strings.Split(info.Comment, ",") {
+		for raw := range strings.SplitSeq(info.Comment, ",") {
 			alias := strings.TrimSpace(raw)
 			if alias == "" {
 				continue
@@ -216,7 +216,7 @@ func parsePsqlTable(output string) *psqlResult {
 		return res
 	}
 
-	for _, raw := range strings.Split(lines[0], "|") {
+	for raw := range strings.SplitSeq(lines[0], "|") {
 		if col := strings.TrimSpace(raw); col != "" {
 			res.Columns = append(res.Columns, col)
 		}
@@ -286,7 +286,7 @@ func resolvePsqlHostPort(hostURI string, postgresPort int) (host, port string) {
 
 // RunSQL implements the SQL retrieval path: preprocess, rewrite aliases,
 // run psql subprocess, parse output.
-func (e *infinityEngine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
+func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("infinity RunSQL: client not initialized")
 	}

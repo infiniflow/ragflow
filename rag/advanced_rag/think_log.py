@@ -40,9 +40,7 @@ from typing import Callable
 
 # Per-request sink: a callable(str) that forwards one log line, or None when no
 # agentic turn is streaming in the current context.
-_think_log_sink: contextvars.ContextVar[Callable[[str], None] | None] = contextvars.ContextVar(
-    "think_log_sink", default=None
-)
+_think_log_sink: contextvars.ContextVar[Callable[[str], None] | None] = contextvars.ContextVar("think_log_sink", default=None)
 
 # Only bracket-tagged INFO lines from these logger namespaces are surfaced.
 _SCOPED_PREFIXES = ("rag.advanced_rag", "rag.llm.chat_model", "rag.llm.tool_decorator")
@@ -68,7 +66,7 @@ class ThinkLogHandler(logging.Handler):
         if not msg or not msg.lstrip().startswith("["):
             return
         try:
-            sink("<br>"+msg.strip())
+            sink("<br>" + msg.strip())
         except Exception:
             # Never let think-log forwarding break the request or the logging
             # subsystem itself.

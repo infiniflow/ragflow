@@ -45,6 +45,20 @@ class APITokenService(CommonService):
 class API4ConversationService(CommonService):
     model = API4Conversation
 
+    @classmethod
+    @DB.connection_context()
+    def get_latest_agent_channel_session(cls, agent_id, user_id):
+        return (
+            cls.model.select()
+            .where(
+                cls.model.dialog_id == agent_id,
+                cls.model.user_id == user_id,
+                cls.model.source == "agent",
+            )
+            .order_by(cls.model.update_time.desc(), cls.model.create_time.desc())
+            .first()
+        )
+
     @staticmethod
     def _normalize_query_date(value, is_end=False):
         if "T" in value:
@@ -68,11 +82,15 @@ class API4ConversationService(CommonService):
         if keywords:
             keywords = keywords.lower()
             escaped_keywords = json_dumps(keywords)[1:-1]
+            session_id = peewee.fn.LOWER(cls.model.id)
+            conversation_name = peewee.fn.LOWER(cls.model.name)
             message = peewee.fn.LOWER(cls.model.message)
+            keyword_condition = session_id.contains(keywords) | conversation_name.contains(keywords)
             if escaped_keywords == keywords:
-                sessions = sessions.where(message.contains(keywords))
+                keyword_condition |= message.contains(keywords)
             else:
-                sessions = sessions.where(message.contains(keywords) | message.contains(escaped_keywords))
+                keyword_condition |= message.contains(keywords) | message.contains(escaped_keywords)
+            sessions = sessions.where(keyword_condition)
         date_field = cls.model.update_date if orderby.startswith("update_") else cls.model.create_date
         if from_date:
             sessions = sessions.where(date_field >= cls._normalize_query_date(from_date))

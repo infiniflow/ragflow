@@ -3,7 +3,7 @@
  * Ported from Nimbalyst. Creates MermaidNode instead of CodeNode.
  */
 
-/* eslint-disable no-console */
+/* oxlint-disable no-console */
 
 import type { MultilineElementTransformer } from '@lexical/markdown';
 import {

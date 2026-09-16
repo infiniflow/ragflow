@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/core/schema"
@@ -9,7 +8,7 @@ import (
 
 func BenchmarkReActAgent_ReActLoop(b *testing.B) {
 	tool := &mockTool{name: "bench_tool", desc: "benchmark tool"}
-	ctx := context.Background()
+	ctx := b.Context()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		model := &mockModel{}
@@ -32,7 +31,7 @@ func BenchmarkReActAgent_ReActLoop(b *testing.B) {
 }
 
 func BenchmarkReActAgent_NoTools(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		model := &mockModel{}

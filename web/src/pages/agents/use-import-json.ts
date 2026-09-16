@@ -37,14 +37,13 @@ export const useHandleImportJsonFile = () => {
           if (graphOrDslStr && !isEmpty(rawParsed)) {
             const isAgent = inferIsAgentFromImport(rawParsed);
             const dsl = bridge.importDsl(rawParsed, isAgent);
-            setAgent({
+            return await setAgent({
               title: name,
               dsl,
               canvas_category: isAgent
                 ? AgentCategory.AgentCanvas
                 : AgentCategory.DataflowCanvas,
             });
-            hideFileUploadModal();
           } else {
             message.error(errorMessage);
           }
@@ -53,7 +52,7 @@ export const useHandleImportJsonFile = () => {
         }
       }
     },
-    [hideFileUploadModal, setAgent, t, toast],
+    [setAgent, t, toast],
   );
 
   return {

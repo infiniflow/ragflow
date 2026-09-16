@@ -21,6 +21,17 @@ import (
 	"testing"
 )
 
+func TestNewTableJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
+	item := NewTableJSONItem("<table><tr><td>value</td></tr></table>", "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+
+	if got, want := item[DocTypeKey], DocTypeTable; got != want {
+		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
+	}
+	if got, want := item["ck_type"], DocTypeTable; got != want {
+		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
+	}
+}
+
 // TestParseResult_Contract pins the wire-shape guarantees
 // port-rag-flow-pipeline-to-go.md §6.5 requires:
 //
@@ -130,9 +141,10 @@ func (s sentinelErr) Error() string { return string(s) }
 // tiny: 1 heading, 1 paragraph, 1 unordered list item, no nested
 // formatting.
 func TestMarkdownParser_ParseWithResult(t *testing.T) {
+	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
 	src := []byte("# Title\n\nFirst paragraph.\n\n- Item one\n")
-	res := p.ParseWithResult("doc.md", src)
+	res := p.ParseWithResult(ctx, "doc.md", src)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}

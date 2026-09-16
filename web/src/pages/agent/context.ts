@@ -15,7 +15,7 @@ export const OwnerTenantIdContext = createContext<string | undefined>(
   undefined,
 );
 
-// eslint-disable-next-line react-refresh/only-export-components
+// oxlint-disable-next-line react-refresh/only-export-components
 export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
 
 type AgentInstanceContextType = Pick<

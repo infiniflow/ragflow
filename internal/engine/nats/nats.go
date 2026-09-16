@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -37,6 +38,16 @@ type NatsEngine struct {
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
 	consumer  jetstream.Consumer
+
+	// dataset-level compile consumer (§11) state.
+	knowledgeCompileStream   jetstream.Stream
+	knowledgeCompileConsumer jetstream.Consumer
+	kv                       jetstream.KeyValue
+
+	syncerStream     jetstream.Stream
+	syncerConsumer   jetstream.PushConsumer
+	syncCheckpointKV jetstream.KeyValue
+	syncerMu         sync.Mutex
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {
@@ -68,34 +79,49 @@ func (n *NatsEngine) Init() error {
 		Subjects:  []string{"tasks.>"},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
+		Discard:   jetstream.DiscardNew,
 		MaxMsgs:   1024 * 128,
-		MaxBytes:  1024 * 1024,
+		MaxBytes:  1024 * 1024 * 64,
+		// Server-side dedup window. Inert for task publishes: PublishTask
+		// intentionally sends no MsgID (see below — dedup would swallow
+		// retry republishes of a reused task_id). It only takes effect for
+		// a publisher that opts into MsgIDs.
+		Duplicates: 10 * time.Minute,
 	}
 
-	n.stream, err = n.jetStream.CreateStream(ctx, streamCfg)
+	n.stream, err = ensureStreamConfig(ctx, n.jetStream, streamCfg)
 	if err != nil {
-		if !strings.Contains(err.Error(), "already exists") {
-			n.nc.Close()
-			return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
-		}
-
-		common.Info("NATS stream already exists, use existing stream")
-		n.stream, err = n.jetStream.Stream(ctx, "RAGFLOW_TASKS")
-		if err != nil {
-			n.nc.Close()
-			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
-		}
-	} else {
-		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
+		n.nc.Close()
+		return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
 	}
+	common.Info(fmt.Sprintf("NATS stream RAGFLOW_TASKS ready at %s", natsURL))
 
 	return nil
 }
 
+func (n *NatsEngine) Type() string {
+	return "nats"
+}
+
 func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
+	if n.jetStream == nil {
+		return errors.New("NATS jetstream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Deliberately NO MsgID/dedup here. Ingestion tasks reuse the same
+	// task_id across publish attempts (the FAILED/STOPPED→CREATED→SCHEDULED retry
+	// path), and the server's Duplicates window suppresses a republished
+	// MsgID for its whole lifetime regardless of whether the original
+	// message was already consumed and acked. A deduped retry publish
+	// strands the task in SCHEDULED with no message behind it — unreachable
+	// by any consumer and un-reparsable ("already exists, status: SCHEDULED").
+	// Duplicate delivery is instead made safe at the consumer level:
+	// StartRunning's CREATED/SCHEDULED→RUNNING CAS plus the in-process claim guard
+	// prevent a second copy from executing while the first owner is active (see
+	// Ingestor.handleAndExecute).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
 		return err
@@ -105,6 +131,10 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 }
 
 func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
+	if n.jetStream == nil || n.stream == nil {
+		return nil, errors.New("NATS jetstream/stream is nil, engine not properly initialized")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	accountInfo, err := n.jetStream.AccountInfo(ctx)
@@ -189,15 +219,31 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	defer cancel()
 
 	var err error
+	// Explicit redelivery schedule: BackOff paces successive redeliveries
+	// (5s/15s/30s, then 60s repeated) so an unsettled message (crash, slow
+	// DB) is retried with breathing room instead of the broker default. The
+	// server normalizes AckWait to BackOff[0] when BackOff is present; the
+	// 60s AckWait is the effective schedule if BackOff is ever dropped.
+	// INVARIANT: the worker's InProgress heartbeat (Ingestor
+	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
+	// messages get redelivered mid-run before the owning worker can settle them.
+	// Note: CreateOrUpdateConsumer is atomic. MaxWaiting is immutable after
+	// creation; if it mismatches the whole update fails (error "max waiting
+	// can not be updated") and NONE of AckWait/BackOff/MaxAckPending are
+	// applied. When MaxWaiting matches (the default, since this config omits
+	// it), the other three update in place. The fallback below handles the
+	// MaxWaiting mismatch by keeping the existing consumer.
 	n.consumer, err = n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:          "RAGFLOW_CONSUMER",
 		AckPolicy:     jetstream.AckExplicitPolicy,
 		MaxDeliver:    16,
 		MaxAckPending: 1024 * 128,
 		FilterSubject: "tasks.>",
+		AckWait:       60 * time.Second,
+		BackOff:       []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second},
 	})
 	if err != nil {
-		// MaxAckPending is immutable after consumer creation.
+		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable when MaxWaiting matches; the update is atomic).
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
 			n.consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
@@ -210,19 +256,58 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	}
 	return nil
 }
-func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) {
-	resultMessages := make([]common.TaskHandle, 0)
-	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+
+// PullMessages fetches up to messageCount messages before ctx expires.
+func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
+	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
+		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
+	}
+	if n.consumer == nil {
+		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, errors.New("pull messages context must have a deadline")
+	}
+
+	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
-	for msg := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
+	for message := range messages.Messages() {
+		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
+	}
+	if batchErr := messages.Error(); batchErr != nil {
+		if errors.Is(batchErr, context.DeadlineExceeded) {
+			return resultMessages, nil
+		}
+		for _, message := range resultMessages {
+			if nackErr := message.Nack(); nackErr != nil {
+				common.Error("nack message after failed pull", nackErr)
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
 	}
 	return resultMessages, nil
 }
 
+// PullMessage returns one task handle from PullMessages. A nil handle
+// with a nil error means the pull expired without an available task.
+func (n *NatsEngine) PullMessage(ctx context.Context) (common.TaskHandle, error) {
+	messages, err := n.PullMessages(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	return messages[0], nil
+}
+
 func (n *NatsEngine) CheckStatus() string {
+	if n.nc == nil {
+		return "NATS connection is nil, engine not properly initialized"
+	}
 	n.nc.Stats()
 	return n.nc.Status().String()
 }

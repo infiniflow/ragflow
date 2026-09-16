@@ -679,18 +679,6 @@ var DEFAULT_RUNTIME = &Runtime{
 	Previous:     nil,
 }
 
-// get_runtime returns the runtime for the current graph run.
-// This corresponds to Python's get_runtime() function in runtime.py
-func get_runtime(config map[string]interface{}) *Runtime {
-	if config == nil {
-		return DEFAULT_RUNTIME.Clone()
-	}
-	if runtime, ok := config[ManagedConfigKeyRuntime].(*Runtime); ok {
-		return runtime
-	}
-	return DEFAULT_RUNTIME.Clone()
-}
-
 // GetTaskID returns the task ID from config.
 func GetTaskID(config map[string]interface{}) string {
 	if config == nil {
@@ -962,7 +950,7 @@ func FormatDuration(d int64) string {
 		return fmt.Sprintf("%.1fs", float64(d)/1000)
 	} else if d < 3600000 {
 		return fmt.Sprintf("%.1fm", float64(d)/60000)
-	} else {
-		return fmt.Sprintf("%.1fh", float64(d)/3600000)
 	}
+
+	return fmt.Sprintf("%.1fh", float64(d)/3600000)
 }

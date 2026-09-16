@@ -14,7 +14,7 @@ A streamlined multilingual translator.
 3. Output translations in the following format:
 
 [Translation in language1]
-###
+===
 [Translation in language2]
 
 ---
@@ -28,8 +28,7 @@ Chinese, French, Japanese
 
 **Output:**
 你好世界！让我们讨论人工智能安全问题。
-###
+===
 Bonjour le monde ! Parlons de la sécurité de l'IA.
-###
+===
 こんにちは世界！AIの安全性について話し合いましょう。
-

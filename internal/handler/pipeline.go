@@ -24,11 +24,12 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
-// builtinPipelineLister is the registry surface PipelineHandler needs.
+// builtinPipelineRegistry is the registry surface PipelineHandler needs.
 // Defined as an interface so handler tests can inject a fake without
 // touching the embedded template FS.
-type builtinPipelineLister interface {
-	List() []*pipelinepkg.BuiltinPipelineMeta
+type builtinPipelineRegistry interface {
+	List() *pipelinepkg.BuiltinPipelineListResponse
+	Get(ref string) (*pipelinepkg.BuiltinPipeline, bool)
 }
 
 // PipelineHandler handles pipeline endpoints.
@@ -36,7 +37,7 @@ type builtinPipelineLister interface {
 // Built-in templates are shipped with the binary; user-defined templates
 // (canvas DSL) may be added later.
 type PipelineHandler struct {
-	registry builtinPipelineLister
+	registry builtinPipelineRegistry
 }
 
 // NewPipelineHandler builds a PipelineHandler backed by the embedded
@@ -59,7 +60,10 @@ func NewPipelineHandler() *PipelineHandler {
 // This is public static data, so no auth is required.
 func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if h == nil || h.registry == nil {
-		common.SuccessWithData(c, []*pipelinepkg.BuiltinPipelineMeta{}, "success")
+		common.SuccessWithData(c, &pipelinepkg.BuiltinPipelineListResponse{
+			BuiltinPipelines: []*pipelinepkg.BuiltinPipelineMeta{},
+			Total:            0,
+		}, "success")
 		return
 	}
 
@@ -69,4 +73,23 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	_ = pipelineType
 
 	common.SuccessWithData(c, h.registry.List(), "success")
+}
+
+// GetPipeline GET /api/v1/pipelines/:id
+// Returns a single built-in pipeline template with its DSL.
+// This is public static data, so no auth is required.
+func (h *PipelineHandler) GetPipeline(c *gin.Context) {
+	if h == nil || h.registry == nil {
+		common.ErrorWithCode(c, common.CodeDataError, "pipeline not found")
+		return
+	}
+
+	id := c.Param("id")
+	tpl, ok := h.registry.Get(id)
+	if !ok || tpl == nil {
+		common.ErrorWithCode(c, common.CodeDataError, "pipeline not found")
+		return
+	}
+
+	common.SuccessWithData(c, map[string]any{"dsl": tpl.DSL}, "success")
 }

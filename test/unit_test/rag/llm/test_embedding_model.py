@@ -35,7 +35,9 @@ import numpy as np
 import pytest
 
 from rag.llm.embedding_model import (
+    BaiduYiyanEmbed,
     DEFAULT_MAX_TOKENS,
+    AzureEmbed,
     BedrockEmbed,
     EmbeddingError,
     LocalAIEmbed,
@@ -43,6 +45,7 @@ from rag.llm.embedding_model import (
     NvidiaEmbed,
     OllamaEmbed,
     OpenAIEmbed,
+    ReplicateEmbed,
     ZhipuEmbed,
 )
 from common.exceptions import ModelException
@@ -223,15 +226,15 @@ class TestTruncationBoundary:
         embed.model_name = "mistral-embed"
         captured = {}
 
-        def _embeddings(input, model):
-            captured["input"] = input
+        def _embeddings_create(inputs, model):
+            captured["inputs"] = inputs
             return _OpenAIResp([[0.0, 0.0]], total_tokens=1)
 
         embed.client = MagicMock()
-        embed.client.embeddings = MagicMock(side_effect=_embeddings)
+        embed.client.embeddings.create = MagicMock(side_effect=_embeddings_create)
         huge = "word " * 12000
         embed.encode([huge])
-        assert num_tokens_from_string(captured["input"][0]) <= DEFAULT_MAX_TOKENS
+        assert num_tokens_from_string(captured["inputs"][0]) <= DEFAULT_MAX_TOKENS
 
 
 # --------------------------------------------------------------------------- #
@@ -306,6 +309,49 @@ class TestBatching:
             vectors, _ = embed.encode(["a", "b", "c"])
         np.testing.assert_array_equal(vectors[:, 0], np.array([0.0, 1.0, 2.0]))
 
+    def test_baidu_yiyan_issues_ceil_n_over_batch_calls(self):
+        """`batch_size` was in the signature and unused: the whole document went in one call."""
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": len(texts)}}))
+
+        texts = [f"t{i}" for i in range(40)]  # batch_size 16 -> ceil(40/16) == 3
+        vectors, token_count = embed.encode(texts)
+
+        assert embed.client.do.call_count == 3
+        assert [len(call.kwargs["texts"]) for call in embed.client.do.call_args_list] == [16, 16, 8]
+        assert vectors.shape == (40, 1)
+        assert token_count == 40
+
+    def test_baidu_yiyan_preserves_order_across_batches(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": 1}}))
+
+        texts = ["a" * (i + 1) for i in range(20)]  # spans two batches
+        vectors, _ = embed.encode(texts)
+
+        np.testing.assert_array_equal(vectors[:, 0], np.array([float(len(t)) for t in texts]))
+
+    def test_baidu_yiyan_surfaces_a_failed_batch(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        calls = {"n": 0}
+
+        def _do(model, texts):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("batch too large")
+            return SimpleNamespace(body={"data": [{"embedding": [0.0]} for _ in texts], "usage": {"total_tokens": 1}})
+
+        embed.client.do = MagicMock(side_effect=_do)
+
+        with pytest.raises(EmbeddingError, match="Embedding request failed for BaiduYiyanEmbed"):
+            embed.encode([f"t{i}" for i in range(40)])
+
     def test_ollama_issues_ceil_n_over_batch_calls(self):
         embed = OllamaEmbed("x", "nomic-embed-text", base_url="http://localhost:11434")
         embed.client = MagicMock()
@@ -319,6 +365,30 @@ class TestBatching:
 # --------------------------------------------------------------------------- #
 # 5. Provider-specific request/response shapes
 # --------------------------------------------------------------------------- #
+@pytest.mark.p2
+class TestAzureEmbeddingEndpoint:
+    def test_uses_azure_resource_endpoint_without_openai_v1_suffix(self, monkeypatch):
+        captured = {}
+
+        class FakeAzureOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.embeddings = SimpleNamespace(create=MagicMock())
+
+        monkeypatch.setattr("openai.lib.azure.AzureOpenAI", FakeAzureOpenAI)
+
+        embed = AzureEmbed(
+            json.dumps({"api_key": "azure-key", "api_version": "2024-02-01"}),
+            "text-embedding-3-small",
+            base_url="https://example.openai.azure.com/",
+        )
+
+        assert embed.base_url == "https://example.openai.azure.com"
+        assert captured["azure_endpoint"] == "https://example.openai.azure.com"
+        assert captured["api_key"] == "azure-key"
+        assert captured["api_version"] == "2024-02-01"
+
+
 @pytest.mark.p2
 class TestNvidiaInputType:
     """NVIDIA NIM expects input_type=passage for documents and =query for queries;
@@ -341,6 +411,22 @@ class TestNvidiaInputType:
         with patch("rag.llm.embedding_model.requests.post", return_value=self._mock_resp()) as post:
             embed.encode_queries("a query")
         assert post.call_args.kwargs["json"]["input_type"] == "query"
+
+
+@pytest.mark.p2
+class TestReplicateEmbedding:
+    def test_query_uses_run_and_returns_single_vector(self):
+        embed = ReplicateEmbed.__new__(ReplicateEmbed)
+        embed.model_name = "owner/model:version"
+        embed.client = MagicMock(spec=["run"])
+        embed.client.run.return_value = [[1.0, 2.0, 3.0]]
+
+        vector, tokens = embed.encode_queries("hello")
+
+        embed.client.run.assert_called_once_with("owner/model:version", input={"texts": ["hello"]})
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == num_tokens_from_string("hello")
 
 
 @pytest.mark.p2
@@ -381,3 +467,60 @@ class TestBedrockResponseParsing:
         embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
         vector, _ = embed.encode_queries("q")
         np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))
+
+    # The message must name the offending model and the expected prefixes so the
+    # error stays actionable; assert on it to catch future wording regressions.
+    _UNSUPPORTED_MSG = r"unsupported embedding model 'meta\.embed-model'.*amazon\..*cohere\."
+
+    def test_unknown_provider_raises_embedding_error(self):
+        # A model that is neither amazon.* nor cohere.* must surface a clear
+        # EmbeddingError instead of an UnboundLocalError on the unset `body`.
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode(["hello"])
+
+    def test_unknown_provider_query_raises_embedding_error(self):
+        embed = self._make("meta")
+        with pytest.raises(EmbeddingError, match=self._UNSUPPORTED_MSG):
+            embed.encode_queries("q")
+
+
+@pytest.mark.p2
+class TestBaiduYiyanResponseParsing:
+    def test_query_returns_single_vector(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do.return_value = SimpleNamespace(
+            body={
+                "data": [{"embedding": [1.0, 2.0, 3.0]}],
+                "usage": {"total_tokens": 7},
+            }
+        )
+
+        vector, tokens = embed.encode_queries("hello")
+
+        assert vector.shape == (3,)
+        np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
+        assert tokens == 7
+
+
+@pytest.mark.p2
+class TestOpenAIUserForwarding:
+    """OpenAI-compatible embedding calls forward ``user`` when LLM context is set."""
+
+    def test_forwards_user_when_context_set(self):
+        from common.llm_request_context import reset_llm_request_context, set_llm_request_context
+
+        embed = _make_openai(total_tokens=3)
+        token = set_llm_request_context(user_id="end-user-1")
+        try:
+            embed.encode(["hello"])
+        finally:
+            reset_llm_request_context(token)
+        assert embed.client.embeddings.create.call_args.kwargs["user"] == "end-user-1"
+
+    def test_omits_user_when_no_context(self):
+        embed = _make_openai(total_tokens=3)
+        embed.encode(["hello"])
+        assert "user" not in embed.client.embeddings.create.call_args.kwargs

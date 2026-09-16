@@ -30,6 +30,7 @@ from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, Order
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
+from common.float_utils import format_minimum_should_match_percent
 
 ATTEMPT_TIME = 2
 
@@ -385,7 +386,7 @@ class OSConnection(DocStoreConnection):
                 use_text = True
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                 bqry.must.append(Q("query_string", fields=m.fields, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
 
@@ -395,9 +396,9 @@ class OSConnection(DocStoreConnection):
             # Besides, Opensearch's DSL for KNN_search query syntax differs from that in Elasticsearch, I also made some adaptions for it
             elif isinstance(m, MatchDenseExpr):
                 assert bqry is not None
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
+                explicit_boost = None
+                if isinstance(m.extra_options, dict) and "boost" in m.extra_options:
+                    explicit_boost = m.extra_options["boost"]
                 use_knn = True
                 vector_column_name = m.vector_column_name
                 knn_query[vector_column_name] = {}
@@ -410,7 +411,8 @@ class OSConnection(DocStoreConnection):
                 bool_inner = bqry.to_dict().get("bool", {})
                 if bool_inner.get("filter"):
                     knn_query[vector_column_name]["filter"] = {"bool": {"filter": bool_inner["filter"]}}
-                knn_query[vector_column_name]["boost"] = similarity
+                if explicit_boost is not None:
+                    knn_query[vector_column_name]["boost"] = explicit_boost
 
         if bqry and rank_feature:
             for fld, sc in rank_feature.items():
@@ -507,7 +509,7 @@ class OSConnection(DocStoreConnection):
         logger.error(f"OSConnection.get timeout for {ATTEMPT_TIME} times!")
         raise Exception("OSConnection.get timeout.")
 
-    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
+    def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None, refresh: str | bool = "wait_for") -> list[str]:
         # Refers to https://opensearch.org/docs/latest/api-reference/document-apis/bulk/
         operations = []
         for d in documents:
@@ -525,7 +527,7 @@ class OSConnection(DocStoreConnection):
         for _ in range(ATTEMPT_TIME):
             try:
                 res = []
-                r = self.os.bulk(index=(indexName), body=operations, refresh="wait_for", timeout=60)
+                r = self.os.bulk(index=(indexName), body=operations, refresh=refresh, timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -547,6 +549,7 @@ class OSConnection(DocStoreConnection):
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
         doc.pop("id", None)
+        condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]

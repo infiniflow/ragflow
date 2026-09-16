@@ -52,7 +52,7 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 // third should be denied. This is the happy-path security gate.
 func TestEvalTokenBucketStrict_AllowedThenDenied(t *testing.T) {
 	r, _ := newStrictTestClient(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 1; i <= 2; i++ {
 		ok, err := r.EvalTokenBucketStrict(ctx, "tb:webhook", 2, 0.1)
@@ -80,7 +80,7 @@ func TestEvalTokenBucketStrict_RedisDownFailsClosed(t *testing.T) {
 	r, mr := newStrictTestClient(t)
 	mr.Close() // break the connection
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 	defer cancel()
 
 	ok, err := r.EvalTokenBucketStrict(ctx, "tb:webhook", 5, 1)
@@ -97,7 +97,7 @@ func TestEvalTokenBucketStrict_RedisDownFailsClosed(t *testing.T) {
 // (false, error) so the webhook handler can surface 102.
 func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
 	var r *Client
-	ok, err := r.EvalTokenBucketStrict(context.Background(), "tb:webhook", 1, 1)
+	ok, err := r.EvalTokenBucketStrict(t.Context(), "tb:webhook", 1, 1)
 	if err == nil {
 		t.Fatalf("expected error on nil client, got nil")
 	}

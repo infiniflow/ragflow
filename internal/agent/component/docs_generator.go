@@ -39,9 +39,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	iow "ragflow/internal/agent/component/io"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -72,7 +74,7 @@ var validOutputFormats = map[string]bool{
 	"txt":      true,
 	"markdown": true,
 	"html":     true,
-	"md":       true, // alias for markdown
+	"md":       true, // alias for Markdown
 }
 
 // docsGeneratorParam is the static DSL param surface.
@@ -140,7 +142,7 @@ func (p *docsGeneratorParam) Update(conf map[string]any) error {
 }
 
 // Check validates the param. FontSize must be ≥ 12; output_format must
-// be one of pdf / docx / txt / markdown / html.
+// be one of pdf / docx / txt / Markdown / html.
 func (p *docsGeneratorParam) Check() error {
 	if !validOutputFormats[strings.ToLower(strings.TrimSpace(p.OutputFormat))] {
 		return &ParamError{
@@ -196,7 +198,7 @@ func (d *DocsGenerator) Name() string { return d.name }
 
 // Invoke dispatches to the appropriate writer. Input overrides for
 // content / filename are honored.
-func (d *DocsGenerator) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	param := d.param
 	content, err := resolveDocsGeneratorContent(ctx, param.Content, inputs)
 	if err != nil {
@@ -348,7 +350,11 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 		}
 	}
 	if !strings.Contains(content, "{{") {
-		return stripThinking(content), nil
+		// The think cut itself is the greedy re.sub(r"^.*</think>", "", s,
+		// re.DOTALL) pattern (as in generator.py). The unconditional trim —
+		// applied even when no think block is present — mirrors Python's
+		// _strip_thinking, which always .strip()s the exported content.
+		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}
 
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
@@ -362,14 +368,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 	if err != nil {
 		return "", fmt.Errorf("resolve content template: %w", err)
 	}
-	return stripThinking(resolved), nil
-}
-
-func stripThinking(content string) string {
-	if idx := strings.LastIndex(content, "</think>"); idx >= 0 {
-		return strings.TrimSpace(content[idx+len("</think>"):])
-	}
-	return content
+	return strings.TrimSpace(common.StripThinkTrailing(resolved)), nil
 }
 
 func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bool, error) {
@@ -387,7 +386,7 @@ func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bo
 		return false, fmt.Errorf("storage not initialized")
 	}
 	bucket := fmt.Sprintf("%s-downloads", tenantID)
-	if err := storageImpl.Put(bucket, docID, payload); err != nil {
+	if err = storageImpl.Put(ctx, bucket, docID, payload); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -412,8 +411,8 @@ func agentAttachmentDownloadPath(attachmentID, ext, mimeType, filename string) s
 }
 
 // Stream mirrors Invoke; DocsGenerator is a single-shot generator.
-func (d *DocsGenerator) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := d.Invoke(ctx, inputs)
+func (d *DocsGenerator) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := d.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +508,7 @@ func sanitizeFilename(raw, ext string) string {
 }
 
 // renderTXT / renderMarkdown / renderHTML live in
-// internal/agent/component/io/{txt,markdown,html}_writer.go so
+// internal/agent/component/io/{txt,Markdown,html}_writer.go so
 // every per-format writer lives in its own file under io/,
 // matching the pdf_writer.go / docx_writer.go packaging.
 

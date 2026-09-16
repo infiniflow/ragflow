@@ -39,12 +39,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	rediscli "ragflow/internal/engine/redis"
 )
@@ -85,7 +87,7 @@ const (
 // fail-closed default. PR review round 5 (#2) — the previous
 // form leaked that distinction via two different messages.
 var errWebhookFailClosed = errors.New(
-	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks.",
+	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks",
 )
 
 // validateWebhookSecurity is the orchestrator.
@@ -107,6 +109,7 @@ func validateWebhookSecurity(
 	c *gin.Context,
 	canvasID string,
 ) error {
+	ctx := c.Request.Context()
 	if len(securityCfg) == 0 {
 		return errWebhookFailClosed
 	}
@@ -116,7 +119,7 @@ func validateWebhookSecurity(
 	if err := validateIPWhitelist(c, securityCfg); err != nil {
 		return err
 	}
-	if err := validateRateLimit(canvasID, securityCfg); err != nil {
+	if err := validateRateLimit(ctx, canvasID, securityCfg); err != nil {
 		return err
 	}
 	return validateAuth(c, securityCfg)
@@ -199,8 +202,16 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// This is a security gate, so the address it checks must be one the
+// caller cannot choose. c.ClientIP() takes X-Forwarded-For / X-Real-IP
+// only when the direct peer is in the engine's trusted proxy list and
+// falls back to the socket peer otherwise; the engine is configured via
+// common.ConfigureTrustedProxies (default: loopback, the nginx bundled
+// in the image) instead of gin's trust-everything default, which let any
+// caller send "X-Forwarded-For: <an-allowed-ip>" and pass. The socket
+// peer alone (c.RemoteIP()) is not usable here because behind that
+// bundled nginx it is 127.0.0.1 for every request.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
@@ -242,7 +253,7 @@ func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 //
 // Strict fail-closed: any Redis error → error. The webhook handler
 // surfaces this as 102 so an operator notices a misconfiguration.
-func validateRateLimit(canvasID string, cfg map[string]any) error {
+func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any) error {
 	rawRL, ok := cfg["rate_limit"].(map[string]any)
 	if !ok || len(rawRL) == 0 {
 		return nil
@@ -277,16 +288,21 @@ func validateRateLimit(canvasID string, cfg map[string]any) error {
 	}
 
 	key := fmt.Sprintf("rl:tb:%s", canvasID)
-	ctx, cancel := context.WithTimeout(context.Background(), webhookRateLimitTimeout)
+	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
 	rdb := rediscli.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}
-	allowed, err := rdb.EvalTokenBucketStrict(ctx, key, limitF, limitF/window)
+	allowed, err := rdb.EvalTokenBucketStrict(newCtx, key, limitF, limitF/window)
 	if err != nil {
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			common.Warn("rate limit check ambiguous (timeout/cancel), allowing",
+				zap.String("canvas_id", canvasID), zap.Error(err))
+			return nil
+		}
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -362,15 +378,15 @@ func isTruthyAllowAnonymous(cfg map[string]any) bool {
 func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	rawToken, _ := cfg["token"].(map[string]any)
 	if rawToken == nil {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	header, _ := rawToken["token_header"].(string)
 	want, _ := rawToken["token_value"].(string)
 	if header == "" || want == "" {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	if c.GetHeader(header) != want {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	return nil
 }
@@ -382,16 +398,16 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	rawBasic, _ := cfg["basic_auth"].(map[string]any)
 	if rawBasic == nil {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	username, _ := rawBasic["username"].(string)
 	password, _ := rawBasic["password"].(string)
 	if username == "" || password == "" {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	u, p, ok := c.Request.BasicAuth()
 	if !ok || u != username || p != password {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	return nil
 }
@@ -455,7 +471,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -491,13 +507,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

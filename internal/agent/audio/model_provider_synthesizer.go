@@ -108,7 +108,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	// log and fall through to the model provider.
 	cacheKey := buildTTSCacheKey(tenantID, req)
 	if cacheKey != "" && m.redis != nil {
-		if cached, _ := m.redis.Get(cacheKey); cached != "" {
+		if cached, _ := m.redis.Get(ctx, cacheKey); cached != "" {
 			if b, err := hex.DecodeString(cached); err == nil && len(b) > 0 {
 				return &SynthesizeResponse{Audio: b, MediaType: "audio/mpeg"}, nil
 			}
@@ -139,7 +139,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	if cacheKey != "" && m.redis != nil {
 		ttl := ttsCacheTTL()
 		if ttl > 0 {
-			m.redis.Set(cacheKey, hex.EncodeToString(resp.Audio), ttl)
+			m.redis.Set(ctx, cacheKey, hex.EncodeToString(resp.Audio), ttl)
 		}
 	}
 	return resp, nil

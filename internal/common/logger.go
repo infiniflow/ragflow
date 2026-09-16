@@ -17,13 +17,17 @@
 package common
 
 import (
-	"errors"
+	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -35,6 +39,9 @@ var (
 	Logger      *zap.Logger
 	Sugar       *zap.SugaredLogger
 	atomicLevel zap.AtomicLevel
+
+	stdLogOnce sync.Once
+	stdLogger  *log.Logger
 )
 
 // FileOutput describes the rotated log file destination.
@@ -48,6 +55,7 @@ var (
 // applied by callers (see resolveCompress) so that "not set" can be distinguished
 // from "explicitly false" via the *bool LogConfig.Compress field.
 type FileOutput struct {
+	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
@@ -59,7 +67,48 @@ const (
 	defaultMaxSizeMB  = 100
 	defaultMaxBackups = 10
 	defaultMaxAgeDays = 30
+	cyanLogMarker     = "[[RAGFLOW_CYAN_LOG]]"
+	greenLogMarker    = "[[RAGFLOW_GREEN_LOG]]"
+	redLogMarker      = "[[RAGFLOW_RED_LOG]]"
+	resetLogMarker    = "[[RAGFLOW_RESET_LOG]]"
+	ansiBrightCyan    = "\x1b[96m"
+	ansiGreen         = "\x1b[32m"
+	ansiRed           = "\x1b[31m"
+	ansiReset         = "\x1b[0m"
 )
+
+type coloredLineWriteSyncer struct {
+	zapcore.WriteSyncer
+	color bool
+}
+
+func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) && !bytes.Contains(p, []byte(redLogMarker)) {
+		return s.WriteSyncer.Write(p)
+	}
+
+	line := bytes.Clone(p)
+	if s.color {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), []byte(ansiBrightCyan))
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), []byte(ansiGreen))
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), []byte(ansiRed))
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), []byte(ansiReset))
+	} else {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), nil)
+	}
+
+	n, err := s.WriteSyncer.Write(line)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(line) {
+		return 0, io.ErrShortWrite
+	}
+	return len(p), nil
+}
 
 func parseZapLevel(level string) (zapcore.Level, error) {
 	switch strings.ToLower(strings.TrimSpace(level)) {
@@ -87,7 +136,7 @@ func logLevelName(level zapcore.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-// Init initializes the global logger. stdout is always written. If file.Path
+// InitLogger initializes the global logger. stdout is always written. If file.Path
 // is non-empty, a rotated file is also written via lumberjack.
 //
 // Callers should pass a non-empty Path so that file logging is preserved
@@ -96,7 +145,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput, serviceName string) error {
+func InitLogger(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -108,7 +157,7 @@ func Init(level string, file FileOutput, serviceName string) error {
 		TimeKey:       "timestamp",
 		LevelKey:      "level",
 		NameKey:       "service",
-		CallerKey:     "",
+		CallerKey:     "caller",
 		FunctionKey:   "",
 		MessageKey:    "msg",
 		StacktraceKey: "stacktrace",
@@ -138,55 +187,68 @@ func Init(level string, file FileOutput, serviceName string) error {
 		maxAge = defaultMaxAgeDays
 	}
 
-	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
-	if file.Path != "" {
-		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join("logs", file.Path),
-			MaxSize:    maxSize,
-			MaxBackups: maxBackups,
-			MaxAge:     maxAge,
-			Compress:   file.Compress,
-			LocalTime:  true,
-		}
-		syncers = append(syncers, zapcore.AddSync(ljLogger))
+	ljLogger := &lumberjack.Logger{
+		Filename:   filepath.Join(file.Path, file.Filename),
+		MaxSize:    maxSize,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   file.Compress,
+		LocalTime:  true,
+	}
+	stdoutSyncer := zapcore.AddSync(os.Stdout)
+	fileSyncer := zapcore.AddSync(ljLogger)
+	var core zapcore.Core
+	if IsLLMDebugEnabled() {
+		core = zapcore.NewTee(
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: stdoutSyncer, color: true},
+				atomicLevel,
+			),
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: fileSyncer},
+				atomicLevel,
+			),
+		)
+	} else {
+		core = zapcore.NewCore(
+			zapcore.NewConsoleEncoder(encoderConfig),
+			zap.CombineWriteSyncers(stdoutSyncer, fileSyncer),
+			atomicLevel,
+		)
 	}
 
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zap.CombineWriteSyncers(syncers...),
-		atomicLevel,
-	)
-
 	if serviceName != "" {
-		Logger = zap.New(core, zap.AddCallerSkip(1)).Named(serviceName)
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		).Named(serviceName)
 	} else {
-		Logger = zap.New(core, zap.AddCallerSkip(1))
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		)
 	}
 	Sugar = Logger.Sugar()
 
 	return nil
 }
 
-// Sync flushes any buffered log entries.
-func Sync() {
+// SyncLog flushes any buffered log entries.
+func SyncLog() {
 	if Logger != nil {
 		_ = Logger.Sync()
 	}
 }
 
-// Fatal logs a fatal message using zap with caller info, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
 	}
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
-	}
 	Logger.Fatal(msg, fields...)
 }
 
-// Info logs an info message.
 func Info(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -194,19 +256,32 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// Error logs an error message. err may be nil; if non-nil it is appended as
-// a zap.Error field. Additional fields follow.
+// LogRequestResponseInfo writes the request portion in bright cyan. The
+// response portion is green for success and red for failure on stdout. File
+// output remains uncolored.
+func LogRequestResponseInfo(request, response string, responseSucceeded bool) {
+	if Logger == nil {
+		return
+	}
+	responseMarker := redLogMarker
+	if responseSucceeded {
+		responseMarker = greenLogMarker
+	}
+	Logger.Info(cyanLogMarker + request + responseMarker + " " + response + resetLogMarker)
+}
+
 func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
 	}
-	if err != nil {
-		fields = append(fields, zap.Error(err))
+
+	if IsDebugEnabled() {
+		Logger.Error(fmt.Sprintf("%s, %+v", msg, err), fields...)
+	} else {
+		Logger.Error(fmt.Sprintf("%s, %v", msg, err), fields...)
 	}
-	Logger.Error(msg, fields...)
 }
 
-// Debug logs a debug message.
 func Debug(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -214,7 +289,6 @@ func Debug(msg string, fields ...zap.Field) {
 	Logger.Debug(msg, fields...)
 }
 
-// Warn logs a warning message.
 func Warn(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -222,40 +296,54 @@ func Warn(msg string, fields ...zap.Field) {
 	Logger.Warn(msg, fields...)
 }
 
+// StdLogger returns a *log.Logger that routes writes through the global zap
+// logger, so call sites that keep a *log.Logger facade still land in the
+// project's structured logs. When the project logger has not been initialized
+// yet (e.g. before InitLogger runs or in standalone tests) it falls back to the
+// standard-library default. The returned logger writes at Info level.
+//
+// The returned *log.Logger resolves the write target LAZILY on every write.
+// Package-level variables like `var _LOG = common.StdLogger()` are evaluated
+// during package init, long before InitLogger runs; a logger captured eagerly
+// at that moment would be log.Default() forever and its output would vanish
+// into stderr, never reaching the structured log files.
+func StdLogger() *log.Logger {
+	stdLogOnce.Do(func() {
+		stdLogger = log.New(stdLogRouter{}, "", 0)
+	})
+	return stdLogger
+}
+
+// stdLogRouter dispatches *log.Logger writes to the current global logger on
+// every write (see StdLogger).
+type stdLogRouter struct{}
+
+func (stdLogRouter) Write(p []byte) (int, error) {
+	if Logger == nil {
+		return os.Stderr.Write(p)
+	}
+	Logger.Info(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
 // IsDebugEnabled returns true if debug logging is enabled.
 func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 
-// GetLevel returns the current log level.
-func GetLevel() string {
+// GetLogLevel returns the current log level.
+func GetLogLevel() string {
 	return atomicLevel.String()
 }
 
-// SetLevel sets the log level at runtime.
-func SetLevel(level string) error {
+// SetLogLevel sets the log level at runtime.
+func SetLogLevel(level string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		return err
 	}
 	atomicLevel.SetLevel(zapLevel)
 	return nil
-}
-
-// ResolveCompress applies the project default (true) when the config-level
-// Compress is nil. When non-nil, the operator's choice is used as-is.
-//
-// The project default is compression on; operators can opt out by setting
-// log.compress: false in service_conf.yaml. Because Go's bool zero value is
-// false and would otherwise be indistinguishable from "not set", the YAML
-// struct uses *bool and this helper resolves the defaulting at the cmd/
-// boundary. The *bool does not live in this file because FileOutput itself
-// takes a plain bool (the caller has already resolved the default by then).
-func ResolveCompress(c *bool) bool {
-	if c == nil {
-		return true
-	}
-	return *c
 }
 
 // GinLogger returns a gin middleware that emits one log line per request
@@ -319,7 +407,7 @@ func GinLogger() gin.HandlerFunc {
 				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
 				// Use a sentinel so the err field is non-empty; operators can
 				// grep for this string in logs.
-				ginErr = errors.New("5xx response with no handler error attached")
+				ginErr = err5xxNoError
 			}
 			Error(msg, ginErr, fields...)
 		case status >= 400:
@@ -329,3 +417,5 @@ func GinLogger() gin.HandlerFunc {
 		}
 	}
 }
+
+var err5xxNoError = errors.New("5xx response with no handler error attached")

@@ -1,6 +1,14 @@
+general:
+  heartbeat_interval: 3s
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+  # Proxies whose X-Forwarded-For / X-Real-IP headers the Go API server trusts
+  # when resolving the client address (agent webhook ip_whitelist, login audit).
+  # Defaults to loopback, i.e. the nginx bundled in this image. An explicit list
+  # replaces that default, so keep the loopback entries when adding the address
+  # or CIDR of a further proxy in front of nginx; an empty list trusts none.
+  # trusted_proxies: ['127.0.0.0/8', '::1/128']
 admin:
   host: 0.0.0.0
   http_port: 9381
@@ -62,12 +70,14 @@ otel:
   port: 4318
   secure: false
   sample_ratio: 1.0
-  stdout: true
-task_executor:
-  message_queue_type: 'nats'
+  stdout: false
+  enable: false
+ingestor:
+  mq_type: 'nats'
+  max_concurrent_workers: 2
+  compiler_pool_size: 0
 file_syncer:
-  max_concurrent_syncs: 4
-  sync_interval: 3
+  max_concurrent_syncs: 5
 user_default_llm:
   default_models:
     embedding_model:
@@ -142,21 +152,21 @@ gcs:
 #     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
 #     token_url: "https://your-oauth-provider.com/oauth/token"
 #     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
 #   oidc:
 #     display_name: "OIDC"
 #     client_id: "your_client_id"
 #     client_secret: "your_client_secret"
 #     issuer: "https://your-oauth-provider.com/oidc"
 #     scope: "openid email profile"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
 #   github:
 #     type: "github"
 #     icon: "github"
 #     display_name: "Github"
 #     client_id: "your_client_id"
 #     client_secret: "your_client_secret"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 # authentication:
 #   client:
 #     switch: false

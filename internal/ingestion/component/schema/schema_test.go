@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -120,90 +121,17 @@ func TestFileOutputsJSONRoundTrip(t *testing.T) {
 // Parser
 // ---------------------------------------------------------------------------
 
-func TestParserFromUpstreamValidate(t *testing.T) {
-	// Name is required.
-	if err := (&ParserFromUpstream{}).Validate(); err == nil {
-		t.Fatal("expected Validate to fail when Name is empty")
-	}
-	if err := (&ParserFromUpstream{Name: "doc.pdf"}).Validate(); err != nil {
-		t.Fatalf("Validate with Name unexpectedly failed: %v", err)
-	}
-}
-
-func TestParserParamDefaults(t *testing.T) {
-	p := ParserParam{}.Defaults()
-	if err := p.Validate(); err != nil {
-		t.Fatalf("default ParserParam failed Validate: %v", err)
-	}
-	// Spot-check a few entries that the Python class initializes.
-	for _, key := range []string{"pdf", "docx", "image", "audio", "video", "email", "epub"} {
-		if _, ok := p.Setups[key]; !ok {
-			t.Errorf("default Setups missing key %q", key)
-		}
-	}
-	if got := p.Setups["pdf"]["parse_method"]; got != "deepdoc" {
-		t.Errorf("default pdf parse_method = %v, want deepdoc", got)
-	}
-	if got := p.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
-		t.Errorf("default pdf allowed_output_format = %v, want [json markdown]", got)
-	}
-}
-
-func TestParserParamJSONRoundTrip(t *testing.T) {
-	original := ParserParam{}.Defaults()
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(data), `"setups"`) {
-		t.Errorf("expected setups in JSON, got %s", data)
-	}
-	var decoded ParserParam
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if decoded.Setups["pdf"]["parse_method"] != "deepdoc" {
-		t.Errorf("round-trip lost default pdf parse_method: got %v", decoded.Setups["pdf"]["parse_method"])
-	}
-}
-
-func TestParserFromUpstreamJSONRoundTrip(t *testing.T) {
-	original := ParserFromUpstream{
-		Name:     "input.pdf",
-		Abstract: true,
-		Author:   false,
-	}
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	// abstract=true should be emitted; author=false has omitempty so it's
-	// dropped (zero-value bool with omitempty). We test the
-	// non-zero path.
-	if !strings.Contains(string(data), `"abstract":true`) {
-		t.Errorf("expected abstract=true in JSON, got %s", data)
-	}
-	var decoded ParserFromUpstream
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if decoded.Name != original.Name {
-		t.Errorf("Name round-trip mismatch: got %q", decoded.Name)
-	}
-	if !decoded.Abstract {
-		t.Errorf("Abstract round-trip mismatch: got %v", decoded.Abstract)
-	}
-	// author field is omitempty, so JSON round-trip should leave it false
-	// (default value) on both sides.
-	if decoded.Author {
-		t.Errorf("Author should be false, got true")
-	}
-}
-
 func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	original := ParserOutputs{
+		Name:         "input.pdf",
+		FileType:     "pdf",
 		OutputFormat: "json",
 		JSON:         []map[string]any{{"text": "hello", "doc_type_kwd": "text"}},
+		Lang:         "English",
+		File:         map[string]any{"name": "input.pdf", "page_count": float64(1)},
+		DocID:        "doc-1",
+		Bucket:       "bucket-1",
+		Path:         "tenant/doc-1.pdf",
 	}
 	data, err := json.Marshal(original)
 	if err != nil {
@@ -212,6 +140,9 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"json"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ParserOutputs
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -219,8 +150,42 @@ func TestParserOutputsJSONRoundTrip(t *testing.T) {
 	if decoded.OutputFormat != "json" {
 		t.Errorf("OutputFormat round-trip mismatch: got %q", decoded.OutputFormat)
 	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
+	}
 	if len(decoded.JSON) != 1 {
 		t.Errorf("JSON round-trip mismatch: got %d", len(decoded.JSON))
+	}
+	if decoded.Name != original.Name || decoded.Lang != original.Lang {
+		t.Errorf("parser identity round-trip mismatch: got name=%q lang=%q", decoded.Name, decoded.Lang)
+	}
+	if decoded.DocID != original.DocID || decoded.Bucket != original.Bucket || decoded.Path != original.Path {
+		t.Errorf("parser storage round-trip mismatch: got doc_id=%q bucket=%q path=%q", decoded.DocID, decoded.Bucket, decoded.Path)
+	}
+	if decoded.File["name"] != "input.pdf" {
+		t.Errorf("parser file metadata round-trip mismatch: got %#v", decoded.File)
+	}
+}
+
+func TestParserOutputsJSONRoundTripPreservesEmptyItems(t *testing.T) {
+	original := ParserOutputs{
+		Name:         "empty.txt",
+		OutputFormat: "json",
+		JSON:         []map[string]any{},
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"json":[]`) {
+		t.Fatalf("empty JSON payload omitted: %s", data)
+	}
+	var decoded ParserOutputs
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.JSON == nil || len(decoded.JSON) != 0 {
+		t.Fatalf("empty JSON payload round-trip mismatch: %#v", decoded.JSON)
 	}
 }
 
@@ -241,6 +206,7 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	md := "# title"
 	original := ChunkerFromUpstream{
 		Name:           "doc.pdf",
+		FileType:       "pdf",
 		OutputFormat:   PayloadFormatChunks,
 		Chunks:         []ChunkDoc{{Text: "alpha"}},
 		MarkdownResult: &md,
@@ -252,6 +218,9 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), `"output_format":"chunks"`) {
 		t.Errorf("expected output_format in JSON, got %s", data)
 	}
+	if !strings.Contains(string(data), `"file_type":"pdf"`) {
+		t.Errorf("expected file_type in JSON, got %s", data)
+	}
 	var decoded ChunkerFromUpstream
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -259,8 +228,53 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.Name != "doc.pdf" || decoded.OutputFormat != PayloadFormatChunks {
 		t.Errorf("round-trip mismatch: %+v", decoded)
 	}
+	if decoded.FileType != "pdf" {
+		t.Errorf("FileType round-trip mismatch: got %q", decoded.FileType)
+	}
 	if len(decoded.Chunks) != 1 {
 		t.Errorf("Chunks round-trip mismatch: got %d", len(decoded.Chunks))
+	}
+}
+
+func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
+	sheetIndex, rowStart, rowEnd, colStart, colEnd := 2, 42, 42, 1, 3
+	original := ChunkDoc{
+		Text:       "ID：A-100; Status：paid",
+		DocType:    "text",
+		CKType:     "table_row",
+		TableID:    "sheet-2",
+		Sheet:      "Orders",
+		SheetIndex: &sheetIndex,
+		Headers:    []string{"ID", "Status", "Note"},
+		Cells:      []string{"A-100", "paid", ""},
+		RowStart:   &rowStart,
+		RowEnd:     &rowEnd,
+		ColStart:   &colStart,
+		ColEnd:     &colEnd,
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded ChunkDoc
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.TableID != original.TableID || decoded.Sheet != original.Sheet {
+		t.Fatalf("spreadsheet identity mismatch: got table=%q sheet=%q", decoded.TableID, decoded.Sheet)
+	}
+	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
+		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
+	}
+	if decoded.RowStart == nil || *decoded.RowStart != rowStart || decoded.RowEnd == nil || *decoded.RowEnd != rowEnd {
+		t.Fatalf("row range mismatch: start=%v end=%v", decoded.RowStart, decoded.RowEnd)
+	}
+	if decoded.ColStart == nil || *decoded.ColStart != colStart || decoded.ColEnd == nil || *decoded.ColEnd != colEnd {
+		t.Fatalf("column range mismatch: start=%v end=%v", decoded.ColStart, decoded.ColEnd)
+	}
+	if !reflect.DeepEqual(decoded.Headers, original.Headers) || !reflect.DeepEqual(decoded.Cells, original.Cells) {
+		t.Fatalf("cells mismatch: headers=%v cells=%v", decoded.Headers, decoded.Cells)
 	}
 }
 
@@ -287,8 +301,8 @@ func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestTokenChunkerParamDefaults(t *testing.T) {
 	p := TokenChunkerParam{}.Defaults()
-	if p.DelimiterMode != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", p.DelimiterMode)
+	if p.DelimiterMode != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", p.DelimiterMode)
 	}
 	if p.ChunkTokenSize != 512 {
 		t.Errorf("default chunk_token_size = %d, want 512", p.ChunkTokenSize)
@@ -373,11 +387,11 @@ func TestTokenizerFromUpstreamValidate(t *testing.T) {
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatChunks}).Validate(); err != nil {
 		t.Fatalf("output_format=chunks should be valid, got %v", err)
 	}
-	// output_format=markdown with no MarkdownResult -> error.
+	// output_format=Markdown with no MarkdownResult -> error.
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown}).Validate(); err == nil {
 		t.Fatal("expected error for markdown without payload")
 	}
-	// output_format=markdown with payload -> OK.
+	// output_format=Markdown with payload -> OK.
 	md := "# title"
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown, MarkdownResult: &md}).Validate(); err != nil {
 		t.Fatalf("markdown with payload should be valid, got %v", err)
@@ -443,7 +457,7 @@ func TestTokenizerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.MarkdownResult == nil || *decoded.MarkdownResult != "# title" {
 		t.Errorf("markdown round-trip mismatch: got %v", decoded.MarkdownResult)
 	}
-	// Re-marshal the decoded and confirm we can read markdown back.
+	// Re-marshal the decoded and confirm we can read Markdown back.
 	data2, err := json.Marshal(decoded)
 	if err != nil {
 		t.Fatalf("re-marshal: %v", err)
@@ -513,20 +527,20 @@ func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestExtractorParamDefaults(t *testing.T) {
 	p := ExtractorParam{}.Defaults()
-	if p.FieldName != "" {
-		t.Errorf("default field_name should be empty, got %q", p.FieldName)
+	if p.LLMID != "" {
+		t.Errorf("default llm_id should be empty, got %q", p.LLMID)
 	}
-	if err := p.Validate(); err == nil {
-		t.Fatal("default ExtractorParam should fail Validate (field_name required)")
+	if err := p.Validate(); err != nil {
+		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
 	}
 }
 
 func TestExtractorParamValidate(t *testing.T) {
-	if err := (&ExtractorParam{}).Validate(); err == nil {
-		t.Fatal("expected error for empty field_name")
+	if err := (&ExtractorParam{}).Validate(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
-		t.Fatalf("Validate with field_name should pass, got %v", err)
+	if err := (&ExtractorParam{LLMID: "model@provider"}).Validate(); err != nil {
+		t.Fatalf("Validate should pass, got %v", err)
 	}
 }
 
@@ -568,6 +582,36 @@ func TestExtractorOutputsJSONRoundTrip(t *testing.T) {
 	}
 	if decoded.OutputFormat != "chunks" {
 		t.Errorf("OutputFormat round-trip mismatch: got %q", decoded.OutputFormat)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ContextualText
+// ---------------------------------------------------------------------------
+
+// TestContextualTextConcatenatesMediaContext pins the single join rule shared
+// by the chunker's output fold and the tokenizer's retrieval text: the context
+// boundaries are concatenated as-is, mirroring Python's finalize
+// (rag/flow/chunker/token_chunker.py:343) — no separator is inserted.
+func TestContextualTextConcatenatesMediaContext(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  ChunkDoc
+		want string
+	}{
+		{"body only", ChunkDoc{Text: "body"}, "body"},
+		{"both sides", ChunkDoc{ContextAbove: "before", Text: "<table/>", ContextBelow: "after"}, "before<table/>after"},
+		{"keeps producer whitespace", ChunkDoc{ContextAbove: "before ", Text: "body", ContextBelow: " after"}, "before body after"},
+		{"above only", ChunkDoc{ContextAbove: "before", Text: "body"}, "beforebody"},
+		{"below only", ChunkDoc{Text: "body", ContextBelow: "after"}, "bodyafter"},
+		{"empty chunk", ChunkDoc{}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ContextualText(tc.doc); got != tc.want {
+				t.Errorf("ContextualText() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -23,8 +23,10 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // VarRefPattern matches the RAGFlow variable reference syntax.
@@ -131,6 +133,24 @@ func ResolveTemplateForDisplay(s string, state *CanvasState) string {
 		if v == nil {
 			return ""
 		}
-		return fmt.Sprintf("%v", v)
+		return stringifyDisplayValue(v)
 	})
+}
+
+// stringifyDisplayValue mirrors Message._stringify_message_value in Python:
+// strings pass through unchanged, while lists, maps, numbers, and booleans
+// use JSON syntax. In particular, a []string{"user: 1"} reference must render
+// as ["user: 1"], not Go's fmt representation [user: 1].
+func stringifyDisplayValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+
+	var buf strings.Builder
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err == nil {
+		return strings.TrimSuffix(buf.String(), "\n")
+	}
+	return fmt.Sprintf("%v", value)
 }

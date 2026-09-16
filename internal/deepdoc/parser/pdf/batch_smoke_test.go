@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -34,7 +34,6 @@ import (
 //
 // DeepDoc is mandatory (DLA+TSR are inseparable from the pipeline).
 //
-//	BATCH_SKIP_OCR=1   skip image OCR (DLA+TSR kept)
 //	BATCH_COUNT=N      limit to first N PDFs (by file size, smallest first)
 //	BATCH_SINGLE=name  process exactly one PDF (full filename)
 //
@@ -52,18 +51,11 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := inf.NewClient(common.GetEnv(common.EnvDeepDocURL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ddClient.Health() {
-		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.BaseURL())
-	}
-	deepDoc := pdf.DocAnalyzer(ddClient)
+	ddClient := mustConnectInProcessAnalyzer(t)
+	deepDoc := ddClient
 
-	variant := variantFromEnv()
-	t.Logf("DeepDoc available — DLA+TSR%s enabled (%d PDFs)",
-		map[bool]string{true: ", image OCR skipped", false: ", OCR enabled"}[variant == "noocr"], len(pdfs))
+	variant := "ocr"
+	t.Logf("DeepDoc available — DLA+TSR+OCR enabled (%d PDFs)", len(pdfs))
 
 	dirs := mkOutputDirs(variant)
 
@@ -83,15 +75,8 @@ func setupLogger() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }
 
-func variantFromEnv() string {
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
-		return "noocr"
-	}
-	return "ocr"
-}
-
 type outputDirs struct {
-	text, tables, dla string
+	text, tables, dla, tsr string
 }
 
 func mkOutputDirs(variant string) outputDirs {
@@ -99,10 +84,12 @@ func mkOutputDirs(variant string) outputDirs {
 		text:   filepath.Join("testdata", "output", "go", variant, "text"),
 		tables: filepath.Join("testdata", "output", "go", variant, "tables"),
 		dla:    filepath.Join("testdata", "output", "go", variant, "dla"),
+		tsr:    filepath.Join("testdata", "output", "go", variant, "tsr_raw"),
 	}
 	os.MkdirAll(d.text, 0755)
 	os.MkdirAll(d.tables, 0755)
 	os.MkdirAll(d.dla, 0755)
+	os.MkdirAll(d.tsr, 0755)
 	return d
 }
 
@@ -179,7 +166,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 	t.Helper()
 	var results []tool.BatchResult
 	totalChars := 0
-	skipOCR := common.GetEnv(common.EnvBatchSkipOCR) == "1"
+	ctx := t.Context()
 
 	for i, name := range pdfs {
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(pdfs), name)
@@ -194,7 +181,7 @@ func processPDFs(t *testing.T, pdfDir string, pdfs []string, deepDoc pdf.DocAnal
 		}
 
 		// ── parse ──
-		res, err := parseOne(pdfDir, name, deepDoc, skipOCR)
+		res, err := parseOne(ctx, pdfDir, name, deepDoc)
 		if err != nil {
 			results = append(results, tool.BatchResult{File: name, Error: err.Error()})
 			t.Logf("%s — %v", label, err)
@@ -220,7 +207,7 @@ type parseOneResult struct {
 	result pdf.ParseResult
 }
 
-func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*parseOneResult, error) {
+func parseOne(ctx context.Context, pdfDir, name string, deepDoc pdf.DocAnalyzer) (*parseOneResult, error) {
 	data, err := os.ReadFile(filepath.Join(pdfDir, name))
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
@@ -236,10 +223,9 @@ func parseOne(pdfDir, name string, deepDoc pdf.DocAnalyzer, skipOCR bool) (*pars
 	chars, _ := extractPageStats(eng)
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.SkipOCR = skipOCR
 	p := NewParser(cfg)
 	t0 := time.Now()
-	parsed, err := p.ParseRaw(context.Background(), eng, deepDoc)
+	parsed, err := p.ParseRaw(ctx, eng, deepDoc)
 	elapsed := time.Since(t0).Seconds()
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
@@ -344,9 +330,68 @@ func writeOutputs(dirs outputDirs, name string, parsed *pdf.ParseResult, res *pa
 	}
 
 	// ── DLA layout intermediates ──
+	// DLA dump: post-filter regions (NMS + confidence filter + Y-sort +
+	// cleanup), matching Python's page_layout. This makes the Go dump
+	// comparable with the Python parity dump, which also writes post-filter
+	// regions.
+	//
+	// Coordinate space: Go dumps image-pixel coordinates (no scale division;
+	// see FilteredDLARegions), whereas Python's page_layout divides by
+	// scale_factor (typically 3, layout_recognizer.py:90-93). So the two
+	// dumps differ by ~3x in absolute coordinates — this is expected, and the
+	// parity comparison is count-only (CompareDLAWithPython), so it does not
+	// affect the match.
+	//
+	// Real DLA regions always carry a score, so cleanupLayouts' box-fallback
+	// never triggers and nil boxes are safe here (count-wise). If a score-0
+	// region were ever emitted, the area tie-break would fall back to keeping
+	// the first region rather than mirroring Python's area-based choice.
 	if parsed.DLARegions != nil {
-		if b, _ := json.MarshalIndent(parsed.DLARegions, "", "  "); b != nil {
+		filteredPages := make([]pdf.DLAPageRegions, 0, len(parsed.DLARegions))
+		for _, pr := range parsed.DLARegions {
+			filteredPages = append(filteredPages, pdf.DLAPageRegions{
+				Page:    pr.Page,
+				Regions: table.FilteredDLARegions(pr.Regions, nil),
+			})
+		}
+		if b, _ := json.MarshalIndent(filteredPages, "", "  "); b != nil {
 			os.WriteFile(filepath.Join(dirs.dla, name+".json"), b, 0644)
 		}
+	}
+
+	// ── TSR raw cells ── (matching Python's tsr_raw dump from parser.tb_cpns).
+	// Flat list of per-cell records so CompareTSRRawWithPython can diff labels
+	// and table counts against the Python reference.
+	type tsrRawCellDump struct {
+		TableIndex int     `json:"table_index"`
+		Page       int     `json:"page"`
+		Label      string  `json:"label"`
+		X0         float64 `json:"x0"`
+		Y0         float64 `json:"y0"`
+		X1         float64 `json:"x1"`
+		Y1         float64 `json:"y1"`
+		Text       string  `json:"text"`
+	}
+	var tsrCells []tsrRawCellDump
+	for ti, t := range parsed.Tables {
+		page := 0
+		if len(t.Positions) > 0 && len(t.Positions[0].PageNumbers) > 0 {
+			page = t.Positions[0].PageNumbers[0]
+		}
+		for _, c := range t.Cells {
+			tsrCells = append(tsrCells, tsrRawCellDump{
+				TableIndex: ti,
+				Page:       page,
+				Label:      c.Label,
+				X0:         c.X0,
+				Y0:         c.Y0,
+				X1:         c.X1,
+				Y1:         c.Y1,
+				Text:       c.Text,
+			})
+		}
+	}
+	if b, _ := json.MarshalIndent(tsrCells, "", "  "); b != nil {
+		os.WriteFile(filepath.Join(dirs.tsr, name+".json"), b, 0644)
 	}
 }

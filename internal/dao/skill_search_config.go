@@ -17,9 +17,12 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // SkillSearchConfigDAO data access object for skill search config
@@ -41,14 +44,14 @@ func NewSkillSearchConfigDAO() *SkillSearchConfigDAO {
 }
 
 // Create creates a new skill search config
-func (dao *SkillSearchConfigDAO) Create(config *entity.SkillSearchConfig) error {
-	return DB.Create(config).Error
+func (dao *SkillSearchConfigDAO) Create(ctx context.Context, db *gorm.DB, config *entity.SkillSearchConfig) error {
+	return db.WithContext(ctx).Create(config).Error
 }
 
 // GetByID retrieves a skill search config by ID
-func (dao *SkillSearchConfigDAO) GetByID(id string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("id = ? AND status = ?", id, "1").First(&config).Error
+	err := db.WithContext(ctx).Where("id = ? AND status = ?", id, "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +59,9 @@ func (dao *SkillSearchConfigDAO) GetByID(id string) (*entity.SkillSearchConfig, 
 }
 
 // GetByTenantID retrieves a skill search config by tenant ID
-func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").First(&config).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -67,15 +70,15 @@ func (dao *SkillSearchConfigDAO) GetByTenantID(tenantID, spaceID string) (*entit
 
 // GetLatestByTenantID retrieves the latest skill search config by tenant ID (ordered by update_time desc)
 // Prioritizes configs with non-empty embd_id to return user-saved configs over auto-created ones
-func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetLatestByTenantID(ctx context.Context, db *gorm.DB, tenantID, spaceID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
 	// First try to get the latest config with non-empty embd_id (user-saved config)
-	err := DB.Where("tenant_id = ? AND space_id = ? AND status = ? AND embd_id != ?", tenantID, normalizeSpaceID(spaceID), "1", "").Order("update_time desc").First(&config).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND space_id = ? AND status = ? AND embd_id != ?", tenantID, normalizeSpaceID(spaceID), "1", "").Order("update_time desc").First(&config).Error
 	if err == nil {
 		return &config, nil
 	}
 	// If no user-saved config found, get any config
-	err = DB.Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Order("update_time desc").First(&config).Error
+	err = db.WithContext(ctx).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Order("update_time desc").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -83,9 +86,9 @@ func (dao *SkillSearchConfigDAO) GetLatestByTenantID(tenantID, spaceID string) (
 }
 
 // GetByTenantAndEmbdID retrieves a skill search config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(ctx context.Context, db *gorm.DB, tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
 	var config entity.SkillSearchConfig
-	err := DB.Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").First(&config).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").First(&config).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,19 +96,19 @@ func (dao *SkillSearchConfigDAO) GetByTenantAndEmbdID(tenantID, spaceID, embdID 
 }
 
 // GetOrCreate retrieves existing config or creates default one
-func (dao *SkillSearchConfigDAO) GetOrCreate(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) GetOrCreate(ctx context.Context, db *gorm.DB, tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
 	spaceID = normalizeSpaceID(spaceID)
-	config, err := dao.GetByTenantAndEmbdID(tenantID, spaceID, embdID)
+	config, err := dao.GetByTenantAndEmbdID(ctx, db, tenantID, spaceID, embdID)
 	if err == nil {
 		return config, nil
 	}
 
 	// Create default config
-	return dao.CreateWithTenantSpace(tenantID, spaceID, embdID)
+	return dao.CreateWithTenantSpace(ctx, db, tenantID, spaceID, embdID)
 }
 
 // CreateWithTenantSpace creates a new config for tenant+space
-func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
+func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(ctx context.Context, db *gorm.DB, tenantID, spaceID, embdID string) (*entity.SkillSearchConfig, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	defaultFieldConfig := entity.DefaultFieldConfig()
 	fieldConfigMap := entity.JSONMap{
@@ -139,46 +142,46 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID
 		Status:                 "1",
 	}
 
-	if err := dao.Create(defaultConfig); err != nil {
+	if err := dao.Create(ctx, db, defaultConfig); err != nil {
 		return nil, err
 	}
 	return defaultConfig, nil
 }
 
 // DeleteAllByTenantSpace deletes all configs for a tenant+space (for cleanup before creating new one)
-func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpace(tenantID, spaceID string) error {
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpace(ctx context.Context, db *gorm.DB, tenantID, spaceID string) error {
 	spaceID = normalizeSpaceID(spaceID)
-	return DB.Model(&entity.SkillSearchConfig{}).
+	return db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).
 		Where("tenant_id = ? AND space_id = ?", tenantID, spaceID).
 		Update("status", "0").Error
 }
 
 // DeleteAllByTenantSpaceExceptID deletes all active configs for a tenant+space except the specified ID
-func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpaceExceptID(tenantID, spaceID, exceptID string) error {
+func (dao *SkillSearchConfigDAO) DeleteAllByTenantSpaceExceptID(ctx context.Context, db *gorm.DB, tenantID, spaceID, exceptID string) error {
 	spaceID = normalizeSpaceID(spaceID)
-	return DB.Model(&entity.SkillSearchConfig{}).
+	return db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).
 		Where("tenant_id = ? AND space_id = ? AND id != ? AND status = ?", tenantID, spaceID, exceptID, "1").
 		Update("status", "0").Error
 }
 
 // Update updates a skill search config with the given updates map
-func (dao *SkillSearchConfigDAO) Update(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.SkillSearchConfig{}).Where("id = ? AND status = ?", id, "1").Updates(updates).Error
+func (dao *SkillSearchConfigDAO) Update(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("id = ? AND status = ?", id, "1").Updates(updates).Error
 }
 
 // UpdateByTenantID updates config by tenant ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantID(tenantID, spaceID string, updates map[string]interface{}) error {
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Updates(updates)
+func (dao *SkillSearchConfigDAO) UpdateByTenantID(ctx context.Context, db *gorm.DB, tenantID, spaceID string, updates map[string]interface{}) error {
+	result := db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), "1").Updates(updates)
 	return result.Error
 }
 
 // UpdateByTenantAndEmbdID updates config by tenant ID and embedding ID
-func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, spaceID, embdID string, updates map[string]interface{}) error {
-	result := DB.Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").Updates(updates)
+func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(ctx context.Context, db *gorm.DB, tenantID, spaceID, embdID string, updates map[string]interface{}) error {
+	result := db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("tenant_id = ? AND space_id = ? AND embd_id = ? AND status = ?", tenantID, normalizeSpaceID(spaceID), embdID, "1").Updates(updates)
 	return result.Error
 }
 
 // Delete deletes a skill search config by ID (soft delete)
-func (dao *SkillSearchConfigDAO) Delete(id string) error {
-	return DB.Model(&entity.SkillSearchConfig{}).Where("id = ?", id).Update("status", "0").Error
+func (dao *SkillSearchConfigDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Model(&entity.SkillSearchConfig{}).Where("id = ?", id).Update("status", "0").Error
 }

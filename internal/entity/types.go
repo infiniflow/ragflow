@@ -20,7 +20,7 @@ import "strings"
 
 // ModelType represents the type of model as a bitmask, matching Python's
 // ModelTypeBinary enum (common/constants.py).
-// Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=speech2text, 8=image2text, 16=rerank, 32=tts, 64=ocr.
+// Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr.
 // A model can belong to multiple types simultaneously.
 type ModelType int
 
@@ -91,10 +91,10 @@ func (mt ModelType) HumanReadable() []string {
 		parts = append(parts, "embedding")
 	}
 	if mt.Has(ModelTypeSpeech2Text) {
-		parts = append(parts, "speech2text")
+		parts = append(parts, "asr")
 	}
 	if mt.Has(ModelTypeImage2Text) {
-		parts = append(parts, "image2text")
+		parts = append(parts, "vision")
 	}
 	if mt.Has(ModelTypeRerank) {
 		parts = append(parts, "rerank")
@@ -115,11 +115,9 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeChat
 	case "embedding":
 		return ModelTypeEmbedding
-	case "speech2text":
+	case "asr", "speech2text":
 		return ModelTypeSpeech2Text
-	case "image2text":
-		return ModelTypeImage2Text
-	case "vision":
+	case "vision", "image2text":
 		return ModelTypeImage2Text
 	case "rerank":
 		return ModelTypeRerank
