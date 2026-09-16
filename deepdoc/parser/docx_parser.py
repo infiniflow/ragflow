@@ -27,10 +27,59 @@ from docx.image.exceptions import (
     UnexpectedEndOfFileError,
     UnrecognizedImageError,
 )
+from docx.oxml.ns import qn
 from rag.utils.lazy_image import LazyImage
+
+# Markup Compatibility namespace. Word stores every text box twice inside an
+# `mc:AlternateContent` element: once as a DrawingML shape under `mc:Choice` and
+# once as a legacy VML shape under `mc:Fallback`. Both carry a `w:txbxContent`,
+# so the fallback copy has to be skipped or the text is emitted twice.
+MC_FALLBACK_TAG = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+TEXT_BOX_TAG = qn("w:txbxContent")
+
+
+def _has_ancestor(node, tag, stop=None):
+    """Whether `node` has an ancestor with `tag`, looking no further than `stop`."""
+    parent = node.getparent()
+    while parent is not None and parent is not stop:
+        if parent.tag == tag:
+            return True
+        parent = parent.getparent()
+    return False
 
 
 class RAGFlowDocxParser:
+    @staticmethod
+    def extract_text_boxes(paragraph):
+        """Text of every text box anchored in `paragraph`, in document order.
+
+        A text box keeps its own `w:p` elements in a `w:txbxContent` nested inside
+        the drawing of a run, so neither `Paragraph.text` nor `Run.text` reaches it
+        and callouts, pull quotes and sidebars are dropped silently.
+        """
+        texts = []
+        element = getattr(paragraph, "_element", None)
+        if element is None:
+            return texts
+        for child in element:
+            try:
+                boxes = child.findall(".//" + TEXT_BOX_TAG)
+            except AttributeError:  # a test double may hand us a plain list
+                continue
+            for box in boxes:
+                if _has_ancestor(box, MC_FALLBACK_TAG):
+                    continue
+                lines = []
+                for p in box.findall(qn("w:p")):
+                    # A text box may itself contain a text box; its `w:t` nodes are
+                    # collected when that inner box comes up in `boxes`.
+                    line = "".join(t.text or "" for t in p.iter(qn("w:t")) if not _has_ancestor(t, TEXT_BOX_TAG, stop=p))
+                    if line.strip():
+                        lines.append(line)
+                if lines:
+                    texts.append("\n".join(lines))
+        return texts
+
     def get_picture(self, document, paragraph):
         imgs = paragraph._element.xpath(".//pic:pic")
         if not imgs:
@@ -165,6 +214,7 @@ class RAGFlowDocxParser:
             if pn > to_page:
                 break
 
+            page_of_paragraph = pn  # a text box is anchored in the paragraph, not in a run
             runs_within_single_paragraph = []  # save runs within the range of pages
             for run in p.runs:
                 if pn > to_page:
@@ -177,6 +227,10 @@ class RAGFlowDocxParser:
                     pn += 1
 
             secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
+
+            if from_page <= page_of_paragraph < to_page:
+                for box_text in self.extract_text_boxes(p):
+                    secs.append((box_text, ""))
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls
