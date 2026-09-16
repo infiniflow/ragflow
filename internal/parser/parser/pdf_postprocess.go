@@ -402,13 +402,19 @@ func sectionText(s deepdoctype.Section) string {
 	return strings.TrimSpace(s.Text)
 }
 
+// sectionTextPrefix returns the first n characters of the section text,
+// mirroring Python's get(i)[:3] in remove_contents_table: str slicing counts
+// code points, so a byte slice would keep only one rune of "第一章 ..." and
+// the prefix scan would terminate on the next 第-prefixed entry.
 func sectionTextPrefix(s deepdoctype.Section, n int) string {
 	text := sectionText(s)
-	if len(text) < n {
+	runes := []rune(text)
+	if len(runes) < n {
 		return text
 	}
-	return text[:n]
+	return string(runes[:n])
 }
+
 func removePDFTOCByOutlines(result *deepdoctype.ParseResult, outlines []deepdoctype.Outline) {
 	if result == nil || len(outlines) == 0 {
 		return

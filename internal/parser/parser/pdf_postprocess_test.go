@@ -163,6 +163,38 @@ func TestApplyPDFPostProcess_RemoveTOCPrefixScanWithoutEntryPattern(t *testing.T
 	}
 }
 
+func TestApplyPDFPostProcess_RemoveTOCPrefixScanCJKEntries(t *testing.T) {
+	// Python remove_contents_table takes the TOC prefix as the first 3
+	// CHARACTERS of the entry (rag/nlp/__init__.py: get(i)[:3]). Slicing by
+	// bytes instead keeps only "第" from "第一章 绪论", so the scan's
+	// terminator matches the very next 第-prefixed entry and the whole
+	// chapter list survives into chunks.
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "目录"},
+			{Text: "第一章 绪论"},
+			{Text: "第二章 背景"},
+			{Text: "第三章 方法"},
+			{Text: "第一章 绪论"},
+			{Text: "正文内容，必须保留。"},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	var kept []string
+	for _, s := range result.Sections {
+		kept = append(kept, s.Text)
+	}
+	want := []string{"第一章 绪论", "正文内容，必须保留。"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept = %v, want %v", kept, want)
+		}
+	}
+}
+
 func TestApplyPDFPostProcess_RemoveTOCSingleFormattedEntryKeepsBody(t *testing.T) {
 	// Only the first entry after the TOC title is formatted. It must count
 	// as a consumed entry so the prefix scan never runs: that scan would
