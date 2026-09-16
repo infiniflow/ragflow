@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -242,27 +243,67 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 	return nil
 }
 
+// PinTable records the IP AssertURLSafe validated for each hostname so a
+// transport can dial that address instead of resolving the hostname a
+// second time. A DNS answer that changes between the check and the dial
+// (rebinding) cannot redirect the connection to a private IP. The zero
+// value is ready to use; pins are scoped to the table instance.
+type PinTable struct {
+	mu  sync.RWMutex
+	ips map[string]string
+}
+
+// Pin records ip as the validated address for hostname. Empty values are
+// ignored so an unresolved host stays unpinned.
+func (t *PinTable) Pin(hostname, ip string) {
+	if hostname == "" || ip == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ips == nil {
+		t.ips = make(map[string]string)
+	}
+	t.ips[hostname] = ip
+}
+
+// WrapDialContext returns a DialContext that rewrites the host part of
+// addr to the pinned IP when the table has one, then delegates the dial
+// to base. A nil base dials with the net.Dialer defaults.
+func (t *PinTable) WrapDialContext(base func(ctx context.Context, network, addr string) (net.Conn, error)) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	if base == nil {
+		base = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err == nil {
+			t.mu.RLock()
+			ip, ok := t.ips[host]
+			t.mu.RUnlock()
+			if ok {
+				addr = net.JoinHostPort(ip, port)
+			}
+		}
+		return base(ctx, network, addr)
+	}
+}
+
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
 // scoped to this client only.
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
-	dialer := &net.Dialer{
-		Timeout:   timeout,
-		KeepAlive: 30 * time.Second,
-	}
+	pins := &PinTable{}
+	pins.Pin(hostname, resolvedIP)
 	transport := &http.Transport{
 		// Disable environment proxy: HTTP_PROXY / HTTPS_PROXY would route
 		// the connection through the proxy host instead of the pinned
 		// resolvedIP, bypassing the SSRF guard.
 		Proxy: nil,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, splitErr := net.SplitHostPort(addr)
-			if splitErr == nil && host == hostname && resolvedIP != "" {
-				return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
-			}
-			return dialer.DialContext(ctx, network, addr)
-		},
+		DialContext: pins.WrapDialContext((&net.Dialer{
+			Timeout:   timeout,
+			KeepAlive: 30 * time.Second,
+		}).DialContext),
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
 		ExpectContinueTimeout: 1 * time.Second,

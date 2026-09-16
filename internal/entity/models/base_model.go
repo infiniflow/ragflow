@@ -481,7 +481,12 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	if allowPrivate {
 		rt = &schemeSafeTransport{base: rt}
 	} else {
-		rt = &strictSSRFTransport{base: rt}
+		// Pin the dial target to the IP AssertURLSafe validates so a DNS
+		// answer that changes between the check and the connect cannot
+		// redirect the request to a private address.
+		pins := &utility.PinTable{}
+		t.DialContext = pins.WrapDialContext(t.DialContext)
+		rt = &strictSSRFTransport{base: rt, pins: pins}
 	}
 	rt = newProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
@@ -681,15 +686,23 @@ func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, erro
 
 // strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
 // validated by the strict SSRF guard (scheme + host + globally routable IP).
-// This is the default for cloud-hosted model drivers and closes the
-// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
-// point at private hosts, loopback, link-local, or cloud metadata endpoints.
-type strictSSRFTransport struct{ base http.RoundTripper }
+// The validated IP is recorded in pins, the table the transport's DialContext
+// consults, so the connection goes to the approved address even if a later
+// DNS lookup returns a different answer. This is the default for cloud-hosted
+// model drivers and closes the go/request-forgery data flow: the
+// user-controllable BaseURL cannot be made to point at private hosts,
+// loopback, link-local, or cloud metadata endpoints.
+type strictSSRFTransport struct {
+	base http.RoundTripper
+	pins *utility.PinTable
+}
 
 func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
+	hostname, resolvedIP, err := utility.AssertURLSafe(req.URL.String())
+	if err != nil {
 		return nil, err
 	}
+	t.pins.Pin(hostname, resolvedIP)
 	return t.base.RoundTrip(req)
 }
 
