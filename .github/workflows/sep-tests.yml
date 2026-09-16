@@ -1830,6 +1830,10 @@ jobs:
     env:
       DOC_ENGINE: infinity
       API_PROXY_SCHEME: go
+      # This job starts only the dependency services (no ragflow-cpu container),
+      # so it never builds or pulls RAGFLOW_IMAGE. Define it (empty) so the shared
+      # prepare step's `set -u` does not trip on the unset variable.
+      RAGFLOW_IMAGE: ""
     steps:
       - name: Ensure workspace ownership
         run: |
