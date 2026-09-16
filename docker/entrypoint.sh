@@ -259,6 +259,27 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# Run the model provider table migrations. The Go backend owns those tables when
+# it serves the API, so it runs its own --migrate action instead of the Python
+# script.
+function run_model_provider_migrations() {
+    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
+    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
+        # These migrations contain MySQL-only SQL and cannot run against a
+        # GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Running model provider table migrations (go)..."
+        bin/ragflow_server --migrate
+    else
+        tools/scripts/run_migrations.sh
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -282,18 +303,16 @@ run_with_restart() {
 # This used to run inside the web server block only, so hosts that ran e.g.
 # just the admin server, data sync, MCP server, or task executors never
 # initialized the schema.
-ensure_db_init
+#
+# Under the go scheme the Go backend owns the schema: its --migrate action and
+# dao.InitDB create and converge the tables. Skip the Python initialization so a
+# single side owns the schema.
+if [[ "${API_PROXY_SCHEME}" != "go" ]]; then
+    ensure_db_init
+fi
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
-    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
-    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-    else
-        tools/scripts/run_migrations.sh
-    fi
+    run_model_provider_migrations
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
@@ -327,11 +346,20 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    run_with_restart "Data sync" "$PY" rag/svr/sync_data_source.py &
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Starting data sync (go)..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
+    else
+        echo "Starting data sync..."
+        run_with_restart "Data sync" "$PY" rag/svr/sync_data_source.py &
+    fi
 fi
 
-if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+# The Go backend serves MCP in-process from --api (POST /mcp on the main API
+# port) and exposes the same ragflow_retrieval, ragflow_list_datasets and
+# ragflow_list_chats tools. The standalone Python MCP server would only
+# duplicate it, so the go scheme relies on the built-in endpoint instead.
+if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]] && [[ "${API_PROXY_SCHEME}" != "go" ]]; then
     start_mcp_server
 fi
 

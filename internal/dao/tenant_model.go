@@ -85,6 +85,20 @@ func (dao *TenantModelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) 
 	return &model, nil
 }
 
+// GetByIDs get tenant models by primary keys (id), mirroring Python
+// TenantModelService.get_by_ids. Unknown ids are simply absent from the result.
+func (dao *TenantModelDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.TenantModel, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var models []*entity.TenantModel
+	err := db.WithContext(ctx).Where("id IN ?", ids).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
 func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
 	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error

@@ -36,7 +36,7 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
@@ -111,6 +111,68 @@ LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
         "extra_body",
     }
 )
+
+# Claude models that reject every sampling parameter (temperature / top_p / top_k -> HTTP 400).
+_CLAUDE_NO_SAMPLING_MARKERS = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable",
+    "claude-mythos",
+)
+
+# First Claude generation that rejects ``temperature`` and ``top_p`` being set together, on the
+# Anthropic API itself as well as through Bedrock (Anthropic API release notes, 2025-08-05:
+# "Opus 4.1 does not allow both temperature and top_p parameters to be specified"; Haiku 4.5
+# migration guide: "Use only temperature OR top_p, not both. Setting both returns a 400 error").
+# Claude 3.x and Claude 4.0 (Opus 4 / Sonnet 4) still accept the pair.
+_CLAUDE_TEMPERATURE_XOR_TOP_P_SINCE = (4, 1)
+
+# ``claude-sonnet-4-5[-20250929]``, ``eu.anthropic.claude-opus-4-1-20250805-v1:0``, ``claude-fable-5-1``.
+# The minor version is at most two digits so a date suffix (``claude-sonnet-4-20250514``) is not read as one.
+_CLAUDE_VERSION_RE = re.compile(r"claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+# Legacy naming: ``claude-3-5-sonnet-20241022``, ``anthropic.claude-3-7-sonnet-20250219-v1:0``, ``claude-3-haiku``.
+_CLAUDE_LEGACY_VERSION_RE = re.compile(r"claude-(\d)(?:-(\d))?-(?:opus|sonnet|haiku)")
+
+
+def _claude_version(model_name_lower: str) -> tuple[int, int] | None:
+    """Return the ``(major, minor)`` Claude generation parsed from a model name, or ``None`` when unknown."""
+    match = _CLAUDE_VERSION_RE.search(model_name_lower) or _CLAUDE_LEGACY_VERSION_RE.search(model_name_lower)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2) or 0)
+
+
+def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None:
+    """Drop, in place on every ``targets`` dict, the sampling parameters a Claude model would reject.
+
+    The rules are properties of the model generation, not of the gateway, so they apply to Claude
+    served by Anthropic directly *and* through Bedrock (``eu.anthropic.claude-sonnet-4-6``):
+
+    * Opus 4.7+, Sonnet 5, Fable/Mythos: no sampling parameter is accepted at all.
+    * Claude 4.1 and later: ``temperature`` and ``top_p`` cannot both be specified (HTTP 400,
+      "temperature and top_p cannot both be specified for this model"). ``temperature`` is the
+      primary UI knob, so ``top_p`` is the one dropped.
+    * Claude 3.x and 4.0 accept the pair and are left untouched. A Claude name whose generation
+      cannot be parsed is treated as recent, since a dropped ``top_p`` beats a failing chat.
+
+    Every drop is logged at WARNING level so the user can find out why a setting is not honoured.
+    """
+    if "claude" not in model_name_lower:
+        return
+    if any(marker in model_name_lower for marker in _CLAUDE_NO_SAMPLING_MARKERS):
+        removed = [key for target in targets for key in ("temperature", "top_p", "top_k") if target.pop(key, None) is not None]
+        if removed:
+            logging.warning("Claude sampling policy: dropped %s for model %s (no sampling parameter accepted)", "/".join(sorted(set(removed))), model_name_lower)
+        return
+    version = _claude_version(model_name_lower)
+    if version is not None and version < _CLAUDE_TEMPERATURE_XOR_TOP_P_SINCE:
+        return
+    if any("temperature" in target for target in targets) and any("top_p" in target for target in targets):
+        for target in targets:
+            target.pop("top_p", None)
+        logging.warning("Claude sampling policy: dropped top_p for model %s (temperature and top_p cannot both be specified)", model_name_lower)
 
 
 def _apply_model_family_policies(
@@ -204,10 +266,8 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
-        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
-            for key in ("temperature", "top_p", "top_k"):
-                sanitized_gen_conf.pop(key, None)
-                sanitized_kwargs.pop(key, None)
+        elif provider in {SupportedLiteLLMProvider.Anthropic, SupportedLiteLLMProvider.Bedrock}:
+            _apply_claude_sampling_policy(model_name_lower, sanitized_gen_conf, sanitized_kwargs)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
@@ -226,6 +286,17 @@ def _apply_model_family_policies(
         elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
+        elif provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax reasoning models (MiniMax-M1/M3) read `thinking` in the
+            # request body and ignore `reasoning_effort`. `thinking` is NOT a
+            # standard OpenAI-compatible param, so LiteLLM's drop_params=True
+            # would drop a top-level key; it must ride in extra_body (merged
+            # verbatim into the body). Without this, MiniMax keeps
+            # chain-of-thought on, which slows extraction and can hang a batch
+            # on a long COT.
+            if thinking_type:
+                _pop_thinking_controls()
+                _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type}})
 
         return sanitized_gen_conf, sanitized_kwargs
 
@@ -238,6 +309,7 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
         SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
         SupportedLiteLLMProvider.Moonshot: {"thinking"},
         SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+        SupportedLiteLLMProvider.MiniMax: {"thinking"},
     }.get(provider, set())
 
     body = completion_args.get("extra_body")
@@ -2015,6 +2087,41 @@ class SynthoraiChat(Base):
         super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 
+class AnonRouterChat(Base):
+    """AnonRouter OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. AnonRouter is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the AnonRouter API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "AnonRouter"
+
+    _BASE_URL = "https://api.anonrouter.ai/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
+class ApiRouteChat(Base):
+    """API-Route OpenAI-compatible chat adapter.
+
+    The endpoint is fixed to global.api-route.com rather than configurable.
+    API-Route is a hosted aggregation platform, so a tenant-supplied
+    ``base_url`` would have no legitimate use and would send the API-Route
+    key elsewhere.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Initialize the API-Route chat model."""
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -2055,10 +2162,31 @@ class LiteLLMBase(ABC):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
-        self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
+        # #19262: the Tongyi-Qianwen / Dashscope factory default base URL is
+        # ``dashscope.aliyuncs.com/compatible-mode/v1`` (the OpenAI-compatible
+        # endpoint). LiteLLM's ``dashscope/`` prefix routes to the *native*
+        # DashScope SDK instead, which rejects the request format with a
+        # generic 102. Both the default and any user-supplied alternative
+        # that targets the OpenAI-compatible endpoint must therefore skip
+        # the prefix; only requests to the native endpoint
+        # (``/api/v1``) keep it.
+        #
+        # Restrict the prefix-skip to the two DashScope-family
+        # providers — a non-DashScope provider with a custom URL ending
+        # in ``/compatible-mode/v1`` would lose its required LiteLLM
+        # prefix and send an invalid model name.
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
+        if self._is_dashscope_family_provider() and self._targets_openai_compatible_endpoint(self.base_url):
+            logger.debug(
+                "DashScope-family provider=%s targeting OpenAI-compatible endpoint — dropping dashscope/ prefix on model_name=%s",
+                self.provider,
+                model_name,
+            )
+            self.prefix = ""
+        else:
+            self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -2092,6 +2220,36 @@ class LiteLLMBase(ABC):
                 self.group_id = ""
         else:
             self.group_id = ""
+
+    def _is_dashscope_family_provider(self) -> bool:
+        """True iff ``self.provider`` is the DashScope / Tongyi-Qianwen
+        family — the two providers whose LiteLLM prefix (``dashscope/``)
+        routes through the same ``dashscope.aliyuncs.com`` endpoint and
+        must be skipped for the OpenAI-compatible base URL to work.
+
+        Restrict the OpenAI-compatible prefix-skip to this family: a
+        non-DashScope provider with a custom URL ending in
+        ``/compatible-mode/v1`` would lose its required LiteLLM prefix
+        and send an invalid model name.
+        """
+        return self.provider in (
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        )
+
+    @staticmethod
+    def _targets_openai_compatible_endpoint(base_url: str) -> bool:
+        """True iff ``base_url`` looks like the DashScope OpenAI-compatible
+        endpoint (``*/compatible-mode/v1``).
+
+        Issue #19262: the Tongyi-Qianwen / Dashscope factory default base
+        URL is the OpenAI-compatible endpoint, so the bare model name
+        (e.g. ``qwen-turbo``) must reach LiteLLM. The native DashScope
+        SDK path (``dashscope/...`` to ``*/api/v1``) keeps the prefix.
+        """
+        if not base_url:
+            return True
+        return base_url.rstrip("/").endswith("/compatible-mode/v1")
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -2798,7 +2956,7 @@ class LiteLLMBase(ABC):
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
 
-            bedrock_key = json.loads(self.api_key)
+            bedrock_key = _resolve_bedrock_credentials(self.api_key)
             mode = bedrock_key.get("auth_mode")
             if not mode:
                 logging.error("Bedrock auth_mode is not provided in the key")
@@ -2905,6 +3063,24 @@ class RAGconChat(Base):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class DaoXEChat(Base):
+    """DaoXE OpenAI-compatible chat adapter.
+
+    DaoXE is a hosted multi-model gateway speaking the OpenAI wire format, so
+    the standard OpenAI client path covers every call. The base URL is
+    tenant-configurable because DaoXE is also self-hostable behind custom
+    domains.
+    """
+
+    _FACTORY_NAME = "DaoXE"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
         super().__init__(key, model_name, base_url, **kwargs)
 
 

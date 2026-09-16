@@ -103,10 +103,12 @@ export enum LLMFactory {
   Qiniu = 'Qiniu',
   TokenHub = 'TokenHub',
   NewAPI = 'New API',
+  DaoXE = 'DaoXE',
   FunASR = 'FunASR',
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
+  ApiRoute = 'API-Route',
 }
 
 // Please lowercase the file name
@@ -192,10 +194,12 @@ export const IconMap = {
   [LLMFactory.TokenHub]: 'tokenhub',
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
+  [LLMFactory.DaoXE]: 'daoxe',
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
   [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
 };
 
@@ -222,6 +226,8 @@ export const APIMapUrl = {
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
   [LLMFactory.Synthorai]: 'https://synthorai.io',
+  [LLMFactory.ApiRoute]: 'https://www.api-route.com',
+  [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

@@ -124,6 +124,8 @@ func NewOpenAIChatService() *OpenAIChatService {
 // OpenAIChatRequest mirrors the OpenAI Chat Completions request body.
 // `stop` and `user` are omitted intentionally — JSON unmarshal silently drops them.
 type OpenAIChatRequest struct {
+	Question  string                   `json:"question,omitempty"`
+	Query     string                   `json:"query,omitempty"`
 	Model     string                   `json:"model"`
 	Messages  []map[string]interface{} `json:"messages"`
 	Stream    *bool                    `json:"stream,omitempty"`
@@ -141,6 +143,17 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		s.writeArgError(c, err.Error())
 		return
+	}
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		s.writeDataError(c, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
 	}
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 

@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -117,7 +118,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 // filling in default values for parameters that the MCP tool does not expose.
 func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(ctx,
-		"", "", page, pageSize, orderby, desc,
+		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
 		"", nil, "", userID, nil,
 	)
 	return data, total, err
@@ -126,7 +127,7 @@ func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID str
 // MCPListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
 func MCPListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, orderby, desc, nil)
+	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -141,10 +142,36 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 	return chatList, resp.Total, nil
 }
 
+// mcpRerankCandidatesCount is the fixed rerank candidate window sent with every
+// retrieval request, so the ranking cannot shift between pages of one
+// pagination sequence. Requests whose page * page_size exceeds it are rejected
+// up front. Keep in sync with _RERANK_CANDIDATES_COUNT in mcp/server/server.py.
+const mcpRerankCandidatesCount = 512
+
+// validateRetrievalWindow checks that the requested page fits inside the fixed
+// rerank candidate window. page/page_size default to the same values as the
+// Python MCP server (1/30) when unset. The comparison divides instead of
+// multiplying so a hostile page value cannot overflow page * pageSize.
+func validateRetrievalWindow(page, pageSize int) error {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	if page > mcpRerankCandidatesCount/pageSize {
+		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
+	}
+	return nil
+}
+
 // MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
 func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
+		return "", err
+	}
 	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
@@ -152,7 +179,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		const maxPageSize = 100
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
-				"", "", page, pageSize, "create_time", true,
+				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 				"", nil, "", userID, nil,
 			)
 			return data, total, err
@@ -196,6 +223,10 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	if req.RerankID != "" {
 		v := req.RerankID
 		searchReq.RerankID = &v
+	}
+	{
+		v := mcpRerankCandidatesCount
+		searchReq.RerankCandidatesCount = &v
 	}
 	{
 		v := req.Keyword

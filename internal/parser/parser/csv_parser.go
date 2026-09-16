@@ -14,16 +14,9 @@
 //  limitations under the License.
 //
 
-// CSVParser renders CSV data as HTML tables, matching the spreadsheet
-// family output_format == "html" convention from ParserParam.Defaults().
-//
-// Mirrors Python's deepdoc/parser/excel_parser.py:RAGFlowExcelParser.html():
-//   - CSV data is rendered as an HTML <table> with <caption> "Data".
-//   - The first row is treated as the header (<th>).
-//   - Illegal control characters are replaced with spaces.
-//   - Large sheets are split into chunks of chunk_rows data rows, each
-//     chunk being a self-contained <table> with its own <caption> and
-//     repeated header row.
+// CSVParser emits ordered spreadsheet row items in structured JSON.
+// Illegal control characters are replaced with spaces; final chunking is
+// owned by GeneralChunker.
 //
 // It implements the ParseResultProducer contract so the dispatch seam in
 // parser_dispatch.go routes .csv files through the structured path.
@@ -37,14 +30,13 @@ import (
 	"strings"
 )
 
-const csvDefaultChunkRows = defaultTableChunkRows
 const csvSheetName = "Data"
 
-// CSVParser reads RFC-4180 CSV data and emits HTML <table> payloads.
+// CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
 	OutputFormat                   string
-	ChunkRows                      int
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -53,7 +45,6 @@ type CSVParser struct {
 
 func NewCSVParser() *CSVParser {
 	return &CSVParser{
-		ChunkRows:                      csvDefaultChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}
@@ -73,19 +64,10 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["chunk_rows"]; ok {
-		switch n := v.(type) {
-		case float64:
-			p.ChunkRows = int(n)
-		case int:
-			p.ChunkRows = n
-		case int64:
-			p.ChunkRows = int(n)
-		}
-		if p.ChunkRows <= 0 {
-			p.ChunkRows = csvDefaultChunkRows
-		}
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
 	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -100,10 +82,8 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult implements ParseResultProducer. It reads CSV rows
-// and renders them as HTML <table> chunks with <caption>, header row
-// repeated per chunk, and illegal-character filtering — mirroring
-// Python's RAGFlowExcelParser.html().
+// ParseWithResult implements ParseResultProducer. It reads CSV rows and emits
+// a header item followed by ordered data-row items.
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
@@ -128,14 +108,20 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	decoded, encName := DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
+		var emptyJSON []map[string]any
+		if p.HTML4Excel {
+			emptyJSON = []map[string]any{NewTableJSONItem("<table><caption>Data</caption></table>", csvSheetName, [][]float64{{1, 1, 1, 1, 1}})}
+		}
 		return ParseResult{
-			OutputFormat: "html",
+			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
 				"encoding": encName,
+				"format":   "csv",
+				"sheets":   1,
 			},
-			HTML: "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>",
+			JSON: emptyJSON,
 		}
 	}
 
@@ -152,18 +138,27 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	// Clean illegal control characters from all cells.
 	records = cleanIllegalControlChars(records)
 
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = csvDefaultChunkRows
+	dataRows := make([]int, len(records)-1)
+	for i := range dataRows {
+		dataRows[i] = i + 2
 	}
-
+	var items []map[string]any
+	if p.HTML4Excel {
+		if table := recordsToHTMLTableItem(records, csvSheetName, 1, 1, dataRows); table != nil {
+			items = []map[string]any{table}
+		}
+	} else {
+		items = recordsToSpreadsheetItems(records, csvSheetName, 1, 1, dataRows)
+	}
 	return ParseResult{
-		OutputFormat: "html",
+		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
 			"encoding": encName,
+			"format":   "csv",
+			"sheets":   1,
 		},
-		HTML: recordsToHTMLTableChunks(records, chunkRows, csvSheetName),
+		JSON: items,
 	}
 }

@@ -74,7 +74,7 @@ func TestMatchAndTagChunk_AsymmetricLength(t *testing.T) {
 
 	// 800-word long technical chunk containing the reference example words
 	longBody := strings.Repeat("RAGFlow is an advanced system that integrates vector database and retrieval architecture engine into scalable workflows. ", 40)
-	chunk := map[string]any{"content_with_weight": longBody}
+	chunk := map[string]any{"text": longBody}
 
 	matched := matchAndTagChunk(chunk, idx, tok, 5)
 	if matched == nil {
@@ -107,7 +107,7 @@ func TestMatchAndTagChunk_TopKWeighted(t *testing.T) {
 
 	// Chunk has high overlap with AI example, slight overlap with Finance
 	chunk := map[string]any{
-		"content_with_weight": "machine learning artificial intelligence deep neural networks banking financial",
+		"text": "machine learning artificial intelligence deep neural networks banking financial",
 	}
 
 	matched := matchAndTagChunk(chunk, idx, tok, 5)
@@ -135,7 +135,7 @@ func TestMatchAndTagChunk_DuplicateTagsDedup(t *testing.T) {
 		t.Fatalf("expected 2 unique tags in example, got %v", idx.examples[0].Tags)
 	}
 
-	chunk := map[string]any{"content_with_weight": "natural language processing text analysis"}
+	chunk := map[string]any{"text": "natural language processing text analysis"}
 	matched := matchAndTagChunk(chunk, idx, tok, 5)
 	if matched == nil {
 		t.Fatal("expected non-nil match")
@@ -157,7 +157,7 @@ func TestMatchAndTagChunk_AllEmptyTags(t *testing.T) {
 		t.Fatalf("expected nil index when all tags are empty, got %v", idx)
 	}
 
-	chunk := map[string]any{"content_with_weight": "some text without tags"}
+	chunk := map[string]any{"text": "some text without tags"}
 	matched := matchAndTagChunk(chunk, idx, tok, 5)
 	if matched != nil {
 		t.Fatalf("expected nil match when index is nil, got %v", matched)
@@ -175,7 +175,7 @@ func TestMatchAndTagChunk_DeterministicTieBreak(t *testing.T) {
 		t.Fatal("expected non-nil index")
 	}
 
-	chunk := map[string]any{"content_with_weight": "shared keyword match document"}
+	chunk := map[string]any{"text": "shared keyword match document"}
 	// Ask for top 2 out of 3 equal-scoring tags
 	matched := matchAndTagChunk(chunk, idx, tok, 2)
 	if matched == nil {
@@ -235,7 +235,7 @@ func BenchmarkMatchAndTagChunk_5000Examples(b *testing.B) {
 	}
 
 	chunk := map[string]any{
-		"content_with_weight": "This is a detailed chunk talking about sample content document 42 with keywords topic42 and subtopic42 for domain categorization in practice.",
+		"text": "This is a detailed chunk talking about sample content document 42 with keywords topic42 and subtopic42 for domain categorization in practice.",
 	}
 
 	b.ReportAllocs()

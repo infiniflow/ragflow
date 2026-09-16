@@ -55,6 +55,8 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   allowCustomValue?: boolean;
+  // Always show the search input even with few options
+  alwaysShowSearch?: boolean;
   // Return false to veto selecting the custom value on Enter
   onNoMatchEnter?(searchValue: string): boolean | void;
   disableAutoSelectOnEnter?: boolean;
@@ -130,6 +132,7 @@ export const SelectWithSearch = forwardRef<
       placeholder,
       emptyData,
       allowCustomValue = false,
+      alwaysShowSearch = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
       testId,
@@ -168,7 +171,7 @@ export const SelectWithSearch = forwardRef<
     }, [options, value]);
 
     const showSearch = useMemo(() => {
-      if (allowCustomValue) {
+      if (allowCustomValue || alwaysShowSearch) {
         return true;
       }
       if (Array.isArray(options) && options.length > 5) {
@@ -181,7 +184,7 @@ export const SelectWithSearch = forwardRef<
         return optionsNum > 5;
       }
       return false;
-    }, [allowCustomValue, options]);
+    }, [allowCustomValue, alwaysShowSearch, options]);
 
     const hasCustomSearchValue = useMemo(() => {
       const customValue = searchValue.trim();
@@ -256,7 +259,7 @@ export const SelectWithSearch = forwardRef<
             )}
           >
             {selectLabel || value ? (
-              <span className="flex min-w-0 options-center gap-2 truncate">
+              <span className="flex min-w-0 options-center gap-2 truncate text-text-primary">
                 {selectLabel || value}
               </span>
             ) : (
@@ -295,7 +298,7 @@ export const SelectWithSearch = forwardRef<
                     ? t('common.searchOrEnterToAdd') + '...'
                     : t('common.search') + '...'
                 }
-                className=" placeholder:text-text-disabled"
+                className="placeholder:text-text-disabled"
                 value={searchValue}
                 onValueChange={setSearchValue}
                 onKeyDown={handleInputKeyDown}
@@ -344,7 +347,7 @@ export const SelectWithSearch = forwardRef<
                               : 'combobox-option'
                           }
                           className={cn(
-                            "relative flex flex-col min-h-10 data-[selected='true']:bg-card-soft",
+                            "relative flex flex-col min-h-10 pr-8 data-[selected='true']:bg-card-soft",
                             option.description
                               ? 'items-start gap-1'
                               : 'justify-center items-start',
@@ -384,7 +387,7 @@ export const SelectWithSearch = forwardRef<
                           : 'combobox-option'
                       }
                       className={cn(
-                        "relative flex flex-col min-h-10 mb-1 data-[selected='true']:bg-card-soft",
+                        "relative flex flex-col min-h-10 mb-1 pr-8 data-[selected='true']:bg-card-soft",
                         group.description
                           ? 'items-start gap-1'
                           : 'justify-center items-start',

@@ -396,6 +396,24 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
+      continueUpload: 'Continue upload',
+      reselectParser: 'Reselect parse method',
+      uploadMissingModelsTitle: 'Some files lack a required model',
+      fileModelMissing:
+        '{{name}} ({{fileType}}) requires a configured {{model}} model',
+      missingModelAsr: 'audio (ASR)',
+      missingModelVision: 'vision',
+      uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
+      fileTypeUnsupported:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      reselectParserAfterUploadHint:
+        'Continue uploading, then reselect a parse method for these files in the file list.',
+      reselectParserToParseHint:
+        'Reselect a parse method for the affected files, then parse again.',
+      parseBlockedTitle: 'Cannot parse',
+      parseBlockedPartialTitle: 'Some files cannot be parsed',
+      parseValidFiles: 'Parse valid files',
+      parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {
         fields: 'fields',
         selectFiles: 'Selected {{count}} files',
@@ -610,9 +628,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set metadata',
@@ -655,6 +673,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       imageTableContextWindow: 'Image & table context window',
       imageTableContextWindowTip:
         'Captures N tokens of text above and below the image & table to provide richer background context.',
+      tableContextWindow: 'Table context window',
+      tableContextWindowTip:
+        'Captures N tokens of text above and below a table to provide richer background context.',
+      imageContextWindow: 'Image context window',
+      imageContextWindowTip:
+        'Captures N tokens of text above and below an image to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU options',
       mineruParseMethod: 'Parse method',
@@ -881,7 +905,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -942,7 +966,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
@@ -1112,7 +1136,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
@@ -1293,6 +1317,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Folder Path (optional)',
       dataSourceFieldBatchSize: 'Batch Size',
+      dataSourceFieldFeishuAppId: 'Feishu app ID',
+      dataSourceFieldFeishuAppSecret: 'Feishu app secret',
+      dataSourceFieldWikiSpaceId: 'Wiki space ID',
+      dataSourceFieldRootNodeToken: 'Wiki root node token',
+      dataSourceFieldIncludeExtensions: 'Allowed file extensions',
+      dataSourceFieldIncludeKeywords: 'Required filename keywords',
+      dataSourceFieldExcludeKeywords: 'Excluded filename keywords',
+      dataSourceFieldMaxFileSizeBytes: 'Maximum file size (bytes)',
+      dataSourceValidationFeishuBatchSize:
+        'Batch size must be between 1 and 10',
       dataSourceFieldMailFolder: 'Mail Folder',
       dataSourceFieldMailboxUserIds: 'Mailbox User IDs (optional)',
       dataSourceFieldInstanceUrl: 'Instance URL',
@@ -1414,6 +1448,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldIsCloud: 'Is Cloud',
       dataSourceFieldIndexMode: 'Index Mode',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps personal access token',
+      dataSourceFieldAzureDevOpsBaseUrl: 'Base URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps organization',
       dataSourceFieldAzureDevOpsRepositories: 'Repositories',
       dataSourceFieldAzureDevOpsContentTypes: 'Content types',
@@ -1566,6 +1601,8 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      feishu_wikiDescription:
+        'Sync downloadable file nodes from a Feishu Wiki subtree.',
       gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
@@ -1603,8 +1640,10 @@ Example: Virtual Hosted Style`,
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
+      azureDevOpsBaseUrlTip:
+        'The Base URL of your Azure DevOps instance (e.g. https://dev.azure.com, or http://tfs.corp.local:8080/tfs for Azure DevOps Server / closed network). Defaults to https://dev.azure.com if omitted.',
       azureDevOpsOrganizationTip:
-        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+        'Organization name (e.g. "contoso"), or project collection name (e.g. "DefaultCollection"), or the full collection URL of a self-hosted Azure DevOps Server.',
       azureDevOpsProjectsTip:
         'Comma separated team project names. E.g., Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1748,6 +1787,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       mysqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      mysqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       postgresqlDescription:
         'Connect to PostgreSQL database to sync data from tables using SQL queries.',
       postgresqlQueryTip:
@@ -1760,6 +1801,8 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      postgresqlFileExtensionTip:
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       bigqueryDescription:
         'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
       bigqueryProjectIdTip:
@@ -1945,9 +1988,9 @@ Example: Virtual Hosted Style`,
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
-      maxTokens: 'Max tokens',
-      maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokens: 'Max context length',
+      maxTokensMessage: 'Max context length is required',
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       password: 'Password',
@@ -2316,7 +2359,7 @@ Example: Virtual Hosted Style`,
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
       editCustomModelTitle: 'Edit model',
-      modelMaxTokens: 'Max tokens',
+      modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
       modelFeatureToolCall: 'Tool call',
       modelFeatureFunctionCall: 'Function call',
@@ -2362,6 +2405,9 @@ Example: Virtual Hosted Style`,
         'Entity mode: one Wiki page per entity or concept. Topic mode: let the LLM group related entities or concepts into the same Wiki page by topic.',
       raptorTreeSettings: 'RAPTOR tree settings',
       summarizationPrompt: 'Summarization prompt',
+      claimExtractionPrompt: 'Claim extraction prompt',
+      claimExtractionPromptTip:
+        'System prompt for harvesting atomic claims with verbatim evidence from the leaf chunks before clustering. Leave empty to use the built-in contract.',
       maxToken: 'Max token',
       maxTokenRequired: 'Please input max token',
       clusteringThreshold: 'Clustering threshold',
@@ -2455,6 +2501,14 @@ Example: Virtual Hosted Style`,
       representationEmpty: 'No artifact templates available.',
       representationUnsupported:
         'This representation type is not supported yet.',
+      claimsPanelTitle: 'Claims · {{name}}',
+      claimsTotal: '{{count}} total',
+      claimsLoading: 'Loading claims…',
+      claimsEmpty: 'No claims were extracted for this cluster.',
+      claimsLoadMore: 'Load more ({{remaining}} remaining)',
+      claimsMoreEvidence: '+{{count}} more evidence',
+      claimsCollapseEvidence: 'Show less',
+      claimsNodeDetail: 'Details',
     },
     message: {
       registered: 'Registered!',
@@ -2636,6 +2690,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      delimitersTip:
+        'One delimiter per row; multi-character delimiters can be typed as-is (e.g. ##). With backticks (e.g. `##`): hard split — every delimiter starts its own chunk and no token-size merge is applied. Without backticks: soft split — the delimiter is only a split point, and the pieces are still merged up to the chunk token size, so short documents may show no visible change.',
+      delimitersTipPython:
+        'One delimiter per row. Only backtick-wrapped entries (e.g. `##`) take effect: every delimiter starts its own chunk and no token-size merge is applied. Entries without backticks are ignored.',
+      childrenDelimitersTip:
+        'Child split: each parent chunk is split again at these delimiters into child chunks used for retrieval; the chunk token size does not apply.',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
@@ -3239,6 +3299,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         details: 'Version details',
         dsl: 'DSL',
         download: 'Download',
+        loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
       },
@@ -3300,6 +3361,9 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
+      documentIds: 'Document IDs',
+      documentIdsTip:
+        'Optional list of document IDs to restrict retrieval scope. Supports upstream variable references.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',
@@ -3442,6 +3506,8 @@ This process aggregates variables from multiple branches into a single variable 
         audio: 'Audio',
         video: 'Video',
       },
+      addFileType: 'Add file type',
+      atLeastOneFileType: 'At least one file type is required',
       fields: 'Field',
       rule: 'Rule',
       addRule: 'Add rule',

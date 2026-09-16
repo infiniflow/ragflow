@@ -14,6 +14,67 @@
  *  limitations under the License.
  */
 
+export enum FileType {
+  PDF = 'pdf',
+  Spreadsheet = 'spreadsheet',
+  Image = 'image',
+  Email = 'email',
+  TextMarkdown = 'markdown',
+  Code = 'text&code',
+  Html = 'html',
+  Doc = 'doc',
+  Docx = 'docx',
+  PowerPoint = 'slides',
+  Video = 'video',
+  Audio = 'audio',
+}
+
+export const FileTypeSuffixMap = {
+  [FileType.PDF]: ['pdf'],
+  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
+  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
+  [FileType.Email]: ['eml', 'msg'],
+  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
+  [FileType.Code]: [
+    'txt',
+    'py',
+    'js',
+    'java',
+    'c',
+    'cpp',
+    'h',
+    'php',
+    'go',
+    'ts',
+    'sh',
+    'cs',
+    'kt',
+    'sql',
+  ],
+  [FileType.Html]: ['htm', 'html'],
+  [FileType.Doc]: ['doc'],
+  [FileType.Docx]: ['docx'],
+  [FileType.PowerPoint]: ['pptx', 'ppt'],
+  [FileType.Video]: ['mp4', 'avi', 'mkv'],
+  [FileType.Audio]: [
+    'da',
+    'wave',
+    'wav',
+    'mp3',
+    'aac',
+    'flac',
+    'ogg',
+    'aiff',
+    'au',
+    'midi',
+    'wma',
+    'realaudio',
+    'vqf',
+    'oggvorbis',
+    'ape',
+  ],
+};
+
 export const FileIconMap = {
   doc: 'doc',
   docx: 'doc',

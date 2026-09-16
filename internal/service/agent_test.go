@@ -880,7 +880,7 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
-	if err := dao.DB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    userID,
@@ -892,7 +892,7 @@ func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string
 			UpdateTime: ptr(updateTime),
 			UpdateDate: &updateDate,
 		},
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -1902,7 +1902,7 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 		t.Fatalf("failed to seed released version: %v", err)
 	}
 	ctx := t.Context()
-	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -1928,6 +1928,44 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 	}
 	if draft.ReleaseTime != nil {
 		t.Fatalf("draft canvas ReleaseTime = %v, want nil", draft.ReleaseTime)
+	}
+}
+
+// TestListAgents_MultiCategoryFilter verifies that a comma-separated
+// canvas_category query (the agents page multi-select filter) returns the
+// union of the selected categories instead of an exact string match.
+func TestListAgents_MultiCategoryFilter(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	canvases := []entity.UserCanvas{
+		{ID: "canvas-wf-1", UserID: "user-1", Title: sptr("Workflow One"), CanvasCategory: "agent_canvas"},
+		{ID: "canvas-wf-2", UserID: "user-1", Title: sptr("Workflow Two"), CanvasCategory: "agent_canvas"},
+		{ID: "canvas-df-1", UserID: "user-1", Title: sptr("Pipeline One"), CanvasCategory: "dataflow_canvas"},
+	}
+	for i := range canvases {
+		if err := dao.DB.Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("failed to create canvas %s: %v", canvases[i].ID, err)
+		}
+	}
+
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "dataflow_canvas,agent_canvas", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
+	}
+	if resp.Total != 3 || len(resp.Canvas) != 3 {
+		t.Fatalf("multi-category filter returned total=%d rows=%d, want 3/3", resp.Total, len(resp.Canvas))
+	}
+
+	single, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "agent_canvas", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents (single category) failed: code=%v err=%v", code, err)
+	}
+	if single.Total != 2 || len(single.Canvas) != 2 {
+		t.Fatalf("single-category filter returned total=%d rows=%d, want 2/2", single.Total, len(single.Canvas))
 	}
 }
 
@@ -1963,7 +2001,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("failed to seed builtin group: %v", err)
 	}
 
-	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
