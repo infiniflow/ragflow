@@ -17,6 +17,8 @@
 package utility
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -196,3 +198,51 @@ func TestAssertURLSafe(t *testing.T) {
 type mockErr struct{ s string }
 
 func (e *mockErr) Error() string { return e.s }
+
+func TestPinnedRedirectPolicy(t *testing.T) {
+	orig := LookupHost
+	LookupHost = func(host string) ([]string, error) {
+		switch host {
+		case "api.example.com", "evil.example":
+			return []string{"93.184.216.34"}, nil // public
+		case "meta.example":
+			return []string{"169.254.169.254"}, nil // cloud metadata / link-local
+		}
+		return nil, fmt.Errorf("unexpected lookup %q", host)
+	}
+	t.Cleanup(func() { LookupHost = orig })
+
+	policy := pinnedRedirectPolicy("https://api.example.com/v1")
+	via := []*http.Request{{}}
+
+	// Same-host redirect is allowed.
+	same, _ := http.NewRequest(http.MethodGet, "https://api.example.com/v2", nil)
+	if err := policy(same, via); err != nil {
+		t.Fatalf("same-host redirect rejected: %v", err)
+	}
+
+	// HTTPS -> HTTP downgrade on the same host is rejected.
+	downgrade, _ := http.NewRequest(http.MethodGet, "http://api.example.com/v2", nil)
+	if err := policy(downgrade, via); err == nil {
+		t.Fatalf("scheme downgrade should be rejected")
+	}
+
+	// Cross-host redirect is rejected even when the target is public.
+	cross, _ := http.NewRequest(http.MethodGet, "https://evil.example/v2", nil)
+	if err := policy(cross, via); err == nil {
+		t.Fatalf("cross-host redirect should be rejected")
+	}
+
+	// A redirect target resolving to a non-public address is rejected by the
+	// SSRF re-check before the origin check.
+	internal, _ := http.NewRequest(http.MethodGet, "https://meta.example/v2", nil)
+	if err := policy(internal, via); err == nil {
+		t.Fatalf("redirect to internal target should be rejected")
+	}
+
+	// More than 10 redirects is rejected.
+	manyVia := make([]*http.Request, 10)
+	if err := policy(same, manyVia); err == nil {
+		t.Fatalf("redirect limit should be enforced")
+	}
+}

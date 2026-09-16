@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -175,6 +176,17 @@ type connectorRequestOptions struct {
 	// a redirect; it runs after connectorRequest's default GET downgrade and
 	// cross-origin credential stripping.
 	NextHop func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop
+}
+
+// connectorUnsafeErr returns the underlying error when err was produced by the
+// SSRF guard (connectorUnsafeURLError), so callers can surface the original
+// message; otherwise it returns err unchanged.
+func connectorUnsafeErr(err error) error {
+	var unsafe *connectorUnsafeURLError
+	if errors.As(err, &unsafe) {
+		return unsafe.Err
+	}
+	return err
 }
 
 // connectorUnsafeURLError marks a hop URL rejected by the SSRF guard so

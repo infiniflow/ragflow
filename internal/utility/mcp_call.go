@@ -79,6 +79,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
 	}
+	opts.HTTPClient = withPinnedRedirectPolicy(opts.HTTPClient, opts.URL)
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {
 		return nil, headerErr
