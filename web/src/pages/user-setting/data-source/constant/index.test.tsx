@@ -277,3 +277,23 @@ describe('Azure DevOps data source', () => {
     ).toBe('setting.azureDevOpsPatTip');
   });
 });
+
+describe.each([
+  ['MySQL', DataSourceKey.MYSQL],
+  ['PostgreSQL', DataSourceKey.POSTGRESQL],
+])('%s data source', (_label, key) => {
+  it('exposes a bounded batch size for large table syncs', () => {
+    const fields = getDataSourceFieldsWithExtras(translate, key) as Array<{
+      name: string;
+      validation?: { min?: number };
+    }>;
+    const batchSize = fields.find((f) => f.name === 'config.batch_size');
+
+    expect(batchSize?.validation?.min).toBe(1);
+    // Python backend (the default in the test environment) keeps the
+    // conservative per-batch default.
+    expect(DataSourceFormDefaultValues[key].config).toMatchObject({
+      batch_size: 2,
+    });
+  });
+});
