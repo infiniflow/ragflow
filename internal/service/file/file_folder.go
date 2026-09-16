@@ -24,7 +24,7 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
 // This method includes init_dataset_docs initialization when parent_id is empty
-func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, orderby string, desc bool, keywords string) (*ListFilesResponse, error) {
+func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
 	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
@@ -52,7 +52,7 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 
 	// Get files by parent folder ID
 	excludeSkills := folder.ID == folder.ParentID
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, orderby, desc, keywords, excludeSkills)
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills)
 	if err != nil {
 		return nil, err
 	}

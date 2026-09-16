@@ -352,18 +352,18 @@ type CreateProviderInstanceRequest struct {
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
-// instanceNamePattern restricts an instance name to digits, underscores, and
-// ASCII letters in both cases.
-var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_]+$`)
+// instanceNamePattern restricts an instance name to digits, underscores,
+// hyphens, and ASCII letters in both cases.
+var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
 
 // validateInstanceName rejects an empty instance name or one carrying any
-// character outside digits, underscores, and ASCII letters.
+// character outside digits, underscores, hyphens, and ASCII letters.
 func validateInstanceName(instanceName string) error {
 	if instanceName == "" {
 		return errors.New("instance name is required")
 	}
 	if !instanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, and letters")
+		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
 	}
 	return nil
 }

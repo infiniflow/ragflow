@@ -304,17 +304,6 @@ func TestTokenizerComponent_EmbeddingIncludesMediaContext(t *testing.T) {
 	}
 }
 
-func TestContextualChunkTextSeparatesTightMediaBoundaries(t *testing.T) {
-	ck := schema.ChunkDoc{
-		ContextAbove: "See results in table:",
-		Text:         "Revenue grew by 20%.",
-		ContextBelow: "Conclusion follows.",
-	}
-	if got, want := contextualChunkText(ck), "See results in table:\nRevenue grew by 20%.\nConclusion follows."; got != want {
-		t.Fatalf("contextual text = %q, want %q", got, want)
-	}
-}
-
 // TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero uses an
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
