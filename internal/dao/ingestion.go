@@ -84,6 +84,12 @@ func (dao *IngestionTaskDAO) UpdatePipelineLogID(ctx context.Context, db *gorm.D
 	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", logID).Error
 }
 
+// ClearPipelineLogID detaches a terminal task from its completed run before a
+// user-initiated retry receives a new immutable run identity.
+func (dao *IngestionTaskDAO) ClearPipelineLogID(ctx context.Context, db *gorm.DB, taskID string) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", nil).Error
+}
+
 type TaskInfo struct {
 	TaskID        string   `json:"task_id"`
 	FilesToDelete []string `json:"files_to_delete"`

@@ -105,7 +105,7 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 }
 
-func TestIngestionTaskServiceCreateForDocumentsQueuesWithoutKnowledgebase(t *testing.T) {
+func TestIngestionTaskServiceCreateForDocumentsRejectsMissingRunMetadata(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestDoc(t, "doc-1", "missing-kb", 0, 0)
@@ -116,20 +116,20 @@ func TestIngestionTaskServiceCreateForDocumentsQueuesWithoutKnowledgebase(t *tes
 
 	responses, err := svc.CreateForDocuments(t.Context(), "missing-kb", "user-1", []string{"doc-1"})
 	if err != nil {
-		t.Fatalf("CreateForDocuments should keep early-log lookup best-effort: %v", err)
+		t.Fatalf("CreateForDocuments returns per-document failures: %v", err)
 	}
-	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id:") {
+	if len(responses) != 1 || !strings.Contains(responses[0].Result, "ensure run identity") {
 		t.Fatalf("unexpected responses: %+v", responses)
 	}
-	if len(publisher.messages) != 1 {
-		t.Fatalf("published messages = %d, want 1", len(publisher.messages))
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want 0", len(publisher.messages))
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
 	if err != nil {
 		t.Fatalf("load queued task: %v", err)
 	}
-	if task == nil || task.Status != common.SCHEDULED {
-		t.Fatalf("queued task = %+v, want SCHEDULED", task)
+	if task != nil {
+		t.Fatalf("task = %+v, want no task after identity setup fails", task)
 	}
 	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
 		t.Fatalf("pipeline log rows = %d, want 0 when metadata lookup fails", got)
@@ -642,6 +642,9 @@ func TestIngestionTaskServiceMarkCompletedReturnsTaskIDInTransitionError(t *test
 func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
@@ -649,9 +652,10 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	testCases := []struct {
 		name   string
 		status string
+		docID  string
 	}{
-		{name: "failed", status: common.FAILED},
-		{name: "stopped", status: common.STOPPED},
+		{name: "failed", status: common.FAILED, docID: "doc-1"},
+		{name: "stopped", status: common.STOPPED, docID: "doc-2"},
 	}
 
 	ctx := t.Context()
@@ -662,13 +666,13 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 			if err := dao.DB.Where("id = ?", "task-1").Delete(&entity.IngestionTask{}).Error; err != nil {
 				t.Fatalf("clear task: %v", err)
 			}
-			insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+			insertTestIngestionTask(t, "task-1", "user-1", tc.docID, "kb-1")
 			if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", tc.status).Error; err != nil {
 				t.Fatalf("set terminal status: %v", err)
 			}
 
 			task, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
-				DocumentID: "doc-1",
+				DocumentID: tc.docID,
 				UserID:     "user-1",
 				DatasetID:  "kb-1",
 				Status:     common.CREATED,
@@ -699,6 +703,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "stale-task", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	publisher := &recordingTaskPublisher{}
@@ -736,6 +742,8 @@ func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *tes
 func TestIngestionTaskServiceConcurrentCreatedTaskPublicationsConverge(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	publisher := &duplicatePublishRecorder{
@@ -802,6 +810,8 @@ func TestIngestionTaskServiceConcurrentCreatedTaskPublicationsConverge(t *testin
 func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	svc := NewIngestionTaskService()
@@ -814,14 +824,17 @@ func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailur
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.CREATED {
-		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.CREATED)
+	if task.Status != common.FAILED {
+		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.FAILED)
 	}
 }
 
 func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.CREATED)
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("create_time", 1).Error; err != nil {
@@ -845,8 +858,8 @@ func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t 
 	if err != nil {
 		t.Fatalf("reload first task: %v", err)
 	}
-	if first.Status != common.CREATED {
-		t.Fatalf("first task status = %q, want %q", first.Status, common.CREATED)
+	if first.Status != common.FAILED {
+		t.Fatalf("first task status = %q, want %q", first.Status, common.FAILED)
 	}
 	second, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-2")
 	if err != nil {
@@ -875,7 +888,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testin
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSettlesNewRunOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -898,19 +911,19 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 	if getErr != nil {
 		t.Fatalf("reload task by document id: %v", getErr)
 	}
-	if task != nil {
-		t.Fatalf("expected created task to be deleted after publish failure, got %+v", task)
+	if task == nil || task.Status != common.FAILED {
+		t.Fatalf("task = %+v, want a durably failed task", task)
 	}
-	open, openErr := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, "doc-1")
-	if openErr != nil {
-		t.Fatalf("load open pipeline log: %v", openErr)
+	var run entity.PipelineOperationLog
+	if err := db.Where("id = ?", *task.PipelineLogID).First(&run).Error; err != nil {
+		t.Fatalf("load numbered pipeline log: %v", err)
 	}
-	if open != nil {
-		t.Fatalf("expected open pipeline log to be deleted after publish failure, got %+v", open)
+	if run.RunCount == nil || *run.RunCount != 1 || run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("run = %+v, want numbered failed run", run)
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailure(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSettlesRetriedRunOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	// Seed the document and KB so buildOpenLogInput succeeds: without them no
@@ -943,10 +956,15 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	if reloaded.Status != common.FAILED {
 		t.Fatalf("status = %q, want %q", reloaded.Status, common.FAILED)
 	}
-	// The retry opened an open row before publishing; the failed publish must
-	// take it back with the rolled-back task.
-	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
-		t.Fatalf("pipeline log rows = %d, want 0 after the retry rollback", got)
+	if reloaded.PipelineLogID == nil {
+		t.Fatal("failed retry lost its run identity")
+	}
+	var run entity.PipelineOperationLog
+	if err := db.Where("id = ?", *reloaded.PipelineLogID).First(&run).Error; err != nil {
+		t.Fatalf("load failed retry run: %v", err)
+	}
+	if run.RunCount == nil || *run.RunCount != 1 || run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("run = %+v, want numbered failed retry", run)
 	}
 }
 
@@ -974,7 +992,7 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 		t.Fatalf("seed open log: %v", err)
 	}
 	// Removal cleanup is scoped to the row the task owns, as bound in
-	// production by createOpenLogBestEffort.
+	// production by ensureRunIdentity.
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
 		Update("pipeline_log_id", "open-log").Error; err != nil {
 		t.Fatalf("bind open log: %v", err)
@@ -1401,6 +1419,9 @@ func TestIngestionTaskServiceCreateForDocumentsOpensPreTerminalPipelineLog(t *te
 	if open.KbID != "kb-1" || open.TenantID != "tenant-1" {
 		t.Fatalf("unexpected kb/tenant scope: %+v", open)
 	}
+	if open.RunCount == nil || *open.RunCount != 1 {
+		t.Fatalf("run_count = %v, want 1", open.RunCount)
+	}
 	if open.ProgressMsg == nil || *open.ProgressMsg != "Task is queued..." {
 		t.Fatalf("ProgressMsg = %v, want queued message", open.ProgressMsg)
 	}
@@ -1548,6 +1569,43 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 }
 
+func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	first, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("create first run: %v", err)
+	}
+	if first.PipelineLogID == nil {
+		t.Fatal("first run has no pipeline log id")
+	}
+	svc.settlePublishFailure(t.Context(), first)
+
+	second, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if second.PipelineLogID == nil || *second.PipelineLogID == *first.PipelineLogID {
+		t.Fatalf("second run id = %v, want a new run", second.PipelineLogID)
+	}
+	var secondLog entity.PipelineOperationLog
+	if err := db.First(&secondLog, "id = ?", *second.PipelineLogID).Error; err != nil {
+		t.Fatalf("load second run: %v", err)
+	}
+	if secondLog.RunCount == nil || *secondLog.RunCount != 2 {
+		t.Fatalf("second run_count = %v, want 2", secondLog.RunCount)
+	}
+}
+
 // TestIngestionTaskServiceOpensPreTerminalLogBeforePublish locks the ordering that
 // closes the orphan window: the run's row must exist before its message is
 // published, so a worker that claims and finishes the task immediately still
@@ -1643,11 +1701,13 @@ func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	queuedMsg := "Task is queued..."
-	seed := func(id, status string) {
+	runCount := 1
+	seed := func(id, status string, runCount *int) {
 		t.Helper()
 		if err := dao.DB.Create(&entity.PipelineOperationLog{
 			ID:              id,
 			DocumentID:      "doc-1",
+			RunCount:        runCount,
 			TenantID:        "tenant-1",
 			KbID:            "kb-1",
 			ParserID:        "naive",
@@ -1658,8 +1718,8 @@ func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
 			t.Fatalf("seed %s: %v", id, err)
 		}
 	}
-	seed("bound-log", string(entity.TaskStatusUnstart))
-	seed("unrelated-log", string(entity.TaskStatusSchedule))
+	seed("bound-log", string(entity.TaskStatusUnstart), &runCount)
+	seed("unrelated-log", string(entity.TaskStatusSchedule), nil)
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
 		Update("pipeline_log_id", "bound-log").Error; err != nil {
 		t.Fatalf("bind: %v", err)
@@ -1709,9 +1769,13 @@ func TestIngestionTaskServiceStaleSnapshotKeepsEstablishedOpenLogBinding(t *test
 	}
 
 	svc := NewIngestionTaskService()
-	svc.createOpenLogBestEffort(t.Context(), firstSnapshot, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+	if err := svc.ensureRunIdentity(t.Context(), firstSnapshot, nil); err != nil {
+		t.Fatalf("establish first identity: %v", err)
+	}
 	firstLogID := loadTaskPipelineLogID(t, t.Context(), db, "task-1")
-	svc.createOpenLogBestEffort(t.Context(), staleSnapshot, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+	if err := svc.ensureRunIdentity(t.Context(), staleSnapshot, nil); err != nil {
+		t.Fatalf("reuse established identity: %v", err)
+	}
 
 	if got := loadTaskPipelineLogID(t, t.Context(), db, "task-1"); got != firstLogID {
 		t.Fatalf("stale snapshot replaced binding %q with %q", firstLogID, got)
@@ -1759,7 +1823,9 @@ func TestIngestionTaskServiceDoesNotDeleteOpenLogOwnedByActiveTask(t *testing.T)
 		t.Fatalf("load new task: %v", err)
 	}
 	svc := NewIngestionTaskService()
-	svc.createOpenLogBestEffort(t.Context(), newTask, string(entity.TaskStatusUnstart), logMsgQueued, nil)
+	if err := svc.ensureRunIdentity(t.Context(), newTask, nil); err == nil {
+		t.Fatal("expected identity creation to reject a live task's open run")
+	}
 
 	var reloaded entity.PipelineOperationLog
 	if err := db.First(&reloaded, "id = ?", ownedLog.ID).Error; err != nil {
@@ -1876,16 +1942,16 @@ func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 		t.Fatalf("load task: %v", err)
 	}
 
-	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusSchedule) {
 		t.Fatalf("after schedule = %q, want %q", got, string(entity.TaskStatusSchedule))
 	}
-	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning)
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusRunning) {
 		t.Fatalf("after start = %q, want %q", got, string(entity.TaskStatusRunning))
 	}
 	// The enqueue-time scheduled write lands late; it must not regress the row.
-	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
 	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
 	if open.OperationStatus != string(entity.TaskStatusRunning) {
 		t.Fatalf("late scheduled write regressed the row to %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
@@ -1895,10 +1961,10 @@ func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 	}
 }
 
-// TestIngestionTaskServiceAdvanceReopenGuard locks the reopen contract: a
-// missing open row is re-created only while the task is still live. A terminal
-// task must never resurrect its closed row as a permanently queued entry.
-func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
+// TestIngestionTaskServiceAdvanceRejectsMissingIdentity ensures a status
+// advance never creates a run identity. Only publish-time EnsureRunIdentity
+// may bind a task to a pipeline-operation-log row.
+func TestIngestionTaskServiceAdvanceRejectsMissingIdentity(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1914,7 +1980,7 @@ func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load terminal task: %v", err)
 	}
-	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
+	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
 	if got := countPipelineLogs(t, db, "doc-terminal"); got != 0 {
 		t.Fatalf("terminal task resurrected %d queued row(s); want none", got)
 	}
@@ -1923,12 +1989,8 @@ func TestIngestionTaskServiceAdvanceReopenGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live task: %v", err)
 	}
-	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued, true)
-	open := loadOpenPipelineLog(t, ctx, db, "doc-live")
-	if open.OperationStatus != string(entity.TaskStatusSchedule) {
-		t.Fatalf("OperationStatus = %q, want %q (reopen for a live task)", open.OperationStatus, string(entity.TaskStatusSchedule))
-	}
-	if bound := loadTaskPipelineLogID(t, ctx, db, "task-live"); bound != open.ID {
-		t.Fatalf("task bound to %q, want reopened row %q", bound, open.ID)
+	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+	if got := countPipelineLogs(t, db, "doc-live"); got != 0 {
+		t.Fatalf("missing identity created %d pipeline log rows, want 0", got)
 	}
 }

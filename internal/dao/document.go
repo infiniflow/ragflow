@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentDAO document data access object
@@ -43,6 +44,18 @@ func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entit
 func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
 	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+// GetByIDForUpdate fetches a document while holding the row lock used to
+// serialize creation of its ingestion-run identity. Callers must use a short
+// transaction and perform no external I/O while holding the lock.
+func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
+	var document entity.Document
+	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

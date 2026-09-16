@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -219,19 +220,22 @@ type OpenLogInput struct {
 	SourceFrom      string
 	Avatar          *string
 	OperationStatus string
-	ProgressMsg     string
+	RunCount        int
 }
 
-// CreateOpenLog opens the pre-terminal row for a queued run. Callers must
-// have verified no open row exists (or accept a best-effort duplicate on a
-// lost race); the error is returned so tests can assert it, while production
-// callers log and continue.
+// CreateOpenLog opens the pre-terminal row for a queued, numbered run. Its
+// caller holds the owning document row lock and binds the result to the task
+// before the task may be published.
 func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.DB, input OpenLogInput) (*entity.PipelineOperationLog, error) {
+	if input.RunCount <= 0 {
+		return nil, fmt.Errorf("pipeline operation log run count must be positive")
+	}
 	now := time.Now().Local()
-	msg := input.ProgressMsg
+	runCount := input.RunCount
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
 		DocumentID:      input.DocumentID,
+		RunCount:        &runCount,
 		TenantID:        input.TenantID,
 		KbID:            input.KbID,
 		ParserID:        input.ParserID,
@@ -240,7 +244,6 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 		DocumentType:    input.DocumentType,
 		SourceFrom:      input.SourceFrom,
 		Progress:        0,
-		ProgressMsg:     &msg,
 		ProcessBeginAt:  &now,
 		ProcessDuration: 0,
 		DSL:             entity.JSONMap{},
@@ -264,9 +267,24 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 	return log, nil
 }
 
-// AdvanceOpenLog moves a run's own row to a later status, refreshing its
-// progress message. The row is targeted by id, so it can never touch another
-// run's row, and the update is guarded by the from-states the caller declares:
+// NextRunCount returns the next display number for a document. The caller
+// must already hold that document row FOR UPDATE, which makes MAX+1 safe
+// across concurrent enqueue requests without a separate counter table.
+func (dao *PipelineOperationLogDAO) NextRunCount(ctx context.Context, db *gorm.DB, documentID string) (int, error) {
+	var next int
+	err := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("document_id = ?", documentID).
+		Select("COALESCE(MAX(run_count), 0) + 1").
+		Scan(&next).Error
+	if err != nil {
+		return 0, err
+	}
+	return next, nil
+}
+
+// AdvanceOpenLog moves a run's own row to a later status. The row is targeted
+// by id, so it can never touch another run's row, and the update is guarded by
+// the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
 // queued write cannot regress a row a concurrent writer already advanced.
 // A row that already left the declared from-states is left untouched.
@@ -282,17 +300,15 @@ func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm
 		}).Error
 }
 
-// DeleteOpenLogByID removes a run's own pre-terminal row. Used to clean up the
-// open row when a task is rolled back or removed, so the detail page is not
-// left with a permanently queued entry. Deleting by id (rather than by
-// document) keeps the cleanup away from a newer run's row, and the open-status
-// guard keeps it away from a terminal row, which is history.
+// DeleteOpenLogByID removes only a legacy, unnumbered pre-terminal row. A
+// numbered run is its document's immutable numbering ledger and must remain
+// available even when publication or task cleanup later fails.
 func (dao *PipelineOperationLogDAO) DeleteOpenLogByID(ctx context.Context, db *gorm.DB, logID string) error {
 	if logID == "" {
 		return nil
 	}
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
+		Where("id = ? AND run_count IS NULL AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
 		Delete(&entity.PipelineOperationLog{}).Error
 }
 
@@ -304,7 +320,7 @@ func (dao *PipelineOperationLogDAO) DeleteUnownedOpenLogByID(ctx context.Context
 		return false, nil
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
+		Where("id = ? AND run_count IS NULL AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
 		Where("NOT EXISTS (SELECT 1 FROM ingestion_task WHERE pipeline_log_id = ? AND status IN ?)", logID, common.ActiveTaskStatuses).
 		Delete(&entity.PipelineOperationLog{})
 	if result.Error != nil {
