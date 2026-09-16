@@ -181,6 +181,56 @@ async def upload_info(tenant_id: str):
         return server_error_response(e)
 
 
+@manager.route("/documents/probe_table", methods=["POST"])  # noqa: F821
+@login_required
+async def probe_table():
+    """
+    Probe a table file to discover column headers without ingesting.
+    """
+    files = await request.files
+    file = files.get("file") if files else None
+    if not file:
+        return get_error_argument_result("No file provided")
+
+    filename = (file.filename or "").lower()
+    content = file.read()
+    if not content:
+        return get_result(data={"columns": [], "total_columns": 0})
+
+    try:
+        from rag.app.table import _deduplicate_column_names
+        import csv
+        import io
+
+        headers = []
+        if filename.endswith((".csv", ".tsv", ".txt")):
+            delimiter = "\t" if filename.endswith(".tsv") else ","
+            text_stream = io.StringIO(content.decode("utf-8-sig", errors="replace"))
+            reader = csv.reader(text_stream, delimiter=delimiter)
+            for row in reader:
+                if any(cell.strip() for cell in row):
+                    headers = [cell.strip() or f"Column_{i+1}" for i, cell in enumerate(row)]
+                    break
+        elif filename.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            if wb.sheetnames:
+                ws = wb[wb.sheetnames[0]]
+                for row in ws.iter_rows(values_only=True):
+                    if any(str(c or "").strip() for c in row):
+                        headers = [str(c or "").strip() or f"Column_{i+1}" for i, cell in enumerate(row)]
+                        break
+            wb.close()
+
+        if headers:
+            headers = _deduplicate_column_names(headers)
+
+        return get_result(data={"columns": headers, "total_columns": len(headers)})
+    except Exception as e:
+        logging.exception("probe_table failed")
+        return server_error_response(e)
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

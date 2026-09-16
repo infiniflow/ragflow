@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
 
@@ -230,39 +231,35 @@ func processChunkPositions(ck map[string]any) {
 // for columns with role "metadata" or "both", merges them into document metadata.
 // Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, roles, tableColumnNames := ResolveTableColumnConfig(parserConfig)
-	if mode == "" {
-		mode = "auto"
+	profile := ResolveTableProfile(parserConfig)
+	if profile == nil {
+		profile = entity.NewTableProfile(entity.TableColumnModeAuto)
 	}
-	if mode != "auto" && mode != "manual" {
-		return nil
-	}
-	if roles == nil {
-		roles = map[string]interface{}{}
-	}
-	if len(tableColumnNames) == 0 {
+	cols := profile.Columns
+	if len(cols) == 0 {
 		for _, ck := range chunks {
 			if names, ok := ck["table_column_names"].([]string); ok && len(names) > 0 {
-				tableColumnNames = make([]interface{}, len(names))
-				for i, n := range names {
-					tableColumnNames[i] = n
-				}
+				cols = names
 				break
 			}
 			if names, ok := ck["table_column_names"].([]interface{}); ok && len(names) > 0 {
-				tableColumnNames = names
+				for _, n := range names {
+					if s, ok := n.(string); ok && strings.TrimSpace(s) != "" {
+						cols = append(cols, strings.TrimSpace(s))
+					}
+				}
 				break
 			}
 		}
 	}
-	if len(tableColumnNames) == 0 && mode == "auto" {
+	if len(cols) == 0 && !profile.IsManual() {
 		seen := make(map[string]struct{})
 		for _, ck := range chunks {
 			if cd, ok := ck["chunk_data"].(map[string]interface{}); ok {
 				for k := range cd {
 					if _, ok := seen[k]; !ok {
 						seen[k] = struct{}{}
-						tableColumnNames = append(tableColumnNames, k)
+						cols = append(cols, k)
 					}
 				}
 			}
@@ -270,24 +267,20 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	}
 
 	var metaCols []string
-	if len(tableColumnNames) > 0 {
-		for _, n := range tableColumnNames {
-			col, _ := n.(string)
+	if len(cols) > 0 {
+		for _, col := range cols {
+			col = strings.TrimSpace(col)
 			if col == "" {
 				continue
 			}
-			role := tableColumnRole(roles[col])
-			if role == "" {
-				role = "both"
-			}
-			if role == "metadata" || role == "both" {
+			role := profile.RoleFor(col)
+			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
 			}
 		}
-	} else {
-		for col, v := range roles {
-			role := tableColumnRole(v)
-			if role == "metadata" || role == "both" {
+	} else if len(profile.Roles) > 0 {
+		for col, role := range profile.Roles {
+			if role == entity.ColumnRoleMetadata || role == entity.ColumnRoleBoth {
 				metaCols = append(metaCols, col)
 			}
 		}
@@ -332,21 +325,23 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	return out
 }
 
-// ResolveTableColumnConfig reads table column settings from parser_config.
+// ResolveTableProfile extracts the strongly-typed TableProfile from parser_config.
 // Tries root-level flat keys first; falls back to resolving from a Parser
 // component entry's spreadsheet config in a component-ID-keyed parser_config.
-// Writer shapes vary ([]string in-memory vs []interface{} after a JSON round
-// trip; map[string]string vs map[string]interface{}), so all are accepted.
-// Column discovery is per-document: the document's own keys win, and a
-// knowledgebase-level fallback is applied only when the document carries no
-// table column keys at all. When several Parser entries exist the lowest
-// component id wins so resolution is deterministic.
-func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
-	mode, _ = parserConfig["table_column_mode"].(string)
-	roles = toTableColumnRoles(parserConfig["table_column_roles"])
-	names = toTableColumnNames(parserConfig["table_column_names"])
-	if mode != "" || roles != nil || len(names) > 0 {
-		return mode, roles, names
+func ResolveTableProfile(parserConfig map[string]interface{}) *entity.TableProfile {
+	if parserConfig == nil {
+		return nil
+	}
+	modeStr, _ := parserConfig["table_column_mode"].(string)
+	roles, rawRoles := parseTableColumnRoles(parserConfig["table_column_roles"])
+	names := parseTableColumnNames(parserConfig["table_column_names"])
+	if modeStr != "" || len(roles) > 0 || len(names) > 0 {
+		return &entity.TableProfile{
+			Mode:     entity.NormalizeTableColumnMode(modeStr),
+			Roles:    roles,
+			RawRoles: rawRoles,
+			Columns:  names,
+		}
 	}
 	for _, cid := range sortedParserComponentIDs(parserConfig) {
 		comp, _ := parserConfig[cid].(map[string]interface{})
@@ -358,58 +353,114 @@ func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 			continue
 		}
 		if v, ok := ss["column_mode"].(string); ok {
-			mode = v
+			modeStr = v
 		}
-		if r := toTableColumnRoles(ss["column_roles"]); r != nil {
+		if r, raw := parseTableColumnRoles(ss["column_roles"]); len(r) > 0 {
 			roles = r
+			rawRoles = raw
 		}
-		if n := toTableColumnNames(ss["column_names"]); len(n) > 0 {
+		if n := parseTableColumnNames(ss["column_names"]); len(n) > 0 {
 			names = n
 		}
-		return mode, roles, names
+		return &entity.TableProfile{
+			Mode:     entity.NormalizeTableColumnMode(modeStr),
+			Roles:    roles,
+			RawRoles: rawRoles,
+			Columns:  names,
+		}
 	}
-	return "", nil, nil
+	return nil
 }
 
-// toTableColumnRoles normalizes the writer-dependent role map shapes into the
-// canonical map[string]interface{} form.
-func toTableColumnRoles(raw any) map[string]interface{} {
-	switch roles := raw.(type) {
-	case map[string]interface{}:
-		if len(roles) == 0 {
-			return nil
+// ResolveTableColumnConfig reads table column settings from parser_config.
+// Tries root-level flat keys first; falls back to resolving from a Parser
+// component entry's spreadsheet config in a component-ID-keyed parser_config.
+func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
+	profile := ResolveTableProfile(parserConfig)
+	if profile == nil {
+		return "", nil, nil
+	}
+	mode = string(profile.Mode)
+	roles = profile.ToRolesInterfaceMap()
+	if len(profile.Columns) > 0 {
+		names = make([]interface{}, len(profile.Columns))
+		for i, c := range profile.Columns {
+			names[i] = c
 		}
-		return roles
+	}
+	return mode, roles, names
+}
+
+func parseTableColumnRoles(raw any) (map[string]entity.ColumnRole, map[string]any) {
+	if raw == nil {
+		return nil, nil
+	}
+	switch m := raw.(type) {
+	case map[string]entity.ColumnRole:
+		if len(m) == 0 {
+			return nil, nil
+		}
+		rawMap := make(map[string]any, len(m))
+		for k, v := range m {
+			rawMap[k] = string(v)
+		}
+		return m, rawMap
 	case map[string]string:
-		if len(roles) == 0 {
-			return nil
+		if len(m) == 0 {
+			return nil, nil
 		}
-		out := make(map[string]interface{}, len(roles))
-		for k, v := range roles {
-			out[k] = v
+		out := make(map[string]entity.ColumnRole, len(m))
+		rawMap := make(map[string]any, len(m))
+		for k, v := range m {
+			out[k] = entity.NormalizeColumnRole(v)
+			rawMap[k] = v
 		}
-		return out
+		return out, rawMap
+	case map[string]interface{}:
+		if len(m) == 0 {
+			return nil, nil
+		}
+		out := make(map[string]entity.ColumnRole, len(m))
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				out[k] = entity.NormalizeColumnRole(s)
+			}
+		}
+		return out, m
 	default:
+		return nil, nil
+	}
+}
+
+func parseTableColumnNames(raw any) []string {
+	if raw == nil {
 		return nil
 	}
-}
-
-// toTableColumnNames normalizes the writer-dependent name list shapes into the
-// canonical []interface{} form.
-func toTableColumnNames(raw any) []interface{} {
-	switch names := raw.(type) {
-	case []interface{}:
-		if len(names) == 0 {
-			return nil
-		}
-		return names
+	switch list := raw.(type) {
 	case []string:
-		if len(names) == 0 {
+		if len(list) == 0 {
 			return nil
 		}
-		out := make([]interface{}, len(names))
-		for i, n := range names {
-			out[i] = n
+		out := make([]string, 0, len(list))
+		for _, s := range list {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []interface{}:
+		if len(list) == 0 {
+			return nil
+		}
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
 		}
 		return out
 	default:
@@ -430,26 +481,17 @@ func sortedParserComponentIDs(parserConfig map[string]interface{}) []string {
 	return ids
 }
 
-// tableColumnRole normalizes a role value for comparison: lowercase,
-// trimmed, with the legacy "vectorize" spelling mapped to "indexing".
-func tableColumnRole(raw any) string {
-	s, _ := raw.(string)
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "vectorize" {
-		return "indexing"
-	}
-	return s
-}
-
 // TableParserStripDocMetadataKeys returns the keys to strip from existing document metadata
 // on reparse.
 func TableParserStripDocMetadataKeys(parserConfig map[string]interface{}) []string {
-	_, roles, tableColumnNames := ResolveTableColumnConfig(parserConfig)
-	if len(tableColumnNames) > 0 {
-		seen := make(map[string]struct{}, len(tableColumnNames))
-		keys := make([]string, 0, len(tableColumnNames))
-		for _, n := range tableColumnNames {
-			s, _ := n.(string)
+	profile := ResolveTableProfile(parserConfig)
+	if profile == nil {
+		return nil
+	}
+	if len(profile.Columns) > 0 {
+		seen := make(map[string]struct{}, len(profile.Columns))
+		keys := make([]string, 0, len(profile.Columns))
+		for _, s := range profile.Columns {
 			s = strings.TrimSpace(s)
 			if s == "" {
 				continue
@@ -461,9 +503,9 @@ func TableParserStripDocMetadataKeys(parserConfig map[string]interface{}) []stri
 		}
 		return keys
 	}
-	if len(roles) > 0 {
-		keys := make([]string, 0, len(roles))
-		for k := range roles {
+	if len(profile.Roles) > 0 {
+		keys := make([]string, 0, len(profile.Roles))
+		for k := range profile.Roles {
 			s := strings.TrimSpace(k)
 			if s != "" {
 				keys = append(keys, s)

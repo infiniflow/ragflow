@@ -38,15 +38,15 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	documentpkg "ragflow/internal/service/document"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
 // indexed, and these bookkeeping inputs remain for the caller to apply to
-// document state (metadata merge + chunk/token counter bumps).
+// document and task state.
 type PipelineResult struct {
 	DocID            string
 	KbID             string
@@ -62,6 +62,8 @@ type PipelineResult struct {
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
 	StripKeys             []string
+	DiscoveredColumns     []string
+	FieldMapUpdates       map[string]interface{}
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -266,20 +268,19 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
-	// Persist the parser-discovered column names on the document so the
-	// role selector can offer them without re-reading the file. The parser
-	// publishes them on its file metadata (file.table_column_names); the
-	// terminal payload carries that map through untouched (see
-	// buildParserOutputs), so read it from the run result — CanvasState
-	// globals are scoped to the pipeline run and are not visible here.
-	if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
-		if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
-			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
-		}
+	// Parser-discovered column names and field map updates are packaged into
+	// PipelineResult so the document-state finalizer (docStateUpdater.apply)
+	// can persist them cleanly without side-effect writes inside the executor.
+	var discoveredCols []string
+	var fieldMapUpdates map[string]interface{}
+	if names := tableColumnNamesFromPayload(pipelineOutput); len(names) > 0 {
+		discoveredCols = names
 		if s.taskCtx.Doc.KbID != "" {
-			if err := syncTableFieldMapToKB(ctx, s.taskCtx.Doc.KbID, names, parserConfigForStrip); err != nil {
-				common.Warn(fmt.Sprintf("failed to sync table field map to KB %s: %v", s.taskCtx.Doc.KbID, err))
+			profile := indexdoc.ResolveTableProfile(parserConfigForStrip)
+			if profile == nil {
+				profile = entity.NewTableProfile(entity.TableColumnModeAuto)
 			}
+			fieldMapUpdates = profile.BuildFieldMap(names)
 		}
 	}
 
@@ -367,6 +368,8 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		KbID:                  s.taskCtx.Doc.KbID,
 		Metadata:              metadata,
 		StripKeys:             stripKeys,
+		DiscoveredColumns:     discoveredCols,
+		FieldMapUpdates:       fieldMapUpdates,
 		ChunkCount:            chunkCount,
 		TokenConsumption:      embeddingTokenConsumption,
 		Duration:              time.Since(start).Seconds(),
@@ -1361,72 +1364,7 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 }
 
 func saveDocumentTableColumns(ctx context.Context, docID string, newNames []string) error {
-	if len(newNames) == 0 || docID == "" || dao.DB == nil {
-		return nil
-	}
-
-	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var doc entity.Document
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", docID).
-			First(&doc).Error; err != nil {
-			return err
-		}
-
-		if doc.ParserConfig == nil {
-			doc.ParserConfig = entity.JSONMap{}
-		}
-		seen := make(map[string]struct{}, len(newNames))
-		names := make([]string, 0, len(newNames))
-		for _, n := range newNames {
-			n = strings.TrimSpace(n)
-			if n == "" {
-				continue
-			}
-			if _, ok := seen[n]; !ok {
-				seen[n] = struct{}{}
-				names = append(names, n)
-			}
-		}
-
-		doc.ParserConfig["table_column_names"] = names
-		doc.ParserConfig["table_column_roles"] = filterTableColumnRoles(doc.ParserConfig["table_column_roles"], seen)
-		for key, value := range doc.ParserConfig {
-			if !strings.HasPrefix(key, "Parser:") {
-				continue
-			}
-			componentConfig, ok := value.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			spreadsheet, ok := componentConfig["spreadsheet"].(map[string]interface{})
-			if !ok {
-				continue
-			}
-			spreadsheet["column_names"] = names
-			spreadsheet["column_roles"] = filterTableColumnRoles(spreadsheet["column_roles"], seen)
-		}
-		return tx.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", doc.ParserConfig).Error
-	})
-}
-
-func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]interface{} {
-	filtered := make(map[string]interface{})
-	switch roles := raw.(type) {
-	case map[string]interface{}:
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
-		}
-	case map[string]string:
-		for column, role := range roles {
-			if _, exists := columns[column]; exists {
-				filtered[column] = role
-			}
-		}
-	}
-	return filtered
+	return documentpkg.NewDocumentService().SaveDocumentTableColumns(ctx, docID, newNames)
 }
 
 // tableColumnNamesFromPayload extracts the parser-discovered column names from
@@ -1458,29 +1396,11 @@ func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
 }
 
 func syncTableFieldMapToKB(ctx context.Context, kbID string, names []string, parserConfig map[string]interface{}) error {
-	if len(names) == 0 || kbID == "" || dao.DB == nil {
-		return nil
+	profile := indexdoc.ResolveTableProfile(parserConfig)
+	if profile == nil {
+		profile = entity.NewTableProfile(entity.TableColumnModeAuto)
 	}
-	_, roles, _ := indexdoc.ResolveTableColumnConfig(parserConfig)
-	fieldMap := make(map[string]interface{})
-	for _, col := range names {
-		col = strings.TrimSpace(col)
-		if col == "" {
-			continue
-		}
-		role := "both"
-		if roles != nil {
-			if rVal, ok := roles[col].(string); ok && strings.TrimSpace(rVal) != "" {
-				role = strings.ToLower(strings.TrimSpace(rVal))
-			}
-			if role == "vectorize" {
-				role = "indexing"
-			}
-		}
-		if role == "metadata" || role == "both" {
-			fieldMap[col] = strings.ReplaceAll(col, "_", " ")
-		}
-	}
+	fieldMap := profile.BuildFieldMap(names)
 	if len(fieldMap) == 0 {
 		return nil
 	}
@@ -1488,30 +1408,6 @@ func syncTableFieldMapToKB(ctx context.Context, kbID string, names []string, par
 }
 
 func saveKBTableFieldMap(ctx context.Context, kbID string, newFieldMap map[string]interface{}) error {
-	if len(newFieldMap) == 0 || kbID == "" || dao.DB == nil {
-		return nil
-	}
-
-	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var kb entity.Knowledgebase
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).
-			First(&kb).Error; err != nil {
-			return err
-		}
-
-		if kb.ParserConfig == nil {
-			kb.ParserConfig = entity.JSONMap{}
-		}
-		fm, ok := kb.ParserConfig["field_map"].(map[string]interface{})
-		if !ok || fm == nil {
-			fm = make(map[string]interface{}, len(newFieldMap))
-		}
-		for k, v := range newFieldMap {
-			fm[k] = v
-		}
-		kb.ParserConfig["field_map"] = fm
-		return tx.Model(&entity.Knowledgebase{}).Where("id = ?", kbID).Update("parser_config", kb.ParserConfig).Error
-	})
+	return documentpkg.NewDocumentService().SaveKBTableFieldMap(ctx, kbID, newFieldMap)
 }
 

@@ -1220,8 +1220,16 @@ func TestProcessOutput_PersistsDiscoveredColumnsFromPayload(t *testing.T) {
 		"chunks": []map[string]any{{"text": "- Name: Alice"}},
 		"file":   map[string]any{"name": "table.csv", "table_column_names": []string{"Name", "City"}},
 	}
-	if _, err := svc.processOutput(t.Context(), output, time.Now()); err != nil {
+	res, err := svc.processOutput(t.Context(), output, time.Now())
+	if err != nil {
 		t.Fatalf("processOutput: %v", err)
+	}
+	wantNames := []string{"Name", "City"}
+	if !reflect.DeepEqual(res.DiscoveredColumns, wantNames) {
+		t.Fatalf("res.DiscoveredColumns = %#v, want %#v", res.DiscoveredColumns, wantNames)
+	}
+	if err := saveDocumentTableColumns(t.Context(), doc.ID, res.DiscoveredColumns); err != nil {
+		t.Fatalf("saveDocumentTableColumns: %v", err)
 	}
 	persisted, err := dao.NewDocumentDAO().GetByID(t.Context(), dao.DB, doc.ID)
 	if err != nil {
@@ -1345,6 +1353,19 @@ func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 	}
 	if len(res.StripKeys) == 0 {
 		t.Errorf("expected StripKeys to be populated, got empty")
+	}
+	if res.FieldMapUpdates["order_id"] != "order id" {
+		t.Errorf("expected order_id -> 'order id', got %v", res.FieldMapUpdates["order_id"])
+	}
+	if res.FieldMapUpdates["product_name"] != "product name" {
+		t.Errorf("expected product_name -> 'product name', got %v", res.FieldMapUpdates["product_name"])
+	}
+	if _, ok := res.FieldMapUpdates["internal_seq"]; ok {
+		t.Errorf("indexing-only column internal_seq must NOT be in FieldMapUpdates, got %v", res.FieldMapUpdates["internal_seq"])
+	}
+
+	if err := saveKBTableFieldMap(t.Context(), kb.ID, res.FieldMapUpdates); err != nil {
+		t.Fatalf("saveKBTableFieldMap: %v", err)
 	}
 
 	persistedKB, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), dao.DB, "kb-1")

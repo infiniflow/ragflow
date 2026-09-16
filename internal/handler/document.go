@@ -84,6 +84,7 @@ type documentServiceIface interface {
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
+	ProbeTable(r io.Reader, filename string) ([]string, error)
 }
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
@@ -2026,3 +2027,27 @@ func pythonJSONKindName(typeErr *json.UnmarshalTypeError) string {
 	}
 	return "value"
 }
+
+// ProbeTable handles POST /documents/probe_table (and POST /document/probe_table).
+// It inspects an uploaded table file (CSV/TSV/XLSX) and extracts the column headers
+// without persisting or running ingestion.
+func (h *DocumentHandler) ProbeTable(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file provided or failed to read multipart form")
+		return
+	}
+	defer file.Close()
+
+	cols, err := h.documentService.ProbeTable(file, header.Filename)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, fmt.Sprintf("Failed to probe table schema: %v", err))
+		return
+	}
+
+	common.SuccessWithData(c, gin.H{
+		"columns":       cols,
+		"total_columns": len(cols),
+	}, "success")
+}
+

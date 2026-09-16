@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -89,6 +90,8 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 	hasActiveTasks         bool
 	hasActiveTasksErr      error
+	probeResult            []string
+	probeErr               error
 }
 
 func (f *fakeDocumentService) Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
@@ -266,6 +269,13 @@ func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []st
 }
 func (f *fakeDocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
 	return f.removeIngestionTasks, f.removeIngestionTaskErr
+}
+
+func (f *fakeDocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
+	if f.probeResult != nil || f.probeErr != nil {
+		return f.probeResult, f.probeErr
+	}
+	return []string{"col1", "col2"}, nil
 }
 
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -2067,3 +2077,68 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
 	}
 }
+
+func TestProbeTable_Success(t *testing.T) {
+	fakeSvc := &fakeDocumentService{
+		probeResult: []string{"Name", "City", "Age"},
+	}
+	h := NewDocumentHandler(fakeSvc, nil, nil)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "table.csv")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	part.Write([]byte("Name,City,Age\nAlice,Paris,30\n"))
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Request = req
+
+	h.ProbeTable(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data not map: %v", resp["data"])
+	}
+	cols, ok := data["columns"].([]interface{})
+	if !ok || len(cols) != 3 {
+		t.Fatalf("unexpected columns: %v", data["columns"])
+	}
+}
+
+func TestProbeTable_NoFile(t *testing.T) {
+	fakeSvc := &fakeDocumentService{}
+	h := NewDocumentHandler(fakeSvc, nil, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest("POST", "/api/v1/documents/probe_table", nil)
+	c.Request = req
+
+	h.ProbeTable(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeArgumentError) {
+		t.Fatalf("expected argument error code, got %v", resp["code"])
+	}
+}
+

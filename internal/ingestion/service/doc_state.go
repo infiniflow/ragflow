@@ -35,6 +35,8 @@ type docStateSvc interface {
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error)
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
 	ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
+	SaveDocumentTableColumns(ctx context.Context, docID string, names []string) error
+	SaveKBTableFieldMap(ctx context.Context, kbID string, fieldMap map[string]interface{}) error
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
@@ -60,6 +62,16 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	if len(r.Metadata) > 0 || len(r.StripKeys) > 0 {
 		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata, r.StripKeys); err != nil {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
+		}
+	}
+	if len(r.DiscoveredColumns) > 0 && r.DocID != "" {
+		if err := u.docSvc.SaveDocumentTableColumns(ctx, r.DocID, r.DiscoveredColumns); err != nil {
+			common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", r.DocID, err))
+		}
+	}
+	if len(r.FieldMapUpdates) > 0 && r.KbID != "" {
+		if err := u.docSvc.SaveKBTableFieldMap(ctx, r.KbID, r.FieldMapUpdates); err != nil {
+			common.Warn(fmt.Sprintf("failed to sync table field map to KB %s: %v", r.KbID, err))
 		}
 	}
 	// Built-in metadata (update_time / file_name) is applied on top of the

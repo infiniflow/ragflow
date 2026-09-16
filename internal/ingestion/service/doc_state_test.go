@@ -25,14 +25,20 @@ import (
 )
 
 type stubDocStateSvc struct {
-	metaData        map[string]any
-	gotDocID        string
-	gotKbID         string
-	gotChunkNum     int
-	gotTokenNum     int
-	gotDuration     float64
-	setCalled       bool
-	incrementCalled bool
+	metaData           map[string]any
+	gotDocID           string
+	gotKbID            string
+	gotChunkNum        int
+	gotTokenNum        int
+	gotDuration        float64
+	gotSaveDocID       string
+	gotSaveDocCols     []string
+	gotSaveKbID        string
+	gotSaveFieldMap    map[string]interface{}
+	setCalled          bool
+	incrementCalled    bool
+	saveColsCalled     bool
+	saveFieldMapCalled bool
 }
 
 func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error) {
@@ -55,6 +61,20 @@ func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string
 	s.gotChunkNum = chunkNum
 	s.gotTokenNum = tokenNum
 	s.gotDuration = duration
+	return nil
+}
+
+func (s *stubDocStateSvc) SaveDocumentTableColumns(ctx context.Context, docID string, names []string) error {
+	s.saveColsCalled = true
+	s.gotSaveDocID = docID
+	s.gotSaveDocCols = names
+	return nil
+}
+
+func (s *stubDocStateSvc) SaveKBTableFieldMap(ctx context.Context, kbID string, fieldMap map[string]interface{}) error {
+	s.saveFieldMapCalled = true
+	s.gotSaveKbID = kbID
+	s.gotSaveFieldMap = fieldMap
 	return nil
 }
 
@@ -335,4 +355,27 @@ func TestDocStateUpdater_StripKeysWithEmptyMetadata(t *testing.T) {
 		t.Errorf("author must be preserved, got %v", svc.metaData["author"])
 	}
 }
+
+func TestDocStateUpdater_PersistsTableColumnsAndFieldMap(t *testing.T) {
+	svc := &stubDocStateSvc{}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+
+	r := &taskpkg.PipelineResult{
+		DocID:             "doc-123",
+		KbID:              "kb-456",
+		DiscoveredColumns: []string{"ColA", "ColB"},
+		FieldMapUpdates:   map[string]interface{}{"ColA": "ColA"},
+	}
+
+	u.apply(ctx, r)
+
+	if !svc.saveColsCalled || svc.gotSaveDocID != "doc-123" || len(svc.gotSaveDocCols) != 2 {
+		t.Errorf("SaveDocumentTableColumns not called properly: %+v", svc)
+	}
+	if !svc.saveFieldMapCalled || svc.gotSaveKbID != "kb-456" || svc.gotSaveFieldMap["ColA"] != "ColA" {
+		t.Errorf("SaveKBTableFieldMap not called properly: %+v", svc)
+	}
+}
+
 
