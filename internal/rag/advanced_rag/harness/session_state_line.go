@@ -44,14 +44,6 @@ type SessionRecord struct {
 	// Undecided are confirmed members (Reached) that the slot table does not
 	// mention at all: the evidence exists, the decision does not.
 	Undecided []string
-	// ScanMatched / ScanRead are the coverage of the runtime's own sweep for the act
-	// words a direction declared (see scan.go): how many corpus passages match the
-	// act, and how many a session has been shown. They are the enumeration's stop
-	// rule — "complete" is a property of the corpus, not of the model's patience.
-	ScanMatched int
-	ScanRead    int
-	// ScanTerms are the act words declared for this table, in declaration order.
-	ScanTerms []string
 }
 
 // CollectSessionRecord gathers the record from the live pool plus the session's
@@ -68,8 +60,6 @@ func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
 			r.Reached = append(r.Reached, rt.Term)
 		}
 		r.Absent = kb.ProbedAbsentTerms()
-		r.ScanMatched, r.ScanRead = kb.ScanCoverage()
-		r.ScanTerms = kb.DeclaredScanTerms()
 	}
 	// Members come from the slots that DECLARE members (slots.KindMembers), each
 	// item carrying its evidence. Nothing is split out of text: a slot holding a
@@ -121,15 +111,6 @@ func (r SessionRecord) Line() string {
 	if len(r.Undecided) > 0 {
 		fmt.Fprintf(&b, " | FOUND BUT NOT RECORDED=%s", shortList(r.Undecided, 4))
 	}
-	// Coverage of the runtime's own sweep: the act words were declared, so "how much
-	// of what the corpus says about the act have you read" is a number the model can
-	// act on — the one stop rule that is not a guess about its appetite.
-	if r.ScanMatched > 0 {
-		fmt.Fprintf(&b, " | scan=%d/%d read", r.ScanRead, r.ScanMatched)
-		if r.ScanRead < r.ScanMatched {
-			b.WriteString(" (unread matches: members nobody has looked at)")
-		}
-	}
 	fmt.Fprintf(&b, " | pool=%d", r.Pool)
 	return b.String()
 }
@@ -176,12 +157,6 @@ func (s *SessionState) workingTable() State {
 func (r SessionRecord) Brief() string {
 	out := fmt.Sprintf("members=%d reached=%d absent=%d undecided=%d",
 		len(r.Members), len(r.Reached), len(r.Absent), len(r.Undecided))
-	// Unread sweep matches belong in the brief because the brief is what the
-	// continuation offer judges "is anything still missing?" by: a direction with 18
-	// unread matching passages has work left that no member count can show.
-	if unread := r.ScanMatched - r.ScanRead; unread > 0 {
-		out += fmt.Sprintf(" scan-unread=%d", unread)
-	}
 	return out
 }
 

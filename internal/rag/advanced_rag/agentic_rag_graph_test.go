@@ -3501,129 +3501,109 @@ func TestBudgetExtensionIsBoughtOncePerQuestion(t *testing.T) {
 	}
 }
 
-// sweepExec is an executor that can sweep: the graph's sweep is a runtime job over an
-// optional capability, so a test double only has to provide that one method.
-type sweepExec struct {
-	harness.ToolExecutor
-	byTerm map[string][]map[string]any
-	// asked records the subject each term was swept with, so a test can prove the
-	// round still offers the direction's subject to the sweep (the executor uses it as
-	// a fallback, not as a query prefix — see harness.ScanSweeper).
-	asked map[string]string
-}
-
-func (e *sweepExec) ScanTerm(_ context.Context, subject, term string, _ int) []map[string]any {
-	if e.asked == nil {
-		e.asked = map[string]string{}
-	}
-	e.asked[term] = subject
-	return e.byTerm[term]
-}
-
-// TestScanSweepTurnsDeclaredActWordsIntoAReadingList pins S3's core: a direction that
-// DECLARED the words its source uses for the act gets those words swept once by the
-// runtime, and the matches become the round's reading list with coverage counts.
+// TestMergeSlotPatchKeepsTheDeclaration pins what the fold must NOT drop.
 //
-// Measured (2026-09-16, 三国/关羽, four runs of one question): the answer missed 2-4
-// members each time and the missing names differed every run — 程远志 / 管亥 / 荀正 /
-// 车胄 appeared ZERO times in one run's log — because a session can only probe the names
-// it thinks of, while the corpus holds the truth.
-func TestScanSweepTurnsDeclaredActWordsIntoAReadingList(t *testing.T) {
-	exec := &sweepExec{byTerm: map[string][]map[string]any{
-		"斩": {{"chunk_id": "c1", "content": "云长提华雄之头"}, {"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"}},
-		"杀": {{"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"}, {"chunk_id": "c3", "content": "关公刀起，秦琪头落"}},
-	}}
-	kb := &harness.Kbinfos{}
-	st := &AgenticState{KB: kb}
-	table := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽"},
-		{ID: 1, Type: "person"},
+// Terms/Subject are the planner's declaration of how the source words the deed, and the
+// completeness pass is built from them (harness.ScanPatterns / RunCompletenessPass).
+// Rebuilding the slot without them is why one run's second round had no act patterns at
+// all: measured (2026-09-16, 三国/关羽) round 1's session seeds carried 6325 characters
+// (method + the declared patterns) and round 2's carried 4150 (method only) — the recovery
+// round, opened by the routing precisely because the record was still short, ran with the
+// enumeration machinery switched off.
+func TestMergeSlotPatchKeepsTheDeclaration(t *testing.T) {
+	base := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+		{ID: 1, Type: "dataset"},
 	}, 0, nil)
+	strong := 0.9
+	branch := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "dataset", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+	}, 1, nil)
 
-	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, st, table)
-	if exec.asked["斩"] != "关羽" {
-		t.Fatalf("sweep asked %q for 斩, want the declared subject", exec.asked["斩"])
+	merged := MergeSlotPatch(base, branch)
+	if merged == nil {
+		t.Fatal("MergeSlotPatch returned nil for a branch that carries a candidate")
 	}
-
-	matched, read := kb.ScanCoverage()
-	if matched != 3 || read != 0 {
-		t.Fatalf("coverage = %d/%d, want 0/3 read: three distinct passages were matched", read, matched)
+	if got := merged.State[0].Terms; len(got) != 2 || got[0] != "斩" || got[1] != "杀" {
+		t.Errorf("merged Terms = %v, want the declaration to travel with the slot", got)
 	}
-	if terms := kb.DeclaredScanTerms(); len(terms) != 2 || terms[0] != "斩" {
-		t.Fatalf("declared terms = %v, want the act words the table declared", terms)
+	if got := merged.State[0].Subject; got != "关羽|云长" {
+		t.Errorf("merged Subject = %q, want the declared actor", got)
 	}
-
-	// A second pass over the same table adds nothing (the terms are already declared)
-	// — the sweep is bounded, not repeated.
-	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, st, table)
-	if matched, _ = kb.ScanCoverage(); matched != 3 {
-		t.Fatalf("matched = %d after a second sweep, want the same three passages", matched)
-	}
-
-	// The record states what the corpus covers, so an answer can say what it covers.
-	line := scanCoverageLine("record", kb)
-	for _, want := range []string{"matching passage(s)", "0 read", "have NOT been read", "斩、杀"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("coverage line = %q, missing %q", line, want)
-		}
-	}
-	kb.UnreadScan(harness.ScanItemsMax)
-	line = scanCoverageLine("record", kb)
-	if !strings.Contains(line, "Every passage the act matched has been read.") {
-		t.Errorf("coverage line = %q, want the complete-coverage wording", line)
-	}
-
-	// No declaration, no sweep: a value question pays nothing for this machinery.
-	plain := &harness.Kbinfos{}
-	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, &AgenticState{KB: plain},
-		harness.NewState([]harness.Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}, 0, nil))
-	if matched, read := plain.ScanCoverage(); matched != 0 || read != 0 {
-		t.Fatalf("coverage = %d/%d on a table with no declared act words, want 0/0", read, matched)
-	}
-	if line := scanCoverageLine("record", plain); line != "record" {
-		t.Errorf("coverage line = %q, want the record untouched", line)
-	}
-
-	// An executor that cannot sweep leaves the round exactly as it was (here: no
-	// executor at all, which is also the low-mode shape).
-	noSweep := &harness.Kbinfos{}
-	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{}},
-		&AgenticState{KB: noSweep}, table)
-	if matched, _ := noSweep.ScanCoverage(); matched != 0 {
-		t.Fatalf("matched = %d with an executor that cannot sweep, want 0", matched)
-	}
-	if terms := noSweep.DeclaredScanTerms(); len(terms) != 2 {
-		t.Errorf("declared terms = %v, want them recorded even without a sweep", terms)
+	// The declaration is what renders the completeness queries: a fold that drops it makes
+	// the next round's seed patternless, which is the measured failure above.
+	if patterns := harness.ScanPatterns(*merged); len(patterns) == 0 {
+		t.Error("the merged table renders no act patterns: the declaration was lost in the fold")
 	}
 }
 
-// TestRoutingCountsUnreadSweepMatchesAsWork pins the coverage stop rule at the loop
-// level: a round that read part of the sweep's reading list has WORK LEFT even when
-// every slot is filled and the review named no gap.
+// patternStubExec answers tool calls like sessionStubExec and is ALSO a
+// harness.PatternRunner, so a round's completeness pass runs without a retriever.
+type patternStubExec struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (e *patternStubExec) Execute(_ context.Context, name string, _ map[string]any) (harness.ToolOutcome, error) {
+	return harness.ToolOutcome{
+		Status:      harness.StatusOK,
+		Payload:     []any{map[string]any{"kind": name, "content": "hit"}},
+		EvidenceIDs: []string{"c-" + name},
+	}, nil
+}
+
+func (e *patternStubExec) RunPattern(_ context.Context, _ string) []map[string]any {
+	e.mu.Lock()
+	e.calls = append(e.calls, "called")
+	e.mu.Unlock()
+	return []map[string]any{{"chunk_id": "w1", "content_with_weight": "云长手起刀落，斩孔秀于马下"}}
+}
+
+func (e *patternStubExec) ran() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.calls)
+}
+
+// TestRunSlotResearchPassRunsTheDeclaredPatterns pins the wiring, and the run-once rule.
 //
-// Measured (2026-09-16, 三国/关羽): the sweep matched 56 passages, the sessions read
-// 38, the table reported unresolved=0 — and the run closed out with 18 matching
-// passages nobody had looked at, because nothing in the loop read the coverage.
-func TestRoutingCountsUnreadSweepMatchesAsWork(t *testing.T) {
-	kb := &harness.Kbinfos{}
-	kb.DeclareScanTerms([]string{"斩"})
-	kb.AddScanItems("斩", []map[string]any{
-		{"chunk_id": "c1", "content": "云长提华雄之头"},
-		{"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"},
-	})
-	st := &AgenticState{
-		KB:           kb,
-		LastRoundNew: 3, // the round learned something, so "work left" is enough
-		Verdict:      VerdictSufficient,
-		Deadline:     time.Now().Add(120 * time.Second),
+// The patterns used to be seeded as a list of queries TO MAKE, and a whole round ran
+// without a single one of them being made (see harness.RunCompletenessPass). Now the round
+// asks the corpus itself, admits what comes back, and seeds the sessions with it.
+func TestRunSlotResearchPassRunsTheDeclaredPatterns(t *testing.T) {
+	table := func() harness.State {
+		return harness.NewState([]harness.Variable{
+			{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+			{ID: 1, Type: "dataset", QuestionClues: []string{"who did he kill?"}},
+		}, 0, nil)
 	}
-	if got := routeSCA(st, true, 3); got != nodeQueryRewrite {
-		t.Fatalf("route = %v with two unread swept passages, want another round", got)
+	exec := &patternStubExec{}
+	kb := &harness.Kbinfos{}
+	st := &AgenticState{Question: "关羽杀了多少有姓名的人物？", KB: kb, SlotTable: table()}
+	deps := harness.SessionDeps{
+		Model: &scriptedModel{replies: []string{"I could not find any evidence about that."}},
+		Tools: &harness.Toolset{Exec: exec},
+		KB:    kb,
+	}
+	RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
+
+	want := len(harness.ScanPatterns(table()))
+	if got := exec.ran(); got != want {
+		t.Fatalf("ran %d pattern(s), want every rendered one (%d)", got, want)
+	}
+	block, done := kb.PatternFindings()
+	if !done || !strings.Contains(block, "w1") || !strings.Contains(block, "斩孔秀于马下") {
+		t.Fatalf("stored block = %q (done=%v), want the window the pass brought back", block, done)
+	}
+	if kb.PoolSize() == 0 {
+		t.Error("the pass's window never reached the pool: the win cannot be cited")
 	}
 
-	// Read them and the same state closes out: coverage is the reason it asked.
-	kb.UnreadScan(harness.ScanItemsMax)
-	if got := routeSCA(st, true, 3); got != nodeFormalizeAnswer {
-		t.Fatalf("route = %v with the sweep fully read, want the answer", got)
+	// A second round REUSES the block: the windows are in the pool under the same ids, so
+	// asking the same corpus the same questions again spends the store legs for nothing.
+	second := &AgenticState{Question: st.Question, KB: kb, SlotTable: table()}
+	RunSlotResearchPass(context.Background(), context.Background(), deps, second.Question, second, 60)
+	if got := exec.ran(); got != want {
+		t.Errorf("second round ran %d pattern(s), want the stored block reused (still %d)", got, want)
 	}
 }

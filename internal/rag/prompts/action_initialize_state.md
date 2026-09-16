@@ -19,7 +19,7 @@ Rules:
 - Order slots so the FIRST one holds the top-level requested fact; the later ones are its dependencies.
 - Cover EVERY listed source: one or more slots per dataset, plus a "web" slot when Web is available and the question touches world knowledge or recent events.
 - clues must be self-contained phrases usable as retrieval hints.
-- `"scan"` — ONLY for a slot whose answer is a SET or a COUNT of things that someone DID ("how many named people did X kill", "which awards did Y win"): the words the SOURCE itself uses for that deed. Give EVERY phrasing you can think of, including the unusual ones (斩 / 杀 / 诛 / 劈 / 砍 / 刺 / 挥为两段 / 手起刀落 / 斩于马下): a passage phrased in a way no term covers is a passage the sweep never sees. At most 10 terms.
-- `"subject"` — next to `scan`, WHO the act is about (e.g. 关羽). The sweep searches subject AND act together, because an act word on its own ranks poorly in the corpus. Omit it only when the slot is not about one actor.
+- `"scan"` — ONLY for a slot whose answer is a SET or a COUNT of things that someone DID ("how many named people did X kill", "which awards did Y win"): the words the SOURCE itself uses for that deed. Give EVERY phrasing you can think of, including the unusual ones (斩 / 杀 / 诛 / 劈 / 砍 / 刺 / 挥为两段 / 手起刀落 / 斩于马下): a passage phrased in a way no term covers is a passage no query ever names. At most 10 terms.
+- `"subject"` — next to `scan`, WHO the act is about, as the names the source uses for them, alternated: `关羽|关公|云长`. Omit it only when the slot is not about one actor.
 - 1-4 first_queries: direct keyword-style searches against the listed sources.
 - No prose outside JSON.

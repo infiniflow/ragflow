@@ -726,28 +726,42 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// "[<kind>] Searching the knowledge base for …" through the run's logger,
 	// which Rag wraps with the think-log forwarder (see think_log.go). Emitting
 	// one here as well would show the same search twice in the reasoning block.
-	chunks, err := deps.Backend.Retrieve(ctx, RetrieveRequest{
-		Query:                 effectiveQuery,
-		DatasetIDs:            targetIDs,
-		DocScope:              docScope,
-		TopN:                  topN,
-		TopK:                  intOrDef(deps.TopK, DefaultTopK),
-		RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
-		SimilarityThreshold:   &opts.threshold,
-		// VectorSimilarityWeight carries the VECTOR weight verbatim (Python
-		// vector_similarity_weight); the canvas adapter's keyword-weight
-		// inversion does NOT apply to this field. DisableVectorLeg mirrors
-		// Python passing embd_mdl=None (no dense leg at all).
-		VectorSimilarityWeight: &opts.weight,
-		DisableVectorLeg:       opts.disableVector,
-		TenantID:               deps.TenantID,
-		MetaDataFilter:         deps.MetaDataFilter,
-		RankFeature:            rankFeature,
-		ExcludeCompiled:        opts.excludeCompiled,
-	})
+	// D5: a retrieval that FAILS is retried once before the query is written off. The
+	// failure this exists for is the upstream one: measured (2026-09-16) two queries of a
+	// run answered `SILICONFLOW API error: 503 Service Unavailable … Model service
+	// overloaded`, and the passages those queries would have returned were simply gone
+	// from a question whose whole work is coverage. One retry costs one round trip on the
+	// failure path only, and it is a retry of the same request (no re-planning, nothing
+	// cached, nothing narrowed yet).
+	retrieve := func() ([]map[string]any, error) {
+		return deps.Backend.Retrieve(ctx, RetrieveRequest{
+			Query:                 effectiveQuery,
+			DatasetIDs:            targetIDs,
+			DocScope:              docScope,
+			TopN:                  topN,
+			TopK:                  intOrDef(deps.TopK, DefaultTopK),
+			RerankCandidatesCount: max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
+			SimilarityThreshold:   &opts.threshold,
+			// VectorSimilarityWeight carries the VECTOR weight verbatim (Python
+			// vector_similarity_weight); the canvas adapter's keyword-weight
+			// inversion does NOT apply to this field. DisableVectorLeg mirrors
+			// Python passing embd_mdl=None (no dense leg at all).
+			VectorSimilarityWeight: &opts.weight,
+			DisableVectorLeg:       opts.disableVector,
+			TenantID:               deps.TenantID,
+			MetaDataFilter:         deps.MetaDataFilter,
+			RankFeature:            rankFeature,
+			ExcludeCompiled:        opts.excludeCompiled,
+		})
+	}
+	chunks, err := retrieve()
 	if err != nil {
 		// Go-only line: Python lets the retriever's exception propagate untagged.
-		logger.Printf("[%s] retrieval failed: %v", opts.logLabel, err)
+		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.logLabel, err)
+		chunks, err = retrieve()
+	}
+	if err != nil {
+		logger.Printf("[%s] retrieval failed twice: %v", opts.logLabel, err)
 		return nil, nil
 	}
 
@@ -889,7 +903,17 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 // It is the widest per-operand number the pipeline already uses elsewhere
 // (SCAViewCap), and only the MATCHED windows travel onwards — the grep output cap
 // (GrepOutTotalChars) still bounds what the model pays for.
-const patternRecallTopN = 60
+//
+// 200, after the measurement that shows 60 is the binding constraint rather than the
+// corpus: in one 三国/关羽 run the operands' own match counts were 云长(111) 斩(97) 关公(79)
+// 关云长(33) 关羽(7) 杀(143), so a pattern's recall stopped before the corpus did and ~50 of
+// 云长's passages were never matched against the pattern at all — the windows that hold the
+// members nobody has named are exactly the ones past a ranking's head. The number is a
+// RECALL bound on candidates that are only matched and narrowed (the model sees the
+// matched windows, capped by GrepOutTotalChars), so widening it costs retrieval, not
+// prompt — and a pattern whose operand hits the bound is now logged rather than silently
+// truncated (see retrieveGrepCandidates).
+const patternRecallTopN = 200
 
 // isStructuralPattern reports whether a query asks for structure (any-wildcard
 // pattern) rather than listing terms: `关公.*斩` does, `华雄|颜良` does not.
@@ -984,16 +1008,30 @@ func retrieveGrepCandidates(
 		sub.Keywords = term
 		sub.TopN = perTopN
 		chunks, docAggs := BM25Search(ctx, deps, sub)
+		if isStructuralPattern(query) && len(chunks) >= perTopN {
+			// A pattern is a LOCATOR over what the keyword leg recalled, so a full page means
+			// it was matched against a TRUNCATED candidate set: matches past this bound are not
+			// "absent from the corpus", they were never looked at. Said out loud because the
+			// difference decides whether a member the pattern did not show is a corpus fact or
+			// a ceiling (see patternRecallTopN for the measurement).
+			searchLogger(deps).Printf("[Grep search] operand %q filled its recall bound (%d passage(s)); matches beyond it were not matched against the pattern.", term, perTopN)
+		}
 		perTerm = append(perTerm, chunks)
 		aggs = append(aggs, docAggs...)
 		// A term searched ON ITS OWN is the caller's probe of ONE individual, so
 		// a passage that carries it is a confirmed member with its evidence —
 		// recorded as such, because the round needs the members (and the passages
 		// behind them), not just the number of chunks it holds.
-		for _, c := range chunks {
-			if strings.Contains(strings.ToLower(ChunkTextOf(c)), strings.ToLower(term)) {
-				deps.KB.RecordReachedTerm(term, ChunkIDOf(c))
-				break
+		//
+		// Except when the caller IS the runtime: the completeness pass searches the
+		// actor and the act words, which are not names and must not enter the record's
+		// to-do list (see SearchParams.SkipReachLedger).
+		if !bp.SkipReachLedger {
+			for _, c := range chunks {
+				if strings.Contains(strings.ToLower(ChunkTextOf(c)), strings.ToLower(term)) {
+					deps.KB.RecordReachedTerm(term, ChunkIDOf(c))
+					break
+				}
 			}
 		}
 	}

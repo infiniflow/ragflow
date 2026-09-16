@@ -416,6 +416,32 @@ func TestSetDirectionIsSeededWithTheMethod(t *testing.T) {
 	if got := setProtocolFor(counted, loader); !strings.Contains(got, "SET / COUNT directions") {
 		t.Errorf("a declared set direction must be seeded with the method, got %q", got)
 	}
+
+	// A direction that DECLARED its act words is seeded with the corpus queries those
+	// words render into (see ScanPatterns): the seed is where the session is told to ask
+	// the corpus for the act, which is the one thing its memory cannot do. Without the
+	// declaration there is nothing to render and the method travels alone.
+	declared := State{State: []Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("18"), Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+		{ID: 1, Type: "dataset"},
+	}}
+	got := setProtocolFor(declared, loader)
+	if !strings.Contains(got, "关羽.*斩|云长.*斩") {
+		t.Errorf("a direction with declared act words must be seeded with their queries, got %q", got)
+	}
+	if !strings.Contains(got, "SET / COUNT directions") {
+		t.Errorf("the method must still travel with them, got %q", got)
+	}
+	// The same declaration on a table that holds NO NAME renders the method alone: the
+	// planner declares act words for "a count of things someone DID" as well, and a list
+	// of corpus queries is neither useful nor free on a question whose answer is a number
+	// (measured 2026-09-16, FRAMES — see MemberShaped).
+	countsOnly := State{State: []Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("5"), Terms: []string{"won", "trophy"}, Subject: "Brazil"},
+	}}
+	if got := setProtocolFor(countsOnly, loader); strings.Contains(got, ".*") || !strings.Contains(got, "SET / COUNT directions") {
+		t.Errorf("a table with no name slot must get the method without act patterns, got %q", got)
+	}
 	// `number` is the planner's label for a measured QUANTITY, and it typed the same
 	// question both ways on two runs of 2026-09-16: not a seed trigger, and exactly
 	// what the batch path exists for.

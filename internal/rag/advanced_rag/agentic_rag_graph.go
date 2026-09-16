@@ -1818,6 +1818,16 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 // scope here — it needs the report prompt templates; the caller reads the
 // approved draft from st.KB.PreSummary.
 func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
+	// The member ROLL CALL runs here — after the research, before the answer — because the
+	// write-back is the one step the evidence cannot do for itself: measured (2026-09-16,
+	// 三国/关羽) runs of ONE build answered 18 / 16 / 15 / 14 / 12 members with the same corpus in
+	// hand, and what differed was what a session remembered to patch (see RollCallMembers). It is
+	// the last moment at which the candidate set is complete and the members still reach everything
+	// downstream: the count reconciliation, the record the answer reads, and the answer itself.
+	if rc := RollCallMembers(ctx, deps, st, logger); rc.Asked > 0 {
+		logger.Printf("[RollCall] done: asked=%d answered=%d written=%d", rc.Asked, rc.Answered, rc.Written)
+	}
+
 	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
 	// than by a verdict that may not exist: unresolved slots are the table's own
 	// list of what it could not fill, NoProgress means the last round learned
@@ -2379,27 +2389,18 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 		gapList = unresolvedClueGaps(st)
 	}
 	gaps := len(gapList)
-	// COVERAGE LEFT — the third record that can ask for a round: a direction that
-	// DECLARED act words has a reading list the runtime swept for it (harness/scan.go),
-	// and an unread matching passage is a member nobody has looked at.
-	//
-	// Measured (2026-09-16, 三国/关羽): the sweep matched 56 passages, the round's
-	// sessions read 38, the table reported `unresolved=0` — and the run closed out
-	// with 18 matching passages the answer could not account for. Nothing in the loop
-	// read the coverage, so nothing asked for the round that would have read them.
-	scanUnread := 0
-	if st.KB != nil {
-		if matched, read := st.KB.ScanCoverage(); matched > read {
-			scanUnread = matched - read
-		}
-	}
-	work := gaps > 0 || len(st.UnresolvedSlots) > 0 || scanUnread > 0
+	// COVERAGE is not a record here any more: a direction that DECLARED act words asks the
+	// corpus the pattern queries its seed carries (harness.ScanPatterns) and reads the
+	// windows they return, so "how much of the corpus has been read" is not a state the loop
+	// has to hold — and holding it was what kept a round alive after the reading was done
+	// (measured 2026-09-16, 三国/关羽: rounds whose whole work was re-reading the same list).
+	work := gaps > 0 || len(st.UnresolvedSlots) > 0
 	grew := st.LastRoundNew > 0
 	verdictAsks := st.Verdict == VerdictInsufficient && work
 	wants := work && (grew || verdictAsks)
 	if !wants {
-		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, scan-unread=%d, +%d chunks this round, verdict=%s).",
-			len(st.UnresolvedSlots), gaps, scanUnread, st.LastRoundNew, st.Verdict)
+		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s).",
+			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict)
 		return nodeFormalizeAnswer
 	}
 	if st.SearchRounds >= scaMaxRounds {
@@ -2420,8 +2421,8 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 		_LOG.Printf("[SCA] pool holds %d chunk(s) (>= view cap %d) but this round's review view CHANGED; the new evidence is readable, so another round is worth its budget.",
 			len(st.KB.Chunks), SCAViewCap)
 	}
-	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, scan-unread=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
-		len(st.UnresolvedSlots), gaps, scanUnread, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
+	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
+		len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
 	return nodeQueryRewrite
 }
 
@@ -2611,7 +2612,17 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// on.
 	if collectedAnswer != "" && setShaped {
 		lines = append(lines, "")
-		lines = append(lines, "One session's own draft answer (UNVERIFIED, written before the other sessions were merged — reconcile it with the slots above, and where it disagrees with the enumerated members, the members stand): "+collectedAnswer)
+		// The draft is not a member LIST — copying its prose is how a fifteen-member answer
+		// came out of a seventeen-member record — but the PASSAGES it quotes are evidence
+		// like any other, and a name those passages attribute to the actor is a member even
+		// when no slot above lists it. Measured (2026-09-16, 三国/关羽, two runs of one
+		// question): one record enumerated 17 members and answered 17; another enumerated 10
+		// while its own draft carried the original text for four more (管亥 / 荀正 / 车胄 /
+		// 杨龄), and the answer — told that "the members stand" — dropped all four. The
+		// evidence was in hand; the rule threw it away. So the draft is demoted as a SOURCE
+		// of members and promoted as evidence: its quotations are the arbiter, and neither
+		// the slots nor the draft decides on its own.
+		lines = append(lines, "One session's own draft answer (UNVERIFIED — written before the other sessions were merged. Its PROSE is not a member list: do not copy its count or its wording. Its QUOTATIONS are evidence like any other: a name those passages attribute to the actor is a member even when no slot above lists it, and a name whose passage attributes the deed to someone else is not. Reconcile the draft with the slots — with the quotations as the arbiter, not either list — and include every member the evidence supports): "+collectedAnswer)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -3351,6 +3362,27 @@ func PrefillSlotsFromEvidence(slotTable *harness.State, kb *harness.Kbinfos) int
 	return filled
 }
 
+// logCompletenessWindows writes the completeness pass's windows to the run log — the QUOTES, not
+// just their count.
+//
+// Whether a member the answer missed was ever IN FRONT of a session is otherwise unknowable, and
+// that difference decides which fault to fix: a name quoted inside a window the sessions read and
+// did not write is a WRITE-BACK fault (the ledger, the record line), while a name the pass matched
+// and never showed is a COVERAGE fault (the window budget). Measured (2026-09-16, 三国/关羽): runs
+// of one question with the same code answered 18 / 16 / 15 / 12 members — the same eleven names
+// every time, plus a different handful of the other eight (程远志 / 管亥 / 车胄 / 杨龄 / 夏侯存 /
+// 成何 / 庞德 / 翟元 / 荀正) — and no line in any of those logs could say whether the missing ones
+// had been shown at all. Every window change made from those logs was therefore a guess, and two of
+// them were wrong.
+func logCompletenessWindows(block string) {
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "- ") || strings.Contains(trimmed, "chunk_id=") {
+			_LOG.Printf("[SlotResearch] completeness window %s", trimmed)
+		}
+	}
+}
+
 // RunSlotResearchPass mirrors Python _run_slot_research_pass: drive ONE
 // research round with slot-aware action sessions.
 //
@@ -3423,19 +3455,6 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 			// review never named.
 			dirs = append(dirs, direction{slotID: -1, text: text})
 		}
-		if len(dirs) == 0 && kb != nil {
-			// A declared sweep with passages still unread is work no SLOT names: the
-			// reading list belongs to the corpus, not to the table (harness/scan.go),
-			// so a round whose table is full and whose review named no gap still has
-			// something to do — read it. Measured (2026-09-16, 三国/关羽): the round
-			// ended with 18 matching passages unread, and nothing in the loop could
-			// ask for the reading that would have covered them.
-			if matched, read := kb.ScanCoverage(); matched > read {
-				_LOG.Printf("[SlotResearch] table full and no gap named, but %d of %d swept passage(s) are unread; running a reading session.",
-					matched-read, matched)
-				dirs = append(dirs, direction{slotID: -1, text: question})
-			}
-		}
 		if len(dirs) == 0 {
 			// Nothing for a session to do. A PREFILL still counts as work — it
 			// edited the table — so its result must travel back to the caller;
@@ -3478,13 +3497,6 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	sessionBudget := max(20.0, deadlineLeft-10.0)
 	if harness.SetShaped(slotTable) {
 		sessionBudget = max(sessionBudget, harness.SessionWallS(slotTable))
-		// The SWEEP: for each act word the table DECLARED, ask the store once and keep
-		// the matches as this round's reading list (see harness/scan.go). Declared,
-		// never inferred — and it is what makes an enumeration's tail a property of
-		// the corpus instead of the model's memory: measured (2026-09-16, 三国/关羽)
-		// four runs of one question missed 2-4 members each, and the missing names
-		// appeared ZERO times in one run's log because no session ever named them.
-		runScanSweep(ctx, deps, st, slotTable)
 		if parent != nil {
 			var cancelSessions context.CancelFunc
 			sessionCtx, cancelSessions = context.WithTimeout(parent, deadlineToDuration(sessionBudget+setSessionSlackS))
@@ -3508,6 +3520,54 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 		} else {
 			_LOG.Printf("[SlotResearch] set-shaped table: session clock %.0fs; research budget NOT extended (only %.0fs of the request is left, and %.0fs is reserved for the review, the draft and the answer).",
 				sessionBudget, ctxLeftS(parent), downstreamReserveS)
+		}
+	}
+
+	// The completeness pass RUNS HERE — in code, before any session starts.
+	//
+	// The direction's own act patterns used to be rendered into the seed as a list of
+	// queries to make, and the measurement is why that is not enough: measured (2026-09-16,
+	// 三国/关羽) a round declared ten act words with several aliases each (2175 characters of
+	// patterns, in the seed of every session) and not one session ran a single one of them —
+	// the run's query log holds zero `.*` queries and the sessions improvised space-separated
+	// word lists instead (`关羽 斩华雄 温酒`, `关公 砍死 斩 杀`). A list of queries in a prompt
+	// is advice; the completeness of an enumeration cannot rest on advice, and every run of
+	// this question missed 2-4 members that differed run to run. So the runtime asks the
+	// corpus itself, admits the windows it gets back to the pool, and seeds the sessions with
+	// what came back (harness.RunCompletenessPass) — the session's job becomes reading them.
+	//
+	// Run once per QUESTION, not once per round: the windows stay in the pool under the same
+	// ids, so a later round reuses the block (Kbinfos.PatternFindings).
+	switch {
+	case !harness.MemberShaped(slotTable):
+		// A table of counts and dates declares act words too (the planner is told to for "a
+		// count of things someone DID"), and no name either pass could return changes a count
+		// of events: measured (2026-09-16, FRAMES) two such questions carried a 100-passage
+		// reading list into sessions 8 passages a turn, together ~18% of the run's tokens.
+		if patterns := harness.ScanPatterns(slotTable); len(patterns) > 0 {
+			_LOG.Printf("[SlotResearch] %d act pattern(s) declared but no slot of this table holds a NAME — not run: a count of events has no names to find.", len(patterns))
+		}
+	case kb != nil:
+		if block, done := kb.PatternFindings(); done {
+			deps.PatternFindings = block
+			_LOG.Printf("[SlotResearch] completeness pass already ran for this question; reusing its %d char block (the windows are in the pool).", len(block))
+		} else if deps.Tools != nil {
+			if runner, ok := deps.Tools.Exec.(harness.PatternRunner); ok {
+				pass := harness.RunCompletenessPass(ctx, runner, kb, slotTable)
+				if pass.Asked > 0 {
+					_LOG.Printf("[SlotResearch] completeness pass: %d act pattern(s) run, %d answered, %d window(s) admitted to the pool; seed +%d char(s).",
+						pass.Asked, pass.Answered, pass.Admitted, len(pass.Text))
+					logCompletenessWindows(pass.Text)
+					kb.StorePatternFindings(pass.Text)
+					deps.PatternFindings = pass.Text
+				} else if patterns := harness.ScanPatterns(slotTable); len(patterns) > 0 {
+					// The pass yields nothing when the clock ran out before the patterns
+					// could be asked (see RunCompletenessPass), so the seed keeps the list —
+					// said out loud, because "no pass" and "a pass that found nothing" are
+					// different facts about the corpus.
+					_LOG.Printf("[SlotResearch] completeness pass produced nothing for %d declared pattern(s) — the seed keeps the pattern list (no time left to ask, or the executor cannot search).", len(patterns))
+				}
+			}
 		}
 	}
 
@@ -3638,90 +3698,9 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 		SlotDraft:       draft,
 		// The answer-facing record (no machine fields) is rendered here, next to
 		// the SCA-facing draft, so the two can never drift apart.
-		SlotRecord: scanCoverageLine(RenderSlotRecord(slotTable, collected), st.KB),
+		SlotRecord: RenderSlotRecord(slotTable, collected),
 		Attempted:  ledger,
 	}
-}
-
-// runScanSweep turns the act words a table DECLARED into a reading list: one store
-// query per term, deduped into the sweep ledger (see harness/scan.go), which the
-// sessions then read through and which the record reports coverage over.
-//
-// It is a runtime job, not a model one, for the reason the whole sweep exists: the
-// model can only probe names it thinks of, and the members a run misses are exactly
-// the ones it did not think of.
-func runScanSweep(ctx context.Context, deps harness.SessionDeps, st *AgenticState, table harness.State) {
-	kb := st.KB
-	if kb == nil {
-		return
-	}
-	var terms []string
-	subject := ""
-	for _, v := range table.State {
-		terms = append(terms, v.Terms...)
-		if subject == "" {
-			subject = strings.TrimSpace(v.Subject)
-		}
-	}
-	if len(terms) == 0 {
-		return
-	}
-	if added := kb.DeclareScanTerms(terms); len(added) == 0 {
-		return
-	}
-	sweeper, _ := deps.Tools.Exec.(harness.ScanSweeper)
-	if sweeper == nil {
-		// No store to sweep: the round proceeds exactly as it did before, with the
-		// declared terms recorded so the record can still say what was asked for.
-		_LOG.Printf("[SlotResearch] scan terms declared (%s) but this executor cannot sweep the corpus.", strings.Join(kb.DeclaredScanTerms(), "、"))
-		return
-	}
-	// Sweep every declared term first, then admit the results into the reading list
-	// ROUND-ROBIN (see AddScanResults): the list is capped, so the order it is filled in
-	// decides which act words it covers, and admitting term by term lets the first
-	// declared words spend the whole cap before the rare ones are even asked for. The
-	// per-term log keeps the difference visible — matched is what the corpus returned,
-	// added is what the cap had room for.
-	results := make([]harness.SweepResult, 0, len(kb.DeclaredScanTerms()))
-	for _, term := range kb.DeclaredScanTerms() {
-		chunks := sweeper.ScanTerm(ctx, subject, term, harness.ScanPerTerm)
-		_LOG.Printf("[SlotResearch] scan sweep %q: %d matching passage(s).", term, len(chunks))
-		results = append(results, harness.SweepResult{Term: term, Chunks: chunks})
-	}
-	if added := kb.AddScanResults(results); added > 0 {
-		_LOG.Printf("[SlotResearch] scan reading list: +%d passage(s) (one per act word per pass).", added)
-	}
-	matched, read := kb.ScanCoverage()
-	_LOG.Printf("[SlotResearch] scan coverage: %d matching passage(s) for %s, %d read so far.",
-		matched, strings.Join(kb.DeclaredScanTerms(), "、"), read)
-}
-
-// scanCoverageLine appends the run's sweep coverage to the answer-facing record.
-//
-// An enumeration's completeness is a fact about the corpus (see harness/scan.go):
-// how many passages match the act words the direction declared, and how many a
-// session has read. Stating it lets the answer say what it actually covers —
-// "these are the members, and every passage the act matched has been read" — instead
-// of implying completeness it cannot demonstrate, or hiding the passages that were
-// never opened.
-func scanCoverageLine(record string, kb *harness.Kbinfos) string {
-	if kb == nil {
-		return record
-	}
-	matched, read := kb.ScanCoverage()
-	if matched == 0 {
-		return record
-	}
-	clause := "Every passage the act matched has been read."
-	if read < matched {
-		clause = fmt.Sprintf("%d matching passage(s) have NOT been read — a member nobody has looked at cannot be ruled out.", matched-read)
-	}
-	if record != "" {
-		record += "\n"
-	}
-	return record + fmt.Sprintf(
-		"- corpus coverage for the act words this direction declared (%s): %d matching passage(s), %d read. %s",
-		strings.Join(kb.DeclaredScanTerms(), "、"), matched, read, clause)
 }
 
 // MergeSlotPatch mirrors Python _merge_slot_patch: fold a session's new-state
@@ -3856,6 +3835,15 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			Candidate:         cand,
 			CandidateStrength: strength,
 			Value:             value,
+			// The DECLARATION travels with the slot. Terms/Subject are what the
+			// completeness pass is built from (harness.ScanPatterns / RunCompletenessPass),
+			// and rebuilding the slot without them is why one run's second round had no act
+			// patterns at all: measured (2026-09-16, 三国/关羽) round 1's seeds carried 6325
+			// characters (method + the declared patterns) and round 2's carried 4150
+			// (method only), so the recovery round — the one the routing opened because the
+			// record was still short — ran with the enumeration machinery switched off.
+			Terms:   append([]string(nil), v.Terms...),
+			Subject: v.Subject,
 		})
 	}
 	if !changed {
@@ -4399,7 +4387,19 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	}, map[string]bool{"stop": true, "rag_agent": true})
 
 	addBranch("rag_agent", func(_ context.Context, s *AgenticState) (string, error) {
-		return guard(agenticNodeName(routeSCA(s, enableSCA, scaMaxRounds))), nil
+		rounds := scaMaxRounds
+		// An ENUMERATION runs a bounded number of rounds: one to ask the corpus the act
+		// patterns its seed carries and name what they return, one to recover what the
+		// round's own record shows it reached and did not record. Measured (2026-09-16,
+		// 三国/关羽, three runs): round 2 took a table from 11 members to 14 by recording
+		// 车胄 / 程远志 / 管亥 — and every round after it added `+0 chunks`, i.e. a third
+		// draft of the same list. The bound is on the SHAPE the planner declared
+		// (SetShaped: count/set/list), so a value question keeps the rounds it buys
+		// accuracy with.
+		if harness.SetShaped(s.SlotTable) && rounds > 2 {
+			rounds = 2
+		}
+		return guard(agenticNodeName(routeSCA(s, enableSCA, rounds))), nil
 	}, map[string]bool{"stop": true, "query_rewrite": true, "formalize_answer": true})
 
 	addBranch("query_rewrite", func(_ context.Context, s *AgenticState) (string, error) {

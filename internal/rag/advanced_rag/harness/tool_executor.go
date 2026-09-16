@@ -99,6 +99,35 @@ func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
 	return &searchExecutor{deps: deps, req: req}
 }
 
+// RunPattern executes ONE completeness pattern and returns the windows it matched, already
+// narrowed (see ScanPatterns / RunCompletenessPass).
+//
+// It goes through the same grep path a retrieve call uses, so a pattern is treated as a
+// pattern: its operands are recalled on their own (patternRecallTopN — a pattern's recall
+// must not stop at a ranking's head, see that constant's measurement), the pattern decides
+// which candidates are windows (matchGrepPattern), and the windows come back narrowed to
+// the match (GrepOutCharsPerChunk / GrepOutTotalChars). The runtime runs this itself
+// because the same queries handed to the model as a list went unrun (see
+// RunCompletenessPass).
+func (e *searchExecutor) RunPattern(ctx context.Context, pattern string) []map[string]any {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil
+	}
+	chunks, _ := GrepSearch(ctx, e.deps, SearchParams{
+		Question: pattern,
+		// A pattern is an expression for the MATCHER, not for the engine (see
+		// GrepSearch): recall gets the operands, the pattern stays here and decides.
+		Keywords: strings.Join(GrepPatternOperands(pattern), " "),
+		TopN:     patternRecallTopN,
+		KbIDs:    e.req.DatasetIDs,
+		// The pass asks about the ACTOR and the ACT WORDS, never about candidate names
+		// (see SearchParams.SkipReachLedger).
+		SkipReachLedger: true,
+	})
+	return chunks
+}
+
 // Execute implements ToolExecutor for the wired tools. Tools whose port has not
 // landed are classified, not errored: they report MISS (the tool is valid, this
 // call reached nothing) so the model falls back to a different tool instead of
@@ -1003,62 +1032,6 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
-}
-
-// ScanTerm implements ScanSweeper: the runtime's coverage sweep asks the keyword leg
-// for ONE declared act term, without a model asking (see scan.go for why).
-//
-// It runs the same leg a batched retrieve runs per term, which is the point: the
-// sweep must reach what a probe would reach, so that a member the model did not think
-// of is still in the reading list. It admits nothing to the pool — the reading list is
-// its own structure — so a sweep cannot displace the evidence a session is working
-// from.
-func (e *searchExecutor) ScanTerm(ctx context.Context, subject, term string, limit int) []map[string]any {
-	term = strings.TrimSpace(term)
-	if term == "" {
-		return nil
-	}
-	if limit <= 0 {
-		limit = ScanPerTerm
-	}
-	// The query is the act word ALONE; the subject is a fallback, not a prefix.
-	//
-	// A coverage sweep wants RECALL, and the leg ANDs the words it is given, so an
-	// alias-prone subject SUBTRACTS from it: measured (2026-09-16, 三国/关羽, one run)
-	// the act word 劈 swept as `关羽 劈` returned ZERO passages — a corpus whose text
-	// says 劈管亥于马下 and whose actor is called 云长 there carries no chunk with both
-	// words, so the one act word the members nobody thought of are worded with was the
-	// one act word the reading list never covered (the sweep log shows the leg running
-	// and the list getting nothing: `scan sweep "劈": 0 new`). Precision is not this
-	// call's job — every passage is filtered by the term below — so the subject could
-	// only ever re-rank, at the price of the recall the sweep exists for. It is still
-	// tried once, when the term alone reaches nothing.
-	chunks, _ := BM25Search(ctx, e.deps, SearchParams{Question: term, Keywords: term, TopN: limit})
-	out := termMatches(chunks, term)
-	if len(out) == 0 {
-		if s := strings.TrimSpace(subject); s != "" {
-			chunks, _ = BM25Search(ctx, e.deps, SearchParams{Question: s + " " + term, Keywords: term, TopN: limit})
-			out = termMatches(chunks, term)
-		}
-	}
-	return out
-}
-
-// termMatches keeps only the passages that carry term.
-//
-// A sweep's matches must be REAL: the leg ranks, and a ranking is a preference, so a
-// passage that does not carry the act word is not one of the passages the act matched.
-// Dropping them here is what makes the coverage counts mean what they say — and it is
-// also what makes the query's recall orientation safe, since nothing that does not
-// carry the term can enter the list from any ranking.
-func termMatches(chunks []map[string]any, term string) []map[string]any {
-	out := make([]map[string]any, 0, len(chunks))
-	for _, c := range chunks {
-		if strings.Contains(ChunkTextOf(c), term) {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // calculate mirrors Python's calculate tool (action_session.py:_exec_calculate): derive a

@@ -84,14 +84,15 @@ type Variable struct {
 	//
 	// They exist because an enumeration cannot be bounded by what the model can
 	// recall: the corpus holds the truth, and the words the source uses are what
-	// reaches it. The runtime sweeps the store for each term once (see scan.go) and
-	// the sessions read what comes back, so the tail of the list is a property of the
-	// corpus rather than of the model's memory.
+	// reaches it. The runtime renders them into completeness queries and RUNS them
+	// (see ScanPatterns / RunCompletenessPass), and the sessions read what came back,
+	// so the tail of the list is a property of the corpus rather than of the model's
+	// memory.
 	Terms []string
 	// Subject is WHO the act is about, declared next to the act words ("关羽"). The
-	// sweep asks for subject AND act together, because an act word on its own has a
+	// pattern asks for subject AND act together, because an act word on its own has a
 	// poor candidate pool (measured 2026-09-16: 劈 returned nothing for a book whose
-	// text says 劈管亥于马下). Empty means the sweep searches the term alone.
+	// text says 劈管亥于马下). Empty means the pattern searches the term alone.
 	Subject string
 }
 
@@ -979,12 +980,14 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "retrieve",
-			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; cover different facets.` +
-				`ENUMERATING A SET: probe the NAMES themselves, alternated with | in ONE query — name1|name2|name3 — 4-6 per query. Hits are members; guess the next batch yourself (aliases, the minor members) rather than stopping at what you hold.` +
-				`DO NOT CALL: For reading a whole document (list_chunks); when no surface word matches (search_chunks).` +
-				`ARGUMENTS: query — array of 1-3 strings; a string may be names alternated with |, or a pattern: "A|B|C" asks several terms in ONE call, and "A.*B" keeps that order while skipping the words between — for a relation whose object you cannot name. Keep 4-6 terms — only a query's first ~10 snippets survive. doc_scope is NOT declared; do not pass it.` +
+			Description: `WHEN TO CALL: you know or suspect exact surface terms in the corpus (names, titles, codes, phrases) — the first recall pass; cover different facets.` +
+				`HOW IT WORKS: keyword recall FIRST, then the pattern is applied to what came back — ` + "`A.*B`" + ` (A then B, anything between) matches only inside the passages its operands recalled, and the RAREST operand bounds it: put the rare word first. A FULL recall page was truncated.` +
+				`ONE STRING, MANY TERMS: ` + "`A|B|C`" + ` recalls each term in ONE call — synonyms belong in one string, not one call each.` +
+				`ENUMERATING A SET: probe the NAMES themselves, alternated with |, 4-6 per query. Hits are members; guess the next batch yourself rather than stopping at what you hold.` +
+				`DO NOT CALL: for a whole document (list_chunks); when no surface word matches (search_chunks).` +
+				`ARGUMENTS: query — array of 1-3 strings; only a query's first ~10 snippets survive; doc_scope is NOT declared.` +
 				`OUTPUT: Exact-term snippets with doc_id and chunk id. ok = new evidence; redundant = seen.` +
-				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). Fuzzy miss: rephrase or search_chunks. redundant = stop and emit a state patch.`,
+				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). redundant = stop and emit a state patch.`,
 			Parameters: arrayParam("", 1, 3),
 		},
 	}
@@ -2272,18 +2275,6 @@ func (s *SessionState) appendRecordLine(ranAny bool) {
 			last.Content += "\n" + excerpt
 		}
 	}
-	// An enumeration whose direction DECLARED act words also gets the sweep's unread
-	// passages — on every turn, not only a flat one: reading the corpus's matches for
-	// the act IS the work (see scan.go), and the coverage counts are what says when
-	// the work is done. The runtime supplies the fact (this text matches the act and
-	// you have not read it); the model decides who is in it.
-	if s.enumerating() && s.KB != nil {
-		if block := s.KB.scanBlock(ScanBatchPerTurn); block != "" {
-			matched, read := s.KB.ScanCoverage()
-			_LOG.Printf("[Action Session] scan batch handed over (coverage %d/%d read).", read, matched)
-			last.Content += "\n" + block
-		}
-	}
 }
 
 // turnRunCap is the hard ceiling on a session's turns: the mode's floor plus the
@@ -2431,10 +2422,65 @@ func SessionWallS(parent State) float64 {
 // version's false positives are the eleven-per-run handful whose tables really are
 // typed as a count.
 func setProtocolFor(table State, prompts PromptLoader) string {
+	method := setMethodFor(table, prompts)
+	if method == "" {
+		return ""
+	}
+	// The pattern list is rendered only where a NAME can be a member (see MemberShaped):
+	// the planner declares act words for "a count of things someone DID" too, and a list of
+	// corpus queries is neither useful nor free on a question whose answer is a number
+	// (measured 2026-09-16, FRAMES — see MemberShaped for the two questions that carried it).
+	if !MemberShaped(table) {
+		return method
+	}
+	patterns := ScanPatterns(table)
+	if len(patterns) == 0 {
+		return method
+	}
+	// The corpus queries the direction's own declaration allows, rendered next to the method
+	// that uses them (see ScanPatterns): completeness belongs to the corpus, and this is the
+	// question that makes it answer — actor and act together, once per act word.
+	//
+	// This is the FALLBACK shape: when the runtime already ran them, enumerationSeed seeds
+	// what came back instead (see RunCompletenessPass).
+	var b strings.Builder
+	b.WriteString(method)
+	b.WriteString("\n## The act patterns this direction declared — one call per line\n\n")
+	for _, p := range patterns {
+		fmt.Fprintf(&b, "- %s\n", p)
+	}
+	return b.String()
+}
+
+// setMethodFor returns the enumeration METHOD alone (see setProtocolFor), or "" when the
+// direction is not assembling a set. Its gate is SetShaped — what the planner declared
+// (count/set/list) — and nothing else: measured (2026-09-16, FRAMES), the permissive
+// reading of a candidate seeded 44 of 67 sessions with 2777 characters of set strategy each
+// on questions that assemble nothing.
+func setMethodFor(table State, prompts PromptLoader) string {
 	if !SetShaped(table) {
 		return ""
 	}
 	return loadOptionalPrompt(prompts, "action_set")
+}
+
+// enumerationSeed builds the enumeration text a session is seeded with.
+//
+// findings is the completeness pass's output (see RunCompletenessPass): the windows the
+// direction's own act patterns brought back, already in the pool. When it is present the
+// seed carries IT and not the list of patterns to make — measured (2026-09-16, 三国/关羽) a
+// round rendered 2175 characters of patterns into the seed of every session and not one
+// session ran a single one of them (the run's query log holds zero `.*` queries), while a
+// window is evidence that cannot be unread. The pattern list stays the fallback for a run
+// where nothing could be run (no runner, an exhausted context, a patternless table).
+func enumerationSeed(table State, prompts PromptLoader, findings string) string {
+	if f := strings.TrimSpace(findings); f != "" {
+		if method := setMethodFor(table, prompts); method != "" {
+			return method + "\n\n" + f
+		}
+		return f
+	}
+	return setProtocolFor(table, prompts)
 }
 
 // continuationAsk is the offer the model decides on: it names the hard bound, the
@@ -3598,6 +3644,12 @@ type SessionDeps struct {
 	// "ALREADY RETRIEVED" so the model does not re-retrieve evidence it already
 	// has (mirrors Python run_action_session:1982-1984). Nil skips the injection.
 	KB *Kbinfos
+	// PatternFindings is the completeness pass's output for this direction (see
+	// RunCompletenessPass): its act patterns were already RUN over the corpus and these
+	// are the windows that came back, each with the chunk id it is cited by. When
+	// non-empty it replaces the seed's list of patterns to make — a query list is
+	// advice, a window is evidence.
+	PatternFindings string
 }
 
 // RunActionSession mirrors Python run_action_session: a bounded session
@@ -3621,7 +3673,7 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	// forty-four-of-sixty-seven measurement that reverted the permissive version). A
 	// set direction whose table was NOT typed that way gets the method from
 	// appendBatchProtocol, on the first batch it writes.
-	seededMethod := setProtocolFor(parent, deps.Prompts)
+	seededMethod := enumerationSeed(parent, deps.Prompts, deps.PatternFindings)
 	if seededMethod != "" {
 		seedUser += "\n\n" + seededMethod
 		// The seeded direction also widens the retrieval budget (see
@@ -3632,6 +3684,12 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		// nothing distinguishes "the gate opened for the direction that needed it" from
 		// "the gate opened for every direction", which is the failure mode to watch.
 		_LOG.Printf("[Action Session] set-shaped direction — enumeration method added to the seed (%d char(s))", len(seededMethod))
+		if findings := strings.TrimSpace(deps.PatternFindings); findings != "" {
+			// Said separately from the line above, because the difference is the whole
+			// point: the seed carries what the declared patterns BROUGHT BACK, not the
+			// patterns themselves (see enumerationSeed).
+			_LOG.Printf("[Action Session] completeness pass's windows in the seed (%d char(s)) — the act patterns were RUN, not listed.", len(findings))
+		}
 	}
 
 	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
@@ -3822,8 +3880,8 @@ func InitializeState(ctx context.Context, deps SessionDeps, question string, fan
 			// Variable.Terms): a missing or malformed list is simply no declaration,
 			// never a reason to discard the decomposition.
 			terms, _ := pyStringList(m["scan"])
-			if len(terms) > ScanTermsMax {
-				terms = terms[:ScanTermsMax]
+			if len(terms) > scanTermsMax {
+				terms = terms[:scanTermsMax]
 			}
 			kept := make([]string, 0, len(terms))
 			for _, t := range terms {

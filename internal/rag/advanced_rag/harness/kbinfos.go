@@ -62,6 +62,16 @@ type SearchParams struct {
 	DocScope []string
 	// TopN is the result count. <= 0 selects the configured default.
 	TopN int
+	// SkipReachLedger keeps this search's terms OUT of the reach ledger.
+	//
+	// The ledger is the record's "names you proved reachable and never recorded"
+	// list, and it is read as a to-do list, so what enters it must be a NAME the
+	// caller probed. The runtime's completeness pass queries ask for the actor and
+	// the act words (see RunCompletenessPass), which are not names and are searched
+	// by construction: measured (2026-09-16, 三国/关羽) the record read
+	// `FOUND BUT NOT RECORDED=斩颜良、诛文丑、三国演义、关羽…+14` — every entry a query
+	// word, and not one of the members the round was actually missing.
+	SkipReachLedger bool
 	// Channel is retained for backward compatibility with callers that still
 	// poke the unified HybridSearch with an explicit channel. It is DEPRECATED:
 	// each Python entry point is now its own function (HybridSearch /
@@ -136,16 +146,13 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
-	// The COVERAGE SWEEP of an enumeration (see scan.go): the act words a direction
-	// declared, and the passages the runtime's own sweep matched for them with
-	// whether a session has been shown each one. Guarded by scanMu — its own lock,
-	// for the same reason the ledger has one: the sweep runs while sessions run, and
-	// a lock shared with the pool would make handing a passage over wait on an
-	// unrelated admit batch.
-	scanMu    sync.Mutex
-	scanTerms []string
-	scanItems []ScanItem
-	scanIndex map[string]int
+	// patternFindings is the completeness pass's block for this QUESTION, and
+	// patternPassed records that it ran (see StorePatternFindings): the windows the
+	// pass admits stay in the pool, so a later round reuses the block rather than
+	// asking the same corpus the same questions and putting back what is already
+	// there. Guarded by ledgerMu.
+	patternFindings string
+	patternPassed   bool
 	// cache is the per-request retrieval cache (Python tools.search_cache). It
 	// is initialised lazily via cacheOnce so a zero-value Kbinfos is usable.
 	cache     *searchCache
@@ -417,6 +424,34 @@ func (k *Kbinfos) IsSetDirection() bool {
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
 	return k.setDirection
+}
+
+// StorePatternFindings records the completeness pass's block for this question (see
+// RunCompletenessPass / PatternFindings).
+func (k *Kbinfos) StorePatternFindings(block string) {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	k.patternFindings = block
+	k.patternPassed = true
+	k.ledgerMu.Unlock()
+}
+
+// PatternFindings returns the block a previous round's completeness pass produced, and
+// whether the pass has run at all.
+//
+// The unit is the REQUEST, not the round: the windows the pass admitted are in the pool
+// under the same chunk ids, so a second round asking the same corpus the same questions
+// would spend the same store legs to re-admit what is already there, and the seed would
+// show the same windows it already showed (see StorePatternFindings).
+func (k *Kbinfos) PatternFindings() (string, bool) {
+	if k == nil {
+		return "", false
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return k.patternFindings, k.patternPassed
 }
 
 // ReachedTerms returns a copy of the confirmed members and the chunk that carries
