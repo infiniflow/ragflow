@@ -51,7 +51,7 @@ func newMarkdownConverter() *md.Converter {
 func preserveInlineWhitespace() md.Plugin {
 	return func(converter *md.Converter) []md.Rule {
 		return []md.Rule{{
-			Filter: []string{"a", "b", "strong", "em", "i", "u", "s", "del", "strike", "sub", "sup"},
+			Filter: []string{"a", "b", "strong", "em", "i", "u", "s", "del", "strike", "sub", "sup", "span"},
 			Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
 				if strings.TrimSpace(content) != "" {
 					if inlineTagsWithDefaultRule[goquery.NodeName(selec)] {
