@@ -67,3 +67,25 @@ func TestConfigureTrustedProxiesRejectsInvalidEntry(t *testing.T) {
 		t.Fatal("expected an error for an unparsable trusted proxy entry")
 	}
 }
+
+// The bundled nginx never sets X-Real-IP, so a trusted loopback peer that
+// forwards no X-Forwarded-For must not let a caller-supplied X-Real-IP name
+// the client.
+func TestConfigureTrustedProxiesIgnoresXRealIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, engine := gin.CreateTestContext(httptest.NewRecorder())
+	if err := ConfigureTrustedProxies(engine, nil); err != nil {
+		t.Fatalf("ConfigureTrustedProxies(nil): %v", err)
+	}
+	c.Request = httptest.NewRequest("GET", "/", nil)
+	c.Request.RemoteAddr = "127.0.0.1:41000"
+	c.Request.Header.Set("X-Real-IP", "203.0.113.7")
+	if got := c.ClientIP(); got != "127.0.0.1" {
+		t.Fatalf("ClientIP() = %q, want the loopback peer; X-Real-IP must not be trusted", got)
+	}
+
+	c.Request.Header.Set("X-Forwarded-For", "198.51.100.9")
+	if got := c.ClientIP(); got != "198.51.100.9" {
+		t.Fatalf("ClientIP() = %q, want the X-Forwarded-For client from the trusted proxy", got)
+	}
+}

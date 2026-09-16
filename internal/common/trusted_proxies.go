@@ -45,5 +45,11 @@ func ConfigureTrustedProxies(engine *gin.Engine, proxies []string) error {
 	if err := engine.SetTrustedProxies(proxies); err != nil {
 		return fmt.Errorf("invalid trusted_proxies %v: %w", proxies, err)
 	}
+	// gin also consults X-Real-IP by default. The bundled nginx
+	// (docker/nginx/proxy.conf) only rewrites X-Forwarded-For, so X-Real-IP
+	// would reach the server exactly as the caller wrote it and a trusted peer
+	// that forwards no X-Forwarded-For would let it name the client. Only the
+	// header the proxy owns is honoured.
+	engine.RemoteIPHeaders = []string{"X-Forwarded-For"}
 	return nil
 }
