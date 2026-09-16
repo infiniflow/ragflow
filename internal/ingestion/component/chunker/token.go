@@ -631,11 +631,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		m.Text = removeTag(m.Text)
 		// Drop a chunk only when nothing about it is retrievable. A media chunk
 		// may carry no body of its own and still be indexed through its
-		// surrounding context: Python's _finalize_json_chunks applies the check
-		// to context_above + text + context_below. The context is folded into
-		// Text once, at chunkOutputs, so the decision is made on that merged
-		// text here without duplicating the fold.
-		if strings.TrimSpace(schema.ContextualText(m)) == "" {
+		// surrounding context: Python's _finalize_json_chunks strips the merged
+		// text and applies the check to it — remove_tag(context_above + text +
+		// context_below) then .strip() — so a context that carries nothing but
+		// a position tag counts as empty. The context is folded into Text once,
+		// at chunkOutputs, so the decision is made on that merged text here
+		// without duplicating the fold.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
 			continue
 		}
 		out = append(out, m)
