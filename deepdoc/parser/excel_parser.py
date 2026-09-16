@@ -94,7 +94,10 @@ class RAGFlowExcelParser:
 
     @staticmethod
     def _dataframe_to_workbook(df):
-        if isinstance(df, dict) and len(df) > 1:
+        # `pd.read_excel(sheet_name=None)` returns a dict whatever the sheet count,
+        # and a one-entry dict has no `.apply`, so it must not fall through to the
+        # single-frame path below.
+        if isinstance(df, dict):
             return RAGFlowExcelParser._dataframes_to_workbook(df)
 
         df = RAGFlowExcelParser._clean_dataframe(df)
@@ -231,6 +234,14 @@ class RAGFlowExcelParser:
             # when the data-row count is an exact multiple of chunk_rows and emits
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
+            if n_data_rows <= 0:
+                # A template sheet holds only its header row. Emit it as a
+                # captioned table instead of dropping the sheet, which is what
+                # Go does (recordsToHTMLTableChunkList, nData == 0). Without
+                # this the column schema of a blank template is lost.
+                tb = f"<table><caption>{sheetname}</caption>" + tb_rows_0 + "</table>"
+                tb_chunks.append((tb, (sheet_idx, 1, 1, 1, col_max)))
+                continue
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
                 row_start = 2 + chunk_i * chunk_rows
                 row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))

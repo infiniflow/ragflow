@@ -500,6 +500,97 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
+func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for _, modelRef := range []string{
+		"unknown@ZHIPU-AI",
+		"unknown@default@OpenAI",
+	} {
+		t.Run(modelRef, func(t *testing.T) {
+			_, _, _, _, err := NewModelProviderService().ResolveModelConfig(
+				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			)
+			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+			}
+			if !strings.Contains(err.Error(), "lookup failed: record not found") {
+				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+			}
+		})
+	}
+}
+
+// TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
+// resolution paths accept empty configuration and unrelated typed fields.
+func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	svc := NewModelProviderService()
+	resolvers := []struct {
+		name    string
+		resolve func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	}{
+		{
+			name: "model ID",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.GetModelConfigByID(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			},
+		},
+		{
+			name: "provider instance",
+			resolve: func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return svc.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			},
+		},
+	}
+	configs := []struct {
+		name        string
+		raw         string
+		wantRegion  string
+		wantBaseURL string
+	}{
+		{name: "empty", raw: ""},
+		{
+			name:        "unrelated typed fields",
+			raw:         `{"region":"us-east-1","base_url":"https://models.example.com","enabled":true,"retries":3,"options":{"mode":"custom"}}`,
+			wantRegion:  "us-east-1",
+			wantBaseURL: "https://models.example.com",
+		},
+	}
+	for _, config := range configs {
+		t.Run(config.name, func(t *testing.T) {
+			if err := db.Model(&entity.TenantModelInstance{}).
+				Where("id = ?", "instance-1").
+				Update("extra", config.raw).Error; err != nil {
+				t.Fatalf("update instance extra: %v", err)
+			}
+
+			for _, resolver := range resolvers {
+				t.Run(resolver.name, func(t *testing.T) {
+					driver, _, apiConfig, _, err := resolver.resolve()
+					if err != nil {
+						t.Fatalf("resolve model config: %v", err)
+					}
+					if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != config.wantRegion || apiConfig.BaseURL == nil || *apiConfig.BaseURL != config.wantBaseURL {
+						t.Fatalf("resolved driver/config = %v/%+v, want region %q and base URL %q", driver, apiConfig, config.wantRegion, config.wantBaseURL)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestMaxTokensFromModelInfo(t *testing.T) {
 	maxTokens := 4096
 	maxOutput := 1024
@@ -1117,5 +1208,43 @@ func TestModelProviderServiceResolveModelToolSupportPropagatesLookupFailure(t *t
 	}
 	if got, err := svc.ResolveModelToolSupport(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", got)
+	}
+}
+
+func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+
+	// Force the second delete (tenant_model_instance) to fail so the
+	// transaction must roll back the already-applied tenant_model delete.
+	if err := db.Callback().Delete().Before("gorm:DELETE").Register(
+		"test:fail_tenant_model_instance_delete",
+		func(tx *gorm.DB) {
+			if tx.Statement != nil && tx.Statement.Table == "tenant_model_instance" {
+				_ = tx.AddError(errors.New("forced tenant_model_instance delete failure"))
+			}
+		},
+	); err != nil {
+		t.Fatalf("failed to register failing delete callback: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Callback().Delete().Remove("test:fail_tenant_model_instance_delete")
+	})
+
+	code, err := NewModelProviderService().DropProviderInstances(t.Context(), "provider-1", "user-1", []string{"instance-1"})
+	if err == nil {
+		t.Fatalf("DropProviderInstances() error = nil, want forced instance delete failure")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("code = %v, want %v", code, common.CodeServerError)
+	}
+
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-1").Count(&modelCount).Error; err != nil {
+		t.Fatalf("failed to count tenant models: %v", err)
+	}
+	if modelCount != 1 {
+		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }

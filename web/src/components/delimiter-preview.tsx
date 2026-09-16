@@ -17,7 +17,10 @@
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from './ui/badge';
-import { parseDelimitersForDisplay } from '@/utils/delimiter-preview';
+import {
+  type ParsedDelimiter,
+  parseDelimitersForDisplay,
+} from '@/utils/delimiter-preview';
 
 interface Props {
   /** The current value of the delimiter field. */
@@ -36,8 +39,24 @@ interface Props {
  * `⇥` for tab, `␣` for space, etc.).
  */
 export function DelimiterPreview({ value }: Props) {
+  return <DelimiterBadges parsed={parseDelimitersForDisplay(value)} />;
+}
+
+/**
+ * Preview of the chunker operator's delimiter LIST (one delimiter per row).
+ * The caller parses the rows for the running backend, so the badges show what
+ * that backend will actually split at.
+ */
+export function DelimiterListPreview({
+  parsed,
+}: {
+  parsed: ParsedDelimiter[];
+}) {
+  return <DelimiterBadges parsed={parsed} />;
+}
+
+function DelimiterBadges({ parsed }: { parsed: ParsedDelimiter[] }) {
   const { t } = useTranslation();
-  const parsed = parseDelimitersForDisplay(value);
 
   if (parsed.length === 0) {
     return (

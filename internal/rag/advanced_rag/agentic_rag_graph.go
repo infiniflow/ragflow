@@ -3548,6 +3548,17 @@ func NewAgenticLoop() AgenticLoop {
 
 		// Surface the loop's outcome on the RunResponse.
 		resp.Slots = append(resp.Slots, st.SlotTable.State...)
+		// Slot citations: the chat pipeline's citation decoration rewrites
+		// leaked "[ID:Slot N]" markers with these evidence chunk ids. Plain
+		// ids (not positions) so the mapping survives the caller's later
+		// evidence-pool narrowing (selectEvidence).
+		if len(st.SlotEvidence) > 0 {
+			sc := make(map[string][]string, len(st.SlotEvidence))
+			for sid, ev := range st.SlotEvidence {
+				sc[sid] = ev.EvidenceIDs
+			}
+			resp.SlotCitations = sc
+		}
 		// Research findings: the SCA-reviewed draft. NOTE: this is the research
 		// draft, NOT the final answer — RAGTools.Run composes the final cited
 		// answer afterwards from KB.PreSummary (see composeFinalAnswer), exactly

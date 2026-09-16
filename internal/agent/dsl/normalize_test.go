@@ -48,6 +48,12 @@ func loadFixture(t *testing.T, name string) map[string]any {
 	return m
 }
 
+func TestComponentNameToNodeTypeRecognizesGeneralChunker(t *testing.T) {
+	if got := componentNameToNodeType("GeneralChunker"); got != "chunkerNode" {
+		t.Fatalf("GeneralChunker node type = %q, want chunkerNode", got)
+	}
+}
+
 // TestNormalize_NoopWhenGraphPresent guards against accidentally
 // clobbering a payload the front-end just saved. Any input with a
 // non-empty `graph.nodes` must round-trip with `graph` untouched.

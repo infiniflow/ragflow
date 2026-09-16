@@ -165,6 +165,11 @@ function buildUniqueTreeDataItems(
 
   for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
+    // Self-referencing relation records the node as its own parent, and the
+    // cycle walk below then spins on it forever (cursor never advances).
+    // This is a backend data integrity issue but we defend against it in the
+    // frontend so the UI never hangs.
+    if (relation.from === relation.to) continue;
 
     const parent = map.get(relation.from);
     const child = map.get(relation.to);
@@ -326,7 +331,7 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
           fill: isTimestamp
             ? 'rgb(var(--accent-primary))'
             : 'rgb(var(--text-primary))',
-          fontSize: 12,
+          fontSize: 24,
           ...(isTimestamp && {
             refX: '50%',
             refY: 0,
@@ -371,7 +376,10 @@ export function adaptMindMapToIndentedTree(
   const roots = buildUniqueTreeDataItems(
     template.entities,
     template.relations,
-    ['has_branch', 'has_sub_branch'],
+    // Python's mindmap structure-graph projection stores parent-child edges
+    // as generic "related" relations. Keep the branch spellings for older
+    // data, but accept the canonical Python form as well.
+    ['related', 'has_branch', 'has_sub_branch'],
   );
 
   const g6Roots = roots.map(treeDataItemToG6TreeData);

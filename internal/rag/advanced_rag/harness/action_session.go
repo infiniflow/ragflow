@@ -30,9 +30,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/RealAlexandreAI/json-repair"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/kaptinlin/jsonrepair"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/chat"
@@ -791,10 +791,9 @@ func stripRawControlChars(s string) string {
 // the single-object path cannot — unquoted object keys ({a: 1}), missing
 // separators between adjacent values ({"a":1} {"b":2} or "x" "y"), bare string
 // values ({name: foo}), and any combination the model emits across the full
-// output. It delegates to github.com/RealAlexandreAI/json-repair, the Go port of
-// the same json_repair library Python uses, so behavior matches exactly. It
-// returns nil when nothing parses, exactly as json_repair would yield a parse
-// error.
+// output. It delegates to github.com/kaptinlin/jsonrepair, which repairs
+// malformed JSON returned by LLMs. It returns nil when nothing parses, exactly
+// as json_repair would yield a parse error.
 func repairJSONWhole(text string) any {
 	cleaned := reThinkWrap.ReplaceAllString(text, "")
 	cleaned = reFencedJSON.ReplaceAllString(cleaned, "$1")
@@ -808,10 +807,10 @@ func repairJSONWhole(text string) any {
 	// value; quoting keys first sidesteps that and matches what Python's
 	// json_repair does internally. Already-valid JSON is left untouched.
 	normalized := quoteUnquotedKeys(cleaned)
-	repaired, err := jsonrepair.RepairJSON(normalized)
+	repaired, err := jsonrepair.Repair(normalized)
 	if err != nil {
 		// Fall back to the un-normalized input in case the heuristic mis-fired.
-		repaired, err = jsonrepair.RepairJSON(cleaned)
+		repaired, err = jsonrepair.Repair(cleaned)
 		if err != nil {
 			return nil
 		}

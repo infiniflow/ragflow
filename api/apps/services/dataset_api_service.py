@@ -348,15 +348,18 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         del req["connectors"]
 
     if req.get("parser_config"):
-        # Flatten parent_child config into children_delimiter for the execution layer
-        pc = req["parser_config"].get("parent_child", {})
-        if pc.get("use_parent_child"):
-            req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
-            req["parser_config"]["enable_children"] = pc.get("use_parent_child", True)
-        else:
-            req["parser_config"]["children_delimiter"] = ""
-            req["parser_config"]["enable_children"] = False
-            req["parser_config"]["parent_child"] = {}
+        # Flatten parent_child config only when the caller explicitly updates it.
+        # A partial parser_config update must preserve the existing parent-child
+        # execution settings instead of treating an omitted field as disabled.
+        if "parent_child" in req["parser_config"]:
+            pc = req["parser_config"]["parent_child"]
+            if pc.get("use_parent_child"):
+                req["parser_config"]["children_delimiter"] = pc.get("children_delimiter", "\n")
+                req["parser_config"]["enable_children"] = pc.get("use_parent_child", True)
+            else:
+                req["parser_config"]["children_delimiter"] = ""
+                req["parser_config"]["enable_children"] = False
+                req["parser_config"]["parent_child"] = {}
 
         req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
@@ -1343,7 +1346,12 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
-    n = int(req.get("check_num", 5))
+    raw_check_num = req.get("check_num", 5)
+    if type(raw_check_num) is not int:
+        return False, "`check_num` must be an integer."
+    n = raw_check_num
+    if n <= 0:
+        return False, "`check_num` must be greater than 0."
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=kb.tenant_id, kb_id=dataset_id, n=n)
     logging.info("check_embedding: dataset=%s sampled=%d chunks", dataset_id, len(samples))
 

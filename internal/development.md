@@ -211,8 +211,8 @@ Note: admin server must be started first; otherwise, api server will encounter e
 ```
 
 ```bash
-# Start admin server and migrate database
-./bin/ragflow_server --admin --migrate
+# Run database migrations (standalone action; does not start a server)
+./bin/ragflow_server --migrate
 ```
 
 ```bash
@@ -659,11 +659,6 @@ RAGFlow(api/default)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/t
 RAGFlow(api/default)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 ```
 
-- Insert data from JSON files
-```
-RAGFlow(api/default)> INSERT CHUNKS FROM FILE 'insert_kb.json'
-```
-
 - Update a chunk's content
 ```
 RAGFlow(api/default)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
@@ -706,10 +701,6 @@ RAGFlow(api/default)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'b
 RAGFlow(api/default)> CREATE METADATA STORE
 ```
 
-- Insert metadata from JSON files
-```
-RAGFlow(api/default)> INSERT METADATA FROM FILE 'insert_metadata.json'
-```
 - Set metadata for a document
 ```
 RAGFlow(api/default)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';

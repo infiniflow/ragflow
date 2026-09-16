@@ -34,6 +34,7 @@ var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -53,7 +54,9 @@ type DocumentStructureGraphTemplate struct {
 
 // DocumentStructureGraphResponse mirrors Python's {"templates": [...]}.
 type DocumentStructureGraphResponse struct {
-	Templates []DocumentStructureGraphTemplate `json:"templates"`
+	TotalEntities    int                              `json:"total_entities"`
+	ReturnedEntities int                              `json:"returned_entities"`
+	Templates        []DocumentStructureGraphTemplate `json:"templates"`
 }
 
 // graphRowSearch runs one raw-row search over the tenant's document index.
@@ -288,14 +291,13 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
 }
 
-// dedupEntities order-preserving by (lowercased name, type).
+// dedupEntities preserves the first entity for each lowercased name.
 func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
 	var out []StructureGraphNode
 	seen := map[string]bool{}
 	for _, e := range entities {
 		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
-		typ := strings.ToLower(strings.TrimSpace(graphStr(e["type"])))
-		key := name + "\x00" + typ
+		key := name
 		if name == "" || seen[key] {
 			continue
 		}
@@ -491,7 +493,8 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 			}
 		}
 		entities = dedupEntities(entities)
-		return entities, normalizeRelationEndpoints(entities, relations), nil
+		relations = normalizeRelationEndpoints(entities, relations)
+		return entities, relations, nil
 	}
 
 	// Large bucket: sample. A = top entities by mention_count_int desc.
@@ -758,6 +761,15 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	}
 
 	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
+	entityCountFilter := map[string]interface{}{
+		"doc_id":              []string{in.DocumentID},
+		"knowledge_graph_kwd": []string{"entity"},
+	}
+	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp.TotalEntities = int(entityTotal)
 
 	// keywords mode: name matching/KNN → matched entities' subgraph.
 	if in.Keywords != "" {
@@ -775,6 +787,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			Entities:     entities,
 			Relations:    relations,
 		})
+		resp.ReturnedEntities = len(entities)
 		return resp, nil
 	}
 
@@ -800,7 +813,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			break
 		}
 	}
-
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	templateDAO := dao.NewCompilationTemplateDAO()
@@ -829,7 +841,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			bucketScopes[bid] = scope
 		}
 	}
-
 	grouped := map[string]DocumentStructureGraphTemplate{}
 	for bid, meta := range bucketMetas {
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)
@@ -863,6 +874,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	for _, bid := range orderedIDs {
 		if g, ok := grouped[bid]; ok && (len(g.Entities) > 0 || len(g.Relations) > 0) {
 			resp.Templates = append(resp.Templates, g)
+			resp.ReturnedEntities += len(g.Entities)
 		}
 	}
 	return resp, nil
@@ -1185,6 +1197,32 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			"knowledge_graph_kwd": []string{"entity"},
 		}
 	}
+	if templateMeta == nil {
+		templateMeta = map[string]map[string]interface{}{}
+	}
+	templateMetaLoaded := make(map[string]bool, len(templateMeta))
+	for templateID := range templateMeta {
+		templateMetaLoaded[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	resolveBucket := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+		templateID := rowTemplateID(row)
+		if templateID != "" && !templateMetaLoaded[templateID] {
+			// Pipeline-produced rows can carry a template id even when the
+			// document parser config does not contain the corresponding group.
+			// Resolve it here as well as in the normal path so keyword searches
+			// expose the user-visible template name instead of the opaque id.
+			templateMetaLoaded[templateID] = true
+			if template, err := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); err == nil && template != nil {
+				templateMeta[templateID] = map[string]interface{}{
+					"template_id":   templateID,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+		}
+		return resolveGraphBucket(row, templateMeta, documentID)
+	}
 	topFields := append(append([]string{}, graphEntityFields...), "compilation_template_ids", "compile_kwd", "compilation_template_kind_kwd")
 
 	textQuery := strings.TrimSpace(graphTextQueryRE.ReplaceAllString(keywords, " "))
@@ -1218,9 +1256,17 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		row  map[string]interface{}
 		node StructureGraphNode
 	}) {
-		key := firstStringValue(candidate.row["id"])
-		if key == "" {
-			key = strings.ToLower(strings.TrimSpace(graphStr(candidate.node["name"]))) + "\x00" + strings.ToLower(strings.TrimSpace(graphStr(candidate.node["type"])))
+		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
+		template := rowTemplateID(candidate.row)
+		if template == "" {
+			template = firstStringValue(candidate.row["compilation_template_kind_kwd"])
+		}
+		if template == "" {
+			template = firstStringValue(candidate.row["compile_kwd"])
+		}
+		key := template + "\x00" + name
+		if name == "" {
+			key = firstStringValue(candidate.row["id"])
 		}
 		if key != "" {
 			if candidateSeen[key] {
@@ -1302,7 +1348,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 	}
 
 	scopeForTemplate := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
-		return resolveGraphBucket(row, templateMeta, documentID)
+		return resolveBucket(row)
 	}
 	bucketMeta, scope := scopeForTemplate(candidates[0].row)
 	bucketID := graphStr(bucketMeta["template_id"])

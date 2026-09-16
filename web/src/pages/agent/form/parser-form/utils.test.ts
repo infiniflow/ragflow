@@ -1,35 +1,9 @@
-import { ParseDocumentType } from '@/components/layout-recognize-form-field';
+import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import {
-  FileType,
-  ImageParseMethod,
-  initialParserValues,
-} from '../../constant/pipeline';
-import {
-  buildInitialParserSetup,
-  buildInitialParserValues,
-  isStaticParseMethod,
-} from './utils';
+import { initialParserValues } from '../../constant/pipeline';
+import { buildInitialParserSetup, buildInitialParserValues } from './utils';
 
 describe('parser-form utils', () => {
-  describe('isStaticParseMethod', () => {
-    it('recognizes the static parse methods', () => {
-      expect(isStaticParseMethod(ImageParseMethod.OCR)).toBe(true);
-      expect(isStaticParseMethod(ParseDocumentType.DeepDOC)).toBe(true);
-      expect(isStaticParseMethod(ParseDocumentType.PlainText)).toBe(true);
-      expect(isStaticParseMethod(ParseDocumentType.Docling)).toBe(true);
-      expect(isStaticParseMethod(ParseDocumentType.OpenDataLoader)).toBe(true);
-      expect(isStaticParseMethod(ParseDocumentType.TCADPParser)).toBe(true);
-    });
-
-    it('treats LLM model ids and empty values as non-static', () => {
-      expect(isStaticParseMethod('gpt-4o@OpenAI')).toBe(false);
-      expect(isStaticParseMethod('')).toBe(false);
-      expect(isStaticParseMethod(undefined)).toBe(false);
-      expect(isStaticParseMethod(null)).toBe(false);
-    });
-  });
-
   describe('buildInitialParserSetup', () => {
     it('returns a deep copy of the default setup', () => {
       const setup = buildInitialParserSetup(FileType.PDF, {});

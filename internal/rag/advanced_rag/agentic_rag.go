@@ -572,6 +572,12 @@ type RunResponse struct {
 	// Kbinfos carries the full accumulated state (including the lossless
 	// memory store) for callers that need more than the summary above.
 	Kbinfos *harness.Kbinfos
+	// SlotCitations maps a slot-table id ("0", "1", ...) to the evidence
+	// chunk ids that filled the slot. The chat pipeline's citation decoration
+	// uses it to rewrite leaked "[ID:Slot N]" markers into citations of the
+	// chunk the slot was filled from (those markers index the internal slot
+	// table — nothing the user can open).
+	SlotCitations map[string][]string
 }
 
 // AnswerSink forwards a partially produced answer while the model is still
@@ -1185,6 +1191,12 @@ func Rag(ctx context.Context, deps RAGTools, req harness.RunRequest) *RunRespons
 	// schema import.
 	if len(deps.Messages) == 0 {
 		deps.Messages = multimodalUserMessage(req.Question, req.TextAttachments, req.Images)
+	} else if req.TextAttachments != "" || len(req.Images) > 0 {
+		last := len(deps.Messages) - 1
+		if deps.Messages[last].Role == schema.User {
+			deps.Messages = append([]schema.Message(nil), deps.Messages...)
+			deps.Messages[last] = multimodalUserMessage(deps.Messages[last].Content, req.TextAttachments, req.Images)[0]
+		}
 	}
 	// Text attachments also feed the direct (non-outer) path, which appends them
 	// to the question (Python text_attachments_content handling); attachments

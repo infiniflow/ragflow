@@ -36,7 +36,7 @@ func NewCompilationTemplateGroupDAO() *CompilationTemplateGroupDAO {
 // ListSaved returns the tenant's valid groups with optional keyword/scope
 // filtering and ordering, mirroring Python list_saved(). Built-in groups
 // (empty tenant) are included so every tenant sees the catalogue.
-func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope, orderby string, desc bool) ([]*entity.CompilationTemplateGroup, error) {
+func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
 	q := db.WithContext(ctx).
 		Where("(tenant_id = ? OR tenant_id = '') AND status = ?", tenantID, string(entity.StatusValid))
 	if keywords != "" {
@@ -45,15 +45,8 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	if scope != "" {
 		q = q.Where("scope = ?", scope)
 	}
-	if orderby != "name" && orderby != "scope" && orderby != "create_time" && orderby != "update_time" {
-		orderby = "create_time"
-	}
-	dir := "asc"
-	if desc {
-		dir = "desc"
-	}
 	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(orderby + " " + dir).Find(&groups).Error; err != nil {
+	if err := q.Order(compilationTemplateGroupOrderClause(terms)).Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
@@ -63,7 +56,7 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 // with empty tenant_id are excluded), mirroring the Python list_saved() query
 // (cls.model.tenant_id == tenant_id). The merged /agents list uses this so
 // built-in catalogue groups do not leak into a tenant's canvas list.
-func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope, orderby string, desc bool) ([]*entity.CompilationTemplateGroup, error) {
+func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
 	q := db.WithContext(ctx).
 		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
 	if keywords != "" {
@@ -72,15 +65,8 @@ func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *
 	if scope != "" {
 		q = q.Where("scope = ?", scope)
 	}
-	if orderby != "name" && orderby != "scope" && orderby != "create_time" && orderby != "update_time" {
-		orderby = "create_time"
-	}
-	dir := "asc"
-	if desc {
-		dir = "desc"
-	}
 	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(orderby + " " + dir).Find(&groups).Error; err != nil {
+	if err := q.Order(compilationTemplateGroupOrderClause(terms)).Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil

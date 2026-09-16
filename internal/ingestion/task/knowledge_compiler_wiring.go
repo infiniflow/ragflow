@@ -363,7 +363,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
 		return nil
 	}
-	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"})
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
 }
 
 func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
@@ -544,7 +544,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		}
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID, maxTokens: llmMaxOutput},
+			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
 			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
 			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
@@ -560,10 +560,9 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 // kcChatInvoker adapts service.ModelProviderService.Chat to the
 // knowledge_compiler ChatInvoker seam.
 type kcChatInvoker struct {
-	svc       *service.ModelProviderService
-	tenantID  string
-	llmID     string
-	maxTokens int
+	svc      *service.ModelProviderService
+	tenantID string
+	llmID    string
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
@@ -578,23 +577,17 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	// Union of both sides: per-call overrides (temperature / max tokens), this
-	// branch's thinking toggle (claim extraction and raptor merge ask the
-	// reasoning model to answer WITHOUT chain-of-thought), and upstream's
-	// invoker-level generation cap, which the MaxTokens else-if below applies
-	// when the call site itself sets none.
-	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking || c.maxTokens > 0 {
+	// Build a provider config only for per-call overrides. In particular, do not
+	// inject the model's configured max_output as max_tokens: knowledge
+	// compilation call sites that need an output cap must set MaxTokens
+	// explicitly, while the model driver remains responsible for its default.
+	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
 		}
-		// Normal knowledge-compilation calls use the generation cap resolved
-		// from the selected model's max_output configuration. Specialized
-		// variants may still provide a smaller per-call cap.
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
-		} else if c.maxTokens > 0 {
-			config.MaxTokens = &c.maxTokens
 		}
 		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
 		// budget on visible COT before the structured reply; compilation should

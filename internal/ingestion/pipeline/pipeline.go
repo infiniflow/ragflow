@@ -720,17 +720,21 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		return nil
 	}
 	return func(ev runtime.ProgressEvent) {
+		componentName := ev.Component
+		if comp, ok := p.canvas.Components[ev.Component]; ok && comp.Obj.ComponentName != "" {
+			componentName = comp.Obj.ComponentName
+		}
 		var msg string
 		switch ev.Phase {
 		case runtime.PhaseEnter:
-			msg = ev.Component + " Started"
+			msg = componentName + " Started"
 		case runtime.PhaseExit:
-			msg = ev.Component + " Done"
+			msg = componentName + " Done"
 		case runtime.PhaseError:
 			if ev.Err != nil {
-				msg = ev.Component + ": " + ev.Err.Error()
+				msg = componentName + ": " + ev.Err.Error()
 			} else {
-				msg = ev.Component + " Error"
+				msg = componentName + " Error"
 			}
 		}
 		// Surface every component lifecycle event as a structured log line so

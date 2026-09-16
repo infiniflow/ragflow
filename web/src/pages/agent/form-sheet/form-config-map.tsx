@@ -48,6 +48,7 @@ import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
+import type { INextOperatorForm } from '../interface';
 
 export const FormConfigMap = {
   [Operator.Begin]: {
@@ -182,6 +183,11 @@ export const FormConfigMap = {
   },
   [Operator.Tokenizer]: {
     component: TokenizerForm,
+  },
+  [Operator.GeneralChunker]: {
+    component: (props: INextOperatorForm) => (
+      <TokenChunkerForm {...props} isGeneralChunker />
+    ),
   },
   [Operator.TokenChunker]: {
     component: TokenChunkerForm,

@@ -2,11 +2,10 @@ package parser
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
-func TestCSVParser_BasicHTMLAndJSON(t *testing.T) {
+func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	csvData := []byte("Name,Age,City\nAlice,30,New York\nBob,25,San Francisco\n")
 	p := NewCSVParser()
 
@@ -20,31 +19,41 @@ func TestCSVParser_BasicHTMLAndJSON(t *testing.T) {
 		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, "json")
 	}
 
-	if len(res.JSON) != 1 {
-		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
+	if len(res.JSON) != 3 {
+		t.Fatalf("len(res.JSON) = %d, want header plus two rows", len(res.JSON))
 	}
-
-	item := res.JSON[0]
-	if text, ok := item["text"].(string); !ok || !strings.Contains(text, "<table>") {
-		t.Fatal("item text should contain rendered <table>")
+	if res.JSON[0]["ck_type"] != "table_header" {
+		t.Fatalf("header ck_type = %v, want table_header", res.JSON[0]["ck_type"])
 	}
-	if item["doc_type_kwd"] != "table" {
-		t.Errorf("item doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
+	if res.JSON[1]["ck_type"] != "table_row" {
+		t.Fatalf("row ck_type = %v, want table_row", res.JSON[1]["ck_type"])
 	}
-	if item["ck_type"] != "table" {
-		t.Errorf("item ck_type = %v, want 'table'", item["ck_type"])
+	if res.JSON[1]["text"] != "Name：Alice; Age：30; City：New York ——Data" {
+		t.Errorf("row text = %v", res.JSON[1]["text"])
 	}
-	if item["sheet"] != "Data" {
-		t.Errorf("item sheet = %v, want 'Data'", item["sheet"])
+	if res.JSON[1]["sheet"] != "Data" || res.JSON[1]["sheet_index"] != 1 {
+		t.Errorf("row sheet metadata = %#v", res.JSON[1])
 	}
-	positions, ok := item["positions"].([][]float64)
+	positions, ok := res.JSON[1]["positions"].([][]float64)
 	if !ok || len(positions) == 0 {
-		t.Fatalf("item positions invalid: %v", item["positions"])
+		t.Fatalf("item positions invalid: %v", res.JSON[1]["positions"])
 	}
 	pos := positions[0]
 	// [sheet, rowStart, rowEnd, colStart, colEnd]
-	if len(pos) != 5 || pos[0] != 1 || pos[1] != 2 || pos[2] != 3 || pos[3] != 1 || pos[4] != 3 {
+	if len(pos) != 5 || pos[0] != 1 || pos[1] != 2 || pos[2] != 2 || pos[3] != 1 || pos[4] != 3 {
 		t.Errorf("unexpected positions: %v", pos)
+	}
+}
+
+func TestCSVParserHTML4ExcelRemainsAtomic(t *testing.T) {
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{"html4excel": true})
+	res := p.ParseWithResult(context.Background(), "qa.csv", []byte("Question,Answer\nQ1,A1\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["ck_type"] != "table" {
+		t.Fatalf("items = %#v, want one table item", res.JSON)
 	}
 }
 
@@ -63,11 +72,11 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 	if res.OutputFormat != "json" {
 		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
 	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
+	if len(res.JSON) != 2 {
+		t.Fatalf("len(res.JSON) = %d, want header plus row", len(res.JSON))
 	}
-	if text, ok := res.JSON[0]["text"].(string); !ok || !strings.Contains(text, "<table>") {
-		t.Fatal("item text should contain rendered <table>")
+	if res.JSON[1]["ck_type"] != "table_row" {
+		t.Fatalf("row ck_type = %v, want table_row", res.JSON[1]["ck_type"])
 	}
 }
 
@@ -85,40 +94,45 @@ func TestCSVParser_EmptyContent(t *testing.T) {
 	if res.OutputFormat != "json" {
 		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
 	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
-	}
-	item := res.JSON[0]
-	if item["doc_type_kwd"] != "table" {
-		t.Errorf("item doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
+	if len(res.JSON) != 0 {
+		t.Fatalf("len(res.JSON) = %d, want 0", len(res.JSON))
 	}
 }
 
-func TestCSVParser_Chunking(t *testing.T) {
-	// Header + 4 data rows, chunk size = 2
+func TestCSVParser_PreservesEveryDataRow(t *testing.T) {
+	// Header + 4 data rows; GeneralChunker owns any later token merge.
 	csvData := []byte("Header\nr1\nr2\nr3\nr4\n")
 	p := NewCSVParser()
-	p.ChunkRows = 2
-
 	res := p.ParseWithResult(context.Background(), "chunked.csv", csvData)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	// 4 data rows with chunk_rows=2 => 2 chunks
-	if len(res.JSON) != 2 {
-		t.Fatalf("len(res.JSON) = %d, want 2", len(res.JSON))
+	if len(res.JSON) != 5 {
+		t.Fatalf("len(res.JSON) = %d, want header plus four rows", len(res.JSON))
 	}
-
-	pos1 := res.JSON[0]["positions"].([][]float64)[0]
-	pos2 := res.JSON[1]["positions"].([][]float64)[0]
-
-	// chunk 1: rows 2..3
-	if pos1[1] != 2 || pos1[2] != 3 {
-		t.Errorf("chunk 1 row range: [%v, %v], want [2, 3]", pos1[1], pos1[2])
+	for i, item := range res.JSON[1:] {
+		pos := item["positions"].([][]float64)[0]
+		wantRow := float64(i + 2)
+		if pos[1] != wantRow || pos[2] != wantRow {
+			t.Errorf("row %d position = [%v, %v], want [%v, %v]", i, pos[1], pos[2], wantRow, wantRow)
+		}
 	}
-	// chunk 2: rows 4..5
-	if pos2[1] != 4 || pos2[2] != 5 {
-		t.Errorf("chunk 2 row range: [%v, %v], want [4, 5]", pos2[1], pos2[2])
+}
+
+func TestCSVParserKeepsVariableRowWidths(t *testing.T) {
+	p := NewCSVParser()
+	res := p.ParseWithResult(context.Background(), "mixed.csv", []byte("Question,Answer\nQ1,A1\nQ2,A2,extra\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 3 {
+		t.Fatalf("items = %d, want header plus two rows", len(res.JSON))
+	}
+	if got := len(res.JSON[1]["cells"].([]string)); got != 2 {
+		t.Fatalf("first data row width = %d, want 2", got)
+	}
+	if got := len(res.JSON[2]["cells"].([]string)); got != 3 {
+		t.Fatalf("second data row width = %d, want 3", got)
 	}
 }

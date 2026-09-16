@@ -40,6 +40,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // Service admin service layer
@@ -475,22 +476,27 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 }
 
 // GetUserDetails get user details
-func (s *Service) GetUserDetails(username string) (map[string]interface{}, error) {
-	// Query user by email/username
-	var user entity.User
-	err := dao.DB.Where("email = ?", username).First(&user).Error
+func (s *Service) GetUserDetails(ctx context.Context, username string) (map[string]interface{}, error) {
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
-		return nil, common.ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	return map[string]interface{}{
-		"id":           user.ID,
-		"email":        user.Email,
-		"nickname":     user.Nickname,
-		"is_active":    user.IsActive,
-		"is_superuser": user.IsSuperuser,
-		"create_time":  user.CreateTime,
-		"update_time":  user.UpdateTime,
+		"avatar":          user.Avatar,
+		"email":           user.Email,
+		"language":        user.Language,
+		"last_login_time": user.LastLoginTime,
+		"is_active":       user.IsActive,
+		"is_anonymous":    user.IsAnonymous,
+		"login_channel":   user.LoginChannel,
+		"status":          user.Status,
+		"is_superuser":    user.IsSuperuser,
+		"create_date":     user.CreateDate,
+		"update_date":     user.UpdateDate,
 	}, nil
 }
 
@@ -623,6 +629,18 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 
 		// 9. Delete chat sessions
 		if len(dialogIDs) > 0 {
+			var sessionIDs []string
+			if pluckErr := tx.Model(&entity.ChatSession{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
+				common.Warn("failed to get chat session IDs", zap.Error(pluckErr.Error))
+			}
+			if len(sessionIDs) > 0 {
+				if delErr := tx.Table("conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete conversation messages", zap.Error(delErr.Error))
+				}
+				if delErr := tx.Table("conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete conversation references", zap.Error(delErr.Error))
+				}
+			}
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
 				common.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
 			}
@@ -640,6 +658,18 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 
 		// 12. Delete API4Conversations
 		if len(dialogIDs) > 0 {
+			var sessionIDs []string
+			if pluckErr := tx.Model(&entity.API4Conversation{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
+				common.Warn("failed to get API conversation IDs", zap.Error(pluckErr.Error))
+			}
+			if len(sessionIDs) > 0 {
+				if delErr := tx.Table("api_4_conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete API conversation messages", zap.Error(delErr.Error))
+				}
+				if delErr := tx.Table("api_4_conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
+					common.Warn("failed to delete API conversation references", zap.Error(delErr.Error))
+				}
+			}
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
 				common.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
 			}
@@ -847,18 +877,6 @@ func (s *Service) RevokeAdmin(ctx context.Context, username string) error {
 	}
 
 	return nil
-}
-
-// GetUserDatasets get user datasets
-func (s *Service) GetUserDatasets(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user datasets
-	return []map[string]interface{}{}, nil
-}
-
-// GetUserAgents get user agents
-func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, error) {
-	// TODO: Implement get user agents
-	return []map[string]interface{}{}, nil
 }
 
 // API Key methods
