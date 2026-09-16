@@ -68,6 +68,12 @@ def _drawing_box(*texts, inner=""):
     </w:drawing>"""
 
 
+def _box_table(*rows):
+    """A table inside a text box; its text lives in `w:p` below `w:tbl`."""
+    cells = "".join(f"<w:tc>{_box_paragraphs(r)}</w:tc>" for r in rows)
+    return f"<w:tbl><w:tr>{cells}</w:tr></w:tbl>"
+
+
 def _vml_box(*texts):
     """A legacy VML text box — what older Word versions write."""
     return f"""<w:pict>
@@ -280,6 +286,20 @@ def test_nested_text_box_is_read_once(docx_modules):
 
     assert texts.count("OUTER") == 1
     assert texts.count("INNER") == 1
+
+
+@pytest.mark.p2
+def test_table_inside_a_text_box_is_extracted(docx_modules):
+    """A text box can hold a table; its cell text sits below `w:tbl`, so only
+    walking the box's direct `w:p` children would miss it."""
+
+    def builder(d):
+        _anchor(d.add_paragraph("PARAGRAPH TEXT"), _run(_drawing_box("BOX TITLE", inner=_box_table("CELL A", "CELL B"))))
+
+    secs, _ = docx_modules.parser()(_build_docx(builder))
+    texts = [text for text, _style in secs]
+
+    assert texts == ["PARAGRAPH TEXT", "BOX TITLE\nCELL A\nCELL B"]
 
 
 @pytest.mark.p2

@@ -70,9 +70,13 @@ class RAGFlowDocxParser:
                 if _has_ancestor(box, MC_FALLBACK_TAG):
                     continue
                 lines = []
-                for p in box.findall(qn("w:p")):
-                    # A text box may itself contain a text box; its `w:t` nodes are
+                # Descendants, not direct children: a text box can hold a table, and
+                # the text of its cells lives in `w:p` elements below the `w:tbl`.
+                for p in box.iter(qn("w:p")):
+                    # A text box may itself contain a text box; its paragraphs are
                     # collected when that inner box comes up in `boxes`.
+                    if _has_ancestor(p, TEXT_BOX_TAG, stop=box):
+                        continue
                     line = "".join(t.text or "" for t in p.iter(qn("w:t")) if not _has_ancestor(t, TEXT_BOX_TAG, stop=p))
                     if line.strip():
                         lines.append(line)
