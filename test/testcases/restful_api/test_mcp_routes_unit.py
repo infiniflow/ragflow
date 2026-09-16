@@ -194,7 +194,12 @@ def _load_mcp_api(monkeypatch):
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.TenantService = _DummyTenantService
+    user_service_mod.UserTenantService = SimpleNamespace(get_tenants_by_user_id=lambda _user_id: [])
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    canvas_service_mod = ModuleType("api.db.services.canvas_service")
+    canvas_service_mod.UserCanvasService = SimpleNamespace(query=lambda **_kwargs: [])
+    monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
 
     mcp_conn_mod = ModuleType("common.mcp_tool_call_conn")
     mcp_conn_mod.MCPToolCallSession = _DummyMCPToolCallSession
