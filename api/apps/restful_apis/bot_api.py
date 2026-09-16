@@ -358,6 +358,9 @@ async def retrieval_test_embedded(tenant_id=None):
     if not kb_ids:
         return get_json_result(data=False, message="Please specify dataset firstly.", code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
+    numeric_fields = ("similarity_threshold", "vector_similarity_weight", "top_k", "rerank_candidates_count")
+    if any(isinstance(req.get(field), bool) for field in numeric_fields):
+        return get_error_data_result("`top_k` and `rerank_candidates_count` must be integers and `similarity_threshold` and `vector_similarity_weight` must be numbers")
     try:
         similarity_threshold = float(req.get("similarity_threshold", 0.0))
         vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))

@@ -132,10 +132,11 @@ def _base_request(**overrides):
 
 @pytest.mark.p2
 @pytest.mark.parametrize("field", ["top_k", "rerank_candidates_count"])
-def test_non_integer_count_params_return_data_error_not_500(monkeypatch, field):
+@pytest.mark.parametrize("value", ["abc", True, False])
+def test_non_integer_count_params_return_data_error_not_500(monkeypatch, field, value):
     module = _load_bot_api(monkeypatch)
     REQUEST_JSON.clear()
-    REQUEST_JSON.update(_base_request(**{field: "abc"}))
+    REQUEST_JSON.update(_base_request(**{field: value}))
     res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
     assert res["code"] == 102
     assert "must be integers" in res["message"]
@@ -143,10 +144,11 @@ def test_non_integer_count_params_return_data_error_not_500(monkeypatch, field):
 
 @pytest.mark.p2
 @pytest.mark.parametrize("field", ["similarity_threshold", "vector_similarity_weight"])
-def test_non_numeric_weight_params_return_data_error_not_500(monkeypatch, field):
+@pytest.mark.parametrize("value", ["abc", True, False])
+def test_non_numeric_weight_params_return_data_error_not_500(monkeypatch, field, value):
     module = _load_bot_api(monkeypatch)
     REQUEST_JSON.clear()
-    REQUEST_JSON.update(_base_request(**{field: "abc"}))
+    REQUEST_JSON.update(_base_request(**{field: value}))
     res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
     assert res["code"] == 102
     assert "must be numbers" in res["message"]
