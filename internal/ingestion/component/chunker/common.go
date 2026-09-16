@@ -181,6 +181,16 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 // swizzle the count strategy in one place if needed.
 func tokenizeStr(s string) int { return tokenizer.NumTokensFromString(s) }
 
+// setChunkText replaces a chunk's body together with the token count that
+// describes it, so a caller cannot leave the two out of sync. TKNums is read as
+// a budget by the media window walk and by the merge thresholds, and it is
+// emitted as tk_nums, so a body replaced on its own silently misreports the
+// chunk's size. Merge paths that join several units keep their summed count.
+func setChunkText(ck *schema.ChunkDoc, text string) {
+	ck.Text = text
+	ck.TKNums = intPtr(tokenizeStr(text))
+}
+
 // toString normalises a chunk-map field to a string. Empty strings
 // for missing fields.
 func toString(v any) string {
@@ -235,13 +245,16 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 // stripped by the chunker, so this only covers the context, which is collected
 // from neighbouring units.
 //
+// The body goes through setChunkText, so TKNums keeps describing the body the
+// chunk carries now instead of the bare payload it replaced.
+//
 // Only media chunks carry context (attachMediaContext and
 // attachGeneralMediaContext write it), so text chunks pass through untouched.
 func materializeMediaContext(ck schema.ChunkDoc) schema.ChunkDoc {
 	if ck.ContextAbove == "" && ck.ContextBelow == "" {
 		return ck
 	}
-	ck.Text = removeTag(schema.ContextualText(ck))
+	setChunkText(&ck, removeTag(schema.ContextualText(ck)))
 	ck.ContextAbove = ""
 	ck.ContextBelow = ""
 	return ck

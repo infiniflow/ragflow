@@ -42,7 +42,7 @@ import (
 
 const ComponentNameGeneralChunker = "GeneralChunker"
 
-var generalSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
+var contextSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
 
 type generalChunkerParam struct {
 	ChunkTokenSize     int
@@ -467,7 +467,7 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		text := units[cursor].Text
 		tokens := generalUnitTokens(units[cursor])
 		if tokens >= remaining {
-			piece := takeGeneralContextSentence(text, remaining, above)
+			piece := takeContextSentences(text, remaining, above)
 			if above {
 				parts = append([]string{piece}, parts...)
 			} else {
@@ -496,8 +496,13 @@ func hasSpreadsheetIdentity(doc schema.ChunkDoc) bool {
 	return doc.TableID != "" || doc.Sheet != "" || doc.SheetIndex != nil
 }
 
-func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
-	sentences := splitGeneralContextSentences(text)
+// takeContextSentences returns the whole sentences at one end of text whose
+// combined token count reaches the budget, taking the last sentence even when
+// it overshoots: a sentence is the smallest unit a context window may cut at,
+// so a text without a sentence boundary comes back whole. Shared by the media
+// context collectors of both chunkers (general.go, token.go).
+func takeContextSentences(text string, budget int, fromEnd bool) string {
+	sentences := splitContextSentences(text)
 	if len(sentences) == 0 {
 		return text
 	}
@@ -526,8 +531,8 @@ func takeGeneralContextSentence(text string, budget int, fromEnd bool) string {
 	return text[:end]
 }
 
-func splitGeneralContextSentences(text string) []string {
-	indices := generalSentencePattern.FindAllStringIndex(text, -1)
+func splitContextSentences(text string) []string {
+	indices := contextSentencePattern.FindAllStringIndex(text, -1)
 	if len(indices) == 0 {
 		if text == "" {
 			return nil

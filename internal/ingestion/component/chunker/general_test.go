@@ -534,6 +534,11 @@ func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText
 			t.Errorf("media chunk must not carry %s after materialization: %+v", key, chunk)
 		}
 	}
+	// The folded body and its token count must agree: a media chunk is never
+	// merged, so TKNums is a count of exactly this text.
+	if count, ok := chunk["tk_nums"].(float64); !ok || count != float64(tokenizeStr(wantText)) {
+		t.Errorf("media chunk tk_nums = %v, want %d (its own text)", chunk["tk_nums"], tokenizeStr(wantText))
+	}
 }
 
 func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
