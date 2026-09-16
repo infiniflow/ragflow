@@ -61,27 +61,50 @@ def _load(module_name: str):
     return importlib.import_module(f"rag.app.{module_name}")
 
 
+def _deepdoc_and_chunker_modules():
+    """The `sys.modules` keys this module swaps out, as a fresh list."""
+    return [name for name in list(sys.modules) if name in ("deepdoc", "rag.app") or name.startswith(("deepdoc.", "rag.app."))]
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _real_pdf_parser():
-    """Swap the `deepdoc.parser.pdf_parser` stub for the real package, once.
+    """Swap the `deepdoc.parser.pdf_parser` stub for the real package, then put
+    the stub back.
 
     `test/unit_test/rag/conftest.py` installs that stub at conftest import time
     so the tests that only need `rag.nlp` do not pull in deepdoc. The chunkers
     here import `deepdoc.parser` for real, which fails against the stub, so drop
     it and let the import machinery find the package again.
 
-    The `rag.app` modules go with it, and neither half is put back. A `rag.app`
-    copy built while the stub was installed subclasses the stub's
-    `RAGFlowPdfParser`, so a later test patching `deepdoc.parser.PdfParser`
-    would patch a class that copy no longer inherits from. Dropping both, and
-    restoring neither, leaves the session with exactly one copy of deepdoc.
+    The `rag.app` modules go with it: a copy built against the stub subclasses
+    the stub's `RAGFlowPdfParser`, so leaving behind a copy that derives from
+    the other `deepdoc` would make a later `monkeypatch.setattr` on
+    `deepdoc.parser.PdfParser` land on a class that copy no longer inherits
+    from. Restoring on the way out — including the `app` attribute on the `rag`
+    package, which `sys.modules` alone does not cover — leaves the session
+    exactly as this module found it.
     """
-    for module_name in [name for name in list(sys.modules) if name == "deepdoc" or name.startswith("deepdoc.")]:
-        del sys.modules[module_name]
-    for module_name in [name for name in list(sys.modules) if name == "rag.app" or name.startswith("rag.app.")]:
-        del sys.modules[module_name]
+    saved_modules = {name: sys.modules[name] for name in _deepdoc_and_chunker_modules()}
+    rag_package = sys.modules.get("rag")
+    unset = object()
+    saved_app_attr = getattr(rag_package, "app", unset) if rag_package is not None else unset
+
+    for name in _deepdoc_and_chunker_modules():
+        del sys.modules[name]
     importlib.invalidate_caches()
     importlib.import_module("deepdoc.parser.pdf_parser")
+
+    yield
+
+    for name in _deepdoc_and_chunker_modules():
+        del sys.modules[name]
+    sys.modules.update(saved_modules)
+    if rag_package is not None:
+        if saved_app_attr is unset:
+            rag_package.__dict__.pop("app", None)
+        else:
+            rag_package.app = saved_app_attr
+    importlib.invalidate_caches()
 
 
 @pytest.fixture
