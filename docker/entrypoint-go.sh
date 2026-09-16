@@ -243,6 +243,18 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+function run_go_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [[ "${db_type}" == "gaussdb" || "${db_type}" == "gauss" ]]; then
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
+    echo "Running database migrations..."
+    bin/ragflow_server --migrate
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -270,21 +282,15 @@ run_with_restart() {
 }
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
-    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
-    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
-        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
-    else
-        #tools/scripts/run_migrations.sh
-        echo ""
-    fi
+    run_go_migrations
+    exit 0
 fi
+
+run_go_migrations
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer --migrate &
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
 fi
 
 sleep 5
@@ -298,7 +304,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
@@ -326,7 +332,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
                 "${MCP_JSON_RESPONSE_FLAG}"
             )
         fi
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate "${MCP_ARGS[@]}" &
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api "${MCP_ARGS[@]}" &
     fi
 fi
 
