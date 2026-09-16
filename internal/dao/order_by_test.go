@@ -88,3 +88,45 @@ func TestEntityAllowlistsDoNotLeakAcrossEntities(t *testing.T) {
 		t.Fatalf("user canvas accepted a knowledge base column: %q", got)
 	}
 }
+
+// The conversation list reached ORDER BY through string concatenation with no
+// allowlist at all, so these cases cover the column names it now refuses as well
+// as the empty value its callers still send.
+func TestChatSessionOrderClauseGuardsTheConversationList(t *testing.T) {
+	cases := []struct {
+		name    string
+		orderby string
+		desc    bool
+		want    string
+	}{
+		{name: "a column the list rows expose", orderby: "name", desc: true, want: "name DESC"},
+		{name: "empty keeps the previous default", orderby: "", want: "create_time ASC"},
+		{name: "empty keeps the requested direction", orderby: "", desc: true, want: "create_time DESC"},
+		{name: "a column of another entity", orderby: "size", want: "create_time ASC"},
+		{name: "an injected expression", orderby: "name; DROP TABLE conversation", desc: true, want: "create_time DESC"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chatSessionOrderClause(tc.orderby, tc.desc); got != tc.want {
+				t.Fatalf("chatSessionOrderClause(%q, %v) = %q, want %q", tc.orderby, tc.desc, got, tc.want)
+			}
+		})
+	}
+}
+
+// The template group list already refused unknown names before the rule moved
+// here, so these cases pin the set it accepted rather than the wider set its row
+// would allow.
+func TestCompilationTemplateGroupOrderClauseKeepsItsAcceptedColumns(t *testing.T) {
+	for _, column := range []string{"name", "scope", "create_time", "update_time"} {
+		if got := compilationTemplateGroupOrderClause(column, false); got != column+" ASC" {
+			t.Fatalf("template group rejected %q: %q", column, got)
+		}
+	}
+	for _, column := range []string{"id", "tenant_id", "description", "status", "create_date"} {
+		if got := compilationTemplateGroupOrderClause(column, true); got != "create_time DESC" {
+			t.Fatalf("template group accepted %q: %q", column, got)
+		}
+	}
+}

@@ -45,15 +45,8 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	if scope != "" {
 		q = q.Where("scope = ?", scope)
 	}
-	if orderby != "name" && orderby != "scope" && orderby != "create_time" && orderby != "update_time" {
-		orderby = "create_time"
-	}
-	dir := "asc"
-	if desc {
-		dir = "desc"
-	}
 	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(orderby + " " + dir).Find(&groups).Error; err != nil {
+	if err := q.Order(compilationTemplateGroupOrderClause(orderby, desc)).Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
@@ -72,15 +65,8 @@ func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *
 	if scope != "" {
 		q = q.Where("scope = ?", scope)
 	}
-	if orderby != "name" && orderby != "scope" && orderby != "create_time" && orderby != "update_time" {
-		orderby = "create_time"
-	}
-	dir := "asc"
-	if desc {
-		dir = "desc"
-	}
 	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(orderby + " " + dir).Find(&groups).Error; err != nil {
+	if err := q.Order(compilationTemplateGroupOrderClause(orderby, desc)).Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil

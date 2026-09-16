@@ -118,14 +118,7 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 	if name != "" {
 		query = query.Where("name = ?", name)
 	}
-	if orderby == "" {
-		orderby = "create_time"
-	}
-	if desc {
-		query = query.Order(orderby + " DESC")
-	} else {
-		query = query.Order(orderby + " ASC")
-	}
+	query = query.Order(chatSessionOrderClause(orderby, desc))
 	if pageSize > 0 {
 		if page < 1 {
 			page = 1

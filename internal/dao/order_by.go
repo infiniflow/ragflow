@@ -77,6 +77,28 @@ var chatOrderableColumns = map[string]struct{}{
 	"update_date":              {},
 }
 
+// chatSessionOrderableColumns allows the scalar conversation columns the list rows expose plus the base timestamp columns.
+var chatSessionOrderableColumns = map[string]struct{}{
+	"id":          {},
+	"dialog_id":   {},
+	"name":        {},
+	"user_id":     {},
+	"create_time": {},
+	"create_date": {},
+	"update_time": {},
+	"update_date": {},
+}
+
+// compilationTemplateGroupOrderableColumns keeps the four columns this list has
+// always accepted rather than every scalar column of the row, so moving the rule
+// here does not widen what callers can order by.
+var compilationTemplateGroupOrderableColumns = map[string]struct{}{
+	"name":        {},
+	"scope":       {},
+	"create_time": {},
+	"update_time": {},
+}
+
 // fileOrderableColumns allows the scalar file columns the list rows expose plus the base timestamp columns.
 var fileOrderableColumns = map[string]struct{}{
 	"id":          {},
@@ -169,6 +191,14 @@ var userCanvasOrderableColumns = map[string]struct{}{
 
 func chatOrderClause(orderby string, desc bool) string {
 	return orderClause(chatOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+}
+
+func chatSessionOrderClause(orderby string, desc bool) string {
+	return orderClause(chatSessionOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+}
+
+func compilationTemplateGroupOrderClause(orderby string, desc bool) string {
+	return orderClause(compilationTemplateGroupOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
 }
 
 func fileOrderClause(orderBy string, desc bool) string {
