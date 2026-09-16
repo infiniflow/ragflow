@@ -2164,14 +2164,23 @@ jobs:
           REDIS_PORT=$(_port REDIS_PORT)
           EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
           EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
+          # The runner is a container on a bridge network; the compose stack is
+          # published on the *host*, so we must reach it via host.docker.internal
+          # (127.0.0.1 here would hit the runner's own loopback and refuse).
+          INFINITY_READY=0
           for i in $(seq 1 60); do
-            if curl -sf --connect-timeout 5 "http://127.0.0.1:${INFINITY_HTTP_PORT}/" >/dev/null 2>&1; then
+            if curl -sf --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/" >/dev/null 2>&1; then
               echo "Infinity ready after ${i} tries"
+              INFINITY_READY=1
               break
             fi
             echo "Waiting for Infinity (${INFINITY_THRIFT_PORT})... ($i/60)"
             sleep 5
           done
+          if [ "${INFINITY_READY}" != "1" ]; then
+            echo "::error::Infinity did not become ready on host.docker.internal:${INFINITY_HTTP_PORT} after 60 tries"
+            exit 1
+          fi
 
       - name: Provide cl100k_base tiktoken vocabulary
         # The Go integration tests (tokenizer / service / graph) panic without the
@@ -2195,11 +2204,16 @@ jobs:
           fi
 
       - name: Run Go integration tests
-        # Override the repo's conf/service_conf.yaml endpoints with the host-mapped
-        # compose ports so the tests (which run on the runner host, not inside the
-        # compose network) reach the services. Engine-specific suites (ES/OceanBase/
-        # SereneDB) self-skip unless their opt-in env vars are set, so only the
-        # infinity + mysql/minio/redis/nats exercised paths run here.
+        # The Go tests run on the runner host (a container on a bridge network).
+        # The dependency stack is brought up via docker compose on the shared host
+        # daemon, so its ports are published on the *host*, not on the runner's
+        # loopback. We therefore point the tests at host.docker.internal:<port>
+        # (the runner's bridge to the host) — 127.0.0.1 would hit the runner's own
+        # loopback and get "connection refused". This mirrors the HOST_ADDRESS
+        # mechanic already used by the Python/SDK jobs in this file.
+        # Engine-specific suites (ES/OceanBase/SereneDB) self-skip unless their
+        # opt-in env vars are set, so only the infinity + mysql/minio/redis/nats
+        # exercised paths run here.
         # The ./test/api HTTP e2e suite requires a live ragflow server (ragflow-cpu),
         # which this job deliberately does NOT start (we drop the `cpu` profile to
         # avoid spinning up the heavy server image), so it is excluded here. Service-
@@ -2221,14 +2235,14 @@ jobs:
           REDIS_PORT=$(_port REDIS_PORT)
           EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
           EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
-          export RAGFLOW_INFINITY_URI="127.0.0.1:${INFINITY_THRIFT_PORT}"
-          export RAGFLOW_MYSQL_HOST=127.0.0.1
+          export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
+          export RAGFLOW_MYSQL_HOST=host.docker.internal
           export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
-          export RAGFLOW_MINIO_HOST="127.0.0.1:${MINIO_PORT}"
-          export RAGFLOW_REDIS_HOST="127.0.0.1:${REDIS_PORT}"
-          export RAGFLOW_NATS_HOST=127.0.0.1
+          export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
+          export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
+          export RAGFLOW_NATS_HOST=host.docker.internal
           export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
-          export RAGFLOW_CLICKHOUSE_HOST=127.0.0.1
+          export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal
           export RAGFLOW_CLICKHOUSE_PORT="${EXPOSE_CLICKHOUSE_TCP_PORT}"
           # The model-backed native DeepDoc tests under internal/deepdoc/**
           # register the in-process backend from within their own packages and are
