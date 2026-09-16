@@ -39,14 +39,24 @@ import (
 
 // fakeSink records document writes for coordinator tests.
 type fakeSink struct {
-	mu             sync.Mutex
-	delay          time.Duration
-	onUpsert       func(input service.DocumentUpsertInput)
-	current        int
-	maxConcurrent  int
-	calls          []service.DocumentUpsertInput
-	errBySourceID  map[string]error
-	autoParseByDoc map[string]bool
+	mu               sync.Mutex
+	delay            time.Duration
+	onUpsert         func(input service.DocumentUpsertInput)
+	current          int
+	maxConcurrent    int
+	calls            []service.DocumentUpsertInput
+	errBySourceID    map[string]error
+	autoParseByDoc   map[string]bool
+	refreshCalls     []string
+	metadataDeferred bool
+}
+
+// RefreshMetadata records a batch-end metadata refresh.
+func (s *fakeSink) RefreshMetadata(_ context.Context, tenantID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshCalls = append(s.refreshCalls, tenantID)
+	return nil
 }
 
 // Upsert records one document write.
@@ -78,7 +88,7 @@ func (s *fakeSink) Upsert(ctx context.Context, input service.DocumentUpsertInput
 	if err := s.errBySourceID[input.SourceDocument.SourceID]; err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
-	return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionAdded}, nil
+	return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionAdded, MetadataDeferred: s.metadataDeferred}, nil
 }
 
 // callCount returns the number of sink calls.
@@ -1027,6 +1037,64 @@ func TestAutoParseFlagFlowsToSink(t *testing.T) {
 	}
 	if sink.autoParseByDoc["source-1"] {
 		t.Fatalf("auto_parse flowed as true, want false")
+	}
+}
+
+// TestSyncBatchRefreshesMetadataOnce verifies a batch whose documents wrote
+// deferred metadata triggers exactly one tenant metadata index refresh at the
+// end of the batch instead of one refresh per row.
+func TestSyncBatchRefreshesMetadataOnce(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("set running task: %v", err)
+	}
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{
+		{Documents: []syncerconnector.SourceDocument{
+			{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: time.Now()},
+			{SourceID: "source-2", Blob: []byte("y"), UpdatedAt: time.Now()},
+		}},
+	}}
+	sink := &fakeSink{metadataDeferred: true}
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(sink.refreshCalls) != 1 || sink.refreshCalls[0] != "tenant-1" {
+		t.Fatalf("refresh calls = %v, want [tenant-1]", sink.refreshCalls)
+	}
+}
+
+// TestSyncBatchSkipsRefreshWithoutDeferredMetadata verifies batches that did
+// not write deferred metadata do not trigger a refresh.
+func TestSyncBatchSkipsRefreshWithoutDeferredMetadata(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("set running task: %v", err)
+	}
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{SyncBatches: []syncerconnector.SyncBatch{
+		{Documents: []syncerconnector.SourceDocument{{SourceID: "source-1", Blob: []byte("x"), UpdatedAt: time.Now()}}},
+	}}
+	sink := &fakeSink{} // metadataDeferred stays false
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(sink.refreshCalls) != 0 {
+		t.Fatalf("refresh calls = %v, want none", sink.refreshCalls)
 	}
 }
 

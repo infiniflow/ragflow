@@ -41,18 +41,30 @@ type DocumentUpsertInput struct {
 	NewID          string
 	SourceDocument syncerconnector.SourceDocument
 	AutoParse      bool
+	// DeferMetadataRefresh defers the document-engine metadata refresh to the
+	// end of the batch. Connector ingest sets it so a large sync refreshes the
+	// tenant metadata index once per batch instead of once per row, keeping
+	// agent retrieval from queueing behind per-row refreshes.
+	DeferMetadataRefresh bool
 }
 
 // DocumentUpsertResult describes one sink write result.
 type DocumentUpsertResult struct {
 	DocID  string
 	Action string
+	// MetadataDeferred reports whether metadata was written with a deferred
+	// refresh and the batch owner must call DocumentSink.RefreshMetadata.
+	MetadataDeferred bool
 }
 
 // DocumentSink stores one normalized source document.
 type DocumentSink interface {
 	// Upsert stores one normalized source document.
 	Upsert(ctx context.Context, input DocumentUpsertInput) (DocumentUpsertResult, error)
+	// RefreshMetadata makes deferred metadata writes searchable. The sync
+	// runner calls it once per batch when any document in the batch reported
+	// MetadataDeferred. Engines without deferred writes no-op.
+	RefreshMetadata(ctx context.Context, tenantID string) error
 }
 
 // RetryableError marks a failure as safe to retry.

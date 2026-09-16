@@ -336,6 +336,7 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 	stats := service.SyncStats{}
 
 	var firstErr error
+	metadataDeferred := false
 	lastCancelCheck := time.Time{}
 	for _, sourceDocument := range documents {
 		if err := ctx.Err(); err != nil {
@@ -355,6 +356,18 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 			continue
 		}
 		stats.AddResult(result)
+		if result.MetadataDeferred {
+			metadataDeferred = true
+		}
+	}
+	if metadataDeferred {
+		// Make the batch's metadata writes searchable with one refresh instead
+		// of one per row. A failure is logged but does not fail the batch: the
+		// rows are already persisted and the engine's periodic refresh (or the
+		// next sync) makes them visible.
+		if err := r.sink.RefreshMetadata(ctx, taskContext.Connector.TenantID); err != nil {
+			common.Warn("refresh tenant metadata index after sync batch failed", zap.Error(err), zap.String("tenant_id", taskContext.Connector.TenantID))
+		}
 	}
 	return stats, firstErr
 }
@@ -420,12 +433,13 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 	}
 
 	return r.sink.Upsert(ctx, service.DocumentUpsertInput{
-		TaskContext:    taskContext,
-		SourceType:     sourceType,
-		DocumentID:     resolved.DocID,
-		LegacyID:       resolved.LegacyID,
-		NewID:          resolved.NewID,
-		SourceDocument: sourceDocument,
-		AutoParse:      taskContext.Connector2Kb.AutoParse != "0",
+		TaskContext:          taskContext,
+		SourceType:           sourceType,
+		DocumentID:           resolved.DocID,
+		LegacyID:             resolved.LegacyID,
+		NewID:                resolved.NewID,
+		SourceDocument:       sourceDocument,
+		AutoParse:            taskContext.Connector2Kb.AutoParse != "0",
+		DeferMetadataRefresh: true,
 	})
 }

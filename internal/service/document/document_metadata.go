@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/service"
 	"reflect"
 	"regexp"
@@ -34,32 +35,71 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
-// SetDocumentMetadata sets metadata for a document in the document engine
+// SetDocumentMetadata sets metadata for a document in the document engine.
 func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
+	_, err := s.setDocumentMetadata(ctx, docID, meta, false)
+	return err
+}
+
+// setDocumentMetadata writes document metadata, optionally deferring the
+// engine refresh so connector ingest can refresh the tenant index once per
+// batch. The returned boolean reports whether the write was deferred (true)
+// and the caller must refresh the tenant metadata index afterwards. Engines
+// without a deferred write path (SQL-backed engines that are immediately
+// searchable) always use the immediate path and return false.
+func (s *DocumentService) setDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}, deferRefresh bool) (bool, error) {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
-		return fmt.Errorf("document not found: %w", err)
+		return false, fmt.Errorf("document not found: %w", err)
 	}
 
 	// Get tenant ID
 	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
+		return false, fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
 	// Ensure the metadata store exists before writing (service-layer
 	// create-on-first-write logic; the engine layer assumes it exists).
 	if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
-		return fmt.Errorf("failed to ensure metadata store: %w", err)
+		return false, fmt.Errorf("failed to ensure metadata store: %w", err)
 	}
 
 	meta = splitCombinedDocumentMetadataValues(meta)
+	if deferRefresh {
+		if writer, ok := s.docEngine.(engine.DeferredMetadataWriter); ok {
+			if err := writer.UpdateMetadataDeferred(ctx, docID, doc.KbID, meta, tenantID); err != nil {
+				return false, fmt.Errorf("failed to update metadata: %w", err)
+			}
+			return true, nil
+		}
+	}
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
-		return fmt.Errorf("failed to update metadata: %w", err)
+		return false, fmt.Errorf("failed to update metadata: %w", err)
 	}
 
+	return false, nil
+}
+
+// RefreshSyncMetadataIndex forces a refresh of the tenant metadata index after
+// a deferred batch of sync metadata writes. It is a no-op for engines without
+// a deferred write path because their metadata is immediately searchable.
+func (s *DocumentService) RefreshSyncMetadataIndex(ctx context.Context, tenantID string) error {
+	writer, ok := s.docEngine.(engine.DeferredMetadataWriter)
+	if !ok {
+		return nil
+	}
+	if err := writer.RefreshMetadataIndex(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to refresh metadata index: %w", err)
+	}
 	return nil
+}
+
+// RefreshMetadata implements service.DocumentSink so the sync runner can make
+// a batch of deferred metadata writes searchable with a single refresh.
+func (s *DocumentService) RefreshMetadata(ctx context.Context, tenantID string) error {
+	return s.RefreshSyncMetadataIndex(ctx, tenantID)
 }
 
 // DeleteDocumentMetadata deletes metadata keys for a document in the document engine

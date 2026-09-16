@@ -89,6 +89,19 @@ func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error
 // InsertMetadata inserts documents into tenant's metadata index
 // If a document with the same id and kb_id already exists, it will be updated with the new value
 func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	return e.insertMetadata(ctx, metadata, tenantID, "wait_for")
+}
+
+// InsertMetadataDeferred inserts metadata without forcing an ES refresh.
+// Connector ingest uses it together with UpdateMetadataDeferred so a large
+// sync refreshes the tenant metadata index once per batch instead of once per
+// row, keeping agent retrieval responsive. Call RefreshMetadataIndex after the
+// batch to make the writes searchable.
+func (e *Engine) InsertMetadataDeferred(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+	return e.insertMetadata(ctx, metadata, tenantID, "")
+}
+
+func (e *Engine) insertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string, refresh string) ([]string, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.InsertMetadata called", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
 
@@ -133,10 +146,11 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		}
 	}
 
-	// Execute bulk request
+	// Execute bulk request. An empty refresh string means "no refresh" so the
+	// write is not made searchable until RefreshMetadataIndex is called.
 	req := esapi.BulkRequest{
 		Body:    bytes.NewReader(buf.Bytes()),
-		Refresh: "wait_for",
+		Refresh: refresh,
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -178,6 +192,18 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 // The metadata index must already exist; the service layer is responsible
 // for creating it before writing.
 func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+	return e.updateMetadata(ctx, docID, datasetID, metaFields, tenantID, true)
+}
+
+// UpdateMetadataDeferred updates metadata without forcing an ES refresh.
+// Connector ingest uses it so a large sync refreshes the tenant metadata index
+// once per batch instead of once per row. Call RefreshMetadataIndex after the
+// batch to make the writes searchable.
+func (e *Engine) UpdateMetadataDeferred(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+	return e.updateMetadata(ctx, docID, datasetID, metaFields, tenantID, false)
+}
+
+func (e *Engine) updateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string, refresh bool) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
@@ -217,7 +243,7 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 	req := esapi.UpdateByQueryRequest{
 		Index:   []string{indexName},
 		Body:    bytes.NewReader(updateBytes),
-		Refresh: func(b bool) *bool { return &b }(true),
+		Refresh: &refresh,
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -238,19 +264,43 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 		return fmt.Errorf("failed to parse update response: %w", err)
 	}
 	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
-		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
+		// New document: keep the refresh mode consistent so a deferred batch
+		// does not fall back to a per-row wait_for insert.
+		insertFn := e.InsertMetadata
+		if !refresh {
+			insertFn = e.InsertMetadataDeferred
+		}
+		if _, err := insertFn(ctx, []map[string]interface{}{
 			{
 				"id":          docID,
 				"kb_id":       datasetID,
 				"meta_fields": metaFields,
 			},
-		}, tenantID)
-		if err != nil {
+		}, tenantID); err != nil {
 			return fmt.Errorf("failed to insert metadata: %w", err)
 		}
 	}
 
 	common.Info("ElasticsearchConnection.UpdateMetadata completes", zap.String("index_name", indexName), zap.String("docID", docID))
+	return nil
+}
+
+// RefreshMetadataIndex forces an ES refresh of the tenant metadata index so
+// deferred metadata writes become immediately searchable. It is the batched
+// counterpart of InsertMetadataDeferred/UpdateMetadataDeferred.
+func (e *Engine) RefreshMetadataIndex(ctx context.Context, tenantID string) error {
+	indexName := buildMetadataIndexName(tenantID)
+	common.Info("ElasticsearchConnection.RefreshMetadataIndex", zap.String("index_name", indexName))
+	req := esapi.IndicesRefreshRequest{Index: []string{indexName}}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to refresh metadata index %s: %w", indexName, err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch refresh metadata index %s returned error: %s, body: %s", indexName, res.Status(), string(bodyBytes))
+	}
 	return nil
 }
 

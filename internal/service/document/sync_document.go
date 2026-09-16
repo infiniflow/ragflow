@@ -69,10 +69,11 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 		return service.DocumentUpsertResult{}, err
 	}
 	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
-		if err := s.ensureSyncDocumentPostWrite(ctx, input, existing); err != nil {
+		metadataDeferred, err := s.ensureSyncDocumentPostWrite(ctx, input, existing)
+		if err != nil {
 			return service.DocumentUpsertResult{}, err
 		}
-		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionSkipped}, nil
+		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionSkipped, MetadataDeferred: metadataDeferred}, nil
 	}
 
 	// store location
@@ -129,11 +130,12 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// write metadata and do `auto_parse` (or not)
-	if err = s.afterSyncDocumentUpsert(ctx, input, doc, false); err != nil {
+	metadataDeferred, err := s.afterSyncDocumentUpsert(ctx, input, doc, false)
+	if err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 
-	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionAdded}, nil
+	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionAdded, MetadataDeferred: metadataDeferred}, nil
 }
 
 // updateSyncDocument updates an existing synced document and file-manager row.
@@ -164,10 +166,11 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, err
 	}
 	// write metadata and do `auto_parse`
-	if err := s.afterSyncDocumentUpsert(ctx, input, doc, true); err != nil {
+	metadataDeferred, err := s.afterSyncDocumentUpsert(ctx, input, doc, true)
+	if err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
-	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated}, nil
+	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated, MetadataDeferred: metadataDeferred}, nil
 }
 
 // publishSyncDocument publishes the staged object key after the document row exists.
@@ -184,41 +187,57 @@ func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.D
 }
 
 // afterSyncDocumentUpsert writes metadata and optionally enqueues parsing.
-func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool) error {
+// The returned boolean reports whether metadata was written with a deferred
+// refresh, in which case the batch owner must refresh the tenant index.
+func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool) (bool, error) {
 	// write metadata
+	metadataDeferred := false
 	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
-		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
-			return err
+		var err error
+		metadataDeferred, err = s.setDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata, input.DeferMetadataRefresh)
+		if err != nil {
+			return false, err
 		}
 	}
 	// do auto_parse if enabled
 	if !input.AutoParse {
-		return nil
+		return metadataDeferred, nil
 	}
-	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun})
+	if err := s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun}); err != nil {
+		return metadataDeferred, err
+	}
+	return metadataDeferred, nil
 }
 
 // ensureSyncDocumentPostWrite retries dependent work before an unchanged document is skipped.
-func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document) error {
+// The returned boolean reports whether metadata was written with a deferred
+// refresh, in which case the batch owner must refresh the tenant index.
+func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document) (bool, error) {
 	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
-		return err
+		return false, err
 	}
+	metadataDeferred := false
 	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
-		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
-			return err
+		var err error
+		metadataDeferred, err = s.setDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata, input.DeferMetadataRefresh)
+		if err != nil {
+			return false, err
 		}
 	}
 	if !input.AutoParse {
-		return nil
+		return metadataDeferred, nil
 	}
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return err
+		return metadataDeferred, err
 	}
 	if task != nil {
-		return nil
+		return metadataDeferred, nil
 	}
-	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{})
+	if err := s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{}); err != nil {
+		return metadataDeferred, err
+	}
+	return metadataDeferred, nil
 }
 
 // updateSyncDocumentFile updates the file-manager row linked to a synced document.
