@@ -20,7 +20,6 @@ import csv
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
-from openpyxl import load_workbook
 
 from common.constants import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
@@ -35,10 +34,14 @@ from common.float_utils import get_float
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
+        # The workbook has to be opened with data_only, or a cell holding a formula
+        # yields `=CONCATENATE(...)` instead of the answer Excel computed for it.
+        # RAGFlowExcelParser._load_excel_to_workbook does that, and carries the CSV
+        # and pandas fallbacks every other Excel path in the repo relies on.
         if binary is None:
-            wb = load_workbook(fnm)
-        else:
-            wb = load_workbook(BytesIO(binary))
+            with open(fnm, "rb") as f:
+                binary = f.read()
+        wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
