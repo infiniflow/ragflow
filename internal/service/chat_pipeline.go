@@ -198,6 +198,9 @@ func (s *ChatPipelineService) AsyncChat(
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
+	if kwargs == nil {
+		kwargs = make(map[string]interface{})
+	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
 	out := make(chan AsyncChatResult, 16)
@@ -479,6 +482,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// - "knowledge" is always skipped (system-injected, not caller-supplied).
 		// - Missing non-optional param => return error immediately.
 		// - Missing optional param => replace "{key}" placeholder with space.
+		kwargs["date"] = time.Now().UTC().Format(time.RFC3339)
 		systemPrompt, _ := promptConfig["system"].(string)
 		for _, p := range parameters {
 			pMap, ok := p.(map[string]interface{})
@@ -755,7 +759,7 @@ func (s *ChatPipelineService) AsyncChat(
 					for k, v := range kwargs {
 						kws[k] = v
 					}
-					kws["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
+					kws["date"] = time.Now().UTC().Format(time.RFC3339)
 					if _, ok := kws["knowledge"]; !ok {
 						kws["knowledge"] = harnessBoundDatasetNames(kbs)
 					}
@@ -1455,7 +1459,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		promptConfig := chat.PromptConfig
 		systemPrompt := ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = sp
+			systemPrompt = strings.ReplaceAll(sp, "{date}", time.Now().UTC().Format(time.RFC3339))
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).
