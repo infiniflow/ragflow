@@ -561,7 +561,17 @@ func main() {
 // A missing marker, or a version on either side that cannot be parsed, never
 // blocks startup: without a usable comparison there is no evidence that the
 // database is ahead of the code.
+//
+// RAGFLOW_DEV_MODE turns the check off entirely. A development build can carry
+// a marker for a release that is not tagged yet, in which case the comparison
+// would reject the build that wrote the marker.
 func checkDatabaseVersion(ctx context.Context) error {
+	if common.DevModeEnabled() {
+		common.Warn("Development mode is enabled, skipping the database downgrade check",
+			zap.String("env", common.EnvRAGFlowDevMode))
+		return nil
+	}
+
 	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
 	if err != nil {
 		return fmt.Errorf("read database version marker: %w", err)

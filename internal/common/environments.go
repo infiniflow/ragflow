@@ -33,6 +33,7 @@ func GetEnvSmall(key string) string {
 // environment variables
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
+	EnvRAGFlowDevMode                    = "RAGFLOW_DEV_MODE"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
