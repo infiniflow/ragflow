@@ -38,6 +38,10 @@ type PipelineOperatorTabsProps = {
   // Dataset-side embeddings show a fixed set of parser file types; only the
   // canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  // Dataset-declared table parser. Table column settings belong to that parser,
+  // so a dataset-scoped caller passes its chunk method here to keep the column
+  // controls off every other dataset; undefined keeps the canvas behaviour.
+  isTableParser?: boolean;
 };
 
 const PipelineOperatorTabs = ({
@@ -48,6 +52,7 @@ const PipelineOperatorTabs = ({
   operatorValues,
   operatorFormErrors,
   fixedFileFormats,
+  isTableParser,
 }: PipelineOperatorTabsProps) => {
   const getOperatorId = useCallback((node: RAGFlowNodeType) => {
     return (
@@ -110,6 +115,7 @@ const PipelineOperatorTabs = ({
               onValuesChange={handleValuesChange(node)}
               externalErrors={operatorFormErrors?.[getOperatorId(node)]}
               fixedFileFormats={fixedFileFormats}
+              isTableParser={isTableParser}
             />
           </TabsContent>
         );

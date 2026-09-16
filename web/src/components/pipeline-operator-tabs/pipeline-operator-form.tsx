@@ -33,6 +33,8 @@ type PipelineOperatorFormProps = {
   // Dataset-side embeddings show a fixed set of parser file types; only the
   // canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  // Dataset-declared table parser, forwarded to the parser form.
+  isTableParser?: boolean;
 };
 
 const PipelineOperatorForm = ({
@@ -40,6 +42,7 @@ const PipelineOperatorForm = ({
   onValuesChange,
   externalErrors,
   fixedFileFormats,
+  isTableParser,
 }: PipelineOperatorFormProps) => {
   const operatorType = getOperatorType(
     (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
@@ -61,6 +64,7 @@ const PipelineOperatorForm = ({
           hideOutputs
           externalErrors={externalErrors}
           fixedFileFormats={fixedFileFormats}
+          isTableParser={isTableParser}
         />
       );
     case Operator.TokenChunker:

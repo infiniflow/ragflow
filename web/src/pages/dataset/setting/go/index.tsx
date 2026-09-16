@@ -97,6 +97,11 @@ export default function DatasetSetting() {
 
   const isPipelineMode = parseType === ParseType.Pipeline;
   const selectedPipelineId = isPipelineMode ? pipelineId : builtinPipelineId;
+  // Table column settings only apply to the table parser. The dataset keeps its
+  // declared parser_id even after switching to a canvas pipeline, so that value
+  // (not the document-level one) is the dataset's chunk method.
+  const isTableParser =
+    (knowledgeDetails?.chunk_method ?? knowledgeDetails?.parser_id) === 'table';
   // The saved parser_config only belongs to the pipeline (and parse type) it
   // was saved with — expose its id only while that exact pipeline is selected,
   // so that after switching, defaults come purely from the new pipeline's DSL.
@@ -240,6 +245,7 @@ export default function DatasetSetting() {
                           | undefined
                       }
                       fixedFileFormats
+                      isTableParser={isTableParser}
                     />
                   )}
 

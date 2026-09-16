@@ -9,6 +9,14 @@ export function buildFieldNameWithPrefix(name: string, prefix: string) {
   return `${prefix}.${name}`;
 }
 
+// Table column settings only take effect on the table parser, so a
+// dataset-scoped caller passes its chunk method and gets the fields hidden for
+// every other one. A caller that passes nothing (the canvas editor, which owns
+// no dataset) keeps the fields visible, preserving the canvas behaviour.
+export function isTableColumnSettingsVisible(isTableParser?: boolean) {
+  return isTableParser !== false;
+}
+
 // Builds the default setup for a file type being added to the parser form,
 // prefilling the tenant default model for types that have one (video/audio).
 export function buildInitialParserSetup(

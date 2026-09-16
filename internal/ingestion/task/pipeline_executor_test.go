@@ -1133,6 +1133,139 @@ func TestInjectTableColumnOverride_DocumentConfigOverridesPipelineDefaults(t *te
 	}
 }
 
+func TestIsTableParserRun(t *testing.T) {
+	cases := []struct {
+		name  string
+		docID string
+		kbID  string
+		want  bool
+	}{
+		{"document parser_id wins", "table", "naive", true},
+		{"document parser_id is other", "naive", "table", false},
+		{"canvas mode inherits dataset parser_id", "", "table", true},
+		{"canvas mode over a non-table dataset", "", "naive", false},
+		{"no parser id anywhere", "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := makeTaskCtx()
+			taskCtx.Doc.ParserID = tc.docID
+			taskCtx.KB.ParserID = tc.kbID
+			svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+			if got := svc.isTableParserRun(); got != tc.want {
+				t.Fatalf("isTableParserRun() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A dataset that carries table column settings must not push them into a
+// document parsed by another parser: Python gates the same merge on
+// parser_id == "table" (rag/utils/table_es_metadata.py:35).
+func TestApplyTableColumnOverride_NonTableRunIgnoresDatasetConfig(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = "naive"
+	taskCtx.Doc.ParserConfig = entity.JSONMap{"existing": "value"}
+	taskCtx.KB.ParserConfig = entity.JSONMap{
+		"table_column_mode":  "manual",
+		"table_column_names": []interface{}{"Name"},
+	}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}{"existing": "value"}, dsl)
+
+	if _, exists := got["Parser:Table"]; exists {
+		t.Fatalf("non-table run must not receive table column settings: %#v", got)
+	}
+	if _, exists := got["table_column_mode"]; exists {
+		t.Fatalf("dataset table settings must not be merged into a non-table document: %#v", got)
+	}
+}
+
+// A canvas-pipeline table dataset clears document.parser_id but keeps the
+// dataset's own parser_id, so the run must still be treated as a table run.
+func TestApplyTableColumnOverride_CanvasTableRunInheritsDatasetParser(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc.ParserID = ""
+	taskCtx.Doc.ParserConfig = entity.JSONMap{}
+	taskCtx.KB.ParserID = "table"
+	taskCtx.KB.ParserConfig = entity.JSONMap{
+		"table_column_mode":  "manual",
+		"table_column_names": []interface{}{"Name"},
+	}
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0)
+
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+	got := svc.applyTableColumnOverride(map[string]interface{}{}, dsl)
+
+	spreadsheet, ok := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected an injected spreadsheet entry, got %#v", got)
+	}
+	if spreadsheet["column_mode"] != "manual" {
+		t.Errorf("column_mode = %#v, want manual", spreadsheet["column_mode"])
+	}
+	if !reflect.DeepEqual(spreadsheet["column_names"], []interface{}{"Name"}) {
+		t.Errorf("column_names = %#v, want [Name]", spreadsheet["column_names"])
+	}
+}
+
+// A document whose parser is not the table parser must survive a reparse with
+// its metadata intact, even when the document or its dataset still carries
+// table column settings: the strip pass deletes metadata entries named after
+// the configured columns and is table-only (Python post_processor.py:69).
+func TestProcessOutput_NonTableParserKeepsMetadata(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	name := "report.pdf"
+	doc := &entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{"table_column_mode": "manual", "table_column_names": []interface{}{"name"}},
+		CreatedBy:    "tenant-1",
+		Type:         "pdf",
+		Suffix:       "pdf",
+		Name:         &name,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	taskCtx := makeTaskCtx()
+	taskCtx.Doc = *doc
+	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
+		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			return nil, nil
+		}).
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+
+	output := map[string]any{
+		"file": map[string]any{"table_column_names": []string{"name"}},
+		"chunks": []map[string]any{{
+			"text":     "a pdf chunk",
+			"metadata": map[string]any{"name": "Alice", "keep": "yes"},
+		}},
+	}
+	res, err := svc.processOutput(t.Context(), output, time.Now())
+	if err != nil {
+		t.Fatalf("processOutput: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected a result")
+	}
+	if len(res.StripKeys) != 0 {
+		t.Errorf("non-table run must not produce strip keys: %#v", res.StripKeys)
+	}
+	if res.Metadata["name"] != "Alice" {
+		t.Errorf("document metadata must survive a non-table reparse: %#v", res.Metadata)
+	}
+	if len(res.DiscoveredColumns) != 0 || len(res.FieldMapUpdates) != 0 {
+		t.Errorf("non-table run must not discover table columns: cols=%#v fieldMap=%#v",
+			res.DiscoveredColumns, res.FieldMapUpdates)
+	}
+}
+
 func TestSyncTableColumnNames_PersistsOnlyOnDocument(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()

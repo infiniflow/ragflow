@@ -63,9 +63,19 @@ type ParserItemProps = {
   index: number;
   canRemove: boolean;
   onRemove: (index: number) => void;
+  // Whether the owner declared the table parser. Table column mode belongs to
+  // that parser, so dataset-scoped callers that know the chunk method hide the
+  // column controls for every other one; undefined keeps the canvas behaviour.
+  isTableParser?: boolean;
 };
 
-function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
+function ParserItem({
+  name,
+  index,
+  canRemove,
+  onRemove,
+  isTableParser,
+}: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
 
@@ -103,7 +113,11 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
         }
       >
         <div className="space-y-5">
-          <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+          <Widget
+            prefix={prefix}
+            fileType={fileFormat as FileType}
+            isTableParser={isTableParser}
+          ></Widget>
         </div>
       </Collapse>
       <div className="hidden">
@@ -120,6 +134,8 @@ type ParserFormProps = INextOperatorForm & {
   // Dataset-side embeddings (settings page, document pipeline dialog) show a
   // fixed set of file types; only the canvas parser allows add/remove.
   fixedFileFormats?: boolean;
+  // Dataset-declared table parser, forwarded to the spreadsheet fields.
+  isTableParser?: boolean;
 };
 
 type AddFileTypeMenuItemProps = {
@@ -146,6 +162,7 @@ const ParserForm = ({
   hideOutputs,
   externalErrors,
   fixedFileFormats,
+  isTableParser,
 }: ParserFormProps) => {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
@@ -204,6 +221,7 @@ const ParserForm = ({
               index={index}
               canRemove={canRemove}
               onRemove={remove}
+              isTableParser={isTableParser}
             ></ParserItem>
           );
         })}
