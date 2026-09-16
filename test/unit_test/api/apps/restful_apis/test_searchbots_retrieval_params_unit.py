@@ -173,3 +173,19 @@ def test_non_positive_rerank_candidates_count_returns_data_error(monkeypatch, va
     res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
     assert res["code"] == 102
     assert "rerank_candidates_count` must be greater than 0" in res["message"]
+
+
+@pytest.mark.p2
+def test_explicit_zero_rerank_count_with_search_id_is_not_defaulted(monkeypatch):
+    module = _load_bot_api(monkeypatch)
+
+    async def _thread_pool_exec(func, *args):
+        return func(*args)
+
+    module.thread_pool_exec = _thread_pool_exec
+    module.SearchService = SimpleNamespace(get_detail=lambda _search_id: {"search_config": {"rerank_candidates_count": 100}})
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update(_base_request(search_id="search-1", rerank_candidates_count=0))
+    res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
+    assert res["code"] == 102
+    assert "rerank_candidates_count` must be greater than 0" in res["message"]

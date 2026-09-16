@@ -407,7 +407,7 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
-            if not req.get("rerank_candidates_count"):
+            if "rerank_candidates_count" not in req:
                 rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
