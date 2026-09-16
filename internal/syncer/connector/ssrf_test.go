@@ -18,6 +18,7 @@ package connector
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -186,4 +187,57 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	if lookups != 1 {
 		t.Fatalf("LookupHost(localhost) called %d times, want 1 (the redirect hop dial must reuse the validated pin, not re-resolve)", lookups)
 	}
+}
+
+func TestConnectorRequestRejectsCrossOriginBodyRedirect(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+
+	var targetHit atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHit.Store(true)
+	}))
+	defer target.Close()
+	targetPort := strings.TrimPrefix(target.URL, "http://127.0.0.1:")
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cross":
+			http.Redirect(w, r, "http://127.0.0.1:"+targetPort+"/final", http.StatusTemporaryRedirect)
+		case "/same":
+			http.Redirect(w, r, "/same-final", http.StatusTemporaryRedirect)
+		case "/same-final":
+			got, _ := io.ReadAll(r.Body)
+			if string(got) != "secret=abc" {
+				t.Errorf("same-origin 307 body = %q, want forwarded body", got)
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer source.Close()
+
+	opts := func(path string) connectorRequestOptions {
+		return connectorRequestOptions{
+			Method:       http.MethodPost,
+			RawURL:       source.URL + path,
+			Body:         []byte("secret=abc"),
+			Headers:      map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+			Timeout:      webdavRequestTimeout,
+			MaxRedirects: 5,
+		}
+	}
+
+	// A 307 to a different origin must not forward the credential-bearing body.
+	if _, err := connectorRequest(context.Background(), opts("/cross")); err == nil || !strings.Contains(err.Error(), "different origin") {
+		t.Fatalf("cross-origin body redirect err = %v, want rejection", err)
+	}
+	if targetHit.Load() {
+		t.Fatalf("cross-origin 307 target must not be reached")
+	}
+
+	// A same-origin 307 still preserves the request body.
+	resp, err := connectorRequest(context.Background(), opts("/same"))
+	if err != nil {
+		t.Fatalf("same-origin 307: %v", err)
+	}
+	resp.Body.Close()
 }

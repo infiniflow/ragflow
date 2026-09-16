@@ -299,6 +299,12 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		nextNetloc := connectorNetloc(nextURL)
 		if nextNetloc != "" && nextNetloc != previousNetloc {
 			hop.Headers = connectorStripAuthHeaders(hop.Headers)
+			// 307/308 preserve the request method and body; never forward a
+			// request body (which may carry credentials, e.g. a Seafile or
+			// Moodle token exchange) to a different origin.
+			if len(hop.Body) > 0 && (resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusPermanentRedirect) {
+				return nil, fmt.Errorf("redirect to a different origin is not allowed for a request with a body")
+			}
 		}
 		previousNetloc = nextNetloc
 		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
