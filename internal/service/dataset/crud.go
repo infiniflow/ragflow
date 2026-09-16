@@ -346,7 +346,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 	})
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" && len(ids) > 0 {
 		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
@@ -385,10 +385,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		pageSize = 30
 	}
 
-	orderby = strings.TrimSpace(orderby)
-	if _, ok := datasetAllowedOrderByFields[orderby]; !ok {
-		orderby = "create_time"
-	}
+	terms = keepDatasetOrderTerms(terms)
 
 	keywords = strings.TrimSpace(keywords)
 	parserID = strings.TrimSpace(parserID)
@@ -463,7 +460,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name, ids)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, terms, keywords, parserID, id, name, ids)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}

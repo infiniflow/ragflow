@@ -16,6 +16,24 @@ import (
 	"github.com/google/uuid"
 )
 
+// keepDatasetOrderTerms narrows the requested terms to the columns the dataset
+// list has always accepted, which is a smaller set than the knowledge base row
+// exposes. A list with nothing left falls back to create_time in the first
+// requested direction, which is what an unrecognised single name did.
+func keepDatasetOrderTerms(terms []dao.OrderTerm) []dao.OrderTerm {
+	kept := make([]dao.OrderTerm, 0, len(terms))
+	for _, term := range terms {
+		column := strings.TrimSpace(term.Column)
+		if _, ok := datasetAllowedOrderByFields[column]; ok {
+			kept = append(kept, dao.OrderTerm{Column: column, Desc: term.Desc})
+		}
+	}
+	if len(kept) == 0 {
+		return []dao.OrderTerm{{Column: "create_time", Desc: len(terms) > 0 && terms[0].Desc}}
+	}
+	return kept
+}
+
 // Package-level vars and constants used by the dataset service.
 var (
 	datasetSupportedAvatarMIMETypes = map[string]struct{}{

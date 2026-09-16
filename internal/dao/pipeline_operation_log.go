@@ -57,43 +57,6 @@ func normalizePipelineOperationStatuses(statuses []string) []string {
 // api/db/services/task_service.py.
 const graphRaptorFakeDocID = "graph_raptor_x"
 
-// pipelineLogOrderableColumns whitelists the columns that may appear in an
-// ORDER BY clause so an attacker cannot inject arbitrary SQL through the
-// `orderby` query parameter.
-var pipelineLogOrderableColumns = map[string]struct{}{
-	"id":               {},
-	"document_id":      {},
-	"tenant_id":        {},
-	"kb_id":            {},
-	"pipeline_id":      {},
-	"pipeline_title":   {},
-	"parser_id":        {},
-	"document_name":    {},
-	"document_suffix":  {},
-	"document_type":    {},
-	"source_from":      {},
-	"progress":         {},
-	"process_begin_at": {},
-	"process_duration": {},
-	"task_type":        {},
-	"operation_status": {},
-	"status":           {},
-	"create_time":      {},
-	"create_date":      {},
-	"update_time":      {},
-	"update_date":      {},
-}
-
-func pipelineLogOrderClause(orderby string, desc bool) string {
-	if _, ok := pipelineLogOrderableColumns[orderby]; !ok {
-		orderby = "create_time"
-	}
-	if desc {
-		return orderby + " DESC"
-	}
-	return orderby + " ASC"
-}
-
 // PipelineOperationLogDAO data access object for pipeline_operation_log.
 type PipelineOperationLogDAO struct{}
 
@@ -109,7 +72,7 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 // documentID is honoured for the same reason as in GetFileLogsByKBID. Dataset
 // logs belong to no single document, so a caller that names one gets an empty
 // list rather than the whole dataset history.
-func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords, documentID string) ([]*entity.PipelineOperationLog, int64, error) {
+func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, operationStatus []string, createDateFrom, createDateTo, keywords, documentID string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
 
@@ -139,7 +102,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 	// if no match is found. The only string that flows into Order() is
 	// the whitelisted column name + " ASC"/" DESC" suffix.
 	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
-	query = query.Order(pipelineLogOrderClause(orderby, desc))
+	query = query.Order(pipelineLogOrderClause(terms))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
@@ -157,7 +120,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 // resolve a queued document's early row: matching by document_name is a fuzzy
 // LIKE search that can push the row out of the first page when several
 // documents share a name.
-func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
+func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ?", kbID)
 
@@ -189,7 +152,7 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	// if no match is found. The only string that flows into Order() is
 	// the whitelisted column name + " ASC"/" DESC" suffix.
 	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
-	query = query.Order(pipelineLogOrderClause(orderby, desc))
+	query = query.Order(pipelineLogOrderClause(terms))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
