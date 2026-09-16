@@ -2174,21 +2174,26 @@ jobs:
             sleep 5
           done
 
-      - name: Download cl100k_base tiktoken vocabulary
+      - name: Provide cl100k_base tiktoken vocabulary
         # The Go integration tests (tokenizer / service / graph) panic without the
-        # cl100k_base BPE table. Only this single file is required here — pulling the
-        # full ragflow_deps bundle (deepdoc + huggingface models) is unnecessary for
-        # the generic integration tier. The runner bakes ORT + deepdoc models at
-        # /opt/ragflow-deepdoc-models (see MODEL_DIR below); the BPE table is the
-        # one artifact we must fetch explicitly.
+        # cl100k_base BPE table. The runner already bakes it at
+        # /opt/ragflow_deps/cl100k_base.tiktoken, so copy from there first; fall
+        # back to the upstream openai blob only if the local copy is missing
+        # (e.g. a non-standard runner). Mirrors the ragflow_native_backend job.
         run: |
           set -euo pipefail
           mkdir -p ragflow_deps
-          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
-            curl -fsSL https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken \
-              -o ragflow_deps/cl100k_base.tiktoken
+          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+              https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || \
+              echo "tiktoken: curl fetch failed; offline loader will fail loudly"
           fi
-          ls -l ragflow_deps/cl100k_base.tiktoken
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
+          fi
 
       - name: Run Go integration tests
         # Override the repo's conf/service_conf.yaml endpoints with the host-mapped
