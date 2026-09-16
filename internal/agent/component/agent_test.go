@@ -1317,3 +1317,16 @@ func TestAgent_ReActExhaustsSteps(t *testing.T) {
 		t.Errorf("sqlmock expectations: %v", err)
 	}
 }
+
+func TestAgentDisabledMaxTokens(t *testing.T) {
+	p := mergeAgentParam(AgentParam{}, map[string]any{"max_tokens": 256, "maxTokensEnabled": false})
+	if p.MaxTokens != nil {
+		t.Fatalf("disabled max_tokens still applied: %d", *p.MaxTokens)
+	}
+	for _, inputs := range []map[string]any{{"max_tokens": 256}, {"max_tokens": 256, "maxTokensEnabled": true}} {
+		p = mergeAgentParam(AgentParam{}, inputs)
+		if p.MaxTokens == nil || *p.MaxTokens != 256 {
+			t.Fatal("enabled or unflagged max_tokens lost")
+		}
+	}
+}

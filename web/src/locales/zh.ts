@@ -356,17 +356,19 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
-      goToConfiguration: '前往配置',
+      reselectParser: '重新选择解析方法',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
       fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
       missingModelAsr: '音频（ASR）',
       missingModelVision: '视觉',
-      configureInDatasetSettingHint:
-        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
+      fileTypeUnsupported:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      reselectParserAfterUploadHint:
+        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+      reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       parseBlockedTitle: '无法解析',
       parseBlockedPartialTitle: '部分文件无法解析',
-      parseBlockedHint:
-        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
       parseValidFiles: '解析有效文件',
       parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
@@ -609,6 +611,12 @@ export default {
       imageTableContextWindow: '图像与表格上下文窗口',
       imageTableContextWindowTip:
         '抓取图像与表格上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
+      tableContextWindow: '表格上下文窗口',
+      tableContextWindowTip:
+        '抓取表格上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
+      imageContextWindow: '图像上下文窗口',
+      imageContextWindowTip:
+        '抓取图像上下方的 N 个 token，为该 Chunk 提供更丰富的背景上下文。',
       autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
@@ -1024,7 +1032,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大 Token 数',
       maxTokensMessage: '最大 Token 数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       thinking: '思考中...',
@@ -1281,8 +1289,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
+      azureDevOpsBaseUrlTip:
+        'Azure DevOps 实例的基础 URL（例如 https://dev.azure.com，或私有网络/本地部署的 Azure DevOps Server 例如 http://tfs.corp.local:8080/tfs）。留空默认使用 https://dev.azure.com。',
       azureDevOpsOrganizationTip:
-        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+        '组织名称（例如 contoso），或项目集合名称（例如 DefaultCollection），或自托管 Azure DevOps Server 的集合地址。',
       azureDevOpsProjectsTip:
         '以逗号分隔的团队项目名称。例如：Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1445,6 +1455,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldIsCloud: '是否为云版本',
       dataSourceFieldIndexMode: '索引模式',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps 个人访问令牌',
+      dataSourceFieldAzureDevOpsBaseUrl: '基础 URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps 组织',
       dataSourceFieldAzureDevOpsRepositories: '仓库',
       dataSourceFieldAzureDevOpsContentTypes: '内容类型',
@@ -1638,9 +1649,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       avatar: '头像',
       avatarTip: '这会在你的个人主页展示',
       profileDescription: '在此更新您的照片和个人详细信息。',
-      maxTokens: '最大token数',
-      maxTokensMessage: '最大token数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokens: '最大上下文长度',
+      maxTokensMessage: '最大上下文长度是必填项',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1957,7 +1968,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
       editCustomModelTitle: '编辑模型',
-      modelMaxTokens: '最大 Token 数',
+      modelMaxTokens: '最大上下文长度',
       modelTypes: {
         chat: 'Chat',
         embedding: 'Embedding',
@@ -2289,6 +2300,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tab: '制表符',
       space: '空格',
       delimiters: '分隔符',
+      delimitersTip:
+        '每行一个分隔符，多字符分隔符可直接填写（如 ##）。加反引号（如 `##`）：强制切分，每个分隔符处独立成块，不再按 token 大小合并；不加反引号：只作为切分点，切出的段落仍会按 chunk_token_size 合并，因此短文本可能看不出效果。',
+      delimitersTipPython:
+        '每行一个分隔符。只有用反引号包裹的条目（如 `##`）生效：每个分隔符处独立成块，不再按 token 大小合并；不加反引号的条目会被忽略。',
+      childrenDelimitersTip:
+        '子块切分：每个父块会再按这些分隔符切成子块（子块用于检索），不受 chunk_token_size 影响。',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
@@ -2377,6 +2394,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       version: {
         details: '版本详情',
         download: '下载',
+        loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
       },
       cite: '引用',

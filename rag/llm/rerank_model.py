@@ -28,6 +28,7 @@ import requests
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response, usage_from_response
+from rag.llm.key_utils import _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 
@@ -490,7 +491,7 @@ class BedrockRerank(Base):
         import boto3
         from botocore.utils import validate_region_name
 
-        key = json.loads(key)
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")

@@ -309,6 +309,49 @@ class TestBatching:
             vectors, _ = embed.encode(["a", "b", "c"])
         np.testing.assert_array_equal(vectors[:, 0], np.array([0.0, 1.0, 2.0]))
 
+    def test_baidu_yiyan_issues_ceil_n_over_batch_calls(self):
+        """`batch_size` was in the signature and unused: the whole document went in one call."""
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": len(texts)}}))
+
+        texts = [f"t{i}" for i in range(40)]  # batch_size 16 -> ceil(40/16) == 3
+        vectors, token_count = embed.encode(texts)
+
+        assert embed.client.do.call_count == 3
+        assert [len(call.kwargs["texts"]) for call in embed.client.do.call_args_list] == [16, 16, 8]
+        assert vectors.shape == (40, 1)
+        assert token_count == 40
+
+    def test_baidu_yiyan_preserves_order_across_batches(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": 1}}))
+
+        texts = ["a" * (i + 1) for i in range(20)]  # spans two batches
+        vectors, _ = embed.encode(texts)
+
+        np.testing.assert_array_equal(vectors[:, 0], np.array([float(len(t)) for t in texts]))
+
+    def test_baidu_yiyan_surfaces_a_failed_batch(self):
+        embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
+        embed.model_name = "bge-large-zh"
+        embed.client = MagicMock()
+        calls = {"n": 0}
+
+        def _do(model, texts):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("batch too large")
+            return SimpleNamespace(body={"data": [{"embedding": [0.0]} for _ in texts], "usage": {"total_tokens": 1}})
+
+        embed.client.do = MagicMock(side_effect=_do)
+
+        with pytest.raises(EmbeddingError, match="Embedding request failed for BaiduYiyanEmbed"):
+            embed.encode([f"t{i}" for i in range(40)])
+
     def test_ollama_issues_ceil_n_over_batch_calls(self):
         embed = OllamaEmbed("x", "nomic-embed-text", base_url="http://localhost:11434")
         embed.client = MagicMock()

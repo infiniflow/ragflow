@@ -8,8 +8,6 @@ export const formSchema = z
   .object({
     parse_type: z.nativeEnum(ParseType).optional(),
     pipeline_id: z.string().optional(),
-    pipeline_name: z.string().optional(),
-    pipeline_avatar: z.string().optional(),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),

@@ -561,3 +561,59 @@ func TestCallTool_InvalidArgumentsJSON(t *testing.T) {
 		t.Errorf("error should mention JSON, got %v", err)
 	}
 }
+
+func TestCallToolSSE(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+	pushes := make(chan string, 4)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /sse", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "event: endpoint\ndata: /messages\n\n")
+		w.(http.Flusher).Flush()
+		for {
+			select {
+			case msg := <-pushes:
+				io.WriteString(w, "event: message\ndata: "+msg+"\n\n")
+				w.(http.Flusher).Flush()
+			case <-r.Context().Done():
+				return
+			}
+		}
+	})
+	var called atomic.Bool
+	mux.HandleFunc("POST /messages", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+			Params struct {
+				Name      string            `json:"name"`
+				Arguments map[string]string `json:"arguments"`
+			} `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+			return
+		}
+		switch req.Method {
+		case "initialize":
+			pushes <- `{"jsonrpc":"2.0","id":0,"result":{"capabilities":{}}}`
+		case "tools/call":
+			called.Store(true)
+			if req.Params.Name != "route" || req.Params.Arguments["origin"] != "大连路站" || req.Params.Arguments["destination"] != "水清三村公寓" {
+				t.Errorf("unexpected call: %+v", req)
+			}
+			raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"content": []map[string]string{{"type": "text", "text": "metro route"}}}})
+			pushes <- string(raw)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	result, err := CallTool(t.Context(), CallOptions{URL: srv.URL + "/sse", ServerType: TransportSSE, HTTPClient: srv.Client(), Timeout: time.Second, ToolName: "route", Arguments: json.RawMessage(`{"origin":"大连路站","destination":"水清三村公寓"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called.Load() || result.Text != "metro route" {
+		t.Fatalf("called=%v result=%+v", called.Load(), result)
+	}
+}

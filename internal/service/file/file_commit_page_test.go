@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -32,7 +33,12 @@ func newPageCommitTestDB(t *testing.T) *gorm.DB {
 	}
 	old := dao.DB
 	dao.DB = db
-	t.Cleanup(func() { dao.DB = old })
+	oldStorage := storage.GetStorageFactory().GetStorage()
+	storage.GetStorageFactory().SetStorage(storage.NewMemoryStorage())
+	t.Cleanup(func() {
+		dao.DB = old
+		storage.GetStorageFactory().SetStorage(oldStorage)
+	})
 	return db
 }
 
@@ -43,7 +49,6 @@ func TestRecordPageEdit_CreatesCommitAndItem(t *testing.T) {
 
 	in := PageEditCommitInput{
 		DatasetID:  "kb1",
-		DocID:      "wiki/page-a",
 		Slug:       "page-a",
 		PageType:   "wiki",
 		Title:      "First edit",
@@ -91,11 +96,70 @@ func TestRecordPageEdit_CreatesCommitAndItem(t *testing.T) {
 	if it.Diff == nil || !strings.Contains(*it.Diff, "hello world, edited") {
 		t.Fatalf("expected diff containing new content, got %v", it.Diff)
 	}
-	if it.ContentAfterStorage == nil || *it.ContentAfterStorage != "es" {
-		t.Fatalf("expected content_after_storage es, got %v", it.ContentAfterStorage)
+	if it.ContentAfterStorage == nil || *it.ContentAfterStorage != "minio" {
+		t.Fatalf("expected content_after_storage minio, got %v", it.ContentAfterStorage)
 	}
-	if it.ContentAfterLocation == nil || *it.ContentAfterLocation != "wiki/page-a" {
-		t.Fatalf("expected content_after_location wiki/page-a, got %v", it.ContentAfterLocation)
+	if it.ContentAfterLocation == nil || !strings.HasPrefix(*it.ContentAfterLocation, ".wiki_commits/") {
+		t.Fatalf("expected content snapshot location, got %v", it.ContentAfterLocation)
+	}
+}
+
+func TestGetPageCommitDetailReadsContentSnapshot(t *testing.T) {
+	newPageCommitTestDB(t)
+	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}, &entity.User{}); err != nil {
+		t.Fatalf("migrate page detail models: %v", err)
+	}
+	status := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Knowledgebase{
+		ID:         "kb1",
+		TenantID:   "tenant1",
+		Name:       "Knowledge Base",
+		EmbdID:     "embedding",
+		Permission: string(entity.TenantPermissionMe),
+		CreatedBy:  "u1",
+		ParserID:   "general",
+		Status:     &status,
+	}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+	if err := dao.DB.Create(&entity.User{
+		ID:              "u1",
+		Nickname:        "Tester",
+		Email:           "tester@example.com",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+	}).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	svc := NewFileCommitService()
+	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+		DatasetID:  "kb1",
+		Slug:       "page-a",
+		PageType:   "wiki",
+		Title:      "Page A",
+		Comments:   "published",
+		AuthorID:   "u1",
+		OldContent: "old body",
+		NewContent: "new body",
+	})
+	if err != nil {
+		t.Fatalf("RecordPageEdit: %v", err)
+	}
+
+	detail, err := svc.GetPageCommitDetail(t.Context(), "kb1", commit.ID)
+	if err != nil {
+		t.Fatalf("GetPageCommitDetail: %v", err)
+	}
+	if detail.KBID != "kb1" || detail.TenantID != "tenant1" {
+		t.Fatalf("unexpected scope: %+v", detail)
+	}
+	if detail.Title != "Page A" || detail.Comments != "published" || detail.UserNickname != "Tester" {
+		t.Fatalf("unexpected metadata: %+v", detail)
+	}
+	if detail.ContentAfter != "new body" || !strings.Contains(detail.Diff, "new body") {
+		t.Fatalf("unexpected content: %+v", detail)
 	}
 }
 
@@ -105,12 +169,12 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 	ctx := t.Context()
 
 	base := PageEditCommitInput{
-		DatasetID: "kb1",
-		DocID:     "wiki/page-a",
-		Slug:      "page-a",
-		PageType:  "wiki",
-		Title:     "first",
-		AuthorID:  "u1",
+		DatasetID:  "kb1",
+		Slug:       "page-a",
+		PageType:   "wiki",
+		Title:      "first",
+		AuthorID:   "u1",
+		NewContent: "initial content",
 	}
 	if _, err := svc.RecordPageEdit(ctx, base); err != nil {
 		t.Fatalf("first RecordPageEdit: %v", err)
@@ -118,7 +182,7 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 
 	second := base
 	second.Title = "second"
-	second.OldContent = "hello"
+	second.OldContent = "initial content"
 	second.NewContent = "hello world"
 	commit2, err := svc.RecordPageEdit(ctx, second)
 	if err != nil {
@@ -136,6 +200,48 @@ func TestRecordPageEdit_SecondEditLinksParent(t *testing.T) {
 	}
 }
 
+func TestRecordPageEdit_FirstGeneratedVersionUsesAdd(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+
+	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+		DatasetID:  "kb1",
+		Slug:       "page-a",
+		PageType:   "wiki",
+		OldContent: "",
+		NewContent: "initial content",
+	})
+	if err != nil {
+		t.Fatalf("RecordPageEdit: %v", err)
+	}
+	var item entity.FileCommitItem
+	if err := dao.DB.Where("commit_id = ?", commit.ID).First(&item).Error; err != nil {
+		t.Fatalf("load commit item: %v", err)
+	}
+	if item.Operation != "add" {
+		t.Fatalf("first generated version operation = %q, want add", item.Operation)
+	}
+}
+
+func TestRecordPageEdit_SkipsNoop(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+
+	commit, err := svc.RecordPageEdit(t.Context(), PageEditCommitInput{
+		DatasetID:  "kb1",
+		Slug:       "page-a",
+		PageType:   "wiki",
+		OldContent: "same",
+		NewContent: "same",
+	})
+	if err != nil {
+		t.Fatalf("RecordPageEdit: %v", err)
+	}
+	if commit != nil {
+		t.Fatalf("no-op edit created commit %s", commit.ID)
+	}
+}
+
 func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	newPageCommitTestDB(t)
 	svc := NewFileCommitService()
@@ -144,7 +250,6 @@ func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	mk := func(datasetID string) PageEditCommitInput {
 		return PageEditCommitInput{
 			DatasetID:  datasetID,
-			DocID:      datasetID + "/wiki/page-a",
 			Slug:       "page-a",
 			PageType:   "wiki",
 			Title:      datasetID + "-edit",
@@ -202,7 +307,6 @@ func TestRecordPageEdit_ConcurrentEditsFormLinearChain(t *testing.T) {
 			defer wg.Done()
 			in := PageEditCommitInput{
 				DatasetID:  "kb1",
-				DocID:      "wiki/page-a",
 				Slug:       "page-a",
 				PageType:   "wiki",
 				Title:      "edit-" + strconv.Itoa(idx),
@@ -255,19 +359,19 @@ func TestUnifiedDiff_EmptyWhenNoChange(t *testing.T) {
 
 func TestUnifiedDiff_DetectsAddition(t *testing.T) {
 	d := unifiedDiff("a\nb\nc\n", "a\nb\nc\nd\n")
-	if !strings.Contains(d, "+d") {
+	if !strings.Contains(d, "@@") || !strings.Contains(d, "+d") {
 		t.Fatalf("expected diff to contain added line, got %q", d)
 	}
 }
 
 func TestUnifiedDiff_DetectsRemoval(t *testing.T) {
 	d := unifiedDiff("a\nb\nc\n", "a\nc\n")
-	if !strings.Contains(d, "-b") {
+	if !strings.Contains(d, "@@") || !strings.Contains(d, "-b") {
 		t.Fatalf("expected diff to contain removed line, got %q", d)
 	}
 }
 
-func TestUnifiedDiff_TruncatesLongDiff(t *testing.T) {
+func TestUnifiedDiff_UsesStandardHunkForLongDiff(t *testing.T) {
 	oldLines := make([]string, 50)
 	newLines := make([]string, 50)
 	for i := range oldLines {
@@ -275,8 +379,11 @@ func TestUnifiedDiff_TruncatesLongDiff(t *testing.T) {
 		newLines[i] = "new-line"
 	}
 	d := unifiedDiff(strings.Join(oldLines, "\n"), strings.Join(newLines, "\n"))
-	if !strings.Contains(d, "... ") || !strings.Contains(d, "lines omitted") {
-		t.Fatalf("expected long diff to be truncated, got %q", d)
+	if !strings.Contains(d, "--- a\n+++ b\n@@") {
+		t.Fatalf("expected standard unified diff headers, got %q", d)
+	}
+	if !strings.Contains(d, "-old-line") || !strings.Contains(d, "+new-line") {
+		t.Fatalf("expected removed and added lines, got %q", d)
 	}
 }
 
@@ -300,7 +407,6 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 
 	base := PageEditCommitInput{
 		DatasetID:  "kb1",
-		DocID:      "topic/fireworks display",
 		Slug:       "fireworks display",
 		PageType:   "topic",
 		AuthorID:   "u1",
@@ -389,7 +495,6 @@ func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
 	// pageType="topic" and the full nested tail as the slug.
 	nested := PageEditCommitInput{
 		DatasetID:  "kb1",
-		DocID:      "topic/People/Writers",
 		Slug:       "People/Writers",
 		PageType:   "topic",
 		AuthorID:   "u1",
@@ -426,7 +531,6 @@ func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
 
 	// A page that only shares the first nested segment has its own history.
 	sibling := nested
-	sibling.DocID = "topic/People/Editors"
 	sibling.Slug = "People/Editors"
 	sibling.Title = "sibling page"
 	siblingCommit, err := svc.RecordPageEdit(ctx, sibling)
@@ -476,7 +580,6 @@ func TestListPageCommits_ResolvesNicknamesInSingleBatchedLookup(t *testing.T) {
 	ctx := context.Background()
 	base := PageEditCommitInput{
 		DatasetID:  "kb1",
-		DocID:      "topic/fireworks display",
 		Slug:       "fireworks display",
 		PageType:   "topic",
 		OldContent: "one",

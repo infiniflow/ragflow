@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 
 	"go.uber.org/zap"
@@ -83,7 +84,7 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
 		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get()},
+		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService()},
 		factory:        defaultDeduperFactory,
 		contributions:  newWikiContributionStore(engine.Get()),
 		ttl:            2 * time.Minute,
@@ -696,6 +697,13 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 			}
 			return err
 		}
+		if err := c.removeNavLocked(ctx, tenant, kb, token, delIDs); err != nil {
+			if errors.Is(err, errClaimSuperseded) {
+				common.Info("knowledge_compile: batch stale before navigation removal, aborting (rewrite barrier)",
+					zap.String("dataset_id", kb))
+			}
+			return err
+		}
 	}
 	if len(completed) == 0 && len(wikiDiff.affectedKeys) == 0 {
 		if err := c.commitWikiContributions(ctx, tenant, kb, wikiDiff.currentByDoc, retractedDocIDs); err != nil {
@@ -1275,10 +1283,6 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 	if deps.Chat == nil {
 		return fmt.Errorf("Wiki page rewrite chat model is unavailable")
 	}
-	maxTokens := deps.ModelMaxOutput
-	if maxTokens <= 0 {
-		maxTokens = 4096
-	}
 	jobs := make([]CompilerJob, 0, len(indexes))
 	for _, idx := range indexes {
 		idx := idx
@@ -1296,7 +1300,6 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 				SystemPrompt: wikiPageRewriteSystemPrompt,
 				UserPrompt:   prompt,
 				Temperature:  floatPtr(0.1),
-				MaxTokens:    &maxTokens,
 			})
 			if err != nil {
 				return fmt.Errorf("rewrite Wiki page %q: %w", metaString(page.Meta, "slug"), err)
@@ -1798,6 +1801,28 @@ func (c *Consumer) upsertNavLocked(ctx context.Context, tenant, kb, token string
 			// batch is retried.
 			if err := ns.UpsertDoc(ctx, inputs[i]); err != nil {
 				return fmt.Errorf("knowledge_compile: nav upsert %s: %w", inputs[i].DocID, err)
+			}
+		}
+		return nil
+	})
+}
+
+// removeNavLocked removes the retracted documents from the dataset navigation
+// tree under the same claim-fenced write lock used by navigation upserts. The
+// document-level tree/structure products remain in storage for a later enable;
+// only their dataset-level navigation projections are removed here.
+func (c *Consumer) removeNavLocked(ctx context.Context, tenant, kb, token string, docIDs []string) error {
+	if len(docIDs) == 0 {
+		return nil
+	}
+	ns := nav.GetNavService()
+	if ns == nil {
+		return fmt.Errorf("knowledge_compile: nav service unavailable while removing documents")
+	}
+	return c.withWriteLock(ctx, kb, token, func() error {
+		for _, docID := range docIDs {
+			if err := ns.RemoveDoc(ctx, tenant, kb, docID); err != nil {
+				return fmt.Errorf("knowledge_compile: nav remove %s: %w", docID, err)
 			}
 		}
 		return nil

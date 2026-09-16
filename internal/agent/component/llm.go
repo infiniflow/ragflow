@@ -735,6 +735,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
+		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
 			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))

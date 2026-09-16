@@ -80,13 +80,13 @@ type SearchShareDetail struct {
 }
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
-func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
+func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListSearchAppsResponse, error) {
 	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
 	if len(ownerIDs) == 0 {
-		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +102,7 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, terms, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -365,7 +365,11 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	if req == nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
-	question := strings.TrimSpace(req.Question)
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	question = strings.TrimSpace(question)
 	if question == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
@@ -683,6 +687,8 @@ func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[str
 }
 
 type SearchCompletionsRequest struct {
-	Question string   `json:"question" binding:"required"`
-	KBIDs    []string `json:"kb_ids,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KBIDs    []string                 `json:"kb_ids,omitempty"`
 }

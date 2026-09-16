@@ -119,6 +119,10 @@ export const AgentKeys = {
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  versionList: (agentId?: string) =>
+    [AgentApiAction.FetchVersionList, agentId] as const,
+  version: (agentId?: string, versionId?: string) =>
+    [AgentApiAction.FetchVersion, agentId, versionId] as const,
 };
 
 export const useFetchAgentTemplates = () => {
@@ -548,6 +552,14 @@ export const useSetAgent = (
         queryClient.invalidateQueries({
           queryKey: AgentKeys.list(),
         });
+        // Every save can prune the oldest unpublished versions server-side,
+        // so the version history list must refetch even when autosave skips
+        // detail invalidation.
+        if (agentId) {
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.versionList(agentId),
+          });
+        }
         if (!agentId) {
           queryClient.invalidateQueries({
             queryKey: AgentKeys.filters(),
@@ -779,7 +791,7 @@ export const useFetchVersionList = () => {
   const { data, isFetching: loading } = useQuery<
     Array<{ created_at: string; title: string; id: string; release?: boolean }>
   >({
-    queryKey: [AgentApiAction.FetchVersionList],
+    queryKey: AgentKeys.versionList(id),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
@@ -797,26 +809,44 @@ export const useFetchVersion = (
 ): {
   data?: IFlow;
   loading: boolean;
+  isError: boolean;
 } => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery({
-    queryKey: [AgentApiAction.FetchVersion, id, version_id],
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery({
+    queryKey: AgentKeys.version(id, version_id),
     initialData: undefined,
     gcTime: 0,
+    // A pruned version never recovers on retry, and each attempt would
+    // re-fire the global error notification.
+    retry: false,
     enabled: !!id && !!version_id,
     queryFn: async () => {
       if (!id || !version_id) return undefined;
 
-      const { data } = await agentService.fetchVersion({
-        agentId: id,
-        versionId: version_id,
-      });
+      // The dialog renders its own error state, so suppress the global
+      // notification whose "no permission" wording misleads here.
+      const { data } = await agentService.fetchVersion(
+        {
+          agentId: id,
+          versionId: version_id,
+          skipGlobalErrorNotification: true,
+        },
+        true,
+      );
+
+      if (data?.code !== 0) {
+        throw new Error(data?.message);
+      }
 
       return data?.data ?? undefined;
     },
   });
 
-  return { data, loading };
+  return { data, loading, isError };
 };
 
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {

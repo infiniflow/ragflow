@@ -23,8 +23,8 @@ func TestRenameTextToContentWithWeight_Basic(t *testing.T) {
 func TestRenameTextToContentWithWeight_PreservesExisting(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "already set", "text": "hello"}
 	RenameTextToContentWithWeight(chunk)
-	if chunk["content_with_weight"] != "already set" {
-		t.Errorf("preserved value should not be overwritten")
+	if chunk["content_with_weight"] != "hello" {
+		t.Errorf("text must be authoritative at the storage boundary, got %q", chunk["content_with_weight"])
 	}
 	if _, exists := chunk["text"]; exists {
 		t.Error("text should still be removed")
@@ -108,19 +108,13 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	}
 }
 
-// TestProcessChunksForPipeline_GeneratesIDOnNonStringText pins the id fallback:
-// when ck["id"] is absent and ck["text"] is a non-string (e.g. from a
-// malformed input), the type assertion silently yields "" and
-// component.ChunkID computes a valid id from empty text, rather than erroring.
-func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
+// TestProcessChunksForPipeline_RejectsNonStringText pins the strict contract:
+// non-string text must fail before chunk-id generation.
+func TestProcessChunksForPipeline_RejectsNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
-	if err != nil {
-		t.Fatalf("ProcessChunksForPipeline: %v", err)
-	}
-	id, ok := chunks[0]["id"].(string)
-	if !ok || id == "" {
-		t.Errorf("id should be generated even for non-string text, got %v", chunks[0]["id"])
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject non-string text")
 	}
 }
 
@@ -333,14 +327,22 @@ func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
+func TestProcessChunksForPipeline_TextAuthoritativeAtRename(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
-	if chunks[0]["content_with_weight"] != "already set" {
-		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
+	if chunks[0]["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %q, want %q", chunks[0]["content_with_weight"], "hello")
+	}
+}
+
+func TestProcessChunksForPipeline_RejectsMissingText(t *testing.T) {
+	chunks := []map[string]any{{"content_with_weight": "already set"}}
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject chunks without text")
 	}
 }
 

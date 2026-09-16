@@ -185,8 +185,9 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	if len(images) != 0 {
 		t.Fatalf("expected no images, got %v", images)
 	}
-	if len(texts) != 1 || !strings.Contains(texts[0], "allowed content") {
-		t.Fatalf("unexpected texts: %v", texts)
+	want := "\n -----------------\nFile: doc.txt\nContent as following: \nallowed content"
+	if len(texts) != 1 || texts[0] != want {
+		t.Fatalf("texts = %v, want %q", texts, want)
 	}
 }
 

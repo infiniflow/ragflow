@@ -34,6 +34,7 @@ import threading
 import traceback
 from datetime import UTC, datetime, timezone
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from flask import json
 
@@ -43,7 +44,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.config_utils import show_configs
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
@@ -109,6 +110,20 @@ def _redact_mailbox(value: str) -> str:
         local_mask = local if len(local) <= 2 else local[:2] + "***"
         return f"{local_mask}@***"
     return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
+def _redact_url(value: str | None) -> str:
+    """Sanitize URL before logging, stripping user credentials, query, and fragment."""
+    if not value or "://" not in value:
+        return value or ""
+    try:
+        parsed = urlparse(value)
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+    except (ValueError, TypeError):
+        return "<invalid URL>"
 
 
 async def _iterate_document_batches(generator):
@@ -246,20 +261,24 @@ class SyncBase:
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
         saw_documents = False
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
-        existing_doc_ids = {
-            doc["id"]
-            for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
-                task["kb_id"],
-                source_type,
-            )
-        }
+        existing_headers = await asyncio.to_thread(
+            DocumentService.list_doc_headers_by_kb_and_source_type,
+            task["kb_id"],
+            source_type,
+        )
+        existing_doc_ids = {doc["id"] for doc in existing_headers}
 
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
+        pause_before_next_batch = False
         async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
+
+            if pause_before_next_batch:
+                await asyncio.sleep(SYNC_BATCH_PAUSE_SECONDS)
+            pause_before_next_batch = True
 
             saw_documents = True
             max_update = max(doc.doc_updated_at for doc in document_batch)
@@ -283,14 +302,12 @@ class SyncBase:
                     d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
+            cancel_event = threading.Event()
+            parent_task = asyncio.current_task()
             try:
-                e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+                err, dids = await asyncio.to_thread(self._ingest_document_batch, task, docs, max_update, cancel_event, parent_task)
                 if err:
                     had_parse_errors = True
-                    if self.RAISE_ON_BATCH_ERROR:
-                        raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
-                SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
                 changed_doc_ids = set(dids)
                 updated_in_batch = len(changed_doc_ids & existing_doc_ids)
                 added_in_batch = len(changed_doc_ids) - updated_in_batch
@@ -298,6 +315,9 @@ class SyncBase:
                 updated_docs += updated_in_batch
                 existing_doc_ids.update(changed_doc_ids)
 
+            except asyncio.CancelledError:
+                cancel_event.set()
+                raise
             except Exception as batch_ex:
                 msg = str(batch_ex)
                 code = getattr(batch_ex, "args", [None])[0]
@@ -310,7 +330,6 @@ class SyncBase:
                 if self.RAISE_ON_BATCH_ERROR:
                     raise
                 failed_docs += len(docs)
-                continue
 
         if not saw_documents:
             next_update = self._get_empty_sync_cursor(task, next_update)
@@ -369,6 +388,40 @@ class SyncBase:
 
     async def _generate(self, task: dict):
         raise NotImplementedError
+
+    def _ingest_document_batch(self, task: dict, docs: list, max_update: datetime, cancel_event: threading.Event | None = None, parent_task: asyncio.Task | None = None):
+        """Write one connector batch (MinIO + document rows) off the event loop.
+
+        Knowledgebase lookup and parse stay on the same worker thread so Peewee
+        objects are not shared across threads. ``cancel_event`` is set when the
+        awaiting coroutine catches ``CancelledError``. ``cancelled()`` stays false
+        until that handler runs, so the worker also observes ``cancelling()`` to
+        stop between files after ``wait_for`` times out. Uploads that already
+        started cannot be force-stopped.
+        """
+
+        def should_cancel() -> bool:
+            if cancel_event is not None and cancel_event.is_set():
+                return True
+            return parent_task is not None and (parent_task.cancelling() > 0 or parent_task.cancelled())
+
+        if should_cancel():
+            return [], []
+        _e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+        err, dids = SyncLogsService.duplicate_and_parse(
+            kb,
+            docs,
+            task["tenant_id"],
+            f"{self.SOURCE_NAME}/{task['connector_id']}",
+            task["auto_parse"],
+            should_cancel=should_cancel,
+        )
+        if should_cancel():
+            return err, dids
+        if err and self.RAISE_ON_BATCH_ERROR:
+            raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
+        SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
+        return err, dids
 
     def _get_source_prefix(self):
         return ""
@@ -2012,6 +2065,7 @@ class AzureDevOps(SyncBase):
     async def _generate(self, task: dict):
         self.connector = AzureDevOpsConnector(
             organization=self.conf.get("organization"),
+            base_url=self.conf.get("base_url"),
             index_mode=self.conf.get("index_mode") or "organization",
             projects=self.conf.get("projects"),
             repositories=self.conf.get("repositories"),
@@ -2066,7 +2120,8 @@ class AzureDevOps(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        target = _redact_url(self.conf.get("base_url")) or f"organization({self.conf.get('organization')})"
+        self.log_connection("AzureDevOps", target, task)
         return wrapper()
 
 
@@ -2200,8 +2255,7 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
 
         self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+        await asyncio.to_thread(self._prepare_rdbms_connector, task)
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
@@ -2221,7 +2275,15 @@ class _RDBMSBase(_CursorPersistingSyncBase):
             _begin_info = f"from {poll_start}"
 
         self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+        return iter_in_worker_thread(document_generator)
+
+    def _prepare_rdbms_connector(self, task: dict) -> None:
+        """Validate and snapshot cursor state off the event loop, then drop the setup connection."""
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+        close_connection = getattr(self.connector, "_close_connection", None)
+        if close_connection is not None:
+            close_connection()
 
 
 class MySQL(_RDBMSBase):

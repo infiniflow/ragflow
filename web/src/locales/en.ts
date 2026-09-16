@@ -397,18 +397,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
-      goToConfiguration: 'Go to configuration',
+      reselectParser: 'Reselect parse method',
       uploadMissingModelsTitle: 'Some files lack a required model',
       fileModelMissing:
         '{{name}} ({{fileType}}) requires a configured {{model}} model',
       missingModelAsr: 'audio (ASR)',
       missingModelVision: 'vision',
-      configureInDatasetSettingHint:
-        'You can configure it in the dataset Configuration page (Parser operator), or continue anyway.',
+      uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
+      fileTypeUnsupported:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      reselectParserAfterUploadHint:
+        'Continue uploading, then reselect a parse method for these files in the file list.',
+      reselectParserToParseHint:
+        'Reselect a parse method for the affected files, then parse again.',
       parseBlockedTitle: 'Cannot parse',
       parseBlockedPartialTitle: 'Some files cannot be parsed',
-      parseBlockedHint:
-        'Configure the model in the dataset Configuration page (Parser operator), then try again.',
       parseValidFiles: 'Parse valid files',
       parseValidFilesNote: '{{count}} valid files will be parsed.',
       metadata: {
@@ -670,6 +673,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       imageTableContextWindow: 'Image & table context window',
       imageTableContextWindowTip:
         'Captures N tokens of text above and below the image & table to provide richer background context.',
+      tableContextWindow: 'Table context window',
+      tableContextWindowTip:
+        'Captures N tokens of text above and below a table to provide richer background context.',
+      imageContextWindow: 'Image context window',
+      imageContextWindowTip:
+        'Captures N tokens of text above and below an image to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU options',
       mineruParseMethod: 'Parse method',
@@ -1127,7 +1136,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently.',
       maxTokens: 'Max tokens',
       maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
@@ -1439,6 +1448,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldIsCloud: 'Is Cloud',
       dataSourceFieldIndexMode: 'Index Mode',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps personal access token',
+      dataSourceFieldAzureDevOpsBaseUrl: 'Base URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps organization',
       dataSourceFieldAzureDevOpsRepositories: 'Repositories',
       dataSourceFieldAzureDevOpsContentTypes: 'Content types',
@@ -1630,8 +1640,10 @@ Example: Virtual Hosted Style`,
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
+      azureDevOpsBaseUrlTip:
+        'The Base URL of your Azure DevOps instance (e.g. https://dev.azure.com, or http://tfs.corp.local:8080/tfs for Azure DevOps Server / closed network). Defaults to https://dev.azure.com if omitted.',
       azureDevOpsOrganizationTip:
-        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+        'Organization name (e.g. "contoso"), or project collection name (e.g. "DefaultCollection"), or the full collection URL of a self-hosted Azure DevOps Server.',
       azureDevOpsProjectsTip:
         'Comma separated team project names. E.g., Project1,Project2',
       azureDevOpsRepositoriesTip:
@@ -1976,9 +1988,9 @@ Example: Virtual Hosted Style`,
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
       profileDescription: 'Update your photo and personal details here.',
-      maxTokens: 'Max tokens',
-      maxTokensMessage: 'Max tokens is required',
-      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. Defaults to 512.`,
+      maxTokens: 'Max context length',
+      maxTokensMessage: 'Max context length is required',
+      maxTokensTip: `The maximum context size of the model; an invalid or incorrect value will cause an error. `,
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       password: 'Password',
@@ -2347,7 +2359,7 @@ Example: Virtual Hosted Style`,
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
       editCustomModelTitle: 'Edit model',
-      modelMaxTokens: 'Max tokens',
+      modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
       modelFeatureToolCall: 'Tool call',
       modelFeatureFunctionCall: 'Function call',
@@ -2678,6 +2690,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      delimitersTip:
+        'One delimiter per row; multi-character delimiters can be typed as-is (e.g. ##). With backticks (e.g. `##`): hard split — every delimiter starts its own chunk and no token-size merge is applied. Without backticks: soft split — the delimiter is only a split point, and the pieces are still merged up to the chunk token size, so short documents may show no visible change.',
+      delimitersTipPython:
+        'One delimiter per row. Only backtick-wrapped entries (e.g. `##`) take effect: every delimiter starts its own chunk and no token-size merge is applied. Entries without backticks are ignored.',
+      childrenDelimitersTip:
+        'Child split: each parent chunk is split again at these delimiters into child chunks used for retrieval; the chunk token size does not apply.',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
@@ -3281,6 +3299,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         details: 'Version details',
         dsl: 'DSL',
         download: 'Download',
+        loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
       },

@@ -83,6 +83,9 @@ func graphRelation(payload map[string]any) map[string]any {
 	if src == "" || tgt == "" {
 		return nil
 	}
+	if src == tgt {
+		return nil
+	}
 	typ := strings.TrimSpace(stringOf(payload["type"]))
 	if typ == "" {
 		typ = "related"

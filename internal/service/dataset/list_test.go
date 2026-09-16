@@ -27,7 +27,7 @@ func TestDatasetServiceListDatasetsFiltersByIDs(t *testing.T) {
 
 	ctx := t.Context()
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
-		"", "", 1, 30, "create_time", true,
+		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "tenant-1", []string{"kb-1"},
 	)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 
 	ctx := t.Context()
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
-		"", "", 1, 30, "create_time", true,
+		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "user-1", []string{"kb-team"},
 	)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestDatasetServiceListDatasetsRejectsIDAndIDsTogether(t *testing.T) {
 
 	ctx := t.Context()
 	_, _, code, err := testDatasetListService(t).ListDatasets(ctx,
-		"kb-1", "", 1, 30, "create_time", true,
+		"kb-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "tenant-1", []string{"kb-1"},
 	)
 	if err == nil {
@@ -103,7 +103,7 @@ func TestDatasetServiceListDatasetsRejectsDeniedIDs(t *testing.T) {
 
 	ctx := t.Context()
 	_, _, code, err := testDatasetListService(t).ListDatasets(ctx,
-		"", "", 1, 30, "create_time", true,
+		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "user-1", []string{"kb-private"},
 	)
 	if err == nil {
