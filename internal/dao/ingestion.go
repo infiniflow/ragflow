@@ -303,6 +303,17 @@ func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, 
 
 type IngestionTaskLogDAO struct{}
 
+// Event types stored in ingestion_task_log.event_type. Only lifecycle events
+// participate in component progress aggregation; the remaining kinds are the
+// immutable run event stream rendered by the UI.
+const (
+	EventTypeLifecycle = iota
+	EventTypeMessage
+	EventTypeTerminal
+	EventTypeSystem
+	EventTypeLegacy
+)
+
 func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
 	return &IngestionTaskLogDAO{}
 }
@@ -374,6 +385,44 @@ func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.
 		case r.Phase == 1:
 			progress.Done++
 		case r.Phase < 0 || r.Phase == 2:
+			progress.Failed++
+		default:
+			progress.Running++
+		}
+	}
+	if total > 0 {
+		progress.Percent = float64(progress.Done) / float64(total) * 100
+	}
+	return progress, nil
+}
+
+// AggregateProgressByPipelineLogID computes component progress for one run.
+// Detailed messages and terminal/system events deliberately do not affect a
+// component's latest lifecycle state.
+func (dao *IngestionTaskLogDAO) AggregateProgressByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string, total int) (*TaskProgress, error) {
+	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Select("MAX(id)").
+		Where("pipeline_log_id = ? AND event_type = ? AND component <> ?", pipelineLogID, EventTypeLifecycle, "").
+		Group("component")
+
+	type phaseRow struct {
+		Phase int
+	}
+	var rows []phaseRow
+	err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Select("phase").
+		Where("id IN (?)", latestIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	progress := &TaskProgress{Total: total}
+	for _, row := range rows {
+		switch {
+		case row.Phase == 1:
+			progress.Done++
+		case row.Phase < 0 || row.Phase == 2:
 			progress.Failed++
 		default:
 			progress.Running++

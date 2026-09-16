@@ -20,6 +20,19 @@ import (
 // the task has been picked up by a worker.
 const stepKeyRunCount = "run_count"
 
+// ingestionEventKind intentionally has an invalid zero value. The persisted
+// event protocol starts at zero for lifecycle events, so callers cannot pass a
+// Go zero value and silently create a lifecycle row.
+type ingestionEventKind uint8
+
+const (
+	ingestionEventInvalid ingestionEventKind = iota
+	ingestionEventLifecycle
+	ingestionEventMessage
+	ingestionEventTerminal
+	ingestionEventSystem
+)
+
 type InvalidTaskTransitionError struct {
 	TaskID string
 	From   string
@@ -801,6 +814,73 @@ func (s *IngestionTaskService) RecordComponentProgress(ctx context.Context, task
 		Message:    message,
 	}
 	return s.ingestionTaskLogDAO.Create(ctx, dao.DB, entry)
+}
+
+// RecordLifecycle writes one component lifecycle event for an already
+// validated run. The worker supplies the captured pipeline log ID, never a
+// value reloaded from the mutable task row.
+func (s *IngestionTaskService) RecordLifecycle(ctx context.Context, pipelineLogID, taskID, component string, phase int, message string) error {
+	if component == "" {
+		return errors.New("ingestion lifecycle event requires a component")
+	}
+	if phase < 0 || phase > 2 {
+		return fmt.Errorf("ingestion lifecycle event has invalid phase %d", phase)
+	}
+	return s.insertEvent(ctx, ingestionEventLifecycle, pipelineLogID, taskID, component, phase, message)
+}
+
+// RecordMessage writes supplemental process detail without affecting component
+// progress aggregation.
+func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID, taskID, message string) error {
+	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
+}
+
+// RecordTerminal writes the terminal explanation associated with a run.
+func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
+	return s.insertEvent(ctx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+}
+
+func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
+	if pipelineLogID == "" {
+		return errors.New("ingestion event requires a pipeline log id")
+	}
+	if taskID == "" {
+		return errors.New("ingestion event requires a task id")
+	}
+	eventType := 0
+	switch kind {
+	case ingestionEventLifecycle:
+		eventType = dao.EventTypeLifecycle
+	case ingestionEventMessage:
+		eventType = dao.EventTypeMessage
+	case ingestionEventTerminal:
+		eventType = dao.EventTypeTerminal
+	case ingestionEventSystem:
+		eventType = dao.EventTypeSystem
+	default:
+		return errors.New("ingestion event has invalid kind")
+	}
+	if kind != ingestionEventLifecycle {
+		component = ""
+		phase = 0
+	}
+	now := time.Now().Local()
+	// EventTypeLifecycle is zero while the database default is the defensive
+	// legacy value. A map keeps the explicitly mapped protocol value intact;
+	// GORM otherwise substitutes a default-tag value for a zero struct field.
+	return dao.DB.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
+		"task_id":         taskID,
+		"pipeline_log_id": pipelineLogID,
+		"checkpoint":      entity.JSONMap{},
+		"phase":           phase,
+		"event_type":      eventType,
+		"component":       component,
+		"message":         message,
+		"create_time":     now.UnixMilli(),
+		"create_date":     now.Truncate(time.Second),
+		"update_time":     now.UnixMilli(),
+		"update_date":     now.Truncate(time.Second),
+	}).Error
 }
 
 // ClearComponentProgress removes lifecycle rows left by a previous attempt of

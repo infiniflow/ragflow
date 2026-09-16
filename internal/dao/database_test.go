@@ -149,6 +149,79 @@ func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
 	}
 }
 
+// TestMigrateIngestionLogRunIdentity verifies that legacy pipeline and event
+// tables gain the run identity columns without assigning a fake run number to
+// pre-existing rows. A NULL legacy run_count lets the unique document/run
+// index protect only newly allocated runs.
+func TestMigrateIngestionLogRunIdentity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ctx := context.Background()
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy pipeline log table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE ingestion_task_log (
+		id integer PRIMARY KEY,
+		task_id varchar(32) NOT NULL,
+		checkpoint text NOT NULL,
+		phase integer,
+		component varchar(64),
+		message text
+	)`).Error; err != nil {
+		t.Fatalf("create legacy ingestion event table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id) VALUES ('legacy-log', 'doc-1')`).Error; err != nil {
+		t.Fatalf("seed legacy pipeline log: %v", err)
+	}
+
+	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
+		t.Fatalf("migrateIngestionLogRunIdentity: %v", err)
+	}
+	migrator := db.Migrator()
+	for _, column := range []string{"run_count"} {
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, column) {
+			t.Fatalf("pipeline_operation_log missing %s", column)
+		}
+	}
+	for _, column := range []string{"pipeline_log_id", "event_type"} {
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, column) {
+			t.Fatalf("ingestion_task_log missing %s", column)
+		}
+	}
+	if !migrator.HasIndex(&entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id") {
+		t.Fatal("ingestion_task_log missing pipeline event index")
+	}
+	if !migrator.HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run") {
+		t.Fatal("pipeline_operation_log missing document run unique index")
+	}
+	if !migrator.HasTable(&entity.DocumentCleanupClaim{}) {
+		t.Fatal("document_cleanup_claim table was not created")
+	}
+
+	var legacyRunCount *int
+	if err := db.Raw(`SELECT run_count FROM pipeline_operation_log WHERE id = 'legacy-log'`).Scan(&legacyRunCount).Error; err != nil {
+		t.Fatalf("read legacy run count: %v", err)
+	}
+	if legacyRunCount != nil {
+		t.Fatalf("legacy run_count = %d, want NULL", *legacyRunCount)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-1', 'doc-1', 1)`).Error; err != nil {
+		t.Fatalf("insert first numbered run: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-2', 'doc-1', 1)`).Error; err == nil {
+		t.Fatal("duplicate numbered run was accepted")
+	}
+
+	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
+		t.Fatalf("second migrateIngestionLogRunIdentity: %v", err)
+	}
+}
+
 func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

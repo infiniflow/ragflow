@@ -1045,6 +1045,31 @@ func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
+		t.Fatalf("RecordLifecycle failed: %v", err)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("event count = %d, want 1", len(logs))
+	}
+	event := logs[0]
+	if event.PipelineLogID == nil || *event.PipelineLogID != "run-1" {
+		t.Fatalf("pipeline_log_id = %v, want run-1", event.PipelineLogID)
+	}
+	if event.EventType != dao.EventTypeLifecycle || event.Component != "Parser" || event.Phase != 1 {
+		t.Fatalf("event = %+v, want lifecycle Parser/1", event)
+	}
+}
+
 func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
