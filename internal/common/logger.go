@@ -69,9 +69,11 @@ const (
 	defaultMaxAgeDays = 30
 	cyanLogMarker     = "[[RAGFLOW_CYAN_LOG]]"
 	greenLogMarker    = "[[RAGFLOW_GREEN_LOG]]"
+	redLogMarker      = "[[RAGFLOW_RED_LOG]]"
 	resetLogMarker    = "[[RAGFLOW_RESET_LOG]]"
 	ansiBrightCyan    = "\x1b[96m"
 	ansiGreen         = "\x1b[32m"
+	ansiRed           = "\x1b[31m"
 	ansiReset         = "\x1b[0m"
 )
 
@@ -81,7 +83,7 @@ type coloredLineWriteSyncer struct {
 }
 
 func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
-	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) {
+	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) && !bytes.Contains(p, []byte(redLogMarker)) {
 		return s.WriteSyncer.Write(p)
 	}
 
@@ -89,10 +91,12 @@ func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
 	if s.color {
 		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), []byte(ansiBrightCyan))
 		line = bytes.ReplaceAll(line, []byte(greenLogMarker), []byte(ansiGreen))
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), []byte(ansiRed))
 		line = bytes.ReplaceAll(line, []byte(resetLogMarker), []byte(ansiReset))
 	} else {
 		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), nil)
 		line = bytes.ReplaceAll(line, []byte(greenLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), nil)
 		line = bytes.ReplaceAll(line, []byte(resetLogMarker), nil)
 	}
 
@@ -252,13 +256,18 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// LogCyanGreenInfo writes the request portion in bright cyan and the response
-// portion in green on stdout. File output remains uncolored.
-func LogCyanGreenInfo(request, response string) {
+// LogRequestResponseInfo writes the request portion in bright cyan. The
+// response portion is green for success and red for failure on stdout. File
+// output remains uncolored.
+func LogRequestResponseInfo(request, response string, responseSucceeded bool) {
 	if Logger == nil {
 		return
 	}
-	Logger.Info(cyanLogMarker + request + greenLogMarker + " " + response + resetLogMarker)
+	responseMarker := redLogMarker
+	if responseSucceeded {
+		responseMarker = greenLogMarker
+	}
+	Logger.Info(cyanLogMarker + request + responseMarker + " " + response + resetLogMarker)
 }
 
 func Error(msg string, err error, fields ...zap.Field) {

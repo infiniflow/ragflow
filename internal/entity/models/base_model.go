@@ -663,7 +663,7 @@ func logProviderCall(providerURL, payload string, statusCode int, responseBody s
 	if err != nil {
 		response += " error=" + err.Error()
 	}
-	common.LogCyanGreenInfo(request, response)
+	common.LogRequestResponseInfo(request, response, err == nil && statusCode >= 200 && statusCode < 300)
 }
 
 // schemeSafeTransport wraps an http.RoundTripper so every outgoing request is

@@ -56,20 +56,37 @@ func TestColoredLineWriteSyncerKeepsFileLinePlain(t *testing.T) {
 	}
 }
 
-func TestColoredLineWriteSyncerKeepsJSONUnescapedAfterEncoding(t *testing.T) {
-	var output bytes.Buffer
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
-			MessageKey: "msg",
-			LineEnding: zapcore.DefaultLineEnding,
-		}),
-		coloredLineWriteSyncer{WriteSyncer: zapcore.AddSync(&output), color: true},
-		zapcore.InfoLevel,
-	)
-	zap.New(core).Info(cyanLogMarker + `url=https://provider.example payload={"query":"hello"}` + greenLogMarker + ` response_code=200 response_body={"answer":"ok"}` + resetLogMarker)
+func TestLogRequestResponseInfoColorsResponseByOutcome(t *testing.T) {
+	tests := []struct {
+		name              string
+		response          string
+		responseSucceeded bool
+		responseColor     string
+	}{
+		{name: "success", response: `response_code=200 response_body={"answer":"ok"}`, responseSucceeded: true, responseColor: ansiGreen},
+		{name: "failure", response: `response_code=503 response_body={"error":"unavailable"}`, responseColor: ansiRed},
+	}
 
-	want := ansiBrightCyan + `url=https://provider.example payload={"query":"hello"}` + ansiGreen + ` response_code=200 response_body={"answer":"ok"}` + ansiReset + "\n"
-	if got := output.String(); got != want {
-		t.Errorf("encoded line = %q, want %q", got, want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			core := zapcore.NewCore(
+				zapcore.NewConsoleEncoder(zapcore.EncoderConfig{
+					MessageKey: "msg",
+					LineEnding: zapcore.DefaultLineEnding,
+				}),
+				coloredLineWriteSyncer{WriteSyncer: zapcore.AddSync(&output), color: true},
+				zapcore.InfoLevel,
+			)
+			previousLogger := Logger
+			Logger = zap.New(core)
+			LogRequestResponseInfo(`url=https://provider.example payload={"query":"hello"}`, test.response, test.responseSucceeded)
+			Logger = previousLogger
+
+			want := ansiBrightCyan + `url=https://provider.example payload={"query":"hello"}` + test.responseColor + " " + test.response + ansiReset + "\n"
+			if got := output.String(); got != want {
+				t.Errorf("encoded line = %q, want %q", got, want)
+			}
+		})
 	}
 }
