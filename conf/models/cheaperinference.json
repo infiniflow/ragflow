@@ -76,6 +76,10 @@
       "model_types": [
         "chat"
       ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
       "tools": {
         "support": true
       }
@@ -87,10 +91,6 @@
       "model_types": [
         "chat"
       ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
       "tools": {
         "support": true
       }
@@ -102,10 +102,6 @@
       "model_types": [
         "chat"
       ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
       "tools": {
         "support": true
       }
@@ -174,10 +170,6 @@
       "model_types": [
         "chat"
       ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
       "tools": {
         "support": true
       }
@@ -189,10 +181,6 @@
       "model_types": [
         "chat"
       ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
       "tools": {
         "support": true
       }
@@ -308,6 +296,10 @@
         "chat",
         "vision"
       ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
       "tools": {
         "support": true
       }
@@ -317,7 +309,8 @@
       "context_length": 256000,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -360,7 +353,8 @@
       "context_length": 1000000,
       "max_output": 32768,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -423,6 +417,10 @@
       "model_types": [
         "chat"
       ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
       "tools": {
         "support": true
       }
@@ -611,22 +609,6 @@
     },
     {
       "name": "gpt-5.5",
-      "context_length": 1000000,
-      "max_output": 128000,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-5.5-pro",
       "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
