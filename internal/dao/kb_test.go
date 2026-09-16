@@ -234,7 +234,7 @@ func TestKnowledgebaseDAOGetByTenantIDsOrderByExpressionFallsBack(t *testing.T) 
 
 	for _, orderby := range knowledgebaseQualifiedOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, orderby, false, "", "", "", "", nil)
+			rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "", "", "", "", nil)
 			if err != nil {
 				t.Fatalf("GetByTenantIDs with orderby %q: %v", orderby, err)
 			}
@@ -258,7 +258,7 @@ func TestKnowledgebaseDAOGetListOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range knowledgebaseOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, orderby, false, "", "")
+			rows, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "", "")
 			if err != nil {
 				t.Fatalf("GetList with orderby %q: %v", orderby, err)
 			}
@@ -283,7 +283,7 @@ func TestKnowledgebaseDAOOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewKnowledgebaseDAO()
 
-	rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, "name", false, "", "", "", "", nil)
+	rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("GetByTenantIDs ascending by name: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestKnowledgebaseDAOOrderByAllowedColumn(t *testing.T) {
 	}
 	assertKnowledgebaseIDOrder(t, ids, []string{"kb-3", "kb-2", "kb-1"}, "name")
 
-	listed, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, "name", true, "", "")
+	listed, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "", "")
 	if err != nil {
 		t.Fatalf("GetList descending by name: %v", err)
 	}

@@ -48,7 +48,7 @@ type SearchDetailRow struct {
 }
 
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
 	var total int64
 
@@ -72,12 +72,12 @@ func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantID
 		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 
-	// Apply ordering. Route orderby through searchOrderClause so a
+	// Apply ordering. Route the requested terms through searchOrderClause so a
 	// user-supplied query param can never reach Order() verbatim: the helper
 	// validates against searchOrderableColumns (a closed allowlist) and falls
 	// back to "create_time" on a miss.
 	// codeql[go/sql-injection] False positive: searchOrderClause
-	query = query.Order(searchOrderClause(orderby, desc))
+	query = query.Order(searchOrderClause(terms))
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
@@ -100,7 +100,7 @@ func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantID
 }
 
 // ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
 
 	// Build query with join to user table
@@ -121,12 +121,12 @@ func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs 
 	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
 	query = query.Where("search.tenant_id IN ?", ownerIDs)
 
-	// Apply ordering. Route orderby through searchOrderClause so a
+	// Apply ordering. Route the requested terms through searchOrderClause so a
 	// user-supplied query param can never reach Order() verbatim: the helper
 	// validates against searchOrderableColumns (a closed allowlist) and falls
 	// back to "create_time" on a miss.
 	// codeql[go/sql-injection] False positive: searchOrderClause
-	query = query.Order(searchOrderClause(orderby, desc))
+	query = query.Order(searchOrderClause(terms))
 
 	// Get all matching records
 	if err := query.Scan(&searches).Error; err != nil {

@@ -80,7 +80,7 @@ func TestSearchDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range searchOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, orderby, false, "")
+			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
 			if err != nil {
 				t.Fatalf("ListByTenantIDs with orderby %q: %v", orderby, err)
 			}
@@ -100,7 +100,7 @@ func TestSearchDAOListByOwnerIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range searchOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", orderby, false, "")
+			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", []OrderTerm{{Column: orderby}}, "")
 			if err != nil {
 				t.Fatalf("ListByOwnerIDs with orderby %q: %v", orderby, err)
 			}
@@ -118,13 +118,13 @@ func TestSearchDAOListOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewSearchDAO()
 
-	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, "name", false, "")
+	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "")
 	if err != nil {
 		t.Fatalf("ListByTenantIDs ascending by name: %v", err)
 	}
 	assertSearchOrder(t, rows, []string{"s-3", "s-2", "s-1"}, "name")
 
-	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, "name", true, "")
+	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "")
 	if err != nil {
 		t.Fatalf("ListByTenantIDs descending by name: %v", err)
 	}

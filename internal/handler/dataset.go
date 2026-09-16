@@ -137,6 +137,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		}
 		desc = parsed
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	keywords := c.Query("keywords")
 	parserID := c.Query("parser_id")
@@ -197,8 +198,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		c.Query("name"),
 		page,
 		pageSize,
-		orderby,
-		desc,
+		terms,
 		keywords,
 		ownerIDs,
 		parserID,
@@ -543,6 +543,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	orderby := c.DefaultQuery("orderby", "create_time")
 	// desc defaults to true and is only disabled by the literal value "false".
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
+	terms := orderTermsFromQuery(c, orderby, desc)
 	operationStatus := c.QueryArray("operation_status")
 	createDateFrom := c.Query("create_date_from")
 	createDateTo := c.Query("create_date_to")
@@ -551,7 +552,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

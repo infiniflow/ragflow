@@ -65,7 +65,7 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 // GetDatasetLogsByKBID lists dataset-level (graph/raptor/mindmap) ingestion
 // logs for a knowledge base. Pagination is only applied when both page and
 // pageSize are positive, matching peewee's paginate behavior.
-func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
+func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
 
@@ -92,7 +92,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 	// if no match is found. The only string that flows into Order() is
 	// the whitelisted column name + " ASC"/" DESC" suffix.
 	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
-	query = query.Order(pipelineLogOrderClause(orderby, desc))
+	query = query.Order(pipelineLogOrderClause(terms))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}
@@ -105,7 +105,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 }
 
 // GetFileLogsByKBID lists per-file ingestion logs for a knowledge base.
-func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, keywords string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
+func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ?", kbID)
 
@@ -134,7 +134,7 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	// if no match is found. The only string that flows into Order() is
 	// the whitelisted column name + " ASC"/" DESC" suffix.
 	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
-	query = query.Order(pipelineLogOrderClause(orderby, desc))
+	query = query.Order(pipelineLogOrderClause(terms))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
 	}

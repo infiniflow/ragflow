@@ -218,7 +218,7 @@ func (dao *KnowledgebaseDAO) Count(ctx context.Context, db *gorm.DB, filters map
 
 // GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
 // This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID, id, name string, ids []string) ([]*entity.KnowledgebaseListItem, int64, error) {
+func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, id, name string, ids []string) ([]*entity.KnowledgebaseListItem, int64, error) {
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
@@ -254,12 +254,12 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 		query = query.Where("knowledgebase.parser_id = ?", parserID)
 	}
 
-	// Route orderby through knowledgebaseQualifiedOrderClause so a
+	// Route the requested terms through knowledgebaseQualifiedOrderClause so a
 	// user-supplied query param can never reach Order() verbatim: the helper
 	// validates against knowledgebaseOrderableColumns (a closed allowlist) and
 	// falls back to "create_time" on a miss.
 	// codeql[go/sql-injection] False positive: knowledgebaseQualifiedOrderClause
-	query = query.Order(knowledgebaseQualifiedOrderClause(orderby, desc))
+	query = query.Order(knowledgebaseQualifiedOrderClause(terms))
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -567,7 +567,7 @@ func (dao *KnowledgebaseDAO) GetKBByNameAndUserID(ctx context.Context, db *gorm.
 
 // GetList retrieves knowledge bases with filtering by ID and name
 // This matches the Python get_list method
-func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, name string) ([]*entity.Knowledgebase, int64, error) {
+func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, terms []OrderTerm, id, name string) ([]*entity.Knowledgebase, int64, error) {
 	var kbs []*entity.Knowledgebase
 	var total int64
 
@@ -582,12 +582,12 @@ func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs
 		query = query.Where("name = ?", name)
 	}
 
-	// Route orderby through knowledgebaseOrderClause so a user-supplied query
+	// Route the requested terms through knowledgebaseOrderClause so a user-supplied query
 	// param can never reach Order() verbatim: the helper validates against
 	// knowledgebaseOrderableColumns (a closed allowlist) and falls back to
 	// "create_time" on a miss.
 	// codeql[go/sql-injection] False positive: knowledgebaseOrderClause
-	query = query.Order(knowledgebaseOrderClause(orderby, desc))
+	query = query.Order(knowledgebaseOrderClause(terms))
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

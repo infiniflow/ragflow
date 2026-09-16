@@ -234,7 +234,7 @@ func (dao *UserCanvasDAO) GetByUserAndTitle(ctx context.Context, db *gorm.DB, us
 
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
-func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
+func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID string, pageNumber, itemsPerPage int, terms []OrderTerm, id, title string, canvasCategory, canvasType string) ([]*entity.UserCanvas, error) {
 
 	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
 		Where("user_id = ?", tenantID)
@@ -254,12 +254,12 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Order by
-	// Route orderby through userCanvasOrderClause above so user-supplied
+	// Route the requested terms through userCanvasOrderClause above so user-supplied
 	// query params can never reach Order() verbatim. The helper validates
 	// against userCanvasOrderableColumns (a closed allowlist) and falls
 	// back to "create_time" on any miss, so the string spliced into the
 	// SQL fragment is always one of a fixed set of column names.
-	query = query.Order(userCanvasOrderClause(orderby, desc))
+	query = query.Order(userCanvasOrderClause(terms))
 
 	// Pagination
 	if pageNumber > 0 && itemsPerPage > 0 {
@@ -308,7 +308,7 @@ type UserCanvasListItem struct {
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -354,7 +354,7 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, owne
 		return nil, 0, err
 	}
 
-	order := userCanvasQualifiedOrderClause(orderby, desc)
+	order := userCanvasQualifiedOrderClause(terms)
 	// codeql[go/sql-injection] False positive: `order` was just derived
 	// from userCanvasQualifiedOrderClause above, which validates `orderby`
 	// against userCanvasOrderableColumns (a closed allowlist) and

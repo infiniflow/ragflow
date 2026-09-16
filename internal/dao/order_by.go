@@ -14,6 +14,38 @@ type OrderTerm struct {
 	Desc   bool
 }
 
+// ParseOrderTerms reads the `sort` query value, a comma separated list of
+// `column:direction` terms such as `name:asc,create_time:desc`. A term that
+// omits the direction is ascending. A term with an empty column or a direction
+// that is neither `asc` nor `desc` costs its own term rather than the list, and
+// an empty result leaves the caller on the older `orderby` and `desc` pair.
+// Whether a column is orderable at all stays the entity allowlist's decision.
+func ParseOrderTerms(sort string) []OrderTerm {
+	terms := make([]OrderTerm, 0, strings.Count(sort, ",")+1)
+	for _, part := range strings.Split(sort, ",") {
+		column, direction, hasDirection := strings.Cut(part, ":")
+		column = strings.TrimSpace(column)
+		if column == "" {
+			continue
+		}
+		term := OrderTerm{Column: column}
+		if hasDirection {
+			switch strings.ToLower(strings.TrimSpace(direction)) {
+			case "asc":
+			case "desc":
+				term.Desc = true
+			default:
+				continue
+			}
+		}
+		terms = append(terms, term)
+	}
+	if len(terms) == 0 {
+		return nil
+	}
+	return terms
+}
+
 func renderTerm(table string, term OrderTerm) string {
 	column := term.Column
 	if table != "" {
@@ -189,42 +221,42 @@ var userCanvasOrderableColumns = map[string]struct{}{
 	"update_date":     {},
 }
 
-func chatOrderClause(orderby string, desc bool) string {
-	return orderClause(chatOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func chatOrderClause(terms []OrderTerm) string {
+	return orderClause(chatOrderableColumns, terms, defaultOrderColumn)
 }
 
-func chatSessionOrderClause(orderby string, desc bool) string {
-	return orderClause(chatSessionOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func chatSessionOrderClause(terms []OrderTerm) string {
+	return orderClause(chatSessionOrderableColumns, terms, defaultOrderColumn)
 }
 
-func compilationTemplateGroupOrderClause(orderby string, desc bool) string {
-	return orderClause(compilationTemplateGroupOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func compilationTemplateGroupOrderClause(terms []OrderTerm) string {
+	return orderClause(compilationTemplateGroupOrderableColumns, terms, defaultOrderColumn)
 }
 
-func fileOrderClause(orderBy string, desc bool) string {
-	return orderClause(fileOrderableColumns, []OrderTerm{{Column: orderBy, Desc: desc}}, defaultOrderColumn)
+func fileOrderClause(terms []OrderTerm) string {
+	return orderClause(fileOrderableColumns, terms, defaultOrderColumn)
 }
 
-func knowledgebaseOrderClause(orderby string, desc bool) string {
-	return orderClause(knowledgebaseOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func knowledgebaseOrderClause(terms []OrderTerm) string {
+	return orderClause(knowledgebaseOrderableColumns, terms, defaultOrderColumn)
 }
 
-func knowledgebaseQualifiedOrderClause(orderby string, desc bool) string {
-	return qualifiedOrderClause("knowledgebase", knowledgebaseOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func knowledgebaseQualifiedOrderClause(terms []OrderTerm) string {
+	return qualifiedOrderClause("knowledgebase", knowledgebaseOrderableColumns, terms, defaultOrderColumn)
 }
 
-func pipelineLogOrderClause(orderby string, desc bool) string {
-	return orderClause(pipelineLogOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func pipelineLogOrderClause(terms []OrderTerm) string {
+	return orderClause(pipelineLogOrderableColumns, terms, defaultOrderColumn)
 }
 
-func searchOrderClause(orderby string, desc bool) string {
-	return orderClause(searchOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func searchOrderClause(terms []OrderTerm) string {
+	return orderClause(searchOrderableColumns, terms, defaultOrderColumn)
 }
 
-func userCanvasOrderClause(orderby string, desc bool) string {
-	return orderClause(userCanvasOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func userCanvasOrderClause(terms []OrderTerm) string {
+	return orderClause(userCanvasOrderableColumns, terms, defaultOrderColumn)
 }
 
-func userCanvasQualifiedOrderClause(orderby string, desc bool) string {
-	return qualifiedOrderClause("user_canvas", userCanvasOrderableColumns, []OrderTerm{{Column: orderby, Desc: desc}}, defaultOrderColumn)
+func userCanvasQualifiedOrderClause(terms []OrderTerm) string {
+	return qualifiedOrderClause("user_canvas", userCanvasOrderableColumns, terms, defaultOrderColumn)
 }

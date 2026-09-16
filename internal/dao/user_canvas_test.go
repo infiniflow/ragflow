@@ -290,7 +290,7 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "create_time", false, "finance", "", "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "finance", "", "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestUserCanvasDAOOrderByTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, "tags", false, "", "", "", nil)
+	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "tags"}}, "", "", "", nil)
 	if err != nil {
 		t.Fatalf("ListByTenantIDs: %v", err)
 	}

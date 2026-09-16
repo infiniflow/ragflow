@@ -100,10 +100,11 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	// Call service to list chat sessions
 	ctx := c.Request.Context()
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), orderby, desc, page, pageSize)
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize)
 	if err != nil {
 		// Mirror Python: ownership failures return code 109 "no authorization"
 		if strings.Contains(err.Error(), "no authorization") {

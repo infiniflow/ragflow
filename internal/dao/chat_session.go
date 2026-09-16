@@ -109,7 +109,7 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []OrderTerm, page, pageSize int) ([]*entity.ChatSession, error) {
 	var chatSessions []*entity.ChatSession
 	query := db.WithContext(ctx).Where("dialog_id = ?", chatID)
 	if sessionID != "" {
@@ -118,7 +118,7 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 	if name != "" {
 		query = query.Where("name = ?", name)
 	}
-	query = query.Order(chatSessionOrderClause(orderby, desc))
+	query = query.Order(chatSessionOrderClause(terms))
 	if pageSize > 0 {
 		if page < 1 {
 			page = 1

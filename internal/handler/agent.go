@@ -183,6 +183,7 @@ func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasI
 // @Param page query int false "Page number (0 = no pagination)"
 // @Param page_size query int false "Items per page (0 = no pagination)"
 // @Param orderby query string false "Order-by field (default: create_time)"
+// @Param sort query string false "Ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "Descending order (default: true)"
 // @Param owner_ids query string false "Comma-separated owner IDs to filter (default: all authorised tenants)"
 // @Param canvas_category query string false "Canvas category (default: agent_canvas)"
@@ -232,6 +233,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	if v := c.Query("desc"); v != "" {
 		desc = strings.ToLower(v) != "false"
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	var ownerIDs []string
 	if raw := c.Query("owner_ids"); raw != "" {
@@ -259,8 +261,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		keywords,
 		page,
 		pageSize,
-		orderby,
-		desc,
+		terms,
 		ownerIDs,
 		canvasCategory,
 		canvasType,

@@ -76,7 +76,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "report", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Nested file two levels down must be found from the root folder.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "notes", false)
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "notes", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Folders themselves are searchable by name.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "sub", false)
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "sub", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	ctx := t.Context()
 
 	// Searching inside dirA must not match files outside that subtree.
-	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, "create_time", true, "report", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	}
 
 	// Tenant isolation still applies.
-	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, "create_time", true, "report", false)
+	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestFileDAO_GetByPfID_OrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderBy := range fileOrderExpressions {
 		t.Run(orderBy, func(t *testing.T) {
-			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, orderBy, false, "", false)
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: orderBy}}, "", false)
 			if err != nil {
 				t.Fatalf("GetByPfID with orderby %q: %v", orderBy, err)
 			}
@@ -218,18 +218,73 @@ func TestFileDAO_GetByPfID_OrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewFileDAO()
 
-	rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "name", false, "", false)
+	rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name"}}, "", false)
 	if err != nil {
 		t.Fatalf("GetByPfID ascending by name: %v", err)
 	}
 	assertFileOrder(t, rows, []string{"f-3", "f-2", "f-1"}, "name")
 
-	rows, _, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "name", true, "", false)
+	rows, _, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name", Desc: true}}, "", false)
 	if err != nil {
 		t.Fatalf("GetByPfID descending by name: %v", err)
 	}
 	assertFileOrder(t, rows, []string{"f-1", "f-2", "f-3"}, "name")
 }
+
+// TestFileDAO_GetByPfID_OrderBySeveralTerms checks that a term list reaches the
+// ORDER BY clause in full, so a second term decides the rows the first one ties,
+// and that a term naming a column the file list does not expose costs only itself.
+func TestFileDAO_GetByPfID_OrderBySeveralTerms(t *testing.T) {
+	db := setupFileTestDB(t)
+	testFile(t, db, "root", "root", "t1", "/", "folder")
+	files := []entity.File{
+		{ID: "g-1", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "bravo.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(100)}},
+		{ID: "g-2", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "alpha.txt", Type: "doc", BaseModel: entity.BaseModel{CreateTime: int64Ptr(200)}},
+		{ID: "g-3", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "delta.txt", Type: "img", BaseModel: entity.BaseModel{CreateTime: int64Ptr(300)}},
+		{ID: "g-4", ParentID: "root", TenantID: "t1", CreatedBy: "t1", Name: "charlie.txt", Type: "img", BaseModel: entity.BaseModel{CreateTime: int64Ptr(400)}},
+	}
+	for i := range files {
+		if err := db.Create(&files[i]).Error; err != nil {
+			t.Fatalf("failed to create file %s: %v", files[i].ID, err)
+		}
+	}
+	ctx := t.Context()
+	d := NewFileDAO()
+
+	cases := []struct {
+		label string
+		terms []OrderTerm
+		want  []string
+	}{
+		{
+			label: "type:asc,name:asc",
+			terms: []OrderTerm{{Column: "type"}, {Column: "name"}},
+			want:  []string{"g-2", "g-1", "g-4", "g-3"},
+		},
+		{
+			// Same first term, so only the second one can account for the difference.
+			label: "type:asc,name:desc",
+			terms: []OrderTerm{{Column: "type"}, {Column: "name", Desc: true}},
+			want:  []string{"g-1", "g-2", "g-3", "g-4"},
+		},
+		{
+			label: "password:asc,name:asc",
+			terms: []OrderTerm{{Column: "password"}, {Column: "name"}},
+			want:  []string{"g-2", "g-1", "g-4", "g-3"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, tc.terms, "", false)
+			if err != nil {
+				t.Fatalf("GetByPfID %s: %v", tc.label, err)
+			}
+			assertFileOrder(t, rows, tc.want, tc.label)
+		})
+	}
+}
+
 func TestFileDAO_GetByIDAndTenant(t *testing.T) {
 	db := setupFileTestDB(t)
 	seedFileTree(t, db) // f-t2 belongs to tenant t2
