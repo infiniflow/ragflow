@@ -404,7 +404,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	}
 
 	// The executor would call this after Run; here we invoke it directly.
-	resultDSL, err := BuildDebugResultDSL(dsl, output)
+	resultDSL, err := BuildDebugResultDSL(dsl, output, true)
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	resultDSL, err := BuildDebugResultDSL(dsl, output)
+	resultDSL, err := BuildDebugResultDSL(dsl, output, true)
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}

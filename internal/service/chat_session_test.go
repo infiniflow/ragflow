@@ -163,7 +163,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
 		if s.DialogID != chatID {
@@ -351,7 +351,7 @@ func TestListChatSessions_Success(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("got %v", err)
 	}
