@@ -314,11 +314,7 @@ class TestBatching:
         embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
         embed.model_name = "bge-large-zh"
         embed.client = MagicMock()
-        embed.client.do = MagicMock(
-            side_effect=lambda model, texts: SimpleNamespace(
-                body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": len(texts)}}
-            )
-        )
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": len(texts)}}))
 
         texts = [f"t{i}" for i in range(40)]  # batch_size 16 -> ceil(40/16) == 3
         vectors, token_count = embed.encode(texts)
@@ -332,11 +328,7 @@ class TestBatching:
         embed = BaiduYiyanEmbed.__new__(BaiduYiyanEmbed)
         embed.model_name = "bge-large-zh"
         embed.client = MagicMock()
-        embed.client.do = MagicMock(
-            side_effect=lambda model, texts: SimpleNamespace(
-                body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": 1}}
-            )
-        )
+        embed.client.do = MagicMock(side_effect=lambda model, texts: SimpleNamespace(body={"data": [{"embedding": [float(len(t))]} for t in texts], "usage": {"total_tokens": 1}}))
 
         texts = ["a" * (i + 1) for i in range(20)]  # spans two batches
         vectors, _ = embed.encode(texts)
