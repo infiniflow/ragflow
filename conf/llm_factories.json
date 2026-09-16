@@ -2114,7 +2114,8 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools"
+                        "is_tools",
+                        "thinking"
                     ]
                 },
                 {
@@ -2124,8 +2125,7 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools",
-                        "thinking"
+                        "is_tools"
                     ]
                 },
                 {
@@ -2135,8 +2135,7 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools",
-                        "thinking"
+                        "is_tools"
                     ]
                 },
                 {
@@ -2192,8 +2191,7 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools",
-                        "thinking"
+                        "is_tools"
                     ]
                 },
                 {
@@ -2203,8 +2201,7 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools",
-                        "thinking"
+                        "is_tools"
                     ]
                 },
                 {
@@ -2299,14 +2296,18 @@
                     ],
                     "is_tools": true,
                     "features": [
-                        "is_tools"
+                        "is_tools",
+                        "thinking"
                     ]
                 },
                 {
                     "llm_name": "gemini-3-flash-preview",
-                    "tags": "LLM,CHAT,256K",
+                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
                     "max_tokens": 256000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2342,9 +2343,12 @@
                 },
                 {
                     "llm_name": "gemini-3.1-pro-preview",
-                    "tags": "LLM,CHAT,1M",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
-                    "model_type": "chat",
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
                     "is_tools": true,
                     "features": [
                         "is_tools",
@@ -2394,7 +2398,8 @@
                     "model_type": "chat",
                     "is_tools": true,
                     "features": [
-                        "is_tools"
+                        "is_tools",
+                        "thinking"
                     ]
                 },
                 {
@@ -2537,20 +2542,6 @@
                 },
                 {
                     "llm_name": "gpt-5.5",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
-                    "max_tokens": 1000000,
-                    "model_type": [
-                        "chat",
-                        "vision"
-                    ],
-                    "is_tools": true,
-                    "features": [
-                        "is_tools",
-                        "thinking"
-                    ]
-                },
-                {
-                    "llm_name": "gpt-5.5-pro",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1000000,
                     "model_type": [
