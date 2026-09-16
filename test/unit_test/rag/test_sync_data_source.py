@@ -1224,3 +1224,14 @@ def test_index_batch_size_env_helpers_use_defaults_for_invalid_values(monkeypatc
     assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
     monkeypatch.setenv("RAGFLOW_TEST_SYNC_PAUSE", "-inf")
     assert data_source_config._env_float("RAGFLOW_TEST_SYNC_PAUSE", 0.0) == 0.0
+
+
+def test_redact_url_strips_credentials_query_and_fragment():
+    _redact_url = sync_data_source._redact_url
+
+    assert _redact_url("https://user:pass@tfs.corp.local:8080/tfs/DefaultCollection?test=1#frag") == "https://tfs.corp.local:8080/tfs/DefaultCollection"
+    assert _redact_url("http://user:pass@host/path") == "http://host/path"
+    assert _redact_url(None) == ""
+    assert _redact_url("") == ""
+    assert _redact_url("organization(myorg)") == "organization(myorg)"
+    assert _redact_url("http://[invalid") == "<invalid URL>"

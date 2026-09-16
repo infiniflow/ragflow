@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -351,6 +352,22 @@ type CreateProviderInstanceRequest struct {
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
+// instanceNamePattern restricts an instance name to digits, underscores, and
+// ASCII letters in both cases.
+var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_]+$`)
+
+// validateInstanceName rejects an empty instance name or one carrying any
+// character outside digits, underscores, and ASCII letters.
+func validateInstanceName(instanceName string) error {
+	if instanceName == "" {
+		return errors.New("instance name is required")
+	}
+	if !instanceNamePattern.MatchString(instanceName) {
+		return errors.New("instance name may only contain digits, underscores, and letters")
+	}
+	return nil
+}
+
 // normalizeAPIKey accepts api_key as either a JSON string or a JSON object
 // (credential bundles such as XunFei Spark's
 // {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
@@ -381,6 +398,11 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req CreateProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	if err := validateInstanceName(req.InstanceName); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}

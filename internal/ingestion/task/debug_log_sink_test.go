@@ -277,8 +277,8 @@ func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]an
 // wiring a dataflow debug run uses: NewPipelineFromDSL + WithProgressSink
 // (DebugLogSink) + Run. The canvas framework wraps each component in
 // realComponentBody → runtime.TrackProgress, which MUST emit BOTH PhaseEnter
-// ("<comp> Started", progress 0) and PhaseExit ("<comp> Done", progress 1) on
-// success.
+// ("<component name> Started", progress 0) and PhaseExit
+// ("<component name> Done", progress 1) on success.
 //
 // This locks the contract the front-end depends on: every component ends with a
 // Done line, not just a Started line. It is the regression guard for the
@@ -333,7 +333,7 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 	// Every real component (a, b) must show BOTH Started (progress 0) and Done
 	// (progress 1) within its own trace — proving TrackProgress emitted the full
 	// enter→exit lifecycle, not just enter.
-	for _, comp := range []string{"a", "b"} {
+	for comp, componentName := range map[string]string{"a": compA, "b": compB} {
 		var gotStart, gotDone bool
 		for _, el := range arr {
 			if el["component_id"] != comp {
@@ -348,9 +348,9 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 				prog, _ := tm["progress"].(float64)
 				msg, _ := tm["message"].(string)
 				switch {
-				case prog == 0 && msg == comp+" Started":
+				case prog == 0 && msg == componentName+" Started":
 					gotStart = true
-				case prog == 1 && msg == comp+" Done":
+				case prog == 1 && msg == componentName+" Done":
 					gotDone = true
 				}
 			}

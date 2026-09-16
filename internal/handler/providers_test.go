@@ -111,6 +111,46 @@ func decodeProviderHandlerResponse(t *testing.T, recorder *httptest.ResponseReco
 	return body
 }
 
+func TestValidateInstanceName(t *testing.T) {
+	tests := []struct {
+		name  string
+		valid bool
+	}{
+		{name: "my_instance", valid: true},
+		{name: "Instance123", valid: true},
+		{name: "_123", valid: true},
+		{name: "", valid: false},
+		{name: "my instance", valid: false},
+		{name: "my-instance", valid: false},
+		{name: "实例", valid: false},
+		{name: "instância", valid: false},
+		{name: "instance!", valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestProviderHandlerCreateProviderInstanceRejectsInvalidInstanceName(t *testing.T) {
+	ctx, recorder := newProviderHandlerRequest(
+		t,
+		map[string]interface{}{"instance_name": "my instance!"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+	)
+
+	NewProviderHandler(nil, service.NewModelProviderService()).CreateProviderInstance(ctx)
+
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
+		t.Fatalf("code = %v, want %v", body["code"], common.CodeBadRequest)
+	}
+}
+
 func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
