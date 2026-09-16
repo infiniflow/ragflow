@@ -228,8 +228,10 @@ def _unconnected_sibling_graph(query=None):
     )
 
 
-def _connected_chain_graph():
+def _connected_chain_graph(query=None):
     """Begin → producer → DataOperations with an explicit canvas edge."""
+    if query is None:
+        query = ["producer@result"]
     return _dsl(
         {
             "begin": _node("Begin", {}, ["producer"], []),
@@ -242,7 +244,7 @@ def _connected_chain_graph():
             "ops": _node(
                 "DataOperations",
                 {
-                    "query": ["producer@result"],
+                    "query": query,
                     "operations": "select_keys",
                     "select_keys": ["name"],
                 },
@@ -348,3 +350,19 @@ def test_connected_fanout_defers_via_explicit_upstream_edge(stack):
     assert ops.output("result") == [{"name": "Ragflow"}]
     assert trace.at("start", "ops") >= trace.at("end", "producer")
     assert "producer" in ops.get_dependency_ids()
+
+
+@pytest.mark.p1
+def test_normalize_query_ref_strips_braces_and_surrounding_spaces(stack):
+    _, _, data_ops = stack
+    assert data_ops.DataOperations._normalize_query_ref(" { producer@result } ") == "producer@result"
+
+
+@pytest.mark.p1
+def test_connected_braced_query_ref_with_surrounding_spaces(stack):
+    canvas_module, _, _ = stack
+    graph = _run(canvas_module, _connected_chain_graph(query=[" { producer@result } "]))
+    ops = graph.get_component_obj("ops")
+
+    assert not ops.error(), ops.error()
+    assert ops.output("result") == [{"name": "Ragflow"}]

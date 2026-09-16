@@ -45,9 +45,9 @@ class DataOperations(ComponentBase, ABC):
 
     @staticmethod
     def _normalize_query_ref(ref: str) -> str:
-        # Match Canvas.get_variable_value so "{ producer@result }" and
+        # Match Canvas.get_variable_value so " { producer@result } " and
         # "producer@result" identify the same producer component.
-        return ref.strip("{").strip("}").strip(" ").strip("{").strip("}")
+        return ref.strip().strip("{}").strip()
 
     def _query_entries(self) -> list[str]:
         refs = getattr(self._param, "query", None)
