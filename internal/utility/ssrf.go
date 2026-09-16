@@ -265,6 +265,7 @@ func pinnedRedirectPolicy(originalURL string) func(*http.Request, []*http.Reques
 		return func(*http.Request, []*http.Request) error { return fmt.Errorf("invalid original URL") }
 	}
 	origHost := strings.ToLower(orig.Hostname())
+	origPort := effectivePort(orig)
 	origScheme := strings.ToLower(orig.Scheme)
 	return func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
@@ -274,14 +275,31 @@ func pinnedRedirectPolicy(originalURL string) func(*http.Request, []*http.Reques
 			return err
 		}
 		host := strings.ToLower(req.URL.Hostname())
-		if host != origHost {
-			return fmt.Errorf("redirect to %q is not allowed (must stay on the validated host %q)", req.URL.Host, origHost)
+		port := effectivePort(req.URL)
+		if host != origHost || port != origPort {
+			return fmt.Errorf("redirect to %q is not allowed (must stay on the validated origin %q)", req.URL.Host, orig.Host)
 		}
 		if origScheme == "https" && !strings.EqualFold(req.URL.Scheme, "https") {
 			return fmt.Errorf("redirect must not downgrade the URL scheme from https")
 		}
 		return nil
 	}
+}
+
+// effectivePort returns the URL's port, defaulting to the scheme's standard
+// port (443 for https, 80 for http) so origin comparisons treat an explicit
+// default port and an omitted port as the same origin.
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every

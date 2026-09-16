@@ -112,6 +112,24 @@ func loopbackTestAllow(hostname string) (string, net.IP, bool) {
 	return "", nil, false
 }
 
+// assertConnectorURLSafeHTTPS validates rawURL with the strict SSRF guard and
+// additionally requires HTTPS. Plain-HTTP loopback targets are still permitted
+// under the test hook (httptest servers are plain HTTP); anything else must use
+// TLS so credentials in request headers are never sent in the clear.
+func assertConnectorURLSafeHTTPS(rawURL string) (string, net.IP, error) {
+	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil {
+		if scheme := strings.ToLower(parsed.Scheme); scheme != "https" {
+			if !connectorAllowLoopbackForTest {
+				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
+			}
+			if _, _, ok := loopbackTestAllow(parsed.Hostname()); !ok {
+				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
+			}
+		}
+	}
+	return assertConnectorURLSafe(rawURL)
+}
+
 // validateConnectorURL is the config-time SSRF check used by connector
 // Validate/New paths.
 func validateConnectorURL(rawURL string) error {
@@ -385,6 +403,7 @@ var connectorAuthSensitiveHeaders = map[string]struct{}{
 	"api-key":             {},
 	"x-api-key":           {},
 	"x-auth-token":        {},
+	"private-token":       {}, // GitLab credential header
 }
 
 func connectorStripAuthHeaders(headers map[string]string) map[string]string {

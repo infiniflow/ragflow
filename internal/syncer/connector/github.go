@@ -384,8 +384,9 @@ func (c *GitHubConnector) getJSON(ctx context.Context, apiURL string, out any) (
 		return c.doJSON(ctx, apiURL, out)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method: http.MethodGet,
-		RawURL: apiURL,
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
 		Headers: map[string]string{
 			"Accept":               "application/vnd.github+json",
 			"X-GitHub-Api-Version": "2022-11-28",

@@ -233,6 +233,18 @@ func TestPinnedRedirectPolicy(t *testing.T) {
 		t.Fatalf("cross-host redirect should be rejected")
 	}
 
+	// Same host on a different port is a different origin and is rejected.
+	otherPort, _ := http.NewRequest(http.MethodGet, "https://api.example.com:8443/v2", nil)
+	if err := policy(otherPort, via); err == nil {
+		t.Fatalf("same-host different-port redirect should be rejected")
+	}
+
+	// The explicit default port normalizes to the same origin and is allowed.
+	explicitPort, _ := http.NewRequest(http.MethodGet, "https://api.example.com:443/v2", nil)
+	if err := policy(explicitPort, via); err != nil {
+		t.Fatalf("explicit default port redirect rejected: %v", err)
+	}
+
 	// A redirect target resolving to a non-public address is rejected by the
 	// SSRF re-check before the origin check.
 	internal, _ := http.NewRequest(http.MethodGet, "https://meta.example/v2", nil)

@@ -298,10 +298,11 @@ func (c *GitlabConnector) getJSON(ctx context.Context, apiURL string, out any) (
 		return c.doJSON(ctx, apiURL, out)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  http.MethodGet,
-		RawURL:  apiURL,
-		Headers: map[string]string{"Accept": "application/json", "PRIVATE-TOKEN": c.token},
-		Timeout: gitlabRequestTimeout,
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers:  map[string]string{"Accept": "application/json", "PRIVATE-TOKEN": c.token},
+		Timeout:  gitlabRequestTimeout,
 	})
 	if err != nil {
 		var unsafe *connectorUnsafeURLError
@@ -327,10 +328,11 @@ func (c *GitlabConnector) getRaw(ctx context.Context, apiURL string) ([]byte, er
 		return c.doRaw(ctx, apiURL)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  http.MethodGet,
-		RawURL:  apiURL,
-		Headers: map[string]string{"PRIVATE-TOKEN": c.token},
-		Timeout: gitlabRequestTimeout,
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers:  map[string]string{"PRIVATE-TOKEN": c.token},
+		Timeout:  gitlabRequestTimeout,
 	})
 	if err != nil {
 		var unsafe *connectorUnsafeURLError

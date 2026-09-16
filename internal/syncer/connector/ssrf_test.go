@@ -227,7 +227,11 @@ func TestConnectorRequestRejectsCrossOriginBodyRedirect(t *testing.T) {
 	}
 
 	// A 307 to a different origin must not forward the credential-bearing body.
-	if _, err := connectorRequest(context.Background(), opts("/cross")); err == nil || !strings.Contains(err.Error(), "different origin") {
+	crossResp, err := connectorRequest(context.Background(), opts("/cross"))
+	if crossResp != nil {
+		crossResp.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "different origin") {
 		t.Fatalf("cross-origin body redirect err = %v, want rejection", err)
 	}
 	if targetHit.Load() {
@@ -240,4 +244,60 @@ func TestConnectorRequestRejectsCrossOriginBodyRedirect(t *testing.T) {
 		t.Fatalf("same-origin 307: %v", err)
 	}
 	resp.Body.Close()
+}
+
+func TestAssertConnectorURLSafeHTTPS(t *testing.T) {
+	orig := utility.LookupHost
+	utility.LookupHost = func(host string) ([]string, error) {
+		return []string{"93.184.216.34"}, nil
+	}
+	t.Cleanup(func() { utility.LookupHost = orig })
+
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+
+	// HTTPS public URLs pass.
+	if _, _, err := assertConnectorURLSafeHTTPS("https://api.example.com/v1"); err != nil {
+		t.Fatalf("https should be allowed: %v", err)
+	}
+	// Plain-HTTP (non-loopback) is rejected so credentials stay off the wire.
+	if _, _, err := assertConnectorURLSafeHTTPS("http://api.example.com/v1"); err == nil {
+		t.Fatalf("plain http should be rejected")
+	}
+	// Loopback HTTP is rejected outside the test hook.
+	if _, _, err := assertConnectorURLSafeHTTPS("http://127.0.0.1:8080/v1"); err == nil {
+		t.Fatalf("loopback http should be rejected outside the test hook")
+	}
+
+	// Loopback HTTP is permitted under the test hook (httptest servers).
+	withConnectorLoopbackTestHook(t)
+	if _, _, err := assertConnectorURLSafeHTTPS("http://127.0.0.1:8080/v1"); err != nil {
+		t.Fatalf("loopback http should be allowed under the test hook: %v", err)
+	}
+	// But a plain-http non-loopback target is still rejected even under the hook.
+	if _, _, err := assertConnectorURLSafeHTTPS("http://api.example.com/v1"); err == nil {
+		t.Fatalf("plain http should still be rejected under the test hook")
+	}
+}
+
+func TestConnectorStripAuthHeadersRemovesCredentials(t *testing.T) {
+	headers := map[string]string{
+		"Authorization":   "Bearer tok",
+		"PRIVATE-TOKEN":   "gitlab-tok",
+		"X-API-Key":       "key",
+		"X-Auth-Token":    "auth",
+		"Content-Type":    "application/json",
+		"X-Custom-Header": "keep",
+	}
+	stripped := connectorStripAuthHeaders(headers)
+	for _, k := range []string{"Authorization", "PRIVATE-TOKEN", "X-API-Key", "X-Auth-Token"} {
+		if _, ok := stripped[k]; ok {
+			t.Fatalf("sensitive header %q was not stripped", k)
+		}
+	}
+	for _, k := range []string{"Content-Type", "X-Custom-Header"} {
+		if stripped[k] == "" {
+			t.Fatalf("non-sensitive header %q was stripped", k)
+		}
+	}
 }
