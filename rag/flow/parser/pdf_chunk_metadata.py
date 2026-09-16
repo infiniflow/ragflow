@@ -15,6 +15,7 @@
 import io
 import logging
 import sys
+import threading
 from copy import deepcopy
 from functools import partial
 
@@ -31,6 +32,20 @@ PDF_PREVIEW_CONTEXT = 120
 PDF_PREVIEW_ZOOM = 3
 PDF_POSITIONS_KEY = "_pdf_positions"
 PDF_MULTI_COLUMN_ZOOM = 3
+PDFPLUMBER_SHARED_LOCK_KEY = "global_shared_lock_pdfplumber"
+_pdfplumber_lock_init_guard = threading.Lock()
+
+
+def _pdfplumber_shared_lock():
+    """Return the process-wide pdfplumber lock (same key as deepdoc.parser.pdf_parser)."""
+    lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+    if lock is None:
+        with _pdfplumber_lock_init_guard:
+            lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+            if lock is None:
+                lock = threading.Lock()
+                sys.modules[PDFPLUMBER_SHARED_LOCK_KEY] = lock
+    return lock
 
 
 def _extract_raw_positions(item):
@@ -127,14 +142,8 @@ def supplement_deepdoc_bboxes_with_embedded_images(
     if bboxes and any(b.get("image") is not None for b in bboxes):
         return bboxes
 
-    lock_key = "global_shared_lock_pdfplumber"
-    if lock_key not in sys.modules:
-        import threading
-
-        sys.modules[lock_key] = threading.Lock()
-
     supplemented = []
-    with sys.modules[lock_key]:
+    with _pdfplumber_shared_lock():
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
             for page_number, page in enumerate(pdf.pages, start=1):
                 if not (from_page + 1 <= page_number <= to_page):
@@ -268,9 +277,7 @@ def _fetch_source_blob(from_upstream, canvas):
 
 
 def _load_pdf_page_images(blob, zoom=PDF_PREVIEW_ZOOM):
-    from deepdoc.parser.pdf_parser import LOCK_KEY_pdfplumber
-
-    with sys.modules[LOCK_KEY_pdfplumber]:
+    with _pdfplumber_shared_lock():
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
             return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
 

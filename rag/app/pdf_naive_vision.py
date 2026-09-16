@@ -57,6 +57,7 @@ def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parse
     """Merge VLM-enhanced bbox text back into naive PDF sections and tables."""
     sections = list(sections or [])
     tables = list(tables or [])
+    sections_was_empty = not sections
 
     for box in bboxes:
         if box.get("image") is None:
@@ -81,6 +82,9 @@ def merge_vlm_enhanced_bboxes_into_naive_pdf(sections, tables, bboxes, pdf_parse
                 break
 
         if matched:
+            continue
+
+        if sections_was_empty:
             continue
 
         poss = _bbox_positions_for_naive_tables(box)

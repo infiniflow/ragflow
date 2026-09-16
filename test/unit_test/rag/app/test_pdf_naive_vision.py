@@ -31,7 +31,7 @@ def test_merge_updates_matching_section_text():
 
 
 @pytest.mark.p1
-def test_merge_adds_table_when_no_section_match():
+def test_merge_puts_image_only_vlm_into_sections_not_tables():
     pdf_parser = Mock()
     pdf_parser._line_tag = Mock(return_value="@@1\t0\t0\t0\t0##")
     bboxes = [
@@ -42,8 +42,27 @@ def test_merge_adds_table_when_no_section_match():
         }
     ]
     sections, tables = merge_vlm_enhanced_bboxes_into_naive_pdf([], [], bboxes, pdf_parser)
+    assert tables == []
+    assert len(sections) == 1
+    assert sections[0][0] == "only vlm"
+
+
+@pytest.mark.p1
+def test_merge_adds_table_when_orphan_image_with_existing_sections():
+    pdf_parser = Mock()
+    pdf_parser._line_tag = Mock(return_value="@@9\t0\t0\t0\t0##")
+    sections = [("intro", "@@1\t0\t0\t0\t0##")]
+    bboxes = [
+        {
+            "text": "orphan figure",
+            "image": object(),
+            "positions": [[2, 0, 10, 0, 10]],
+        }
+    ]
+    sections, tables = merge_vlm_enhanced_bboxes_into_naive_pdf(sections, [], bboxes, pdf_parser)
     assert len(tables) == 1
-    assert tables[0][0][1] == ["only vlm"]
+    assert tables[0][0][1] == ["orphan figure"]
+    assert sections[0][0] == "intro"
 
 
 @pytest.mark.p1
