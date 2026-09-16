@@ -167,10 +167,12 @@ func TestRollCallSkipsWhenThereIsNothingToAsk(t *testing.T) {
 	}
 }
 
-// TestRollCallMembersOutrankAProseList pins what happens when the slot the members go into holds
-// PROSE: the accountable list wins, because every name in it carries the passage that names it (a
-// prose claim contributes no member and therefore no count at all — see memberUnion).
-func TestRollCallMembersOutrankAProseList(t *testing.T) {
+// TestRollCallLeavesAValueTableAlone pins the restraint that keeps this step off every question that
+// is not enumerating anything: when no slot holds members, nothing is written and no prose is
+// replaced by a list. A table whose slots hold VALUES (a name, a date, a number, a phrase) is not
+// enumerating, and a single-value answer must stay what it is — which is what makes this step safe on
+// the questions that are not sets.
+func TestRollCallLeavesAValueTableAlone(t *testing.T) {
 	kb := &harness.Kbinfos{}
 	kb.StorePatternFindings("- 关羽.*斩 →\n    chunk_id=w1  \"云长手起刀落，斩杨龄于马下\"\n")
 	prose := "据网文统计共14人：华雄、颜良、文丑……"
@@ -179,22 +181,22 @@ func TestRollCallMembersOutrankAProseList(t *testing.T) {
 		{ID: 1, Type: "dataset", Candidate: &prose, CandidateStrength: testFloatPtr(0.95)},
 	}, 0, nil)
 	st := &AgenticState{Question: "关羽杀了多少有姓名的人物？", KB: kb, SlotTable: table}
-	deps := RAGTools{Model: &rollCallModel{reply: `{"members": [{"i": 0, "name": "杨龄"}], "not_members": []}`}}
+	model := &rollCallModel{reply: `{"members": [{"i": 0, "name": "杨龄"}], "not_members": []}`}
 
-	res := RollCallMembers(context.Background(), deps, st, log.New(&bytes.Buffer{}, "", 0))
-	if res.Written != 1 {
-		t.Fatalf("written = %d, want 1", res.Written)
+	res := RollCallMembers(context.Background(), RAGTools{Model: model}, st, log.New(&bytes.Buffer{}, "", 0))
+
+	if res.Asked != 0 || res.Written != 0 {
+		t.Fatalf("roll call = asked %d / written %d, want nothing: the table holds no members", res.Asked, res.Written)
+	}
+	if model.calls != 0 {
+		t.Errorf("model calls = %d, want none — a table of values must not spend a call", model.calls)
 	}
 	v := st.SlotTable.State[1]
-	if v.Typed().Kind != slots.KindMembers {
-		t.Errorf("slot holds %v, want the member list the roll call verified", v.Typed().Kind)
+	if v.Typed().Kind == slots.KindMembers {
+		t.Errorf("slot now holds a member list, want the value it held untouched")
 	}
-	if names := v.Typed().Names(); len(names) != 1 || names[0] != "杨龄" {
-		t.Errorf("slot members = %v, want 杨龄", names)
-	}
-	// The prose is not thrown away: it survives as an alternate, exactly as a losing claim does.
-	if !strings.Contains(strings.Join(v.DiscoveredClues, "|"), "14人") {
-		t.Errorf("clues = %v, want the prose claim kept as an alternate", v.DiscoveredClues)
+	if v.Candidate == nil || *v.Candidate != prose {
+		t.Errorf("slot candidate = %v, want the prose it held", v.Candidate)
 	}
 }
 

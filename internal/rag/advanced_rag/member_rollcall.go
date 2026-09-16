@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -49,12 +50,20 @@ import (
 // line the runtime handed it, never from the reply.
 
 // MemberRollCallPrompt is the whole instruction: one verdict per line, both lists.
+//
+// It is written around the QUESTION rather than around any one kind of answer: the same step runs on
+// "which awards did X win" and on "who did X kill", so what a line has to do is state a member of
+// the set the question asks for — the question itself is in the user message. Nothing here decides
+// what counts as a member; that judgement is the model's, and it is the same judgement it makes
+// inside a session. What changes is only WHO WRITES IT DOWN.
 const MemberRollCallPrompt = "You are given numbered evidence lines from one fixed corpus, each with the chunk id it came from.\n" +
-	"For EVERY line decide one thing: does this line record the ACTOR killing a NAMED person — and if it does, who?\n" +
-	"Judge only what the line says. A threat, a vow, a pursuit, a rout, a killing by somebody else, or a " +
-	"victim the line does not name is NOT a member.\n" +
+	"For EVERY line decide one thing: does this line itself state a member of the set the question " +
+	"asks for — and if it does, what is that member called?\n" +
+	"Judge only what the line says, never what you know from elsewhere. A mention that is not a member " +
+	"(a plan, a promise, a denial, a pursuit, something that did not happen, somebody else's action, or " +
+	"a member the line does not name) is NOT one.\n" +
 	"Answer with JSON only, and put EVERY line number in exactly one of the two lists:\n" +
-	`{"members": [{"i": <line number>, "name": "<the person the actor killed>"}], "not_members": [<line numbers>]}` + "\n" +
+	`{"members": [{"i": <line number>, "name": "<the member the line states>"}], "not_members": [<line numbers>]}` + "\n" +
 	"Use the line's own words for the name. Never invent a name, and never answer for a line you were not given."
 
 // rollCallCandidate is one line put in front of the model.
@@ -97,13 +106,26 @@ func RollCallMembers(ctx context.Context, deps RAGTools, st *AgenticState, logge
 	if !harness.MemberShaped(st.SlotTable) {
 		return res
 	}
+	// And the stronger gate, which is the one that keeps the step off every question that is not a
+	// set: the members go into a slot that ALREADY holds members, so a table whose slots hold values
+	// (one name, one date, one number, one phrase) is not enumerated at all and this step spends
+	// nothing — not even the call (see rollCallTargetSlot).
+	slotID := rollCallTargetSlot(&st.SlotTable)
+	if slotID < 0 {
+		return res
+	}
 	cands := rollCallCandidates(st)
 	if len(cands) == 0 {
 		return res
 	}
 	res.Asked = len(cands)
 
-	reply, err := deps.Model.Complete(ctx, []schema.Message{
+	// Bounded like every other single-purpose call in this graph (see RewriteTimeoutS): the answer
+	// composition still has to fit inside the request's clock, so this step may not spend it.
+	t := min(RollCallTimeoutS, max(10.0, st.RemainingS()-10.0))
+	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
+	defer cancel()
+	reply, err := deps.Model.Complete(callCtx, []schema.Message{
 		*schema.SystemMessage(MemberRollCallPrompt),
 		*schema.UserMessage(rollCallQuestion(st, cands)),
 	}, nil)
@@ -126,11 +148,6 @@ func RollCallMembers(ctx context.Context, deps RAGTools, st *AgenticState, logge
 		return res
 	}
 
-	slotID := rollCallTargetSlot(&st.SlotTable)
-	if slotID < 0 {
-		logger.Printf("[RollCall] %d member(s) named but the table holds no slot that can carry them", len(members))
-		return res
-	}
 	before := len(memberUnion(&st.SlotTable))
 	value := slots.Members(members...)
 	rendered := slots.Render(value)
@@ -283,10 +300,15 @@ func parseRollCallVerdicts(content string, cands []rollCallCandidate) ([]slots.M
 	return members, len(answered)
 }
 
-// rollCallTargetSlot is the slot the members go into: the member slot that already holds the most
-// members — the enumeration's own list slot, which is the one the answer and the record read — or,
-// when the table holds no members yet, the first slot whose type can carry them. -1 when neither
-// exists, which is a direction that is not enumerating anything.
+// rollCallTargetSlot is the slot the members go into: the member slot that ALREADY holds the most
+// members — the enumeration's own list slot, the one the record and the answer read. -1 when the
+// table holds no members at all.
+//
+// The restraint is deliberate, and it is what keeps this step off every other kind of question: a
+// table whose slots hold VALUES (a name, a date, a number, a phrase) is not enumerating anything, so
+// there is nothing to add to and nothing is written — no prose is replaced, no single answer is
+// turned into a list. Whether a table IS enumerating is therefore the model's own earlier decision
+// (it wrote members), not a reading of a slot's type here.
 func rollCallTargetSlot(table *harness.State) int {
 	if table == nil {
 		return -1
@@ -300,16 +322,7 @@ func rollCallTargetSlot(table *harness.State) int {
 			best, bestN = v.ID, n
 		}
 	}
-	if best >= 0 {
-		return best
-	}
-	for _, v := range table.State {
-		switch strings.ToLower(strings.TrimSpace(v.Type)) {
-		case "entity", "person", "dataset", "list", "set":
-			return v.ID
-		}
-	}
-	return -1
+	return best
 }
 
 // rollCallItems normalises a JSON list, whichever shape the decoder produced for it.

@@ -108,6 +108,9 @@ const (
 	DraftTimeoutS       = 60.0 // fallback draft synthesis
 	SCATimeoutS         = 60.0 // sufficient-context review call
 	RewriteTimeoutS     = 45.0 // gap → query rewrite call
+	// RollCallTimeoutS bounds the member roll call (see RollCallMembers): it runs before the answer
+	// is composed, so it may not spend the clock the answer needs.
+	RollCallTimeoutS = 30.0
 	// SCAViewCap: 24 of 225 hid the answer-bearing table chunk from the SCA.
 	SCAViewCap = 60
 	// MaxSnippetPool is the storage ceiling of the snippet pool across ALL
