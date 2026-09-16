@@ -202,6 +202,7 @@ export const IconMap = {
   [LLMFactory.Synthorai]: 'synthorai',
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
+  [LLMFactory.CheaperInference]: 'cheaperinference',
 };
 
 export const ModelTypeToField: Record<string, string> = {
