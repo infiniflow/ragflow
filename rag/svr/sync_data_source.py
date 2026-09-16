@@ -403,9 +403,7 @@ class SyncBase:
         def should_cancel() -> bool:
             if cancel_event is not None and cancel_event.is_set():
                 return True
-            return parent_task is not None and (
-                parent_task.cancelling() > 0 or parent_task.cancelled()
-            )
+            return parent_task is not None and (parent_task.cancelling() > 0 or parent_task.cancelled())
 
         if should_cancel():
             return [], []

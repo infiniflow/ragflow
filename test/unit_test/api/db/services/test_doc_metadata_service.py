@@ -105,4 +105,3 @@ class TestDocMetadataServiceRefreshNow:
             mock_doc_store.insert.assert_called_once()
             assert mock_doc_store.insert.call_args.kwargs["refresh"] is False
             mock_doc_store.refresh_idx.assert_not_called()
-

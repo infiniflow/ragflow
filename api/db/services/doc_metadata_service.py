@@ -455,9 +455,7 @@ class DocMetadataService:
         if refresh_idx(index_name):
             logging.debug(f"Refreshed metadata index: {index_name}")
             return
-        logging.warning(
-            f"Failed to refresh metadata index {index_name} on backend {type(settings.docStoreConn).__name__}; metadata may not be immediately searchable"
-        )
+        logging.warning(f"Failed to refresh metadata index {index_name} on backend {type(settings.docStoreConn).__name__}; metadata may not be immediately searchable")
 
     @classmethod
     @DB.connection_context()
