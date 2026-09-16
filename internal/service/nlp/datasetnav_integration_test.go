@@ -98,7 +98,7 @@ func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
 	t.Cleanup(func() { _ = ns.RemoveDoc(context.Background(), tenantID, kbID, docID) })
 
 	// NavService.Search must find the nav row (reads nav rows directly).
-	hits, err := ns.Search(t.Context(), tenantID, kbID, "rocket propulsion", nil, 5)
+	hits, err := ns.Search(t.Context(), tenantID, kbID, "rocket propulsion", nil, nil, 5)
 	if err != nil {
 		t.Fatalf("nav search: %v", err)
 	}

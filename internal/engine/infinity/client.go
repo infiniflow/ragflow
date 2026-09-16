@@ -390,8 +390,8 @@ func (e *Engine) SupportsPageRank() bool {
 
 // Ping checks if Infinity is accessible
 func (e *Engine) Ping(ctx context.Context) error {
-	if e.client == nil || e.client.pool == nil {
-		return fmt.Errorf("infinity client not initialized")
+	if e == nil || e.client == nil || e.client.pool == nil {
+		return fmt.Errorf("infinity engine not initialized")
 	}
 	conn, release, err := e.client.checkoutConn(ctx, "Ping")
 	if err != nil {

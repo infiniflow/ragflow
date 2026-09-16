@@ -16,6 +16,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 )
@@ -617,8 +618,16 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if req == nil {
 		t.Fatal("expected doc engine search request")
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
-		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
+	// The per-memory index name gains a `_<memoryID>` suffix on infinity
+	// (see memorySearchIndexNames). The engine type is process-global and set
+	// by sibling integration tests, so make the expectation engine-aware rather
+	// than hard-coding the non-infinity name.
+	wantIndexName := "memory_user-1"
+	if engine.GetEngineType() == "infinity" {
+		wantIndexName = "memory_user-1_mem-owned"
+	}
+	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
+		t.Fatalf("IndexNames = %v, want [%s]", req.IndexNames, wantIndexName)
 	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)
