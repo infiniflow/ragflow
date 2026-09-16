@@ -505,7 +505,6 @@ class DocMetadataService:
                     [{"id": doc_id, "kb_id": kb_id, "meta_fields": processed_meta}],
                     index_name,
                     kb_id,
-                    refresh="wait_for" if refresh_now else False,
                 )
                 if insert_errors:
                     logging.error(f"Failed to update metadata for document {doc_id}: {insert_errors}")
