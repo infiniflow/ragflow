@@ -331,7 +331,4 @@ def test_vision_figure_parser_pdf_wrapper_handles_textless_figure_items(monkeypa
 
     assert result == boosted_figures
     module.VisionFigureParser.assert_called_once()
-    assert module.VisionFigureParser.call_args.kwargs["figures_data"] == [
-        ((fake_img, [""]), [(0, 10, 100, 20, 200)])
-    ]
-
+    assert module.VisionFigureParser.call_args.kwargs["figures_data"] == [((fake_img, [""]), [(0, 10, 100, 20, 200)])]

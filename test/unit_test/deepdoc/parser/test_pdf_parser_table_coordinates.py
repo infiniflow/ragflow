@@ -382,7 +382,7 @@ def test_extract_table_figure_preserves_textless_figures(monkeypatch):
     items = parser._extract_table_figure(need_image=True, ZM=1, return_html=False, need_position=True)
     assert len(items) == 1
     (img, descriptions), poss = items[0]
+    assert img is not None
     assert isinstance(descriptions, list)
     assert descriptions == [""]
     assert poss == [(0, 50, 200, 50, 200)]
-
