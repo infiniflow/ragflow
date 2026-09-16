@@ -39,6 +39,48 @@ import (
 // azure_blob.go).
 var connectorAssertURLSafe = utility.AssertURLSafe
 
+// connectorAssertHostSafe is the host-type SSRF guard shared by the host-based
+// connectors (IMAP/MySQL/PostgreSQL). It is an indirection over
+// utility.AssertHostSafe so unit tests can substitute a stub without touching
+// the shared utility guard (same pattern as connectorAssertURLSafe).
+var connectorAssertHostSafe = utility.AssertHostSafe
+
+// assertConnectorHostSafe validates a bare host (hostname or literal IP, no
+// scheme or port) with the shared strict SSRF guard and returns the first
+// validated public IP so callers can pin the dial, preventing DNS rebinding
+// between validation and the connection.
+//
+// When connectorAllowLoopbackForTest is set, loopback-only hosts are allowed
+// (unit tests run against local listeners); anything else falls through to the
+// strict guard, so a mixed private address is still rejected.
+func assertConnectorHostSafe(host string) (net.IP, error) {
+	host = strings.TrimSpace(host)
+	if connectorAllowLoopbackForTest {
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.IsLoopback() {
+				return ip, nil
+			}
+		} else {
+			lower := strings.ToLower(host)
+			if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
+				if _, ip, ok := loopbackTestAllow(lower); ok {
+					return ip, nil
+				}
+			}
+		}
+		// Not allowed by the test hook — fall through to the strict guard.
+	}
+	ipStr, err := connectorAssertHostSafe(host)
+	if err != nil {
+		return nil, err
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return nil, fmt.Errorf("Could not parse validated address %q for host %q", ipStr, host)
+	}
+	return ip, nil
+}
+
 // connectorAllowLoopbackForTest lets unit tests exercise the real HTTP path
 // against httptest servers bound to loopback. Production code keeps it false so
 // loopback/private endpoints stay blocked.

@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -174,8 +176,38 @@ func (c *S3CompatibleConnector) ensureClient(ctx context.Context) (*s3.Client, e
 	c.client = s3.NewFromConfig(cfg, func(options *s3.Options) {
 		options.BaseEndpoint = aws.String(c.endpointURL)
 		options.UsePathStyle = c.addressingStyle == "path"
+		// The SDK resolves the endpoint host itself (bucket.virtual-host style
+		// included), so pin every connection at dial time against the shared
+		// SSRF guard instead of only validating the configured endpoint once.
+		options.HTTPClient = s3PinnedHTTPClient()
 	})
 	return c.client, nil
+}
+
+// s3PinnedHTTPClient returns an HTTP client whose transport validates and
+// DNS-pins every outbound dial against the shared SSRF guard. The request URL
+// keeps the original endpoint hostname (correct TLS SNI / certificate
+// verification) while the TCP connect is pinned to the validated IP, closing
+// the DNS-rebinding window between validation and the actual connection.
+func s3PinnedHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			// Ignore environment proxies: HTTP_PROXY / HTTPS_PROXY would route
+			// the connection through a proxy host instead of the pinned IP.
+			Proxy: nil,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				_, pinIP, err := assertConnectorURLSafe("https://" + host)
+				if err != nil {
+					return nil, err
+				}
+				return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
+			},
+		},
+	}
 }
 
 func (c *S3CompatibleConnector) listObjectPage(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
@@ -228,6 +260,13 @@ func validateS3CompatibleEndpoint(raw string) error {
 	}
 	if parsed.Fragment != "" {
 		return fmt.Errorf("invalid S3-compatible endpoint_url %q: fragment is not allowed", raw)
+	}
+	// The endpoint host is user-controlled and connected to server-side, so it
+	// must resolve only to public addresses (blocks loopback, RFC1918 and
+	// cloud metadata). The per-connection transport in s3PinnedHTTPClient
+	// re-validates and pins at dial time.
+	if _, _, err := assertConnectorURLSafe(raw); err != nil {
+		return fmt.Errorf("invalid S3-compatible endpoint_url %q: %v", raw, err)
 	}
 	return nil
 }

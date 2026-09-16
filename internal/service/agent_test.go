@@ -19,7 +19,6 @@ package service
 import (
 	"encoding/json"
 	"errors"
-	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -1261,31 +1260,6 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 	}
 	if canvasInstance.Tags != "" {
 		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
-	}
-}
-
-func TestIsPublicAddr(t *testing.T) {
-	tests := []struct {
-		name string
-		addr string
-		want bool
-	}{
-		{name: "public IPv4", addr: "8.8.8.8", want: true},
-		{name: "loopback", addr: "127.0.0.1", want: false},
-		{name: "private", addr: "192.168.1.1", want: false},
-		{name: "carrier NAT", addr: "100.64.0.1", want: false},
-		{name: "documentation", addr: "203.0.113.1", want: false},
-		{name: "IPv4 mapped loopback", addr: "::ffff:127.0.0.1", want: false},
-		{name: "IPv6 documentation", addr: "2001:db8::1", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isPublicAddr(netip.MustParseAddr(tt.addr))
-			if got != tt.want {
-				t.Fatalf("isPublicAddr(%s): expected %v, got %v", tt.addr, tt.want, got)
-			}
-		})
 	}
 }
 

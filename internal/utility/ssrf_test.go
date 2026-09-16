@@ -258,3 +258,50 @@ func TestPinnedRedirectPolicy(t *testing.T) {
 		t.Fatalf("redirect limit should be enforced")
 	}
 }
+
+func TestAssertHostSafe(t *testing.T) {
+	orig := LookupHost
+	defer func() { LookupHost = orig }()
+
+	cases := []struct {
+		name string
+		host string
+		ips  []string
+		err  string
+		ip   string
+	}{
+		{name: "public IPv4", host: "example.com", ips: []string{"93.184.216.34"}, ip: "93.184.216.34"},
+		{name: "literal public IPv4", host: "8.8.8.8", ip: "8.8.8.8"},
+		{name: "literal loopback", host: "127.0.0.1", err: "not a public address"},
+		{name: "literal metadata", host: "169.254.169.254", err: "not a public address"},
+		{name: "literal unspecified", host: "0.0.0.0", err: "not a public address"},
+		{name: "loopback resolved", host: "localhost", ips: []string{"127.0.0.1"}, err: "non-public address"},
+		{name: "private resolved", host: "internal", ips: []string{"10.0.0.5"}, err: "non-public address"},
+		{name: "IPv4-mapped loopback resolved", host: "mapped", ips: []string{"::ffff:127.0.0.1"}, err: "non-public address"},
+		{name: "empty host", host: "  ", err: "host is missing"},
+		{name: "no records", host: "nodata.example", ips: []string{}, err: "resolved to no addresses"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			LookupHost = func(host string) ([]string, error) {
+				if tc.ips == nil {
+					t.Fatalf("unexpected DNS lookup for literal/empty host %q", host)
+				}
+				return tc.ips, nil
+			}
+			got, err := AssertHostSafe(tc.host)
+			if tc.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("AssertHostSafe(%q) = %q, %v; want error containing %q", tc.host, got, err, tc.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AssertHostSafe(%q) = %v, want nil", tc.host, err)
+			}
+			if got != tc.ip {
+				t.Fatalf("AssertHostSafe(%q) = %q, want %q", tc.host, got, tc.ip)
+			}
+		})
+	}
+}

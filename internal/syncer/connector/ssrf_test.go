@@ -19,11 +19,14 @@ package connector
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"ragflow/internal/utility"
 )
@@ -300,4 +303,307 @@ func TestConnectorStripAuthHeadersRemovesCredentials(t *testing.T) {
 			t.Fatalf("non-sensitive header %q was stripped", k)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Host-type SSRF guards (IMAP / MySQL / PostgreSQL / S3-compatible)
+// ---------------------------------------------------------------------------
+
+func TestAssertConnectorHostSafe(t *testing.T) {
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+
+	tests := []struct {
+		name string
+		host string
+		want bool // true = accepted, false = rejected
+	}{
+		{name: "public literal ip", host: "8.8.8.8", want: true},
+		{name: "loopback", host: "127.0.0.1", want: false},
+		{name: "localhost", host: "localhost", want: false},
+		{name: "cloud metadata", host: "169.254.169.254", want: false},
+		{name: "private 10/8", host: "10.0.0.5", want: false},
+		{name: "private 192.168/16", host: "192.168.1.10", want: false},
+		{name: "unspecified", host: "0.0.0.0", want: false},
+		{name: "empty", host: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip, err := assertConnectorHostSafe(tt.host)
+			if tt.want && err != nil {
+				t.Fatalf("assertConnectorHostSafe(%q) = %v, want nil", tt.host, err)
+			}
+			if tt.want && (ip == nil || ip.String() != "8.8.8.8") {
+				t.Fatalf("assertConnectorHostSafe(%q) = %v, want 8.8.8.8", tt.host, ip)
+			}
+			if !tt.want && err == nil {
+				t.Fatalf("assertConnectorHostSafe(%q) = nil, want rejection", tt.host)
+			}
+		})
+	}
+}
+
+func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	if _, err := assertConnectorHostSafe("127.0.0.1"); err != nil {
+		t.Fatalf("loopback should be allowed with hook on: %v", err)
+	}
+	if _, err := assertConnectorHostSafe("localhost"); err != nil {
+		t.Fatalf("localhost should be allowed with hook on: %v", err)
+	}
+	// Private / metadata addresses are still rejected even with the hook on.
+	if _, err := assertConnectorHostSafe("10.0.0.1"); err == nil {
+		t.Fatalf("private address should be rejected even with hook on")
+	}
+	if _, err := assertConnectorHostSafe("169.254.169.254"); err == nil {
+		t.Fatalf("metadata address should be rejected even with hook on")
+	}
+}
+
+// TestConnectorHostSSRFDNSRebinding closes the host-type TOCTOU window: after
+// the guard validates a public host, the dial must be pinned to the validated
+// IP and never re-resolve the hostname. The guard seam is stubbed to simulate
+// "validates to a public IP" while the dial helper is pointed at a loopback
+// listener.
+func TestMySQLPinnedDialConnectsToPinnedIP(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dial := mysqlPinnedDial(net.ParseIP("127.0.0.1"), port)
+	// The driver passes the DSN host (attacker-controlled); the pinned dialer
+	// must ignore it and connect to pinIP:port.
+	conn, err := dial(context.Background(), "attacker.example:9999")
+	if err != nil {
+		t.Fatalf("pinned dial did not reach the pinned listener: %v", err)
+	}
+	_ = conn.Close()
+}
+
+func TestPostgresPinnedDialConnectsToPinnedIP(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dial := postgresPinnedDial(net.ParseIP("127.0.0.1"), portStr, time.Second)
+	conn, err := dial(context.Background(), "tcp", "attacker.example:9999")
+	if err != nil {
+		t.Fatalf("pinned dial did not reach the pinned listener: %v", err)
+	}
+	_ = conn.Close()
+}
+
+// TestDialRealIMAPClientPinsToLoopback verifies the IMAP production dial is
+// SSRF-guarded and pinned: under the test hook it connects to the loopback
+// listener (failing only at the TLS handshake, never at the TCP dial), proving
+// the dial target is the validated IP rather than a re-resolved hostname.
+func TestDialRealIMAPClientPinsToLoopback(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = dialRealIMAPClient(context.Background(), "127.0.0.1", port, "user", "pass")
+	if err == nil {
+		t.Fatalf("expected a TLS handshake failure against a plain TCP listener")
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("dial was not pinned to the loopback listener: %v", err)
+	}
+}
+
+// TestDialRealIMAPClientRejectsPrivateHost verifies IMAP config-time validation
+// rejects a non-public host before any dial.
+func TestDialRealIMAPClientRejectsPrivateHost(t *testing.T) {
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	_, err := dialRealIMAPClient(context.Background(), "10.0.0.5", 993, "user", "pass")
+	if err == nil || !strings.Contains(err.Error(), "public address") {
+		t.Fatalf("dialRealIMAPClient(10.0.0.5) = %v, want public-address rejection", err)
+	}
+}
+
+func TestMySQLConnectorValidateRejectsPrivateHost(t *testing.T) {
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	c, err := NewMySQLConnector(map[string]any{
+		"host":     "10.0.0.5",
+		"port":     "3306",
+		"database": "db",
+		"credentials": map[string]any{
+			"username": "root",
+			"password": "secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMySQLConnector: %v", err)
+	}
+	if err := c.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "public address") {
+		t.Fatalf("Validate(10.0.0.5) = %v, want public-address rejection", err)
+	}
+}
+
+func TestPostgreSQLConnectorValidateRejectsPrivateHost(t *testing.T) {
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	c, err := NewPostgreSQLConnector(map[string]any{
+		"host":     "10.0.0.5",
+		"port":     "5432",
+		"database": "db",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPostgreSQLConnector: %v", err)
+	}
+	if err := c.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "public address") {
+		t.Fatalf("Validate(10.0.0.5) = %v, want public-address rejection", err)
+	}
+}
+
+// TestMySQLConnectorOpenAllowsLoopbackUnderHook verifies the loopback test hook
+// lets host-based connectors build a client against a local listener; sql.Open
+// is lazy so no server is required.
+func TestMySQLConnectorOpenAllowsLoopbackUnderHook(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	c, err := NewMySQLConnector(map[string]any{
+		"host":     "127.0.0.1",
+		"port":     "3306",
+		"database": "db",
+		"credentials": map[string]any{
+			"username": "root",
+			"password": "secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMySQLConnector: %v", err)
+	}
+	db, err := c.open()
+	if err != nil {
+		t.Fatalf("open with loopback host under hook: %v", err)
+	}
+	_ = db.Close()
+}
+
+func TestPostgreSQLConnectorOpenAllowsLoopbackUnderHook(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	c, err := NewPostgreSQLConnector(map[string]any{
+		"host":     "127.0.0.1",
+		"port":     "5432",
+		"database": "db",
+		"credentials": map[string]any{
+			"username": "postgres",
+			"password": "secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPostgreSQLConnector: %v", err)
+	}
+	db, err := c.open()
+	if err != nil {
+		t.Fatalf("open with loopback host under hook: %v", err)
+	}
+	_ = db.Close()
+}
+
+// TestValidateS3CompatibleEndpointSSRF verifies the user-controlled endpoint
+// is rejected when it resolves to non-public addresses and allowed for
+// loopback under the test hook.
+func TestValidateS3CompatibleEndpointSSRF(t *testing.T) {
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	for _, endpoint := range []string{"http://10.0.0.5", "https://169.254.169.254", "http://127.0.0.1"} {
+		if err := validateS3CompatibleEndpoint(endpoint); err == nil {
+			t.Fatalf("endpoint %q should be rejected", endpoint)
+		}
+	}
+	withConnectorLoopbackTestHook(t)
+	if err := validateS3CompatibleEndpoint("http://127.0.0.1"); err != nil {
+		t.Fatalf("loopback endpoint should be allowed under the test hook: %v", err)
+	}
+}
+
+// TestS3PinnedTransportPinsDial verifies the S3-compatible transport validates
+// and pins every outbound dial against the SSRF guard.
+func TestS3PinnedTransportPinsDial(t *testing.T) {
+	transport := s3PinnedHTTPClient().Transport.(*http.Transport)
+
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	if _, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:9999"); err == nil {
+		t.Fatalf("loopback dial should be rejected without the test hook")
+	}
+
+	withConnectorLoopbackTestHook(t)
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, acceptErr := ln.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	conn, err := transport.DialContext(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("pinned dial did not reach the listener: %v", err)
+	}
+	_ = conn.Close()
 }

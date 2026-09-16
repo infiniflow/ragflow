@@ -126,7 +126,6 @@ const (
 	EnvSSHKnownHosts                     = "SSH_KNOWN_HOSTS"
 	EnvTrinoUseTls                       = "TRINO_USE_TLS"
 	EnvSSHEnableAPIURL                   = "SSH_ENABLE_API_URL"
-	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
 	EnvHome                              = "HOME"
