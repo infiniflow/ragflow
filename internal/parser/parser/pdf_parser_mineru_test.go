@@ -205,11 +205,11 @@ func TestPDFParser_ParseWithResult_MinerUSendsServerURLForHTTPClientBackend(t *t
 
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":       "MinerU",
-		"output_format":      "markdown",
-		"mineru_apiserver":   server.URL,
-		"mineru_backend":     "vlm-http-client",
-		"mineru_server_url":  "http://vllm-host:30000",
+		"parse_method":      "MinerU",
+		"output_format":     "markdown",
+		"mineru_apiserver":  server.URL,
+		"mineru_backend":    "vlm-http-client",
+		"mineru_server_url": "http://vllm-host:30000",
 	})
 
 	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
@@ -266,8 +266,8 @@ func TestPDFParser_ParseWithResult_MinerUReadsBackendFromProviderJSONApiKey(t *t
 	apiKeyJSON := fmt.Sprintf(`{"mineru_apiserver":"%s","mineru_backend":"vlm-http-client","mineru_server_url":"http://vllm-host:30000"}`, server.URL)
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":  "MinerU",
-		"output_format": "markdown",
+		"parse_method":   "MinerU",
+		"output_format":  "markdown",
 		"mineru_api_key": apiKeyJSON,
 	})
 	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
