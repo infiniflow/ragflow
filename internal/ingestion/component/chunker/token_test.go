@@ -561,6 +561,45 @@ func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
 	assertMaterializedMediaContext(t, media, "gamma deltaalpha beta.")
 }
 
+// TestTokenChunkerWindowTruncatesOnSentenceBoundary pins that a neighbour
+// larger than the remaining window is trimmed on a sentence boundary. A cut
+// inside the sentence would hand the index a fragment: the removed rune-level
+// helper returned "zeta." for this fixture, a piece of "epsilon zeta.".
+func TestTokenChunkerWindowTruncatesOnSentenceBoundary(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":     "delimiter",
+		"chunk_token_size":   512,
+		"table_context_size": 3,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "epsilon zeta.", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var media map[string]any
+	for _, ck := range outputChunks(t, out) {
+		if ck["ck_type"] == "table" {
+			media = ck
+		}
+	}
+	if media == nil {
+		t.Fatalf("table chunk missing: %+v", out)
+	}
+	// "epsilon zeta." is one sentence of 4 tokens, so the 3-token window takes
+	// it whole rather than cutting into it.
+	assertMaterializedMediaContext(t, media, "epsilon zeta.")
+}
+
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
 // payload 10 times under the race detector and asserts the chunk
 // list is identical every time.

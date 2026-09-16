@@ -866,6 +866,8 @@ func attachMediaContext(chunks []schema.ChunkDoc, tableCtx, imageCtx int) []sche
 // collectContext walks chunks around `i` (above when direction==true,
 // below when false), pulling text chunks while remaining token budget
 // stays positive. Matches token_chunker.py:_attach_context_to_media_chunks.
+// A neighbour that does not fit is truncated on a sentence boundary
+// (takeContextSentences), not at an arbitrary rune.
 func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) string {
 	var parts []string
 	remain := ctxTokens
@@ -877,7 +879,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append([]string{takeFromEnd(txt, remain)}, parts...)
+					parts = append([]string{takeContextSentences(txt, remain, true)}, parts...)
 					remain = 0
 					break
 				}
@@ -893,7 +895,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append(parts, takeFromStart(txt, remain))
+					parts = append(parts, takeContextSentences(txt, remain, false))
 					remain = 0
 					break
 				}
@@ -904,39 +906,6 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 		}
 	}
 	return strings.Join(parts, "")
-}
-
-// takeFromEnd returns the smallest tail of text whose token count is >=
-// tokens, counted exactly via tokenizeStr  The previous
-// 4-bytes-per-token heuristic over-counted for CJK text.
-func takeFromEnd(text string, tokens int) string {
-	runes := []rune(text)
-	// The tail runes[i:] grows as i decreases, so the first (largest i,
-	// i.e. smallest tail) that meets the budget is the answer.
-	for i := len(runes); i > 0; i-- {
-		cand := string(runes[i:])
-		if tokenizeStr(cand) >= tokens {
-			return cand
-		}
-	}
-	return text
-}
-
-// takeFromStart returns the smallest prefix of text whose token count is >=
-// tokens, counted exactly via tokenizeStr
-func takeFromStart(text string, tokens int) string {
-	runes := []rune(text)
-	best := text
-	// Prefix grows as i increases; the first (smallest) qualifying prefix
-	// is the answer.
-	for i := 1; i <= len(runes); i++ {
-		cand := string(runes[:i])
-		if tokenizeStr(cand) >= tokens {
-			best = cand
-			break
-		}
-	}
-	return best
 }
 
 // mergeUnits is the single, unified token-merge core shared by BOTH the text
