@@ -17,10 +17,10 @@ import (
 // would otherwise block goroutines indefinitely.
 var builtinHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
-	Transport: &http.Transport{
+	Transport: newProviderLoggingTransport(&http.Transport{
 		MaxIdleConnsPerHost:   10,
 		ResponseHeaderTimeout: 10 * time.Second,
-	},
+	}),
 }
 
 // BuiltinModel implements ModelDriver for Builtin (local embedding models via TEI)

@@ -19,6 +19,7 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,11 @@ func GetEnv(key string) string {
 
 func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
+}
+
+func IsLLMDebugEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
+	return err == nil && enabled
 }
 
 // environment variables
@@ -99,6 +105,7 @@ const (
 	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
+	EnvLLMDebug                          = "LLM_DEBUG"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
