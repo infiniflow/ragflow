@@ -332,7 +332,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Whether the message carried image attachments before the
 		// vision gate (read by the empty-response fallback below).
 		var hasImageAttachments bool
-		// Joined text attachments (appended to system prompt).
+		// Joined text attachments (appended to the last user message).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
 		// from storage. When plain strings, falls back to string splitting;
@@ -956,7 +956,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// must reach a vision model instead of being swallowed by the
 		// canned response. In that case we skip the early return and fall
 		// through to the normal LLM call where attachments are appended to
-		// the system prompt.
+		// the last user message.
 		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
@@ -992,7 +992,7 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		systemPrompt = ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = s.formatPrompt(sp, kwargs) + attachments
+			systemPrompt = s.formatPrompt(sp, kwargs)
 			// If knowledge was retrieved but the template has no {knowledge}
 			// placeholder, auto-append it so the LLM still sees the context.
 			if len(knowledges) > 0 && !strings.Contains(sp, "{knowledge}") {
@@ -1052,6 +1052,11 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			llmMessage["content"] = content
 			llmMessages = append(llmMessages, llmMessage)
+		}
+		if attachments != "" && len(llmMessages) > 0 {
+			if lastContent, ok := llmMessages[len(llmMessages)-1]["content"].(string); ok {
+				llmMessages[len(llmMessages)-1]["content"] = lastContent + attachments
+			}
 		}
 
 		// Fit messages within token budget.

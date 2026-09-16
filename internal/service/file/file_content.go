@@ -146,7 +146,8 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 			}
 			images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 		} else {
-			texts = append(texts, parseFileContent(ctx, name, data))
+			content := parseFileContent(ctx, name, data)
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", name, content))
 		}
 	}
 	return texts, images, nil
