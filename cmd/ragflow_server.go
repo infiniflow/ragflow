@@ -386,13 +386,16 @@ func parsePort(value, name string) (int, error) {
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
 		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -454,7 +457,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || arguments.mode == nil {
+	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
 		printHelp(arguments)
 		os.Exit(1)
 	}
@@ -462,6 +465,13 @@ func main() {
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
+	}
+
+	if arguments.migrateDB {
+		if err = runMigrate(ctx, arguments); err != nil {
+			common.Fatal("Failed to run database migration", zap.Error(err))
+		}
+		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -648,6 +658,60 @@ func main() {
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
 		os.Exit(1)
 	}
+}
+
+func runMigrate(ctx context.Context, args *serverArgs) error {
+	const serverName = "migrate"
+
+	if err := server.InitLocalVariables(); err != nil {
+		return fmt.Errorf("initialize local variables: %w", err)
+	}
+
+	logLevel := "info"
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
+		return fmt.Errorf("initialize logger: %w", err)
+	}
+
+	var configPath string
+	if args.configPath != nil {
+		configPath = *args.configPath
+	}
+	if err := server.Init(configPath); err != nil {
+		return fmt.Errorf("initialize configuration: %w", err)
+	}
+
+	globalConfig := server.GetConfig()
+	server.SetServerName(serverName)
+	logConfig := globalConfig.GetLogConfig()
+	if logConfig.Level != "" {
+		logLevel = logConfig.Level
+	}
+	if args.debugLog {
+		logLevel = "debug"
+	}
+	globalConfig.SetLogLevel(logLevel)
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, common.FileOutput{
+		Filename:   serverName + ".log",
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
+	}
+
+	common.Info("Running database migrations")
+	if err := dao.InitDB(ctx, true); err != nil {
+		return fmt.Errorf("initialize database: %w", err)
+	}
+	common.Info("Database migrations completed")
+	return nil
 }
 
 func runAdmin(ctx context.Context, args *serverArgs) error {
