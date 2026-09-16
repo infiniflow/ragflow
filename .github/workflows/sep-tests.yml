@@ -2167,9 +2167,14 @@ jobs:
           # The runner is a container on a bridge network; the compose stack is
           # published on the *host*, so we must reach it via host.docker.internal
           # (127.0.0.1 here would hit the runner's own loopback and refuse).
+          # Use the same endpoint the infinity healthcheck uses
+          # (/admin/node/current) and DO NOT pass curl -f: infinity's root path
+          # returns a non-2xx, which -f would treat as failure even when the
+          # server is up. Any HTTP response (or a refused connection) decides
+          # readiness, matching the compose healthcheck exactly.
           INFINITY_READY=0
           for i in $(seq 1 60); do
-            if curl -sf --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/" >/dev/null 2>&1; then
+            if curl -s --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/admin/node/current" >/dev/null 2>&1; then
               echo "Infinity ready after ${i} tries"
               INFINITY_READY=1
               break
@@ -2179,6 +2184,8 @@ jobs:
           done
           if [ "${INFINITY_READY}" != "1" ]; then
             echo "::error::Infinity did not become ready on host.docker.internal:${INFINITY_HTTP_PORT} after 60 tries"
+            echo "Last curl attempt (verbose, for diagnosis):"
+            curl -sv --connect-timeout 5 "http://host.docker.internal:${INFINITY_HTTP_PORT}/admin/node/current" || true
             exit 1
           fi
 
