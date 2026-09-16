@@ -34,6 +34,7 @@ type fileCommitService interface {
 	CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
 	ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
 	GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error)
+	GetPageCommitDetail(ctx context.Context, datasetID, commitID string) (*entity.WikiPageCommitDetail, error)
 	ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error)
 	DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error)
 	GetUncommittedChanges(ctx context.Context, folderID string) ([]entity.DiffEntry, error)
@@ -359,8 +360,21 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		return
 	}
 
-	if commit.FolderID != folderID {
+	// Workspace commits store the workspace folder id. Wiki/skill page audit
+	// commits are scoped by dataset instead, so the dataset route must accept
+	// the dataset id as the commit scope after the resolver has authorized it.
+	datasetID := c.Param("dataset_id")
+	if commit.FolderID != folderID && (datasetID == "" || commit.FolderID != datasetID) {
 		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found in workspace")
+		return
+	}
+	if datasetID != "" && commit.Title != nil {
+		detail, err := h.commitService.GetPageCommitDetail(ctx, datasetID, commitID)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Commit not found")
+			return
+		}
+		common.SuccessWithData(c, detail, common.CodeSuccess.Message())
 		return
 	}
 

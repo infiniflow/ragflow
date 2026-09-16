@@ -104,7 +104,8 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 
 	// Call service to list chat sessions
 	ctx := c.Request.Context()
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize)
+	includeHistory := c.DefaultQuery("include_history", "true")
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize, includeHistory != "false" && includeHistory != "False")
 	if err != nil {
 		// Mirror Python: ownership failures return code 109 "no authorization"
 		if strings.Contains(err.Error(), "no authorization") {
@@ -119,31 +120,31 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 }
 
 type ChatCompletionsRequest struct {
-	ChatID                 string                   `json:"chat_id,omitempty"`
-	SessionID              string                   `json:"session_id,omitempty"`
-	ConversationID         string                   `json:"conversation_id,omitempty"`
-	Messages               []map[string]interface{} `json:"messages,omitempty"`
-	Question               string                   `json:"question,omitempty"`
-	Files                  []interface{}            `json:"files,omitempty"`
-	LLMID                  string                   `json:"llm_id,omitempty"`
-	PassAllHistoryMessages *bool                    `json:"pass_all_history_messages,omitempty"`
-	PassAllHistory         *bool                    `json:"pass_all_history,omitempty"`
-	StoreHistoryMessages   *bool                    `json:"store_history_messages,omitempty"`
-	StoreHistory           *bool                    `json:"store_history,omitempty"`
-	Legacy                 bool                     `json:"legacy,omitempty"`
-	Stream                 *bool                    `json:"stream"`
-	Thinking               string                   `json:"thinking"`
-	Temperature            *float64                 `json:"temperature,omitempty"`
-	TopP                   *float64                 `json:"top_p,omitempty"`
-	FrequencyPenalty       *float64                 `json:"frequency_penalty,omitempty"`
-	PresencePenalty        *float64                 `json:"presence_penalty,omitempty"`
-	MaxTokens              *int                     `json:"max_tokens,omitempty"`
+	ChatID           string                   `json:"chat_id,omitempty"`
+	SessionID        string                   `json:"session_id,omitempty"`
+	ConversationID   string                   `json:"conversation_id,omitempty"`
+	Messages         []map[string]interface{} `json:"messages,omitempty"`
+	Question         string                   `json:"question,omitempty"`
+	Query            string                   `json:"query,omitempty"`
+	Files            []interface{}            `json:"files,omitempty"`
+	LLMID            string                   `json:"llm_id,omitempty"`
+	Legacy           bool                     `json:"legacy,omitempty"`
+	Stream           *bool                    `json:"stream"`
+	Thinking         string                   `json:"thinking"`
+	Temperature      *float64                 `json:"temperature,omitempty"`
+	TopP             *float64                 `json:"top_p,omitempty"`
+	FrequencyPenalty *float64                 `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float64                 `json:"presence_penalty,omitempty"`
+	MaxTokens        *int                     `json:"max_tokens,omitempty"`
+
+	StoreHistoryMessages *bool `json:"store_history_messages,omitempty"`
 }
 
 // ChatCompletions chat completion
 // @Summary Chat Completion
 // @Description Send messages to the chat model and get a response.
 // @Description Default is streaming (text/event-stream); set stream:false for JSON.
+// @Description Set store_history_messages:false to use the full messages payload without storing history. No other explicit value is supported.
 // @Tags chat_session
 // @Accept json
 // @Produce json, text/event-stream
@@ -164,6 +165,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
+	if _, err := service.ResolveStoreHistoryMessages(rawBody); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
 
 	var req ChatCompletionsRequest
 	b, err := json.Marshal(rawBody)
@@ -174,6 +179,10 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	if err = json.Unmarshal(b, &req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
+	}
+
+	if req.Question == "" {
+		req.Question = req.Query
 	}
 
 	// Normalize session_id / conversation_id
@@ -213,35 +222,11 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		genConfig["max_tokens"] = *req.MaxTokens
 	}
 
-	// Resolve pass_all_history from either alias
-	passAllHistory := false
-	if req.PassAllHistory != nil {
-		passAllHistory = *req.PassAllHistory
-	}
-	if req.PassAllHistoryMessages != nil {
-		passAllHistory = *req.PassAllHistoryMessages
-	}
-
-	// Resolve store_history from either alias (default true, mirrors Python)
-	storeHistory := true
-	if req.StoreHistory != nil {
-		storeHistory = *req.StoreHistory
-	}
-	if req.StoreHistoryMessages != nil {
-		storeHistory = *req.StoreHistoryMessages
-	}
-	if !storeHistory && !passAllHistory {
-		common.ErrorWithCode(c, common.CodeDataError, "`pass_all_history_messages` must be true when `store_history_messages` is false.")
-		return
-	}
-
 	// Remove known keys from rawBody; what remains is passthrough kwargs
 	knownKeys := []string{
 		"chat_id", "session_id", "conversation_id",
-		"messages", "question", "files",
+		"messages", "question", "query", "files",
 		"llm_id",
-		"pass_all_history_messages", "pass_all_history",
-		"store_history_messages", "store_history",
 		"legacy", "stream", "thinking",
 		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
 	}
@@ -272,7 +257,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
-				passAllHistory, storeHistory, req.Legacy,
+				req.Legacy,
 				true, streamChan,
 			)
 		}()
@@ -292,7 +277,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
 			req.LLMID, genConfig, kwargs,
-			passAllHistory, storeHistory, req.Legacy,
+			req.Legacy,
 			false, nil,
 		)
 		if err != nil {

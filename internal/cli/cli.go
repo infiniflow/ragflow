@@ -1061,7 +1061,7 @@ Syntax:
        [system "..."] [history "..."] [history_delimiter "<char>"]
        [temperature <float>] [max_tokens <int>] [stream <bool>]
        [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
-       [pass_all_history <bool>] [legacy <bool>] ;
+       [legacy <bool>] ;
 
 Required positional:
   'question'  the user question
@@ -1079,7 +1079,6 @@ Named options (any order; all optional with defaults):
   top_p             <float>  0..1
   frequency_penalty <float>  -2..2
   presence_penalty  <float>  -2..2
-  pass_all_history  <bool>   pass all history messages
   legacy            <bool>   use legacy SSE format
 
 Defaults:

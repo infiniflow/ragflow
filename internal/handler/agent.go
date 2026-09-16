@@ -278,9 +278,8 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // mapAgentError normalises service-layer errors onto the existing
 // {code, data, message} response envelope used by every other handler.
 //
-// Four classes:
+// Three classes:
 //   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
-//   - service.ErrAgentSessionBusy -> "session already running" (103)
 //   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
 //   - service.ErrAgentStorageError -> "Internal storage error"  (500)
 //
@@ -297,9 +296,6 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
-	}
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return common.CodeOperatingError, "This agent session is already running."
 	}
 	if errors.Is(err, dao.ErrUserCanvasNotFound) ||
 		errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
@@ -505,7 +501,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		// Persistence of the session record remains owned by AgentService.RunAgent.
 		sessionID = utility.GenerateToken()
 	}
-	userInput := readUserInput(c)
+	userInput, err := readUserInput(c)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
@@ -545,26 +545,29 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 // present, otherwise from the ?user_input= query string. An empty body
 // (no body sent) is treated as "" so the resume cycle still works
 // when the client only passes ?session_id=...&user_input=... on the URL.
-func readUserInput(c *gin.Context) string {
-	if c.Request.ContentLength > 0 {
+func readUserInput(c *gin.Context) (string, error) {
+	if c.Request.ContentLength != 0 {
 		var body struct {
-			UserInput string `json:"user_input"`
-			Query     string `json:"query"`
-			Message   string `json:"message"`
+			UserInput string                   `json:"user_input"`
+			Question  string                   `json:"question"`
+			Messages  []map[string]interface{} `json:"messages"`
+			Query     string                   `json:"query"`
+			Message   string                   `json:"message"`
 		}
 		if err := c.ShouldBindJSON(&body); err == nil {
-			if body.UserInput != "" {
-				return body.UserInput
+			question, err := service.ResolveCompletionQuestion(body.Question, body.Query, body.Messages)
+			if err != nil || question != "" {
+				return question, err
 			}
-			if body.Query != "" {
-				return body.Query
+			if body.UserInput != "" {
+				return body.UserInput, nil
 			}
 			if body.Message != "" {
-				return body.Message
+				return body.Message, nil
 			}
 		}
 	}
-	return c.Query("user_input")
+	return c.Query("user_input"), nil
 }
 
 // runCanvasPipelineDebug runs a canvas in pipeline dry-run (debug) mode: it builds
@@ -945,6 +948,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		UserID:     queryUserID,
 		ExpUserID:  expUserID,
 		IncludeDSL: includeDSL,
+		NoHistory:  c.Query("include_history") == "false" || c.Query("include_history") == "False",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -1063,6 +1067,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     adapter lives in agent_openai.go so the regular Agent event contract
 //     remains unchanged.
 type agentChatCompletionsRequest struct {
+	Question     string                   `json:"question,omitempty"`
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
 	Inputs       map[string]interface{}   `json:"inputs"`
@@ -1112,23 +1117,20 @@ func (f *agentFiles) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// extractLastUserContent returns the content of the last message in
-// `messages` whose role is "user", or "" if none is found. Mirrors the
-// Python derivation in api/apps/restful_apis/agent_api.py:1258 that drives
-// `completion_openai` when the request uses the openai-compatible wire
-// format but no top-level `query` is supplied.
+// extractLastUserContent returns the latest message's content only if it is from a user.
 func extractLastUserContent(messages []map[string]interface{}) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		role, _ := messages[i]["role"].(string)
-		if role != "user" {
-			continue
-		}
-		content, err := service.NormalizeOpenAIMessageContent(messages[i]["content"])
-		if err == nil && content != "" {
-			return content
-		}
+	if len(messages) == 0 {
+		return ""
 	}
-	return ""
+	message := messages[len(messages)-1]
+	if message["role"] != "user" {
+		return ""
+	}
+	content, err := service.NormalizeOpenAIMessageContent(message["content"])
+	if err != nil {
+		return ""
+	}
+	return content
 }
 
 // extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
@@ -1211,6 +1213,18 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
+	}
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.Query = question
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
 	}
 	if req.AgentID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")

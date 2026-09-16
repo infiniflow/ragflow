@@ -72,6 +72,16 @@ const PipelineOperatorForm = ({
           externalErrors={externalErrors}
         />
       );
+    case Operator.GeneralChunker:
+      return (
+        <TokenChunkerForm
+          node={node}
+          onValuesChange={handleValuesChange}
+          hideOutputs
+          externalErrors={externalErrors}
+          isGeneralChunker
+        />
+      );
     case Operator.TitleChunker:
       return (
         <TitleChunkerForm

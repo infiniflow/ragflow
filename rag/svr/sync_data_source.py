@@ -34,6 +34,7 @@ import threading
 import traceback
 from datetime import UTC, datetime, timezone
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from flask import json
 
@@ -109,6 +110,20 @@ def _redact_mailbox(value: str) -> str:
         local_mask = local if len(local) <= 2 else local[:2] + "***"
         return f"{local_mask}@***"
     return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
+def _redact_url(value: str | None) -> str:
+    """Sanitize URL before logging, stripping user credentials, query, and fragment."""
+    if not value or "://" not in value:
+        return value or ""
+    try:
+        parsed = urlparse(value)
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+    except (ValueError, TypeError):
+        return "<invalid URL>"
 
 
 async def _iterate_document_batches(generator):
@@ -2012,6 +2027,7 @@ class AzureDevOps(SyncBase):
     async def _generate(self, task: dict):
         self.connector = AzureDevOpsConnector(
             organization=self.conf.get("organization"),
+            base_url=self.conf.get("base_url"),
             index_mode=self.conf.get("index_mode") or "organization",
             projects=self.conf.get("projects"),
             repositories=self.conf.get("repositories"),
@@ -2066,7 +2082,8 @@ class AzureDevOps(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        target = _redact_url(self.conf.get("base_url")) or f"organization({self.conf.get('organization')})"
+        self.log_connection("AzureDevOps", target, task)
         return wrapper()
 
 

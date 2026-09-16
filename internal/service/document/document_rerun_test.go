@@ -153,6 +153,102 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	}
 }
 
+func TestRerunDocument_ClearsQueuedTaskPreTerminalLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", entity.JSONMap{"components": map[string]interface{}{}})
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+	queuedMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "queued-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusSchedule),
+		ProgressMsg:     &queuedMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed queued log: %v", err)
+	}
+	// The clearing run owns this row, exactly as createOpenLogBestEffort
+	// binds it in production.
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "queued-log").Error; err != nil {
+		t.Fatalf("bind queued log: %v", err)
+	}
+
+	svc, _ := rerunTestService(t)
+	if err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", nil, "c1"); err != nil {
+		t.Fatalf("RerunDocument: %v", err)
+	}
+	var surviving entity.PipelineOperationLog
+	err := db.First(&surviving, "id = ?", "queued-log").Error
+	if err == nil {
+		t.Fatalf("stale queued row survived the rerun; the new run must start fresh")
+	}
+	if !dao.IsNotFoundErr(err) {
+		t.Fatalf("load queued log: %v", err)
+	}
+}
+
+// TestRerunDocument_KeepsAnotherRunsPreTerminalLog locks the ownership boundary: the
+// rerun cleanup drops only the row the cleared task was bound to, so an open
+// row belonging to another run is left alone.
+func TestRerunDocument_KeepsAnotherRunsPreTerminalLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", entity.JSONMap{"components": map[string]interface{}{}})
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	queuedMsg := "Task is queued..."
+	seed := func(id, docID string) {
+		t.Helper()
+		if err := dao.DB.Create(&entity.PipelineOperationLog{
+			ID:              id,
+			DocumentID:      docID,
+			TenantID:        "tenant-1",
+			KbID:            "kb-1",
+			ParserID:        "naive",
+			TaskType:        "Parse",
+			OperationStatus: string(entity.TaskStatusSchedule),
+			ProgressMsg:     &queuedMsg,
+		}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	seed("own-log", "doc-1")
+	seed("other-run-log", "doc-2")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "own-log").Error; err != nil {
+		t.Fatalf("bind own log: %v", err)
+	}
+
+	svc, _ := rerunTestService(t)
+	if err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", nil, "c1"); err != nil {
+		t.Fatalf("RerunDocument: %v", err)
+	}
+
+	if err := db.First(&entity.PipelineOperationLog{}, "id = ?", "own-log").Error; !dao.IsNotFoundErr(err) {
+		t.Fatalf("cleared run's own row should be deleted, got err=%v", err)
+	}
+	if err := db.First(&entity.PipelineOperationLog{}, "id = ?", "other-run-log").Error; err != nil {
+		t.Fatalf("another run's open row was deleted by this run's cleanup: %v", err)
+	}
+}
+
 func TestRerunDocument_EmptyDSLPersistsEntryPath(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

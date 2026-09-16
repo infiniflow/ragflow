@@ -29,6 +29,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
 		}}),
 		componentDSL("Message", map[string]any{"text": "hello"}),
+		componentDSL("Compiler", map[string]any{"compilation_template_group_id": "group-1"}),
 		// Whitespace-only delimiters are legitimate split tokens: the web
 		// form's default row is "\n" (a real newline) and the delimiter
 		// input converts a typed "\n"/"\t" into the raw control character
@@ -66,6 +67,8 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"empty message content", componentDSL("Message", map[string]any{"content": []any{""}}), "Message"},
 		{"missing message content", componentDSL("Message", map[string]any{}), "Message"},
 		{"blank message row after valid row", componentDSL("Message", map[string]any{"content": []any{"hello", " "}}), "Message"},
+		{"missing compilation template", componentDSL("Compiler", map[string]any{}), "Compilation Template Group does not support empty value"},
+		{"empty compilation template", componentDSL("Compiler", map[string]any{"compilation_template_group_id": " "}), "Compilation Template Group does not support empty value"},
 	}
 
 	for _, test := range tests {

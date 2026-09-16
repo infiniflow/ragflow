@@ -49,6 +49,29 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	}
 }
 
+func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[
+			{"type":"text","text":"before"},
+			{"type":"image","data":"aGVsbG8="},
+			{"type":"text","text":"after"}
+		]}
+	]}]}`
+	got := buildDOCXJSONSections(irJSON)
+	if len(got) != 3 {
+		t.Fatalf("sections = %+v, want text/image/text sequence", got)
+	}
+	if got[0]["text"] != "before" || got[0]["doc_type_kwd"] != "text" {
+		t.Errorf("first item = %+v, want text before", got[0])
+	}
+	if got[1]["image"] != "aGVsbG8=" || got[1]["doc_type_kwd"] != "image" {
+		t.Errorf("inline image item = %+v", got[1])
+	}
+	if got[2]["text"] != "after" || got[2]["doc_type_kwd"] != "text" {
+		t.Errorf("last item = %+v, want text after", got[2])
+	}
+}
+
 // TestJoinDOCXIRRuns pins that only text-type runs are concatenated;
 // non-text runs (e.g. nested image runs) are skipped.
 func TestJoinDOCXIRRuns(t *testing.T) {
@@ -101,6 +124,23 @@ func TestExtractDOCXFiguresFromIR(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fig, want) {
 		t.Fatalf("figure mismatch:\n got: %+v\nwant: %+v", fig, want)
+	}
+}
+
+func TestExtractDOCXFiguresFromIR_InlineImage(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[
+			{"type":"text","text":"before"},
+			{"type":"image","data":"aGVsbG8="},
+			{"type":"text","text":"after"}
+		]}
+	]}]}`
+	figs := extractDOCXFiguresFromIR(irJSON)
+	if len(figs) != 1 {
+		t.Fatalf("expected 1 inline figure, got %d", len(figs))
+	}
+	if figs[0].Image != "aGVsbG8=" || figs[0].ContextAbove != "before" || figs[0].ContextBelow != "after" {
+		t.Fatalf("inline figure = %+v", figs[0])
 	}
 }
 

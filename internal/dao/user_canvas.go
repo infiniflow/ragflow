@@ -308,7 +308,7 @@ type UserCanvasListItem struct {
 // ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
 // keyword filter, tag filter, pagination, and ordering.
 // Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
-func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords, canvasCategory, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
+func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string, canvasCategories []string, canvasType string, tags []string) ([]*UserCanvasListItem, int64, error) {
 	if len(ownerIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -335,8 +335,8 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, owne
 			db.WithContext(ctx).Where("user_canvas.permission = ?", "team").
 				Or("user_canvas.user_id = ?", userID))
 
-	if canvasCategory != "" {
-		base = base.Where("user_canvas.canvas_category = ?", canvasCategory)
+	if len(canvasCategories) > 0 {
+		base = base.Where("user_canvas.canvas_category IN ?", canvasCategories)
 	}
 
 	if canvasType != "" {

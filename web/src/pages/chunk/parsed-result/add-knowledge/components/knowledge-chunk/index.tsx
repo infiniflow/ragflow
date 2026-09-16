@@ -2,7 +2,8 @@ import {
   useFetchNextChunkList,
   useSwitchChunk,
 } from '@/hooks/use-chunk-request';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
@@ -223,6 +224,15 @@ function Chunk() {
     return 'unknown';
   }, [documentInfo]);
 
+  // Virtual list setup for chunk cards
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: chunkList.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 120, // Estimated card height
+    overscan: 5, // Render 5 extra items above/below viewport
+  });
+
   return (
     <main className="h-dvh flex flex-col">
       <PageHeader>
@@ -347,23 +357,50 @@ function Chunk() {
                       />
                     </div>
 
-                    <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
-                      {chunkList.map((item) => (
-                        <ChunkCard
-                          item={item}
-                          key={item.chunk_id}
-                          editChunk={showChunkUpdatingModal}
-                          checked={selectedChunkIds.some(
-                            (x) => x === item.chunk_id,
-                          )}
-                          handleCheckboxClick={handleSingleCheckboxClick}
-                          switchChunk={handleSwitchChunk}
-                          clickChunkCard={handleChunkCardClick}
-                          selected={item.chunk_id === selectedChunkId}
-                          textMode={textMode}
-                          t={dataUpdatedAt}
-                        />
-                      ))}
+                    <div
+                      ref={scrollContainerRef}
+                      className="flex-1 overflow-y-auto min-h-0"
+                    >
+                      <div
+                        style={{
+                          height: `${virtualizer.getTotalSize()}px`,
+                          width: '100%',
+                          position: 'relative',
+                        }}
+                      >
+                        {virtualizer.getVirtualItems().map((virtualItem) => {
+                          const item = chunkList[virtualItem.index];
+                          return (
+                            <div
+                              key={item.chunk_id}
+                              data-index={virtualItem.index}
+                              ref={virtualizer.measureElement}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${virtualItem.start}px)`,
+                              }}
+                              className="pb-4"
+                            >
+                              <ChunkCard
+                                item={item}
+                                editChunk={showChunkUpdatingModal}
+                                checked={selectedChunkIds.some(
+                                  (x) => x === item.chunk_id,
+                                )}
+                                handleCheckboxClick={handleSingleCheckboxClick}
+                                switchChunk={handleSwitchChunk}
+                                clickChunkCard={handleChunkCardClick}
+                                selected={item.chunk_id === selectedChunkId}
+                                textMode={textMode}
+                                t={dataUpdatedAt}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <footer className="mt-5">
