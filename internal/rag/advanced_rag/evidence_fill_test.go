@@ -159,7 +159,7 @@ func TestRunSlotResearchPass_PrefilledSlotsSkipSession(t *testing.T) {
 	mdl := &scriptedModel{}
 	deps := harness.SessionDeps{Model: mdl, KB: kb}
 
-	res := RunSlotResearchPass(context.Background(), deps, st.Question, st, 120.0)
+	res := RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 120.0)
 	if res == nil {
 		t.Fatal("expected a result")
 	}

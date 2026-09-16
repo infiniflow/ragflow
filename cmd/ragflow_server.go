@@ -1401,8 +1401,18 @@ func startServer(ctx context.Context) {
 		Handler:           ginEngine,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// WriteTimeout spans "request header read → response written", so it is a
+		// ceiling on the WHOLE request, not on a slow client's reads. Measured
+		// (2026-09-15, FRAMES 20q): three multi-hop questions take 150–225s to reach
+		// their response, and at 120s the server closed the connection with no
+		// response at all — the client reports
+		// `RemoteDisconnected('Remote end closed connection without response')` and
+		// the benchmark re-runs the whole question (max_retries: 2), so one slow
+		// question cost three full pipelines. 180s clears the measured distribution's
+		// middle; questions whose composition alone runs past it still need streaming
+		// or a larger budget.
+		WriteTimeout: 180 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Start server in a goroutine

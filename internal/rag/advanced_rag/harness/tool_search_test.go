@@ -1279,3 +1279,216 @@ func TestResolveDocScopeIntersectsExplicitScopeWithSession(t *testing.T) {
 		t.Fatalf("scope = %v, want [sess1] (explicit scope must be ceilinged by the session scope)", got)
 	}
 }
+
+// TestGrepSearchMatchesPatternOverKeywordCandidates pins the integration: the
+// keyword leg samples the corpus, and the PATTERN decides which of those
+// candidates are evidence — each returned as the clause around its match.
+//
+// The two properties a term-locate pass cannot give: a candidate the pattern does
+// not match is not evidence whatever its retrieval score (c3), and the match is
+// reported with the sentence that carries it rather than the whole chunk.
+func TestGrepSearchMatchesPatternOverKeywordCandidates(t *testing.T) {
+	long := strings.Repeat("前情提要。", 80) + "华雄出马，关公温酒斩之。" + strings.Repeat("余者不表。", 80)
+	r := &stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "content": long},
+		{"chunk_id": "c2", "content": "荀正 引军来战，被云长一刀斩于马下。"},
+		{"chunk_id": "c3", "content": "曹操引军回许都，不在话下。"},
+	}}
+	deps, _ := newTestSearchDeps(r)
+
+	got, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "华雄|荀正|管亥"})
+	if len(got) != 2 {
+		t.Fatalf("got %d chunk(s), want 2: only the candidates the pattern matches are evidence", len(got))
+	}
+	ids := map[string]bool{}
+	for _, c := range got {
+		ids[ChunkIDOf(c)] = true
+	}
+	if !ids["c1"] || !ids["c2"] || ids["c3"] {
+		t.Errorf("kept %v, want c1+c2 and NOT c3 (a candidate the pattern does not match is not evidence)", ids)
+	}
+	for _, c := range got {
+		if ChunkIDOf(c) != "c1" {
+			continue
+		}
+		if n := len([]rune(ChunkTextOf(c))); n > 200 {
+			t.Errorf("c1 window = %d runes, want the clause around the match, not the whole %d-rune chunk", n, len([]rune(long)))
+		}
+	}
+
+	// Nothing matched: the raw candidates are returned so evidence is never
+	// dropped (and the reach line says what happened).
+	none, _ := GrepSearch(context.Background(), deps, SearchParams{Question: "杨龄|夏侯存"})
+	if len(none) != 3 {
+		t.Errorf("no-match grep returned %d chunk(s), want all 3 raw candidates kept", len(none))
+	}
+}
+
+// TestPatternNeverReachesTheEngine pins the invariant that makes `|` and `.*`
+// usable at all: recall is given the pattern's OPERANDS, and the pattern itself is
+// applied here.
+//
+// Handing the pattern to a keyword leg is what turned a batch probe into a silent
+// "the corpus does not carry it": the engine either escapes `|`/`.*` into
+// literals or reads them as its own syntax, and an empty result is then
+// indistinguishable from an absent fact.
+func TestPatternNeverReachesTheEngine(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c1", "content": "关公马快，早赶上文丑，脑后一刀，斩于马下。"},
+	}}
+	deps, _ := newTestSearchDeps(r)
+
+	for _, q := range []string{"华雄|荀正|管亥", "关公.*斩"} {
+		GrepSearch(context.Background(), deps, SearchParams{Question: q})
+		for _, req := range r.requests {
+			for _, bad := range []string{"|", ".*", ".+"} {
+				if strings.Contains(req.Query, bad) {
+					t.Errorf("query %q handed %q to the engine (request %q): pattern syntax must stay on this side", q, bad, req.Query)
+				}
+			}
+		}
+	}
+	// And the recall that WAS issued is the operands, so the engine is still
+	// asked about every alternative.
+	joined := ""
+	for _, req := range r.requests {
+		joined += " " + req.Query
+	}
+	for _, want := range []string{"华雄", "荀正", "管亥", "关公", "斩"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("no request carried %q; recall must be issued per operand (%q)", want, joined)
+		}
+	}
+}
+
+// TestPerTermSearchRecordsConfirmedMembers pins that the weave's per-term search
+// doubles as the member record: a term searched ON ITS OWN that comes back with a
+// passage is a confirmed member with its evidence.
+func TestPerTermSearchRecordsConfirmedMembers(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"chunk_id": "c-yan", "content": "荀正 引军来战，被云长一刀斩于马下。"},
+	}}
+	deps, kb := newTestSearchDeps(r)
+
+	GrepSearch(context.Background(), deps, SearchParams{Question: "荀正|管亥"})
+	got := kb.ReachedTerms()
+	if len(got) != 1 || got[0].Term != "荀正" {
+		t.Fatalf("ReachedTerms = %+v, want 荀正 recorded with the passage that carries it", got)
+	}
+	if got[0].ChunkID != "c-yan" {
+		t.Errorf("recorded chunk = %q, want the passage the term's own search returned", got[0].ChunkID)
+	}
+}
+
+// TestPatternRecallIsPerOperandAndWide pins the LOCATOR fix: a structural pattern
+// ("关公.*斩") asks the engine about each of its operands, at a width that gives
+// the pattern ground to match in.
+//
+// The pattern used to be only a FILTER: the legs' own topN (10 for `retrieve`)
+// decided what it could ever see, so a query about how a deed is written could
+// match inside ten passages, and reported per-term reach over those ten. That is
+// the one retrieval path that does not depend on the model already knowing the
+// name it is looking for — and it was looking through a keyhole.
+func TestPatternRecallIsPerOperandAndWide(t *testing.T) {
+	answer := []map[string]any{{"chunk_id": "c1", "content": "关公勒马，一刀斩之"}}
+
+	// Structural pattern: one search per operand, each WIDE.
+	wide := &stubRetriever{chunks: answer}
+	deps, _ := newTestSearchDeps(wide)
+	GrepSearch(context.Background(), deps, SearchParams{
+		Question: "关公.*斩|云长.*斩", TopN: 10, KbIDs: []string{"kb1"},
+	})
+	if len(wide.requests) < 2 {
+		t.Fatalf("requests = %d, want one per operand", len(wide.requests))
+	}
+	for _, r := range wide.requests {
+		if r.TopN < patternRecallTopN {
+			t.Errorf("operand %q recalled TopN=%d, want >= %d", r.Query, r.TopN, patternRecallTopN)
+		}
+	}
+
+	// An alternation of NAMES keeps the leg's own topN: a rare name's top ten is
+	// enough, and widening there would only cost the engine.
+	narrow := &stubRetriever{chunks: answer}
+	depsNames, _ := newTestSearchDeps(narrow)
+	GrepSearch(context.Background(), depsNames, SearchParams{
+		Question: "华雄|荀正", TopN: 10, KbIDs: []string{"kb1"},
+	})
+	if len(narrow.requests) == 0 {
+		t.Fatal("no requests: the alternation must still search per name")
+	}
+	for _, r := range narrow.requests {
+		if r.TopN != 10 {
+			t.Errorf("name probe %q recalled TopN=%d, want the leg's own 10", r.Query, r.TopN)
+		}
+	}
+}
+
+// TestCallerBatchRecognisesTheBatchTheModelWrites pins the weave's trigger.
+//
+// The per-term seat allocation exists for the batches the model writes, and over
+// the runs of 2026-09-15 it wrote them with SPACES: `关羽 斩 华雄 颜良 文丑 蔡阳`,
+// never once with `|`. A trigger keyed on `|` therefore left the whole mechanism
+// dead code while precisely those batches went to a single ranked top-N — the
+// ranking that hands nearly every seat to the passages matching the most terms at
+// once, which is how four names the corpus carries came back with nothing.
+func TestCallerBatchRecognisesTheBatchTheModelWrites(t *testing.T) {
+	for _, q := range []string{
+		"关羽 斩 华雄 颜良 文丑 蔡阳",
+		"华雄|颜良|文丑",
+		"关公.*斩|云长.*斩",
+	} {
+		if !callerBatch(q) {
+			t.Errorf("callerBatch(%q) = false, want the batch recognised", q)
+		}
+	}
+	// A sentence is not a batch, in either language: that is what keeps the extra
+	// searches off the questions that are not enumerating anything.
+	for _, q := range []string{
+		"三国演义中，关羽杀了多少有姓名的人物？",
+		"What was the outcome of the battle at Red Cliffs?",
+		"关羽",
+	} {
+		if callerBatch(q) {
+			t.Errorf("callerBatch(%q) = true, want a sentence left on the single search", q)
+		}
+	}
+}
+
+// TestProbeItemsAreTheCallersOwnWords pins the reach ledger's reading of a call.
+//
+// The ledger is read back as the session's to-do list ("probed, came back with a
+// passage, not recorded"), so it may only hold what the call PROPOSED as items —
+// the pieces of a batch, or a query that is one word. Measured (2026-09-15): the
+// line read `FOUND BUT NOT RECORDED=三国、演义、关羽、五关…+15` in a run whose
+// sessions were missing six members, none of which was on the list, because the
+// windows an unbroken clause decomposes into had been probed AND recorded.
+func TestProbeItemsAreTheCallersOwnWords(t *testing.T) {
+	got := probeItemsOf([]string{"关羽 古城 蔡阳 斩 颜良 文丑 华雄 庞德 荀正", "韩福"})
+	for _, want := range []string{"蔡阳", "颜良", "华雄", "荀正", "韩福"} {
+		if !got[strings.ToLower(want)] {
+			t.Errorf("probeItemsOf missed the proposed item %q", want)
+		}
+	}
+	// A one-rune verb is stripped as a term edge, not proposed as an item.
+	if got["斩"] {
+		t.Error("a single-rune fragment must not count as a proposed item")
+	}
+
+	// A question is not a proposal, and an unbroken clause yields no item either.
+	if items := probeItemsOf([]string{"三国演义中关羽一共杀死多少有姓名的人物"}); len(items) != 0 {
+		t.Errorf("a sentence proposed %v as items, want nothing", items)
+	}
+
+	// The batch case that produced the junk: the windows of 关羽过五关斩六将 must
+	// not appear, while the caller's own words do.
+	batch := probeItemsOf([]string{"三国演义 关羽过五关斩六将 六将姓名"})
+	for _, window := range []string{"国演", "演义", "羽过", "过五", "关斩", "斩六"} {
+		if batch[window] {
+			t.Errorf("window %q must never reach the ledger", window)
+		}
+	}
+	if !batch["三国演义"] {
+		t.Error("the caller's own word 三国演义 must be a candidate item")
+	}
+}
