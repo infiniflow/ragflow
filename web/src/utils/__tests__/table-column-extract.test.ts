@@ -27,7 +27,7 @@ describe('table-column-extract', () => {
 
   describe('extractTableColumns', () => {
     it('returns columns from backend probe when available', async () => {
-      (request.post as jest.Mock).mockResolvedValueOnce({
+      (request.post as unknown as jest.Mock).mockResolvedValueOnce({
         data: {
           code: 0,
           data: {
@@ -47,7 +47,7 @@ describe('table-column-extract', () => {
     });
 
     it('falls back to local parsing if server probe errors', async () => {
-      (request.post as jest.Mock).mockRejectedValueOnce(
+      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
         new Error('Network error'),
       );
 
@@ -59,7 +59,7 @@ describe('table-column-extract', () => {
     });
 
     it('falls back to local TSV parsing with tab delimiter', async () => {
-      (request.post as jest.Mock).mockRejectedValueOnce(
+      (request.post as unknown as jest.Mock).mockRejectedValueOnce(
         new Error('Probe disabled'),
       );
 

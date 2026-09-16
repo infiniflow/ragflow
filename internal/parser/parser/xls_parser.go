@@ -19,6 +19,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type XLSParser struct {
