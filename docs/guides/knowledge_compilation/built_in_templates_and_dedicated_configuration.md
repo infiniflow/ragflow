@@ -386,18 +386,13 @@ System default rules include:
 
 Users can adjust rules based on business requirements, such as limiting the entity scope to focus on, supplementing domain knowledge, or adjusting page generation requirements.
 
-### Plan
+### Wiki mode
 
-Plan is used to plan and organize document content before generating Wiki content. After Plan is enabled, the system first generates a content plan for the Wiki based on the document content, and then generates the corresponding Wiki content according to the plan, making the generated result more clearly structured.
+Specifies how Wiki pages are organized.
 
-When creating or editing a Wiki compilation template, you can choose whether to enable Plan.
+- **Entity mode**: Generates Wiki pages by entity or concept. Each identified entity or concept is organized into a separate Wiki page. This mode is suitable for exploring information about individual entities or concepts.
 
-- **Plan enabled**: The system first generates a content plan, and then generates Wiki content according to the plan. This is suitable for documents with substantial content and complex structures that require overall organization of Wiki content.
-- **Plan disabled**: The system does not generate a content plan and directly generates Wiki content based on the document content.
-
-After the configuration is completed and the template is saved, the system follows the current Plan configuration when using this template for knowledge compilation.
-
-Note: Whether Plan is enabled affects the Wiki content generation flow. For longer documents or documents with complex content structures, it is recommended to enable Plan.
+- **Topic mode**: Organizes Wiki pages by topic. The LLM groups related entities or concepts into the same Wiki page based on their relationships and context. This mode is suitable for organizing and exploring knowledge at the topic level.
 
 ### EntitySpecification
 
