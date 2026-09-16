@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/utility"
 )
 
 // TestDBConnectionRequest is the request body for AgentService.TestDBConnection.
@@ -61,11 +61,10 @@ func allowAnyHost() bool {
 	return AllowAnyHostForTest
 }
 
-// AssertHostIsSafe returns the first resolved public IP for host, or an error
-// when the host resolves to any non-public address. It delegates to
-// utility.AssertHostSafe (the shared host-type SSRF guard) so external DB
-// probes cannot pivot to internal network ranges; the check mirrors the SSRF
-// guard in the Python implementation.
+// AssertHostIsSafe returns the first resolved public IP for host, or an
+// error when the host resolves to any non-public address. The check
+// mirrors the SSRF guard in the Python implementation so external
+// service calls cannot pivot to internal network ranges.
 func AssertHostIsSafe(host string) (string, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -78,15 +77,104 @@ func AssertHostIsSafe(host string) (string, error) {
 		return host, nil
 	}
 
-	resolvedIP, err := utility.AssertHostSafe(host)
+	ips, err := net.LookupIP(host)
 	if err != nil {
-		zap.L().Warn("SSRF guard blocked host",
+		zap.L().Warn("SSRF guard could not resolve host",
 			zap.String("host", host),
 			zap.Error(err),
 		)
-		return "", err
+		return "", fmt.Errorf("could not resolve host %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		zap.L().Warn("SSRF guard blocked host: resolved to no addresses",
+			zap.String("host", host),
+		)
+		return "", fmt.Errorf("host %q resolved to no addresses", host)
+	}
+
+	var resolvedIP string
+	for _, ip := range ips {
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			return "", fmt.Errorf("invalid resolved IP %q for host %q", ip.String(), host)
+		}
+		// Normalize IPv4-mapped IPv6, equivalent to Python _effective_ip().
+		addr = addr.Unmap()
+
+		if !isPublicAddr(addr) {
+			zap.L().Warn("SSRF guard blocked host",
+				zap.String("host", host),
+				zap.String("resolved_ip", addr.String()),
+			)
+			return "", fmt.Errorf("host resolves to a non-public address (%s), which is not allowed", addr.String())
+		}
+		if resolvedIP == "" {
+			resolvedIP = addr.String()
+		}
+	}
+	if resolvedIP == "" {
+		return "", fmt.Errorf("host %q resolved to no addresses", host)
 	}
 	return resolvedIP, nil
+}
+
+func isPublicAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
+	if !addr.IsValid() {
+		return false
+	}
+	if !addr.IsGlobalUnicast() {
+		return false
+	}
+	if addr.IsPrivate() ||
+		addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() {
+		return false
+	}
+	return !isSpecialUseAddr(addr)
+}
+
+func isSpecialUseAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
+	specialCIDRs := []string{
+		// IPv4 special-use / documentation / reserved ranges.
+		"0.0.0.0/8",
+		"100.64.0.0/10",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"192.0.0.0/24",
+		"192.0.2.0/24",
+		"198.18.0.0/15",
+		"198.51.100.0/24",
+		"203.0.113.0/24",
+		"224.0.0.0/4",
+		"240.0.0.0/4",
+
+		// IPv6 special-use / documentation / local ranges.
+		"::/128",
+		"::1/128",
+		"64:ff9b:1::/48",
+		"100::/64",
+		"2001::/23",
+		"2001:2::/48",
+		"fc00::/7",
+		"fe80::/10",
+		"ff00::/8",
+		"2001:db8::/32",
+		"2002::/16",
+	}
+	for _, cidr := range specialCIDRs {
+		prefix := netip.MustParsePrefix(cidr)
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func missingDBConnectionFields(req *TestDBConnectionRequest) []string {

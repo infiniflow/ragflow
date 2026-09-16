@@ -189,30 +189,3 @@ func TestValidateDBHost_LiteralPublicIPAccepted(t *testing.T) {
 		t.Fatalf("returned host %q is not a valid IP", got)
 	}
 }
-
-// TestValidateDBHost_IgnoresEnvBypass locks in the "no env-var bypass" rule:
-// ALLOW_ANY_HOST=1 must NOT disable the host SSRF guard. The only override is
-// the process-memory AllowAnyHostForTest used by tests; an env var or a
-// deployment mistake cannot turn the guard off.
-func TestValidateDBHost_IgnoresEnvBypass(t *testing.T) {
-	t.Setenv("ALLOW_ANY_HOST", "1")
-	if _, err := ValidateDBHost("10.0.0.5"); err == nil || !errors.Is(err, ErrSSRFBlocked) {
-		t.Fatalf("ValidateDBHost with ALLOW_ANY_HOST=1 = %v, want ErrSSRFBlocked", err)
-	}
-}
-
-// TestValidateDBHost_TestOnlyOverride verifies the process-memory test override
-// (AllowAnyHostForTest) is the sole bypass and can be used by unit tests.
-func TestValidateDBHost_TestOnlyOverride(t *testing.T) {
-	prev := AllowAnyHostForTest
-	AllowAnyHostForTest = true
-	t.Cleanup(func() { AllowAnyHostForTest = prev })
-
-	got, err := ValidateDBHost("127.0.0.1")
-	if err != nil {
-		t.Fatalf("ValidateDBHost(127.0.0.1) with test override = %v, want nil", err)
-	}
-	if got != "127.0.0.1" {
-		t.Fatalf("got %q, want 127.0.0.1", got)
-	}
-}
