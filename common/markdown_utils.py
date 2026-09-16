@@ -15,9 +15,14 @@
 #
 """HTML to Markdown conversion for the ingestion paths."""
 
+import re
 from typing import Any
 
 from markdownify import MarkdownConverter
+
+# A bare Markdown link destination ends at the first whitespace and at an
+# unbalanced closing parenthesis, and an angle bracket would close it early.
+_NEEDS_ANGLE_BRACKETS = re.compile(r"[\s()<>]")
 
 # Inline tags whose markdownify conversion runs the text through chomp(), which lifts the
 # surrounding whitespace out of the text and then returns an empty string once nothing is
@@ -45,6 +50,22 @@ _WHITESPACE_ONLY_PRESERVING_TAGS = frozenset(
 )
 
 
+def _format_destination(url: str) -> str:
+    """Render `url` so it survives being read back as a Markdown destination.
+
+    A URL holding a space -- a SharePoint or OneDrive path, say -- or an
+    unbalanced parenthesis is cut short when the Markdown is parsed again.
+    Angle brackets are what CommonMark provides for the case, and they leave
+    the URL itself byte for byte as it was, rather than re-encoding characters
+    the server may be reading.
+    """
+    if not url or not _NEEDS_ANGLE_BRACKETS.search(url):
+        return url
+
+    # A `<...>` destination may not contain an unescaped angle bracket.
+    return "<{}>".format(url.replace("<", "%3C").replace(">", "%3E"))
+
+
 class _WhitespacePreservingConverter(MarkdownConverter):
     """Same as markdownify's converter, but a whitespace-only inline element keeps its text."""
 
@@ -60,6 +81,20 @@ class _WhitespacePreservingConverter(MarkdownConverter):
             return convert_fn(el, text, *args, **kwargs)
 
         return _keep_whitespace_only
+
+    def convert_a(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        href = el.get("href")
+        if href:
+            el["href"] = _format_destination(href)
+
+        return super().convert_a(el, text, *args, **kwargs)
+
+    def convert_img(self, el: Any, text: str, *args: Any, **kwargs: Any) -> str:
+        src = el.get("src")
+        if src:
+            el["src"] = _format_destination(src)
+
+        return super().convert_img(el, text, *args, **kwargs)
 
 
 def html_to_markdown(html: str, **options: Any) -> str:
