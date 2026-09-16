@@ -3542,13 +3542,13 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	// Run once per QUESTION, not once per round: the windows stay in the pool under the same
 	// ids, so a later round reuses the block (Kbinfos.PatternFindings).
 	switch {
-	case !harness.MemberShaped(slotTable):
+	case !harness.EnumerationShaped(slotTable):
 		// A table of counts and dates declares act words too (the planner is told to for "a
 		// count of things someone DID"), and no name either pass could return changes a count
 		// of events: measured (2026-09-16, FRAMES) two such questions carried a 100-passage
 		// reading list into sessions 8 passages a turn, together ~18% of the run's tokens.
 		if patterns := harness.ScanPatterns(slotTable); len(patterns) > 0 {
-			_LOG.Printf("[SlotResearch] %d act pattern(s) declared but no slot of this table holds a NAME — not run: a count of events has no names to find.", len(patterns))
+			_LOG.Printf("[SlotResearch] %d act pattern(s) declared but this table is not an ENUMERATION (it declared no count/set/list slot, no NAME-carrying slot, or no act words) — not run: a value question pays nothing for a set's bookkeeping.", len(patterns))
 		}
 	case kb != nil:
 		if block, done := kb.PatternFindings(); done {

@@ -400,27 +400,24 @@ func TestSetShapedFollowsThePlannersDeclaration(t *testing.T) {
 	}
 }
 
-// TestSetDirectionIsSeededWithTheMethod pins WHERE the enumeration method is
-// delivered: in the seed, before the first turn, when the table DECLARED a set
-// (count/set/list).
+// TestSetDirectionIsSeededWithTheMethod pins WHERE the enumeration method is delivered — in the
+// seed, before the first turn — and, just as important, WHO gets it: only a table that declared the
+// whole ENUMERATION shape (see EnumerationShaped).
 //
-// Its first instruction — propose more candidates than you expect — is a decision
-// taken before the first query: measured (2026-09-16, 三国/关羽) the same question
-// answered eighteen members with the method in the seed of its `[count]` table and
-// fourteen when it arrived one turn later. A table that was NOT typed as a set is not
-// seeded here; it is handed the method by appendBatchProtocol on the first batch it
-// writes, and a single-value direction never sees it at all.
+// Its first instruction — propose more candidates than you expect — is a decision taken before the
+// first query: measured (2026-09-16, 三国/关羽) the same question answered eighteen members with the
+// method in the seed of its `[count]` table and fourteen when it arrived a turn later. But the same
+// instruction on a question whose answer is ONE value sends the session looking for members it does
+// not need: measured (2026-09-16, FRAMES — 4 questions in flight, 300s deadline) the SetShaped-only
+// gate seeded the value questions that merely contain a count and the run finished 0.833 with two
+// timeouts against 0.875 with none.
 func TestSetDirectionIsSeededWithTheMethod(t *testing.T) {
 	loader := StringPromptLoader{"action_set": "SET / COUNT directions — the member list IS the work"}
-	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}
-	if got := setProtocolFor(counted, loader); !strings.Contains(got, "SET / COUNT directions") {
-		t.Errorf("a declared set direction must be seeded with the method, got %q", got)
-	}
 
-	// A direction that DECLARED its act words is seeded with the corpus queries those
-	// words render into (see ScanPatterns): the seed is where the session is told to ask
-	// the corpus for the act, which is the one thing its memory cannot do. Without the
-	// declaration there is nothing to render and the method travels alone.
+	// A table that declared count/set/list AND a NAME-carrying slot AND its act words: the
+	// enumeration strategy, seeded with the method and the corpus queries those words render into
+	// (see ScanPatterns) — the seed is where the session is told to ask the corpus for the act,
+	// which is the one thing its memory cannot do.
 	declared := State{State: []Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("18"), Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
 		{ID: 1, Type: "dataset"},
@@ -430,17 +427,31 @@ func TestSetDirectionIsSeededWithTheMethod(t *testing.T) {
 		t.Errorf("a direction with declared act words must be seeded with their queries, got %q", got)
 	}
 	if !strings.Contains(got, "SET / COUNT directions") {
-		t.Errorf("the method must still travel with them, got %q", got)
+		t.Errorf("the method must travel with them, got %q", got)
 	}
-	// The same declaration on a table that holds NO NAME renders the method alone: the
-	// planner declares act words for "a count of things someone DID" as well, and a list
-	// of corpus queries is neither useful nor free on a question whose answer is a number
-	// (measured 2026-09-16, FRAMES — see MemberShaped).
+
+	// And now the three ways a table FAILS to be an enumeration, each of which must leave a value
+	// question alone. A count with no names: a count of EVENTS, which the planner declares act
+	// words for as well ("how many times had Brazil won the World Cup").
 	countsOnly := State{State: []Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("5"), Terms: []string{"won", "trophy"}, Subject: "Brazil"},
 	}}
-	if got := setProtocolFor(countsOnly, loader); strings.Contains(got, ".*") || !strings.Contains(got, "SET / COUNT directions") {
-		t.Errorf("a table with no name slot must get the method without act patterns, got %q", got)
+	if got := setProtocolFor(countsOnly, loader); got != "" {
+		t.Errorf("a count of events must not be seeded with the member method, got %q", got)
+	}
+	// Names with no count/set/list: a question about ONE named thing that also declared act words
+	// (the shape a multi-hop value question takes).
+	namesOnly := State{State: []Variable{
+		{ID: 0, Type: "person", Terms: []string{"wrote", "published"}, Subject: "the writer"},
+		{ID: 1, Type: "date"},
+	}}
+	if got := setProtocolFor(namesOnly, loader); got != "" {
+		t.Errorf("a value question holding one name must not be seeded with the member method, got %q", got)
+	}
+	// A count with no act words: nothing was declared to enumerate.
+	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}
+	if got := setProtocolFor(counted, loader); got != "" {
+		t.Errorf("a count with no declared act words must not be seeded, got %q", got)
 	}
 	// `number` is the planner's label for a measured QUANTITY, and it typed the same
 	// question both ways on two runs of 2026-09-16: not a seed trigger, and exactly

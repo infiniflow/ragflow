@@ -2415,22 +2415,23 @@ func SessionWallS(parent State) float64 {
 // has not is handed it after the first batch it writes (see appendBatchProtocol),
 // which is the signal with no measured false positives.
 //
-// The gate is SetShaped — what the planner DECLARED (count/set/list) — and not the
-// permissive reading of a candidate. Measured (2026-09-16, FRAMES): the permissive
-// version seeded 44 of 67 sessions, 2777 characters of set strategy each, on questions
-// that assemble nothing (named-term seats 0, batch weaving 0), while the declared
-// version's false positives are the eleven-per-run handful whose tables really are
-// typed as a count.
+// The gate is EnumerationShaped — the planner's own three statements about the answer
+// (count/set/list, a NAME-carrying slot, act words) — and never a reading of a
+// candidate. Measured (2026-09-16, FRAMES): the permissive version seeded 44 of 67
+// sessions, 2777 characters of set strategy each, on questions that assemble nothing
+// (named-term seats 0, batch weaving 0); the SetShaped-only version still seeded the
+// handful of value questions that merely contain a count, and that run — 4 questions in
+// flight, 300s deadline — finished 0.833 with two timeouts against 0.875 with none.
 func setProtocolFor(table State, prompts PromptLoader) string {
 	method := setMethodFor(table, prompts)
 	if method == "" {
 		return ""
 	}
-	// The pattern list is rendered only where a NAME can be a member (see MemberShaped):
-	// the planner declares act words for "a count of things someone DID" too, and a list of
-	// corpus queries is neither useful nor free on a question whose answer is a number
-	// (measured 2026-09-16, FRAMES — see MemberShaped for the two questions that carried it).
-	if !MemberShaped(table) {
+	// The pattern list belongs to the enumeration strategy alone (see EnumerationShaped): the
+	// planner declares act words for "a count of things someone DID" too, and a list of corpus
+	// queries is neither useful nor free on a question whose answer is a number (measured
+	// 2026-09-16, FRAMES — see EnumerationShaped for the run that paid for it).
+	if !EnumerationShaped(table) {
 		return method
 	}
 	patterns := ScanPatterns(table)
@@ -2458,7 +2459,10 @@ func setProtocolFor(table State, prompts PromptLoader) string {
 // reading of a candidate seeded 44 of 67 sessions with 2777 characters of set strategy each
 // on questions that assemble nothing.
 func setMethodFor(table State, prompts PromptLoader) string {
-	if !SetShaped(table) {
+	// The gate is the whole shape of the question, not just "a count appears in it" (see
+	// EnumerationShaped): the method tells a session to enumerate NAMED members, and a single-value
+	// question that merely contains a number must not be told to assemble anything.
+	if !EnumerationShaped(table) {
 		return ""
 	}
 	return loadOptionalPrompt(prompts, "action_set")

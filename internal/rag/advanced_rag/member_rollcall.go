@@ -100,10 +100,10 @@ func RollCallMembers(ctx context.Context, deps RAGTools, st *AgenticState, logge
 	if st == nil || deps.Model == nil || st.KB == nil || len(st.SlotTable.State) == 0 {
 		return res
 	}
-	// Same gate as the completeness pass, for the same reason (see harness.MemberShaped): a table of
-	// counts and dates has no members to roll-call, so a question whose answer is a number must not
-	// pay for one.
-	if !harness.MemberShaped(st.SlotTable) {
+	// Same gate as the completeness pass (see harness.EnumerationShaped): the roll call belongs to the
+	// ENUMERATION strategy, so a single-value question — even one that contains a count — pays
+	// nothing for it.
+	if !harness.EnumerationShaped(st.SlotTable) {
 		return res
 	}
 	// And the stronger gate, which is the one that keeps the step off every question that is not a

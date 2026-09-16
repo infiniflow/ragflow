@@ -158,3 +158,44 @@ func TestEnumerationSeedCarriesFindingsInsteadOfTheList(t *testing.T) {
 		t.Errorf("seed %q still lists patterns to make — the windows replaced them", seed)
 	}
 }
+
+// TestEnumerationShapedSeparatesSetsFromValues pins the split the two strategies need: a set of NAMED
+// members is not a count of events, and neither is a question about one named thing.
+//
+// Measured (2026-09-16, FRAMES, 4 questions in flight, 300s deadline): with the completeness pass
+// gated on MemberShaped alone it ran on 7 of the 20 questions — every one of them single-value — and
+// the run finished 0.833 with two timeouts against 0.875 with none. The gate is the conjunction of
+// the planner's OWN three statements, so nothing is read from a slot's text or from the question.
+func TestEnumerationShapedSeparatesSetsFromValues(t *testing.T) {
+	set := NewState([]Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+		{ID: 1, Type: "dataset"},
+	}, 0, nil)
+	if !EnumerationShaped(set) {
+		t.Error("a count over named members with declared act words IS an enumeration")
+	}
+	cases := []struct {
+		name  string
+		table State
+	}{
+		{"a count of events (no slot holds names)", NewState([]Variable{
+			{ID: 0, Type: "count", Terms: []string{"won", "trophy"}, Subject: "Brazil"},
+		}, 0, nil)},
+		{"a named thing with act words but no count/set/list", NewState([]Variable{
+			{ID: 0, Type: "person", Terms: []string{"wrote"}},
+			{ID: 1, Type: "date"},
+		}, 0, nil)},
+		{"a count with nothing declared to enumerate", NewState([]Variable{
+			{ID: 0, Type: "count", Candidate: strPtr("18")},
+			{ID: 1, Type: "dataset"},
+		}, 0, nil)},
+		{"a single value", NewState([]Variable{
+			{ID: 0, Type: "date", Candidate: strPtr("1858")},
+		}, 0, nil)},
+	}
+	for _, tc := range cases {
+		if EnumerationShaped(tc.table) {
+			t.Errorf("%s must NOT be an enumeration: the enumeration machinery (method seed, completeness pass, roll call) costs a value question its budget", tc.name)
+		}
+	}
+}

@@ -65,6 +65,39 @@ func MemberShaped(table State) bool {
 	return false
 }
 
+// EnumerationShaped reports whether this table asks for an ENUMERATION — a set of NAMED members — as
+// opposed to one value, one date or one number.
+//
+// It is the gate for every piece of the enumeration machinery (the method seed, the completeness pass,
+// the member roll call), and it is the conjunction of three things the PLANNER itself declared, so
+// nothing here reads a slot's text, the question, or a candidate:
+//
+//   - SetShaped: the table asked for a count, a set or a list — the answer is a SET, not one value;
+//   - MemberShaped: a slot of this table carries NAMES (entity / person / dataset / list / set);
+//   - act words were declared for the deed being enumerated (a slot's Terms).
+//
+// The conjunction is what separates a set of named members from a count of EVENTS, which the planner
+// declares act words for too ("how many times had Brazil won the World Cup" → won / victory /
+// champion): that question is set-shaped but holds no names, so it is a VALUE question and pays
+// nothing for a set's bookkeeping.
+//
+// Measured (2026-09-16, FRAMES, 4 questions in flight, 300s deadline): with the pass gated on
+// MemberShaped alone it ran on 7 of the 20 questions — every one of them a single-value question —
+// and the run ended 0.833 with two timeouts against 0.875 with none. The two strategies need
+// different machinery, so they get it: a value question keeps the plain research loop, and only a
+// table that declared all three things pays for the enumeration.
+func EnumerationShaped(table State) bool {
+	if !SetShaped(table) || !MemberShaped(table) {
+		return false
+	}
+	for _, v := range table.State {
+		if len(v.Terms) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // PatternRunner gives one completeness pattern to the corpus and returns what matched.
 //
 // A one-method interface on purpose: the runtime must be able to run the block
@@ -113,7 +146,7 @@ type CompletenessPass struct {
 // with no possible payoff.
 func RunCompletenessPass(ctx context.Context, runner PatternRunner, kb *Kbinfos, table State) CompletenessPass {
 	pass := CompletenessPass{}
-	if runner == nil || !MemberShaped(table) {
+	if runner == nil || !EnumerationShaped(table) {
 		return pass
 	}
 	patterns := ScanPatterns(table)
