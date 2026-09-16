@@ -896,6 +896,12 @@ func (s *IngestionTaskService) AggregateTaskProgress(ctx context.Context, taskID
 	return s.ingestionTaskLogDAO.AggregateProgress(ctx, dao.DB, taskID, total)
 }
 
+// AggregateTaskProgressByPipelineLogID returns component progress for one
+// immutable ingestion run.
+func (s *IngestionTaskService) AggregateTaskProgressByPipelineLogID(ctx context.Context, pipelineLogID string, total int) (*dao.TaskProgress, error) {
+	return s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, pipelineLogID, total)
+}
+
 // lastRunCount scans all task logs (newest first) for a run_count entry,
 // skipping component-progress rows whose Checkpoint is empty. It returns
 // the counter and whether one was found.

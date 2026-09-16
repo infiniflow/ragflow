@@ -1179,7 +1179,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 			return dsl, parserID, nil
 		})
 	}
-	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	pipelineLogID := ""
+	if ingestionTask.PipelineLogID != nil {
+		pipelineLogID = *ingestionTask.PipelineLogID
+	}
+	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc, pipelineLogID)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}
