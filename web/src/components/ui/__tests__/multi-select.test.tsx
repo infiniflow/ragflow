@@ -118,3 +118,80 @@ describe('MultiSelect disabled options', () => {
     expect(onValueChange).toHaveBeenCalledWith(['b']);
   });
 });
+
+describe('MultiSelect locked options', () => {
+  const options = [
+    { label: 'Alpha', value: 'a', locked: true },
+    { label: 'Beta', value: 'b' },
+    { label: 'Gamma', value: 'c' },
+  ];
+
+  it('select all includes locked options', () => {
+    const onValueChange = jest.fn();
+    render(
+      <MultiSelect
+        options={options}
+        defaultValue={[]}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(document.querySelector('[cmdk-item]')!);
+    expect(onValueChange).toHaveBeenCalledWith(['a', 'b', 'c']);
+  });
+
+  it('locked options cannot be deselected by clicking', () => {
+    const onValueChange = jest.fn();
+    render(
+      <MultiSelect
+        options={options}
+        defaultValue={['a', 'b']}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button'));
+    // Click on the locked option 'a'
+    const lockedOption = Array.from(
+      document.querySelectorAll('[role="option"]'),
+    ).find((el) => el.textContent?.includes('Alpha'));
+    fireEvent.click(lockedOption!);
+    // Should still be ['a', 'b'] because 'a' is locked
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('locked options cannot be removed via badge remove icon', () => {
+    const onValueChange = jest.fn();
+    render(
+      <MultiSelect
+        options={options}
+        defaultValue={['a', 'b']}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const badgeRow = screen.getByText('Alpha').parentElement!;
+    const removeIcon = badgeRow.querySelector('svg.lucide-circle-x');
+    expect(removeIcon).toBeTruthy();
+
+    fireEvent.click(removeIcon!);
+    // Should not be called because 'a' is locked
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('clear keeps locked options', () => {
+    const onValueChange = jest.fn();
+    const { container } = render(
+      <MultiSelect
+        options={options}
+        defaultValue={['a', 'b', 'c']}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    fireEvent.click(container.querySelector('svg.lucide-x')!);
+    // Only locked option 'a' should remain
+    expect(onValueChange).toHaveBeenCalledWith(['a']);
+  });
+});
