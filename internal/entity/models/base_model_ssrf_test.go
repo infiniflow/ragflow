@@ -186,3 +186,30 @@ func serverPort(t *testing.T, server *httptest.Server) string {
 	}
 	return u.Port()
 }
+
+// A proxy from the environment would let the proxy re-resolve the hostname,
+// so the strict client must ignore it and dial the pinned address itself.
+func TestDriverHTTPClientStrictIgnoresEnvironmentProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+	t.Setenv("NO_PROXY", "")
+	client := NewDriverHTTPClient(false)
+	rt := client.Transport
+	for {
+		switch v := rt.(type) {
+		case *providerLoggingTransport:
+			rt = v.base
+			continue
+		case *strictSSRFTransport:
+			rt = v.base
+			continue
+		case *http.Transport:
+			if v.Proxy != nil {
+				t.Fatal("strict driver client must not route through an environment proxy")
+			}
+			return
+		default:
+			t.Fatalf("unexpected transport %T", rt)
+		}
+	}
+}

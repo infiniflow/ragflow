@@ -243,6 +243,9 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 	return nil
 }
 
+// maxPinnedRedirects mirrors net/http's default redirect budget.
+const maxPinnedRedirects = 10
+
 // PinTable records the IP AssertURLSafe validated for each hostname so a
 // transport can dial that address instead of resolving the hostname a
 // second time. A DNS answer that changes between the check and the dial
@@ -292,6 +295,14 @@ func (t *PinTable) WrapDialContext(base func(ctx context.Context, network, addr 
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
 // scoped to this client only.
+//
+// Redirects are re-validated: net/http follows up to ten redirects by
+// default, and the pin only covers the hostname the caller validated, so a
+// public server answering 302 Location: http://169.254.169.254/... would
+// otherwise be dialed straight through, unchecked and unpinned. Each hop is
+// therefore passed through AssertURLSafe and its resolved IP added to the
+// pin table before the client follows it. Callers that need a different
+// policy (e.g. refusing redirects outright) still override CheckRedirect.
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 	pins := &PinTable{}
 	pins.Pin(hostname, resolvedIP)
@@ -312,5 +323,23 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxPinnedRedirects {
+				return fmt.Errorf("stopped after %d redirects", maxPinnedRedirects)
+			}
+			// Never follow an HTTPS -> HTTP downgrade: the request may carry
+			// credentials (Authorization, API-key headers rendered for MCP
+			// servers) that would otherwise be replayed over cleartext.
+			if len(via) > 0 && via[0].URL != nil && strings.EqualFold(via[0].URL.Scheme, "https") &&
+				!strings.EqualFold(req.URL.Scheme, "https") {
+				return fmt.Errorf("redirect to %s blocked: https to http downgrade", req.URL.Redacted())
+			}
+			host, ip, err := AssertURLSafe(req.URL.String())
+			if err != nil {
+				return fmt.Errorf("redirect to %s blocked: %w", req.URL.Redacted(), err)
+			}
+			pins.Pin(host, ip)
+			return nil
+		},
 	}
 }

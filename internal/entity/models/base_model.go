@@ -484,6 +484,10 @@ func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 		// Pin the dial target to the IP AssertURLSafe validates so a DNS
 		// answer that changes between the check and the connect cannot
 		// redirect the request to a private address.
+		// An environment proxy would make the proxy, not this transport,
+		// resolve the hostname, so the pin could not be enforced; strict
+		// mode dials directly, as PinnedHTTPClient does.
+		t.Proxy = nil
 		pins := &utility.PinTable{}
 		t.DialContext = pins.WrapDialContext(t.DialContext)
 		rt = &strictSSRFTransport{base: rt, pins: pins}
