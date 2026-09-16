@@ -425,6 +425,100 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 	}
 }
 
+// TestTokenChunkerMediaContextSpansUpstreamItems pins the flat attach contract
+// on the canvas path: Python collects a media chunk's context from the flat
+// chunk list (token_chunker.py:537, :545), so the text units of *other*
+// upstream items are in scope. The context is also what keeps a caption-less
+// media chunk alive — its own body is empty — and what that chunk indexes.
+func TestTokenChunkerMediaContextSpansUpstreamItems(t *testing.T) {
+	cases := []struct {
+		name      string
+		params    map[string]any
+		mediaItem map[string]any
+		mediaType string
+		wantText  string
+	}{
+		{
+			name:      "image without a body",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "image_context_size": 20},
+			mediaItem: map[string]any{"text": "", "image": "figure-bytes", "doc_type_kwd": "image"},
+			mediaType: "image",
+			wantText:  "abovebelow",
+		},
+		{
+			name:      "table",
+			params:    map[string]any{"delimiter_mode": "delimiter", "chunk_token_size": 512, "table_context_size": 20},
+			mediaItem: map[string]any{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			mediaType: "table",
+			wantText:  "above<table><tr><td>A</td></tr></table>below",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenChunker(tc.params)
+			if err != nil {
+				t.Fatalf("NewTokenChunker: %v", err)
+			}
+			out, err := c.Invoke(context.Background(), nil, map[string]any{
+				"name":          "fig.pdf",
+				"file_type":     "pdf",
+				"output_format": "json",
+				"json": []map[string]any{
+					{"text": "above", "doc_type_kwd": "text"},
+					tc.mediaItem,
+					{"text": "below", "doc_type_kwd": "text"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			var media map[string]any
+			for _, ck := range chunks {
+				if ck["ck_type"] == tc.mediaType {
+					media = ck
+					break
+				}
+			}
+			if media == nil {
+				t.Fatalf("%s chunk missing from %d chunks: %+v", tc.mediaType, len(chunks), chunks)
+			}
+			assertMaterializedMediaContext(t, media, tc.wantText)
+		})
+	}
+}
+
+// TestTokenChunkerDropsMediaChunkWithTagOnlyContext pins the drop filter
+// against Python's finalize, which strips parser position tags from the merged
+// body before the empty check (token_chunker.py:343). A media chunk whose only
+// surrounding context is a position tag has nothing retrievable left, so it
+// must not survive — the fold would otherwise emit a chunk with an empty body.
+func TestTokenChunkerDropsMediaChunkWithTagOnlyContext(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":     "delimiter",
+		"chunk_token_size":   512,
+		"table_context_size": 20,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if chunks := outputChunks(t, out); len(chunks) != 0 {
+		t.Fatalf("chunks = %+v, want none: the media chunk's only context is a position tag", chunks)
+	}
+}
+
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
 // payload 10 times under the race detector and asserts the chunk
 // list is identical every time.

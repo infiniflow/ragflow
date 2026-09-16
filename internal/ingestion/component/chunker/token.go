@@ -588,24 +588,35 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		}
 	}
 
-	// Attach surrounding media context (token_chunker.py:358).
-	attached := attachMediaContext(perItem, c.param.TableContextSize, c.param.ImageContextSize)
+	// Surrounding media context is attached on the flattened chunk list,
+	// mirroring Python's _attach_context_to_media_chunks (token_chunker.py:537,
+	// :545): the units are flat there, so a media block collects the text units
+	// around it across item boundaries. Attaching per upstream item instead
+	// leaves every media chunk without neighbours, because one item rarely
+	// yields more than one chunk.
+	flat := flatten(perItem)
 
 	// Python's naive_merge: custom (backtick) delimiters produce one
 	// chunk per segment — no token-size merge (naive_merge:1194-1213).
 	// Otherwise split-then-merge: delimiter-split segments are greedily
 	// merged to chunk_token_size with optional overlap.
-	if !hasCustomDelim(c.param.Delimiters) {
+	customDelim := hasCustomDelim(c.param.Delimiters)
+	if !customDelim {
+		// Attach before the merge — Python's non-delimiter branch collects the
+		// context from the pre-merge text units. The merge only joins text
+		// chunks, so a media chunk keeps what it collected.
+		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 		// Python _merge_text_chunks_by_token_size merges adjacent text
-		// chunks across JSON items into one global token budget. Flatten the
-		// per-item structure into a single sequence first so the merge is
-		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+		// chunks across JSON items into one global token budget.
+		flat = flatten(mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flat}, c.param.ChunkTokenSize, c.param.OverlappedPercent))
 	}
 
-	flat := flatten(attached)
 	if childrenPattern != nil {
 		flat = splitByChildren(flat, childrenPattern)
+	}
+	if customDelim {
+		// Python's delimiter branch splits by children first, then attaches.
+		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 	}
 
 	// Crop image/table chunks on demand when a PDF engine is available.
@@ -618,7 +629,15 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
 		m.Text = removeTag(m.Text)
-		if m.Text == "" {
+		// Drop a chunk only when nothing about it is retrievable. A media chunk
+		// may carry no body of its own and still be indexed through its
+		// surrounding context: Python's _finalize_json_chunks strips the merged
+		// text and applies the check to it — remove_tag(context_above + text +
+		// context_below) then .strip() — so a context that carries nothing but
+		// a position tag counts as empty. The context is folded into Text once,
+		// at chunkOutputs, so the decision is made on that merged text here
+		// without duplicating the fold.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
 			continue
 		}
 		out = append(out, m)
@@ -818,32 +837,30 @@ func partition(n, parts int) []lane {
 	return out
 }
 
-func attachMediaContext(perItem [][]schema.ChunkDoc, tableCtx, imageCtx int) [][]schema.ChunkDoc {
+// attachMediaContext writes the surrounding context onto the media chunks of a
+// flat chunk list. Mirrors token_chunker.py:_attach_context_to_media_chunks,
+// which runs on the flat chunk list as well: a media block collects the text
+// units around it, up to the token budget, across upstream item boundaries.
+func attachMediaContext(chunks []schema.ChunkDoc, tableCtx, imageCtx int) []schema.ChunkDoc {
 	if tableCtx <= 0 && imageCtx <= 0 {
-		return perItem
+		return chunks
 	}
-	for idx := range perItem {
-		chunks := perItem[idx]
-		if len(chunks) == 0 {
+	for i, ck := range chunks {
+		ckType := ck.CKType
+		if ckType != "table" && ckType != "image" {
 			continue
 		}
-		for i, ck := range chunks {
-			ckType := ck.CKType
-			if ckType != "table" && ckType != "image" {
-				continue
-			}
-			ctx := imageCtx
-			if ckType == "table" {
-				ctx = tableCtx
-			}
-			if ctx <= 0 {
-				continue
-			}
-			chunks[i].ContextAbove = collectContext(chunks, i, ctx, true)
-			chunks[i].ContextBelow = collectContext(chunks, i, ctx, false)
+		ctx := imageCtx
+		if ckType == "table" {
+			ctx = tableCtx
 		}
+		if ctx <= 0 {
+			continue
+		}
+		chunks[i].ContextAbove = collectContext(chunks, i, ctx, true)
+		chunks[i].ContextBelow = collectContext(chunks, i, ctx, false)
 	}
-	return perItem
+	return chunks
 }
 
 // collectContext walks chunks around `i` (above when direction==true,
