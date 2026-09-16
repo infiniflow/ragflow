@@ -1187,6 +1187,19 @@ class ApiRoute(OpenAIAPICompatible):
         return f"{self._BASE_URL}/models"
 
 
+class CheaperInference(OpenAIAPICompatible):
+    """Cheaper Inference catalog lister.
+
+    ``conf/models/cheaperinference.json`` pins the catalog the gateway
+    documents, which is what the model pickers show. This lister covers the
+    on-demand refresh: it reads the gateway's own ``/v1/models`` endpoint
+    (inherited behavior) so routes added after this file shipped are still
+    discoverable against the tenant's own key.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+
 class DaoXE(OpenAIAPICompatible):
     """DaoXE catalog lister.
 
