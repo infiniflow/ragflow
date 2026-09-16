@@ -91,8 +91,8 @@ type GroupListItem struct {
 
 // ListSaved returns the tenant's groups with nested templates. Mirrors Python
 // list_saved(). total is derived from the full (unpaginated) result set.
-func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantID, keywords, scope, orderby string, desc bool) ([]*GroupListItem, error) {
-	groups, err := s.groupDAO.ListSaved(ctx, dao.DB, tenantID, keywords, scope, orderby, desc)
+func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantID, keywords, scope string, terms []dao.OrderTerm) ([]*GroupListItem, error) {
+	groups, err := s.groupDAO.ListSaved(ctx, dao.DB, tenantID, keywords, scope, terms)
 	if err != nil {
 		return nil, err
 	}

@@ -817,7 +817,8 @@ class Docx(DocxParser):
         import uuid
 
         import mammoth
-        from markdownify import markdownify
+
+        from common.markdown_utils import html_to_markdown
 
         docx_file = BytesIO(binary) if binary is not None else open(filename, "rb")
 
@@ -844,7 +845,7 @@ class Docx(DocxParser):
 
             html = result.value
 
-            markdown_text = markdownify(html)
+            markdown_text = html_to_markdown(html)
             return markdown_text
 
         finally:

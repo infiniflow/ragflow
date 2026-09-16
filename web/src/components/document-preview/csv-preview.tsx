@@ -20,7 +20,13 @@ import request from '@/utils/request';
 import { decodeBlobText } from '@/utils/file-util';
 import classNames from 'classnames';
 import Papa from 'papaparse';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 interface CSVData {
   rows: string[][];
@@ -134,11 +140,7 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
   return (
     <div
       ref={containerRef}
-      className={classNames(
-        'relative w-full h-full bg-background-paper border border-border-normal rounded-md',
-        'overflow-auto',
-        className,
-      )}
+      className={classNames('relative w-full h-full overflow-auto', className)}
       onScroll={handleScroll}
     >
       {isLoading ? (
@@ -146,17 +148,23 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
           <Spin />
         </div>
       ) : data ? (
-        /* Use CSS table layout so header and data cells share consistent
-           column widths. The table's natural width determines the scroll
-           range, ensuring all columns are reachable via horizontal scroll. */
+        /* Border lives on the inner wrapper (inline-block, content-sized)
+           rather than the scroll container. When the CSV has only a few
+           rows, the bordered box wraps just the rendered table instead
+           of enclosing a tall empty area that visually reads as
+           "truncated". The wrapper still honors contentWidth for the
+           horizontal-scroll reach. */
         <div
           style={{ width: contentWidth || undefined }}
-          className={contentWidth ? '' : 'w-fit'}
+          className={classNames(
+            'inline-block align-top bg-background-paper border border-border-normal rounded-md',
+            contentWidth ? '' : 'w-fit',
+          )}
         >
           <div ref={tableRef} className="table w-fit">
             {/* Sticky header row */}
             <div className="table-row-group">
-              <div className="table-row sticky top-0 z-10 bg-background-header-bar">
+              <div className="table-row sticky top-0 z-10 bg-bg-canvas">
                 {data.headers.map((header, index) => (
                   <div
                     key={`header-${index}`}
@@ -171,14 +179,20 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
             <div className="table-row-group">
               {/* Top spacer row */}
               {startIdx > 0 && (
-                <div className="table-row" style={{ height: startIdx * rowHeight }}>
+                <div
+                  className="table-row"
+                  style={{ height: startIdx * rowHeight }}
+                >
                   <div className="table-cell border-b border-border-normal" />
                 </div>
               )}
               {data.rows.slice(startIdx, endIdx).map((row, i) => {
                 const actualIndex = startIdx + i;
                 return (
-                  <div key={`row-${actualIndex}`} className="table-row hover:bg-gray-50">
+                  <div
+                    key={`row-${actualIndex}`}
+                    className="table-row hover:bg-gray-50"
+                  >
                     {row.map((cell, cellIndex) => (
                       <div
                         key={`cell-${actualIndex}-${cellIndex}`}
@@ -193,7 +207,10 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
               })}
               {/* Bottom spacer row */}
               {data.rows.length - endIdx > 0 && (
-                <div className="table-row" style={{ height: (data.rows.length - endIdx) * rowHeight }}>
+                <div
+                  className="table-row"
+                  style={{ height: (data.rows.length - endIdx) * rowHeight }}
+                >
                   <div className="table-cell border-b border-border-normal" />
                 </div>
               )}

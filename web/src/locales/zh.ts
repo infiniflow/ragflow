@@ -356,17 +356,19 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
-      goToConfiguration: '前往配置',
+      reselectParser: '重新选择解析方法',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
       fileModelMissing: '{{name}}（{{fileType}}）需要配置{{model}}模型',
       missingModelAsr: '音频（ASR）',
       missingModelVision: '视觉',
-      configureInDatasetSettingHint:
-        '可在数据集「配置」页的 Parser 算子中设置对应模型，或继续操作。',
+      uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
+      fileTypeUnsupported:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      reselectParserAfterUploadHint:
+        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+      reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       parseBlockedTitle: '无法解析',
       parseBlockedPartialTitle: '部分文件无法解析',
-      parseBlockedHint:
-        '请先在数据集「配置」页的 Parser 算子中设置对应模型，再重新解析。',
       parseValidFiles: '解析有效文件',
       parseValidFilesNote: '将解析其余 {{count}} 个有效文件。',
       metadata: {
@@ -1030,7 +1032,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '与存在惩罚类似，这减少了模型频繁重复相同单词的倾向。',
       maxTokens: '最大 Token 数',
       maxTokensMessage: '最大 Token 数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       thinking: '思考中...',
@@ -1647,9 +1649,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       avatar: '头像',
       avatarTip: '这会在你的个人主页展示',
       profileDescription: '在此更新您的照片和个人详细信息。',
-      maxTokens: '最大token数',
-      maxTokensMessage: '最大token数是必填项',
-      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
+      maxTokens: '最大上下文长度',
+      maxTokensMessage: '最大上下文长度是必填项',
+      maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
@@ -1966,7 +1968,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
       editCustomModelTitle: '编辑模型',
-      modelMaxTokens: '最大 Token 数',
+      modelMaxTokens: '最大上下文长度',
       modelTypes: {
         chat: 'Chat',
         embedding: 'Embedding',

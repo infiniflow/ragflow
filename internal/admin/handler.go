@@ -287,7 +287,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	userDetails, err := h.service.GetUserDetails(username)
+	userDetails, err := h.service.GetUserDetails(c.Request.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -297,7 +297,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, userDetails, "")
+	common.SuccessWithData(c, []map[string]interface{}{userDetails}, "")
 }
 
 // DeleteUser handle delete user
