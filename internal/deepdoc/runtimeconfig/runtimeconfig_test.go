@@ -15,8 +15,9 @@ func TestORTThreads(t *testing.T) {
 	}
 
 	t.Setenv("DEEPDOC_ORT_NUM_THREADS", "2")
-	if got := runtimeconfig.ORTThreads(); got != 2 {
-		t.Fatalf("got %d, want 2", got)
+	want := min(2, runtime.GOMAXPROCS(0))
+	if got := runtimeconfig.ORTThreads(); got != want {
+		t.Fatalf("got %d, want %d", got, want)
 	}
 }
 
