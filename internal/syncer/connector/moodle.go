@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -915,60 +914,17 @@ func moodleAssertURLSafe(ctx context.Context, rawURL, originURL string) (string,
 // redirect handling. Each hop is independently validated for SSRF, HTTPS, and
 // same-origin policy, preventing DNS rebinding and redirect-based bypasses.
 func (c *MoodleConnector) moodleHTTPDo(ctx context.Context, method, rawURL string, body []byte, headers map[string]string) (*http.Response, error) {
-	currentURL := rawURL
-	currentMethod := method
-	currentBody := body
-	for hop := 0; hop <= moodleMaxRedirects; hop++ {
-		hostname, pinIP, err := moodleAssertURLSafe(ctx, currentURL, c.moodleURL)
-		if err != nil {
-			return nil, err
-		}
-		transport := newRestAPIPinnedTransport(hostname, pinIP)
-		client := &http.Client{
-			Transport: transport,
-			Timeout:   moodleRequestTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-		var bodyReader io.Reader
-		if currentBody != nil {
-			bodyReader = bytes.NewReader(currentBody)
-		}
-		req, err := http.NewRequestWithContext(ctx, currentMethod, currentURL, bodyReader)
-		if err != nil {
-			transport.CloseIdleConnections()
-			return nil, err
-		}
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			transport.CloseIdleConnections()
-			return nil, err
-		}
-		if !restAPIIsRedirect(resp.StatusCode) {
-			resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
-			return resp, nil
-		}
-		location := resp.Header.Get("Location")
-		resp.Body.Close()
-		transport.CloseIdleConnections()
-		if location == "" {
-			return nil, fmt.Errorf("Moodle redirect with empty Location header")
-		}
-		nextURL, err := restAPIResolveURL(currentURL, location)
-		if err != nil {
-			return nil, err
-		}
-		currentURL = nextURL
-		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
-			currentMethod = http.MethodGet
-			currentBody = nil
-		}
-	}
-	return nil, fmt.Errorf("Moodle request stopped after %d redirects", moodleMaxRedirects)
+	return connectorRequest(ctx, connectorRequestOptions{
+		Method:       method,
+		RawURL:       rawURL,
+		Body:         body,
+		Headers:      headers,
+		Timeout:      moodleRequestTimeout,
+		MaxRedirects: moodleMaxRedirects,
+		Validate: func(raw string) (string, net.IP, error) {
+			return moodleAssertURLSafe(context.Background(), raw, c.moodleURL)
+		},
+	})
 }
 
 // moodleRedactedURL strips query and fragment from a URL so that tokens or

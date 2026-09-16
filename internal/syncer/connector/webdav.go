@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -409,20 +408,18 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if err != nil {
 		return nil, err
 	}
-	client, err := pinnedConnectorClient(resolved, c.httpClient, webdavRequestTimeout, nil)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, "PROPFIND", resolved, bytes.NewReader([]byte(webdavPropfindBody)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Depth", "1")
-	req.Header.Set("Content-Type", "application/xml")
+	headers := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  "PROPFIND",
+		RawURL:  resolved,
+		Body:    []byte(webdavPropfindBody),
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -439,18 +436,17 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 
 // download fetches a file body over GET.
 func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
-	client, err := pinnedConnectorClient(fileURL, c.httpClient, webdavRequestTimeout, nil)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	headers := map[string]string{}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  fileURL,
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}

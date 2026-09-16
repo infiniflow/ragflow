@@ -18,7 +18,6 @@ package connector
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -622,160 +621,90 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		currentHeaders[k] = v
 	}
 	currentBody := c.cfg.RequestBody
-	currentAuth := c.basicAuth
-	previousNetloc := restAPINetloc(currentURL)
-
-	for hop := 0; hop <= restAPIMaxRedirects; hop++ {
-		hostname, pinIP, err := assertRestAPIURLSafe(ctx, currentURL)
-		if err != nil {
-			return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + err.Error()}
-		}
-
-		var resp *http.Response
-		var respErr error
-		for wait := 0; wait < restAPI429MaxWaits; wait++ {
-			resp, respErr = c.doRequest(ctx, currentMethod, currentURL, currentHeaders, queryParams, currentBody, currentAuth, hostname, pinIP)
-			if respErr != nil {
-				return nil, respErr
-			}
-			if resp.StatusCode != http.StatusTooManyRequests {
-				break
-			}
-			retryAfter := restAPI429DefaultWait
-			if raw := resp.Header.Get("Retry-After"); raw != "" {
-				if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds >= 0 {
-					retryAfter = time.Duration(seconds) * time.Second
-				}
-			}
-			resp.Body.Close()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(retryAfter):
-			}
-		}
-		if respErr != nil {
-			return nil, respErr
-		}
-		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
-			return nil, &RateLimitTriedTooManyTimesError{Message: fmt.Sprintf("REST API rate limited: exceeded '%d' retries (too many requests)", restAPI429MaxWaits)}
-		}
-
-		if restAPIIsRedirect(resp.StatusCode) {
-			location := resp.Header.Get("Location")
-			if location == "" {
-				return c.handleResponse(resp)
-			}
-			nextURL, err := restAPIResolveURL(currentURL, location)
-			if err != nil {
-				resp.Body.Close()
-				return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + err.Error()}
-			}
-			nextNetloc := restAPINetloc(nextURL)
-			if nextNetloc != "" && nextNetloc != previousNetloc {
-				currentHeaders = restAPIStripAuthHeaders(currentHeaders)
-				currentAuth = nil
-			}
-			previousNetloc = nextNetloc
-			if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
-				currentMethod = "GET"
-				currentBody = nil
-				queryParams = nil
-			}
-			resp.Body.Close()
-			currentURL = nextURL
-			continue
-		}
-		return c.handleResponse(resp)
-	}
-	return nil, &ConnectorValidationError{Message: fmt.Sprintf("Exceeded %d redirects fetching %q", restAPIMaxRedirects, currentURL)}
-}
-
-func (c *RestAPIConnector) doRequest(
-	ctx context.Context,
-	method, rawURL string,
-	headers map[string]string,
-	params map[string]any,
-	body map[string]any,
-	auth *restAPIBasicAuth,
-	hostname string,
-	pinIP net.IP,
-) (*http.Response, error) {
-	transport := newRestAPIPinnedTransport(hostname, pinIP)
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   restAPIRequestTimeout,
-		// Redirects are handled manually so auth headers can be stripped on
-		// cross-origin hops and each hop is re-validated against SSRF.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	fullURL := rawURL
-	if encoded := restAPIEncodeParams(params); encoded != "" {
-		sep := "?"
-		if strings.Contains(rawURL, "?") {
-			sep = "&"
-		}
-		fullURL = rawURL + sep + encoded
-	}
-
-	var req *http.Request
-	var err error
-	switch method {
-	case "GET":
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
-	case "POST":
-		var payload []byte
-		if body == nil {
-			payload = []byte("{}")
+	var bodyBytes []byte
+	if currentMethod == http.MethodPost {
+		if currentBody == nil {
+			bodyBytes = []byte("{}")
 		} else {
-			payload, err = json.Marshal(body)
+			var err error
+			bodyBytes, err = json.Marshal(currentBody)
 			if err != nil {
 				return nil, &ConnectorValidationError{Message: "REST API request body is not valid JSON"}
 			}
 		}
-		req, err = http.NewRequestWithContext(ctx, http.MethodPost, fullURL, strings.NewReader(string(payload)))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
+	}
+	currentAuth := c.basicAuth
+	previousNetloc := connectorNetloc(currentURL)
+
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:       currentMethod,
+		RawURL:       currentURL,
+		Body:         bodyBytes,
+		Headers:      currentHeaders,
+		Timeout:      restAPIRequestTimeout,
+		MaxRedirects: restAPIMaxRedirects,
+		Prepare: func(req *http.Request, hop connectorRequestHop) error {
+			if hop.Method == http.MethodPost && req.Header.Get("Content-Type") == "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			if currentAuth != nil {
+				req.SetBasicAuth(currentAuth.username, currentAuth.password)
+			}
+			if encoded := restAPIEncodeParams(queryParams); encoded != "" {
+				sep := "?"
+				if strings.Contains(hop.URL, "?") {
+					sep = "&"
+				}
+				fullURL, err := url.Parse(hop.URL + sep + encoded)
+				if err != nil {
+					return err
+				}
+				req.URL = fullURL
+			}
+			return nil
+		},
+		RetryStatus: func(resp *http.Response, attempt int) (time.Duration, bool) {
+			if resp.StatusCode != http.StatusTooManyRequests {
+				return 0, false
+			}
+			if attempt >= restAPI429MaxWaits {
+				return 0, false
+			}
+			wait := restAPI429DefaultWait
+			if raw := resp.Header.Get("Retry-After"); raw != "" {
+				if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds >= 0 {
+					wait = time.Duration(seconds) * time.Second
+				}
+			}
+			return wait, true
+		},
+		NextHop: func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop {
+			nextNetloc := connectorNetloc(nextURL)
+			if nextNetloc != "" && nextNetloc != previousNetloc {
+				currentAuth = nil
+			}
+			previousNetloc = nextNetloc
+			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
+				hop.Method = http.MethodGet
+				hop.Body = nil
+				queryParams = nil
+			}
+			hop.URL = nextURL
+			return hop
+		},
+	})
+	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + unsafe.Err.Error()}
 		}
-	default:
-		return nil, &ConnectorValidationError{Message: fmt.Sprintf("Unsupported HTTP method: %s", method)}
-	}
-	if err != nil {
 		return nil, err
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		return nil, &RateLimitTriedTooManyTimesError{Message: fmt.Sprintf("REST API rate limited: exceeded '%d' retries (too many requests)", restAPI429MaxWaits)}
 	}
-	if auth != nil {
-		req.SetBasicAuth(auth.username, auth.password)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return nil, err
-	}
-	resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
-	return resp, nil
-}
-
-// restAPICloseIdleBody closes the underlying response body and then releases
-// the pinned transport's idle connections, so the per-request transports do
-// not leak keep-alive sockets during long paginated syncs.
-type restAPICloseIdleBody struct {
-	body      io.ReadCloser
-	transport *http.Transport
-}
-
-func (b *restAPICloseIdleBody) Read(p []byte) (int, error) { return b.body.Read(p) }
-
-func (b *restAPICloseIdleBody) Close() error {
-	err := b.body.Close()
-	b.transport.CloseIdleConnections()
-	return err
+	return c.handleResponse(resp)
 }
 
 func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
@@ -803,26 +732,6 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 		return nil, &ConnectorValidationError{Message: "REST API response is not valid JSON"}
 	}
 	return value, nil
-}
-
-// newRestAPIPinnedTransport resolves the target once (in assertRestAPIURLSafe)
-// and pins that address for the actual connection, preventing DNS rebinding.
-func newRestAPIPinnedTransport(hostname string, pinIP net.IP) *http.Transport {
-	dialer := &net.Dialer{Timeout: restAPIRequestTimeout, KeepAlive: 30 * time.Second}
-	return &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			_, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				port = "443"
-			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
-		},
-		TLSClientConfig: &tls.Config{
-			ServerName: hostname,
-			MinVersion: tls.VersionTLS12,
-		},
-		ForceAttemptHTTP2: true,
-	}
 }
 
 // buildURLWithTemplates substitutes {key} placeholders in the URL and returns
@@ -870,55 +779,6 @@ func restAPIEncodeParams(params map[string]any) string {
 		values.Set(k, restAPIParamString(v))
 	}
 	return values.Encode()
-}
-
-func restAPINetloc(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return parsed.Host
-}
-
-func restAPIResolveURL(base, location string) (string, error) {
-	baseParsed, err := url.Parse(base)
-	if err != nil {
-		return "", err
-	}
-	ref, err := url.Parse(location)
-	if err != nil {
-		return "", err
-	}
-	return baseParsed.ResolveReference(ref).String(), nil
-}
-
-func restAPIIsRedirect(status int) bool {
-	switch status {
-	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
-		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
-		return true
-	}
-	return false
-}
-
-var restAPIAuthSensitiveHeaders = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"apikey":              {},
-	"api-key":             {},
-	"x-api-key":           {},
-	"x-auth-token":        {},
-}
-
-func restAPIStripAuthHeaders(headers map[string]string) map[string]string {
-	out := make(map[string]string, len(headers))
-	for k, v := range headers {
-		if _, sensitive := restAPIAuthSensitiveHeaders[strings.ToLower(k)]; sensitive {
-			continue
-		}
-		out[k] = v
-	}
-	return out
 }
 
 // ---------------------------------------------------------------------------

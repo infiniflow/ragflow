@@ -17,8 +17,12 @@
 package connector
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -124,48 +128,283 @@ func validateConnectorURL(rawURL string) error {
 	return nil
 }
 
-// pinnedConnectorClient builds an HTTP client whose transport pins the first
-// validated hop to its resolved IP and whose CheckRedirect re-validates every
-// redirect target against the SSRF guard before following it.
+// basicAuthHeader returns the value for an HTTP Basic Authorization header.
+func basicAuthHeader(username, password string) string {
+	return base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+}
+
+// ---------------------------------------------------------------------------
+// Shared request path
+// ---------------------------------------------------------------------------
+
+// connectorRequestHop is the per-hop request state carried by connectorRequest.
+type connectorRequestHop struct {
+	Method  string
+	URL     string
+	Body    []byte
+	Headers map[string]string
+}
+
+// connectorRequestOptions configures connectorRequest. Zero values use safe
+// defaults: Validate falls back to assertConnectorURLSafe and MaxRedirects to 10.
+type connectorRequestOptions struct {
+	Method       string
+	RawURL       string
+	Body         []byte
+	Headers      map[string]string
+	Timeout      time.Duration
+	MaxRedirects int
+	// Base, when non-nil, provides the starting transport so custom TLS/CA
+	// settings are preserved; otherwise a default pinned transport is used.
+	Base *http.Client
+	// Validate checks a hop URL for SSRF and returns the hostname plus the IP
+	// to pin for that hop.
+	Validate func(rawURL string) (string, net.IP, error)
+	// Prepare customizes each hop's request before it is sent (basic auth,
+	// query parameters, ...).
+	Prepare func(req *http.Request, hop connectorRequestHop) error
+	// CheckRedirect, when non-nil, is invoked before following to the next hop
+	// (after the next hop's SSRF validation) and may enforce a same-origin
+	// policy or re-apply credentials.
+	CheckRedirect func(req *http.Request, via []*http.Request) error
+	// RetryStatus, when non-nil, decides whether a non-redirect response should
+	// be retried on the same hop URL; it returns the wait duration and whether
+	// to retry. Used for REST API 429 handling.
+	RetryStatus func(resp *http.Response, attempt int) (time.Duration, bool)
+	// NextHop adapts the hop state (method/body/headers/URL) for the hop after
+	// a redirect; it runs after connectorRequest's default GET downgrade and
+	// cross-origin credential stripping.
+	NextHop func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop
+}
+
+// connectorUnsafeURLError marks a hop URL rejected by the SSRF guard so
+// callers can tell validation failures apart from transport errors.
+type connectorUnsafeURLError struct{ Err error }
+
+func (e *connectorUnsafeURLError) Error() string { return e.Err.Error() }
+func (e *connectorUnsafeURLError) Unwrap() error { return e.Err }
+
+// connectorRequest is the single HTTP send path shared by every connector. It
+// follows redirects manually so that each hop is SSRF-validated and DNS-pinned
+// before a connection is made, closing the TOCTOU window that an automatic
+// redirect policy would leave open (the redirect target would otherwise be
+// validated once and resolved again at dial time).
 //
-// base, when non-nil, provides the starting transport (preserving custom TLS /
-// CA settings); otherwise utility.PinnedHTTPClient is used.
-func pinnedConnectorClient(rawURL string, base *http.Client, timeout time.Duration, redirectCheck func(*http.Request, []*http.Request) error) (*http.Client, error) {
-	hostname, ip, err := assertConnectorURLSafe(rawURL)
-	if err != nil {
-		return nil, err
+// Per-hop behavior:
+//   - Validate checks the hop URL and returns the hostname + IP to pin.
+//   - The hop is sent through a transport that dials exactly the validated IP,
+//     so a DNS change after validation cannot rebind the connection.
+//   - Sensitive headers (Authorization etc.) are dropped when a redirect
+//     crosses to a different netloc, mirroring http.Client's default.
+//   - 301/302/303 downgrade the next hop to GET with an empty body.
+//
+// Connector-specific behavior is expressed through the Prepare, CheckRedirect,
+// RetryStatus, and NextHop hooks.
+func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.Response, error) {
+	if opts.Validate == nil {
+		opts.Validate = assertConnectorURLSafe
 	}
-	checkRedirect := func(req *http.Request, via []*http.Request) error {
-		if _, _, err := assertConnectorURLSafe(req.URL.String()); err != nil {
-			return err
+	if opts.MaxRedirects <= 0 {
+		opts.MaxRedirects = 10
+	}
+	hop := connectorRequestHop{Method: opts.Method, URL: opts.RawURL, Body: opts.Body, Headers: opts.Headers}
+	previousNetloc := connectorNetloc(hop.URL)
+	var via []*http.Request
+	for redirects := 0; ; redirects++ {
+		hostname, pinIP, err := opts.Validate(hop.URL)
+		if err != nil {
+			return nil, &connectorUnsafeURLError{Err: err}
 		}
-		if redirectCheck != nil {
-			return redirectCheck(req, via)
+		var reader io.Reader
+		if hop.Body != nil {
+			reader = bytes.NewReader(hop.Body)
 		}
-		return nil
+		req, err := http.NewRequestWithContext(ctx, hop.Method, hop.URL, reader)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range hop.Headers {
+			req.Header.Set(k, v)
+		}
+		if opts.Prepare != nil {
+			if err := opts.Prepare(req, hop); err != nil {
+				return nil, err
+			}
+		}
+		if redirects > 0 && opts.CheckRedirect != nil {
+			if err := opts.CheckRedirect(req, via); err != nil {
+				return nil, err
+			}
+		}
+		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout)
+		client := &http.Client{
+			Transport: transport,
+			Timeout:   opts.Timeout,
+			// Redirects are followed manually by this loop; each hop gets its
+			// own validated, pinned transport.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		var resp *http.Response
+		for attempt := 1; ; attempt++ {
+			resp, err = client.Do(req)
+			if err != nil {
+				transport.CloseIdleConnections()
+				return nil, err
+			}
+			if !connectorIsRedirect(resp.StatusCode) && opts.RetryStatus != nil {
+				if wait, retry := opts.RetryStatus(resp, attempt); retry {
+					resp.Body.Close()
+					select {
+					case <-ctx.Done():
+						transport.CloseIdleConnections()
+						return nil, ctx.Err()
+					case <-time.After(wait):
+					}
+					continue
+				}
+			}
+			break
+		}
+		if !connectorIsRedirect(resp.StatusCode) {
+			resp.Body = &connectorCloseIdleBody{body: resp.Body, transport: transport}
+			return resp, nil
+		}
+		location := resp.Header.Get("Location")
+		resp.Body.Close()
+		transport.CloseIdleConnections()
+		if location == "" {
+			return nil, fmt.Errorf("redirect with empty Location header")
+		}
+		if redirects >= opts.MaxRedirects {
+			return nil, fmt.Errorf("request stopped after %d redirects", opts.MaxRedirects)
+		}
+		nextURL, err := connectorResolveURL(hop.URL, location)
+		if err != nil {
+			return nil, err
+		}
+		nextNetloc := connectorNetloc(nextURL)
+		if nextNetloc != "" && nextNetloc != previousNetloc {
+			hop.Headers = connectorStripAuthHeaders(hop.Headers)
+		}
+		previousNetloc = nextNetloc
+		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
+			hop.Method = http.MethodGet
+			hop.Body = nil
+		}
+		if opts.NextHop != nil {
+			hop = opts.NextHop(nextURL, resp.StatusCode, hop)
+		} else {
+			hop.URL = nextURL
+		}
+		via = append(via, req)
+	}
+}
+
+// newConnectorPinnedTransport builds a transport that dials exactly pinIP for
+// every connection, so the hop is connected to the address validated by the
+// SSRF guard regardless of later DNS changes. When base provides an
+// *http.Transport (custom TLS/CA), it is cloned and reused; otherwise a default
+// transport is used. Environment proxies are deliberately ignored: HTTP_PROXY /
+// HTTPS_PROXY would route the connection through a proxy host instead of pinIP.
+func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.IP, timeout time.Duration) *http.Transport {
+	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			port = "443"
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
 	}
 	if base != nil {
 		if t, ok := base.Transport.(*http.Transport); ok {
 			clone := t.Clone()
-			dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
-			clone.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-				host, port, err := net.SplitHostPort(addr)
-				if err != nil {
-					port = "443"
+			clone.DialContext = dial
+			if clone.TLSClientConfig == nil {
+				clone.TLSClientConfig = &tls.Config{ServerName: hostname, MinVersion: tls.VersionTLS12}
+			} else {
+				clone.TLSClientConfig = clone.TLSClientConfig.Clone()
+				if clone.TLSClientConfig.ServerName == "" {
+					clone.TLSClientConfig.ServerName = hostname
 				}
-				if host == hostname {
-					addr = net.JoinHostPort(ip.String(), port)
-				}
-				return dialer.DialContext(ctx, network, addr)
 			}
-			client := *base
-			client.Transport = clone
-			client.Timeout = timeout
-			client.CheckRedirect = checkRedirect
-			return &client, nil
+			return clone
 		}
 	}
-	client := utility.PinnedHTTPClient(hostname, ip.String(), timeout)
-	client.CheckRedirect = checkRedirect
-	return client, nil
+	return &http.Transport{
+		Proxy:                 nil,
+		DialContext:           dial,
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     false,
+		TLSClientConfig:       &tls.Config{ServerName: hostname, MinVersion: tls.VersionTLS12},
+	}
+}
+
+// connectorCloseIdleBody closes the underlying response body and then releases
+// the per-hop pinned transport's idle connections, so per-hop transports do not
+// leak keep-alive sockets during long syncs.
+type connectorCloseIdleBody struct {
+	body      io.ReadCloser
+	transport *http.Transport
+}
+
+func (b *connectorCloseIdleBody) Read(p []byte) (int, error) { return b.body.Read(p) }
+func (b *connectorCloseIdleBody) Close() error {
+	err := b.body.Close()
+	b.transport.CloseIdleConnections()
+	return err
+}
+
+// connectorAuthSensitiveHeaders lists headers that must not be forwarded to a
+// different origin on redirect.
+var connectorAuthSensitiveHeaders = map[string]struct{}{
+	"authorization":       {},
+	"proxy-authorization": {},
+	"apikey":              {},
+	"api-key":             {},
+	"x-api-key":           {},
+	"x-auth-token":        {},
+}
+
+func connectorStripAuthHeaders(headers map[string]string) map[string]string {
+	out := make(map[string]string, len(headers))
+	for k, v := range headers {
+		if _, sensitive := connectorAuthSensitiveHeaders[strings.ToLower(k)]; sensitive {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func connectorNetloc(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
+}
+
+func connectorResolveURL(base, location string) (string, error) {
+	baseParsed, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	ref, err := url.Parse(location)
+	if err != nil {
+		return "", err
+	}
+	return baseParsed.ResolveReference(ref).String(), nil
+}
+
+func connectorIsRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	}
+	return false
 }

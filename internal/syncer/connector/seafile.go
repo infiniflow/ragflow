@@ -380,12 +380,15 @@ func (c *SeaFileConnector) defaultAuthenticate(ctx context.Context, username, pa
 	form.Set("password", password)
 	reqCtx, cancel := context.WithTimeout(ctx, seafileRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.seafileURL+"/api2/auth-token/", strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
+	resp, err := connectorRequest(reqCtx, connectorRequestOptions{
+		Method:       http.MethodPost,
+		RawURL:       c.seafileURL + "/api2/auth-token/",
+		Body:         []byte(form.Encode()),
+		Headers:      map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Timeout:      seafileRequestTimeout,
+		MaxRedirects: seafileMaxRedirects,
+		Base:         c.httpClient,
+	})
 	if err != nil {
 		return "", &ConnectorMissingCredentialError{Message: fmt.Sprintf("Failed to authenticate with SeaFile: %v", err)}
 	}
@@ -539,66 +542,29 @@ func (c *SeaFileConnector) getBody(ctx context.Context, endpoint string, useRepo
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, seafileRequestTimeout)
 	defer cancel()
-	currentURL := c.apiURL(endpoint, useRepoToken, query)
-	previousNetloc := restAPINetloc(currentURL)
-	for hop := 0; hop <= seafileMaxRedirects; hop++ {
-		hostname, pinIP, err := seafileAssertURLSafe(reqCtx, currentURL)
-		if err != nil {
-			return nil, &ConnectorValidationError{Message: "Unsafe SeaFile URL: " + err.Error()}
+	resp, err := connectorRequest(reqCtx, connectorRequestOptions{
+		Method:       http.MethodGet,
+		RawURL:       c.apiURL(endpoint, useRepoToken, query),
+		Headers:      headers,
+		Timeout:      seafileRequestTimeout,
+		MaxRedirects: seafileMaxRedirects,
+		Base:         c.httpClient,
+	})
+	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, &ConnectorValidationError{Message: "Unsafe SeaFile URL: " + unsafe.Err.Error()}
 		}
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, currentURL, nil)
-		if err != nil {
-			return nil, err
-		}
-		for key, value := range headers {
-			req.Header.Set(key, value)
-		}
-		transport := newRestAPIPinnedTransport(hostname, pinIP)
-		client := &http.Client{
-			Transport: transport,
-			Timeout:   seafileRequestTimeout,
-			// Redirects are handled manually so every hop is re-validated
-			// for SSRF and DNS-pinned before a connection is made.
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			transport.CloseIdleConnections()
-			return nil, err
-		}
-		if !restAPIIsRedirect(resp.StatusCode) {
-			resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
-			body, err := readSeaFileBody(resp)
-			if err != nil {
-				return nil, err
-			}
-			if resp.StatusCode >= 400 {
-				return nil, &seafileHTTPError{Status: resp.StatusCode, Body: string(body), URL: req.URL.String()}
-			}
-			return body, nil
-		}
-		location := resp.Header.Get("Location")
-		resp.Body.Close()
-		transport.CloseIdleConnections()
-		if location == "" {
-			return nil, fmt.Errorf("SeaFile API redirect with empty Location header")
-		}
-		nextURL, err := restAPIResolveURL(currentURL, location)
-		if err != nil {
-			return nil, err
-		}
-		// Never forward credentials to a different host, matching Go's default
-		// redirect handling.
-		nextNetloc := restAPINetloc(nextURL)
-		if nextNetloc != "" && nextNetloc != previousNetloc {
-			headers = restAPIStripAuthHeaders(headers)
-		}
-		previousNetloc = nextNetloc
-		currentURL = nextURL
+		return nil, err
 	}
-	return nil, fmt.Errorf("SeaFile API request exceeded %d redirects", seafileMaxRedirects)
+	body, err := readSeaFileBody(resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, &seafileHTTPError{Status: resp.StatusCode, Body: string(body), URL: resp.Request.URL.String()}
+	}
+	return body, nil
 }
 
 func (c *SeaFileConnector) requestHeaders(useRepoToken bool) (map[string]string, error) {

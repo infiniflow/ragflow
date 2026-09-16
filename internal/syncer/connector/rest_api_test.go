@@ -120,7 +120,7 @@ func (b *restAPITestReadCloser) Close() error               { return b.closeErr 
 func TestRestAPICloseIdleBodyPreservesBodyAndCloseError(t *testing.T) {
 	closeErr := errors.New("close boom")
 	body := &restAPITestReadCloser{reader: strings.NewReader("hello"), closeErr: closeErr}
-	wrapped := &restAPICloseIdleBody{body: body, transport: &http.Transport{}}
+	wrapped := &connectorCloseIdleBody{body: body, transport: &http.Transport{}}
 	got, err := io.ReadAll(wrapped)
 	if err != nil || string(got) != "hello" {
 		t.Fatalf("read data=%q err=%v", got, err)

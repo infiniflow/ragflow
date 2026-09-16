@@ -18,8 +18,13 @@ package connector
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/utility"
 )
 
 // withConnectorLoopbackTestHook enables the loopback test seam for the duration
@@ -133,5 +138,52 @@ func TestJiraConnectorRejectsInternalBaseURL(t *testing.T) {
 		if err := c.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "non-public address") {
 			t.Fatalf("Validate(%q) = %v, want non-public rejection", base, err)
 		}
+	}
+}
+
+func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	origLookup := utility.LookupHost
+	lookups := 0
+	utility.LookupHost = func(host string) ([]string, error) {
+		if host == "localhost" {
+			lookups++
+			if lookups == 1 {
+				return []string{"127.0.0.1"}, nil
+			}
+			// A second resolution simulates DNS rebinding to a private address
+			// after validation; the dial must never consult it.
+			return []string{"10.0.0.5"}, nil
+		}
+		return origLookup(host)
+	}
+	t.Cleanup(func() { utility.LookupHost = origLookup })
+
+	var targetHit atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHit.Store(true)
+	}))
+	defer target.Close()
+	targetPort := strings.TrimPrefix(target.URL, "http://127.0.0.1:")
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://localhost:"+targetPort+"/final", http.StatusFound)
+	}))
+	defer source.Close()
+
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:       http.MethodGet,
+		RawURL:       source.URL,
+		Timeout:      webdavRequestTimeout,
+		MaxRedirects: 5,
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	resp.Body.Close()
+	if !targetHit.Load() {
+		t.Fatalf("redirect target was not reached via its pinned address")
+	}
+	if lookups != 1 {
+		t.Fatalf("LookupHost(localhost) called %d times, want 1 (the redirect hop dial must reuse the validated pin, not re-resolve)", lookups)
 	}
 }
