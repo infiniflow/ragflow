@@ -14,30 +14,32 @@
 #  limitations under the License.
 #
 
+import importlib
 import sys
 import types
 
 import pytest
 
 
-def _stub(name, **attrs):
+def _stub(monkeypatch, name, **attrs):
     mod = types.ModuleType(name)
     for key, value in attrs.items():
         setattr(mod, key, value)
-    sys.modules.setdefault(name, mod)
+    monkeypatch.setitem(sys.modules, name, mod)
     return mod
 
 
-# Stub heavy module-level imports so rag.nlp can be imported in isolation.
-_stub("common.token_utils", num_tokens_from_string=lambda *a, **k: 0)
-_stub("roman_numbers")
-_stub("word2number", w2n=types.SimpleNamespace())
-_stub("cn2an", cn2an=lambda *a, **k: 0)
-_pil = _stub("PIL")
-_pil.Image = _stub("PIL.Image")
-_stub("chardet")
-
-from rag.nlp import docx_question_level
+@pytest.fixture()
+def docx_question_level(monkeypatch):
+    _stub(monkeypatch, "common.token_utils", num_tokens_from_string=lambda *a, **k: 0)
+    _stub(monkeypatch, "roman_numbers")
+    _stub(monkeypatch, "word2number", w2n=types.SimpleNamespace())
+    _stub(monkeypatch, "cn2an", cn2an=lambda *a, **k: 0)
+    pil = _stub(monkeypatch, "PIL")
+    pil.Image = _stub(monkeypatch, "PIL.Image")
+    _stub(monkeypatch, "chardet")
+    monkeypatch.delitem(sys.modules, "rag.nlp", raising=False)
+    return importlib.import_module("rag.nlp").docx_question_level
 
 
 class _Style:
@@ -65,14 +67,14 @@ class _Paragraph:
         ("Heading Title", 1),  # custom prefix with space, no number -> top level
     ],
 )
-def test_docx_question_level_heading_styles(style_name, expected_level):
+def test_docx_question_level_heading_styles(docx_question_level, style_name, expected_level):
     level, text = docx_question_level(_Paragraph(style_name))
     assert level == expected_level
     assert text == "Some title"
 
 
 @pytest.mark.p2
-def test_docx_question_level_no_number_does_not_raise():
+def test_docx_question_level_no_number_does_not_raise(docx_question_level):
     # Regression for #16163: a "Heading"-prefixed style without a parseable
     # number used to raise ValueError: invalid literal for int().
     for name in ("Heading", "HeadingTitle", "Heading Title"):
@@ -81,7 +83,7 @@ def test_docx_question_level_no_number_does_not_raise():
 
 
 @pytest.mark.p2
-def test_docx_question_level_non_heading_default_bull():
+def test_docx_question_level_non_heading_default_bull(docx_question_level):
     # Non-heading paragraph with the default bull=-1 returns level 0 (body text).
     level, text = docx_question_level(_Paragraph("Normal", text="just a body line"))
     assert level == 0

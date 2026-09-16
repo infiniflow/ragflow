@@ -25,16 +25,11 @@ class LoopParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.loop_variables = []
-        self.loop_termination_condition=[]
+        self.loop_termination_condition = []
         self.maximum_loop_count = 0
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "items": {
-                "type": "json",
-                "name": "Items"
-            }
-        }
+        return {"items": {"type": "json", "name": "Items"}}
 
     def check(self):
         return True
@@ -83,10 +78,10 @@ class Loop(ComponentBase, ABC):
         for item in self._param.loop_variables:
             if self._is_incomplete_loop_variable(item):
                 raise ValueError("Loop Variable is not complete.")
-            if item["input_mode"]=="variable":
-                self.set_output(item["variable"],self._canvas.get_variable_value(item["value"]))
-            elif item["input_mode"]=="constant":
-                self.set_output(item["variable"],item["value"])
+            if item["input_mode"] == "variable":
+                self.set_output(item["variable"], self._canvas.get_variable_value(item["value"]))
+            elif item["input_mode"] == "constant":
+                self.set_output(item["variable"], item["value"])
             else:
                 if item["type"] == "number":
                     self.set_output(item["variable"], 0)
@@ -100,7 +95,6 @@ class Loop(ComponentBase, ABC):
                     self.set_output(item["variable"], [])
                 else:
                     self.set_output(item["variable"], "")
-
 
     def thoughts(self) -> str:
         return "Loop from canvas."

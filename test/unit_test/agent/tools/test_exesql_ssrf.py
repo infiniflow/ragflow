@@ -25,6 +25,7 @@ must dial the validated/resolved public IP for allowed hosts — mirroring the
 auto-discover every tool and pull in the full agent framework), with the heavy
 DB drivers and the agent base classes stubbed so only the real SSRF guard runs.
 """
+
 import importlib.util
 import sys
 import types
@@ -80,12 +81,10 @@ def _load_exesql_module():
 
     # Neutralize the @timeout decorator so _invoke is a plain method.
     conn_utils = types.ModuleType("common.connection_utils")
-    conn_utils.timeout = lambda *a, **k: (lambda f: f)
+    conn_utils.timeout = lambda *a, **k: lambda f: f
     sys.modules["common.connection_utils"] = conn_utils
 
-    spec = importlib.util.spec_from_file_location(
-        "exesql_uut", _REPO_ROOT / "agent" / "tools" / "exesql.py"
-    )
+    spec = importlib.util.spec_from_file_location("exesql_uut", _REPO_ROOT / "agent" / "tools" / "exesql.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -99,8 +98,12 @@ def _build_exesql(host, db_type="mysql"):
     cpn = ExeSQL.__new__(ExeSQL)
     cpn._canvas = SimpleNamespace()
     cpn._param = SimpleNamespace(
-        host=host, port=3306, db_type=db_type,
-        database="db", username="u", password="p",
+        host=host,
+        port=3306,
+        db_type=db_type,
+        database="db",
+        username="u",
+        password="p",
     )
     # Neutralize the component machinery that runs before the host check.
     cpn.check_if_canceled = lambda *_a, **_k: False

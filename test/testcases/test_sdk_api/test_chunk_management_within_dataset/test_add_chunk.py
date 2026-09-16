@@ -89,7 +89,7 @@ class TestAddChunk:
             chunks = document.list_chunks()
             assert len(chunks) == chunks_count + 1, str(chunks)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
@@ -170,7 +170,7 @@ class TestAddChunk:
 
         with pytest.raises(Exception) as exception_info:
             document.add_chunk(content="chunk test")
-        assert f"You don't own the document {document.id}" in str(exception_info.value), str(exception_info.value)
+        assert f"you don't own the document {document.id}" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.skip(reason="issues/6411")
     @pytest.mark.p3

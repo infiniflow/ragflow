@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package parser
+package pdf
 
 import (
 	"image"
@@ -53,7 +53,7 @@ func TestRenderCompare(t *testing.T) {
 		}
 
 		// Render page 0 with pdfium (Go).
-		goImg, err := renderPageToImage(eng, 0)
+		goImg, err := RenderPageToImage(eng, 0)
 		eng.Close()
 		if err != nil {
 			t.Logf("%s: render error: %v", name, err)

@@ -30,27 +30,32 @@ import (
 
 func main() {
 
-	parseArgs, err := cli.ParseArgs(os.Args[1:])
+	arguments, err := cli.ParseArgs(os.Args[1:])
 	if err != nil {
 		return
 	}
 
-	if parseArgs.ShowHelp {
+	if arguments.ShowHelp {
 		cli.PrintUsage()
 		return
 	}
 
-	//parseArgs.Print()
+	if arguments.ShowVersion {
+		fmt.Println("RAGFlow CLI version 1.0.0") // Replace with actual version if needed
+		return
+	}
+
+	//arguments.Print()
 	logLevel := "warn" // Default to warn (quiet mode)
-	if parseArgs.Verbose {
+	if arguments.Verbose {
 		logLevel = "info"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{}); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{}, "ragflow-cli"); err != nil {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 
-	client, err := cli.NewCLIWithConfig(parseArgs)
+	client, err := cli.NewCLIWithConfig(arguments)
 	if err != nil {
 		fmt.Printf("Failed to create CLI: %v\n", err)
 		os.Exit(1)
@@ -64,8 +69,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if parseArgs.Command != nil {
-		if err = client.RunSingleCommand(parseArgs.Command); err != nil {
+	if arguments.Command != nil {
+		if err = client.RunSingleCommand(arguments.Command); err != nil {
 			fmt.Printf("Command execution failed: %v\n", err)
 			os.Exit(1)
 		}

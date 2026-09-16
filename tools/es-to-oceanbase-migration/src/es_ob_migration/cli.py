@@ -38,7 +38,7 @@ def main(ctx, verbose):
 
     Migrate RAGFlow data from Elasticsearch 8+ to OceanBase with schema conversion,
     vector data mapping, batch import, and resume capability.
-    
+
     This tool is specifically designed for RAGFlow's data structure.
     """
     ctx.ensure_object(dict)
@@ -84,7 +84,7 @@ def migrate(
     progress_dir,
 ):
     """Run RAGFlow data migration from Elasticsearch to OceanBase.
-    
+
     If --index is omitted, all indices starting with 'ragflow_' will be migrated.
     If --table is omitted, the same name as the source index will be used.
     """
@@ -116,14 +116,14 @@ def migrate(
             # Auto-discover all ragflow_* indices
             console.print("\n[cyan]Discovering RAGFlow indices...[/]")
             ragflow_indices = es_client.list_ragflow_indices()
-            
+
             if not ragflow_indices:
                 console.print("[yellow]No ragflow_* indices found in Elasticsearch[/]")
                 sys.exit(0)
-            
+
             # Each index maps to a table with the same name
             indices_to_migrate = [(idx, idx) for idx in ragflow_indices]
-            
+
             console.print(f"[green]Found {len(indices_to_migrate)} RAGFlow indices:[/]")
             for idx, _ in indices_to_migrate:
                 doc_count = es_client.count_documents(idx)
@@ -144,9 +144,9 @@ def migrate(
 
         # Migrate each index
         for es_index, ob_table in indices_to_migrate:
-            console.print(f"\n[bold blue]{'='*60}[/]")
+            console.print(f"\n[bold blue]{'=' * 60}[/]")
             console.print(f"[bold]Migrating: {es_index} -> {ob_database}.{ob_table}[/]")
-            console.print(f"[bold blue]{'='*60}[/]")
+            console.print(f"[bold blue]{'=' * 60}[/]")
 
             result = migrator.migrate(
                 es_index=es_index,
@@ -155,7 +155,7 @@ def migrate(
                 resume=resume,
                 verify_after=verify,
             )
-            
+
             results.append(result)
             if result["success"]:
                 total_success += 1
@@ -164,9 +164,9 @@ def migrate(
 
         # Summary for multiple indices
         if len(indices_to_migrate) > 1:
-            console.print(f"\n[bold]{'='*60}[/]")
+            console.print(f"\n[bold]{'=' * 60}[/]")
             console.print("[bold]Migration Summary[/]")
-            console.print(f"[bold]{'='*60}[/]")
+            console.print(f"[bold]{'=' * 60}[/]")
             console.print(f"  Total indices: {len(indices_to_migrate)}")
             console.print(f"  [green]Successful: {total_success}[/]")
             if total_failed > 0:
@@ -217,33 +217,34 @@ def schema(ctx, es_host, es_port, es_user, es_password, index, output):
         migrator = ESToOceanBaseMigrator(es_client, ob_client if ob_client else OBClient.__new__(OBClient))
         # Directly use schema converter
         from .schema import RAGFlowSchemaConverter
+
         converter = RAGFlowSchemaConverter()
-        
+
         es_mapping = es_client.get_index_mapping(index)
         analysis = converter.analyze_es_mapping(es_mapping)
         column_defs = converter.get_column_definitions()
 
         # Display analysis
         console.print(f"\n[bold]ES Index Analysis: {index}[/]\n")
-        
+
         # Known RAGFlow fields
         console.print(f"[green]Known RAGFlow fields:[/] {len(analysis['known_fields'])}")
-        
+
         # Vector fields
-        if analysis['vector_fields']:
+        if analysis["vector_fields"]:
             console.print("\n[cyan]Vector fields detected:[/]")
-            for vf in analysis['vector_fields']:
+            for vf in analysis["vector_fields"]:
                 console.print(f"  - {vf['name']} (dimension: {vf['dimension']})")
-        
+
         # Unknown fields
-        if analysis['unknown_fields']:
+        if analysis["unknown_fields"]:
             console.print("\n[yellow]Unknown fields (will be stored in 'extra'):[/]")
-            for uf in analysis['unknown_fields']:
+            for uf in analysis["unknown_fields"]:
                 console.print(f"  - {uf}")
 
         # Display RAGFlow column schema
         console.print(f"\n[bold]RAGFlow OceanBase Schema ({len(column_defs)} columns):[/]\n")
-        
+
         table = Table(title="Column Definitions")
         table.add_column("Column Name", style="cyan")
         table.add_column("OB Type", style="green")
@@ -260,7 +261,7 @@ def schema(ctx, es_host, es_port, es_user, es_password, index, output):
                 special.append("ARRAY")
             if col.get("is_vector"):
                 special.append("VECTOR")
-            
+
             table.add_row(
                 col["name"],
                 col["ob_type"],
@@ -333,7 +334,8 @@ def verify(
 
         verifier = MigrationVerifier(es_client, ob_client)
         result = verifier.verify(
-            index, table, 
+            index,
+            table,
             sample_size=sample_size,
         )
 
@@ -386,7 +388,7 @@ def list_indices(ctx, es_host, es_port, es_user, es_password):
         for idx in indices:
             doc_count = es_client.count_documents(idx)
             total_docs += doc_count
-            
+
             # Determine index type
             if idx.startswith("ragflow_doc_meta_"):
                 idx_type = "Metadata"
@@ -394,7 +396,7 @@ def list_indices(ctx, es_host, es_port, es_user, es_password):
                 idx_type = "Document Chunks"
             else:
                 idx_type = "Unknown"
-            
+
             table.add_row(idx, f"{doc_count:,}", idx_type)
 
         table.add_row("", "", "")
@@ -488,11 +490,11 @@ def status(ctx, es_host, es_port, ob_host, ob_port, ob_user, ob_password):
         console.print(f"  Cluster: {health.get('cluster_name')}")
         console.print(f"  Status:  {health.get('status')}")
         console.print(f"  Version: {info.get('version', {}).get('number', 'unknown')}")
-        
+
         # List indices
         indices = es_client.list_indices("*")
         console.print(f"  Indices: {len(indices)}")
-        
+
         es_client.close()
     except Exception as e:
         console.print(f"[red]Elasticsearch ({es_host}:{es_port}): Failed[/]")
@@ -542,7 +544,7 @@ def sample(ctx, es_host, es_port, index, size):
             console.print(f"  kb_id: {doc.get('kb_id')}")
             console.print(f"  doc_id: {doc.get('doc_id')}")
             console.print(f"  docnm_kwd: {doc.get('docnm_kwd')}")
-            
+
             # Check for vector fields
             vector_fields = [k for k in doc.keys() if k.startswith("q_") and k.endswith("_vec")]
             if vector_fields:
@@ -550,14 +552,14 @@ def sample(ctx, es_host, es_port, index, size):
                     vec = doc.get(vf)
                     if vec:
                         console.print(f"  {vf}: [{len(vec)} dimensions]")
-            
+
             content = doc.get("content_with_weight", "")
             if content:
                 if isinstance(content, dict):
                     content = json.dumps(content, ensure_ascii=False)
                 preview = content[:100] + "..." if len(str(content)) > 100 else content
                 console.print(f"  content: {preview}")
-            
+
             console.print()
 
         es_client.close()

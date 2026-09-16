@@ -85,9 +85,7 @@ class _SharedWebhookServer:
             if request.method == "GET":
                 echo_str = request.query.get("echostr", "")
                 try:
-                    decrypted = channel.crypto.check_signature(
-                        signature, timestamp, nonce, echo_str
-                    )
+                    decrypted = channel.crypto.check_signature(signature, timestamp, nonce, echo_str)
                     return web.Response(text=decrypted)
                 except InvalidSignatureException:
                     return web.Response(status=403, text="bad signature")
@@ -104,10 +102,39 @@ class _SharedWebhookServer:
                 LOGGER.error("[wecom:%s] parse error", account_id, exc_info=True)
                 return web.Response(text="")
 
+            # WeCom retries callbacks that are not acknowledged within a few
+            # seconds. Answering a message runs an LLM completion that can take
+            # far longer, so acknowledge the webhook immediately and process
+            # the message in the background; a late retry is deduped by the
+            # message id instead of being answered a second time.
+            message_id = str(getattr(msg, "id", "") or "")
+            dedupe_key = (account_id, message_id) if message_id else None
+            if dedupe_key is not None:
+                now = time.time()
+                last_seen = _recent_message_ids.get(dedupe_key)
+                if last_seen is not None and now - last_seen < _MESSAGE_DEDUPE_WINDOW_SECS:
+                    LOGGER.info(
+                        "[wecom:%s] skip duplicate callback message_id=%s",
+                        account_id,
+                        message_id,
+                    )
+                    return web.Response(text="")
+                _recent_message_ids[dedupe_key] = now
+                if len(_recent_message_ids) > _MESSAGE_DEDUPE_MAX:
+                    for key, ts in list(_recent_message_ids.items()):
+                        if now - ts > _MESSAGE_DEDUPE_WINDOW_SECS:
+                            del _recent_message_ids[key]
+                    while len(_recent_message_ids) > _MESSAGE_DEDUPE_MAX:
+                        del _recent_message_ids[min(_recent_message_ids, key=_recent_message_ids.get)]
+
             try:
-                await channel.handle_decrypted_message(msg)
+                task = asyncio.create_task(channel.handle_decrypted_message(msg))
+                _pending_handler_tasks.add(task)
+                task.add_done_callback(_on_handler_task_done)
             except Exception:
-                LOGGER.error("[wecom:%s] handler error", account_id, exc_info=True)
+                if dedupe_key is not None:
+                    _recent_message_ids.pop(dedupe_key, None)
+                LOGGER.error("[wecom:%s] failed to schedule handler", account_id, exc_info=True)
         except Exception:
             LOGGER.error("[wecom:%s] inbound request handling error", account_id, exc_info=True)
         # Empty 200 OK tells WeCom we accepted the event.
@@ -116,6 +143,26 @@ class _SharedWebhookServer:
 
 _servers: Dict[Tuple[str, int], _SharedWebhookServer] = {}
 _active_per_server: Dict[Tuple[str, int], int] = {}
+
+# In-process guard against WeCom callback retries: the same (account, message)
+# pair seen within this window is acknowledged but not answered twice.
+_recent_message_ids: Dict[Tuple[str, str], float] = {}
+_MESSAGE_DEDUPE_WINDOW_SECS = 30.0
+_MESSAGE_DEDUPE_MAX = 2000
+
+# Strong references to background handler tasks: asyncio only keeps weak
+# references, so an unreferenced long-running task can be garbage-collected
+# before it sends the answer. Tasks are discarded when they finish.
+_pending_handler_tasks: set = set()
+
+
+def _on_handler_task_done(task: asyncio.Task) -> None:
+    _pending_handler_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        LOGGER.error("background wecom handler task failed: %s", exc, exc_info=exc)
 
 
 async def _acquire_server(host: str, port: int) -> _SharedWebhookServer:
@@ -148,11 +195,7 @@ class WeComChannel(Channel):
         self.account = account
         self.account_id = account.account_id
         self.connection_type = (account.connection_type or "webhook").strip().lower()
-        self.crypto = (
-            WeChatCrypto(account.token, account.aes_key, account.corp_id)
-            if self.connection_type == "webhook"
-            else None
-        )
+        self.crypto = WeChatCrypto(account.token, account.aes_key, account.corp_id) if self.connection_type == "webhook" else None
         self._server: Optional[_SharedWebhookServer] = None
         self._access_token: Optional[str] = None
         self._access_token_expires_at: float = 0.0
@@ -180,9 +223,7 @@ class WeComChannel(Channel):
             )
             return
 
-        self._server = await _acquire_server(
-            self.account.webhook_host, self.account.webhook_port
-        )
+        self._server = await _acquire_server(self.account.webhook_host, self.account.webhook_port)
         self._server.channels[self.account_id] = self
         LOGGER.info(
             "[wecom:%s] registered at path /wecom/%s/callback (agent_id=%s)",
@@ -215,9 +256,7 @@ class WeComChannel(Channel):
         self._ws = None
         if self._server is not None:
             self._server.channels.pop(self.account_id, None)
-            await _release_server(
-                self.account.webhook_host, self.account.webhook_port
-            )
+            await _release_server(self.account.webhook_host, self.account.webhook_port)
             self._server = None
 
     async def _handle_text_message(
@@ -285,18 +324,14 @@ class WeComChannel(Channel):
                             self.account_id,
                         )
                         await self._subscribe_websocket(ws)
-                        self._heartbeat_task = asyncio.create_task(
-                            self._heartbeat_loop(ws)
-                        )
+                        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(ws))
                         async for msg in ws:
                             if self._stop_requested:
                                 break
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 await self._handle_ws_payload(msg.data)
                             elif msg.type == aiohttp.WSMsgType.BINARY:
-                                await self._handle_ws_payload(
-                                    msg.data.decode("utf-8", "ignore")
-                                )
+                                await self._handle_ws_payload(msg.data.decode("utf-8", "ignore"))
                             elif msg.type == aiohttp.WSMsgType.PONG:
                                 LOGGER.debug("[wecom:%s] websocket pong", self.account_id)
                             elif msg.type in (
@@ -372,9 +407,7 @@ class WeComChannel(Channel):
         errcode = int(resp.get("errcode", 0) or 0)
         if errcode != 0:
             if errcode == 853000:
-                raise PermissionError(
-                    f"wecom websocket subscribe failed: invalid bot_id or secret: {resp}"
-                )
+                raise PermissionError(f"wecom websocket subscribe failed: invalid bot_id or secret: {resp}")
             raise RuntimeError(f"wecom websocket subscribe failed: {resp}")
         LOGGER.info("[wecom:%s] websocket subscribed", self.account_id)
 
@@ -460,17 +493,13 @@ class WeComChannel(Channel):
                 "corpsecret": self.account.secret,
             }
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{WECOM_API_BASE}/gettoken", params=params
-                ) as resp:
+                async with session.get(f"{WECOM_API_BASE}/gettoken", params=params) as resp:
                     data = await resp.json(content_type=None)
             if data.get("errcode", 0) != 0 or "access_token" not in data:
                 raise RuntimeError(f"wecom gettoken failed: {data}")
             self._access_token = data["access_token"]
             # 60s safety margin against clock skew / in-flight calls.
-            self._access_token_expires_at = (
-                now + int(data.get("expires_in", 7200)) - 60
-            )
+            self._access_token_expires_at = now + int(data.get("expires_in", 7200)) - 60
             return self._access_token
 
     async def send(self, message: OutgoingMessage) -> None:
@@ -551,9 +580,7 @@ def _build(account_id: str, cfg: dict) -> Channel:
         required = ("corp_id", "agent_id", "secret", "token", "aes_key")
     missing = [k for k in required if not cfg.get(k)]
     if missing:
-        raise ValueError(
-            f"wecom account '{account_id}' missing required fields: {missing}"
-        )
+        raise ValueError(f"wecom account '{account_id}' missing required fields: {missing}")
     agent_id = 0
     aes_key = ""
     corp_id = str(cfg.get("corp_id") or "")
@@ -563,16 +590,12 @@ def _build(account_id: str, cfg: dict) -> Channel:
         try:
             agent_id = int(cfg["agent_id"])
         except (TypeError, ValueError) as err:
-            raise ValueError(
-                f"wecom account '{account_id}' agent_id must be int: {err}"
-            ) from err
+            raise ValueError(f"wecom account '{account_id}' agent_id must be int: {err}") from err
         # WeCom EncodingAESKey is always 43 characters; reject placeholders early so
         # the failure is a clear message instead of a base64 "Incorrect padding" error.
         aes_key = str(cfg["aes_key"])
         if len(aes_key) != 43:
-            raise ValueError(
-                f"wecom account '{account_id}' aes_key (EncodingAESKey) must be 43 characters, got {len(aes_key)}"
-            )
+            raise ValueError(f"wecom account '{account_id}' aes_key (EncodingAESKey) must be 43 characters, got {len(aes_key)}")
     return WeComChannel(
         WeComAccount(
             account_id=account_id,

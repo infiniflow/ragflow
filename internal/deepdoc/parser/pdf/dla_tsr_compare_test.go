@@ -1,14 +1,15 @@
 //go:build cgo && integration
 
-package parser
+package pdf
 
 import (
-	"context"
 	"encoding/json"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"testing"
 )
 
@@ -22,11 +23,11 @@ import (
 //  2. Run Python:     python3 tools/dla_tsr_compare.py
 //  3. Diff the JSON:  diff testdata/output/render_compare/go_dla.json testdata/output/render_compare/py_dla.json
 func TestDLATSRResponseCompare(t *testing.T) {
-	client := mustConnectDeepDoc(t)
+	client := mustConnectInProcessAnalyzer(t)
 	eng := mustOpenEngine(t, "06_table_content.pdf")
 	defer eng.Close()
 
-	pageImg, err := renderPageToImage(eng, 0)
+	pageImg, err := RenderPageToImage(eng, 0)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -34,17 +35,18 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	outDir := filepath.Join("testdata", "output", "render_compare")
 	os.MkdirAll(outDir, 0755)
 
-	// Save rendered image as JPEG (matching what DLA/TSR actually send).
-	jpegData, err := encodeJPEG(pageImg)
+	// Save rendered image as PNG (matching what DLA/TSR actually send).
+	pngData, err := util.EncodePNG(pageImg)
 	if err != nil {
-		t.Fatalf("encode jpeg: %v", err)
+		t.Fatalf("encode png: %v", err)
 	}
-	imgPath := filepath.Join(outDir, "dla_input.jpeg")
-	os.WriteFile(imgPath, jpegData, 0644)
-	t.Logf("Input image saved: %s (%dx%d, %d bytes JPEG)", imgPath, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), len(jpegData))
+	imgPath := filepath.Join(outDir, "dla_input.png")
+	os.WriteFile(imgPath, pngData, 0644)
+	t.Logf("Input image saved: %s (%dx%d, %d bytes PNG)", imgPath, pageImg.Bounds().Dx(), pageImg.Bounds().Dy(), len(pngData))
 
+	ctx := t.Context()
 	// ── DLA ──
-	regions, err := client.DLA(context.Background(), pageImg)
+	regions, err := client.DLA(ctx, pageImg)
 	if err != nil {
 		t.Fatalf("DLA: %v", err)
 	}
@@ -57,7 +59,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	}
 
 	// ── TSR (crop first table region) ──
-	var tableRegion *DLARegion
+	var tableRegion *pdf.DLARegion
 	for i := range regions {
 		if regions[i].Label == "table" {
 			tableRegion = &regions[i]
@@ -71,11 +73,11 @@ func TestDLATSRResponseCompare(t *testing.T) {
 			int(tableRegion.X0), int(tableRegion.Y0),
 			int(tableRegion.X1), int(tableRegion.Y1))
 
-		cropPath := filepath.Join(outDir, "tsr_input.jpeg")
-		cropJPEG, _ := encodeJPEG(cropped)
-		os.WriteFile(cropPath, cropJPEG, 0644)
+		cropPath := filepath.Join(outDir, "tsr_input.png")
+		cropPNG, _ := util.EncodePNG(cropped)
+		os.WriteFile(cropPath, cropPNG, 0644)
 
-		cells, err := client.TSR(context.Background(), cropped)
+		cells, err := client.TSR(ctx, cropped)
 		if err != nil {
 			t.Fatalf("TSR: %v", err)
 		}
@@ -88,7 +90,7 @@ func TestDLATSRResponseCompare(t *testing.T) {
 	}
 
 	// ── OCR Detect ──
-	detectBoxes, err := client.OCRDetect(context.Background(), pageImg)
+	detectBoxes, err := client.OCRDetect(ctx, pageImg)
 	if err != nil {
 		t.Fatalf("OCRDetect: %v", err)
 	}
@@ -103,11 +105,12 @@ func TestDLATSRResponseCompare(t *testing.T) {
 		cropped := cropImageRect(pageImg,
 			int(b.X0), int(b.Y0), int(b.X2), int(b.Y2))
 
-		cropPath := filepath.Join(outDir, "ocr_rec_input.jpeg")
-		recJPEG, _ := encodeJPEG(cropped)
-		os.WriteFile(cropPath, recJPEG, 0644)
+		cropPath := filepath.Join(outDir, "ocr_rec_input.png")
+		recPNG, _ := util.EncodePNG(cropped)
+		os.WriteFile(cropPath, recPNG, 0644)
 
-		texts, err := client.OCRRecognize(context.Background(), cropped)
+		var texts []pdf.OCRText
+		texts, err = client.OCRRecognize(ctx, cropped)
 		if err != nil {
 			t.Fatalf("OCRRecognize: %v", err)
 		}

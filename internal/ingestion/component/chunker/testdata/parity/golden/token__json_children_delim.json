@@ -1,0 +1,20 @@
+{
+ "case_id": "token__json_children_delim",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "mom": "第一句内容。第二句内容。第三句内容。",
+   "text": "第一句内容"
+  },
+  {
+   "doc_type_kwd": "text",
+   "mom": "第一句内容。第二句内容。第三句内容。",
+   "text": "第二句内容"
+  },
+  {
+   "doc_type_kwd": "text",
+   "mom": "第一句内容。第二句内容。第三句内容。",
+   "text": "第三句内容"
+  }
+ ]
+}

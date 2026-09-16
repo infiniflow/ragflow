@@ -1,0 +1,169 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"ragflow/internal/entity"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+
+	// Verify tables do not exist initially
+	if db.Migrator().HasTable(&entity.IngestionTask{}) {
+		t.Fatal("expected ingestion_task to not exist initially")
+	}
+	if db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
+		t.Fatal("expected ingestion_task_log to not exist initially")
+	}
+	if db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to not exist initially")
+	}
+
+	ctx := context.Background()
+	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
+		t.Fatalf("autoMigrateRuntimeModels failed: %v", err)
+	}
+
+	// Verify tables exist after auto migration
+	if !db.Migrator().HasTable(&entity.IngestionTask{}) {
+		t.Fatal("expected ingestion_task to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
+		t.Fatal("expected ingestion_task_log to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasIndex(&entity.MemoryTask{}, "idx_memory_task_due") {
+		t.Fatal("expected memory_task due index to exist after autoMigrateRuntimeModels")
+	}
+
+	memoryTask := &entity.MemoryTask{
+		TaskID:   "task-1",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input: entity.JSONMap{
+			"user_id":    "user-1",
+			"user_input": "remember this",
+		},
+		State: entity.MemoryTaskStatePending,
+		Extraction: entity.JSONSlice{
+			map[string]interface{}{"message_id": float64(7), "content": "remembered"},
+		},
+		LastError: "",
+	}
+	if err = db.Create(memoryTask).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	var stored entity.MemoryTask
+	if err = db.First(&stored, "task_id = ?", memoryTask.TaskID).Error; err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStatePending {
+		t.Fatalf("memory task state = %q, want %q", stored.State, entity.MemoryTaskStatePending)
+	}
+	if got := stored.Input["user_input"]; got != "remember this" {
+		t.Fatalf("memory task input user_input = %#v, want %q", got, "remember this")
+	}
+	if len(stored.Extraction) != 1 {
+		t.Fatalf("memory task extraction length = %d, want 1", len(stored.Extraction))
+	}
+
+	// Verify idempotency
+	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
+		t.Fatalf("second autoMigrateRuntimeModels failed: %v", err)
+	}
+}
+
+// TestMigrateIngestionTaskPipelineLogID covers the upgrade path AutoMigrate
+// cannot handle on MySQL: an existing ingestion_task created before
+// pipeline_log_id existed must gain the column, and running the migration again
+// must be a no-op.
+func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ctx := context.Background()
+
+	// An ingestion_task table without the column, as created by an older build.
+	if err := db.Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NOT NULL,
+		document_id varchar(32) NOT NULL,
+		dataset_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	migrator := db.Migrator()
+	if migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+		t.Fatal("precondition failed: column already present")
+	}
+
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("migrateIngestionTaskPipelineLogID: %v", err)
+	}
+	if !migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+		t.Fatal("expected pipeline_log_id to be added")
+	}
+
+	// Idempotent: a second run must not fail on the existing column.
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("second migrateIngestionTaskPipelineLogID: %v", err)
+	}
+
+	// Missing table is a no-op, not an error.
+	fresh, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open second sqlite: %v", err)
+	}
+	if err := migrateIngestionTaskPipelineLogID(ctx, fresh); err != nil {
+		t.Fatalf("migration on a table-less database should be a no-op: %v", err)
+	}
+}
+
+func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql database: %v", err)
+	}
+	if err = sqlDB.Close(); err != nil {
+		t.Fatalf("close sql database: %v", err)
+	}
+
+	err = autoMigrateRuntimeModels(t.Context(), db)
+	if err == nil || !strings.Contains(err.Error(), "runtime table ingestion_task") {
+		t.Fatalf("autoMigrateRuntimeModels error = %v, want failing table name", err)
+	}
+}

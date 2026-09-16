@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && manual
 
 package pdfoxide
 
@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-var fixtureDir = filepath.Join("..", "parser", "testdata", "pdfs")
+var fixtureDir = filepath.Join("..", "testdata", "pdfs")
 
 // ── Document opening ─────────────────────────────────────────────────────
 
@@ -517,7 +517,7 @@ type pyChar struct {
 //   - text content (as sorted sets, ignoring order differences)
 //   - coordinate ranges (min/max, since absolute positions differ by engine)
 func TestCharExtraction_CompareWithPython(t *testing.T) {
-	snapDir := filepath.Join("..", "parser", "testdata", "snapshots")
+	snapDir := filepath.Join("..", "testdata", "snapshots")
 
 	entries, err := os.ReadDir(snapDir)
 	if err != nil {

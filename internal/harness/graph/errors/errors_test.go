@@ -2,6 +2,7 @@
 package errors
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -199,13 +200,13 @@ func TestChainError(t *testing.T) {
 
 	// Test with nil base
 	nilChained := ChainError(nil, newErr)
-	if nilChained != newErr {
+	if !errors.Is(nilChained, newErr) {
 		t.Error("Chaining nil base should return new error")
 	}
 
 	// Test with nil new
 	nilChained2 := ChainError(baseErr, nil)
-	if nilChained2 != baseErr {
+	if !errors.Is(nilChained2, baseErr) {
 		t.Error("Chaining nil new should return base error")
 	}
 }

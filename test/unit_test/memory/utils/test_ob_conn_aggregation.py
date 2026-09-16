@@ -42,9 +42,7 @@ class TestAggregateByField:
         assert set(out) == {("user", 2), ("assistant", 1)}
 
     def test_single_doc_result(self):
-        messages = [
-            {"id": "m1", "message_type_kwd": "user", "content_ltks": "x", "message_id": "msg1", "memory_id": "mem1", "status_int": 1}
-        ]
+        messages = [{"id": "m1", "message_type_kwd": "user", "content_ltks": "x", "message_id": "msg1", "memory_id": "mem1", "status_int": 1}]
         out = aggregate_by_field(messages, "message_type_kwd")
         assert out == [("user", 1)]
 

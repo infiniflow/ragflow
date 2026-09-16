@@ -200,7 +200,7 @@ func validateCodeExecTopLevelValueDomain(value any) error {
 		return nil
 	default:
 		return fmt.Errorf(
-			"CodeExec unsupported top-level result type: %T. Allowed top-level values are String, Number, Boolean, Object, Array, or Null.",
+			"unsupported top-level result type: %T. Allowed top-level values are String, Number, Boolean, Object, Array, or Null.",
 			value,
 		)
 	}
@@ -253,7 +253,7 @@ func validateCodeExecExpectedType(expectedType string, value any, path string) e
 	case "Null":
 		valid = value == nil
 	default:
-		return fmt.Errorf("Unsupported expected type: %s", expectedType)
+		return fmt.Errorf("unsupported expected type: %s", expectedType)
 	}
 	if valid {
 		return nil
@@ -287,7 +287,7 @@ func normalizeCodeExecExpectedType(expectedType string) (string, error) {
 	if strings.HasPrefix(low, "array<") && strings.HasSuffix(etype, ">") {
 		inner := strings.TrimSpace(etype[len("Array<") : len(etype)-1])
 		if inner == "" {
-			return "", fmt.Errorf("Unsupported expected type: %s", expectedType)
+			return "", fmt.Errorf("unsupported expected type: %s", expectedType)
 		}
 		normalizedInner, err := normalizeCodeExecExpectedType(inner)
 		if err != nil {

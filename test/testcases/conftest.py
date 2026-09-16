@@ -91,9 +91,11 @@ def _install_scholarly_stub():
 _install_rag_llm_stubs()
 _install_scholarly_stub()
 
+import time
+
 import pytest
 import requests
-from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
+from test.testcases.configs import API_PROXY_SCHEME, EMAIL, HOST_ADDRESS, IS_GO_PROXY, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -148,14 +150,42 @@ def login():
     return auth
 
 
+_ADMIN_BOOTSTRAP_REASON = "admin server not connected"
+
+
+def _auth_with_admin_bootstrap_retry():
+    deadline = time.monotonic() + 120
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            register()
+        except Exception as exc:
+            message = str(exc)
+            if _ADMIN_BOOTSTRAP_REASON in message:
+                last_error = exc
+                time.sleep(2)
+                continue
+            print(exc)
+        try:
+            return login()
+        except Exception as exc:
+            if _ADMIN_BOOTSTRAP_REASON in str(exc):
+                last_error = exc
+                time.sleep(2)
+                continue
+            raise
+    raise last_error or Exception("Timed out waiting for admin server during auth bootstrap")
+
+
 @pytest.fixture(scope="session")
 def auth():
+    if IS_GO_PROXY:
+        return _auth_with_admin_bootstrap_retry()
     try:
         register()
     except Exception as e:
         print(e)
-    auth = login()
-    return auth
+    return login()
 
 
 @pytest.fixture(scope="session")
@@ -180,13 +210,26 @@ def get_added_models(auth, factory_name):
     # Go server (post-Python port) serializes this field as `model_provider`
     # in the RESTful `/api/v1/models` response. Fall back to the legacy
     # `provider_name` key so this conftest works against both.
-    added_factory = {
-        model.get("model_provider") or model["provider_name"]
-        for model in res.get("data", [])
-    }
+    added_factory = {model.get("model_provider") or model["provider_name"] for model in res.get("data", [])}
+    if API_PROXY_SCHEME == "go":
+        added_factory = {provider.casefold() for provider in added_factory}
+        factory_name = factory_name.casefold()
     if factory_name in added_factory:
         return True
     return False
+
+
+def _response_json_or_warning(response, action: str) -> dict:
+    try:
+        return response.json()
+    except ValueError:
+        if API_PROXY_SCHEME != "go":
+            raise
+        message = response.text.strip() or response.reason or "empty response body"
+        return {
+            "code": response.status_code or -1,
+            "message": f"{action} returned non-JSON response: {message[:200]}",
+        }
 
 
 def add_model_instance(auth):
@@ -225,12 +268,30 @@ def add_model_instance(auth):
         # and BAAI/bge-reranker-v2-m3@CI@SILICONFLOW).
         instance_name = "CI"
         add_instance_api = HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances"
-        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={
-            "instance_name": instance_name,
-            "api_key": api_key,
-            "region": "default",
-            "base_url": ""
-        })
+        # Bind and verify only the free models the suite actually uses.
+        # Without model_info the server binds/verifies the entire factory
+        # catalog for the provider, including paid chat models.
+        if provider_name == "SILICONFLOW":
+            instance_payload = {
+                "instance_name": instance_name,
+                "api_key": api_key,
+                "region": "default",
+                "base_url": "",
+                "model_info": [
+                    {"model_type": ["rerank"], "model_name": "BAAI/bge-reranker-v2-m3", "max_tokens": 8192},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-m3", "max_tokens": 8192},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-large-en-v1.5", "max_tokens": 512},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-large-zh-v1.5", "max_tokens": 512},
+                ],
+            }
+        else:
+            instance_payload = {
+                "instance_name": instance_name,
+                "api_key": api_key,
+                "region": "default",
+                "base_url": "",
+            }
+        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json=instance_payload)
         add_instance_res = add_instance_response.json()
         if add_instance_res.get("code") != 0:
             msg = add_instance_res.get("message", "")
@@ -248,10 +309,7 @@ def add_model_instance(auth):
             if "cannot be 'default'" in msg:
                 print("Note: model instance name is reserved, skipping")
                 continue
-            pytest.exit(
-                f"Critical error in add model instance {provider_name}/{instance_name}: "
-                f"{msg}"
-            )
+            pytest.exit(f"Critical error in add model instance {provider_name}/{instance_name}: {msg}")
 
         add_success = get_added_models(auth, provider_name)
         if not add_success:
@@ -262,10 +320,7 @@ def add_model_instance(auth):
                 # on PUT. Downgrade to a warning so tests that don't depend
                 # on the model can still run; tests that do will fail with
                 # a real error rather than this opaque setup crash.
-                print(
-                    "WARNING: provider already exists in catalog but missing from "
-                    "this tenant's /api/v1/models. Tests that depend on it may fail."
-                )
+                print("WARNING: provider already exists in catalog but missing from this tenant's /api/v1/models. Tests that depend on it may fail.")
                 continue
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
 
@@ -280,56 +335,32 @@ def set_tenant_info(auth):
     url = HOST_ADDRESS + "/api/v1/models/default"
     authorization = {"Authorization": auth}
     # set chat model
-    set_default_llm_response = requests.patch(
-        url=url,
-        headers=authorization,
-        json={
-            "model_provider": "ZHIPU-AI",
-            "model_instance": "CI",
-            "model_type": "chat",
-            "model_name": "glm-4-flash"
-        })
-    llm_res = set_default_llm_response.json()
+    set_default_llm_response = requests.patch(url=url, headers=authorization, json={"model_provider": "ZHIPU-AI", "model_instance": "CI", "model_type": "chat", "model_name": "glm-4-flash"})
+    llm_res = _response_json_or_warning(set_default_llm_response, "set default chat LLM")
     if llm_res.get("code") != 0:
         # The Go server (post-Python port) doesn't yet implement
         # PATCH /api/v1/models/default, so the chat/embedding default
         # can't be set via API. Downgrade to a warning so tests that
         # don't rely on a default LLM can still run; tests that do
         # will fail with their own real error.
-        print(
-            f"WARNING: failed to set default chat LLM via {url}: "
-            f"{llm_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default chat LLM via {url}: {llm_res.get('message')!r}. Continuing.")
     # set embedding model
     set_default_embedding_response = requests.patch(
         url=url,
         headers=authorization,
-        json={
-            "model_provider": "Builtin",
-            "model_instance": "Local",
-            "model_type": "embedding",
-            "model_name": "BAAI/bge-small-en-v1.5"
-        })
-    embd_res = set_default_embedding_response.json()
+        json={"model_provider": "Builtin", "model_instance": "Local", "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"},
+        timeout=60,
+    )
+    embd_res = _response_json_or_warning(set_default_embedding_response, "set default embedding LLM")
     if embd_res.get("code") != 0:
-        print(
-            f"WARNING: failed to set default embedding LLM via {url}: "
-            f"{embd_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default embedding LLM via {url}: {embd_res.get('message')!r}. Continuing.")
     # set rerank model
     set_default_rerank_response = requests.patch(
         url=url,
         headers=authorization,
-        json={
-            "model_provider": "SILICONFLOW",
-            "model_instance": "CI",
-            "model_type": "rerank",
-            "model_name": "BAAI/bge-reranker-v2-m3"
-        }
+        json={"model_provider": "SILICONFLOW", "model_instance": "CI", "model_type": "rerank", "model_name": "BAAI/bge-reranker-v2-m3"},
+        timeout=60,
     )
-    rerank_res = set_default_rerank_response.json()
+    rerank_res = _response_json_or_warning(set_default_rerank_response, "set default rerank LLM")
     if rerank_res.get("code") != 0:
-        print(
-            f"WARNING: failed to set default rerank LLM via {url}: "
-            f"{rerank_res.get('message')!r}. Continuing."
-        )
+        print(f"WARNING: failed to set default rerank LLM via {url}: {rerank_res.get('message')!r}. Continuing.")

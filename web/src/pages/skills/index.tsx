@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { BulkOperateBar } from '@/components/bulk-operate-bar';
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
@@ -224,7 +240,7 @@ const SkillsPage: React.FC = () => {
 
   useEffect(() => {
     loadSpaces();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   // Function to load skills with pagination and sorting
@@ -259,14 +275,14 @@ const SkillsPage: React.FC = () => {
     fetchConfig(undefined, selectedSpaceId);
     // Use search API with pagination and sorting
     loadSkills();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [selectedSpaceId, selectedSpaceName]);
 
   // Load skills when pagination or sorting changes
   useEffect(() => {
     if (!selectedSpaceId || !selectedSpaceName || hasSearched) return;
     loadSkills();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [currentPage, sortBy, sortOrder]);
 
   const handleViewSkill = useCallback(

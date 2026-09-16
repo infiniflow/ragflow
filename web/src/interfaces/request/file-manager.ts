@@ -8,3 +8,5 @@ export interface IConnectRequestBody {
   fileIds: string[];
   kbIds: string[];
 }
+
+export type ConnectFileToKnowledgeMode = 'add' | 'replace';

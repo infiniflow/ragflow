@@ -55,19 +55,19 @@ class TestAuthorization:
         assert expected_fragment in res["message"], res
 
     ## The inputs has been changed to add 'doc_ids'
-    ## TODO: 
-    #@pytest.mark.p2
-    #@pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    #def test_metadata_summary_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
+    ## TODO:
+    # @pytest.mark.p2
+    # @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    # def test_metadata_summary_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
     #    res = document_metadata_summary(invalid_auth, {"kb_id": "kb_id"})
     #    assert res["code"] == expected_code, res
     #    assert expected_fragment in res["message"], res
 
     ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #@pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    #def test_metadata_update_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
+    ## TODO:
+    # @pytest.mark.p2
+    # @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    # def test_metadata_update_auth_invalid(self, invalid_auth, expected_code, expected_fragment):
     #    res = document_metadata_update(invalid_auth, {"kb_id": "kb_id", "selector": {"document_ids": ["doc_id"]}, "updates": []})
     #    assert res["code"] == expected_code, res
     #    assert expected_fragment in res["message"], res
@@ -86,6 +86,7 @@ class TestAuthorization:
         res = document_change_status(invalid_auth, dataset_id, {"doc_ids": ["doc_id"], "status": "1"})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
+
 
 class TestDocumentMetadata:
     @pytest.mark.p2
@@ -106,18 +107,18 @@ class TestDocumentMetadata:
         assert docs[0]["id"] == doc_id, res
 
     ## The inputs has been changed to add 'doc_ids'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_metadata_summary(self, WebApiAuth, add_document_func):
+    ## TODO:
+    # @pytest.mark.p2
+    # def test_metadata_summary(self, WebApiAuth, add_document_func):
     #    kb_id, _ = add_document_func
     #    res = document_metadata_summary(WebApiAuth, {"kb_id": kb_id})
     #    assert res["code"] == 0, res
     #    assert isinstance(res["data"]["summary"], dict), res
 
     ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_metadata_update(self, WebApiAuth, add_document_func):
+    ## TODO:
+    # @pytest.mark.p2
+    # def test_metadata_update(self, WebApiAuth, add_document_func):
     #    kb_id, doc_id = add_document_func
     #    payload = {
     #        "kb_id": kb_id,
@@ -132,11 +133,11 @@ class TestDocumentMetadata:
     #    assert info_res["code"] == 0, info_res
     #    meta_fields = info_res["data"][0].get("meta_fields", {})
     #    assert meta_fields.get("author") == "alice", info_res
-    
+
     ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p2
-    #def test_update_metadata_setting(self, WebApiAuth, add_document_func):
+    ## TODO:
+    # @pytest.mark.p2
+    # def test_update_metadata_setting(self, WebApiAuth, add_document_func):
     #    _, doc_id = add_document_func
     #    metadata = {"source": "test"}
     #    res = document_update_metadata_setting(WebApiAuth, {"doc_id": doc_id, "metadata": metadata})
@@ -155,7 +156,6 @@ class TestDocumentMetadata:
 
         assert info_res["code"] == 0, info_res
         assert info_res["data"]["docs"][0]["status"] == "1", info_res
-
 
     @pytest.mark.p2
     def test_update_document_change_parser(self, WebApiAuth, add_document_func):
@@ -184,7 +184,6 @@ class TestDocumentMetadata:
 
         assert res["code"] == 0, res
         assert res["data"]["docs"][0]["chunk_method"] == new_parser_id, res
-
 
     @pytest.mark.p2
     def test_update_document_change_pipeline(self, WebApiAuth, add_document_func):
@@ -224,9 +223,9 @@ class TestDocumentMetadataNegative:
         assert "KB ID" in res["message"], res
 
     ## The inputs has been changed to deprecate 'selector'
-    ## TODO: 
-    #@pytest.mark.p3
-    #def test_metadata_update_missing_kb_id(self, WebApiAuth, add_document_func):
+    ## TODO:
+    # @pytest.mark.p3
+    # def test_metadata_update_missing_kb_id(self, WebApiAuth, add_document_func):
     #    _, doc_id = add_document_func
     #    res = document_metadata_update(WebApiAuth, {"selector": {"document_ids": [doc_id]}, "updates": []})
     #    assert res["code"] == 101, res
@@ -257,7 +256,7 @@ class TestDocumentMetadataNegative:
         # Now try to update metadata setting for the deleted document
         res = document_update_metadata_setting(WebApiAuth, dataset_id, doc_id, {"metadata": {"author": "test"}})
         assert res["code"] == 102, res
-        assert f"Document {doc_id} not found in dataset {dataset_id}" in res["message"], res
+        assert f"document {doc_id} not found in dataset {dataset_id}" in res["message"], res
 
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
@@ -314,37 +313,29 @@ class TestDocumentMetadataUnit:
     def test_update_metadata_success(self, WebApiAuth, add_document_func):
         """Test the new unified update_metadata API - success case."""
         kb_id, doc_id = add_document_func
-        res = document_metadata_update(
-            WebApiAuth, kb_id,
-            {
-                "selector": {"document_ids": [doc_id]},
-                "updates": [{"key": "author", "value": "test_author"}],
-                "deletes": []
-            }
-        )
+        res = document_metadata_update(WebApiAuth, kb_id, {"selector": {"document_ids": [doc_id]}, "updates": [{"key": "author", "value": "test_author"}], "deletes": []})
         assert res["code"] == 0, res
-
 
     @pytest.mark.p3
     def test_update_metadata_invalid_delete_item(self, WebApiAuth, add_document_func):
         """Test the new unified update_metadata API - invalid delete item."""
         kb_id, doc_id = add_document_func
         res = document_metadata_update(
-            WebApiAuth, kb_id,
+            WebApiAuth,
+            kb_id,
             {
                 "selector": {"document_ids": [doc_id]},
                 "updates": [],
-                "deletes": [{}]  # Invalid - missing key
-            }
+                "deletes": [{}],  # Invalid - missing key
+            },
         )
         assert res["code"] == 102
         assert "Each delete requires key" in res["message"], res
 
-
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         # Stub get_by_id to a valid document so the test can only pass via the
         # accessible() early return; if that check ever regresses, the route would
         # proceed and the assertions below would no longer match.
@@ -362,7 +353,7 @@ class TestDocumentMetadataUnit:
         )
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("doc1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -371,7 +362,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"blob-data"
@@ -405,7 +396,7 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module, "request", _DummyRequest(args={"ext": "abc"}))
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         accessible_calls = []
 
         def fake_accessible_denied(doc_id, user_id):
@@ -415,7 +406,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
         res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("att1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -456,7 +447,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download_document("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
     def test_dataset_document_download_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
@@ -465,7 +456,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download("kb1", "doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
     @pytest.mark.p2
     def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
@@ -690,9 +681,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(
             module,
             "apply_safe_file_response_headers",
-            lambda response, content_type, extension: response.headers.update(
-                {"content_type": content_type, "extension": extension}
-            ),
+            lambda response, content_type, extension: response.headers.update({"content_type": content_type, "extension": extension}),
         )
         monkeypatch.setattr(
             module.settings,

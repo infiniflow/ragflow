@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"slices"
 )
 
 // AgentCallbackInput is the input to the agent callback OnStart.
@@ -102,14 +103,7 @@ func filterOptions(name string, opts []RunOption) []RunOption {
 			tmp := &runOptions{}
 			fn(tmp)
 			if tmp.agentNames != nil {
-				match := false
-				for _, n := range tmp.agentNames {
-					if n == name {
-						match = true
-						break
-					}
-				}
-				if !match {
+				if !slices.Contains(tmp.agentNames, name) {
 					continue
 				}
 			}
@@ -152,14 +146,7 @@ func filterCallbackHandlersForNestedAgents(name string, opts []RunOption) []RunO
 			tmp := &runOptions{}
 			fn(tmp)
 			if tmp.agentNames != nil {
-				match := false
-				for _, n := range tmp.agentNames {
-					if n == name {
-						match = true
-						break
-					}
-				}
-				if !match {
+				if !slices.Contains(tmp.agentNames, name) {
 					continue
 				}
 			}

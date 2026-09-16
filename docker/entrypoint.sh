@@ -9,19 +9,30 @@ cat /ragflow/VERSION
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [OPTIONS]"
     echo
-    echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
-    echo "  --disable-taskexecutor          Disables task executor workers."
-    echo "  --disable-datasync              Disables synchronization of datasource workers."
-    echo "  --enable-mcpserver              Enables the MCP server."
-    echo "  --enable-adminserver            Enables the Admin server."
-    echo "  --init-model-provider-tables  Run model provider table migrations and exit."
-    echo "  --init-superuser                Initializes the superuser."
-    echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
-    echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
-    echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
-    echo "  --host-id=<string>              Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --disable-webserver                     Disables the web server (nginx + ragflow_server)."
+    echo "  --disable-taskexecutor                  Disables task executor workers."
+    echo "  --disable-datasync                      Disables synchronization of datasource workers."
+    echo "  --enable-mcpserver                      Enables the MCP server."
+    echo "  --enable-adminserver                    Enables the Admin server."
+    echo "  --init-model-provider-tables            Run model provider table migrations and exit."
+    echo "  --init-superuser                        Initializes the superuser."
+    echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
+    echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
+    echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
+    echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --mcp-host=<string>                     Address the MCP server binds to (default: 127.0.0.1)."
+    echo "  --mcp-port=<num>                        Port the MCP server listens on (default: 9382)."
+    echo "  --mcp-base-url=<string>                 RAGFlow base URL the MCP server calls (default: http://127.0.0.1:9380)."
+    echo "  --mcp-script-path=<path>                MCP server entry script (default: /ragflow/mcp/server/server.py)."
+    echo "  --mcp-mode=<self-host|host>             MCP server mode (default: self-host)."
+    echo "  --mcp-host-api-key=<string>             API key required when --mcp-mode=self-host."
+    echo "  --no-transport-sse-enabled              Disables the MCP SSE transport."
+    echo "  --no-transport-streamable-http-enabled  Disables the MCP streamable HTTP transport. Disabling"
+    echo "                                          both transports re-enables this one, since the server"
+    echo "                                          requires at least one."
+    echo "  --no-json-response                      Disables JSON responses from the MCP server."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -248,110 +259,140 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
-function wait_for_server() {
-    local url="$1"
-    local server_name="$2"
-    local timeout=90
-    local interval=2
-    local start_time=$(date +%s)
+# Run the model provider table migrations. The Go backend owns those tables when
+# it serves the API, so it runs its own --migrate action instead of the Python
+# script.
+function run_model_provider_migrations() {
+    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
+    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
+        # These migrations contain MySQL-only SQL and cannot run against a
+        # GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
 
-    echo "Waiting for $server_name to be ready at $url..."
-    while ! curl -f -s -o /dev/null "$url"; do
-        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
-            echo "Timeout waiting for $server_name after $timeout seconds"
-            return 1
-        fi
-        sleep $interval
-    done
-    echo "$server_name is ready."
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Running model provider table migrations (go)..."
+        bin/ragflow_server --migrate
+    else
+        tools/scripts/run_migrations.sh
+    fi
 }
 
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
-ensure_docling
-ensure_db_init
 
-if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    echo "Running model provider table migrations..."
-    "$PY" tools/scripts/mysql_migration.py \
-        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
-        --config conf/service_conf.yaml \
-        --execute \
-        --database-version "v0.26.1" \
-        --mark-database-version-on-success
-    echo "Model provider table migrations completed."
+run_with_restart() {
+  local process_name="$1"
+  shift
+
+  while true; do
+    echo "Attempt to start ${process_name}..."
+    set +e
+    "$@"
+    local exit_code=$?
+    set -e
+    echo "${process_name} exited with code ${exit_code}. Restarting in 1 second..."
+    sleep 1
+  done
+}
+
+# Initialize the database schema before any of the services below start.
+# This used to run inside the web server block only, so hosts that ran e.g.
+# just the admin server, data sync, MCP server, or task executors never
+# initialized the schema.
+#
+# Under the go scheme the Go backend owns the schema: its --migrate action and
+# dao.InitDB create and converge the tables. Skip the Python initialization so a
+# single side owns the schema.
+if [[ "${API_PROXY_SCHEME}" != "go" ]]; then
+    ensure_db_init
 fi
 
-if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
-    echo "Starting nginx..."
-    /usr/sbin/nginx
+if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
+    run_model_provider_migrations
+fi
 
-    while true; do
-        echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-        echo "RAGFlow python server started."
-        sleep 1;
-    done &
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        echo "Attempt to start Admin python server..."
+        run_with_restart "Admin python server" "$PY" admin/server/admin_server.py &
+    fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/api/v1/system/healthz" "ragflow_server"
-            echo "Starting RAGFlow go server..."
-            bin/ragflow_server
-            sleep 1;
-        done &
+        echo "Starting Admin go server..."
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
+if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    ensure_docling
 
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    while true; do
-        echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
-        echo "Admin python server started"
-        sleep 1;
-    done &
+    echo "Starting nginx..."
+    /usr/sbin/nginx -c /etc/nginx/nginx.conf
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        echo "Attempt to start RAGFlow python server..."
+        run_with_restart "RAGFlow python server" "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
+    fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
-            echo "Starting Admin go server..."
-            bin/admin_server
-            sleep 1;
-        done &
+        echo "Starting RAGFlow go server..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
     fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    while true; do
-        "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Starting data sync (go)..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
+    else
+        echo "Starting data sync..."
+        run_with_restart "Data sync" "$PY" rag/svr/sync_data_source.py &
+    fi
 fi
 
-if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+# The Go backend serves MCP in-process from --api (POST /mcp on the main API
+# port) and exposes the same ragflow_retrieval, ragflow_list_datasets and
+# ragflow_list_chats tools. The standalone Python MCP server would only
+# duplicate it, so the go scheme relies on the built-in endpoint instead.
+if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]] && [[ "${API_PROXY_SCHEME}" != "go" ]]; then
     start_mcp_server
 fi
 
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        echo "Starting task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
-        for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
-        do
-          task_exe "${i}" "${HOST_ID}" &
-        done
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+            echo "Starting python task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
+            for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
+            do
+              task_exe "${i}" "${HOST_ID}" &
+            done
+        fi
+
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+            echo "Starting ingestor..."
+            run_with_restart "ingestor" bin/ragflow_server --ingestor &
+        fi
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-          task_exe "${i}" "${HOST_ID}" &
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+                echo "Starting python task executor..."
+                task_exe "${i}" "${HOST_ID}" &
+                sleep 1;
+            fi
+
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                echo "Starting ingestor..."
+                run_with_restart "ingestor" bin/ragflow_server --ingestor &
+          fi
         done
     fi
 fi

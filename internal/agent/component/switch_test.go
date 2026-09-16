@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -56,7 +55,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["x"] = "yes"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -69,7 +68,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -87,7 +86,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Sys["score"] = "85"
 	state.Sys["flag"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -113,7 +112,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -129,7 +128,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -142,7 +141,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 		},
 		"default": "fallback_0",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -156,7 +155,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-end-cpn", "task-end-cpn")
 	state.Sys["x"] = "no"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -169,7 +168,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 		},
 		"end_cpn_ids": []any{"legacy_fallback"},
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Sys["body"] = "hello world"
 	state.Sys["opt"] = ""
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -200,7 +199,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 		},
 		"default": "x",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -229,9 +228,9 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-legacy", "task-legacy")
 	state.SetVar("UserFillUp:Menu", "demo", "loop")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
-	out, err := s.Invoke(ctx, nil)
+	out, err := s.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -253,7 +252,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-contains", "task-nil-contains")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -267,7 +266,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -284,7 +283,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-needle", "task-nil-needle")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -298,7 +297,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -316,7 +315,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-value", "task-nil-value")
 	state.Sys["answer"] = "foobar"
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -330,7 +329,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -350,7 +349,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-nil-start-end", "task-nil-start-end")
 	state.Sys["answer"] = nil
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	for _, tc := range []struct {
 		name string
@@ -372,7 +371,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 				},
 				"default": "else_target",
 			}
-			out, err := s.Invoke(ctx, inputs)
+			out, err := s.Invoke(ctx, nil, inputs)
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
@@ -393,7 +392,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-multi", "task-multi")
 	state.SetVar("UserFillUp:Menu", "demo", "data_ops")
-	ctx := withStateForTest(context.Background(), state)
+	ctx := withStateForTest(t.Context(), state)
 
 	inputs := map[string]any{
 		"conditions": []any{
@@ -411,12 +410,120 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 		},
 		"default": "Message:Help",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	targets := nextTargets(out)
 	if len(targets) != 2 || targets[0] != "DataOperations:UpdateSample" || targets[1] != "CodeExec:FunnyBronsShare" {
 		t.Errorf("_next: got %v, want [\"DataOperations:UpdateSample\", \"CodeExec:FunnyBronsShare\"]", targets)
+	}
+}
+
+// TestSwitch_EmptyAndConditionFallsThrough guards PR #15644 port:
+// an "and" condition with no clauses (or all clauses filtered out
+// by the legacy normaliser) must NOT match. Previously the empty
+// `clauses` short-circuit returned `true` (vacuously), routing the
+// Switch to the empty group's `to` target before reaching the
+// default / end_cpn_ids branch.
+func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-empty-and", "task-1")
+	ctx := withStateForTest(t.Context(), state)
+
+	// Empty clauses: must not match. Should fall through to default.
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"op":      "and",
+				"clauses": []any{},
+				"to":      "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("empty and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_LegacyEmptyItemsFallsThrough covers the legacy
+// "logical_operator" / "items" form, where every item has an
+// empty `cpn_id` (the bug scenario from the Python PR: items
+// list non-empty but every item skipped, so clauses is empty).
+func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-legacy-empty", "task-1")
+	ctx := withStateForTest(t.Context(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "", "operator": "contains", "value": "x"},
+				},
+				"to": "WRONG_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	for _, tgt := range targets {
+		if tgt == "WRONG_TARGET" {
+			t.Errorf("all-skipped and-condition must not match, but Switch routed to %q", tgt)
+		}
+	}
+}
+
+// TestSwitch_SatisfiedAndConditionStillRoutes is the negative
+// control: a genuinely satisfied "and" condition MUST still match
+// after the fix. Without this guard, a refactor that breaks the
+// real all() path would slip through.
+func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-and-ok", "task-1")
+	state.Sys["greeting"] = "hello world"
+	ctx := withStateForTest(t.Context(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "sys.greeting", "operator": "contains", "value": "hello"},
+				},
+				"to": "CORRECT_TARGET",
+			},
+		},
+		"default": "DEFAULT",
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) == 0 {
+		t.Fatalf("expected non-empty _next, got nothing (out=%v)", out)
+	}
+	found := false
+	for _, tgt := range targets {
+		if tgt == "CORRECT_TARGET" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("satisfied and-condition must route to CORRECT_TARGET, got %v", targets)
 	}
 }

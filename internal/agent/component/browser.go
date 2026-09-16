@@ -44,15 +44,55 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
+	"net/url"
+
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 const componentNameBrowser = "Browser"
+
+var stagehandNativeProviders = map[string]string{
+	"anthropic": "anthropic",
+	"google":    "google",
+	"openai":    "openai",
+}
+
+var browserFactoryDefaultBaseURL = map[string]string{
+	"302.ai":         "https://api.302.ai/v1",
+	"anthropic":      "https://api.anthropic.com/",
+	"astraflow":      "https://api-us-ca.umodelverse.ai/v1",
+	"astraflow-cn":   "https://api.modelverse.cn/v1",
+	"avian":          "https://api.avian.io/v1",
+	"cometapi":       "https://api.cometapi.com/v1",
+	"dashscope":      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+	"deepseek":       "https://api.deepseek.com/v1",
+	"deerapi":        "https://api.deerapi.com/v1",
+	"futurmix":       "https://futurmix.ai/v1",
+	"giteeai":        "https://ai.gitee.com/v1/",
+	"hunyuan":        "https://api.hunyuan.cloud.tencent.com/v1",
+	"jiekouai":       "https://api.jiekou.ai/openai",
+	"lingyi-ai":      "https://api.lingyiwanwu.com/v1",
+	"longcat":        "https://api.longcat.chat/openai",
+	"minimax":        "https://api.minimaxi.com/v1",
+	"moonshot":       "https://api.moonshot.cn/v1",
+	"n1n":            "https://api.n1n.ai/v1",
+	"novitaai":       "https://api.novita.ai/v3/openai",
+	"openai":         "https://api.openai.com/v1",
+	"openrouter":     "https://openrouter.ai/api/v1",
+	"perfxcloud":     "https://cloud.perfxlab.cn/v1",
+	"ppio":           "https://api.ppinfra.com/v3/openai",
+	"siliconflow":    "https://api.siliconflow.cn/v1",
+	"stepfun":        "https://api.stepfun.com/v1",
+	"tongyi-qianwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+	"upstage":        "https://api.upstage.ai/v1/solar",
+	"zhipu-ai":       "https://open.bigmodel.cn/api/paas/v4",
+}
 
 // browserParam is the static DSL param surface for the Browser
 // component. Mirrors Python `browser.py:LLMParam + browser knobs`:
@@ -83,27 +123,6 @@ type browserParam struct {
 	// test file; not used by the stagehand path).
 	URL     string `json:"url"`
 	Timeout int    `json:"timeout"`
-}
-
-// llmIDPattern matches `ModelName@Factory`. The factory part is
-// optional; when absent, the caller's tenant lookup will be
-// `GetByTenantAndModelName` instead of
-// `GetByTenantFactoryAndModelName`.
-var llmIDPattern = regexp.MustCompile(`^(.+)@(.+)$`)
-
-// resolveLLMID splits `llm_id` (e.g. "deepseek-v4-pro@DeepSeek") into
-// `(modelName, factory)`. When no `@` is present, factory is empty
-// and the caller must use a single-key lookup.
-//
-// Mirrors the contract of `dao.splitModelNameAndFactory` (private);
-// re-implemented here to keep the component free of an import
-// dependency on a DB-validating private helper.
-func resolveLLMID(llmID string) (modelName, factory string) {
-	m := llmIDPattern.FindStringSubmatch(strings.TrimSpace(llmID))
-	if m == nil {
-		return strings.TrimSpace(llmID), ""
-	}
-	return strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
 }
 
 // Update copies a fresh param map into the receiver. The
@@ -200,7 +219,7 @@ func (p *browserParam) AsDict() map[string]any {
 }
 
 // BrowserComponent is the canvas Browser node. Owns its static
-// param; delegates the multi-step agent run to StagehandInvoker.
+// param; delegates the multistep agent run to StagehandInvoker.
 type BrowserComponent struct {
 	name  string
 	param browserParam
@@ -210,10 +229,10 @@ type BrowserComponent struct {
 func NewBrowserComponent(params map[string]any) (Component, error) {
 	p := &browserParam{}
 	if err := p.Update(params); err != nil {
-		return nil, fmt.Errorf("Browser: param update: %w", err)
+		return nil, fmt.Errorf("browser: param update: %w", err)
 	}
 	if err := p.Check(); err != nil {
-		return nil, fmt.Errorf("Browser: param check: %w", err)
+		return nil, fmt.Errorf("browser: param check: %w", err)
 	}
 	return &BrowserComponent{
 		name:  componentNameBrowser,
@@ -228,10 +247,10 @@ func (b *BrowserComponent) Name() string { return b.name }
 // StagehandInvoker.RunExtract with a `{"type": "string"}` schema.
 // The flow:
 //
-//  1. Pull tenant_id from `state.Sys["user_id"]`.
+//  1. Pull tenant_id from `state.Sys["tenant_id"]`.
 //  2. Resolve the `prompts` template via `runtime.ResolveTemplate`.
-//  3. Split `llm_id` → `(modelName, factory)` and look up the
-//     tenant LLM config (apiKey, baseURL) from the DAO.
+//  3. Resolve `llm_id` as a tenant_model id or legacy model@factory
+//     reference and look up the tenant LLM config (apiKey, baseURL).
 //  4. Build `RunExtractRequest` with `ModelName = "openai/<model>"`,
 //     the resolved apiKey/baseURL/instruction, and
 //     `Schema = {"type": "string"}`.
@@ -242,38 +261,42 @@ func (b *BrowserComponent) Name() string { return b.name }
 //
 // File upload/download and session persistence are not supported
 // in this component; they are v1-deferred.
-func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: %w", err)
+		return nil, fmt.Errorf("browser: %w", err)
 	}
 	if state == nil {
-		return nil, errors.New("Browser: nil canvas state")
+		return nil, errors.New("browser: nil canvas state")
 	}
 
-	tenantID, _ := state.Sys["user_id"].(string)
+	tenantID, _ := state.Sys["tenant_id"].(string)
 	if tenantID == "" {
-		return nil, errors.New("Browser: tenant_id missing from canvas state (state.Sys[\"user_id\"])")
+		return nil, errors.New("browser: tenant_id missing from canvas state (state.Sys[\"tenant_id\"])")
 	}
 
 	// 1. Resolve prompts template.
-	resolvedPrompts, err := runtime.ResolveTemplate(b.param.Prompts, state)
+	prompts := b.param.Prompts
+	if v, ok := inputs["prompts"].(string); ok && strings.TrimSpace(v) != "" {
+		prompts = v
+	}
+	resolvedPrompts, err := runtime.ResolveTemplate(prompts, state)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: resolve prompts template: %w", err)
+		return nil, fmt.Errorf("browser: resolve prompts template: %w", err)
 	}
 
 	// 2. Look up tenant model config.
-	modelName, factory := resolveLLMID(b.param.LLMID)
-	apiKey, baseURL, err := resolveTenantLLM(tenantID, modelName, factory)
+	providerName, modelName, apiKey, baseURL, err := resolveBrowserLLM(ctx, db, tenantID, b.param.LLMID)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: tenant llm lookup (%q, factory=%q): %w", b.param.LLMID, factory, err)
+		return nil, fmt.Errorf("browser: tenant llm lookup (%q): %w", b.param.LLMID, err)
 	}
+	baseURL = strings.TrimSpace(baseURL)
 
 	// 3. Build RunExtractRequest with single-string schema.
 	req := RunExtractRequest{
 		TenantID:    tenantID,
 		LLMID:       b.param.LLMID,
-		ModelName:   "openai/" + modelName,
+		ModelName:   stagehandModelName(providerName, modelName),
 		BaseURL:     baseURL,
 		APIKey:      apiKey,
 		Headless:    b.param.Headless,
@@ -285,13 +308,14 @@ func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 	invoker := getDefaultStagehandInvoker()
 	rawJSON, err := invoker.RunExtract(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: stagehand extract: %w", err)
+		return nil, fmt.Errorf("browser: stagehand extract (model=%q, base_url=%s): %w",
+			req.ModelName, browserBaseURLForLog(req.BaseURL), err)
 	}
 
 	// 5. Unmarshal the JSON-string result to get the plain text.
 	var content string
-	if err := json.Unmarshal([]byte(rawJSON), &content); err != nil {
-		return nil, fmt.Errorf("Browser: unmarshal extract result: %w", err)
+	if err = json.Unmarshal([]byte(rawJSON), &content); err != nil {
+		return nil, fmt.Errorf("browser: unmarshal extract result: %w", err)
 	}
 
 	// 6. Build the output map.
@@ -302,14 +326,46 @@ func (b *BrowserComponent) Invoke(ctx context.Context, inputs map[string]any) (m
 		"status":           0,
 		"size":             len(content),
 		"model_id":         b.param.LLMID,
-		"prompt":           b.param.Prompts,
+		"prompt":           prompts,
 	}
 	return out, nil
 }
 
+func browserBaseURLForLog(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "<provider default>"
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid>"
+	}
+	u.User = nil
+	return u.String()
+}
+
+func stagehandModelName(providerName, modelName string) string {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return ""
+	}
+	if strings.Contains(modelName, "/") {
+		prefix, _, _ := strings.Cut(modelName, "/")
+		if stagehandNativeProviders[strings.ToLower(strings.TrimSpace(prefix))] != "" {
+			return modelName
+		}
+		return "openai/" + modelName
+	}
+	providerName = strings.ToLower(strings.TrimSpace(providerName))
+	if nativeProvider := stagehandNativeProviders[providerName]; nativeProvider != "" {
+		return nativeProvider + "/" + modelName
+	}
+	return "openai/" + modelName
+}
+
 // Stream mirrors Invoke; Browser is a single-shot generator.
-func (b *BrowserComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := b.Invoke(ctx, inputs)
+func (b *BrowserComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := b.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -334,6 +390,19 @@ func (b *BrowserComponent) Inputs() map[string]string {
 	}
 }
 
+func (b *BrowserComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"prompts": map[string]any{
+			"type": "paragraph",
+			"name": "Prompts",
+		},
+		"upload_sources": map[string]any{
+			"type": "line",
+			"name": "Upload sources",
+		},
+	}
+}
+
 // Outputs returns the response surface.
 func (b *BrowserComponent) Outputs() map[string]string {
 	return map[string]string{
@@ -347,52 +416,93 @@ func (b *BrowserComponent) Outputs() map[string]string {
 	}
 }
 
-// resolveTenantLLM looks up the tenant LLM config and returns
-// (apiKey, baseURL, modelName). baseURL may be empty when the
-// tenant's provider doesn't configure a custom endpoint (the
-// stagehand server will then use its openai-compat default).
+// resolveBrowserLLM resolves tenant model credentials exclusively through the
+// model_provider series tables (tenant_model → tenant_model_provider →
+// tenant_model_instance). It no longer falls back to the legacy tenant_llm path.
 //
-// Tests override the lookup via `tenantLLMLookupForTest` (a
-// package-level function variable) so they don't need a real DB.
-// Production code leaves the variable unset.
-//
-// TODO(v2): this helper can move to `internal/dao` so the LLM
-// component (`llm.go`) and other future components can share it.
-func resolveTenantLLM(tenantID, modelName, factory string) (apiKey, baseURL string, err error) {
-	if tenantLLMLookupForTest != nil {
-		return tenantLLMLookupForTest(tenantID, modelName, factory)
+// Tests override the lookup via `browserLLMLookupForTest` (a package-level
+// function variable) so they don't need a real DB. Production code leaves the
+// variable unset.
+func resolveBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error) {
+	if browserLLMLookupForTest != nil {
+		return browserLLMLookupForTest(ctx, db, tenantID, llmID)
 	}
-	dao := dao.NewTenantLLMDAO()
-	var (
-		row *entity.TenantLLM
-	)
-	if factory != "" {
-		row, err = dao.GetByTenantFactoryAndModelName(tenantID, factory, modelName)
-	} else {
-		// No factory suffix on llm_id; fall back to a single-key
-		// lookup (errors if the model is registered under multiple
-		// factories — caller must use the explicit form).
-		row, err = dao.GetByTenantAndModelName(tenantID, "", modelName)
-	}
+
+	providerName, modelName, apiKey, baseURL, err = resolveTenantModelBrowserLLM(ctx, db, tenantID, llmID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", "", fmt.Errorf("tenant model lookup (%q): %w", llmID, err)
 	}
-	if row == nil {
-		return "", "", fmt.Errorf("tenant LLM not found")
-	}
-	if row.APIKey != nil {
-		apiKey = *row.APIKey
-	}
-	if row.APIBase != nil {
-		baseURL = *row.APIBase
-	}
-	return apiKey, baseURL, nil
+	baseURL = browserOpenAICompatibleBaseURL(baseURL, providerName)
+	return providerName, modelName, apiKey, baseURL, nil
 }
 
-// tenantLLMLookupForTest is the test seam for `resolveTenantLLM`.
+func resolveTenantModelBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, modelID string) (providerName, modelName, apiKey, baseURL string, err error) {
+	modelRow, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", err
+		}
+		return "", "", "", "", fmt.Errorf("tenant model id=%s lookup failed: %w", modelID, err)
+	}
+	if modelRow.Status != "active" {
+		return "", "", "", "", fmt.Errorf("tenant model id=%s is disabled", modelID)
+	}
+	if !entity.ModelType(modelRow.ModelType).Has(entity.ModelTypeChat) {
+		return "", "", "", "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, entity.ModelTypeChat.String())
+	}
+
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, modelRow.ProviderID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
+		}
+		return "", "", "", "", err
+	}
+	if provider == nil {
+		return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
+	}
+	if provider.TenantID != tenantID {
+		return "", "", "", "", fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+	}
+
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, modelRow.InstanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)
+		}
+		return "", "", "", "", err
+	}
+	if instance == nil {
+		return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)
+	}
+
+	apiKey = instance.APIKey
+	if strings.TrimSpace(instance.Extra) != "" {
+		var extra map[string]string
+		if err = json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+			return "", "", "", "", err
+		}
+		baseURL = extra["base_url"]
+	}
+	return provider.ProviderName, modelRow.ModelName, apiKey, baseURL, nil
+}
+
+func browserOpenAICompatibleBaseURL(baseURL, provider string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL != "" {
+		return baseURL
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return ""
+	}
+	return browserFactoryDefaultBaseURL[strings.ToLower(provider)]
+}
+
+// browserLLMLookupForTest is the test seam for `resolveBrowserLLM`.
 // When non-nil, it's called instead of the real DAO lookup.
 // Production leaves this nil; tests set it via `defer ... = nil`.
-var tenantLLMLookupForTest func(tenantID, modelName, factory string) (apiKey, baseURL string, err error)
+var browserLLMLookupForTest func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error)
 
 func init() {
 	Register(componentNameBrowser, NewBrowserComponent)

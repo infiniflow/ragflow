@@ -93,8 +93,11 @@ func CreateReducerChannel(fieldName string, fieldType reflect.Type, reducer type
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
-		// For numeric types, use BinaryOperatorAggregate with add operator
-		channel = NewBinaryOperatorAggregate(fieldType, IntAdd)
+		// For numeric types, use BinaryOperatorAggregate with add operator.
+		// Pass reflect.Zero(fieldType).Interface() instead of fieldType itself
+		// so createZeroValue uses the correct underlying numeric type for its
+		// reflect.Zero call, not the reflect.Type descriptor.
+		channel = NewBinaryOperatorAggregate(reflect.Zero(fieldType).Interface(), IntAdd)
 	default:
 		// Default to LastValue channel
 		channel = NewLastValue(fieldType)

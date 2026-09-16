@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
@@ -29,11 +30,16 @@ import (
 const (
 	DefaultAskPage                   = 1
 	DefaultAskPageSize               = 12
+	DefaultAskRerankCandidatesCount  = 100
 	DefaultAskTopK                   = 1024
 	DefaultAskSimilarityThreshold    = 0.1
 	DefaultAskVectorSimilarityWeight = 0.3
 	DefaultAskTokenBudget            = 4096
 	DefaultAskStreamMinTokens        = 16
+	// DefaultAskTemperature and DefaultAskTopP mirror Python's
+	// LLM_SETTING_DEFAULTS in api/db/services/llm_service.py.
+	DefaultAskTemperature = 0.1
+	DefaultAskTopP        = 0.3
 )
 
 // AskDeltaKind classifies a streaming event emitted by AskService.
@@ -53,14 +59,50 @@ type AskDelta struct {
 	Refs  interface{} // populated on AskDeltaFinal: {chunks, doc_aggs}
 }
 
-// Retriever abstracts chunk retrieval for AskService.
-type Retriever interface {
-	RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+// AskStreamOptions carries optional retrieval settings supplied by saved
+// search_config. Zero values keep the same defaults as Stream.
+type AskStreamOptions struct {
+	SearchID               string
+	DocIDs                 []string
+	UseKG                  *bool
+	TopK                   *int
+	RerankCandidatesCount  *int
+	CrossLanguages         []string
+	Filter                 map[string]interface{}
+	TenantRerankID         *string
+	RerankID               *string
+	Keyword                *bool
+	SimilarityThreshold    *float64
+	VectorSimilarityWeight *float64
+	Temperature            *float64
+	TopP                   *float64
 }
 
-// StreamingLLM abstracts streaming chat for AskService.
+// Retriever abstracts chunk retrieval for AskService.
+type Retriever interface {
+	RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+}
+
+// StreamingLLM abstracts streaming chat for AskService. The first channel
+// carries answer deltas; the second delivers the driver error when the stream
+// terminates abnormally (nil when it completes cleanly). The trailing error is
+// non-nil only for synchronous setup failures.
 type StreamingLLM interface {
-	ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error)
+	ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error)
+}
+
+// llmErrorMessage converts a raw LLM driver error into a user-facing message,
+// mirroring Python's completion error handling which appends an API-Key hint
+// when the provider rejects the credentials.
+func llmErrorMessage(err error) string {
+	if err == nil {
+		return "LLM call failed"
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "invalid key") || strings.Contains(msg, "invalid api") {
+		return msg + " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
+	}
+	return msg
 }
 
 // AskService performs retrieval-augmented Q&A with streaming output.
@@ -91,29 +133,63 @@ func NewAskService(retriever Retriever, embedder Embedder, tokenBudget, minStrea
 // Stream runs the full ask pipeline.  llm must not be nil.  The returned
 // channel is closed when the pipeline completes or ctx is cancelled.
 func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string) <-chan AskDelta {
+	return s.StreamWithOptions(ctx, llm, userID, question, kbIDs, AskStreamOptions{})
+}
+
+// StreamWithOptions runs Stream while allowing callers such as saved Search
+// apps to pass search_config retrieval options through to RetrievalTest.
+func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
 	out := make(chan AskDelta, 32)
 	go func() {
 		defer close(out)
-		s.run(ctx, llm, userID, question, kbIDs, out)
+		s.run(ctx, llm, userID, question, datasetIDs, opts, out)
 	}()
 	return out
 }
 
-func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string, out chan<- AskDelta) {
+func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	// Phase 1: Retrieval.
+	topK := DefaultAskTopK
+	if opts.TopK != nil {
+		topK = *opts.TopK
+	}
+	similarityThreshold := DefaultAskSimilarityThreshold
+	if opts.SimilarityThreshold != nil {
+		similarityThreshold = *opts.SimilarityThreshold
+	}
+	vectorSimilarityWeight := DefaultAskVectorSimilarityWeight
+	if opts.VectorSimilarityWeight != nil {
+		vectorSimilarityWeight = *opts.VectorSimilarityWeight
+	}
+	rerankCandidatesCount := DefaultAskRerankCandidatesCount
+	if opts.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *opts.RerankCandidatesCount
+	}
+
 	req := &RetrievalTestRequest{
-		Datasets:               common.StringSlice(kbIDs),
+		Datasets:               common.StringSlice(datasetIDs),
 		Question:               question,
-		TopK:                   ptrInt(DefaultAskTopK),
-		SimilarityThreshold:    ptrFloat64(DefaultAskSimilarityThreshold),
-		VectorSimilarityWeight: ptrFloat64(DefaultAskVectorSimilarityWeight),
+		DocIDs:                 opts.DocIDs,
+		UseKG:                  opts.UseKG,
+		TopK:                   ptrInt(topK),
+		RerankCandidatesCount:  ptrInt(rerankCandidatesCount),
+		CrossLanguages:         opts.CrossLanguages,
+		Filter:                 opts.Filter,
+		TenantRerankID:         opts.TenantRerankID,
+		RerankID:               opts.RerankID,
+		Keyword:                opts.Keyword,
+		SimilarityThreshold:    ptrFloat64(similarityThreshold),
+		VectorSimilarityWeight: ptrFloat64(vectorSimilarityWeight),
+	}
+	if opts.SearchID != "" {
+		req.SearchID = &opts.SearchID
 	}
 	page := DefaultAskPage
 	ps := DefaultAskPageSize
 	req.Page = &page
 	req.Size = &ps
 
-	result, err := s.retriever.RetrievalTest(req, userID)
+	result, err := s.retriever.RetrievalTest(ctx, req, userID)
 	if err != nil {
 		common.Warn("AskService retrieval failed", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "retrieval failed"}, ctx)
@@ -140,12 +216,23 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		{Role: "system", Content: sysPrompt},
 		{Role: "user", Content: question},
 	}
-	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(0.1)}
+	// Thinking is disabled: summarization does not need reasoning. With
+	// thinking enabled, the reasoning (which drafts the summary) streams
+	// first, then collapses into a hidden think block, and the provider may
+	// emit only a fragment as the visible answer once the reasoning has
+	// consumed the output budget.
+	genConf := &modelModule.ChatConfig{Temperature: ptrFloat64(DefaultAskTemperature), Thinking: ptrBool(false)}
+	if opts.Temperature != nil {
+		genConf.Temperature = opts.Temperature
+	}
+	if opts.TopP != nil {
+		genConf.TopP = opts.TopP
+	}
 
-	ch, err := llm.ChatStream(ctx, messages, genConf)
+	ch, llmErrs, err := llm.ChatStream(ctx, messages, genConf)
 	if err != nil {
 		common.Warn("AskService LLM stream failed", zap.Error(err))
-		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "LLM call failed"}, ctx)
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: llmErrorMessage(err)}, ctx)
 		return
 	}
 
@@ -161,14 +248,33 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		}
 	}
 
+	// Surface the real driver error (e.g. a provider 400/401) instead of a
+	// generic message when the stream terminated abnormally.
+	var llmErr error
+	select {
+	case llmErr = <-llmErrs:
+	case <-ctx.Done():
+		return
+	}
+	if llmErr != nil {
+		common.Warn("AskService LLM stream failed", zap.Error(llmErr))
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: llmErrorMessage(llmErr)}, ctx)
+		return
+	}
+
 	// Phase 4: Finalize — citation insertion + reference formatting.
 	visible := ExtractVisibleAnswer(fullAnswer)
+	if strings.TrimSpace(visible) == "" {
+		common.Warn("AskService LLM stream completed without visible answer")
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "LLM call failed"}, ctx)
+		return
+	}
 	chunkRefs := ChunksFormat(chunks)
 
 	// Attempt citation insertion if embedder is available.
 	chunkVectors := ExtractChunkVectors(result.Chunks)
 	if len(chunkVectors) > 0 && s.embedder != nil {
-		if decorated, cited := InsertCitations(visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
+		if decorated, cited := InsertCitations(ctx, visible, chunks, s.embedder, chunkVectors); len(cited) > 0 {
 			visible = decorated
 		}
 	}
@@ -228,3 +334,4 @@ func toFloat64Slice(v interface{}) []float64 {
 
 func ptrInt(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
+func ptrBool(v bool) *bool          { return &v }

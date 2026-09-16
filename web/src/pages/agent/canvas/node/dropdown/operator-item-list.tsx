@@ -7,7 +7,7 @@ import {
 import { Operator } from '@/constants/agent';
 import { IModalProps } from '@/interfaces/common';
 import { AgentInstanceContext, HandleContext } from '@/pages/agent/context';
-import OperatorIcon from '@/pages/agent/operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { Position } from '@xyflow/react';
 import { lowerFirst } from 'lodash';
 import { createContext, useContext } from 'react';

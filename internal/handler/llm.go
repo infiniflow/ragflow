@@ -17,8 +17,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
@@ -62,29 +60,22 @@ func NewLLMHandler(llmService *service.LLMService, userService *service.UserServ
 func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	tenantID := user.ID
 	includeDetailsStr := c.DefaultQuery("include_details", "false")
 	includeDetails := includeDetailsStr == "true"
+	ctx := c.Request.Context()
 
-	llms, err := h.llmService.GetMyLLMs(tenantID, includeDetails)
+	llms, err := h.llmService.GetMyLLMs(ctx, tenantID, includeDetails)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }
 
 // SetAPIKey set API key for a LLM factory
@@ -100,45 +91,31 @@ func (h *LLMHandler) GetMyLLMs(c *gin.Context) {
 func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	var req service.SetAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"message": "Invalid request: " + err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, false, "Invalid request: "+err.Error())
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	tenantID := user.ID
-	result, err := h.llmService.SetAPIKey(tenantID, &req)
+	result, err := h.llmService.SetAPIKey(ctx, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
 		return
 	}
 
 	if req.Verify {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeSuccess,
-			"message": "success",
-			"data":    result,
-		})
+		common.SuccessWithData(c, result, "success")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    true,
-	})
+	common.SuccessWithData(c, true, "success")
 }
 
 // ListApp lists LLMs grouped by factory
@@ -154,27 +131,20 @@ func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 func (h *LLMHandler) ListApp(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
 	tenantID := user.ID
+	ctx := c.Request.Context()
 
 	modelType := c.Query("model_type")
 
-	llms, err := h.llmService.ListLLMs(tenantID, modelType)
+	llms, err := h.llmService.ListLLMs(ctx, tenantID, modelType)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"message": err.Error(),
-			"data":    false,
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"message": "success",
-		"data":    llms,
-	})
+	common.SuccessWithData(c, llms, "success")
 }

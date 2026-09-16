@@ -21,6 +21,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -28,13 +30,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+
+	"ragflow/internal/common"
 )
 
 func securityCtx(t *testing.T, remoteAddr string, headers map[string]string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
+	c, engine := gin.CreateTestContext(w)
+	// Same trust boundary as the production engine in cmd/ragflow_server.go.
+	if err := common.ConfigureTrustedProxies(engine, nil); err != nil {
+		t.Fatalf("ConfigureTrustedProxies: %v", err)
+	}
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/c1/webhook", strings.NewReader("{}"))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.RemoteAddr = remoteAddr
@@ -108,11 +116,19 @@ func TestValidateIPWhitelist_RejectForeign(t *testing.T) {
 	}
 }
 
-// TestValidateAuth_NoneIsAllow covers the auth_type=="none" no-op.
-func TestValidateAuth_NoneIsAllow(t *testing.T) {
+// TestValidateAuth_NoneRequiresOptIn covers the auth_type=="none"
+// opt-in: the old "fail open" default was closed by PR #14890.
+// An anonymous webhook must explicitly set allow_anonymous=true
+// to pass; the bare {"auth_type":"none"} block now rejects.
+func TestValidateAuth_NoneRequiresOptIn(t *testing.T) {
 	c := securityCtx(t, "1.2.3.4:0", nil)
-	if err := validateAuth(c, map[string]any{"auth_type": "none"}); err != nil {
-		t.Errorf("auth_type=none: err = %v, want nil", err)
+	// Bare auth_type=none → must reject (no opt-in).
+	if err := validateAuth(c, map[string]any{"auth_type": "none"}); err == nil {
+		t.Errorf("bare auth_type=none: want error (no opt-in), got nil")
+	}
+	// With explicit allow_anonymous=true → must pass.
+	if err := validateAuth(c, map[string]any{"auth_type": "none", "allow_anonymous": true}); err != nil {
+		t.Errorf("opt-in auth_type=none + allow_anonymous=true: err = %v, want nil", err)
 	}
 }
 
@@ -287,14 +303,16 @@ func TestValidateJWTAuth_ReservedClaimRejected(t *testing.T) {
 
 // TestValidateRateLimit_NoConfig covers the no-rate-limit branch.
 func TestValidateRateLimit_NoConfig(t *testing.T) {
-	if err := validateRateLimit("c1", map[string]any{}); err != nil {
+	ctx := t.Context()
+	if err := validateRateLimit(ctx, "c1", map[string]any{}); err != nil {
 		t.Errorf("no rate_limit: err = %v, want nil", err)
 	}
 }
 
 // TestValidateRateLimit_BadPer rejects unknown per window.
 func TestValidateRateLimit_BadPer(t *testing.T) {
-	err := validateRateLimit("c1", map[string]any{
+	ctx := t.Context()
+	err := validateRateLimit(ctx, "c1", map[string]any{
 		"rate_limit": map[string]any{"limit": 10, "per": "week"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid rate_limit.per") {
@@ -304,7 +322,8 @@ func TestValidateRateLimit_BadPer(t *testing.T) {
 
 // TestValidateRateLimit_BadLimit rejects non-positive limits.
 func TestValidateRateLimit_BadLimit(t *testing.T) {
-	err := validateRateLimit("c1", map[string]any{
+	ctx := t.Context()
+	err := validateRateLimit(ctx, "c1", map[string]any{
 		"rate_limit": map[string]any{"limit": 0, "per": "minute"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "must be > 0") {
@@ -376,5 +395,160 @@ func TestValidateTokenAuth_EmptyValueRejected(t *testing.T) {
 	c := securityCtx(t, "1.2.3.4:0", nil) // no header at all
 	if err := validateTokenAuth(c, cfg); err == nil {
 		t.Errorf("empty token_value: err = nil, want error")
+	}
+}
+
+// TestValidateWebhookSecurity_RejectsEmptyConfig guards PR
+// #14890: empty / nil security config used to be allowed by
+// default (fail-open), letting unauthenticated webhooks fire on
+// any canvas. The fix requires an explicit opt-in via
+// allow_anonymous=true. The handler must return the same generic
+// error the python fix uses, so a probe cannot distinguish
+// "missing config" from "exists but no allow_anonymous".
+func TestValidateWebhookSecurity_RejectsEmptyConfig(t *testing.T) {
+	if err := validateWebhookSecurity(map[string]any{}, newSecurityCtx("c1"), "c1"); err == nil {
+		t.Fatal("empty config: want error, got nil")
+	}
+	if err := validateWebhookSecurity(nil, newSecurityCtx("c1"), "c1"); err == nil {
+		t.Fatal("nil config: want error, got nil")
+	}
+}
+
+// TestValidateWebhookSecurity_RejectsAnonymousWithoutOptIn covers
+// the auth_type=none case without allow_anonymous — used to be
+// allowed silently. Must be rejected.
+func TestValidateWebhookSecurity_RejectsAnonymousWithoutOptIn(t *testing.T) {
+	cases := []map[string]any{
+		{"auth_type": "none"},
+		{"auth_type": "none", "allow_anonymous": false},
+		{"auth_type": "none", "allow_anonymous": "false"},
+		{"auth_type": ""},
+		{"auth_type": "", "allow_anonymous": "yes please"},
+	}
+	for _, cfg := range cases {
+		if err := validateWebhookSecurity(cfg, newSecurityCtx("c1"), "c1"); err == nil {
+			t.Errorf("cfg %v: want error, got nil", cfg)
+		}
+	}
+}
+
+// TestValidateWebhookSecurity_FailClosedSameError pins PR review
+// round 5 (#2): the two fail-closed branches (empty security block
+// vs. anonymous-without-opt-in) MUST return the same error so a
+// probe cannot distinguish them. Using errors.Is lets the test
+// survive cosmetic wording tweaks; the assertion is on identity.
+func TestValidateWebhookSecurity_FailClosedSameError(t *testing.T) {
+	missing := validateWebhookSecurity(map[string]any{}, newSecurityCtx("c1"), "c1")
+	if missing == nil {
+		t.Fatal("empty cfg: want errWebhookFailClosed, got nil")
+	}
+	anon := validateWebhookSecurity(map[string]any{"auth_type": "none"}, newSecurityCtx("c1"), "c1")
+	if anon == nil {
+		t.Fatal("auth_type=none: want errWebhookFailClosed, got nil")
+	}
+	if missing.Error() != anon.Error() {
+		t.Errorf("fail-closed branches must share one error string\n"+
+			"  missing-config: %q\n"+
+			"  anonymous:      %q", missing.Error(), anon.Error())
+	}
+	if !errors.Is(missing, errWebhookFailClosed) || !errors.Is(anon, errWebhookFailClosed) {
+		t.Errorf("both branches must be errors.Is(errWebhookFailClosed); missing=%v anon=%v", missing, anon)
+	}
+}
+
+// TestValidateWebhookSecurity_AllowsAnonymousWithOptIn is the
+// positive control: auth_type=none with an explicit
+// allow_anonymous=true must pass. The python frontend now
+// serialises this when the user picks "None" auth.
+func TestValidateWebhookSecurity_AllowsAnonymousWithOptIn(t *testing.T) {
+	cases := []map[string]any{
+		{"auth_type": "none", "allow_anonymous": true},
+		{"auth_type": "none", "allow_anonymous": "true"},
+		{"auth_type": "none", "allow_anonymous": "1"},
+		{"auth_type": "none", "allow_anonymous": "yes"},
+		{"auth_type": "none", "allow_anonymous": "on"},
+	}
+	for _, cfg := range cases {
+		if err := validateWebhookSecurity(cfg, newSecurityCtx("c1"), "c1"); err != nil {
+			t.Errorf("cfg %v: want nil, got %v", cfg, err)
+		}
+	}
+}
+
+// newSecurityCtx is a tiny helper that builds a *gin.Context with
+// just enough request surface for validateWebhookSecurity to run
+// without panicking on a nil receiver.
+func newSecurityCtx(canvasID string) *gin.Context {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+canvasID+"/webhook", nil)
+	return c
+}
+
+// TestValidateIPWhitelist_IgnoresForwardedForSpoof asserts that a peer
+// outside the trusted proxy list is judged by its socket address, not by
+// the X-Forwarded-For / X-Real-IP headers it sends. Under gin's
+// trust-everything default the spoofed header value would have satisfied
+// the allowlist.
+func TestValidateIPWhitelist_IgnoresForwardedForSpoof(t *testing.T) {
+	// Real peer 192.168.1.5 is not on the list; the headers claim 10.0.0.5.
+	c := securityCtx(t, "192.168.1.5:0", map[string]string{
+		"X-Forwarded-For": "10.0.0.5",
+		"X-Real-IP":       "10.0.0.5",
+	})
+	cfg := map[string]any{"ip_whitelist": []any{"10.0.0.5", "10.0.0.0/8"}}
+	err := validateIPWhitelist(c, cfg)
+	if err == nil || !strings.Contains(err.Error(), "not allowed by whitelist") {
+		t.Fatalf("spoofed X-Forwarded-For must not satisfy the whitelist: err = %v", err)
+	}
+	if strings.Contains(err.Error(), "10.0.0.5") {
+		t.Fatalf("rejection should report the real peer, not the spoofed header: %v", err)
+	}
+}
+
+// TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof confirms a peer that is
+// genuinely on the list still passes even when the headers claim otherwise.
+func TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof(t *testing.T) {
+	c := securityCtx(t, "10.0.0.5:0", map[string]string{
+		"X-Forwarded-For": "8.8.8.8",
+	})
+	cfg := map[string]any{"ip_whitelist": []any{"10.0.0.0/8"}}
+	if err := validateIPWhitelist(c, cfg); err != nil {
+		t.Fatalf("real peer on the list must pass: err = %v", err)
+	}
+}
+
+// TestValidateIPWhitelist_BehindBundledProxy covers the shipped deployment:
+// docker/entrypoint.sh runs nginx in the same container and
+// docker/nginx/ragflow.conf.golang proxies the webhook route to
+// 127.0.0.1:9384 with X-Forwarded-For set by proxy.conf. The socket peer is
+// therefore always loopback and the whitelist has to be evaluated against
+// the forwarded address, which the loopback default in
+// common.DefaultTrustedProxies makes gin.ClientIP() return.
+func TestValidateIPWhitelist_BehindBundledProxy(t *testing.T) {
+	cfg := map[string]any{"ip_whitelist": []any{"203.0.113.7"}}
+
+	allowed := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "203.0.113.7",
+	})
+	if err := validateIPWhitelist(allowed, cfg); err != nil {
+		t.Fatalf("listed caller forwarded by the bundled nginx must pass: err = %v", err)
+	}
+
+	denied := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "198.51.100.9",
+	})
+	err := validateIPWhitelist(denied, cfg)
+	if err == nil || !strings.Contains(err.Error(), "198.51.100.9") {
+		t.Fatalf("unlisted caller forwarded by the bundled nginx must be rejected by its own address: err = %v", err)
+	}
+
+	// A caller that reaches nginx through a further, undeclared hop is
+	// attributed to that hop, never to the leftmost value it chose itself.
+	chained := securityCtx(t, "127.0.0.1:0", map[string]string{
+		"X-Forwarded-For": "203.0.113.7, 198.51.100.9",
+	})
+	err = validateIPWhitelist(chained, cfg)
+	if err == nil || !strings.Contains(err.Error(), "198.51.100.9") {
+		t.Fatalf("spoofed leftmost X-Forwarded-For entry must not pass: err = %v", err)
 	}
 }

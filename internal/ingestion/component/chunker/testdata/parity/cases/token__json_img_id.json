@@ -1,0 +1,26 @@
+{
+ "id": "token__json_img_id",
+ "component": "TokenChunker",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "img.json",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "Text before the image.",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "an image",
+    "doc_type_kwd": "image",
+    "img_id": "img-abc-123"
+   }
+  ]
+ },
+ "notes": "Image chunk must carry img_id through to output."
+}

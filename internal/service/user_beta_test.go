@@ -34,6 +34,7 @@ func setupUserBetaServiceDB(t *testing.T) {
 }
 
 func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
+	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	accessToken := "access-token"
@@ -62,7 +63,7 @@ func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
 
 	svc := NewUserService()
 	for _, auth := range []string{"Bearer " + beta, beta, "Bearer    " + beta} {
-		user, code, err := svc.GetUserByBetaAPIToken(auth)
+		user, code, err := svc.GetUserByBetaAPIToken(ctx, auth)
 		if err != nil {
 			t.Fatalf("GetUserByBetaAPIToken(%q) failed: %v", auth, err)
 		}
@@ -76,9 +77,10 @@ func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
 }
 
 func TestUserServiceGetUserByBetaAPITokenRejectsInvalidToken(t *testing.T) {
+	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
-	_, code, err := NewUserService().GetUserByBetaAPIToken("Bearer missing")
+	_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, "Bearer missing")
 	if err == nil {
 		t.Fatal("expected error for invalid beta token")
 	}
@@ -88,10 +90,11 @@ func TestUserServiceGetUserByBetaAPITokenRejectsInvalidToken(t *testing.T) {
 }
 
 func TestUserServiceGetUserByBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testing.T) {
+	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	for _, auth := range []string{"Bearer ", "   ", "\t"} {
-		_, code, err := NewUserService().GetUserByBetaAPIToken(auth)
+		_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, auth)
 		if err == nil {
 			t.Fatalf("expected error for auth %q", auth)
 		}
@@ -102,6 +105,7 @@ func TestUserServiceGetUserByBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testin
 }
 
 func TestUserServiceGetUserByBetaAPITokenRejectsUserWithEmptyAccessToken(t *testing.T) {
+	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	status := "1"
@@ -128,7 +132,7 @@ func TestUserServiceGetUserByBetaAPITokenRejectsUserWithEmptyAccessToken(t *test
 		t.Fatalf("failed to create api token: %v", err)
 	}
 
-	_, code, err := NewUserService().GetUserByBetaAPIToken("Bearer " + beta)
+	_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, "Bearer "+beta)
 	if err == nil {
 		t.Fatal("expected error for empty access token")
 	}

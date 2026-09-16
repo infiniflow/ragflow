@@ -25,15 +25,16 @@ from pyobvector.util import ObVersion
 from common import settings
 from common.decorator import singleton
 
-ATTEMPT_TIME = 2
+MAX_RETRIES = 6
+ATTEMPT_TIME = MAX_RETRIES
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
 OB_QUERY_TIMEOUT = int(os.environ.get("OB_QUERY_TIMEOUT", "100_000_000"))
 
-logger = logging.getLogger('ragflow.ob_conn_pool')
+logger = logging.getLogger("ragflow.ob_conn_pool")
 
 
 @singleton
 class OceanBaseConnectionPool:
-
     def __init__(self):
         self.client = None
         self.es = None  # HybridSearch client
@@ -70,7 +71,7 @@ class OceanBaseConnectionPool:
         max_overflow = int(os.environ.get("OB_MAX_OVERFLOW", max(max_connections // 2, 10)))
         pool_timeout = int(os.environ.get("OB_POOL_TIMEOUT", "30"))
 
-        for _ in range(ATTEMPT_TIME):
+        for attempt in range(MAX_RETRIES):
             try:
                 self.client = ObVecClient(
                     uri=self.uri,
@@ -85,11 +86,27 @@ class OceanBaseConnectionPool:
                 )
                 break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting OceanBase {self.uri} to be healthy.")
-                time.sleep(5)
+                logger.warning(
+                    "OceanBase %s connection attempt %d/%d failed: %s",
+                    self.uri,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                if self.client is not None:
+                    try:
+                        self.client.engine.dispose()
+                    except Exception:
+                        logger.exception(
+                            "Failed to dispose partially-initialized OceanBase engine before retry.",
+                        )
+                time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt))
+                continue
 
         if self.client is None:
-            msg = f"OceanBase {self.uri} connection failed after {ATTEMPT_TIME} attempts."
+            msg = f"OceanBase {self.uri} connection failed after {MAX_RETRIES} attempts."
             logger.error(msg)
             raise Exception(msg)
 
@@ -112,9 +129,7 @@ class OceanBaseConnectionPool:
 
         ob_version = ObVersion.from_db_version_string(version_str)
         if ob_version < ObVersion.from_db_version_nums(4, 3, 5, 1):
-            raise Exception(
-                f"The version of OceanBase needs to be higher than or equal to 4.3.5.1, current version is {version_str}"
-            )
+            raise Exception(f"The version of OceanBase needs to be higher than or equal to 4.3.5.1, current version is {version_str}")
 
     def _try_to_update_ob_query_timeout(self):
         try:
@@ -135,7 +150,7 @@ class OceanBaseConnectionPool:
             logger.warning(f"Failed to set 'ob_query_timeout' variable: {str(e)}")
 
     def _init_hybrid_search(self, max_connections, max_overflow, pool_timeout):
-        enable_hybrid_search = os.getenv('ENABLE_HYBRID_SEARCH', 'false').lower() in ['true', '1', 'yes', 'y']
+        enable_hybrid_search = os.getenv("ENABLE_HYBRID_SEARCH", "false").lower() in ["true", "1", "yes", "y"]
         if enable_hybrid_search:
             try:
                 self.es = HybridSearch(

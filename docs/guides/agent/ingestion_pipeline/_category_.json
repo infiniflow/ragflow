@@ -1,0 +1,11 @@
+{
+  "label": "Ingestion Pipeline",
+  "position": 8,
+  "link": {
+    "type": "generated-index",
+    "description": "Configure and use Ingestion Pipeline in RAGFlow Agents."
+  },
+  "customProps": {
+    "categoryIcon": "RagAiAgent"
+  }
+}

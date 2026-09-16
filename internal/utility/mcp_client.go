@@ -112,7 +112,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 
 	switch strings.ToLower(opts.ServerType) {
 	case TransportStreamableHTTP:
-		return fetchToolsStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient)
+		return fetchToolsStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.Timeout)
 	case TransportSSE:
 		return fetchToolsSSE(connectCtx, opts.URL, headers, opts.HTTPClient)
 	default:
@@ -207,15 +207,25 @@ func initializeParams() map[string]interface{} {
 
 // ---------- streamable-HTTP transport ----------
 
-const sessionHeader = "Mcp-Session-Id"
+const (
+	sessionHeader                      = "Mcp-Session-Id"
+	maxStreamableSessionCleanupTimeout = 5 * time.Second
+)
 
-func fetchToolsStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client) ([]Tool, error) {
+func streamableSessionCleanupBudget(timeout time.Duration) time.Duration {
+	return min(timeout, maxStreamableSessionCleanupTimeout)
+}
+
+func fetchToolsStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, cleanupTimeout time.Duration) ([]Tool, error) {
 	sessionID, initRes, err := streamableSend(ctx, client, endpoint, "", headers, jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		ID:      0,
 		Method:  "initialize",
 		Params:  initializeParams(),
 	}, true)
+	if sessionID != "" {
+		defer terminateStreamableSessionBestEffort(ctx, client, endpoint, sessionID, headers, cleanupTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +252,47 @@ func fetchToolsStreamableHTTP(ctx context.Context, endpoint string, headers map[
 		return nil, formatMCPError("tools/list", listRes.Error)
 	}
 	return parseToolsResult(listRes.Result)
+}
+
+func terminateStreamableSessionBestEffort(ctx context.Context, client *http.Client, endpoint, sessionID string, headers map[string]string, timeout time.Duration) {
+	if sessionID == "" {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), streamableSessionCleanupBudget(timeout))
+	defer cancel()
+	cleanupClient := *client
+	cleanupClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	BestEffort("terminate MCP streamable HTTP session", func() error {
+		req, err := http.NewRequestWithContext(cleanupCtx, http.MethodDelete, endpoint, nil)
+		if err != nil {
+			return fmt.Errorf("build MCP session termination request: %w", err)
+		}
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		req.Header.Set(sessionHeader, sessionID)
+
+		resp, err := cleanupClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("send MCP session termination request: %w", err)
+		}
+		_, drainErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		closeErr := resp.Body.Close()
+		if drainErr != nil {
+			return fmt.Errorf("drain MCP session termination response: %w", drainErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close MCP session termination response: %w", closeErr)
+		}
+		if (resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices) || resp.StatusCode == http.StatusMethodNotAllowed {
+			return nil
+		}
+		return fmt.Errorf("MCP server returned HTTP %d for session termination", resp.StatusCode)
+	})
 }
 
 // streamableSend POSTs a JSON-RPC payload to the streamable-HTTP endpoint.
@@ -295,19 +346,20 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 		sessionID = sid
 	}
 	if strings.Contains(contentType, "text/event-stream") {
-		r, err := readJSONRPCFromSSE(resp.Body, payload.ID)
+		var r *jsonRPCResponse
+		r, err = readJSONRPCFromSSE(resp.Body, payload.ID)
 		if err != nil {
-			return "", nil, err
+			return sessionID, nil, err
 		}
 		return sessionID, r, nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return "", nil, fmt.Errorf("read MCP response: %w", err)
+		return sessionID, nil, fmt.Errorf("read MCP response: %w", err)
 	}
 	parsed, err := parseJSONRPC(raw, payload.ID)
 	if err != nil {
-		return "", nil, err
+		return sessionID, nil, err
 	}
 	return sessionID, parsed, nil
 }
@@ -315,6 +367,15 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 // ---------- SSE transport ----------
 
 func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client) ([]Tool, error) {
+	result, err := requestSSE(ctx, endpoint, headers, client, "tools/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseToolsResult(result)
+}
+
+// requestSSE initializes a session and performs one JSON-RPC request.
+func requestSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, method string, params any) (json.RawMessage, error) {
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build SSE request: %w", err)
@@ -368,7 +429,10 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	}()
 
 	postOnce := func(payload jsonRPCRequest) error {
-		body, _ := json.Marshal(payload)
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("encode MCP SSE request: %w", err)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("build SSE POST: %w", err)
@@ -398,7 +462,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	// Register the waiter BEFORE issuing the POST so a fast server that
 	// pushes its response before our wait() call doesn't drop the delivery.
 	initWaiter := pending.register(0)
-	if err := postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 0, Method: "initialize", Params: initializeParams()}); err != nil {
+	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 0, Method: "initialize", Params: initializeParams()}); err != nil {
 		pending.cancel(0)
 		return nil, err
 	}
@@ -409,11 +473,11 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	if initRes.Error != nil {
 		return nil, formatMCPError("initialize", initRes.Error)
 	}
-	if err := postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, Method: "notifications/initialized"}); err != nil {
+	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, Method: "notifications/initialized"}); err != nil {
 		return nil, err
 	}
 	listWaiter := pending.register(1)
-	if err := postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: "tools/list"}); err != nil {
+	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: method, Params: params}); err != nil {
 		pending.cancel(1)
 		return nil, err
 	}
@@ -422,9 +486,9 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 	if listRes.Error != nil {
-		return nil, formatMCPError("tools/list", listRes.Error)
+		return nil, formatMCPError(method, listRes.Error)
 	}
-	return parseToolsResult(listRes.Result)
+	return listRes.Result, nil
 }
 
 // waitForEndpoint reads SSE events until an "endpoint" event arrives and
@@ -445,11 +509,13 @@ func waitForEndpoint(ctx context.Context, stream *sseReader, base string) (strin
 			if ref == "" {
 				return "", errors.New("MCP SSE endpoint event has empty data")
 			}
-			baseURL, err := url.Parse(base)
+			var baseURL *url.URL
+			baseURL, err = url.Parse(base)
 			if err != nil {
 				return "", fmt.Errorf("parse MCP SSE base url: %w", err)
 			}
-			rel, err := url.Parse(ref)
+			var rel *url.URL
+			rel, err = url.Parse(ref)
 			if err != nil {
 				return "", fmt.Errorf("parse MCP SSE endpoint data: %w", err)
 			}
@@ -717,21 +783,21 @@ func parseToolsResult(raw json.RawMessage) ([]Tool, error) {
 		return nil, fmt.Errorf("parse tools result: %w", err)
 	}
 	tools := make([]Tool, 0, len(envelope.Tools))
-	for _, raw := range envelope.Tools {
-		name, _ := raw["name"].(string)
+	for _, rawMap := range envelope.Tools {
+		name, _ := rawMap["name"].(string)
 		if name == "" {
 			continue
 		}
-		desc, _ := raw["description"].(string)
+		desc, _ := rawMap["description"].(string)
 		var schema map[string]interface{}
-		if s, ok := raw["inputSchema"].(map[string]interface{}); ok {
+		if s, ok := rawMap["inputSchema"].(map[string]interface{}); ok {
 			schema = s
 		}
 		tools = append(tools, Tool{
 			Name:        name,
 			Description: desc,
 			InputSchema: schema,
-			Raw:         raw,
+			Raw:         rawMap,
 		})
 	}
 	return tools, nil
@@ -748,7 +814,7 @@ func formatMCPError(method string, e *jsonRPCError) error {
 // when a low-level connection fails (authentication / network).
 func mapMCPConnectionError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return errors.New("Timeout connecting to MCP server")
+		return fmt.Errorf("timeout connecting to MCP server: %w", err)
 	}
-	return fmt.Errorf("Connection failed (possibly due to auth error). Please check authentication settings first: %v", err)
+	return fmt.Errorf("connection failed (possibly due to auth error). Please check authentication settings first: %w", err)
 }

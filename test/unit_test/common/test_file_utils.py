@@ -107,12 +107,15 @@ class TestGetProjectBaseDirectory:
 
 
 # Parameterized tests for different path combinations
-@pytest.mark.parametrize("path_args,expected_suffix", [
-    ((), ""),  # No additional arguments
-    (("src",), "src"),
-    (("data", "models"), os.path.join("data", "models")),
-    (("config", "app", "settings.json"), os.path.join("config", "app", "settings.json")),
-])
+@pytest.mark.parametrize(
+    "path_args,expected_suffix",
+    [
+        ((), ""),  # No additional arguments
+        (("src",), "src"),
+        (("data", "models"), os.path.join("data", "models")),
+        (("config", "app", "settings.json"), os.path.join("config", "app", "settings.json")),
+    ],
+)
 def test_various_path_combinations(path_args, expected_suffix):
     """Test various combinations of path arguments"""
     base_path = get_project_base_directory()

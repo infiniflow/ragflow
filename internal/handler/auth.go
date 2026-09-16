@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -37,9 +38,10 @@ type AuthHandler struct {
 // so the test suite can swap in a stub without spinning up the
 // full UserService (which requires a live Redis + JWT secret).
 type userTokenResolver interface {
-	GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(token string) (*entity.User, common.ErrorCode, error)
+	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
+	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
+	GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error)
 }
 
 // NewAuthHandler create auth handler
@@ -49,17 +51,16 @@ func NewAuthHandler() *AuthHandler {
 	}
 }
 
-// BetaAuthMiddleware resolves a `beta` API token from the Authorization
-// header and sets the user on the gin.Context, mirroring Python's
-// @login_required(auth_types=AUTH_BETA) used by /chatbots and
-// /agentbots route groups.
+// BetaAuthMiddleware resolves a user token, API token, or `beta` API token
+// from the Authorization header and sets the user on the gin.Context.
 //
-// A beta token can also be a regular user JWT — in that case we
-// delegate to the existing AuthMiddleware logic. Order of precedence:
+// A beta token can also be a regular user JWT or API token. Order of
+// precedence:
 //
-//  1. JWT (regular session) → existing UserService.GetUserByToken
-//  2. Beta API token          → GetUserByBetaAPIToken
-//  3. Fall through            → 401
+//  1. Beta API token         → GetUserByBetaAPIToken
+//  2. JWT (regular session) → existing UserService.GetUserByToken
+//  3. API token              → GetUserByAPIToken
+//  4. Fall through           → code 102 "Authorization is not valid!"
 //
 // IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
 // prefix. UserService.GetUserByToken accepts the raw Authorization
@@ -69,26 +70,45 @@ func NewAuthHandler() *AuthHandler {
 // regular user token must keep working here too.
 func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
-			jsonError(c, common.CodeUnauthorized, "Authorization required")
+			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
+				auth = cookie
+			}
+		}
+
+		if auth == "" {
+			// Mirror Python's login_required(auth_types=AUTH_BETA): any auth
+			// failure on beta endpoints is a business error, not an HTTP 401.
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Authorization is not valid!")
 			c.Abort()
 			return
 		}
-		// Try regular user session first (handles JWT, Bearer, or
-		// raw access_token — same dispatch as AuthMiddleware()).
-		if u, code, err := h.userService.GetUserByToken(auth); err == nil && code == common.CodeSuccess {
+		// AUTH_JWT
+		if u, code, err := h.userService.GetUserByToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			c.Next()
+			return
+		}
+		// Then try a regular API token (non-beta public bot flow).
+		if u, code, err := h.userService.GetUserByAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			c.Set("user", u)
+			c.Set("auth_via_api_token", true)
 			c.Next()
 			return
 		}
 		// Fall back to beta API token (public bot access).
-		if u, code, err := h.userService.GetUserByBetaAPIToken(auth); err == nil && code == common.CodeSuccess {
+		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			c.Set("user", u)
+			if tok, terr := h.userService.GetAPITokenByBeta(ctx, auth); terr == nil && tok != nil && tok.DialogID != nil {
+				c.Set("agent_id", *tok.DialogID)
+			}
 			c.Next()
 			return
 		}
-		jsonError(c, common.CodeUnauthorized, "Invalid auth credentials")
+		// Mirror Python's login_required(auth_types=AUTH_BETA).
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Authorization is not valid!")
 		c.Abort()
 	}
 }
@@ -97,12 +117,10 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 // Validates that the user is authenticated and is a superuser (admin)
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
-				"message": "Missing Authorization header",
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Missing Authorization header")
 			c.Abort()
 			return
 		}
@@ -110,14 +128,11 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		authViaAPIToken := false
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(token)
+		user, code, err := h.userService.GetUserByToken(ctx, token)
 		if err != nil {
-			user, code, err = h.userService.GetUserByAPIToken(token)
+			user, code, err = h.userService.GetUserByAPIToken(ctx, token)
 			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"code":    code,
-					"message": "Invalid access token",
-				})
+				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 				c.Abort()
 				return
 			}
@@ -125,10 +140,8 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if user.IsSuperuser != nil && *user.IsSuperuser {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    common.CodeForbidden,
-				"message": "Super user shouldn't access the URL",
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Super user shouldn't access the URL")
+			c.Abort()
 			return
 		}
 
@@ -136,11 +149,8 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			license := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server license %s", license.Reason)
 			common.Warn(errMsg)
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"code":    common.CodeUnauthorized,
-				"message": errMsg,
-				"data":    "No",
-			})
+			common.ResponseWithHttpCodeData(c, http.StatusServiceUnavailable, common.CodeUnauthorized, "No", errMsg)
+			c.Abort()
 			return
 		}
 

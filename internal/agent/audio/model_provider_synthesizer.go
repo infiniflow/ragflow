@@ -40,7 +40,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
 	"strconv"
 	"time"
 
@@ -87,7 +87,7 @@ func SetModelProviderSynthesizer(fn ModelProviderFunc) {
 
 type modelProviderSynthesizer struct {
 	fn    ModelProviderFunc
-	redis *redis.RedisClient
+	redis *redis.Client
 }
 
 func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req SynthesizeRequest) (*SynthesizeResponse, error) {
@@ -108,7 +108,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	// log and fall through to the model provider.
 	cacheKey := buildTTSCacheKey(tenantID, req)
 	if cacheKey != "" && m.redis != nil {
-		if cached, _ := m.redis.Get(cacheKey); cached != "" {
+		if cached, _ := m.redis.Get(ctx, cacheKey); cached != "" {
 			if b, err := hex.DecodeString(cached); err == nil && len(b) > 0 {
 				return &SynthesizeResponse{Audio: b, MediaType: "audio/mpeg"}, nil
 			}
@@ -139,7 +139,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	if cacheKey != "" && m.redis != nil {
 		ttl := ttsCacheTTL()
 		if ttl > 0 {
-			m.redis.Set(cacheKey, hex.EncodeToString(resp.Audio), ttl)
+			m.redis.Set(ctx, cacheKey, hex.EncodeToString(resp.Audio), ttl)
 		}
 	}
 	return resp, nil
@@ -167,7 +167,7 @@ func buildTTSCacheKey(tenantID string, req SynthesizeRequest) string {
 // ttsCacheTTL reads RAGFLOW_TTS_CACHE_TTL_SECONDS; default 7 days.
 // Matches the Python `_ttl_seconds` default of 7 * 24 * 60 * 60.
 func ttsCacheTTL() time.Duration {
-	raw := os.Getenv("RAGFLOW_TTS_CACHE_TTL_SECONDS")
+	raw := common.GetEnv(common.EnvRAGFlowTTSCacheTTLSeconds)
 	if raw == "" {
 		return 7 * 24 * time.Hour
 	}

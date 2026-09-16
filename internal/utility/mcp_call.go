@@ -14,17 +14,6 @@
 //  limitations under the License.
 //
 
-// Phase 3.7: MCP tools/call implementation. The mcp_client.go
-// file handles tools/list discovery; this file adds the
-// tools/call invocation path so the MCPToolAdapter can return
-// real results instead of "not yet implemented" errors.
-//
-// The implementation focuses on the streamable-HTTP transport
-// (spec 2025-03-26) because that is the dominant transport for
-// modern MCP servers. The legacy SSE transport's session
-// lifecycle is more complex; deferring it matches the rest of
-// the package's "loud-fail with a clear error" pattern.
-
 package utility
 
 import (
@@ -102,9 +91,15 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 		// Empty ServerType is treated as streamable-http because
 		// that is the default per the spec. Servers explicitly
 		// declaring the legacy SSE transport get the legacy path.
-		return callToolStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.ToolName, opts.Arguments)
+		return callToolStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.ToolName, opts.Arguments, opts.Timeout)
 	case TransportSSE:
-		return nil, errors.New("MCP tools/call on legacy SSE transport is not yet implemented in Go (Phase 3.7 deferred; use streamable-http)")
+		result, err := requestSSE(connectCtx, opts.URL, headers, opts.HTTPClient, "tools/call", map[string]any{
+			"name": opts.ToolName, "arguments": opts.Arguments,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return parseCallResult(result)
 	default:
 		return nil, fmt.Errorf("Unsupported MCP server type.")
 	}
@@ -112,15 +107,18 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 
 // callToolStreamableHTTP drives the streamable-HTTP session:
 // initialize → notifications/initialized → tools/call. The
-// session is torn down at the end (the server is free to
-// garbage-collect the session id; future calls re-initialize).
-func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, toolName string, args json.RawMessage) (*CallResult, error) {
+// session is explicitly terminated at the end; future calls
+// re-initialize.
+func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, toolName string, args json.RawMessage, cleanupTimeout time.Duration) (*CallResult, error) {
 	sessionID, initRes, err := streamableSend(ctx, client, endpoint, "", headers, jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		ID:      0,
 		Method:  "initialize",
 		Params:  initializeParams(),
 	}, true)
+	if sessionID != "" {
+		defer terminateStreamableSessionBestEffort(ctx, client, endpoint, sessionID, headers, cleanupTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +126,7 @@ func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[st
 		return nil, formatMCPError("initialize", initRes.Error)
 	}
 
-	if _, _, err := streamableSend(ctx, client, endpoint, sessionID, headers, jsonRPCRequest{
+	if _, _, err = streamableSend(ctx, client, endpoint, sessionID, headers, jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		Method:  "notifications/initialized",
 	}, false); err != nil {
@@ -137,7 +135,7 @@ func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[st
 
 	var argsAny any
 	if len(args) > 0 {
-		if err := json.Unmarshal(args, &argsAny); err != nil {
+		if err = json.Unmarshal(args, &argsAny); err != nil {
 			return nil, fmt.Errorf("mcp tools/call: arguments are not valid JSON: %w", err)
 		}
 	}

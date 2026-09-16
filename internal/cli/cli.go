@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
+
 	//"os/signal"
 	"path/filepath"
 	"strconv"
@@ -79,6 +81,7 @@ type CommandLineConfig struct {
 	Verbose           bool
 	Interactive       bool
 	OutputFormat      OutputFormat
+	ShowVersion       bool
 	Command           *string
 }
 
@@ -108,6 +111,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		CLIMode:           APIMode,
 		AdminClientConfig: nil,
 		ShowHelp:          false,
+		ShowVersion:       false,
 		Verbose:           false,
 		Interactive:       true,
 		OutputFormat:      OutputFormatTable,
@@ -137,6 +141,8 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			commandLineConfig.CLIMode = AdminMode
 		case "--help", "-help":
 			commandLineConfig.ShowHelp = true
+		case "--version", "-V":
+			commandLineConfig.ShowVersion = true
 		default:
 			if !strings.HasPrefix(arg, "-") {
 				commandLineConfig.Interactive = false
@@ -168,7 +174,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--help", "-help":
+			case "-v", "--verbose", "--help", "-help", "--version", "-V":
 				continue
 			case "--admin", "-admin":
 				return nil, fmt.Errorf("unexpected parameter: --admin")
@@ -186,7 +192,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					defaultApiServerConfig.IP = h
 					defaultApiServerConfig.Port = port
@@ -237,14 +243,14 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		data, err := os.ReadFile(configFile)
 		if err == nil {
 			if err = yaml.Unmarshal(data, &config); err != nil {
-				return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+				return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 			}
 			if config.Host != "" {
 				var h string
 				var port int
 				h, port, err = parseHostPort(config.Host)
 				if err != nil {
-					return nil, fmt.Errorf("invalid host in config file: %v", err)
+					return nil, fmt.Errorf("invalid host in config file: %w", err)
 				}
 				if defaultApiServerConfig.IP == "" {
 					defaultApiServerConfig.IP = h
@@ -271,7 +277,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		} else {
 			if configFile == "rf.yml" && os.IsNotExist(err) {
 			} else {
-				return nil, fmt.Errorf("failed to read %s: %v", configFile, err)
+				return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
 			}
 		}
 
@@ -309,7 +315,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					i++
 				}
 				continue
-			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help", "--version", "-V":
 				continue
 			case "-t", "--token":
 				return nil, fmt.Errorf("token is invalid in admin mode")
@@ -329,7 +335,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					AdminConfig.AdminHost = h
 					AdminConfig.AdminPort = port
@@ -388,7 +394,7 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+		return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 	}
 
 	return &config, nil
@@ -398,12 +404,12 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 func LoadConfigFileFromPath(path string) (*ConfigFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
 	return &config, nil
@@ -446,6 +452,7 @@ Options:
   -v, --verbose          Enable verbose logging (shows debug info)
   --admin, -admin        Run in admin mode
   --help                 Show this help message
+  -V, --version          Show version information
 
 Mode:
   --admin, -admin        Run in admin mode (prompt: RAGFlow(admin)>)
@@ -482,7 +489,7 @@ Commands:
 
 // HistoryFile returns the path to the history file
 func HistoryFile() string {
-	return os.Getenv("HOME") + "/" + historyFileName
+	return common.GetEnv(common.EnvHome) + "/" + historyFileName
 }
 
 const historyFileName = ".ragflow_cli_history"
@@ -736,7 +743,7 @@ func (c *CLI) Run() error {
 			// the command handlers. Don't echo that back to the operator
 			// verbatim — log the full error server-side for debugging, and
 			// show only the error type/message via a sanitized wrapper.
-			fmt.Printf("CLI error: %s\n", sanitizeCLIError(err))
+			fmt.Printf("ragflow-cli error: %s\n", sanitizeCLIError(err))
 		}
 	}
 
@@ -832,8 +839,10 @@ Commands (User Mode):
   USE MODEL 'provider/instance/model';                   - Set current model for chat
   CHAT 'message';                                        - Chat using current model
   CHAT 'provider/instance/model' 'message';              - Chat with specified model
-  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat 
+  OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat
                                                            (run openai_chat -h for detailed options)
+  CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
+                                                           (run chat completions -h for detailed options)
 
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
@@ -974,18 +983,17 @@ Datasets syntax (full filter set):
     keyword                 true|false  Enable keyword extraction via LLM
     use_kg                  true|false  Enable knowledge-graph augmentation
     rerank_id               'id'      Rerank model to apply
-    tenant_rerank_id        'id'      Tenant-scoped rerank model
-    search_id               'id'      Idempotency / search-session id
-    meta_data_filter        '<json>'  Metadata filter (must be valid JSON)
+    search_id               'id'      Apply a saved search configuration
+    metadata_condition      '<json>'  Metadata filter (must be valid JSON)
     cross_languages         ['a','b'] Source languages to translate from
-    doc_ids                 ['d1',...] Restrict to specific document ids
+    document_ids            ['d1',...] Restrict to specific document ids
 
   Examples:
     search 'AI' on datasets 'kb_chinese' with top_k 10;
     search 'AI' on datasets 'kb1' 'kb2' with top_k 20 similarity_threshold 0.3 cross_languages ['Chinese']
-        doc_ids ['d1', 'd2'];
+        document_ids ['d1', 'd2'];
     search 'manual' on datasets 'kb1' with
-        meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+        metadata_condition '{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]}';
 `
 	fmt.Println(help)
 }
@@ -1038,6 +1046,52 @@ Examples:
   OPENAI_CHAT 'cid' 'Hello' stream true;
   OPENAI_CHAT 'cid' 'next' system 'You are concise.' history 'user:q1;assistant:a1';
   OPENAI_CHAT 'cid' 'Hello' extra_body '{"reference":true,"metadata_condition":{"logic":"and","conditions":[{"key":"doc_type","operator":"is","value":"faq"}]}}';
+`
+	fmt.Println(help)
+}
+
+// printChatCompletionsHelp prints help for the CHAT COMPLETIONS command.
+func printChatCompletionsHelp() {
+	help := `CHAT COMPLETIONS — hit POST /api/v1/chat/completions
+
+Syntax:
+  CHAT COMPLETIONS 'question'
+       chat_id '...'
+       [session "..."] [llm "..."]
+       [system "..."] [history "..."] [history_delimiter "<char>"]
+       [temperature <float>] [max_tokens <int>] [stream <bool>]
+       [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
+       [legacy <bool>] ;
+
+Required positional:
+  'question'  the user question
+
+Named options (any order; all optional with defaults):
+  chat_id           '...'  the dialog id (optional)
+  session           '...'  existing session/conversation id
+  llm               '...'  override the dialog's LLM
+  system            '...'  override the system prompt
+  history           '...'  prior turns: user:...;assistant:...;user:...
+  history_delimiter '...'  turn separator for history (default ';')
+  temperature       <float>  0..2  (default 0)
+  max_tokens        <int>    (default 0 = server/model default)
+  stream            <bool>   true|false  (default false)
+  top_p             <float>  0..1
+  frequency_penalty <float>  -2..2
+  presence_penalty  <float>  -2..2
+  legacy            <bool>   use legacy SSE format
+
+Defaults:
+  stream            false
+  temperature       0
+  history_delimiter ';'
+
+Examples:
+  CHAT COMPLETIONS 'Hello, how are you?' chat_id 'cid';
+  CHAT COMPLETIONS 'Explain quantum computing' chat_id 'cid' stream true;
+  CHAT COMPLETIONS 'Next question' chat_id 'cid' session 'sess-abc123';
+  CHAT COMPLETIONS 'What about X?' chat_id 'cid' system 'You are a helpful assistant.' history 'user:Tell me about Y;assistant:Y is...';
+  CHAT COMPLETIONS 'Summarize' chat_id 'cid' llm 'Qwen/Qwen3-8B@ling@SILICONFLOW' temperature 0.7 max_tokens 512;
 `
 	fmt.Println(help)
 }

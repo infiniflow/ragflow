@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +27,7 @@ import (
 
 func TestDeepL_BuildRequest(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotMethod, gotAuth, gotCT, gotPath string
 	var gotForm url.Values
@@ -52,7 +52,7 @@ func TestDeepL_BuildRequest(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"api_key":"key-xyz:fx","text":"Hello world","source_lang":"en","target_lang":"de"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -98,6 +98,7 @@ func TestDeepL_BuildRequest(t *testing.T) {
 
 func TestDeepL_DefaultLanguages(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +113,7 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 		Transport: rewriteHostTransport(srv.URL),
 	})
 	tool := NewDeepLToolWith(helper)
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"x:fx","text":"Hello"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -126,13 +127,14 @@ func TestDeepL_DefaultLanguages(t *testing.T) {
 
 func TestDeepL_RequiresAPIKeyAndText(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"","text":"Hello"}`); err == nil {
 		t.Error("expected error for missing api_key")
 	}
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"api_key":"x","text":""}`); err == nil {
 		t.Error("expected error for empty text")
 	}
@@ -140,9 +142,10 @@ func TestDeepL_RequiresAPIKeyAndText(t *testing.T) {
 
 func TestDeepL_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewDeepLTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -151,5 +154,70 @@ func TestDeepL_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "DeepL") {
 		t.Errorf("Desc = %q, want to mention DeepL", info.Desc)
+	}
+}
+
+// TestBeOutput_MirrorsPythonContract guards the Go-side
+// component.BeOutput helper added for parity with
+// agent/component/base.py:ComponentBase.be_output (PR #16363).
+// Downstream consumers (Message, VariableAggregator) read
+// `out["content"]`; the helper must produce that key.
+// NOTE: live in component/base_test.go (BeOutput is in the
+// component package, not the tool package).
+//
+// TestDeepL_TranslationFailureReturnsError mirrors PR #16363
+// (regression for the missing return in DeepL's _run except branch,
+// which raised AttributeError before any error envelope reached the
+// caller). The Go port already had every error path returning the
+// error envelope + error value, so this test guards against any
+// future change that drops the `return` keyword and lets the
+// function fall through to a non-error return.
+//
+// The test uses rewriteHostTransport (the same pattern as the
+// other DeepL tests) to swap the request host to the stub
+// httptest server while preserving the path. This avoids mutating
+// the package-level deeplFreeEndpoint / deeplProEndpoint globals
+// — mutating those would race against TestDeepL_BuildRequest
+// when both tests run in the same package.
+func TestDeepL_TranslationFailureReturnsError(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	// 500 Internal Server Error from a stub DeepL endpoint.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	tool := NewDeepLToolWith(helper)
+	out, err := tool.InvokableRun(ctx,
+		`{"api_key":"key-xyz:fx","text":"hello","source_lang":"EN","target_lang":"ZH"}`)
+	if err == nil {
+		t.Fatalf("expected non-nil error, got nil; out=%s", out)
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("err = %v, want to contain 500", err)
+	}
+	if !strings.Contains(out, "_ERROR") {
+		t.Errorf("out = %q, want to contain _ERROR envelope", out)
+	}
+	if !strings.Contains(out, "500") {
+		t.Errorf("out = %q, want error envelope to mention 500", out)
+	}
+
+	// Decode the JSON envelope to confirm shape parity with the
+	// Python test (the model sees _ERROR field, not raw stack).
+	var env deeplEnvelope
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON envelope: %v (out=%s)", err, out)
+	}
+	if env.Error == "" {
+		t.Errorf("envelope.Error empty; want non-empty")
+	}
+	if len(env.Results) != 0 {
+		t.Errorf("envelope.Results should be empty on error, got %v", env.Results)
 	}
 }

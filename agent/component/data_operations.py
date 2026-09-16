@@ -19,55 +19,47 @@ import os
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
 
+
 class DataOperationsParam(ComponentParamBase):
     """
     Define the Data Operations component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.query = []
         self.operations = "literal_eval"
         self.select_keys = []
-        self.filter_values=[]
-        self.updates=[]
-        self.remove_keys=[]
-        self.rename_keys=[]
-        self.outputs = {
-            "result": {
-                "value": [],
-                "type": "Array of Object"
-            }
-        }
-    
-    def check(self):
-        self.check_valid_value(self.operations, "Support operations", ["select_keys", "literal_eval","combine","filter_values","append_or_update","remove_keys","rename_keys"])
-    
-    
+        self.filter_values = []
+        self.updates = []
+        self.remove_keys = []
+        self.rename_keys = []
+        self.outputs = {"result": {"value": [], "type": "Array of Object"}}
 
-class DataOperations(ComponentBase,ABC):
+    def check(self):
+        self.check_valid_value(self.operations, "Support operations", ["select_keys", "literal_eval", "combine", "filter_values", "append_or_update", "remove_keys", "rename_keys"])
+
+
+class DataOperations(ComponentBase, ABC):
     component_name = "DataOperations"
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            k: {"name": o.get("name", ""), "type": "line"}
-            for input_item in (self._param.query or [])
-            for k, o in self.get_input_elements_from_text(input_item).items()
-        }
+        return {k: {"name": o.get("name", ""), "type": "line"} for input_item in (self._param.query or []) for k, o in self.get_input_elements_from_text(input_item).items()}
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
-        self.input_objects=[]
+        self.input_objects = []
         inputs = getattr(self._param, "query", None)
         if not isinstance(inputs, (list, tuple)):
             inputs = [inputs]
         for input_ref in inputs:
-            input_object=self._canvas.get_variable_value(input_ref)
+            input_object = self._canvas.get_variable_value(input_ref)
             self.set_input_value(input_ref, input_object)
             if input_object is None:
                 continue
-            if isinstance(input_object,dict):
+            if isinstance(input_object, dict):
                 self.input_objects.append(input_object)
-            elif isinstance(input_object,list):
+            elif isinstance(input_object, list):
                 self.input_objects.extend(x for x in input_object if isinstance(x, dict))
             else:
                 continue
@@ -85,12 +77,11 @@ class DataOperations(ComponentBase,ABC):
             self._remove_keys()
         else:
             self._rename_keys()
-    
+
     def _select_keys(self):
         filter_criteria: list[str] = self._param.select_keys
         results = [{key: value for key, value in data_dict.items() if key in filter_criteria} for data_dict in self.input_objects]
         self.set_output("result", results)
-
 
     def _recursive_eval(self, data):
         if isinstance(data, dict):
@@ -99,23 +90,19 @@ class DataOperations(ComponentBase,ABC):
             return [self._recursive_eval(item) for item in data]
         if isinstance(data, str):
             try:
-                if (
-                    data.strip().startswith(("{", "[", "(", "'", '"'))
-                    or data.strip().lower() in ("true", "false", "none")
-                    or data.strip().replace(".", "").isdigit()
-                ):
+                if data.strip().startswith(("{", "[", "(", "'", '"')) or data.strip().lower() in ("true", "false", "none") or data.strip().replace(".", "").isdigit():
                     return ast.literal_eval(data)
             except (ValueError, SyntaxError, TypeError, MemoryError):
                 return data
             else:
                 return data
         return data
-    
+
     def _literal_eval(self):
         self.set_output("result", self._recursive_eval(self.input_objects))
 
     def _combine(self):
-        result={}
+        result = {}
         for obj in self.input_objects:
             for key, value in obj.items():
                 if key not in result:
@@ -126,15 +113,13 @@ class DataOperations(ComponentBase,ABC):
                     else:
                         result[key].append(value)
                 else:
-                    result[key] = (
-                        [result[key], value] if not isinstance(value, list) else [result[key], *value]
-                    )
+                    result[key] = [result[key], value] if not isinstance(value, list) else [result[key], *value]
         self.set_output("result", result)
-    
-    def norm(self,v):
+
+    def norm(self, v):
         s = "" if v is None else str(v)
         return s
-    
+
     def match_rule(self, obj, rule):
         key = rule.get("key")
         op = (rule.get("operator") or "equals").lower()
@@ -155,10 +140,10 @@ class DataOperations(ComponentBase,ABC):
         if op == "end with":
             return v.endswith(target)
         return False
-        
+
     def _filter_values(self):
-        results=[]
-        rules = (getattr(self._param, "filter_values", None) or [])
+        results = []
+        rules = getattr(self._param, "filter_values", None) or []
         for obj in self.input_objects:
             if not rules:
                 results.append(obj)
@@ -166,11 +151,10 @@ class DataOperations(ComponentBase,ABC):
             if all(self.match_rule(obj, r) for r in rules):
                 results.append(obj)
         self.set_output("result", results)
-            
-                
+
     def _append_or_update(self):
-        results=[]
-        updates = getattr(self._param, "updates", []) or [] 
+        results = []
+        updates = getattr(self._param, "updates", []) or []
         for obj in self.input_objects:
             new_obj = dict(obj)
             for item in updates:
@@ -187,7 +171,7 @@ class DataOperations(ComponentBase,ABC):
         results = []
         remove_keys = getattr(self._param, "remove_keys", []) or []
 
-        for obj in (self.input_objects or []):
+        for obj in self.input_objects or []:
             new_obj = dict(obj)
             for k in remove_keys:
                 if not isinstance(k, str):
@@ -200,7 +184,7 @@ class DataOperations(ComponentBase,ABC):
         results = []
         rename_pairs = getattr(self._param, "rename_keys", []) or []
 
-        for obj in (self.input_objects or []):
+        for obj in self.input_objects or []:
             new_obj = dict(obj)
             for pair in rename_pairs:
                 if not isinstance(pair, dict):

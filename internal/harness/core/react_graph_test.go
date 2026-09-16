@@ -41,7 +41,7 @@ func TestReActGraph_CheckpointInterruptResume(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = rg.Invoke(ctx, &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("approve")}},
 		nil)
@@ -82,8 +82,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	outputCh, errCh := rg.Stream(ctx, &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("test")}},
 		nil, types.StreamModeValues)
@@ -141,7 +140,7 @@ func TestReActGraph_FullCheckpointInterruptResume(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	input := &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("what is 10+20?")},
 	}
@@ -207,7 +206,7 @@ func TestReActGraph_SerialCheckpointCycles(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	config := &types.RunnableConfig{ThreadID: "serial-cycle-001"}
 	input := &AgentInput{Messages: []*schema.Message{schema.UserMessage("run all steps")}}
 
@@ -261,7 +260,7 @@ func TestReActGraph_StreamingCheckpointEvents(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	outCh, _ := rg.Stream(ctx, &AgentInput{
@@ -312,7 +311,7 @@ func TestReActGraph_ConcurrentCheckpoints(t *testing.T) {
 				return
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err = rg.Invoke(ctx, &AgentInput{
 				Messages: []*schema.Message{schema.UserMessage("concurrent test")},
 			}, nil)
@@ -361,7 +360,7 @@ func TestReActGraph_DAGMode(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{})
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

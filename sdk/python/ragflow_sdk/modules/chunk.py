@@ -16,6 +16,7 @@
 
 from .base import Base
 
+
 class ChunkUpdateError(Exception):
     def __init__(self, code=None, message=None, details=None):
         self.code = code
@@ -23,10 +24,12 @@ class ChunkUpdateError(Exception):
         self.details = details
         super().__init__(message)
 
+
 class Chunk(Base):
     def __init__(self, rag, res_dict):
         self.id = ""
         self.content = ""
+        self.image_id = ""
         self.important_keywords = []
         self.tag_kwd = []
         self.questions = []
@@ -48,17 +51,12 @@ class Chunk(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-        #for backward compatibility
+        # for backward compatibility
         if not self.document_name:
             self.document_name = self.document_keyword
-
 
     def update(self, update_message: dict):
         res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
-            raise ChunkUpdateError(
-                code=res.get("code"),
-                message=res.get("message"),
-                details=res.get("details")
-            )
+            raise ChunkUpdateError(code=res.get("code"), message=res.get("message"), details=res.get("details"))

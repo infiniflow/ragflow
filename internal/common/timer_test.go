@@ -114,13 +114,11 @@ func TestTimer_ConcurrentAccess(t *testing.T) {
 	tm.Start()
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			tm.Enter(PhaseRetrieval)
 			time.Sleep(time.Millisecond)
 			tm.Exit(PhaseRetrieval)
-		}()
+		})
 	}
 	wg.Wait()
 	got := tm.Phase(PhaseRetrieval)

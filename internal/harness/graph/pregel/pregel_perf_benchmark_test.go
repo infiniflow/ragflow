@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	graphPkg "ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
 // ============================================================
@@ -22,7 +23,7 @@ import (
 
 // benchmarkSimpleGraph creates a simple 3-node graph for benchmarking.
 // mirrors newSimpleGraph in engine_test.go
-func benchmarkSimpleGraph() *graphPkg.StateGraph {
+func benchmarkSimpleGraph() types.StateGraph {
 	sg := graphPkg.NewStateGraph(map[string]any{"value": ""})
 	sg.AddChannel("value", channels.NewLastValue(""))
 
@@ -43,7 +44,7 @@ func benchmarkSimpleGraph() *graphPkg.StateGraph {
 func BenchmarkEngine_SimpleChain(b *testing.B) {
 	g := benchmarkSimpleGraph()
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := map[string]any{"value": "bench"}
 
 	b.ResetTimer()
@@ -77,7 +78,7 @@ func BenchmarkEngine_LongChain(b *testing.B) {
 	sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(200))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := State{}
 
 	b.ResetTimer()
@@ -99,7 +100,7 @@ func BenchmarkEngine_WithCheckpointer(b *testing.B) {
 	g := benchmarkSimpleGraph()
 	ms := checkpoint.NewMemorySaver()
 	engine := NewEngine(g, WithRecursionLimit(10), WithCheckpointer(ms))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := map[string]any{"value": "bench-cp"}
 
 	b.ResetTimer()
@@ -138,7 +139,7 @@ func BenchmarkEngine_Scaling_Nodes(b *testing.B) {
 			sg.AddEdge(prev, constants.End)
 
 			engine := NewEngine(sg, WithRecursionLimit(n*2))
-			ctx := context.Background()
+			ctx := b.Context()
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -159,7 +160,7 @@ func BenchmarkEngine_Scaling_Nodes(b *testing.B) {
 func BenchmarkEngine_Allocation(b *testing.B) {
 	g := benchmarkSimpleGraph()
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := map[string]any{"value": "bench-alloc"}
 
 	b.ResetTimer()
@@ -196,7 +197,7 @@ func BenchmarkEngine_LargeState(b *testing.B) {
 	sg.AddEdge("load", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -216,7 +217,7 @@ func BenchmarkEngine_LargeState(b *testing.B) {
 func BenchmarkEngine_ConcurrentCalls(b *testing.B) {
 	g := benchmarkSimpleGraph()
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := b.Context()
 	input := map[string]any{"value": "bench-conc"}
 
 	b.ResetTimer()
@@ -255,7 +256,7 @@ func BenchmarkEngine_Checkpoint_LargeState(b *testing.B) {
 
 	ms := checkpoint.NewMemorySaver()
 	engine := NewEngine(sg, WithRecursionLimit(10), WithCheckpointer(ms))
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 	b.ReportAllocs()
