@@ -215,6 +215,7 @@ class TestSSRFValidation:
         with pytest.raises(ConnectorValidationError, match="scheme"):
             _make_connector(url="file:///etc/passwd")
 
+    @pytest.mark.p3
     def test_redirect_to_loopback_rejected(self):
         """Redirect targets must be revalidated before they are fetched.
 
@@ -267,6 +268,7 @@ class TestSSRFValidation:
                         params={},
                     )
 
+    @pytest.mark.p3
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
     def test_post_307_preserves_body(self, mock_pin_dns, mock_safe):
@@ -290,6 +292,7 @@ class TestSSRFValidation:
         assert mock_rl.post.call_args_list[1].kwargs["json"] == {"hello": "world"}
         assert mock_rl.post.call_args_list[1].kwargs["allow_redirects"] is False
 
+    @pytest.mark.p3
     @patch("common.data_source.rest_api_connector.assert_url_is_safe")
     @patch("common.data_source.rest_api_connector.pin_dns")
     def test_exceeds_max_redirects_raises(self, mock_pin_dns, mock_safe):
@@ -680,6 +683,7 @@ class TestNonRetriableErrors:
             with pytest.raises(ConnectorValidationError, match="non-retriable"):
                 c._fetch_page({})
 
+    @pytest.mark.p3
     def test_500_triggers_retry(self):
         """500 should raise HTTPError (which the retry decorator catches)."""
         with _mocked_rest_api_requests_and_dns() as mock_rl:
@@ -689,6 +693,7 @@ class TestNonRetriableErrors:
             with pytest.raises(requests.HTTPError):
                 c._fetch_page({})
 
+    @pytest.mark.p3
     def test_429_triggers_retry(self):
         """429 should raise HTTPError (retriable, not ConnectorValidationError)."""
         with _mocked_rest_api_requests_and_dns() as mock_rl:

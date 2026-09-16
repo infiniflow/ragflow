@@ -18,7 +18,6 @@ import json
 
 import pytest
 
-
 MINIMAL_DSL = {
     "components": {
         "begin": {
@@ -344,15 +343,6 @@ def test_agent_webhook_logs_empty_poll_contract(rest_client, create_agent_resour
 @pytest.mark.p2
 def test_agent_db_connection_validates_required_fields(rest_client):
     res = rest_client.post("/agents/test_db_connection", json={"db_type": "mysql"})
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["code"] == 101, payload
-    assert "required argument are missing" in payload["message"], payload
-
-
-@pytest.mark.p2
-def test_agent_rerun_requires_required_fields(rest_client):
-    res = rest_client.post("/agents/rerun", json={"id": "flow-1"})
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload

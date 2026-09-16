@@ -61,6 +61,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
+	case "hubris":
+		return NewHubrisModel(baseURL, urlSuffix), nil
 	case "lm-studio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
 	case "llmman":
@@ -85,6 +87,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
+	case "daoxe":
+		return NewDaoxeModel(baseURL, urlSuffix), nil
 	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
@@ -169,6 +173,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGreenPTModel(baseURL, urlSuffix), nil
 	case "synthorai":
 		return NewSynthoraiModel(baseURL, urlSuffix), nil
+	case "anonrouter":
+		return NewAnonRouterModel(baseURL, urlSuffix), nil
+	case "apiroute":
+		return NewApiRouteModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

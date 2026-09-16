@@ -25,14 +25,13 @@ import (
 	"ragflow/internal/utility"
 )
 
-// RenameTextToContentWithWeight renames the "text" key to "content_with_weight".
-// If "content_with_weight" already exists, the "text" key is simply removed.
-// Mirrors Python: ck["content_with_weight"] = ck["text"]; del ck["text"]
+// RenameTextToContentWithWeight maps the canonical pre-index "text" field to the
+// storage field "content_with_weight" and removes "text". The text value is
+// always authoritative at this boundary — any pre-existing content_with_weight
+// is overwritten so identity/embedding and persisted content cannot diverge.
 func RenameTextToContentWithWeight(chunk map[string]any) {
-	if _, exists := chunk["content_with_weight"]; !exists {
-		if text, ok := chunk["text"]; ok {
-			chunk["content_with_weight"] = text
-		}
+	if text, ok := chunk["text"].(string); ok {
+		chunk["content_with_weight"] = text
 	}
 	delete(chunk, "text")
 }
@@ -85,8 +84,12 @@ func ProcessChunksForPipeline(
 		ck["create_time"] = timeStr
 		ck["create_timestamp_flt"] = timestamp
 
+		text, err := requireStringText(ck)
+		if err != nil {
+			return nil, err
+		}
+
 		if _, exists := ck["id"]; !exists {
-			text, _ := ck["text"].(string)
 			ck["id"] = common.ChunkID(docID, text)
 		}
 
@@ -96,6 +99,20 @@ func ProcessChunksForPipeline(
 		processChunkPositions(ck)
 	}
 	return metadata, nil
+}
+
+// requireStringText enforces the pre-index wire contract: every chunk must
+// carry a string "text" field before chunk-id generation or persistence mapping.
+func requireStringText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
 }
 
 // cleanupConsumedChunkFields materializes the stored array form of the

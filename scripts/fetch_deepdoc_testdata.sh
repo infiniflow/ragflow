@@ -16,9 +16,17 @@
 # Env:
 #   RAGFLOW_TESTDATA_REPO  repo "owner/name" (default infiniflow/ragflow-testdata)
 #   RAGFLOW_TESTDATA_REF   override the anchor tag/ref (else read testdata.ref)
+#   RAGFLOW_TESTDATA_DIR   pre-seeded asset repo root (first level: deepdoc/).
+#                          When it carries deepdoc/<pkg>/testdata, that copy is
+#                          used as-is: no ref pinning, no network fetch. This is
+#                          what a CI runner that mounts the asset repo should
+#                          set; a missing subtree falls back to cloning.
 #   XDG_CACHE_HOME         cache base (default ~/.cache)
 #
 # Behavior:
+#   - With RAGFLOW_TESTDATA_DIR set, the pre-seeded copy wins over everything
+#     below. The ref pin is bypassed — whoever seeds the directory owns its
+#     freshness.
 #   - If testdata is already present INLINE (a real dir, pre-migration), this
 #     script leaves it untouched and exits (nothing to fetch).
 #   - If a correct symlink already exists, it exits.
@@ -40,6 +48,56 @@ PKG="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+TARGET="$ROOT/internal/deepdoc/$PKG/testdata"
+
+# Serialize all invocations for a given <pkg>. `go test ./internal/deepdoc/native/...`
+# runs the `native` and `croptest` test binaries concurrently, and croptest imports
+# native — so native's fetch_testdata init() runs in BOTH processes at once, racing on
+# the same TARGET. Two concurrent `ln -s` calls on a symlink-to-directory make the second
+# one descend INTO it and create <TARGET>/testdata ("Permission denied"), the exact CI
+# failure this guards against. A per-package flock makes the rm+ln critical section
+# atomic across processes; the first writer wins, the rest wait and then see the result.
+LOCKDIR="${XDG_CACHE_HOME:-$HOME/.cache}/ragflow-testdata-locks"
+mkdir -p "$LOCKDIR"
+exec 9>"$LOCKDIR/$PKG.lock"
+flock 9
+
+# Determine whether we need a writable copy (regeneration) or can use the
+# pre-seeded copy directly.
+NEED_WRITE=0
+for v in "${!GEN_@}"; do
+  if [ -n "${!v:-}" ]; then NEED_WRITE=1; break; fi
+done
+
+# Pre-seeded testdata: CI runners mount the asset repo at a fixed path instead
+# of cloning it. Use that copy directly when it carries this package's subtree.
+# This runs before the ref is resolved: a pre-seeded copy carries no ref, so
+# packages without a testdata.ref can be served this way too.
+if [ -n "${RAGFLOW_TESTDATA_DIR:-}" ]; then
+  PRESET="$RAGFLOW_TESTDATA_DIR/deepdoc/$PKG/testdata"
+  if [ -d "$PRESET" ] && [ -n "$(ls -A "$PRESET" 2>/dev/null)" ]; then
+    if [ "$NEED_WRITE" -eq 1 ]; then
+      # Regeneration rewrites the fixtures, so it needs a writable copy next to
+      # the tests — which a pre-seeded runner cannot provide. Say so plainly
+      # instead of failing later with a confusing permission error.
+      if ! (rm -rf -- "$TARGET" && cp -r "$PRESET" "$TARGET") 2>/dev/null; then
+        echo "fetch_deepdoc_testdata: GEN_* regeneration needs a writable $TARGET, but the workspace is read-only. Run it where $TARGET is writable, or drop RAGFLOW_TESTDATA_DIR to clone the fixtures." >&2
+        exit 1
+      fi
+      echo "fetch_deepdoc_testdata: copied writable pre-seeded testdata for regeneration ($PKG)"
+      exit 0
+    fi
+    # Leave the workspace untouched: the consuming test binary reads the
+    # fixtures from this directory directly (see testdata_skip_test.go).
+    # Linking or copying them into $TARGET used to be required, and failed on
+    # runners that mount the workspace read-only — which was then reported as a
+    # missing fixture even though the data was right here.
+    echo "fetch_deepdoc_testdata: using pre-seeded testdata at $PRESET (workspace untouched)"
+    exit 0
+  fi
+  echo "fetch_deepdoc_testdata: RAGFLOW_TESTDATA_DIR set but deepdoc/$PKG/testdata is missing; falling back to clone" >&2
+fi
+
 REF_FILE="$ROOT/internal/deepdoc/$PKG/testdata.ref"
 REF="${RAGFLOW_TESTDATA_REF:-}"
 if [ -z "$REF" ] && [ -f "$REF_FILE" ]; then
@@ -54,13 +112,6 @@ REPO="${RAGFLOW_TESTDATA_REPO:-infiniflow/ragflow-testdata}"
 CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/ragflow-testdata"
 CACHE="$CACHE_BASE/$REF"
 SRC="$CACHE/deepdoc/$PKG/testdata"
-TARGET="$ROOT/internal/deepdoc/$PKG/testdata"
-
-# Determine whether we need a writable copy (regeneration) or a symlink.
-NEED_WRITE=0
-for v in "${!GEN_@}"; do
-  if [ -n "${!v:-}" ]; then NEED_WRITE=1; break; fi
-done
 
 # Already a correct symlink -> done.
 if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET")" = "$(readlink -f "$SRC")" ] && [ -n "$(ls -A "$SRC" 2>/dev/null)" ]; then
@@ -75,7 +126,9 @@ if [ -d "$TARGET" ] && [ ! -L "$TARGET" ] && [ -n "$(ls -A "$TARGET" 2>/dev/null
 fi
 
 # Absent (or stale symlink) -> fetch.
-rm -f "$TARGET" 2>/dev/null || true
+# rm -rf for the same reason as the pre-seeded branch: a leftover empty
+# directory must be removed, not silently turned into a nested symlink.
+rm -rf -- "$TARGET"
 
 if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
   echo "fetch_deepdoc_testdata: cloning $REPO @ $REF (subtree deepdoc/$PKG/testdata)"
@@ -115,6 +168,6 @@ if [ "$NEED_WRITE" -eq 1 ]; then
   cp -r "$SRC" "$TARGET"
 else
   echo "fetch_deepdoc_testdata: linking $TARGET -> $SRC"
-  ln -s "$SRC" "$TARGET"
+  ln -sfn "$SRC" "$TARGET"
 fi
 echo "fetch_deepdoc_testdata: done ($PKG @ $REF)"

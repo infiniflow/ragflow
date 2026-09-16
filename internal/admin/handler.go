@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -286,7 +287,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	userDetails, err := h.service.GetUserDetails(username)
+	userDetails, err := h.service.GetUserDetails(c.Request.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -296,7 +297,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, userDetails, "")
+	common.SuccessWithData(c, []map[string]interface{}{userDetails}, "")
 }
 
 // DeleteUser handle delete user
@@ -923,7 +924,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
+	err = msgQueueEngine.PublishTask(common.TaskSubject, taskMessageStr)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -933,7 +934,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 }
 
 type PullMessageFromQueueRequest struct {
-	MessageCount int    `json:"message_count" binding:"required"`
+	MessageCount int    `json:"message_count" binding:"required,gt=0"`
 	AckPolicy    string `json:"ack_policy" binding:"required"`
 }
 
@@ -943,14 +944,20 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, fmt.Sprintf("Message count error: %s", err.Error()))
 		return
 	}
+	if req.MessageCount > common.MaxManualPullMessages {
+		common.ErrorWithCode(c, common.CodeBadRequest,
+			fmt.Sprintf("message count must be between 1 and %d", common.MaxManualPullMessages))
+		return
+	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
-	if err != nil {
+	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	pullCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+	defer cancel()
+	messages, err := msgQueueEngine.PullMessages(pullCtx, req.MessageCount)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -978,6 +985,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 				"id":   taskMessage.TaskID,
 				"type": taskMessage.TaskType,
 			}
+			err = message.Nack()
 			if err == nil {
 				resultMessage["nack"] = "true"
 			} else {

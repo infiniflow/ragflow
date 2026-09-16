@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 13
 title: RAGFlow MCP Client Examples
 sidebar_label: RAGFlow MCP Client Examples
 slug: /mcp_client

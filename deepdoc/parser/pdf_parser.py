@@ -859,15 +859,17 @@ class RAGFlowPdfParser:
         # logging.info(f"__ocr sorting {len(chars)} chars cost {timer() - start}s")
         # start = timer()
         boxes_to_reg = []
-        img_np = None
+        crop_boxes = []
         for b in bxs:
             if not b["text"]:
-                if img_np is None:
-                    img_np = np.asarray(img)
                 left, right, top, bott = b["x0"] * ZM, b["x1"] * ZM, b["top"] * ZM, b["bottom"] * ZM
-                b["box_image"] = self.ocr.get_rotate_crop_image(img_np, np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
+                crop_boxes.append(np.array([[left, top], [right, top], [right, bott], [left, bott]], dtype=np.float32))
                 boxes_to_reg.append(b)
             del b["txt"]
+        if boxes_to_reg:
+            crops = self.ocr.get_rotate_crop_images(np.asarray(img), crop_boxes)
+            for box, crop in zip(boxes_to_reg, crops):
+                box["box_image"] = crop
         texts = self.ocr.recognize_batch([b["box_image"] for b in boxes_to_reg], device_id)
         for i in range(len(boxes_to_reg)):
             boxes_to_reg[i]["text"] = texts[i]
@@ -1454,9 +1456,9 @@ class RAGFlowPdfParser:
         figure_positions = []
         # crop figure out and add caption
         for k, bxs in figures.items():
-            txt = "\n".join([b["text"] for b in bxs])
-            if not txt:
+            if not bxs:
                 continue
+            txt = "\n".join([b["text"] for b in bxs if b.get("text")])
 
             poss = []
 
@@ -1464,13 +1466,13 @@ class RAGFlowPdfParser:
                 img = cropout(bxs, "figure", poss)
                 if img is None:
                     continue
-                figure_results.append((img, [txt]))
+                figure_results.append((img, [txt] if txt else [""]))
                 figure_positions.append(poss)
             else:
                 img = cropout(bxs, "figure", poss)
                 if img is None:
                     continue
-                res.append((img, [txt]))
+                res.append((img, [txt] if txt else [""]))
                 positions.append(poss)
 
         for k, bxs in tables.items():

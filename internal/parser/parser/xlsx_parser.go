@@ -29,7 +29,7 @@ type XLSXParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	ChunkRows                      int
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -42,7 +42,6 @@ func NewXLSXParser(libType string) (*XLSXParser, error) {
 	}
 	return &XLSXParser{
 		libType:                        libType,
-		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -62,7 +61,10 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	p.ChunkRows = decodeChunkRows(setup)
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
+	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -113,12 +115,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-
-	items, warnings, sheets, err := parseXLSXBytes(data, chunkRows)
+	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
 	if err == nil {
 		return xlsxParseResult(filename, items, warnings, sheets)
 	}
@@ -130,7 +127,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, chunkRows)
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, p.HTML4Excel)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
 	}
@@ -138,7 +135,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -149,28 +146,30 @@ func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
 	for sheetIdx, sheet := range sheets {
-		tables, sheetWarnings, err := renderSheetTableChunks(f, sheet, chunkRows)
+		records, dataRows, headerRow, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
 		if err != nil {
 			return nil, warnings, len(sheets), err
 		}
 		warnings = append(warnings, sheetWarnings...)
-		for _, table := range tables {
-			items = append(items, map[string]any{
-				"text":         table.HTML,
-				"doc_type_kwd": "table",
-				"ck_type":      "table",
-				"sheet":        sheet,
-				"positions": [][]float64{{
-					float64(sheetIdx + 1),
-					float64(table.RowStart),
-					float64(table.RowEnd),
-					float64(table.ColStart),
-					float64(table.ColEnd),
-				}},
-			})
+		var sheetItems []map[string]any
+		if html4excel {
+			if table := recordsToHTMLTableItem(records, sheet, sheetIdx+1, headerRow, dataRows); table != nil {
+				sheetItems = []map[string]any{table}
+			}
+		} else {
+			sheetItems = recordsToSpreadsheetItems(records, sheet, sheetIdx+1, headerRow, dataRows)
 		}
 		images, imageWarnings := extractXLSXImages(f, sheet)
-		items = append(items, images...)
+		for _, image := range images {
+			row, _ := numericItemInt(image["row_start"])
+			col, _ := numericItemInt(image["col_start"])
+			image["sheet_index"] = sheetIdx + 1
+			image["table_id"] = fmt.Sprintf("sheet-%d", sheetIdx+1)
+			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
+		}
+		sheetItems = append(sheetItems, images...)
+		sortSpreadsheetItems(sheetItems)
+		items = append(items, sheetItems...)
 		warnings = append(warnings, imageWarnings...)
 	}
 	return items, warnings, len(sheets), nil
@@ -178,7 +177,7 @@ func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int
 
 func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
-		OutputFormat: "json",
+		OutputFormat: spreadsheetOutputFormat,
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
 		JSON:         items,
 		Warnings:     warnings,

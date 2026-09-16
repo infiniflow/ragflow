@@ -119,24 +119,34 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		pageSize = ps
 	}
 
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` or `desc` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
 	orderby := "create_time"
 	if queryOrderby, exists := c.GetQuery("orderby"); exists {
 		if queryOrderby != "create_time" && queryOrderby != "update_time" {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be 'create_time' or 'update_time'")
-			return
+			if len(sortTerms) == 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be 'create_time' or 'update_time'")
+				return
+			}
+		} else {
+			orderby = queryOrderby
 		}
-		orderby = queryOrderby
 	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
 		parsed, ok := parsePythonBool(descStr)
 		if !ok {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid boolean, unable to interpret input")
-			return
+			if len(sortTerms) == 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid boolean, unable to interpret input")
+				return
+			}
+		} else {
+			desc = parsed
 		}
-		desc = parsed
 	}
+	terms := orderTerms(sortTerms, orderby, desc)
 
 	keywords := c.Query("keywords")
 	parserID := c.Query("parser_id")
@@ -197,8 +207,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		c.Query("name"),
 		page,
 		pageSize,
-		orderby,
-		desc,
+		terms,
 		keywords,
 		ownerIDs,
 		parserID,
@@ -354,7 +363,7 @@ func pythonJSONTypeName(v interface{}) string {
 // before validation in the Python endpoint).
 var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
-	"orderby": true, "desc": true, "include_parsing_status": true,
+	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
 }
 
@@ -543,15 +552,19 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	orderby := c.DefaultQuery("orderby", "create_time")
 	// desc defaults to true and is only disabled by the literal value "false".
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
+	terms := orderTermsFromQuery(c, orderby, desc)
 	operationStatus := c.QueryArray("operation_status")
 	createDateFrom := c.Query("create_date_from")
 	createDateTo := c.Query("create_date_to")
 	logType := c.DefaultQuery("log_type", "dataset")
 	keywords := c.Query("keywords")
+	// Exact per-document filter for the file-log list. Python's endpoint has no
+	// equivalent; the frontend only sends it on the Go backend.
+	documentID := c.Query("document_id")
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1018,7 +1031,8 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
 // state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
-// Python-era TraceIndex task-progress endpoint for the Go backend.
+// Python-era TraceIndex task-progress endpoint for the Go backend. The optional
+// `kind` query parameter scopes the status to one compile type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -1032,7 +1046,8 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	}
 	userID := strings.TrimSpace(user.ID)
 	ctx := c.Request.Context()
-	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, userID, datasetID)
+	kind := strings.TrimSpace(c.Query("kind"))
+	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, userID, datasetID, kind)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

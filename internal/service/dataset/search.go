@@ -241,15 +241,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		if hasMetadataCondition {
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
-			docIDs = filteredDocIDs
-		} else {
-			filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, nil, datasetIDs)
-			if !filterReturnedEmpty {
-				docIDs = append(docIDs, filteredDocIDs...)
-			}
-		}
+		filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
+		docIDs = selectMetadataFilteredDocIDs(docIDs, filteredDocIDs, hasMetadataCondition, filterReturnedEmpty)
 	}
 
 	// Apply cross_languages and keyword extraction
@@ -294,11 +287,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, maxTokens, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}
-		rerankModel = modelModule.NewRerankModel(driver, &modelName, apiConfig)
+		rerankModel = modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens)
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
@@ -364,4 +357,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {
+	if hasMetadataCondition || !filterReturnedEmpty {
+		return filteredDocIDs
+	}
+	return currentDocIDs
 }

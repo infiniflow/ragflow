@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -10,6 +11,7 @@ import {
 } from '@/interfaces/database/agent';
 import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
+import { parseDelimiterListForDisplay } from '@/utils/delimiter-preview';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { humanId } from 'human-id';
@@ -27,8 +29,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
@@ -367,6 +367,43 @@ export function transformTokenChunkerParams(
   };
 }
 
+// The two backends honor the chunker's delimiter list differently: the Go
+// chunker treats a bare entry as a soft split point (the split pieces are still
+// merged up to the chunk token size) while the Python flow TokenChunker only
+// activates backtick-wrapped entries. The shared chunker form shows the tip
+// that matches the running backend.
+export function getChunkerDelimiterTipKey() {
+  return pickByBackend({
+    go: 'flow.delimitersTip',
+    python: 'flow.delimitersTipPython',
+  });
+}
+
+export function getChunkerDelimiterPreview(values: (string | undefined)[]) {
+  return pickByBackend({
+    go: parseDelimiterListForDisplay(values, { keepBare: true }),
+    python: parseDelimiterListForDisplay(values, { keepBare: false }),
+  });
+}
+
+// The child split activates every non-empty entry on both backends, so the
+// child preview never drops bare rows.
+export function getChunkerChildrenDelimiterPreview(
+  values: (string | undefined)[],
+) {
+  return parseDelimiterListForDisplay(values, { keepBare: true });
+}
+
+export function transformGeneralChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
+  const result = transformTokenChunkerParams(params);
+  result.table_context_size = Number(params.table_context_size || 0);
+  result.image_context_size = Number(params.image_context_size || 0);
+  delete result.delimiter_mode;
+  return result;
+}
+
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -640,6 +677,10 @@ export const buildDslComponentsByGraph = (
           params = transformTokenChunkerParams(params);
           break;
 
+        case Operator.GeneralChunker:
+          params = transformGeneralChunkerParams(params);
+          break;
+
         case Operator.TitleChunker:
           params = transformTitleChunkerParams(params);
           break;
@@ -797,6 +838,11 @@ export const generateNodeNamesWithIncreasingIndex = (
     .filter((x) => {
       const temporaryName = x.data.name;
 
+      // The first node of a type has no numeric suffix and occupies index 0
+      if (temporaryName === name) {
+        return true;
+      }
+
       const { type, index } = splitName(temporaryName);
 
       return (
@@ -810,7 +856,7 @@ export const generateNodeNamesWithIncreasingIndex = (
       const { index } = splitName(temporaryName);
 
       return {
-        idx: index,
+        idx: temporaryName === name ? 0 : index,
         name: temporaryName,
       };
     })
@@ -826,7 +872,7 @@ export const generateNodeNamesWithIncreasingIndex = (
     }
   }
 
-  return `${name}_${index}`;
+  return index === 0 ? name : `${name}_${index}`;
 };
 
 export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {

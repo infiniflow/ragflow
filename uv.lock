@@ -2114,7 +2114,7 @@ sdist = { url = "https://mirrors.aliyun.com/pypi/packages/8a/e4/05e80adeadc39f17
 
 [[package]]
 name = "flask"
-version = "3.1.2"
+version = "3.1.3"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "blinker" },
@@ -2124,9 +2124,9 @@ dependencies = [
     { name = "markupsafe" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/dc/6d/cfe3c0fcc5e477df242b98bfe186a4c34357b4847e87ecaef04507332dab/flask-3.1.2.tar.gz", hash = "sha256:bf656c15c80190ed628ad08cdfd3aaa35beb087855e2f494910aa3774cc4fd87" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/26/00/35d85dcce6c57fdc871f3867d465d780f302a175ea360f62533f12b27e2b/flask-3.1.3.tar.gz", hash = "sha256:0ef0e52b8a9cd932855379197dd8f94047b359ca0a78695144304cb45f87c9eb" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/ec/f9/7f9263c5695f4bd0023734af91bedb2ff8209e8de6ead162f35d8dc762fd/flask-3.1.2-py3-none-any.whl", hash = "sha256:ca1d8112ec8a6158cc29ea4858963350011b5c846a414cdb7a954aa9e967d03c" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/7f/9c/34f6962f9b9e9c71f6e5ed806e0d0ff03c9d1b0b2340088a0cf4bce09b18/flask-3.1.3-py3-none-any.whl", hash = "sha256:f4bcbefc124291925f1a26446da31a5178f9483862233b23c0c96a20701f670c" },
 ]
 
 [[package]]
@@ -3455,15 +3455,15 @@ wheels = [
 
 [[package]]
 name = "langgraph-sdk"
-version = "0.3.6"
+version = "0.3.15"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "orjson" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/3e/ec/477fa8b408f948b145d90fd935c0a9f37945fa5ec1dfabfc71e7cafba6d8/langgraph_sdk-0.3.6.tar.gz", hash = "sha256:7650f607f89c1586db5bee391b1a8754cbe1fc83b721ff2f1450f8906e790bd7" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/66/af/cdd4d6f3c05b3c1112ed3f12ef830faf15951b21d22cbc622a4becbbe25c/langgraph_sdk-0.3.15.tar.gz", hash = "sha256:29e805003d2c6e296823dd71992610976fd0428cefaa8b3304fd91f2247037de" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/d8/61/12508e12652edd1874327271a5a8834c728a605f53a1a1c945f13ab69664/langgraph_sdk-0.3.6-py3-none-any.whl", hash = "sha256:7df2fd552ad7262d0baf8e1f849dce1d62186e76dcdd36db9dc5bdfa5c3fc20f" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/be/a5/0196d9c05749c25bc198e4909d68c998bc3120297e14944921baf2f4c384/langgraph_sdk-0.3.15-py3-none-any.whl", hash = "sha256:3838773acf7456d158165385d49f48f1e856f28b56ccd99ea139a8f27004815d" },
 ]
 
 [[package]]
@@ -8169,7 +8169,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.27.1"
+version = "0.27.2"
 source = { virtual = "." }
 dependencies = [
     { name = "agentrun-sdk" },
@@ -8283,6 +8283,7 @@ dependencies = [
     { name = "ranx" },
     { name = "rapidfuzz" },
     { name = "readability-lxml" },
+    { name = "regex" },
     { name = "replicate" },
     { name = "reportlab" },
     { name = "roman-numbers" },
@@ -8330,7 +8331,6 @@ test = [
     { name = "pytest-xdist" },
     { name = "python-docx" },
     { name = "python-pptx" },
-    { name = "regex" },
     { name = "reportlab" },
     { name = "requests" },
     { name = "requests-toolbelt" },
@@ -8416,7 +8416,7 @@ requires-dist = [
     { name = "mysql-connector-python", specifier = ">=9.0.0,<10.0.0" },
     { name = "nest-asyncio", specifier = ">=1.6.0,<2.0.0" },
     { name = "office365-rest-python-client", specifier = "==2.6.2" },
-    { name = "ollama", specifier = ">=0.5.0" },
+    { name = "ollama", specifier = ">=0.5.1" },
     { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'", specifier = "==1.23.2" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'", specifier = "==1.23.2" },
     { name = "opencv-python", specifier = "==4.10.0.84" },

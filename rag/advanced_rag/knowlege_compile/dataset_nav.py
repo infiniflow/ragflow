@@ -84,9 +84,9 @@ _NAV_HYBRID_DENSE_W = 0.5
 
 # Minimum fused relevance score a nav node must reach to be returned by a
 # tree search.  Below this, the query is treated as "not related" to the
-# dataset and search_nav_tree_descent returns an empty result instead of
-# falling back to an entire subtree.  The dense leg contributes at most
-# ``_NAV_HYBRID_DENSE_W`` (cosine ≤ 1) and the text leg at most
+# dataset: no node clears the floor, so search_nav_tree_descent routes nothing
+# rather than falling back to the nearest subtree.  The dense leg contributes
+# at most ``_NAV_HYBRID_DENSE_W`` (cosine ≤ 1) and the text leg at most
 # ``1 - _NAV_HYBRID_DENSE_W``, so a score below this threshold means the
 # query is neither semantically nor lexically close to any node.
 _NAV_TREE_MIN_SCORE = 0.1
@@ -1513,6 +1513,15 @@ async def search_nav_tree_descent(
     The search uses BFS with beam pruning — at each depth, only the
     *beam_width* most similar clusters are expanded further.
 
+    A query term that only appears in a ``nav_cluster`` summary (not in any
+    leaf's text) is still routable.  Roots are routed by vector only, so such a
+    cluster would never enter the beam on its own; a flat lexical sweep over the
+    cluster level finds it independent of the beam and seeds the frontier with
+    it.  Lexical support then propagates down the matched path, so that cluster's
+    documents are ranked by the usual hybrid score instead of the cluster
+    dumping a coverage list.  When the descent yields no document at all, the
+    matched clusters' ``doc_ids_kwd`` coverage is routed as a last resort.
+
     ``doc_scope`` restricts the search to a specific set of documents: both
     the KNN legs (exact if the engine misses the terms filter, ``_store_knn``
     falls back to a full in-memory match) and the text legs apply the scope
@@ -1631,6 +1640,33 @@ async def search_nav_tree_descent(
     if not current_level:
         return []
 
+    # Seed the frontier with lexically matched clusters: they are entry points
+    # into branches the vector-only root routing can miss, and seeding them lets
+    # the descent rank their documents instead of dumping a coverage list.
+    lexical_hits = await _lexical_cluster_hits(
+        tenant_id,
+        kb_id,
+        query,
+        vec,
+        vf,
+        dense_w,
+        fields,
+        allowed_docs,
+        limit=max((top_k or 0) * 3, 20),
+    )
+    frontier_by_name = {r.get("name"): r for r in current_level}
+    for r in lexical_hits[:beam_width]:
+        existing = frontier_by_name.get(r.get("name"))
+        if existing is not None:
+            # Already in the frontier (e.g. a root the vector leg routed to):
+            # fold the lexical support in so its branch inherits it instead of
+            # only being rescued by its coverage list.
+            existing["_text_score"] = max(existing.get("_text_score") or 0.0, r["_text_score"])
+            existing["_score"] = max(existing.get("_score") or 0.0, r["_score"])
+        else:
+            frontier_by_name[r.get("name")] = r
+            current_level.append(r)
+
     while current_level and (top_k is None or len(collected) < top_k):
         next_level: list[dict] = []
 
@@ -1640,6 +1676,10 @@ async def search_nav_tree_descent(
                 continue
             seen_nodes.add(node_name)
             parent_score = node.get("_score", 0.0)
+            # Lexical support for this subtree: the node carries the query term
+            # itself (seeded entry point or this level's text leg), or an
+            # ancestor did.
+            lexical_support = node.get("_lex") or node.get("_text_score") or 0.0
 
             child_cond: dict = {
                 "kb_id": [kb_id],
@@ -1697,6 +1737,9 @@ async def search_nav_tree_descent(
             for c in candidates:
                 if top_k is not None and len(collected) >= top_k:
                     break
+                # A leaf is routable when the query term is supported anywhere on
+                # its ancestor path, not only when the leaf's own text carries it.
+                lexical = (c.get("_text_score") or 0.0) or lexical_support
                 if c.get("type_kwd") == "nav_doc":
                     doc_id = (c.get("doc_id") or "").strip()
                     score = c["_score"] if c.get("_score") is not None else parent_score
@@ -1704,13 +1747,12 @@ async def search_nav_tree_descent(
                         continue
                     if allowed_docs and doc_id not in allowed_docs:
                         continue
-                    # Tree search is driven by a keyword: a nav_doc that only
-                    # matched by vector similarity (no lexical/keyword hit,
-                    # i.e. ``_text_score == 0``) is unrelated to the query and
-                    # must not surface.  Vector similarity alone always yields
-                    # a "nearest" node, so without this gate an unrelated
-                    # keyword would return the whole nearest subtree.
-                    if not c.get("_text_score"):
+                    # Tree search is driven by a keyword: a nav_doc with no
+                    # lexical support on its path is unrelated to the query and
+                    # must not surface.  Vector similarity alone always yields a
+                    # "nearest" node, so without this gate an unrelated keyword
+                    # would return the whole nearest subtree.
+                    if lexical <= 0:
                         continue
                     # Skip low-relevance leaves: a below-threshold score means
                     # the query is unrelated to this node, so it must not
@@ -1720,6 +1762,10 @@ async def search_nav_tree_descent(
                     seen_docs.add(doc_id)
                     collected.append({"doc_id": doc_id, "score": round(score, 4)})
                 else:
+                    # Carry the lexical support down so a matched branch keeps
+                    # contributing documents even where the term reappears only
+                    # in a deeper summary.
+                    c["_lex"] = lexical
                     next_level.append(c)
 
             if top_k is not None and len(collected) >= top_k:
@@ -1728,36 +1774,81 @@ async def search_nav_tree_descent(
         if top_k is not None and len(collected) >= top_k:
             break
 
-        next_level.sort(key=lambda c: c.get("_score", 0.0), reverse=True)
+        # Keep lexically supported branches in the beam ahead of purely
+        # vector-ranked ones: the query term is what makes them relevant.
+        next_level.sort(key=lambda c: (bool(c.get("_lex")), c.get("_score", 0.0)), reverse=True)
         current_level = next_level[:beam_width]
 
-    # Fallback: collect doc_ids from terminal cluster nodes — but only when
-    # the terminal cluster itself is relevant (its score clears the threshold
-    # AND it has a lexical hit).  Without this guard, an unrelated query
-    # (e.g. random gibberish) would always have a nearest cluster and the
-    # search would dump the entire subtree's documents back, defeating the
-    # purpose of tree search.
-    if not collected and current_level:
-        for node in current_level:
-            node_score = node.get("_score", 0.0) or 0.0
-            if node_score < _NAV_TREE_MIN_SCORE:
-                continue
-            if not node.get("_text_score"):
-                continue
-            for did in node.get("doc_ids_kwd") or []:
-                did_str = str(did).strip()
-                if not did_str or did_str in seen_docs:
-                    continue
-                if allowed_docs and did_str not in allowed_docs:
-                    continue
-                seen_docs.add(did_str)
-                collected.append({"doc_id": did_str, "score": round(node_score, 4)})
+    # Last resort: a lexically matched cluster whose documents the descent could
+    # not reach — no leaf children, or every child dropped by the doc scope —
+    # still names them in ``doc_ids_kwd``, so route that coverage list.
+    if not collected and lexical_hits:
+        for node in lexical_hits:
+            for did in _as_str_list(node.get("doc_ids_kwd")):
                 if top_k is not None and len(collected) >= top_k:
                     break
+                if did in seen_docs:
+                    continue
+                if allowed_docs and did not in allowed_docs:
+                    continue
+                seen_docs.add(did)
+                collected.append({"doc_id": did, "score": round(node["_score"], 4)})
             if top_k is not None and len(collected) >= top_k:
                 break
 
     return collected
+
+
+async def _lexical_cluster_hits(
+    tenant_id: str,
+    kb_id: str,
+    query: str,
+    vec: list[float],
+    vf: str,
+    dense_w: float,
+    fields: list[str],
+    allowed_docs: set[str],
+    limit: int,
+) -> list[dict]:
+    """Clusters whose summary carries a query term, best first.
+
+    The descent can miss these on its own: roots are routed by vector only, so a
+    cluster whose summary names the query term never enters the beam unless its
+    whole ancestor chain ranks high on cosine.  A flat lexical sweep over the
+    cluster level finds it regardless of the beam.  Each returned row carries
+    ``_score`` (same fusion scale as the descent levels) and ``_text_score``, so
+    a caller can seed the frontier with it.
+    """
+    condition: dict = {"type_kwd": ["nav_cluster"], "kb_id": [kb_id]}
+    if allowed_docs:
+        condition["doc_ids_kwd"] = sorted(allowed_docs)
+    try:
+        rows = await _store_text_search(
+            tenant_id,
+            kb_id,
+            query,
+            fields,
+            limit=limit,
+            extra_filter=condition,
+        )
+    except Exception:
+        logging.exception("search_nav_tree_descent: cluster text sweep failed for kb=%s", kb_id)
+        return []
+    hits: list[dict] = []
+    for row in rows:
+        if not _in_nav_scope(row, allowed_docs):
+            continue
+        text_score = _nav_text_score(query, row)
+        if text_score <= 0:
+            continue
+        score = dense_w * _cosine_sim(vec, row.get(vf)) + (1.0 - dense_w) * text_score
+        if score < _NAV_TREE_MIN_SCORE:
+            continue
+        row["_score"] = score
+        row["_text_score"] = text_score
+        hits.append(row)
+    hits.sort(key=lambda r: r["_score"], reverse=True)
+    return hits
 
 
 def _hybrid_fuse(

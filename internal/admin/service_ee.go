@@ -21,9 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, string) {
@@ -570,43 +574,79 @@ func (s *Service) ShowUserPermission(ctx context.Context, email string) (map[str
 
 // ListUserDatasets show user datasets for enterprise edition
 func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	// Query user by email
-	var user entity.User
-	err := dao.DB.Where("email = ?", email).First(&user).Error
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
 	if err != nil {
-		return nil, common.ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	result := []map[string]interface{}{
-		{
-			"command":  "list_user_datasets",
-			"email":    user.Email,
-			"nickname": user.Nickname,
-			"error":    "'list user datasets' is not supported",
-		},
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
 
+	datasets, err := s.kbDAO.GetAllByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user datasets: %w", err)
+	}
+
+	result := make([]map[string]interface{}, 0, len(datasets))
+	for _, dataset := range datasets {
+		status := ""
+		if dataset.Status != nil {
+			status = *dataset.Status
+		}
+		result = append(result, map[string]interface{}{
+			"name":        dataset.Name,
+			"avatar":      dataset.Avatar,
+			"language":    dataset.Language,
+			"permission":  dataset.Permission,
+			"doc_num":     dataset.DocNum,
+			"token_num":   dataset.TokenNum,
+			"chunk_num":   dataset.ChunkNum,
+			"status":      status,
+			"create_date": dataset.CreateDate,
+			"update_date": dataset.UpdateDate,
+		})
+	}
 	return result, nil
 }
 
 // ListUserAgents show user agents for enterprise edition
 func (s *Service) ListUserAgents(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	// Query user by email
-	var user entity.User
-	err := dao.DB.Where("email = ?", email).First(&user).Error
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
 	if err != nil {
-		return nil, common.ErrUserNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.ErrUserNotFound
+		}
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	result := []map[string]interface{}{
-		{
-			"command":  "list_user_agents",
-			"email":    user.Email,
-			"nickname": user.Nickname,
-			"error":    "'list user agents' is not supported",
-		},
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
 
+	agents, err := s.canvasDAO.GetAllCanvasesByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user agents: %w", err)
+	}
+
+	result := make([]map[string]interface{}, 0, len(agents))
+	for _, agent := range agents {
+		title := ""
+		if agent.Title != nil {
+			title = *agent.Title
+		}
+		result = append(result, map[string]interface{}{
+			"title":           title,
+			"permission":      agent.Permission,
+			"canvas_category": strings.SplitN(agent.CanvasCategory, "_", 2)[0],
+			"avatar":          agent.Avatar,
+		})
+	}
 	return result, nil
 }
 
