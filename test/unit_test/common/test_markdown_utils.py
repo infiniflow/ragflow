@@ -60,3 +60,37 @@ def test_an_element_with_content_converts_as_before(html, expected):
 
 def test_markdownify_options_are_forwarded():
     assert html_to_markdown("<h1>Title</h1>", heading_style="ATX").strip() == "# Title"
+
+
+def _table_lines(markdown):
+    return [line.strip() for line in markdown.splitlines() if line.strip().startswith("|")]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        # What mammoth hands over for a Word table: no <thead>, no <th>.
+        "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        # The same table wrapped in a <tbody>, which is what a browser's DOM has.
+        "<table><tbody><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_without_th_uses_its_first_row_as_the_header(html):
+    assert _table_lines(html_to_markdown(html)) == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><th>Product</th><th>Spec</th></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        "<table><thead><tr><th>Product</th><th>Spec</th></tr></thead><tbody><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_that_marks_its_header_is_unchanged(html):
+    assert _table_lines(html_to_markdown(html)) == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_the_caller_can_still_ask_for_the_empty_header():
+    html = "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>"
+
+    assert _table_lines(html_to_markdown(html, table_infer_header=False))[0] == "|  |  |"
