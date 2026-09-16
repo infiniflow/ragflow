@@ -415,6 +415,9 @@ async def retrieval_test_embedded(tenant_id=None):
                 chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
+        if rerank_candidates_count <= 0:
+            return get_error_data_result("`rerank_candidates_count` must be greater than 0")
+
         if meta_data_filter:
             local_doc_ids = await apply_meta_data_filter(
                 meta_data_filter,

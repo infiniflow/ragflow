@@ -162,3 +162,14 @@ def test_non_positive_top_k_still_rejected(monkeypatch):
     res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
     assert res["code"] == 102
     assert "greater than 0" in res["message"]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("value", [0, -1])
+def test_non_positive_rerank_candidates_count_returns_data_error(monkeypatch, value):
+    module = _load_bot_api(monkeypatch)
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update(_base_request(rerank_candidates_count=value))
+    res = asyncio.run(module.retrieval_test_embedded(tenant_id="tenant-1"))
+    assert res["code"] == 102
+    assert "rerank_candidates_count` must be greater than 0" in res["message"]
