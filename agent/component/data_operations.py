@@ -43,6 +43,15 @@ class DataOperationsParam(ComponentParamBase):
 class DataOperations(ComponentBase, ABC):
     component_name = "DataOperations"
 
+    def param_refs(self) -> list[str]:
+        # query entries are resolved via Canvas.get_variable_value in _invoke,
+        # not through declared inputs, so the batch scheduler only sees them
+        # when exposed here (same contract as VariableAggregator.param_refs).
+        refs = getattr(self._param, "query", None) or []
+        if isinstance(refs, str):
+            refs = [refs]
+        return [r for r in refs if isinstance(r, str) and r.strip()]
+
     def get_input_form(self) -> dict[str, dict]:
         return {k: {"name": o.get("name", ""), "type": "line"} for input_item in (self._param.query or []) for k, o in self.get_input_elements_from_text(input_item).items()}
 
