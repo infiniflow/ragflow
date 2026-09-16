@@ -25,6 +25,9 @@ if (typeof globalThis.fetch === 'undefined') {
 
 // jsdom 20 does not expose CSS.supports, but css-support.ts reads it at module
 // scope (browsers all support it).
-if (typeof (globalThis as Record<string, unknown>).CSS === 'undefined' || typeof (globalThis as Record<string, unknown>).CSS.supports !== 'function') {
+if (
+  typeof (globalThis as Record<string, unknown>).CSS === 'undefined' ||
+  typeof (globalThis as Record<string, unknown>).CSS.supports !== 'function'
+) {
   (globalThis as Record<string, unknown>).CSS = { supports: () => false };
 }
