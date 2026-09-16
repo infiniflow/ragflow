@@ -1,19 +1,18 @@
 import { Operator } from '@/constants/agent';
-import type { IDataset } from '@/interfaces/database/dataset';
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import type { IDocumentInfo } from '@/interfaces/database/document';
-import {
-  FileType,
-  FileTypeSuffixMap,
-  initialParserValues,
-} from '@/pages/agent/constant/pipeline';
 import { pickByBackend } from '@/utils/backend-variant';
 import { getExtension } from '@/utils/document-util';
 import {
   getOperatorType,
   transformParserConfigSetups,
 } from '@/utils/pipeline-operator';
-import { cloneDeep } from 'lodash';
-import { IngestionTaskStatus, RunningStatus } from './constant';
+import {
+  IngestionTaskStatus,
+  ParserGapReason,
+  ParserModelKind,
+  RunningStatus,
+} from './constant';
 
 /** Ingestion statuses that represent an active or canceling parse task on Go. */
 const activeIngestionStatuses = new Set<IngestionTaskStatus>([
@@ -158,22 +157,34 @@ export const isDocumentProcessing = (
     python: isPythonDocumentProcessing(document),
   });
 
-// --- Parser model prerequisite checks -------------------------------------
-// Audio/video files can only be parsed when the matching model is configured
-// on the dataset's Parser operator. The tenant default is deliberately not
-// consulted: parsing reads the operator setup, so a global default does not
-// make the file parsable. Image files are exempt: the image parser always
-// runs OCR and only supplements it with the vision model (picked as the
-// image parse_method, with the tenant default as fallback), so a static
-// method like ocr is a complete configuration.
+// --- Parser prerequisite checks -------------------------------------------
+// A file cannot be parsed under the dataset's current Parser operator when
+// the operator does not declare the file's type family at all
+// (unsupportedType), or — for audio/video — when the declared setup carries
+// no model (missingModel). The tenant default is deliberately not consulted:
+// parsing reads the operator setup, so a global default does not make the
+// file parsable. Image files only need their family declared: the image
+// parser always runs OCR and merely supplements it with the vision model
+// (picked as the image parse_method, with the tenant default as fallback).
 // These helpers power the upload warning and the parse-click validation.
 
 export type ParserModelGap = {
+  reason: ParserGapReason.MissingModel;
   fileType: FileType;
-  modelKind: 'asr' | 'vision';
+  modelKind: ParserModelKind.Asr | ParserModelKind.Vision;
 };
 
-export type FileModelGap = ParserModelGap & { name: string };
+export type UnsupportedTypeGap = {
+  reason: ParserGapReason.UnsupportedType;
+  fileType: FileType;
+};
+
+export type ParserGap = ParserModelGap | UnsupportedTypeGap;
+
+export type FileParserGap = ParserGap & { name: string };
+
+export const hasUnsupportedTypeGap = (gaps: ParserGap[]) =>
+  gaps.some((gap) => gap.reason === ParserGapReason.UnsupportedType);
 
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
@@ -193,65 +204,89 @@ export function getFileTypeByExtension(
 }
 
 /**
- * Effective parser setups for a dataset: the saved Parser operator entry
- * (stored as a flattened map keyed by file format) merged over the default
- * setups, so untouched file types validate against their defaults.
+ * Parser setups exactly as saved, keyed by file format — the keys are the
+ * type families the pipeline/built-in method declares. Accepts either a
+ * dataset or a document row: a document's parser_config snapshots the parser
+ * it actually runs with (dataset config at upload, the override after a
+ * parser change). Returns null when parser_config has no Parser operator
+ * entry (legacy flat-shape configs, pipelines without a Parser stage): type
+ * support cannot be determined then and validation is skipped.
  */
-export function getEffectiveParserSetups(
-  knowledgeBase: Pick<IDataset, 'parser_config'> | null | undefined,
-): ParserSetup[] {
-  const parserConfig = knowledgeBase?.parser_config as
-    | Record<string, any>
-    | undefined;
+export function getSavedParserSetups(
+  source: { parser_config?: unknown } | null | undefined,
+): ParserSetup[] | null {
+  const parserConfig = source?.parser_config as Record<string, any> | undefined;
 
   const parserEntry = Object.entries(parserConfig ?? {}).find(
     ([operatorId]) => getOperatorType(operatorId) === Operator.Parser,
   )?.[1];
 
-  const savedSetups = transformParserConfigSetups(parserEntry);
-  const savedByFileType = new Map(
-    savedSetups.map((setup) => [setup.fileFormat, setup]),
-  );
-
-  const defaultSetups = cloneDeep(initialParserValues.setups) as ParserSetup[];
-  const merged = defaultSetups.map(
-    (setup) => savedByFileType.get(setup.fileFormat) ?? setup,
-  );
-  for (const setup of savedSetups) {
-    if (!defaultSetups.some((x) => x.fileFormat === setup.fileFormat)) {
-      merged.push(setup);
-    }
+  if (!parserEntry) {
+    return null;
   }
-  return merged;
+  return transformParserConfigSetups(parserEntry);
 }
 
-export function findMissingParserModel(
+export function findParserGap(
   fileType: FileType | undefined,
   setups: ParserSetup[],
-): ParserModelGap | null {
+): ParserGap | null {
+  if (!fileType) {
+    return null;
+  }
+
   const setup = setups.find((x) => x.fileFormat === fileType);
+  if (!setup) {
+    return { reason: ParserGapReason.UnsupportedType, fileType };
+  }
 
   switch (fileType) {
     case FileType.Audio: {
-      const configured = setup?.vlm?.llm_id;
-      return configured ? null : { fileType, modelKind: 'asr' };
+      return setup.vlm?.llm_id
+        ? null
+        : {
+            reason: ParserGapReason.MissingModel,
+            fileType,
+            modelKind: ParserModelKind.Asr,
+          };
     }
     case FileType.Video: {
-      const configured = setup?.vlm?.llm_id;
-      return configured ? null : { fileType, modelKind: 'vision' };
+      return setup.vlm?.llm_id
+        ? null
+        : {
+            reason: ParserGapReason.MissingModel,
+            fileType,
+            modelKind: ParserModelKind.Vision,
+          };
     }
     default:
       return null;
   }
 }
 
-export function findFilesMissingParserModels(
+export function findFilesParserGaps(
   names: string[],
   setups: ParserSetup[],
-): FileModelGap[] {
+): FileParserGap[] {
   return names.flatMap((name) => {
     const fileType = getFileTypeByExtension(getExtension(name));
-    const gap = findMissingParserModel(fileType, setups);
+    const gap = findParserGap(fileType, setups);
     return gap ? [{ ...gap, name }] : [];
+  });
+}
+
+/**
+ * Per-document parse validation: each document row carries the parser config
+ * it actually runs with (dataset snapshot at upload, the override after a
+ * parser change), so it is validated against its own setups. Rows without a
+ * Parser entry fall back to `fallbackSetups` (the dataset-level config).
+ */
+export function findDocumentsParserGaps(
+  documents: Array<{ name: string; parser_config?: unknown }>,
+  fallbackSetups: ParserSetup[] | null,
+): FileParserGap[] {
+  return documents.flatMap((doc) => {
+    const setups = getSavedParserSetups(doc) ?? fallbackSetups;
+    return setups ? findFilesParserGaps([doc.name], setups) : [];
   });
 }

@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -28,8 +29,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
