@@ -13,16 +13,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""DataOperations must wait for param-ref producers in the canvas batch window.
+"""DataOperations requires explicit canvas edges for query component refs.
 
-DataOperations._invoke resolves each entry of ``query`` through
-``Canvas.get_variable_value`` without declaring those refs via
-``param_refs()``. When Begin fans out to a slow producer and a sibling
-DataOperations that reads ``producer@result``, both land in the same
-``path[idx:to]`` batch and the reader sees the stale (empty) value.
-
-This is the same scheduler contract #19282 introduced for VariableAggregator
-/ CodeExec. DataOperations was still invisible to ``_schedulable``.
+Workflow semantics: DataOperations may execute only when its upstream
+producers are explicitly connected on the canvas. A ``producer@result``
+(or braced) entry in ``query`` must not create an implicit scheduler
+dependency via ``param_refs()``. Unconnected references are rejected;
+connected upstream edges drive readiness (path growth and/or
+``get_dependency_ids`` from ``upstream``), so a properly wired producer
+is not read while still empty.
 """
 
 from __future__ import annotations
@@ -120,6 +119,9 @@ class _Trace:
     def at(self, kind, cpn_id):
         return next(t for k, c, t in self.events if k == kind and c == cpn_id)
 
+    def ran(self, cpn_id):
+        return any(k == "start" and c == cpn_id for k, c, _ in self.events)
+
 
 def _make_components(base, data_ops, trace):
     class BeginParam(base.ComponentParamBase):
@@ -199,12 +201,10 @@ def _dsl(components):
     )
 
 
-def _sibling_data_ops_graph():
-    """Begin fans out to a slow producer and a DataOperations sibling.
-
-    No edge from producer to DataOperations — the dependency is only the
-    ``query`` param ref ``producer@result``.
-    """
+def _unconnected_sibling_graph(query=None):
+    """Begin fans out to producer and DataOperations with no producer→ops edge."""
+    if query is None:
+        query = ["producer@result"]
     return _dsl(
         {
             "begin": _node("Begin", {}, ["producer", "ops"], []),
@@ -217,12 +217,66 @@ def _sibling_data_ops_graph():
             "ops": _node(
                 "DataOperations",
                 {
-                    "query": ["producer@result"],
+                    "query": query,
                     "operations": "select_keys",
                     "select_keys": ["name"],
                 },
                 [],
                 ["begin"],
+            ),
+        }
+    )
+
+
+def _connected_chain_graph():
+    """Begin → producer → DataOperations with an explicit canvas edge."""
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["producer"], []),
+            "producer": _node(
+                "DictProducer",
+                {"payload": [{"name": "Ragflow", "ok": True}], "delay": 0.30},
+                ["ops"],
+                ["begin"],
+            ),
+            "ops": _node(
+                "DataOperations",
+                {
+                    "query": ["producer@result"],
+                    "operations": "select_keys",
+                    "select_keys": ["name"],
+                },
+                [],
+                ["producer"],
+            ),
+        }
+    )
+
+
+def _connected_fanout_graph():
+    """Begin fans out to both nodes, but producer is also an explicit upstream of ops.
+
+    Without edge-based ``get_dependency_ids``, ops would share the batch with
+    the slow producer and read a stale empty value even though the edge exists.
+    """
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["producer", "ops"], []),
+            "producer": _node(
+                "DictProducer",
+                {"payload": [{"name": "Ragflow", "ok": True}], "delay": 0.30},
+                ["ops"],
+                ["begin"],
+            ),
+            "ops": _node(
+                "DataOperations",
+                {
+                    "query": ["{ producer@result }"],
+                    "operations": "select_keys",
+                    "select_keys": ["name"],
+                },
+                [],
+                ["begin", "producer"],
             ),
         }
     )
@@ -247,20 +301,50 @@ def _run(canvas_module, dsl):
 
 
 @pytest.mark.p1
-def test_data_operations_param_refs_exposes_query(stack):
-    canvas_module, _, _ = stack
-    graph = _run(canvas_module, _sibling_data_ops_graph())
+def test_unconnected_query_ref_is_rejected(stack):
+    canvas_module, trace, _ = stack
+    graph = _run(canvas_module, _unconnected_sibling_graph())
     ops = graph.get_component_obj("ops")
-    assert ops.param_refs() == ["producer@result"]
-    assert "producer" in ops.get_dependency_ids()
+
+    err = ops.error() or ""
+    assert "explicit canvas edge" in err, err
+    assert "producer" in err
+    assert ops.output("result") == []
+    # Query must not become an implicit scheduler dependency.
+    assert ops.param_refs() == []
+    assert "producer" not in ops.get_dependency_ids()
 
 
 @pytest.mark.p1
-def test_data_operations_waits_for_sibling_producer(stack):
+def test_unconnected_braced_query_ref_is_rejected(stack):
+    canvas_module, _, _ = stack
+    graph = _run(canvas_module, _unconnected_sibling_graph(query=["{producer@result}"]))
+    ops = graph.get_component_obj("ops")
+    err = ops.error() or ""
+    assert "explicit canvas edge" in err, err
+    assert "producer" in err
+
+
+@pytest.mark.p1
+def test_connected_upstream_reads_fresh_producer_output(stack):
     canvas_module, trace, _ = stack
-    graph = _run(canvas_module, _sibling_data_ops_graph())
+    graph = _run(canvas_module, _connected_chain_graph())
     ops = graph.get_component_obj("ops")
 
-    result = ops.output("result")
-    assert result == [{"name": "Ragflow"}], result
+    assert not ops.error(), ops.error()
+    assert ops.output("result") == [{"name": "Ragflow"}]
     assert trace.at("start", "ops") >= trace.at("end", "producer")
+    assert "producer" in ops.get_dependency_ids()
+    assert ops.param_refs() == []
+
+
+@pytest.mark.p1
+def test_connected_fanout_defers_via_explicit_upstream_edge(stack):
+    canvas_module, trace, _ = stack
+    graph = _run(canvas_module, _connected_fanout_graph())
+    ops = graph.get_component_obj("ops")
+
+    assert not ops.error(), ops.error()
+    assert ops.output("result") == [{"name": "Ragflow"}]
+    assert trace.at("start", "ops") >= trace.at("end", "producer")
+    assert "producer" in ops.get_dependency_ids()

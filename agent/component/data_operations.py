@@ -43,25 +43,56 @@ class DataOperationsParam(ComponentParamBase):
 class DataOperations(ComponentBase, ABC):
     component_name = "DataOperations"
 
-    def param_refs(self) -> list[str]:
-        # query entries are resolved via Canvas.get_variable_value in _invoke,
-        # not through declared inputs, so the batch scheduler only sees them
-        # when exposed here (same contract as VariableAggregator.param_refs).
-        refs = getattr(self._param, "query", None) or []
-        if isinstance(refs, str):
+    @staticmethod
+    def _normalize_query_ref(ref: str) -> str:
+        # Match Canvas.get_variable_value so "{ producer@result }" and
+        # "producer@result" identify the same producer component.
+        return ref.strip("{").strip("}").strip(" ").strip("{").strip("}")
+
+    def _query_entries(self) -> list[str]:
+        refs = getattr(self._param, "query", None)
+        if not isinstance(refs, (list, tuple)):
             refs = [refs]
         return [r for r in refs if isinstance(r, str) and r.strip()]
+
+    def _validate_connected_query_refs(self) -> None:
+        """Reject component refs whose producer is not an explicit upstream.
+
+        DataOperations may run only when its producers are connected on the
+        canvas. A ``producer@result`` entry in ``query`` must not create an
+        implicit scheduler dependency; unconnected refs fail instead.
+        """
+        upstream = set(self.get_upstream() or [])
+        for raw in self._query_entries():
+            ref = self._normalize_query_ref(raw)
+            if ref.find("@") < 0:
+                continue  # globals such as sys.query / env.*
+            producer_id = ref.split("@", 1)[0]
+            if not producer_id:
+                continue
+            if producer_id not in upstream:
+                raise ValueError(
+                    f"[DataOperations] query reference '{raw}' requires an explicit canvas edge "
+                    f"from '{producer_id}' to '{self._id}'; disconnected parameter references are not allowed."
+                )
+
+    def get_dependency_ids(self) -> list[str]:
+        # Scheduler readiness stays on explicit canvas edges (plus any declared
+        # inputs). Query strings must not contribute dependencies via param_refs.
+        ids = [ele["_cpn_id"] for ele in self.get_input_elements().values() if isinstance(ele, dict) and ele.get("_cpn_id")]
+        for u in self.get_upstream() or []:
+            if u and u not in ids:
+                ids.append(u)
+        return ids
 
     def get_input_form(self) -> dict[str, dict]:
         return {k: {"name": o.get("name", ""), "type": "line"} for input_item in (self._param.query or []) for k, o in self.get_input_elements_from_text(input_item).items()}
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
+        self._validate_connected_query_refs()
         self.input_objects = []
-        inputs = getattr(self._param, "query", None)
-        if not isinstance(inputs, (list, tuple)):
-            inputs = [inputs]
-        for input_ref in inputs:
+        for input_ref in self._query_entries():
             input_object = self._canvas.get_variable_value(input_ref)
             self.set_input_value(input_ref, input_object)
             if input_object is None:
