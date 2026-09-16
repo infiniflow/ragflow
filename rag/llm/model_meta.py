@@ -1232,7 +1232,9 @@ class CheaperInference(OpenAIAPICompatible):
             if modality and modality != self._CHAT_MODALITY:
                 continue
 
-            capabilities = model.get("capabilities") or {}
+            capabilities = model.get("capabilities")
+            if not isinstance(capabilities, dict):
+                capabilities = {}
             model_types = [LLMType.CHAT.value]
             if capabilities.get("vision"):
                 model_types.append(LLMType.VISION.value)
@@ -1240,12 +1242,16 @@ class CheaperInference(OpenAIAPICompatible):
             if capabilities.get("reasoning"):
                 features.append("thinking")
 
+            context_length = model.get("context_length")
+            if not isinstance(context_length, int) or isinstance(context_length, bool) or context_length <= 0:
+                context_length = 8192
+
             model_list.append(
                 {
                     "name": model_name,
                     "model_types": model_types,
                     "features": features,
-                    "max_tokens": model.get("context_length") or 8192,
+                    "max_tokens": context_length,
                 }
             )
 
