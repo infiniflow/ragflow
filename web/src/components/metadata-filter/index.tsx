@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { DatasetMetadata } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -50,10 +66,18 @@ export function MetadataFilter({
 
   const methodName = prefix + 'meta_data_filter.method';
 
-  const kbIds: string[] = useWatch({
+  const datasetIds: string[] = useWatch({
+    control: form.control,
+    name: prefix + 'dataset_ids',
+  });
+
+  const oldKbIds: string[] = useWatch({
     control: form.control,
     name: prefix + 'kb_ids',
   });
+
+  const kbIds = datasetIds || oldKbIds || [];
+
   const metadata = useWatch({
     control: form.control,
     name: methodName,

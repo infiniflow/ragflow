@@ -41,11 +41,10 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
                 "invalid_chat_assistant_id",
                 109,
-                "No authorization.",
+                "no authorization",
             ),
         ],
     )

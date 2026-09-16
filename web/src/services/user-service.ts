@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request, { post } from '@/utils/request';
@@ -7,18 +23,8 @@ const {
   logout,
   register,
   setting,
-  user_info,
-  tenant_info,
-  factories_list,
-  llm_list,
-  my_llm,
-  set_api_key,
-  set_tenant_info,
-  add_llm,
-  delete_llm,
-  enable_llm,
-  deleteFactory,
-  getSystemStatus,
+  userInfo,
+  tenantInfo,
   getSystemVersion,
   getSystemTokenList,
   removeSystemToken,
@@ -34,7 +40,7 @@ const methods = {
   },
   logout: {
     url: logout,
-    method: 'get',
+    method: 'post',
   },
   register: {
     url: register,
@@ -42,59 +48,19 @@ const methods = {
   },
   setting: {
     url: setting,
-    method: 'post',
+    method: 'patch',
   },
-  user_info: {
-    url: user_info,
+  userInfo: {
+    url: userInfo,
     method: 'get',
   },
-  get_tenant_info: {
-    url: tenant_info,
-    method: 'get',
-  },
-  set_tenant_info: {
-    url: set_tenant_info,
-    method: 'post',
-  },
-  factories_list: {
-    url: factories_list,
-    method: 'get',
-  },
-  llm_list: {
-    url: llm_list,
-    method: 'get',
-  },
-  my_llm: {
-    url: my_llm,
-    method: 'get',
-  },
-  set_api_key: {
-    url: set_api_key,
-    method: 'post',
-  },
-  add_llm: {
-    url: add_llm,
-    method: 'post',
-  },
-  delete_llm: {
-    url: delete_llm,
-    method: 'post',
-  },
-  enable_llm: {
-    url: enable_llm,
-    method: 'post',
-  },
-  getSystemStatus: {
-    url: getSystemStatus,
+  getTenantInfo: {
+    url: tenantInfo,
     method: 'get',
   },
   getSystemVersion: {
     url: getSystemVersion,
     method: 'get',
-  },
-  deleteFactory: {
-    url: deleteFactory,
-    method: 'post',
   },
   listToken: {
     url: getSystemTokenList,
@@ -128,9 +94,9 @@ const methods = {
 
 const userService = registerServer<keyof typeof methods>(methods, request);
 
-export const getLoginChannels = () => request.get(api.login_channels);
+export const getLoginChannels = () => request.get(api.loginChannels);
 export const loginWithChannel = (channel: string) =>
-  (window.location.href = api.login_channel(channel));
+  (window.location.href = api.loginChannel(channel));
 
 export const listTenantUser = (tenantId: string) =>
   request.get(api.listTenantUser(tenantId));
@@ -144,11 +110,14 @@ export const deleteTenantUser = ({
 }: {
   tenantId: string;
   userId: string;
-}) => request.delete(api.deleteTenantUser(tenantId, userId));
+}) =>
+  request.delete(api.deleteTenantUser(tenantId), {
+    data: { userId },
+  });
 
 export const listTenant = () => request.get(api.listTenant);
 
 export const agreeTenant = (tenantId: string) =>
-  request.put(api.agreeTenant(tenantId));
+  request.patch(api.agreeTenant(tenantId));
 
 export default userService;

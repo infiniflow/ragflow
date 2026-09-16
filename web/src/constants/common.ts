@@ -1,45 +1,18 @@
-export const fileIconMap = {
-  aep: 'aep.svg',
-  ai: 'ai.svg',
-  avi: 'avi.svg',
-  css: 'css.svg',
-  csv: 'csv.svg',
-  dmg: 'dmg.svg',
-  doc: 'doc.svg',
-  docx: 'docx.svg',
-  eps: 'eps.svg',
-  exe: 'exe.svg',
-  fig: 'fig.svg',
-  gif: 'gif.svg',
-  html: 'html.svg',
-  indd: 'indd.svg',
-  java: 'java.svg',
-  jpeg: 'jpeg.svg',
-  jpg: 'jpg.svg',
-  js: 'js.svg',
-  json: 'json.svg',
-  md: 'md.svg',
-  mdx: 'mdx.svg',
-  mkv: 'mkv.svg',
-  mp3: 'mp3.svg',
-  mp4: 'mp4.svg',
-  mpeg: 'mpeg.svg',
-  pdf: 'pdf.svg',
-  png: 'png.svg',
-  ppt: 'ppt.svg',
-  pptx: 'pptx.svg',
-  psd: 'psd.svg',
-  rss: 'rss.svg',
-  sql: 'sql.svg',
-  svg: 'svg.svg',
-  tiff: 'tiff.svg',
-  txt: 'txt.svg',
-  wav: 'wav.svg',
-  webp: 'webp.svg',
-  xls: 'xls.svg',
-  xlsx: 'xlsx.svg',
-  xml: 'xml.svg',
-};
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 
 // TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
@@ -58,6 +31,7 @@ export const LanguageList = [
   'Bulgarian',
   'Arabic',
   'Turkish',
+  'Dutch',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -76,6 +50,7 @@ export const LanguageMap = {
   Bulgarian: 'Български',
   Arabic: 'العربية',
   Turkish: 'Türkçe',
+  Dutch: 'Nederlands',
 };
 
 export enum LanguageAbbreviation {
@@ -94,6 +69,8 @@ export enum LanguageAbbreviation {
   Bg = 'bg',
   Ar = 'ar',
   Tr = 'tr',
+  Ko = 'ko',
+  Nl = 'nl',
 }
 
 export const LanguageAbbreviationMap = {
@@ -112,6 +89,8 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Bg]: 'Български',
   [LanguageAbbreviation.Ar]: 'العربية',
   [LanguageAbbreviation.Tr]: 'Türkçe',
+  [LanguageAbbreviation.Ko]: '한국어',
+  [LanguageAbbreviation.Nl]: 'Nederlands',
 };
 
 export const LanguageTranslationMap = {
@@ -141,6 +120,7 @@ export const LanguageTranslationMap = {
   Bulgarian: 'bg',
   Arabic: 'ar',
   Turkish: 'tr',
+  Dutch: 'nl',
 };
 
 export enum FileMimeType {
@@ -165,7 +145,7 @@ export enum FileMimeType {
   Mp4 = 'video/mp4',
   Json = 'application/json',
   Md = 'text/markdown',
-  Mdx = 'text/markdown',
+  Mdx = 'text/mdx',
 }
 
 export const Domain = 'cloud.ragflow.io';
@@ -192,6 +172,12 @@ export const ExceptiveType = [
   'docx',
   'md',
   'mdx',
+  'txt',
+  'csv',
+  'pptx',
+  'html',
+  'htm',
+  'epub',
   ...Images,
 ];
 
@@ -210,3 +196,5 @@ export enum ThemeEnum {
   Light = 'light',
   System = 'system',
 }
+
+export const DESCRIPTION_MAX_LENGTH = 512;

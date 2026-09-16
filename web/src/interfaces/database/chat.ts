@@ -1,5 +1,12 @@
-import { MessageType } from '@/constants/chat';
+import { MessageType, WebSearchProvider } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
+
+export interface IDocumentDownloadInfo {
+  doc_id: string;
+  filename: string;
+  mime_type: string;
+  size?: number;
+}
 
 export interface PromptConfig {
   empty_response: string;
@@ -14,7 +21,15 @@ export interface PromptConfig {
   reasoning?: boolean;
   cross_languages?: Array<string>;
   tavily_api_key?: string;
+  querit_api_key?: string;
+  serply_api_key?: string;
+  youcom_api_key?: string;
+  web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
+  reference_metadata?: {
+    include?: boolean;
+    fields?: string[];
+  };
 }
 
 export interface Parameter {
@@ -35,6 +50,7 @@ export interface Variable {
   presence_penalty?: number;
   temperature?: number;
   top_p?: number;
+  thinking?: 'default' | 'enabled' | 'disabled';
   tenant_llm_id?: string;
   model_type?: string;
 }
@@ -64,7 +80,9 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  rerank_candidates_count: number;
   rerank_id?: string;
+  tenant_rerank_id?: string;
   meta_data_filter: MetaDataFilter;
 }
 
@@ -104,6 +122,7 @@ export interface Message {
   files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
 }
 
 export interface IReferenceChunk {
@@ -116,8 +135,9 @@ export interface IReferenceChunk {
   similarity: number;
   vector_similarity: number;
   term_similarity: number;
-  positions: number[];
+  positions: number[][];
   doc_type?: string;
+  document_metadata?: Record<string, any>;
 }
 
 export interface IReference {
@@ -134,6 +154,7 @@ export interface IReferenceObject {
 export interface IAnswer {
   answer: string;
   attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
   reference?: IReference;
   conversationId?: string;
   prompt?: string;
@@ -188,6 +209,8 @@ export interface IExternalChatInfo {
   title: string;
   prologue?: string;
   has_tavily_key?: boolean;
+  has_web_search_provider?: boolean;
+  llm_id?: string;
 }
 
 export interface IMessage extends Message {

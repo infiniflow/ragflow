@@ -15,6 +15,7 @@
 #
 import pytest
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from configs import HOST_ADDRESS
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Message, Session
 
@@ -30,7 +31,7 @@ def set_tenant_info():
 
 
 class TestSessionsWithChatAssistantList:
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_list_sessions_raises_on_nonzero_response(self, add_sessions_with_chat_assistant, monkeypatch):
         chat_assistant, _ = add_sessions_with_chat_assistant
 
@@ -72,7 +73,7 @@ class TestSessionsWithChatAssistantList:
         "params, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, "not instance of"),
-            ({"page_size": 0}, 0, ""),
+            ({"page_size": 0}, 5, ""),
             ({"page_size": 1}, 1, ""),
             ({"page_size": 6}, 5, ""),
             ({"page_size": "1"}, 0, "not instance of"),
@@ -226,12 +227,12 @@ class TestSessionsWithChatAssistantList:
 
         with pytest.raises(Exception) as exception_info:
             chat_assistant.list_sessions()
-        assert "You don't own the assistant" in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2
 def test_session_module_error_paths_unit(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
 
     unknown_session = Session(client, {"id": "session-unknown", "chat_id": "chat-1"})
     unknown_session._Session__session_type = "unknown"  # noqa: SLF001

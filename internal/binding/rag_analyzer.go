@@ -14,15 +14,19 @@
 //  limitations under the License.
 //
 
+//go:build cgo
+
 package rag_analyzer
 
 /*
 #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/..
-#cgo linux LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
-#cgo darwin LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+#cgo linux LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread -lpcre2-8
+// Apple Silicon: Homebrew installs to /opt/homebrew; Intel Macs keep /usr/local.
+#cgo darwin,arm64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /opt/homebrew/lib/libpcre2-8.a
+#cgo darwin,amd64 LDFLAGS: ${SRCDIR}/cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
 
 #include <stdlib.h>
-#include "../cpp/rag_analyzer_c_api.h"
+#include "cpp/rag_analyzer_c_api.h"
 */
 import "C"
 import (
@@ -90,6 +94,17 @@ func (a *Analyzer) SetEnablePosition(enablePosition bool) {
 		return
 	}
 	C.RAGAnalyzer_SetEnablePosition(a.handle, C.bool(enablePosition))
+}
+
+// SetLanguage configures the Snowball stemmer for the given language (e.g. "English", "Dutch").
+// Falls back to the English Porter stemmer for unmapped languages.
+func (a *Analyzer) SetLanguage(language string) {
+	if a.handle == nil {
+		return
+	}
+	cLang := C.CString(language)
+	defer C.free(unsafe.Pointer(cLang))
+	C.RAGAnalyzer_SetLanguage(a.handle, cLang)
 }
 
 // Analyze analyzes the input text and returns all tokens

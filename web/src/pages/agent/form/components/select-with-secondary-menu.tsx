@@ -170,6 +170,8 @@ export function GroupedSelectWithSecondaryMenu({
                     >
                       <HoverCardTrigger asChild>
                         <CommandItem
+                          value={option.value}
+                          keywords={[option.label]}
                           onSelect={() => {}}
                           className="flex items-center justify-between cursor-default"
                         >
@@ -205,6 +207,8 @@ export function GroupedSelectWithSecondaryMenu({
                   ) : (
                     <CommandItem
                       key={option.value}
+                      value={option.value}
+                      keywords={[option.label]}
                       onSelect={() => {
                         onChange?.(option.value);
                         setOpen(false);

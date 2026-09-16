@@ -13,6 +13,12 @@ const TooltipColorMap = {
   edge: 'text-blue-600',
 };
 
+const getMaxSize = (node: any) => {
+  if (!node?.size) return 32;
+  const size = Array.isArray(node.size) ? node.size : [node.size, node.size];
+  return Math.max(size[0] || 32, size[1] || 32);
+};
+
 interface IProps {
   data: any;
   show: boolean;
@@ -100,9 +106,23 @@ const ForceGraph = ({ data, show }: IProps) => {
       ],
       layout: {
         type: 'combo-combined',
-        preventOverlap: true,
-        comboPadding: 1,
-        spacing: 100,
+        comboPadding: 10,
+        nodeSpacing: 100,
+        comboSpacing: 100,
+        layout: (comboId: string | null) =>
+          !comboId
+            ? {
+                type: 'force',
+                preventOverlap: true,
+                gravity: 1,
+                factor: 4,
+                linkDistance: (_edge: any, source: any, target: any) => {
+                  const sourceSize = getMaxSize(source);
+                  const targetSize = getMaxSize(target);
+                  return sourceSize / 2 + targetSize / 2 + 200;
+                },
+              }
+            : { type: 'concentric', preventOverlap: true },
       },
       node: {
         style: {
@@ -161,7 +181,7 @@ const ForceGraph = ({ data, show }: IProps) => {
     graph.setData(nextData);
 
     graph.render();
-  }, [nextData]);
+  }, [isDark, nextData, tooltipId]);
 
   useEffect(() => {
     if (!isEmpty(data)) {

@@ -1,0 +1,23 @@
+{
+  "name": "HuggingFace",
+  "rank": 991,
+  "url": {
+    "default": "https://router.huggingface.co/v1"
+  },
+  "url-suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "hf-inference/models"
+  },
+  "class": "huggingface",
+  "models": [
+    {
+      "name": "openai/gpt-oss-120b:fastest",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}

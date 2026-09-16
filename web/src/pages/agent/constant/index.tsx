@@ -27,6 +27,10 @@ export * from './pipeline';
 
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -40,6 +44,7 @@ export enum PromptRole {
 }
 
 import {
+  Braces,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -82,16 +87,14 @@ export enum RetrievalFrom {
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
-  top_k: 1024,
-  kb_ids: [],
+  rerank_candidates_count: 64,
+  dataset_ids: [],
   rerank_id: '',
-  empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  toc_enhance: false,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
+  document_ids: '',
   outputs: {
     formalized_content: {
       type: 'string',
@@ -188,6 +191,76 @@ export const initialSearXNGValues = {
   },
 };
 
+export enum KeenableMode {
+  Pro = 'pro',
+  Realtime = 'realtime',
+}
+
+export enum YouComFreshness {
+  Any = 'any',
+  Day = 'day',
+  Week = 'week',
+  Month = 'month',
+  Year = 'year',
+}
+
+export const initialYouComValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  freshness: YouComFreshness.Any,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export enum SofyaSearchDepth {
+  Basic = 'basic',
+  Snippets = 'snippets',
+}
+
+export const initialSofyaValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  search_depth: SofyaSearchDepth.Basic,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialKeenableValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  mode: KeenableMode.Pro,
+  site: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -208,6 +281,23 @@ export const initialPubMedValues = {
     formalized_content: {
       value: '',
       type: 'string',
+    },
+  },
+};
+
+export const initialBGPTValues = {
+  top_n: 10,
+  api_key: '',
+  days_back: '',
+  query: AgentGlobals.SysQuery,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
     },
   },
 };
@@ -406,13 +496,14 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  max_concurrency: 0,
   outputs: {},
 };
 
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -427,7 +518,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};
@@ -448,6 +539,7 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
+  tool_timeout: 10,
   cite: true,
   showStructuredOutput: false,
   outputs: {
@@ -527,6 +619,48 @@ export const initialTavilyValues = {
   },
 };
 
+export const initialQueritValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  count: 10,
+  chunks_per_doc: 3,
+  site_include: [],
+  site_exclude: [],
+  time_range: '',
+  country_include: [],
+  language_include: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
+export enum QueritContentFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+  Html = 'html',
+}
+
+export const initialQueritContentsValues = {
+  api_key: '',
+  urls: '',
+  format: QueritContentFormat.Markdown,
+  crawl_timeout: 10,
+  extras_meta: false,
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export enum TavilyExtractDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -583,7 +717,7 @@ export enum SortMethod {
 }
 
 export enum ListOperations {
-  TopN = 'topN',
+  Nth = 'nth',
   Head = 'head',
   Tail = 'tail',
   Filter = 'filter',
@@ -593,7 +727,8 @@ export enum ListOperations {
 
 export const initialListOperationsValues = {
   query: '',
-  operations: ListOperations.TopN,
+  operations: ListOperations.Nth,
+  strict: false,
   outputs: {
     // result: {
     //   type: 'Array<?>',
@@ -654,12 +789,16 @@ export const RestrictedUpstreamMap = {
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
+  [Operator.BGPT]: [Operator.Begin, Operator.Retrieval],
   [Operator.ArXiv]: [Operator.Begin, Operator.Retrieval],
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
+  [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -674,6 +813,8 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritContents]: [Operator.Begin],
+  [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
@@ -684,15 +825,18 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
+  [Operator.GeneralChunker]: [Operator.Begin],
   [Operator.TokenChunker]: [Operator.Begin],
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.Compiler]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
-  [Operator.PDFGenerator]: [Operator.Begin],
+  [Operator.DocGenerator]: [Operator.Begin],
+  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -704,12 +848,16 @@ export const NodeMap = {
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
+  [Operator.BGPT]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
+  [Operator.KeenableSearch]: 'ragNode',
+  [Operator.YouComSearch]: 'ragNode',
+  [Operator.SofyaSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -718,13 +866,15 @@ export const NodeMap = {
   [Operator.Crawler]: 'ragNode',
   [Operator.Invoke]: 'ragNode',
   [Operator.Email]: 'ragNode',
-  [Operator.Iteration]: 'group',
+  [Operator.Iteration]: 'iterationNode',
   [Operator.IterationStart]: 'iterationStartNode',
   [Operator.Code]: 'ragNode',
   [Operator.WaitingDialogue]: 'ragNode',
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritContents]: 'ragNode',
+  [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
@@ -732,9 +882,11 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.GeneralChunker]: 'chunkerNode',
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
+  [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
@@ -743,7 +895,8 @@ export const NodeMap = {
   [Operator.LoopStart]: 'loopStartNode',
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
-  [Operator.PDFGenerator]: 'ragNode',
+  [Operator.DocGenerator]: 'ragNode',
+  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -753,6 +906,7 @@ export enum BeginQueryType {
   File = 'file',
   Integer = 'integer',
   Boolean = 'boolean',
+  Object = 'object',
 }
 
 export const BeginQueryTypeIconMap = {
@@ -762,6 +916,7 @@ export const BeginQueryTypeIconMap = {
   [BeginQueryType.File]: CloudUpload,
   [BeginQueryType.Integer]: ListOrdered,
   [BeginQueryType.Boolean]: ToggleLeft,
+  [BeginQueryType.Object]: Braces,
 };
 
 export const NoDebugOperatorsList = [
@@ -775,19 +930,24 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compiler,
   Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Compiler,
 ];
 
 export enum NodeHandleId {
@@ -959,68 +1119,38 @@ export enum AgentVariableType {
   Conversation = 'conversation',
 }
 
-// PDF Generator enums
-export enum PDFGeneratorFontFamily {
-  Helvetica = 'Helvetica',
-  TimesRoman = 'Times-Roman',
-  Courier = 'Courier',
-  HelveticaBold = 'Helvetica-Bold',
-  TimesBold = 'Times-Bold',
-}
-
-export enum PDFGeneratorLogoPosition {
-  Left = 'left',
-  Center = 'center',
-  Right = 'right',
-}
-
-export enum PDFGeneratorPageSize {
-  A4 = 'A4',
-  Letter = 'Letter',
-}
-
-export enum PDFGeneratorOrientation {
-  Portrait = 'portrait',
-  Landscape = 'landscape',
-}
-
-export const initialPDFGeneratorValues = {
+export const initialDocGeneratorValues = {
   output_format: 'pdf',
   content: '',
-  title: '',
-  subtitle: '',
+  filename: '',
   header_text: '',
   footer_text: '',
-  logo_image: '',
-  logo_position: PDFGeneratorLogoPosition.Left,
-  logo_width: 2.0,
-  logo_height: 1.0,
-  font_family: PDFGeneratorFontFamily.Helvetica,
-  font_size: 12,
-  title_font_size: 24,
-  heading1_font_size: 18,
-  heading2_font_size: 16,
-  heading3_font_size: 14,
-  text_color: '#000000',
-  title_color: '#000000',
-  page_size: PDFGeneratorPageSize.A4,
-  orientation: PDFGeneratorOrientation.Portrait,
-  margin_top: 1.0,
-  margin_bottom: 1.0,
-  margin_left: 1.0,
-  margin_right: 1.0,
-  line_spacing: 1.2,
-  filename: '',
-  output_directory: '/tmp/pdf_outputs',
+  watermark_text: '',
   add_page_numbers: true,
   add_timestamp: true,
-  watermark_text: '',
-  enable_toc: false,
+  include_download_info_in_content: false,
+  font_size: 12,
   outputs: {
-    file_path: { type: 'string' },
-    pdf_base64: { type: 'string' },
+    doc_id: { type: 'string' },
+    filename: { type: 'string' },
+    mime_type: { type: 'string' },
+    size: { type: 'number' },
     download: { type: 'string' },
-    success: { type: 'boolean' },
+  },
+};
+
+export const initialBrowserValues = {
+  ...initialLlmBaseValues,
+  prompts: `{${AgentGlobals.SysQuery}}`,
+  max_steps: 30,
+  headless: true,
+  enable_default_extensions: false,
+  chromium_sandbox: false,
+  persist_session: true,
+  upload_sources: '',
+  outputs: {
+    content: { type: 'string', value: '' },
+    downloaded_files: { type: 'Array<Object>', value: [] },
   },
 };
 
@@ -1069,6 +1199,7 @@ export enum WebhookRequestParameters {
   String = TypesWithArray.String,
   Number = TypesWithArray.Number,
   Boolean = TypesWithArray.Boolean,
+  Object = TypesWithArray.Object,
 }
 
 export enum WebhookStatus {
@@ -1085,6 +1216,7 @@ export const BeginQueryTypeMap = {
   [BeginQueryType.File]: 'File',
   [BeginQueryType.Integer]: TypesWithArray.Number,
   [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+  [BeginQueryType.Object]: TypesWithArray.Object,
 };
 
 export const VariableRegex = /{([^{}]*)}/g;

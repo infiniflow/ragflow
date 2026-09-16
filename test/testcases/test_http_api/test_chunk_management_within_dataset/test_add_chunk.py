@@ -39,12 +39,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -58,7 +54,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": None}, 100, """TypeError("unsupported operand type(s) for +: \'NoneType\' and \'str\'")"""),
+            ({"content": None}, 102, "`content` is required"),
             ({"content": ""}, 102, "`content` is required"),
             pytest.param(
                 {"content": 1},
@@ -111,9 +107,7 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
-        assert res["code"] == expected_code, (
-            f"Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}"
-        )
+        assert res["code"] == expected_code, f"Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}"
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
             res = list_chunks(HttpApiAuth, dataset_id, document_id)
@@ -208,7 +202,7 @@ class TestAddChunk:
             (
                 INVALID_ID_32,
                 102,
-                f"You don't own the document {INVALID_ID_32}.",
+                f"you don't own the document {INVALID_ID_32}",
             ),
         ],
     )
@@ -248,7 +242,7 @@ class TestAddChunk:
         delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})
         res = add_chunk(HttpApiAuth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == 102
-        assert res["message"] == f"You don't own the document {document_id}."
+        assert res["message"] == f"you don't own the document {document_id}"
 
     @pytest.mark.skip(reason="issues/6411")
     def test_concurrent_add_chunk(self, HttpApiAuth, add_document):

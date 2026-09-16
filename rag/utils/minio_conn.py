@@ -44,8 +44,8 @@ class RAGFlowMinio:
         self.conn = None
         # Use `or None` to convert empty strings to None, ensuring single-bucket
         # mode is truly disabled when not configured
-        self.bucket = settings.MINIO.get('bucket', None) or None
-        self.prefix_path = settings.MINIO.get('prefix_path', None) or None
+        self.bucket = settings.MINIO.get("bucket", None) or None
+        self.prefix_path = settings.MINIO.get("prefix_path", None) or None
         self.__open__()
 
     @staticmethod
@@ -58,7 +58,7 @@ class RAGFlowMinio:
             actual_bucket = self.bucket if self.bucket else bucket
             if self.bucket:
                 # pass original identifier forward for use by other decorators
-                kwargs['_orig_bucket'] = original_bucket
+                kwargs["_orig_bucket"] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -71,7 +71,7 @@ class RAGFlowMinio:
             # bucket name and forwarded the original identifier as `_orig_bucket`.
             # Prefer that original identifier when constructing the key path so
             # objects are stored under <physical-bucket>/<identifier>/...
-            orig_bucket = kwargs.pop('_orig_bucket', None)
+            orig_bucket = kwargs.pop("_orig_bucket", None)
 
             if self.prefix_path:
                 # If a prefix_path is configured, include it and then the identifier
@@ -106,11 +106,11 @@ class RAGFlowMinio:
                 access_key=settings.MINIO["user"],
                 secret_key=settings.MINIO["password"],
                 secure=secure,
+                region=settings.MINIO.get("region", None) or None,
                 http_client=http_client,
             )
         except Exception:
-            logging.exception(
-                "Fail to connect %s " % settings.MINIO["host"])
+            logging.exception("Fail to connect %s " % settings.MINIO["host"])
 
     def __close__(self):
         del self.conn
@@ -143,21 +143,20 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def put(self, bucket, fnm, binary, tenant_id=None):
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 # Note: bucket must already exist - we don't have permission to create buckets
                 if not self.bucket and not self.conn.bucket_exists(bucket):
                     self.conn.make_bucket(bucket)
 
-                r = self.conn.put_object(bucket, fnm,
-                                         BytesIO(binary),
-                                         len(binary)
-                                         )
+                r = self.conn.put_object(bucket, fnm, BytesIO(binary), len(binary))
                 return r
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
 
     @use_default_bucket
     @use_prefix_path
@@ -170,14 +169,16 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get(self, bucket, filename, tenant_id=None):
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
             except Exception:
                 logging.exception(f"Fail to get {bucket}/{filename}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return
 
     @use_default_bucket
@@ -214,18 +215,20 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return
 
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
-        orig_bucket = kwargs.pop('_orig_bucket', None)
+        orig_bucket = kwargs.pop("_orig_bucket", None)
         try:
             if self.bucket:
                 # Single bucket mode: remove objects with prefix

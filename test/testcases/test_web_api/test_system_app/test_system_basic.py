@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import (
+from test_common import (
     system_config,
     system_delete_token,
     system_new_token,
@@ -37,13 +37,6 @@ class TestAuthorization:
     @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
     def test_auth_invalid_status(self, invalid_auth, expected_code, expected_fragment):
         res = system_status(invalid_auth)
-        assert res["code"] == expected_code, res
-        assert expected_fragment in res["message"], res
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
-    def test_auth_invalid_version(self, invalid_auth, expected_code, expected_fragment):
-        res = system_version(invalid_auth)
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
 

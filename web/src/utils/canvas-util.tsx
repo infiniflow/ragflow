@@ -1,33 +1,56 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   AgentStructuredOutputField,
   JsonSchemaDataType,
   Operator,
 } from '@/constants/agent';
 import { BaseNode } from '@/interfaces/database/agent';
-import OperatorIcon from '@/pages/agent/operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 
 import { Edge } from '@xyflow/react';
 import { get, isEmpty } from 'lodash';
 import { ReactNode } from 'react';
 
 export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
-  return nodeIds.reduce<string[]>((pre, nodeId) => {
-    const currentEdges = edges.filter((x) => x.target === nodeId);
-
-    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
-
-    const ids = upstreamNodeIds.concat(
-      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
-    );
-
-    ids.forEach((x) => {
-      if (pre.every((y) => y !== x)) {
-        pre.push(x);
+  // Iterative BFS with a visited set so cycles in the upstream graph
+  // (e.g. answer:0 ↔ exesql:0 in the v1 exesql.json fixture) cannot
+  // recurse forever. The previous recursive implementation had no cycle
+  // detection and would blow the stack on any cyclic dsl.
+  const visited = new Set<string>(nodeIds);
+  const result: string[] = [];
+  let frontier = [...nodeIds];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      const upstreamIds = edges
+        .filter((x) => x.target === nodeId)
+        .map((x) => x.source);
+      for (const id of upstreamIds) {
+        if (!visited.has(id)) {
+          visited.add(id);
+          result.push(id);
+          next.push(id);
+        }
       }
-    });
-
-    return pre;
-  }, []);
+    }
+    frontier = next;
+  }
+  return result;
 }
 
 export function filterChildNodeIds(nodes: BaseNode[], nodeId?: string) {
@@ -72,6 +95,10 @@ function getNodeOutputs(x: BaseNode) {
     content: outputs.content ?? {
       type: JsonSchemaDataType.String,
       value: '',
+    },
+    attachments: outputs.attachments ?? {
+      type: 'Array<String>',
+      value: [],
     },
   };
 }

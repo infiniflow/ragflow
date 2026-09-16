@@ -1,13 +1,7 @@
-PRESENTATION_MIME_TYPE = (
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-)
+PRESENTATION_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
-SPREADSHEET_MIME_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-WORD_PROCESSING_MIME_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
+SPREADSHEET_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+WORD_PROCESSING_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PDF_MIME_TYPE = "application/pdf"
 
 
@@ -35,6 +29,4 @@ class UploadMimeTypes:
         "application/epub+zip",
     }
 
-    ALLOWED_MIME_TYPES = IMAGE_MIME_TYPES.union(
-        TEXT_MIME_TYPES, DOCUMENT_MIME_TYPES, CSV_MIME_TYPES
-    )
+    ALLOWED_MIME_TYPES = IMAGE_MIME_TYPES.union(TEXT_MIME_TYPES, DOCUMENT_MIME_TYPES, CSV_MIME_TYPES)

@@ -15,7 +15,7 @@ export const useFindPrologueFromDialogList = () => {
   const { data } = useFetchChatList();
 
   const prologue = useMemo(() => {
-    return data.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
+    return data?.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
   }, [dialogId, data]);
 
   return prologue;
@@ -30,6 +30,7 @@ export const useSelectDerivedConversationList = () => {
     loading,
     handleInputChange,
     searchString,
+    setSearchString,
   } = useFetchSessionList();
 
   const { id: dialogId } = useParams();
@@ -38,6 +39,9 @@ export const useSelectDerivedConversationList = () => {
 
   const addTemporaryConversation = useCallback(() => {
     const conversationId = generateConversationId();
+    // Clear the search keyword, otherwise the newly created session will be
+    // filtered out by the search after it is persisted and refetched.
+    setSearchString('');
     setList((pre) => {
       if (dialogId) {
         setConversationBoth(conversationId, 'true');
@@ -61,7 +65,14 @@ export const useSelectDerivedConversationList = () => {
 
       return pre;
     });
-  }, [dialogId, setConversationBoth, t, prologue, conversationList]);
+  }, [
+    dialogId,
+    setConversationBoth,
+    t,
+    prologue,
+    conversationList,
+    setSearchString,
+  ]);
 
   const removeTemporaryConversation = useCallback((conversationId: string) => {
     setList((prevList) => {
@@ -72,6 +83,17 @@ export const useSelectDerivedConversationList = () => {
   }, []);
 
   // When you first enter the page, select the top conversation card
+
+  // useEffect(() => {
+  //   setList((prevList) => {
+  //     const tempItems = prevList.filter((item) => item.is_new);
+  //     const existingTempIds = new Set(tempItems.map((t) => t.id));
+  //     const newItems = conversationList.filter(
+  //       (item) => !existingTempIds.has(item.id),
+  //     );
+  //     return [...tempItems, ...newItems];
+  //   });
+  // }, [conversationList]);
 
   useEffect(() => {
     setList([...conversationList]);

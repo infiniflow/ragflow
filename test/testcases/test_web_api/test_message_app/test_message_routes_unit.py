@@ -75,6 +75,7 @@ def _load_memory_routes_module(monkeypatch):
 
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    apps_mod.AUTH_API = "API"
     apps_mod.current_user = SimpleNamespace(id="user-1")
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
@@ -149,3 +150,34 @@ def test_get_messages_csv_and_missing_memory_ids(monkeypatch):
     res = _run(inspect.unwrap(module.get_messages)())
     assert res["code"] == module.RetCode.SUCCESS, res
     assert isinstance(res["data"], list), res
+
+
+@pytest.mark.p2
+def test_get_messages_rejects_limit_above_rest_api_max(monkeypatch):
+    module = _load_memory_routes_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(args=_DummyArgs({"memory_id": "m1", "limit": "1000"})),
+    )
+    res = _run(inspect.unwrap(module.get_messages)())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "page_size must be less than or equal to 100" in res["message"], res
+
+
+@pytest.mark.p2
+def test_search_message_rejects_top_n_above_rest_api_max(monkeypatch):
+    module = _load_memory_routes_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(args=_DummyArgs({"memory_id": "m1", "query": "hello", "top_n": "500"})),
+    )
+
+    async def _search_message(_filter_dict, _params):
+        return []
+
+    monkeypatch.setattr(module.memory_api_service, "search_message", _search_message)
+    res = _run(inspect.unwrap(module.search_message)())
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "page_size must be less than or equal to 100" in res["message"], res

@@ -18,6 +18,7 @@ import json
 import os
 import logging
 import re
+import secrets
 from typing import Any
 
 from werkzeug.security import check_password_hash
@@ -117,7 +118,9 @@ class UserMgr:
         # check new_password different from old.
         usr = user_list[0]
         psw = decrypt(new_password)
-        if check_password_hash(usr.password, psw):
+        # SSO-provisioned users (OIDC/OAuth) have no local password (usr.password is None):
+        # skip the equality check, which would otherwise crash inside werkzeug's split().
+        if usr.password and check_password_hash(usr.password, psw):
             return "Same password, no need to update!"
         # update password
         UserService.update_user_password(usr.id, psw)
@@ -144,7 +147,10 @@ class UserMgr:
         if target_status == usr.is_active:
             return f"User activate status is already {_activate_status}!"
         # update is_active
-        UserService.update_user(usr.id, {"is_active": target_status})
+        update_dict = {"is_active": target_status}
+        if target_status == ActiveEnum.INACTIVE.value:
+            update_dict["access_token"] = f"INVALID_{secrets.token_hex(16)}"
+        UserService.update_user(usr.id, update_dict)
         return f"Turn {_activate_status} user activate status successfully!"
 
     @staticmethod
@@ -271,12 +277,23 @@ class ServiceMgr:
     @staticmethod
     def get_all_services():
         doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
+        # Map STORAGE_IMPL (e.g. "AWS_S3", "MINIO", "OSS") to the lowercase
+        # `store_type` we use in FileStoreConfig.store_type. The "AWS_"
+        # prefix is stripped so AWS_S3 matches store_type "s3".
+        storage_impl = os.getenv("STORAGE_IMPL", "MINIO")
+        active_store_type = storage_impl.lower().removeprefix("aws_")
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
             if config_dict["service_type"] == "retrieval":
                 if config_dict["extra"]["retrieval_type"] != doc_engine:
+                    continue
+            if config_dict["service_type"] == "file_store":
+                # Only show the file-store backend that's actually active.
+                # Without this filter, a stale minio entry from service_conf.yaml
+                # is returned even when STORAGE_IMPL=AWS_S3 (see #17294).
+                if config_dict.get("extra", {}).get("store_type") != active_store_type:
                     continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
@@ -331,35 +348,64 @@ class ServiceMgr:
 
 class SettingsMgr:
     @staticmethod
+    def _format_setting(setting):
+        return {
+            "data_type": setting.data_type,
+            "name": setting.name,
+            "setting_type": "config",
+            "value": setting.value,
+        }
+
+    @staticmethod
+    def _validate_value(name: str, data_type: str, value: str):
+        data_type = data_type.lower()
+        value = str(value)
+        if data_type == "string":
+            return
+        if data_type == "integer":
+            try:
+                int(value)
+            except ValueError:
+                raise AdminException(f"Invalid integer value for {name}: {value}")
+            return
+        if data_type in {"bool", "boolean"}:
+            if value not in {"true", "false"}:
+                raise AdminException(f"Invalid bool value for {name}: expected true or false")
+            return
+        if data_type == "json":
+            try:
+                json.loads(value)
+            except json.JSONDecodeError:
+                raise AdminException(f"Invalid JSON value for {name}")
+            return
+        raise AdminException(f"Unsupported data type for {name}: {data_type}")
+
+    @staticmethod
+    def _infer_data_type(name: str):
+        if name.startswith("sandbox."):
+            return "json"
+        if name.endswith(".enabled"):
+            return "bool"
+        return "string"
+
+    @staticmethod
     def get_all():
-        settings = SystemSettingsService.get_all()
+        settings = SystemSettingsService.get_all(reverse=False, order_by="name")
         result = []
         for setting in settings:
-            result.append(
-                {
-                    "name": setting.name,
-                    "source": setting.source,
-                    "data_type": setting.data_type,
-                    "value": setting.value,
-                }
-            )
+            result.append(SettingsMgr._format_setting(setting))
         return result
 
     @staticmethod
     def get_by_name(name: str):
         settings = SystemSettingsService.get_by_name(name)
         if len(settings) == 0:
-            raise AdminException(f"Can't get setting: {name}")
+            settings = SystemSettingsService.get_by_name_prefix(name)
+            if len(settings) == 0:
+                raise AdminException(f"Can't get setting: {name}")
         result = []
         for setting in settings:
-            result.append(
-                {
-                    "name": setting.name,
-                    "source": setting.source,
-                    "data_type": setting.data_type,
-                    "value": setting.value,
-                }
-            )
+            result.append(SettingsMgr._format_setting(setting))
         return result
 
     @staticmethod
@@ -367,6 +413,7 @@ class SettingsMgr:
         settings = SystemSettingsService.get_by_name(name)
         if len(settings) == 1:
             setting = settings[0]
+            SettingsMgr._validate_value(name, setting.data_type, value)
             setting.value = value
             setting_dict = setting.to_dict()
             SystemSettingsService.update_by_name(name, setting_dict)
@@ -376,12 +423,8 @@ class SettingsMgr:
             # Create new setting if it doesn't exist
 
             # Determine data_type based on name and value
-            if name.startswith("sandbox."):
-                data_type = "json"
-            elif name.endswith(".enabled"):
-                data_type = "boolean"
-            else:
-                data_type = "string"
+            data_type = SettingsMgr._infer_data_type(name)
+            SettingsMgr._validate_value(name, data_type, value)
 
             new_setting = {
                 "name": name,
@@ -431,10 +474,20 @@ class SandboxMgr:
 
     # Provider registry with metadata
     PROVIDER_REGISTRY = {
+        "local": {
+            "name": "Local",
+            "description": "Execute code directly on the current host process.",
+            "tags": ["local", "host", "minimal"],
+        },
         "self_managed": {
             "name": "Self-Managed",
             "description": "On-premise deployment using Daytona/Docker",
             "tags": ["self-hosted", "low-latency", "secure"],
+        },
+        "ssh": {
+            "name": "SSH",
+            "description": "Execute code on a remote machine over SSH.",
+            "tags": ["remote", "ssh", "custom-runtime"],
         },
         "aliyun_codeinterpreter": {
             "name": "Aliyun Code Interpreter",
@@ -446,6 +499,16 @@ class SandboxMgr:
             "description": "E2B Cloud - Code Execution Sandboxes",
             "tags": ["saas", "fast", "global"],
         },
+        "tenki": {
+            "name": "Tenki",
+            "description": "Tenki - Disposable microVM code sandboxes",
+            "tags": ["saas", "cloud", "microvm", "isolated"],
+        },
+        "ucloud_agent_sandbox": {
+            "name": "UCloud Agent Sandbox",
+            "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution",
+            "tags": ["saas", "cloud", "isolated", "ucloud"],
+        },
     }
 
     @staticmethod
@@ -453,25 +516,30 @@ class SandboxMgr:
         """List all available sandbox providers."""
         result = []
         for provider_id, metadata in SandboxMgr.PROVIDER_REGISTRY.items():
-            result.append({
-                "id": provider_id,
-                **metadata
-            })
+            result.append({"id": provider_id, **metadata})
         return result
 
     @staticmethod
     def get_provider_config_schema(provider_id: str):
         """Get configuration schema for a specific provider."""
         from agent.sandbox.providers import (
+            LocalProvider,
             SelfManagedProvider,
+            SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         schemas = {
+            "local": LocalProvider.get_config_schema(),
             "self_managed": SelfManagedProvider.get_config_schema(),
+            "ssh": SSHProvider.get_config_schema(),
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
+            "tenki": TenkiProvider.get_config_schema(),
+            "ucloud_agent_sandbox": UCloudAgentSandboxProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -486,7 +554,6 @@ class SandboxMgr:
             # Get active provider type
             provider_type_settings = SystemSettingsService.get_by_name("sandbox.provider_type")
             if not provider_type_settings:
-                # Return default config if not set
                 provider_type = "self_managed"
             else:
                 provider_type = provider_type_settings[0].value
@@ -500,6 +567,15 @@ class SandboxMgr:
                     provider_config = json.loads(provider_config_settings[0].value)
                 except json.JSONDecodeError:
                     provider_config = {}
+
+            if not provider_config:
+                schema = SandboxMgr.get_provider_config_schema(provider_type)
+                provider_config = {}
+                for field_name, field_schema in schema.items():
+                    if field_schema.get("readonly"):
+                        continue
+                    if field_schema.get("default") is not None:
+                        provider_config[field_name] = field_schema["default"]
 
             return {
                 "provider_type": provider_type,
@@ -524,9 +600,13 @@ class SandboxMgr:
             Dictionary with updated provider_type and config
         """
         from agent.sandbox.providers import (
+            LocalProvider,
             SelfManagedProvider,
+            SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         try:
@@ -551,7 +631,7 @@ class SandboxMgr:
                     elif field_type == "string":
                         if not isinstance(config[field_name], str):
                             raise AdminException(f"Field '{field_name}' must be a string")
-                    elif field_type == "bool":
+                    elif field_type == "boolean":
                         if not isinstance(config[field_name], bool):
                             raise AdminException(f"Field '{field_name}' must be a boolean")
 
@@ -566,9 +646,13 @@ class SandboxMgr:
 
             # Provider-specific custom validation
             provider_classes = {
+                "local": LocalProvider,
                 "self_managed": SelfManagedProvider,
+                "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -582,6 +666,9 @@ class SandboxMgr:
             # Always update the provider config
             config_json = json.dumps(config)
             SettingsMgr.update_by_name(f"sandbox.{provider_type}", config_json)
+            from agent.sandbox.client import reload_provider
+
+            reload_provider()
 
             return {"provider_type": provider_type, "config": config}
         except AdminException:
@@ -608,16 +695,24 @@ class SandboxMgr:
         """
         try:
             from agent.sandbox.providers import (
+                LocalProvider,
                 SelfManagedProvider,
+                SSHProvider,
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
+                TenkiProvider,
+                UCloudAgentSandboxProvider,
             )
 
             # Instantiate provider based on type
             provider_classes = {
+                "local": LocalProvider,
                 "self_managed": SelfManagedProvider,
+                "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
 
             if provider_type not in provider_classes:
@@ -631,68 +726,45 @@ class SandboxMgr:
 
             # Create a temporary sandbox instance for testing
             instance = provider.create_instance(template="python")
+            if not instance:
+                raise AdminException("Failed to create sandbox instance.")
 
-            if not instance or instance.status != "READY":
-                raise AdminException(f"Failed to create sandbox instance. Status: {instance.status if instance else 'None'}")
-
-            # Simple test code that exercises basic Python functionality
-            test_code = """
-# Test basic Python functionality
-import sys
+            try:
+                # Keep the probe close to the original coverage, but avoid
+                # `sys` because the sandbox security analyzer blocks it.
+                test_code = """
 import json
 import math
 
-print("Python version:", sys.version)
-print("Platform:", sys.platform)
 
-# Test basic calculations
-result = 2 + 2
-print(f"2 + 2 = {result}")
-
-# Test JSON operations
-data = {"test": "data", "value": 123}
-print(f"JSON dump: {json.dumps(data)}")
-
-# Test math operations
-print(f"Math.sqrt(16) = {math.sqrt(16)}")
-
-# Test error handling
-try:
-    x = 1 / 1
-    print("Division test: OK")
-except Exception as e:
-    print(f"Error: {e}")
-
-# Return success indicator
-print("TEST_PASSED")
+def main() -> dict:
+    left = 2
+    right = 2
+    print(f"2 + 2 = {left + right}")
+    print(f"JSON dump: {json.dumps({'test': 'data', 'value': 123})}")
+    print(f"Math.sqrt(16) = {math.sqrt(16)}")
+    print("TEST_PASSED")
+    return {"ok": True, "provider_test": "TEST_PASSED"}
 """
 
-            # Execute test code with timeout
-            execution_result = provider.execute_code(
-                instance_id=instance.instance_id,
-                code=test_code,
-                language="python",
-                timeout=10  # 10 seconds timeout
-            )
-
-            # Clean up the test instance (if provider supports it)
-            try:
-                if hasattr(provider, 'terminate_instance'):
-                    provider.terminate_instance(instance.instance_id)
+                # Execute test code with timeout
+                execution_result = provider.execute_code(
+                    instance_id=instance.instance_id,
+                    code=test_code,
+                    language="python",
+                    timeout=10,
+                )
+            finally:
+                try:
+                    provider.destroy_instance(instance.instance_id)
                     logging.info(f"Cleaned up test instance {instance.instance_id}")
-                else:
-                    logging.warning(f"Provider {provider_type} does not support terminate_instance, test instance may leak")
-            except Exception as cleanup_error:
-                logging.warning(f"Failed to cleanup test instance {instance.instance_id}: {cleanup_error}")
+                except Exception as cleanup_error:
+                    logging.warning(f"Failed to cleanup test instance {instance.instance_id}: {cleanup_error}")
 
             # Build detailed result message
             success = execution_result.exit_code == 0 and "TEST_PASSED" in execution_result.stdout
 
-            message_parts = [
-                f"Test {success and 'PASSED' or 'FAILED'}",
-                f"Exit code: {execution_result.exit_code}",
-                f"Execution time: {execution_result.execution_time:.2f}s"
-            ]
+            message_parts = [f"Test {success and 'PASSED' or 'FAILED'}", f"Exit code: {execution_result.exit_code}", f"Execution time: {execution_result.execution_time:.2f}s"]
 
             if execution_result.stdout.strip():
                 stdout_preview = execution_result.stdout.strip()[:200]
@@ -712,12 +784,13 @@ print("TEST_PASSED")
                     "execution_time": execution_result.execution_time,
                     "stdout": execution_result.stdout,
                     "stderr": execution_result.stderr,
-                }
+                },
             }
 
         except AdminException:
             raise
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             raise AdminException(f"Connection test failed: {str(e)}\\n\\nStack trace:\\n{error_details}")

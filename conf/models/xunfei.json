@@ -1,0 +1,27 @@
+{
+  "name": "XunFei Spark",
+  "url": {
+    "default": "https://spark-api-open.xf-yun.com"
+  },
+  "url_suffix": {
+    "chat": "v2/chat/completions"
+  },
+  "class": "xunfei",
+  "models": [
+    {
+      "name": "spark-x",
+      "context_length": 128000,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

@@ -56,7 +56,7 @@ export default {
       submit: 'Отправить',
       clear: 'Очистить',
       embedIntoSite: 'Встроить на веб-страницу',
-      openInNewTab: 'Чат в новой вкладке',
+      openInNewTab: 'Открыть в новой вкладке',
       previousPage: 'Назад',
       nextPage: 'Вперед',
       add: 'Добавить',
@@ -75,6 +75,7 @@ export default {
       selected: 'Выбрано',
       seeAll: 'Показать все',
       bulkOperate: 'Массовые операции',
+      owner: 'Владелец',
     },
     login: {
       loginTitle: 'Войдите в свою учетную запись',
@@ -121,8 +122,7 @@ export default {
         'Анализирует содержание диалога, извлекает ключевую информацию и формирует структурированные сводки памяти.',
       embeddingModelTooltip:
         'Преобразует текст в числовые векторы для семантического поиска и извлечения памяти.',
-      embeddingModelError:
-        'Тип памяти обязателен; тип «raw» нельзя удалить.',
+      embeddingModelError: 'Тип памяти обязателен; тип «raw» нельзя удалить.',
       memoryTypeTooltip: `Raw: исходный диалог пользователя и агента (обязателен по умолчанию).
 Семантическая память: обобщённые знания и факты о пользователе и мире.
 Эпизодическая память: события с привязкой ко времени.
@@ -213,7 +213,6 @@ export default {
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',
-        type: 'Тип',
         fieldNameInvalid:
           'Имя поля может содержать только буквы или подчёркивания.',
         builtIn: 'Встроенное',
@@ -235,7 +234,8 @@ export default {
           'Имя поля уже есть. Подтвердите объединение дубликатов.',
         fieldExists: 'Поле уже существует.',
         fieldSetting: 'Настройки поля',
-        changesAffectNewParses: 'Изменения применяются только к новым парсингам.',
+        changesAffectNewParses:
+          'Изменения применяются только к новым парсингам.',
         // editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Ограничить заданными значениями',
         metadataGenerationSettings: 'Настройки генерации метаданных',
@@ -246,12 +246,12 @@ export default {
         value: 'Значение',
         action: 'Действие',
         field: 'Поле',
+        type: 'Тип',
         description: 'Описание',
         fieldName: 'Имя поля',
         editMetadata: 'Редактировать метаданные',
         addMetadata: 'Добавить метаданные',
-        deleteWarn:
-          'Поле «{{field}}» будет удалено из всех связанных файлов',
+        deleteWarn: 'Поле «{{field}}» будет удалено из всех связанных файлов',
         deleteManageFieldAllWarn:
           'Это поле и все его значения будут удалены из всех связанных файлов.',
         deleteManageValueAllWarn:
@@ -264,7 +264,8 @@ export default {
         deleteSettingValueWarn: `Значение будет удалено; существующие метаданные не затронуты.`,
       },
       redoAll: 'Очистите существующие фрагменты',
-      applyAutoMetadataSettings: 'Применить глобальные настройки авто-метаданных',
+      applyAutoMetadataSettings:
+        'Применить глобальные настройки авто-метаданных',
       parseFileTip: 'Запустить парсинг?',
       parseFile: 'Парсить файл',
       emptyMetadata: 'Нет метаданных',
@@ -346,7 +347,7 @@ export default {
         'Проведите тест извлечения, чтобы проверить, может ли RAGFlow восстановить целевой контент для LLM. Если вы изменили настройки по умолчанию, такие как вес ключевого слова или порог схожести, для достижения оптимальных результатов, имейте в виду, что эти изменения не будут сохранены автоматически. Вы должны применить их в настройках вашего чат-ассистента или в настройках компонента Retrieval агента.',
       similarityThreshold: 'Порог схожести',
       similarityThresholdTip:
-        'RAGFlow использует либо комбинацию взвешенной схожести по ключевым словам и взвешенного косинусного сходства векторов, либо комбинацию взвешенной схожести по ключевым словам и взвешенного reranking-счета при извлечении. Этот параметр устанавливает порог для схожести между пользовательским запросом и чанками. Любой чанк с оценкой схожести ниже этого порога будет исключен из результатов. По умолчанию порог установлен на 0.2. Это означает, что будут извлекаться только чанки с комбинированной оценкой схожести 20 или выше.',
+        'RAGFlow использует либо комбинацию взвешенной схожести по ключевым словам и взвешенного косинусного сходства векторов, либо комбинацию взвешенной схожести по ключевым словам и взвешенного reranking-счета при извлечении. Этот параметр устанавливает порог для схожести между пользовательским запросом и чанками. Любой чанк с оценкой схожести ниже этого порога будет исключен из результатов. По умолчанию порог установлен на 20. Это означает, что будут извлекаться только чанки с комбинированной оценкой схожести 20 или выше.',
       vectorSimilarityWeight: 'Вес векторной схожести',
       vectorSimilarityWeightTip:
         'Это устанавливает вес векторной схожести в комбинированной оценке схожести, используемой либо с косинусным сходством векторов, либо с reranking-счетом. Сумма двух весов должна быть равна 1.0.',
@@ -369,6 +370,7 @@ export default {
       runningStatus2: 'ОТМЕНЕНО',
       runningStatus3: 'УСПЕХ',
       runningStatus4: 'НЕУДАЧА',
+      runningStatusQueued: 'В очереди',
       pageRanges: 'Диапазон страниц',
       pageRangesTip:
         'Диапазон страниц для парсинга; страницы вне этого диапазона обрабатываться не будут.',
@@ -409,11 +411,11 @@ export default {
         'Разделитель может состоять из одного или нескольких специальных символов. Если это несколько символов, убедитесь, что они заключены в обратные кавычки (``). Например, если вы настроите разделители так: \\n`##`;, то ваш текст будет разделен по переводам строк, двойным символам решетки (##) и точкам с запятой.',
 
       html4excel: 'Excel в HTML',
-      html4excelTip: `Используется с методом чанкинга General. Когда отключено, электронные таблицы (XLSX или XLS (Excel 97-2003)) в базе знаний будут разобраны в пары ключ-значение. Когда включено, они будут разобраны в HTML таблицы, разделяя каждые 12 строк, если исходная таблица имеет более 12 строк. Подробности см. на https://ragflow.io/docs/dev/enable_excel2html.`,
+      html4excelTip: `Используется с методом чанкинга General. Когда отключено, электронные таблицы (XLSX или XLS (Excel 97-2003)) в базе знаний будут разобраны в пары ключ-значение. Когда включено, они будут разобраны в HTML таблицы, разделяя каждые 12 строк, если исходная таблица имеет более 12 строк. Подробности см. на https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Авто-ключевые слова',
-      autoKeywordsTip: `Автоматически извлекает N ключевых слов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти ключевые слова. Имейте в виду, что дополнительные токены будут потребляться чат-моделью, указанной в 'Системных настройках модели'. Вы можете проверить или обновить добавленные ключевые слова для чанка из списка чанков. Подробности см. на https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Автоматически извлекает N ключевых слов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти ключевые слова. Имейте в виду, что дополнительные токены будут потребляться чат-моделью, указанной в 'Системных настройках модели'. Вы можете проверить или обновить добавленные ключевые слова для чанка из списка чанков. Подробности см. на https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Авто-вопросы',
-      autoQuestionsTip: `Автоматически извлекает N вопросов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти вопросы. Вы можете проверить или обновить добавленные вопросы для чанка из списка чанков. Эта функция не нарушит процесс чанкинга в случае ошибки, за исключением того, что может добавить пустой результат в исходный чанк. Имейте в виду, что дополнительные токены будут потребляться LLM, указанной в 'Системных настройках модели'. Подробности см. на https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Автоматически извлекает N вопросов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти вопросы. Вы можете проверить или обновить добавленные вопросы для чанка из списка чанков. Эта функция не нарушит процесс чанкинга в случае ошибки, за исключением того, что может добавить пустой результат в исходный чанк. Имейте в виду, что дополнительные токены будут потребляться LLM, указанной в 'Системных настройках модели'. Подробности см. на https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       redo: 'Вы хотите очистить существующие {{chunkNum}} чанков?',
       setMetaData: 'Установить Метаданные',
       pleaseInputJson: 'Пожалуйста, введите JSON',
@@ -448,7 +450,7 @@ export default {
       datasetDescription: 'Опишите ваш датасет',
       overlappedPercentTip: 'Процент перекрытия между соседними чанками',
       globalIndexModelTip:
-        'Используется для графа знаний, RAPTOR, авто-метаданных, авто-ключевых слов и авто-вопросов. Качество модели влияет на качество генерации.',
+        'Используется для авто-метаданных, авто-ключевых слов и авто-вопросов. Качество модели влияет на качество генерации.',
       globalIndexModel: 'Индексирующая модель',
       settings: 'Настройки',
       autoMetadataTip: `Автоматическая генерация метаданных. Применяется к новым файлам во время парсинга. Существующие файлы требуют повторного разбора для обновления (фрагменты остаются сохраненными). Имейте в виду, что дополнительные токены будут использоваться моделью индексации, указанной в разделе "Конфигурация".`,
@@ -492,9 +494,6 @@ export default {
       linkSourceSetTip:
         'Управление связью источника данных с этим набором данных',
       linkDataSource: 'Связать источник данных',
-      tocExtraction: 'Улучшение оглавлением',
-      tocExtractionTip:
-        'Для существующих чанков генерируется иерархическое оглавление (одна директория на файл). При запросах, когда активировано улучшение по оглавлению, система использует большую модель, чтобы определить релевантные пункты оглавления вопросу пользователя и выделить нужные чанки.',
       deleteGenerateModalContent: `
         <p>Удаление сгенерированных результатов <strong class='text-text-primary'>{{type}}</strong>
         удалит все производные сущности и отношения из этого набора данных.
@@ -539,7 +538,7 @@ export default {
       embeddingModelTip:
         'Модель эмбеддингов по умолчанию для базы знаний. После появления чанков при смене модели система случайно выбирает несколько чанков для проверки совместимости, перекодирует их новой моделью и вычисляет косинусное сходство. Переключение возможно только если среднее сходство ≥ 0.9. Иначе удалите все чанки в датасете.',
       permissionsTip:
-        "Если установлено значение «Команда», все члены команды смогут управлять базой знаний.",
+        'Если установлено значение «Команда», все члены команды смогут управлять базой знаний.',
       chunkTokenNumberTip:
         'Это своего рода устанавливает порог токенов для создания чанка. Сегмент с меньшим количеством токенов, чем этот порог, будет объединен со следующими сегментами до тех пор, пока количество токенов не превысит порог, после чего будет создан чанк. Новый чанк не создается, если не встречен разделитель, даже если порог превышен.',
       chunkMethod: 'Метод чанкинга',
@@ -577,6 +576,12 @@ export default {
       dialogueExamplesTitle: 'просмотр',
       methodEmpty:
         'Здесь будет отображено визуальное объяснение категорий базы знаний',
+      audio: `<p>Поддерживаемые форматы файлов: <b>WAV, MP3, AAC, FLAC, OGG</b> и другие распространённые аудиоформаты.</p>
+<p>Этот метод транскрибирует аудиофайлы в текст с помощью модели преобразования речи в текст.</p>`,
+      email: `<p>Поддерживаемые форматы файлов: <b>EML</b> и <b>MSG</b>.</p>
+<p>Этот метод разбирает файлы электронной почты, извлекая поля заголовков (такие как От, Кому, Копия, Тема и Дата), тело письма и вложения.</p>`,
+      knowledgeCompiler: `<p>Этот конвейер разбирает файлы и разбивает их на чанки, а затем компилирует чанки в структурированные единицы знаний (граф знаний, вики, RAPTOR, интеллект-карту или навигацию по набору данных) с помощью компонента Knowledge Compiler.</p>
+<p>Скомпилированные единицы знаний выдаются в виде чанков, объединённых в поток чанков, что идеально подходит для построения извлекаемого слоя знаний поверх разбитых документов.</p>`,
       book: `<p>Поддерживаемые форматы файлов: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Для каждой книги в PDF, пожалуйста, установите <i>диапазон страниц</i>, чтобы удалить нежелательную информацию и сократить время анализа.</p>`,
       laws: `<p>Поддерживаемые форматы файлов: <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -668,7 +673,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR можно использовать для многошаговых вопросно-ответных задач. Перейдите на страницу Файлы, нажмите Сгенерировать > RAPTOR. Подробности: https://ragflow.io/docs/dev/enable_raptor',
+        'RAPTOR можно использовать для многошаговых вопросно-ответных задач. Перейдите на страницу Файлы, нажмите Сгенерировать > RAPTOR. Подробности: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree',
       prompt: 'Промпт',
       promptTip:
         'Используйте системный промпт, чтобы описать задачу для LLM, указать, как она должна отвечать, и очертить другие требования. Системный промпт часто используется вместе с ключами (переменными). Используйте `/` или кнопку (x), чтобы показать ключи.',
@@ -692,7 +697,7 @@ export default {
       entityTypes: 'Типы сущностей',
       vietnamese: 'Вьетнамский',
       pageRank: 'Page rank',
-      pageRankTip: `Вы можете назначить более высокий балл PageRank определённым базам знаний при извлечении. Соответствующий балл добавляется к комбинированным оценкам схожести извлечённых чанков, повышая их рейтинг. Подробности: https://ragflow.io/docs/dev/set_page_rank`,
+      pageRankTip: `Вы можете назначить более высокий балл PageRank определённым базам знаний при извлечении. Соответствующий балл добавляется к комбинированным оценкам схожести извлечённых чанков, повышая их рейтинг. Подробности: https://ragflow.io/docs/dataset_configuration#basic-information`,
       tagName: 'Тег',
       frequency: 'Частота',
       searchTags: 'Поиск тегов',
@@ -700,7 +705,7 @@ export default {
       tagTable: 'Таблица',
       tagSet: 'Наборы тегов',
       tagSetTip: `
-     <p> Выберите одну или несколько баз тегов для автоматического тегирования чанков. Подробности: https://ragflow.io/docs/dev/use_tag_sets</p>
+     <p> Выберите одну или несколько баз тегов для автоматического тегирования чанков. Подробности: https://ragflow.io/docs/dataset_configuration#basic-information</p>
 <p>Пользовательский запрос также будет автоматически тегирован.</p>
 Авто-тегирование улучшает извлечение, добавляя ещё один уровень предметных знаний.
 <p>Разница между авто-тегом и авто-ключевым словом:</p>
@@ -715,11 +720,12 @@ export default {
       addTag: 'Добавить тег',
       useGraphRag: 'Граф знаний',
       useGraphRagTip:
-        'Строит граф знаний поверх чанков файлов текущей базы знаний для многошагового Q&A с вложенной логикой. Подробности: https://ragflow.io/docs/dev/construct_knowledge_graph',
+        'Строит граф знаний поверх чанков файлов текущей базы знаний для многошагового Q&A с вложенной логикой. Подробности: https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph',
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (по умолчанию) Промпты github.com/HKUDS/LightRAG для извлечения сущностей и связей. Меньше токенов, памяти и вычислений.</br>
-      General: Промпты github.com/microsoft/graphrag`,
+      General: Промпты github.com/microsoft/graphrag.</br>
+      NER: Использует spaCy NER и извлечение ключевых слов на основе правил для извлечения сущностей и связей. LLM не требуется для самого извлечения, что делает его быстрым и эффективным.`,
       resolution: 'Разрешение сущностей',
       resolutionTip: `Переключатель дедубликации сущностей. Когда включен, LLM объединяет похожие сущности (например «2025» и «год 2025») для более точного графа`,
       community: 'Отчёты сообществ',
@@ -739,6 +745,8 @@ export default {
       size: 'Размер',
       uploadedTime: 'Время загрузки',
       chunk: 'Чанк',
+      createChunk: 'Создать чанк',
+      editChunk: 'Редактировать чанк',
       bulk: 'Пакетно',
       selectAll: 'Выбрать все',
       enabledSelected: 'Включить выбранные',
@@ -767,6 +775,9 @@ export default {
       delete: 'Удалить',
     },
     chat: {
+      chatSupport: 'Чат-поддержка',
+      replyInstantly: 'Обычно мы отвечаем мгновенно',
+      typeYourMessage: 'Введите сообщение...',
       messagePlaceholder: 'Введите ваше сообщение здесь...',
       exit: 'Выход',
       multipleModels: 'Несколько моделей',
@@ -821,7 +832,7 @@ export default {
       topN: 'Топ N',
       topNTip: `Не все чанки с оценкой схожести выше 'порога схожести' будут отправлены в LLM. Это выбирает 'Топ N' чанков из извлеченных.`,
       variable: 'Переменная',
-      variableTip: `Используется вместе с API управления чат-ассистентами RAGFlow, переменные помогают строить гибкие стратегии системных промптов. {knowledge} — зарезервированная переменная для чанков из указанных баз знаний; все переменные в фигурных скобках {} в «Системном промпте». Подробнее: https://ragflow.io/docs/dev/set_chat_variables`,
+      variableTip: `Используется вместе с API управления чат-ассистентами RAGFlow, переменные помогают строить гибкие стратегии системных промптов. {knowledge} — зарезервированная переменная для чанков из указанных баз знаний; все переменные в фигурных скобках {} в «Системном промпте». Подробнее: https://ragflow.io/docs/chat_configuration#system-prompt`,
       add: 'Добавить',
       key: 'Ключ',
       optional: 'Опционально',
@@ -858,7 +869,8 @@ export default {
       maxTokensTip: `Максимальный размер контекста модели; неверное значение вызовет ошибку. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для макс. токенов.',
-      maxTokensMinMessage: 'Максимальное количество токенов не может быть меньше 0.',
+      maxTokensMinMessage:
+        'Максимальное количество токенов не может быть меньше 0.',
       quote: 'Показать цитату',
       quoteTip: 'Отображать ли исходный текст как ссылку.',
       selfRag: 'Self-RAG',
@@ -873,7 +885,7 @@ export default {
       preview: 'Предпросмотр',
       embedded: 'Встроенный',
       serviceApiEndpoint: 'Конечная точка сервисного API',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       apiReference: 'Документация API',
       dateRange: 'Диапазон дат:',
       backendServiceApi: 'API Сервер',
@@ -881,6 +893,9 @@ export default {
       created: 'Создано',
       action: 'Действие',
       embedModalTitle: 'Встроить на веб-страницу',
+      embedUserIdPlaceholder: 'например: user-001',
+      embedUserIdTooltip:
+        'Строка (до 255 символов), идентифицирующая конечного пользователя встроенной страницы. Она добавляется в URL встраивания как параметр userId.',
       published: 'Опубликовано',
       publishedTooltip:
         'Использовать опубликованную версию для встраивания. В URL будет release=true.',
@@ -954,6 +969,12 @@ export default {
       tocEnhance: 'Улучшение оглавлением',
       tocEnhanceTip: ` Во время парсинга документа была сгенерирована информация оглавления (см. опцию 'Включить извлечение оглавления' в методе General). Это позволяет большой модели возвращать элементы оглавления, релевантные запросу пользователя, тем самым используя эти элементы для извлечения связанных чанков и применения весов к этим чанкам в процессе сортировки. Этот подход получен из имитации поведенческой логики того, как люди ищут знания в книгах.`,
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
+      showChunkMetadata: 'Показать метаданные чанка',
+      showChunkMetadataTip:
+        'Отображать метаданные документа (заголовок, номер страницы, дата загрузки и т.д.) рядом с извлечёнными текстовыми чанками',
+      metadataFields: 'Поля метаданных',
+      metadataFieldsTip:
+        'Выберите поля метаданных для отображения рядом с каждым чанком',
     },
     setting: {
       Verify: 'Проверить',
@@ -961,12 +982,12 @@ export default {
       keyInvalid: 'Ваш API ключ недействителен.',
       deleteModel: 'Удалить модель',
       bedrockCredentialsHint:
-        'Подсказка: оставьте Access Key / Secret Key пустыми для аутентификации AWS IAM.',
-      awsAuthModeAccessKeySecret: 'Ключ доступа (Access Key)',
+        'Подсказка: оставьте ACCESS KEY / SECRET KEY пустыми для аутентификации AWS IAM.',
+      awsAuthModeAccessKeySecret: 'Ключ доступа (ACCESS KEY)',
       awsAuthModeIamRole: 'Роль IAM',
       awsAuthModeAssumeRole: 'Assume role',
-      awsAccessKeyId: 'AWS Access Key ID',
-      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsAccessKeyId: 'AWS ACCESS KEY ID',
+      awsSecretAccessKey: 'AWS SECRET ACCESS KEY',
       awsRoleArn: 'AWS Role ARN',
       awsRoleArnMessage: 'Введите AWS Role ARN',
       awsAssumeRoleTip:
@@ -984,6 +1005,7 @@ export default {
       selectModelPlaceholder: 'Выберите модель',
       configureModelTitle: 'Настроить модель',
       connectorNameTip: 'Укажите понятное имя для коннектора',
+      syncDeletedFiles: 'Синхронизировать удалённые файлы',
       confluenceIsCloudTip:
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1045,6 +1067,10 @@ export default {
         'Загрузите OAuth JSON, сгенерированный в Google Console. Если он содержит только учетные данные клиента, выполните одноразовое подтверждение в браузере, чтобы получить долгоживущие токены обновления.',
       dropboxDescription:
         'Подключите ваш Dropbox для синхронизации файлов и папок из выбранного аккаунта.',
+      sitemapDescription:
+        'Подключите публичный sitemap.xml, чтобы синхронизировать перечисленные веб-страницы и PDF-документы с базой знаний.',
+      azure_devopsDescription:
+        "Подключите Azure DevOps для синхронизации файлов репозитория и pull request'ов.",
       bitbucketDescription:
         'Подключите Bitbucket для синхронизации содержимого PR.',
       bitbucketTopWorkspaceTip:
@@ -1085,8 +1111,7 @@ export default {
       seafileAccountScopeTip:
         'Синхронизирует все библиотеки, видимые для указанного ниже токена API аккаунта.',
       seafileTokenPanelHeading: 'Укажите один из способов аутентификации:',
-      seafileTokenPanelAccountBullet:
-        '— доступ ко всем вашим библиотекам.',
+      seafileTokenPanelAccountBullet: '— доступ ко всем вашим библиотекам.',
       seafileTokenPanelLibraryBullet:
         '— только к одной библиотеке (безопаснее).',
       seafileValidationAccountTokenRequired:
@@ -1195,7 +1220,8 @@ export default {
       maxTokensTip: `Максимальный размер контекста mодель; недопустимое или неверное значение приведёт к ошибке. По умолчанию 512.`,
       maxTokensInvalidMessage:
         'Пожалуйста, введите действительное число для максимального количества токенов.',
-      maxTokensMinMessage: 'Максимальное количество токенов не может быть меньше 0.',
+      maxTokensMinMessage:
+        'Максимальное количество токенов не может быть меньше 0.',
       password: 'Пароль',
       passwordDescription:
         'Пожалуйста, введите ваш текущий пароль, чтобы изменить ваш пароль.',
@@ -1236,13 +1262,13 @@ export default {
       addedModels: 'Добавленные модели',
       modelsToBeAdded: 'Модели для добавления',
       addTheModel: 'Добавить',
-      apiKey: 'API-Ключ',
+      apiKey: 'API Key',
       apiKeyMessage: 'Пожалуйста, введите API ключ',
       apiKeyTip:
         'API ключ можно получить, зарегистрировавшись у соответствующего поставщика LLM.',
       showMoreModels: 'Показать модели',
       hideModels: 'Скрыть модели',
-      baseUrl: 'Базовый-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
         'Если ваш API ключ от OpenAI, просто проигнорируйте это. Любые другие промежуточные провайдеры дадут этот базовый url вместе с API ключом.',
       tongyiBaseUrlTip:
@@ -1284,8 +1310,14 @@ export default {
       modelNameMessage: 'Пожалуйста, введите название вашей модели!',
       modelType: 'Тип модели',
       modelTypeMessage: 'Пожалуйста, введите тип вашей модели!',
-      addLlmBaseUrl: 'Базовый url',
-      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый url!',
+      addLlmBaseUrl: 'Базовый URL',
+      baseUrlNameMessage: 'Пожалуйста, введите ваш базовый URL',
+      mwsApiUrl: 'URL API',
+      mwsApiUrlMessage: 'Введите URL API проекта MWS',
+      mwsApiUrlPlaceholder: 'https://gpt.mwsapis.ru/projects/<project>',
+      mwsToken: 'Токен',
+      mwsTokenMessage: 'Введите токен MWS',
+      mwsTokenPlaceholder: 'API-ключ сервисного аккаунта MWS',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
@@ -1303,17 +1335,17 @@ export default {
       FishAudioLink: 'Как использовать FishAudio',
       TencentCloudLink: 'Как использовать TencentCloud ASR',
       volcModelNameMessage: 'Пожалуйста, введите название вашей модели!',
-      addEndpointID: 'EndpointID модели',
-      endpointIDMessage: 'Пожалуйста, введите EndpointID модели',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Пожалуйста, введите Model ID модели',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Пожалуйста, введите ваш ARK_API_KEY',
-      bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели!',
+      bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Пожалуйста, введите ваш ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       bedrockRegion: 'AWS Регион',
-      bedrockRegionMessage: 'Пожалуйста, выберите!',
+      bedrockRegionMessage: 'Пожалуйста, выберите',
       'us-east-2': 'US East (Огайо)',
       'us-east-1': 'US East (Северная Вирджиния)',
       'us-west-1': 'US West (Северная Калифорния)',
@@ -1351,26 +1383,26 @@ export default {
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Пожалуйста, введите ваш Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Пожалуйста, введите ваш Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       SparkModelNameMessage: 'Пожалуйста, выберите модель Spark',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'Пожалуйста, введите ваш APIPassword',
       addSparkAPPID: 'Spark APP ID',
       SparkAPPIDMessage: 'Пожалуйста, введите ваш APP ID',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'Пожалуйста, введите ваш APISecret',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'Пожалуйста, введите ваш API SECRET',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'Пожалуйста, введите ваш APIKey',
       yiyanModelNameMessage: 'Пожалуйста, введите название модели',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Пожалуйста, введите ваш API KEY',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Пожалуйста, введите ваш Secret KEY',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Пожалуйста, введите ваш API Key',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Пожалуйста, введите ваш SECRET KEY',
       FishAudioModelNameMessage:
         'Пожалуйста, дайте вашей модели синтеза речи название',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Пожалуйста, введите ваш API KEY',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Пожалуйста, введите ваш API Key',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Пожалуйста, введите Reference ID (оставьте пустым для использования модели по умолчанию).',
@@ -1438,7 +1470,7 @@ export default {
         chat: 'Чат',
         embedding: 'Эмбеддинг',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1584,6 +1616,9 @@ export default {
       maxRounds: 'Максимальное количество раундов рефлексии',
       delayAfterError: 'Задержка после ошибки',
       maxRetries: 'Максимальное количество попыток повтора',
+      toolTimeout: 'Таймаут вызова инструмента',
+      toolTimeoutTip:
+        'Таймаут в секундах для одного вызова инструмента (включая MCP). Увеличьте для длительно выполняющихся инструментов.',
       advancedSettings: 'Расширенные настройки',
       addTools: 'Добавить инструменты',
       sysPromptDefaultValue: `
@@ -1685,10 +1720,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, который выполняет поиск через ваш предоставленный URL экземпляра SearXNG. Укажите TopN и URL экземпляра.',
-      pdfGenerator: 'Генератор документов',
-      pDFGenerator: 'Генератор документов',
-      pdfGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
-      pDFGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
+      docGenerator: 'Генератор документов',
+      docGeneratorDescription: `Создает файл из содержимого Markdown.`,
       subtitle: 'Подзаголовок',
       logoImage: 'Изображение логотипа',
       logoPosition: 'Позиция логотипа',
@@ -1733,7 +1766,7 @@ export default {
       bing: 'Microsoft Bing',
       bingDescription:
         'Компонент, который выполняет поиск на https://www.bing.com/, позволяя вам указать количество результатов поиска с помощью TopN. Он дополняет существующие базы знаний. Обратите внимание, что для этого требуется API ключ от microsoft.com.',
-      apiKey: 'API KEY',
+      apiKey: 'API Key',
       country: 'Страна и регион',
       language: 'Язык',
       googleScholar: 'Google Scholar',
@@ -2430,7 +2463,7 @@ export default {
         bodyTemplate: 'Шаблон тела',
         basic: 'Basic',
         bearer: 'Bearer',
-        apiKey: 'API-ключ',
+        apiKey: 'API Key',
         queryParameters: 'Параметры запроса',
         headerParameters: 'Параметры заголовка',
         requestBodyParameters: 'Параметры тела запроса',
@@ -2451,6 +2484,8 @@ export default {
       success: 'Успех',
       failed: 'Ошибка',
       logTitle: 'Заголовок',
+      tags: 'Теги',
+      canvasCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2509,6 +2544,7 @@ export default {
       okText: 'Сохранить',
       cancelText: 'Отмена',
       chooseDataset: 'Пожалуйста, сначала выберите датасет',
+      selectLocalePlaceholder: 'Выберите локаль',
     },
     language: {
       english: 'Английский',
@@ -2792,8 +2828,7 @@ export default {
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
       noCanvasFound: 'Канвасы не найдены',
-      deleteSelectedConfirm:
-        'Удалить выбранные сеансы ({{count}})?',
+      deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },
   },

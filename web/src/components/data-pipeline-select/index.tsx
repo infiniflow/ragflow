@@ -1,8 +1,25 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { AgentCategory } from '@/constants/agent';
 import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentList } from '@/hooks/use-agent-request';
+import { AgentListItem, AgentListItemType } from '@/interfaces/database/agent';
 import { buildSelectOptions } from '@/utils/component-util';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
@@ -48,19 +65,25 @@ export function DataFlowSelect(props: IProps) {
   const { data: dataPipelineOptions } = useFetchAgentList({
     canvas_category: AgentCategory.DataflowCanvas,
   });
+
+  const canvasList = useMemo(
+    () =>
+      (dataPipelineOptions?.canvas ?? []).filter(
+        (item): item is AgentListItem & { title: string; avatar?: string } =>
+          item.type !== AgentListItemType.CompilationTemplateGroup,
+      ),
+    [dataPipelineOptions?.canvas],
+  );
+
   const options = useMemo(() => {
-    const option = buildSelectOptions(
-      dataPipelineOptions?.canvas,
-      'id',
-      'title',
-    );
+    const option = buildSelectOptions(canvasList, 'id', 'title');
 
     return option || [];
-  }, [dataPipelineOptions]);
+  }, [canvasList]);
 
   const nodes = useMemo(() => {
     return (
-      dataPipelineOptions?.canvas?.map((item) => {
+      canvasList.map((item) => {
         return {
           id: item?.id,
           name: item?.title,
@@ -68,7 +91,7 @@ export function DataFlowSelect(props: IProps) {
         };
       }) || []
     );
-  }, [dataPipelineOptions]);
+  }, [canvasList]);
 
   useEffect(() => {
     setDataList?.(nodes);
@@ -86,6 +109,7 @@ export function DataFlowSelect(props: IProps) {
                 <FormLabel
                   // tooltip={t('dataFlowTip')}
                   className="text-sm text-text-primary whitespace-wrap "
+                  required
                 >
                   {t('manualSetup')}
                 </FormLabel>

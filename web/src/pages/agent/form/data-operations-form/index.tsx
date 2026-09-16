@@ -9,11 +9,7 @@ import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  JsonSchemaDataType,
-  Operations,
-  initialDataOperationsValues,
-} from '../../constant';
+import { Operations, initialDataOperationsValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -94,7 +90,6 @@ function DataOperationsForm({ node }: INextOperatorForm) {
         <QueryVariableList
           tooltip={t('flow.queryTip')}
           label={t('flow.query')}
-          types={[JsonSchemaDataType.Object]}
         ></QueryVariableList>
         <Separator />
         <RAGFlowFormItem name="operations" label={t('flow.operations')}>

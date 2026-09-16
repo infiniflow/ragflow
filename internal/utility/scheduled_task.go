@@ -19,7 +19,8 @@ package utility
 import (
 	"encoding/json"
 	"fmt"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,7 +52,7 @@ func StatusMessageSending() {
 	// Serialize to JSON
 	jsonData, err := json.Marshal(statusMessage)
 	if err != nil {
-		logger.Error("Failed to marshal status message", err)
+		common.Error("Failed to marshal status message", err)
 		return
 	}
 
@@ -66,13 +67,13 @@ func StatusMessageSending() {
 	// Send POST request
 	resp, err := client.PostJSON("/v1/admin/status", jsonData)
 	if err != nil {
-		logger.Error("Error sending status message", err)
+		common.Error("Error sending status message", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		logger.Error("Failed to send status message", fmt.Errorf("status: %d", resp.StatusCode))
+		common.Error("Failed to send status message", fmt.Errorf("status: %d", resp.StatusCode))
 	}
 }
 
@@ -82,6 +83,7 @@ type ScheduledTask struct {
 	Interval  time.Duration
 	Job       func()
 	stop      chan struct{}
+	mu        sync.Mutex
 	running   bool
 	executing int32 // atomic flag: 0 - not executed, 1 running
 }
@@ -92,40 +94,44 @@ func NewScheduledTask(name string, interval time.Duration, job func()) *Schedule
 		Name:     name,
 		Interval: interval,
 		Job:      job,
-		stop:     make(chan struct{}),
 	}
 }
 
 // Start begins the periodic task
 func (t *ScheduledTask) Start() {
+	t.mu.Lock()
 	if t.running {
+		t.mu.Unlock()
 		return
 	}
+	stop := make(chan struct{})
+	t.stop = stop
 	t.running = true
+	t.mu.Unlock()
 
-	go func() {
+	go func(stop <-chan struct{}) {
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()
 
-			logger.Info("Task started", zap.String("name", t.Name))
+		common.Info("Task started", zap.String("name", t.Name))
 
 		for {
 			select {
 			case <-ticker.C:
 				t.runSafely()
-			case <-t.stop:
-				logger.Info("Task stopped", zap.String("name", t.Name))
+			case <-stop:
+				common.Info("Task stopped", zap.String("name", t.Name))
 				return
 			}
 		}
-	}()
+	}(stop)
 }
 
 // runSafely executes the job with panic recovery and prevents overlap
 func (t *ScheduledTask) runSafely() {
 	// Attempt to set the flag
 	if !atomic.CompareAndSwapInt32(&t.executing, 0, 1) {
-		logger.Warn("Task skipped - previous execution still running", zap.String("name", t.Name))
+		common.Warn("Task skipped - previous execution still running", zap.String("name", t.Name))
 		return
 	}
 
@@ -134,7 +140,7 @@ func (t *ScheduledTask) runSafely() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
+			common.Fatal("Task panicked", zap.String("name", t.Name), zap.Any("recover", r))
 		}
 	}()
 
@@ -143,11 +149,15 @@ func (t *ScheduledTask) runSafely() {
 
 // Stop stops the periodic task
 func (t *ScheduledTask) Stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if !t.running {
 		return
 	}
 	t.running = false
 	close(t.stop)
+	t.stop = nil
 }
 
 // IsExecuting returns whether the task is currently executing

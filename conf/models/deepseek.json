@@ -1,0 +1,61 @@
+{
+  "name": "DeepSeek",
+  "rank": 996,
+  "url": {
+    "default": "https://api.deepseek.com"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "balance": "user/balance"
+  },
+  "class": "deepseek",
+  "models": [
+    {
+      "name": "deepseek-v4-flash",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash-vision-exp",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

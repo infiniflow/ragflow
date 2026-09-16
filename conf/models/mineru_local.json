@@ -1,0 +1,16 @@
+{
+  "name": "MinerU",
+  "url_suffix": {
+    "doc_parse": "file_parse",
+    "task": "tasks"
+  },
+  "class": "local",
+  "models": [
+    {
+      "name": "MinerU-model",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

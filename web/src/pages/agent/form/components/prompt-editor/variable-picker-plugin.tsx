@@ -36,6 +36,7 @@ import React, {
 } from 'react';
 import * as ReactDOM from 'react-dom';
 
+import { resolvePromptVariableOption } from './utils';
 import { $createVariableNode } from './variable-node';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -47,10 +48,18 @@ import {
   useShowSecondaryMenu,
 } from '@/pages/agent/hooks/use-build-structured-output';
 import { useFilterQueryVariableOptionsByTypes } from '@/pages/agent/hooks/use-get-begin-query';
+import {
+  flip,
+  FloatingPortal,
+  offset,
+  shift,
+  useFloating,
+} from '@floating-ui/react';
 import { LucideChevronRight } from 'lucide-react';
 import { PromptIdentity } from '../../agent-form/use-build-prompt-options';
 import { StructuredOutputSecondaryMenu } from '../structured-output-secondary-menu';
 import { ProgrammaticTag } from './constant';
+
 import './index.css';
 
 const SelectedValueContext = createContext<string>('');
@@ -59,7 +68,7 @@ class VariableOption extends MenuOption {
   label: string;
   value: string;
   parentLabel: string | JSX.Element;
-  icon?: ReactNode;
+  icon?: JSX.Element;
   type?: string;
   options?: VariableOption[];
 
@@ -74,7 +83,7 @@ class VariableOption extends MenuOption {
     this.label = label;
     this.value = value;
     this.parentLabel = parentLabel;
-    this.icon = icon;
+    this.icon = icon as JSX.Element | undefined;
     this.type = type;
   }
 }
@@ -360,7 +369,7 @@ export default function VariablePickerMenuPlugin({
   const filterStructuredOutput = useGetStructuredOutputByValue();
 
   const testTriggerFn = React.useCallback((text: string) => {
-    const triggerRegex = /(^|\s|\()([/]((?:[^/\s\()])*))$/;
+    const triggerRegex = /(^|\s|\()([/]((?:[^/\s()])*))$/;
     const match = triggerRegex.exec(text);
 
     if (match !== null) {
@@ -379,10 +388,13 @@ export default function VariablePickerMenuPlugin({
   const previousValue = useRef<string | undefined>();
   const [queryString, setQueryString] = React.useState<string>('');
 
-  let options = useFilterQueryVariableOptionsByTypes({ types });
+  let options: VariablePickerMenuOptionType[] =
+    useFilterQueryVariableOptionsByTypes({
+      types,
+    }) as VariablePickerMenuOptionType[];
 
   if (baseOptions) {
-    options = baseOptions as typeof options;
+    options = baseOptions;
   }
 
   const unifiedOptions = useMemo(() => {
@@ -518,7 +530,7 @@ export default function VariablePickerMenuPlugin({
           icon?: ReactNode;
         }>
       >((pre, cur) => {
-        return pre.concat(cur.options);
+        return pre.concat(cur.options as typeof pre);
       }, []);
 
       // agent structured output
@@ -530,7 +542,7 @@ export default function VariablePickerMenuPlugin({
         return agentStructuredOutput;
       }
 
-      return children.find((x) => x.value === value);
+      return resolvePromptVariableOption(value, children);
     },
     [findAgentStructuredOutputLabel, options],
   );
@@ -648,6 +660,11 @@ export default function VariablePickerMenuPlugin({
     }
   }, [parseTextToVariableNodes, editor, value]);
 
+  const { x, y, refs, strategy } = useFloating({
+    placement: 'bottom-start',
+    middleware: [offset(6), flip(), shift()],
+  });
+
   // Fixed the issue where the cursor would go to the end when changing its own data
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState, tags }) => {
@@ -677,6 +694,11 @@ export default function VariablePickerMenuPlugin({
       }
       triggerFn={testTriggerFn}
       options={unifiedOptions.flattened}
+      onOpen={(r) => {
+        refs.setPositionReference({
+          getBoundingClientRect: r.getRect,
+        });
+      }}
       menuRenderFn={(
         anchorElementRef,
         { selectOptionAndCleanUp, options, selectedIndex },
@@ -693,21 +715,32 @@ export default function VariablePickerMenuPlugin({
               ''
             }
           >
-            <div className="typeahead-popover w-80 bg-bg-base border-0.5 border-border">
-              <ScrollArea className="p-2">
-                <div className="max-h-64 space-y-2">
-                  {unifiedOptions.treeified.map((group) => (
-                    <VariablePickerOptionGroup
-                      key={group.title}
-                      title={group.title}
-                      options={group.options}
-                      types={types}
-                      selectOptionAndCleanUp={selectOptionAndCleanUp}
-                    />
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
+            <FloatingPortal>
+              <div
+                ref={refs.setFloating}
+                className="typeahead-popover w-80 bg-bg-base border-0.5 border-border"
+                style={{
+                  position: strategy,
+                  top: y ?? 0,
+                  left: x ?? 0,
+                  width: 'max-content',
+                }}
+              >
+                <ScrollArea className="p-2">
+                  <div className="max-h-64 space-y-2">
+                    {unifiedOptions.treeified.map((group) => (
+                      <VariablePickerOptionGroup
+                        key={group.title}
+                        title={group.title}
+                        options={group.options}
+                        types={types}
+                        selectOptionAndCleanUp={selectOptionAndCleanUp}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            </FloatingPortal>
           </SelectedValueContext.Provider>,
           anchorElementRef.current,
         );

@@ -1,0 +1,102 @@
+{
+  "name": "TokenHub",
+  "url": {
+    "default": "https://aitok.cc/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "tokenhub",
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4",
+      "context_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4-turbo",
+      "context_length": 128000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-3-5-sonnet",
+      "context_length": 200000,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-1.5-pro",
+      "context_length": 2097152,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-1.5-flash",
+      "context_length": 1048576,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

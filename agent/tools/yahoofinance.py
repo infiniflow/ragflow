@@ -29,17 +29,10 @@ class YahooFinanceParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "yahoo_finance",
             "description": "The Yahoo Finance is a service that provides access to real-time and historical stock market data. It enables users to fetch various types of stock information, such as price quotes, historical prices, company profiles, and financial news. The API offers structured data, allowing developers to integrate market data into their applications and analysis tools.",
-            "parameters": {
-                "stock_code": {
-                    "type": "string",
-                    "description": "The stock code or company name.",
-                    "default": "{sys.query}",
-                    "required": True
-                }
-            }
+            "parameters": {"stock_code": {"type": "string", "description": "The stock code or company name.", "default": "{sys.query}", "required": True}},
         }
         super().__init__()
         self.info = True
@@ -62,12 +55,8 @@ class YahooFinanceParam(ToolParamBase):
         self.check_boolean(self.news, "show news")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "stock_code": {
-                "name": "Stock code/Company name",
-                "type": "line"
-            }
-        }
+        return {"stock_code": {"name": "Stock code/Company name", "type": "line"}}
+
 
 class YahooFinance(ToolBase, ABC):
     component_name = "YahooFinance"
@@ -82,7 +71,7 @@ class YahooFinance(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("YahooFinance processing"):
                 return None
 

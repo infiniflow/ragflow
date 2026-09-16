@@ -16,23 +16,161 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES, PipelineTaskType
+from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
+from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
+from common.constants import PipelineTaskType, TaskStatus
+
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _parser_setup_key_by_suffix() -> dict[str, str]:
+    """Map document suffixes to the DSL "setups" key the flow Parser uses
+    to pick the per-type parser config (issue #18306).
+
+    Derived from ``ParserParam().setups`` (the source of truth used by
+    the runtime dispatch loop at rag/flow/parser/parser.py:1425-1426) so
+    the map can never diverge from the runtime — adding a new family or
+    suffix in ``ParserParam.setups`` flows through automatically.
+
+    Lazily evaluated on first call so importing this module does not pull
+    in ``rag.flow.parser.parser`` (which transitively imports deepdoc,
+    numpy, PIL) at API server startup. The first lookup happens only
+    when ``PipelineOperationLogService.create`` resolves a PARSE task's
+    pipeline parser.
+    """
+    from rag.flow.parser.parser import ParserParam
+
+    mapping: dict[str, str] = {}
+    for setup_key, conf in ParserParam().setups.items():
+        for suffix in conf.get("suffix", []):
+            mapping[suffix] = setup_key
+    return mapping
+
+
+def _load_dsl_mapping(dsl_str) -> dict | None:
+    """Decode + validate a pipeline DSL string into a mapping.
+
+    Returns None for missing, malformed, or non-mapping input so callers
+    can fall back to ``document.parser_id`` (issue #18306). An empty
+    mapping (``{}``) is a valid result and is returned as such so callers
+    can persist it on the log row. The PipelineOperationLog create path
+    decodes the DSL exactly once and reuses the parsed mapping for both
+    parser extraction and the persisted ``dsl`` column — avoids a
+    second ``json.loads`` that would re-raise on the same malformed
+    input.
+    """
+    if dsl_str is None or dsl_str == "":
+        return None
+    if isinstance(dsl_str, dict):
+        return dsl_str
+    try:
+        parsed = json.loads(dsl_str)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parser_for_document_from_dsl(dsl_mapping: dict | None, document_suffix: str) -> str | None:
+    """Return the parse_method the flow Parser would use for this document.
+
+    The Pipeline's Parser component configures ``parse_method`` per file
+    family (PDF, spreadsheet, slides, ...). For a dataflow task, the
+    PipelineOperationLog should record what the pipeline actually used,
+    not ``document.parser_id`` which may carry the KB default (e.g.
+    "DeepDOC") even when the Pipeline Parser component is set to
+    "Docling" — see issue #18306.
+
+    ``dsl_mapping`` must already be a decoded JSON object — callers
+    should run the raw DSL through :func:`_load_dsl_mapping` first so
+    malformed input is handled in one place.
+    """
+    if not isinstance(dsl_mapping, dict):
+        return None
+    components = dsl_mapping.get("components") or {}
+    if not isinstance(components, dict):
+        return None
+    setup_key = _parser_setup_key_by_suffix().get((document_suffix or "").lower())
+    if not setup_key:
+        return None
+    for cpn in components.values():
+        if not isinstance(cpn, dict):
+            continue
+        obj = cpn.get("obj")
+        if not isinstance(obj, dict) or obj.get("component_name") != "Parser":
+            continue
+        params = obj.get("params")
+        if not isinstance(params, dict):
+            continue
+        setups = params.get("setups")
+        if not isinstance(setups, dict):
+            continue
+        cfg = setups.get(setup_key)
+        if isinstance(cfg, dict):
+            method = cfg.get("parse_method")
+            if isinstance(method, str) and method:
+                return method
+    return None
+
+
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
+
+# KB-level fan-out pipeline task types (task row carries a fake doc_id; the real
+# participants live in task["doc_ids"]) → the KB ``<type>_task_finish_at`` column
+# stamped when the task completes. Membership also marks a task as KB-scoped so
+# the per-document progress update is skipped.
+_PIPELINE_TASK_TYPE_TO_FINISH_FIELD = {
+    PipelineTaskType.GRAPH_RAG: "graphrag_task_finish_at",
+    PipelineTaskType.RAPTOR: "raptor_task_finish_at",
+    PipelineTaskType.MINDMAP: "mindmap_task_finish_at",
+    PipelineTaskType.ARTIFACT: "wiki_task_finish_at",
+    PipelineTaskType.SKILL: "skill_task_finish_at",
+    PipelineTaskType.STRUCTURE_GRAPH: "structure_graph_task_finish_at",
+    PipelineTaskType.STRUCTURE_MINDMAP: "structure_mindmap_task_finish_at",
+    PipelineTaskType.TIMELINE: "timeline_task_finish_at",
+    PipelineTaskType.SESSION_GRAPH: "session_graph_task_finish_at",
+    PipelineTaskType.SESSION_ESSENCE: "session_essence_task_finish_at",
+    PipelineTaskType.STRUCTURE: "structure_task_finish_at",
+}
+
+_EMBEDDING_VECTOR_FIELD = re.compile(r"^q_\d+_vec$")
+
+
+def _remove_embedding_vectors(value):
+    """Remove index-only embedding vectors from a runtime pipeline snapshot."""
+    if isinstance(value, dict):
+        for key in list(value):
+            if _EMBEDDING_VECTOR_FIELD.fullmatch(str(key)):
+                del value[key]
+            else:
+                _remove_embedding_vectors(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _remove_embedding_vectors(item)
+    return value
 
 
 class PipelineOperationLogService(CommonService):
     model = PipelineOperationLog
+
+    @classmethod
+    def _is_final_state(cls, progress, operation_status):
+        if progress == 1 or progress == -1:
+            return True
+        status = operation_status.value if isinstance(operation_status, TaskStatus) else str(operation_status)
+        return status in [TaskStatus.CANCEL.value, TaskStatus.DONE.value, TaskStatus.FAIL.value]
 
     @classmethod
     def get_file_logs_fields(cls):
@@ -93,23 +231,46 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create(cls, document_id, pipeline_id, task_type, fake_document_ids=[], dsl: str = "{}"):
-        referred_document_id = document_id
+    def create(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None, dsl: str = "{}"):
+        if document_id != GRAPH_RAPTOR_FAKE_DOC_ID:
+            referred_document_id = document_id
 
-        if referred_document_id == GRAPH_RAPTOR_FAKE_DOC_ID and fake_document_ids:
-            referred_document_id = fake_document_ids[0]
+        # no need to update document for KB-level fan-out tasks
+        if task_type not in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD:
+            ok, document = DocumentService.get_by_id(referred_document_id)
+            if not ok:
+                logger.warning(f"Document for referred_document_id {referred_document_id} not found")
+                return None
+            DocumentService.update_progress_immediately([document.to_dict()])
+
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            logger.warning(f"Document for referred_document_id {referred_document_id} not found")
             return None
-        DocumentService.update_progress_immediately([document.to_dict()])
-        ok, document = DocumentService.get_by_id(referred_document_id)
-        if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
-            return None
-        if document.progress not in [1, -1]:
-            return None
+
+        # From document
+        title = document.parser_id
+        avatar = document.thumbnail
+        document_name = document.name
         operation_status = document.run
+        progress = document.progress
+        progress_msg = document.progress_msg
+        process_begin_at = document.process_begin_at
+        process_duration = document.process_duration
+        parser_id = document.parser_id
+
+        # Closes #18306: decode the DSL exactly once and reuse the parsed
+        # mapping for both parser extraction and the persisted ``dsl``
+        # column — avoids a second ``json.loads`` that would re-raise on
+        # the same malformed input. If the DSL is malformed or missing we
+        # fall back to an empty mapping instead of crashing, and the
+        # warning below tells the operator why the parser resolution
+        # fell back to ``document.parser_id``.
+        dsl_mapping = _load_dsl_mapping(dsl)
+        if dsl_mapping is None:
+            dsl_for_log = {}
+        else:
+            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -118,81 +279,153 @@ class PipelineOperationLogService(CommonService):
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
+            if task_type == PipelineTaskType.PARSE:
+                pipeline_parser = _parser_for_document_from_dsl(
+                    dsl_mapping,
+                    document.suffix or "",
+                )
+                if pipeline_parser:
+                    parser_id = pipeline_parser
+                elif dsl_mapping is None:
+                    # The pipeline's DSL is missing or malformed (None
+                    # from _load_dsl_mapping for None/""/invalid JSON/
+                    # non-mapping input). We can't recover the configured
+                    # parser from the DSL, so log the gap explicitly
+                    # before falling back to document.parser_id (which
+                    # may carry the KB default like "DeepDOC" — see
+                    # #18306).
+                    logger.warning(
+                        "[PipelineOperationLog] Pipeline DSL is missing or malformed for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
+                elif dsl and dsl != "":
+                    # This is not necessarily an error — many pipelines
+                    # legitimately have no Parser component (e.g. they
+                    # process already-chunked text from a prior stage).
+                    # Demoted to DEBUG so the warning channel isn't noisy
+                    # on every PARSE task where the pipeline just doesn't
+                    # happen to configure a Parser component (issue #18306
+                    # review follow-up).
+                    logger.debug(
+                        "[PipelineOperationLog] Could not resolve pipeline parser from DSL for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
                 raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
-
             tenant_id = kb_info.tenant_id
-            title = document.parser_id
-            avatar = document.thumbnail
 
         if task_type not in VALID_PIPELINE_TASK_TYPES:
             raise ValueError(f"Invalid task type: {task_type}")
 
-        if task_type in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
-            finish_at = document.process_begin_at + timedelta(seconds=document.process_duration)
-            if task_type == PipelineTaskType.GRAPH_RAG:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"graphrag_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.RAPTOR:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"raptor_task_finish_at": finish_at},
-                )
-            elif task_type == PipelineTaskType.MINDMAP:
-                KnowledgebaseService.update_by_id(
-                    document.kb_id,
-                    {"mindmap_task_finish_at": finish_at},
-                )
+        if task_type in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD:
+            # query task to get progress information from task
+            ok, task = TaskService.get_by_id(task_id)
+            if not ok:
+                raise RuntimeError(f"Task not found for dataset {document.kb_id}")
+            title = task_type
+            document_name = task_type
+            operation_status = TaskStatus.DONE.value if task.progress == 1 else TaskStatus.FAIL.value if task.progress == -1 else TaskStatus.RUNNING.value
+            progress = task.progress
+            progress_msg = task.progress_msg
+            process_begin_at = task.begin_at
+            process_duration = task.process_duration
 
-        log = dict(
-            id=get_uuid(),
-            document_id=document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
-            tenant_id=tenant_id,
-            kb_id=document.kb_id,
-            pipeline_id=pipeline_id,
-            pipeline_title=title,
-            parser_id=document.parser_id,
-            document_name=document.name,
-            document_suffix=document.suffix,
-            document_type=document.type,
-            source_from=document.source_type.split("/")[0],
-            progress=document.progress,
-            progress_msg=document.progress_msg,
-            process_begin_at=document.process_begin_at,
-            process_duration=document.process_duration,
-            dsl=json.loads(dsl),
-            task_type=task_type,
-            operation_status=operation_status,
-            avatar=avatar,
-        )
+            if not cls._is_final_state(progress, operation_status):
+                logger.info("Skip non-final dataset pipeline operation log task_id=%s task_type=%s progress=%s", task_id, task_type, progress)
+                return None
+
+            finish_at = process_begin_at + timedelta(seconds=process_duration)
+            KnowledgebaseService.update_by_id(
+                document.kb_id,
+                {_PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: finish_at},
+            )
+        elif not cls._is_final_state(progress, operation_status):
+            logger.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
+            return None
+
+        log = {
+            "id": get_uuid(),
+            "document_id": document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
+            "tenant_id": tenant_id,
+            "kb_id": document.kb_id,
+            "pipeline_id": pipeline_id,
+            "pipeline_title": title,
+            "parser_id": parser_id,
+            "document_name": document_name,
+            "document_suffix": document.suffix,
+            "document_type": document.type,
+            "source_from": document.source_type.split("/")[0],
+            "progress": progress,
+            "progress_msg": progress_msg,
+            "process_begin_at": process_begin_at,
+            "process_duration": process_duration,
+            "dsl": dsl_for_log,
+            "task_type": task_type,
+            "operation_status": operation_status,
+            "avatar": avatar,
+        }
         timestamp = current_timestamp()
-        datetime_now = datetime_format(datetime.now())
+        datetime_now = datetime_format(datetime.now())  # noqa: DTZ005
         log["create_time"] = timestamp
         log["create_date"] = datetime_now
         log["update_time"] = timestamp
         log["update_date"] = datetime_now
         with DB.atomic():
+            operation_status_value = operation_status.value if isinstance(operation_status, TaskStatus) else str(operation_status)
+            if document_id != GRAPH_RAPTOR_FAKE_DOC_ID and operation_status_value == TaskStatus.CANCEL.value:
+                # Serialize page-task finalizers for the same canceled document.
+                locked_document = Document.select(Document.id, Document.run, Document.update_time).where(Document.id == document.id).for_update().first()
+                if locked_document is None or locked_document.run != TaskStatus.CANCEL.value:
+                    return None
+                cancel_update_time = locked_document.update_time or timestamp
+                if locked_document.update_time is None:
+                    Document.update(update_time=cancel_update_time, update_date=datetime_now).where(Document.id == locked_document.id).execute()
+                pipeline_filter = cls.model.pipeline_id == pipeline_id if pipeline_id else (cls.model.pipeline_id.is_null(True) | (cls.model.pipeline_id == ""))
+                existing = (
+                    cls.model.select()
+                    .where(
+                        (cls.model.document_id == document_id)
+                        & pipeline_filter
+                        & (cls.model.task_type == task_type)
+                        & (cls.model.operation_status == TaskStatus.CANCEL.value)
+                        & (cls.model.create_time >= cancel_update_time)
+                    )
+                    .first()
+                )
+                if existing:
+                    logger.debug(
+                        "Skip duplicate pipeline operation log document_id=%s pipeline_id=%s task_type=%s process_begin_at=%s existing_id=%s",
+                        document_id,
+                        pipeline_id,
+                        task_type,
+                        process_begin_at,
+                        existing.id,
+                    )
+                    return existing
+
             obj = cls.save(**log)
 
-            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1000))
+            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", "1000"))
             total = cls.model.select().where(cls.model.kb_id == document.kb_id).count()
 
             if total > limit:
                 keep_ids = [m.id for m in cls.model.select(cls.model.id).where(cls.model.kb_id == document.kb_id).order_by(cls.model.create_time.desc()).limit(limit)]
 
                 deleted = cls.model.delete().where(cls.model.kb_id == document.kb_id, cls.model.id.not_in(keep_ids)).execute()
-                logging.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
+                logger.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
 
         return obj
 
     @classmethod
     @DB.connection_context()
-    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, fake_document_ids=[]):
-        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, fake_document_ids=fake_document_ids)
+    def record_pipeline_operation(cls, document_id, pipeline_id, task_type, task_id=None, referred_document_id=None):
+        return cls.create(document_id=document_id, pipeline_id=pipeline_id, task_type=task_type, task_id=task_id, referred_document_id=referred_document_id)
 
     @classmethod
     @DB.connection_context()
@@ -206,7 +439,7 @@ class PipelineOperationLogService(CommonService):
         logs = logs.where(cls.model.document_id != GRAPH_RAPTOR_FAKE_DOC_ID)
 
         if operation_status:
-            logs = logs.where(cls.model.operation_status.in_(operation_status))
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if types:
             logs = logs.where(cls.model.document_type.in_(types))
         if suffix:
@@ -231,23 +464,19 @@ class PipelineOperationLogService(CommonService):
     @DB.connection_context()
     def get_documents_info(cls, id):
         fields = [Document.id, Document.name, Document.progress, Document.kb_id]
-        return (
-            cls.model.select(*fields)
-            .join(Document, on=(cls.model.document_id == Document.id))
-            .where(
-                cls.model.id == id
-            )
-            .dicts()
-        )
+        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(cls.model.id == id).dicts()
 
     @classmethod
     @DB.connection_context()
-    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from=None, create_date_to=None):
+    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from=None, create_date_to=None, keywords=None):
         fields = cls.get_dataset_logs_fields()
-        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
+        if keywords:
+            logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID), (fn.LOWER(cls.model.document_name).contains(keywords.lower())))
+        else:
+            logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
-            logs = logs.where(cls.model.operation_status.in_(operation_status))
+            logs = logs.where(cls.model.operation_status.in_([status.value if isinstance(status, TaskStatus) else str(status) for status in operation_status]))
         if create_date_from:
             logs = logs.where(cls.model.create_date >= create_date_from)
         if create_date_to:

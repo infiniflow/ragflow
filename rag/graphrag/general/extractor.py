@@ -24,7 +24,6 @@ from typing import Callable
 import networkx as nx
 
 from api.db.services.task_service import has_canceled
-from common.connection_utils import timeout
 from common.token_utils import truncate
 from rag.graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from rag.graphrag.utils import (
@@ -74,11 +73,10 @@ class Extractor:
     def _is_truncated_cache(response):
         return len((response or "").strip()) <= 1
 
-    @timeout(60 * 20)
-    def _chat(self, system, history, gen_conf={}, task_id=""):
+    async def _async_chat(self, system, history, gen_conf={}, task_id=""):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
-        response = get_llm_cache(self._llm.llm_name, system, hist, conf)
+        response = await thread_pool_exec(get_llm_cache, self._llm.llm_name, system, hist, conf)
         response = self._normalize_response_text(response)
         if self._is_truncated_cache(response):
             response = ""
@@ -88,18 +86,24 @@ class Extractor:
         response = ""
         for attempt in range(3):
             if task_id:
-                if has_canceled(task_id):
+                if await thread_pool_exec(has_canceled, task_id):
                     logging.info(f"Task {task_id} cancelled during entity resolution candidate processing.")
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
             try:
-                response = asyncio.run(self._llm.async_chat(system_msg[0]["content"], hist, conf))
+                response = await asyncio.wait_for(
+                    self._llm.async_chat(system_msg[0]["content"], hist, conf),
+                    timeout=60 * 20,
+                )
                 response = self._normalize_response_text(response)
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
                 if not self._is_truncated_cache(response):
-                    set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+                    await thread_pool_exec(set_llm_cache, self._llm.llm_name, system, response, history, gen_conf)
                 break
+            except asyncio.TimeoutError:
+                logging.warning("_async_chat timed out after 20 minutes")
+                raise  # timeout is not a transient error; do not retry
             except Exception as e:
                 logging.exception(e)
                 if attempt == 2:
@@ -138,7 +142,6 @@ class Extractor:
             async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int, task_id=""):
                 nonlocal error_count
                 async with limiter:
-
                     if task_id and has_canceled(task_id):
                         raise TaskCanceledException(f"Task {task_id} was cancelled during entity extraction")
 
@@ -154,10 +157,7 @@ class Extractor:
                         if error_count > max_errors:
                             raise Exception(f"Maximum error count ({max_errors}) reached. Last errors: {str(e)}")
 
-            tasks = [
-                asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id))
-                for i, ck in enumerate(chunks)
-            ]
+            tasks = [asyncio.create_task(worker((doc_id, ck), i, len(chunks), task_id)) for i, ck in enumerate(chunks)]
 
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
@@ -203,10 +203,7 @@ class Extractor:
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled before nodes merging")
 
-        tasks = [
-            asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id))
-            for en_nm, ents in maybe_nodes.items()
-        ]
+        tasks = [asyncio.create_task(self._merge_nodes(en_nm, ents, all_entities_data, task_id)) for en_nm, ents in maybe_nodes.items()]
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -232,11 +229,7 @@ class Extractor:
 
         tasks = []
         for (src, tgt), rels in maybe_edges.items():
-            tasks.append(
-                asyncio.create_task(
-                    self._merge_edges(src, tgt, rels, all_relationships_data, task_id)
-                )
-            )
+            tasks.append(asyncio.create_task(self._merge_edges(src, tgt, rels, all_relationships_data, task_id)))
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
@@ -315,7 +308,10 @@ class Extractor:
             node1_attrs = graph.nodes[node1]
             node0_attrs["description"] += f"{GRAPH_FIELD_SEP}{node1_attrs['description']}"
             node0_attrs["source_id"] = sorted(set(node0_attrs["source_id"] + node1_attrs["source_id"]))
-            for neighbor in graph.neighbors(node1):
+            # Snapshot neighbors before mutation; otherwise networkx raises
+            # "dictionary keys changed during iteration" when concurrent merges
+            # or graph.add_edge/remove_node below touch the same adjacency dict.
+            for neighbor in list(graph.neighbors(node1)):
                 change.removed_edges.add(get_from_to(node1, neighbor))
                 if neighbor not in nodes_set:
                     edge1_attrs = graph.get_edge_data(node1, neighbor)
@@ -331,6 +327,10 @@ class Extractor:
                         graph.add_edge(nodes[0], neighbor, **edge0_attrs)
                     else:
                         graph.add_edge(nodes[0], neighbor, **edge1_attrs)
+                        # Track the redirected neighbour so a later node1 in this
+                        # merge that also points to it takes the merge branch
+                        # above instead of overwriting the edge we just added.
+                        node0_neighbors.add(neighbor)
             graph.remove_node(node1)
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"], task_id=task_id)
         graph.nodes[nodes[0]].update(node0_attrs)
@@ -357,5 +357,5 @@ class Extractor:
             raise TaskCanceledException(f"Task {task_id} was cancelled during summary handling")
 
         async with chat_limiter:
-            summary = await thread_pool_exec(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
+            summary = await self._async_chat("", [{"role": "user", "content": use_prompt}], {}, task_id)
         return summary

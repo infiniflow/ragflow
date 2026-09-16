@@ -16,7 +16,7 @@
 import uuid
 
 import pytest
-from common import search_create, search_detail, search_list, search_rm, search_update
+from test_common import search_create, search_detail, search_list, search_rm, search_update
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

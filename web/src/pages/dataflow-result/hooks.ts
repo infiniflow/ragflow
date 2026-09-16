@@ -4,22 +4,30 @@ import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { useCreateChunk, useDeleteChunk } from '@/hooks/use-chunk-request';
-import kbService from '@/services/knowledge-service';
+import kbService, { getPipelineDetail } from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams, useSearchParams } from 'react-router';
-import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
+import OperatorIcon from '@/components/operator-icon';
+import { Operator } from '@/constants/agent';
 import {
   ChunkTextMode,
   PipelineResultSearchParams,
   TimelineNodeType,
 } from './constant';
 import { IChunk, IDslComponent, IPipelineFileLogDetail } from './interface';
+import { buildPipelineFileLogDetailQueryKey } from './query-key';
 
 export const useFetchPipelineFileLogDetail = ({
   isAgent = false,
@@ -33,22 +41,22 @@ export const useFetchPipelineFileLogDetail = ({
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const logId = searchParams.get('id') || id;
+  const knowledgeId = searchParams.get('knowledgeId') || '';
 
-  let queryKey: (string | number)[] = [];
-  if (typeof refreshCount === 'number') {
-    queryKey = ['fetchLogDetail', refreshCount];
-  }
+  const queryKey = buildPipelineFileLogDetailQueryKey({
+    knowledgeId,
+    logId,
+    refreshCount,
+  });
 
   const { data, isFetching: loading } = useQuery<IPipelineFileLogDetail>({
     queryKey,
     initialData: {} as IPipelineFileLogDetail,
     gcTime: 0,
-    enabled: !isAgent,
+    enabled: !isAgent && isEdit && Boolean(knowledgeId && logId),
     queryFn: async () => {
-      if (isEdit) {
-        const { data } = await kbService.get_pipeline_detail({
-          log_id: logId,
-        });
+      if (isEdit && knowledgeId && logId) {
+        const { data } = await getPipelineDetail(knowledgeId, logId);
         return data?.data ?? {};
       } else {
         return {};
@@ -170,62 +178,18 @@ export const useUpdateChunk = () => {
   };
 };
 
-export const useRerunDataflow = ({
-  data,
-}: {
-  data: IPipelineFileLogDetail;
-}) => {
-  const [isChange, setIsChange] = useState(false);
-
-  const { mutateAsync: handleReRunFunc, isPending: loading } = useMutation({
-    mutationKey: ['pipelineRerun', data],
-    mutationFn: async (newData: { value: IDslComponent; key: string }) => {
-      const newDsl = {
-        ...data.dsl,
-        components: {
-          ...data.dsl.components,
-          [newData.key]: newData.value,
-        },
-      };
-
-      // this Data provided to the interface
-      const params = {
-        id: data.id,
-        dsl: newDsl,
-        component_id: newData.key,
-      };
-      const { data: result } = await kbService.pipelineRerun(params);
-      if (result.code === 0) {
-        message.success(t('message.operated'));
-        // queryClient.invalidateQueries({
-        //   queryKey: [type],
-        // });
-      }
-      return result;
-    },
-  });
-
-  return {
-    loading,
-    isChange,
-    setIsChange,
-    handleReRunFunc,
-  };
-};
-
 export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   const timelineNodes: TimelineNode[] = useMemo(() => {
-    const nodes: Array<ITimelineNodeObj & { id: number | string }> = [];
-    console.log('time-->', data);
+    const nodes: Array<
+      TimelineNode & { detail: { value: IDslComponent; key: string } }
+    > = [];
     const times = data?.dsl?.components;
     const graphNodes = data?.dsl?.graph?.nodes;
     if (times) {
       const getNode = (key: string, index: number, type: TimelineNodeType) => {
         const node = times[key].obj;
         const graphNode = graphNodes?.find((item) => item.id === key);
-        const name = camelCase(
-          node.component_name,
-        ) as keyof typeof TimelineNodeObj;
+        const name = camelCase(node.component_name);
 
         let tempType = type;
         if (name === TimelineNodeType.parser) {
@@ -238,9 +202,19 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         ) {
           tempType = name;
         }
+        const operatorName = upperFirst(name) as keyof typeof Operator;
         const timeNode = {
-          ...TimelineNodeObj[name],
+          icon: Operator[operatorName]
+            ? createElement(OperatorIcon, {
+                name: Operator[operatorName],
+              })
+            : undefined,
           title: graphNode?.data?.name,
+          clickable: ![
+            TimelineNodeType.begin,
+            TimelineNodeType.tokenizer,
+            TimelineNodeType.compiler,
+          ].includes(name as TimelineNodeType),
           id: index,
           className: 'w-32',
           completed: false,
@@ -249,26 +223,18 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
           ),
           type: tempType,
           detail: { value: times[key], key: key },
-        } as ITimelineNodeObj & {
-          id: number | string;
-          className: string;
-          completed: boolean;
-          date: string;
-          type: TimelineNodeType;
+        } as TimelineNode & {
           detail: { value: IDslComponent; key: string };
         };
-        console.log('timeNodetype-->', type);
         nodes.push(timeNode);
 
         if (times[key].downstream && times[key].downstream.length > 0) {
           const nextKey = times[key].downstream[0];
 
-          // nodes.push(timeNode);
           getNode(nextKey, index + 1, tempType);
         }
       };
       getNode(upperFirst(TimelineNodeType.begin), 1, TimelineNodeType.begin);
-      // setTimelineNodeArr(nodes as unknown as ITimelineNodeObj & {id: number | string})
     }
     return nodes;
   }, [data]);
@@ -282,7 +248,6 @@ export const useGetPipelineResultSearchParams = () => {
   const is_read_only = currentQueryParameters.get(
     PipelineResultSearchParams.IsReadOnly,
   ) as 'true' | 'false';
-  console.log('is_read_only', is_read_only);
   return {
     type: currentQueryParameters.get(PipelineResultSearchParams.Type) || '',
     documentId:
@@ -300,6 +265,14 @@ export const useGetPipelineResultSearchParams = () => {
       ) || '',
     createdBy:
       currentQueryParameters.get(PipelineResultSearchParams.CreatedBy) || '',
+    documentName:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentName) || '',
+    documentSize:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentSize) || '',
+    documentCreatedAt:
+      currentQueryParameters.get(
+        PipelineResultSearchParams.DocumentCreatedAt,
+      ) || '',
   };
 };
 

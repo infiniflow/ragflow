@@ -1,0 +1,160 @@
+{
+  "name": "CometAPI",
+  "url": {
+    "default": "https://api.cometapi.com"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "api/models",
+    "embedding": "v1/embeddings",
+    "balance": "https://query.cometapi.com/user/quota",
+    "tts": "v1/audio/speech",
+    "asr": "v1/audio/transcriptions"
+  },
+  "class": "cometapi",
+  "models": [
+    {
+      "name": "gpt-5.5",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3-pro-preview",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3.2",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "whisper-1",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "tts-1",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

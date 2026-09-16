@@ -18,12 +18,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { RunningStatusMap } from '@/constants/knowledge';
+import {
+  ProcessingType,
+  ProcessingTypeMap,
+  RunningStatusMap,
+} from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
-import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
-import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
@@ -40,21 +41,16 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
-import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
+import { ArrowUpDown, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
-import { useParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
-import { LogTabs, ProcessingType, ProcessingTypeMap } from './dataset-common';
+import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
 export const getFileLogsTableColumns = (
   t: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
-  kowledgeId: string,
-  navigateToDataflowResult: (
-    props: NavigateToDataflowResultProps,
-  ) => () => void,
   dataSourceInfo: IDataSourceInfoMap,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
@@ -116,7 +112,9 @@ export const getFileLogsTableColumns = (
             <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
               <MonitorUp className="text-accent-primary" size={16} />
             </div>
-          ) : (
+          ) : dataSourceInfo[
+              row.original.source_from as keyof typeof dataSourceInfo
+            ] ? (
             <div className="w-6 h-6 flex items-center justify-center">
               {
                 dataSourceInfo[
@@ -124,13 +122,17 @@ export const getFileLogsTableColumns = (
                 ].icon
               }
             </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
+            </div>
           )}
         </div>
       ),
     },
     {
       accessorKey: 'pipeline_title',
-      header: t('dataPipeline'),
+      header: t('dataPipelineTitle'),
       cell: ({ row }) => {
         const title = row.original.pipeline_title;
         const pipelineTitle = title === 'naive' ? 'general' : title;
@@ -204,22 +206,6 @@ export const getFileLogsTableColumns = (
           >
             <Eye />
           </Button>
-          {row.original.pipeline_id && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={navigateToDataflowResult({
-                id: row.original.id,
-                [PipelineResultSearchParams.KnowledgeId]: kowledgeId,
-                [PipelineResultSearchParams.DocumentId]:
-                  row.original.document_id,
-                [PipelineResultSearchParams.IsReadOnly]: 'false',
-                [PipelineResultSearchParams.Type]: 'dataflow',
-              })}
-            >
-              <ClipboardList />
-            </Button>
-          )}
         </div>
       ),
     },
@@ -289,7 +275,8 @@ export const getDatasetLogsTableColumns = (
       header: t('processingType'),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          {ProcessingType.knowledgeGraph === row.original.task_type && (
+          {(ProcessingType.knowledgeGraph === row.original.task_type ||
+            row.original.task_type === 'GraphRAG') && (
             <IconFontFill
               name={`knowledgegraph`}
               className="text-text-secondary"
@@ -356,9 +343,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { t } = useTranslate('knowledgeDetails');
   const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const { navigateToDataflowResult } = useNavigatePage();
   const [logInfo, setLogInfo] = useState<IFileLogItem>();
-  const kowledgeId = useParams().id;
   const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
@@ -379,13 +364,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
-      ? getFileLogsTableColumns(
-          t,
-          showLog,
-          kowledgeId || '',
-          navigateToDataflowResult,
-          dataSourceInfo,
-        )
+      ? getFileLogsTableColumns(t, showLog, dataSourceInfo)
       : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);
 

@@ -1,5 +1,4 @@
 import Image from '@/components/image';
-import { useTheme } from '@/components/theme-provider';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -8,11 +7,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import type { ChunkDocType, IChunk } from '@/interfaces/database/knowledge';
+import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
@@ -44,7 +43,6 @@ const ChunkCard = ({
   const { t } = useTranslation();
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
-  const { theme } = useTheme();
 
   const onChange = (checked: boolean) => {
     setEnabled(checked);
@@ -130,11 +128,10 @@ const ChunkCard = ({
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight).trim(),
+              __html: sanitizeHtmlWithImagesAsText(item.content_with_weight),
             }}
             className={classNames(
-              // Keep whitespaces?
-              'text-wrap break-words whitespace-pre',
+              'whitespace-pre-wrap break-words',
               textMode === ChunkTextMode.Ellipse && 'line-clamp-3',
             )}
           />

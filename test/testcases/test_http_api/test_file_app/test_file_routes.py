@@ -221,14 +221,18 @@ def test_upload_file_success_uses_new_service_layer(monkeypatch):
     monkeypatch.setattr(
         module.FileService,
         "create_folder",
-        lambda _file, parent_id, _names, _len_id: SimpleNamespace(id=parent_id),
+        lambda _file, parent_id, _names, _len_id, *_args: SimpleNamespace(id=parent_id),
     )
-    monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(
-        obj_exist=lambda *_args, **_kwargs: False,
-        put=lambda bucket, location, blob: storage_puts.append((bucket, location, blob)),
-        rm=lambda *_args, **_kwargs: None,
-        move=lambda *_args, **_kwargs: None,
-    ))
+    monkeypatch.setattr(
+        module.settings,
+        "STORAGE_IMPL",
+        SimpleNamespace(
+            obj_exist=lambda *_args, **_kwargs: False,
+            put=lambda bucket, location, blob: storage_puts.append((bucket, location, blob)),
+            rm=lambda *_args, **_kwargs: None,
+            move=lambda *_args, **_kwargs: None,
+        ),
+    )
 
     ok, data = _run(module.upload_file("tenant1", "pf1", [_DummyUploadFile("a.txt", b"hello")]))
     assert ok is True
@@ -247,6 +251,15 @@ def test_create_folder_rejects_duplicate_name(monkeypatch):
 
 
 @pytest.mark.p2
+def test_create_folder_rejects_slash_in_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+
+    ok, message = _run(module.create_folder("tenant1", "/", "pf1", module.FileType.FOLDER.value))
+    assert ok is False
+    assert message == 'Folder name cannot contain "/"'
+
+
+@pytest.mark.p2
 def test_delete_files_checks_team_permission(monkeypatch):
     module = _load_file_api_service(monkeypatch)
     monkeypatch.setattr(
@@ -258,7 +271,7 @@ def test_delete_files_checks_team_permission(monkeypatch):
 
     ok, message = _run(module.delete_files("tenant1", ["file1"]))
     assert ok is False
-    assert message == "No authorization."
+    assert message == {"success_count": 0, "errors": ["No authorization for file file1"]}
 
 
 @pytest.mark.p2
@@ -273,6 +286,20 @@ def test_move_files_rejects_extension_change_in_new_name(monkeypatch):
     ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a.pdf"))
     assert ok is False
     assert message == "The extension of file can't be changed"
+
+
+@pytest.mark.p2
+def test_move_files_rejects_slash_in_new_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _ids: [_DummyFile("file1", module.FileType.FOLDER.value, name="old")],
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a/b"))
+    assert ok is False
+    assert message == 'Name cannot contain "/"'
 
 
 @pytest.mark.p2
@@ -291,12 +318,16 @@ def test_move_files_handles_dest_and_storage_move(monkeypatch):
         "get_by_ids",
         lambda _ids: [_DummyFile("file1", module.FileType.DOC.value, parent_id="src", location="old", name="a.txt")],
     )
-    monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(
-        obj_exist=lambda *_args, **_kwargs: False,
-        put=lambda *_args, **_kwargs: None,
-        rm=lambda *_args, **_kwargs: None,
-        move=lambda old_bucket, old_loc, new_bucket, new_loc: moved.append((old_bucket, old_loc, new_bucket, new_loc)),
-    ))
+    monkeypatch.setattr(
+        module.settings,
+        "STORAGE_IMPL",
+        SimpleNamespace(
+            obj_exist=lambda *_args, **_kwargs: False,
+            put=lambda *_args, **_kwargs: None,
+            rm=lambda *_args, **_kwargs: None,
+            move=lambda old_bucket, old_loc, new_bucket, new_loc: moved.append((old_bucket, old_loc, new_bucket, new_loc)),
+        ),
+    )
     monkeypatch.setattr(module.FileService, "update_by_id", lambda file_id, data: updated.append((file_id, data)) or True)
 
     ok, message = _run(module.move_files("tenant1", ["file1"], "missing"))
@@ -343,7 +374,7 @@ def test_get_file_content_checks_permission(monkeypatch):
 
     ok, message = module.get_file_content("tenant1", "file1")
     assert ok is False
-    assert message == "No authorization."
+    assert message == "no authorization"
 
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     ok, file = module.get_file_content("tenant1", "file1")

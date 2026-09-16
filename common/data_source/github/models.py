@@ -12,6 +12,4 @@ class SerializedRepository(BaseModel):
     raw_data: dict[str, Any]
 
     def to_Repository(self, requester: Requester) -> Repository.Repository:
-        return Repository.Repository(
-            requester, self.headers, self.raw_data, completed=True
-        )
+        return Repository.Repository(requester, self.headers, self.raw_data, completed=True)

@@ -59,7 +59,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -77,8 +77,7 @@ class TestChatCompletionsOpenAI:
         assert "prompt_tokens" in usage, f"'usage' should contain 'prompt_tokens': {usage}"
         assert "completion_tokens" in usage, f"'usage' should contain 'completion_tokens': {usage}"
         assert "total_tokens" in usage, f"'usage' should contain 'total_tokens': {usage}"
-        assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], \
-            f"total_tokens should equal prompt_tokens + completion_tokens: {usage}"
+        assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], f"total_tokens should equal prompt_tokens + completion_tokens: {usage}"
 
     @pytest.mark.p2
     def test_openai_chat_completion_token_count_reasonable(self, HttpApiAuth, add_dataset_func, tmp_path, request):
@@ -100,7 +99,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -123,7 +122,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             "invalid_chat_id",
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },

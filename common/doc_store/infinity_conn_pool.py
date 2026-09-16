@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import time
 
 import infinity
@@ -23,44 +24,78 @@ from infinity.errors import ErrorCode
 from common import settings
 from common.decorator import singleton
 
+MAX_RETRIES = 8
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
+HEALTH_CHECK_MAX_DELAY_SECONDS = 60
+
 
 @singleton
 class InfinityConnectionPool:
-
     def __init__(self):
         if hasattr(settings, "INFINITY"):
             self.INFINITY_CONFIG = settings.INFINITY
         else:
-            self.INFINITY_CONFIG = settings.get_base_config("infinity", {
-                "uri": "infinity:23817",
-                "postgres_port": 5432,
-                "db_name": "default_db"
-            })
+            self.INFINITY_CONFIG = settings.get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
+
+        raw_pool_max_size = os.environ.get("INFINITY_POOL_MAX_SIZE", "4")
+        try:
+            self.pool_max_size = int(raw_pool_max_size)
+        except ValueError as e:
+            raise ValueError("INFINITY_POOL_MAX_SIZE must be a positive integer") from e
+        if self.pool_max_size < 1:
+            raise ValueError("INFINITY_POOL_MAX_SIZE must be >= 1")
 
         infinity_uri = self.INFINITY_CONFIG["uri"]
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             self.infinity_uri = infinity.common.NetworkAddress(host, int(port))
 
-        for _ in range(24):
+        self.conn_pool = None
+        for attempt in range(MAX_RETRIES):
+            conn_pool = None
+            inf_conn = None
             try:
-                conn_pool = ConnectionPool(self.infinity_uri, max_size=4)
+                conn_pool = ConnectionPool(self.infinity_uri, max_size=self.pool_max_size)
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
                     self.conn_pool = conn_pool
-                    conn_pool.release_conn(inf_conn)
                     break
+                logging.warning(
+                    "Infinity status %s on attempt %d/%d, waiting Infinity %s to be healthy.",
+                    res.server_status,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
+                    logging.error(msg)
+                    raise Exception(msg)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
-                logging.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                logging.warning(
+                    "Infinity connection attempt %d/%d to %s failed: %s",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
+            finally:
+                if inf_conn is not None and conn_pool is not None:
+                    conn_pool.release_conn(inf_conn)
+                if conn_pool is not None and conn_pool is not self.conn_pool:
+                    conn_pool.destroy()
 
         if self.conn_pool is None:
-            msg = f"Infinity {infinity_uri} is unhealthy in 120s."
+            msg = f"Infinity {infinity_uri} is unhealthy after {MAX_RETRIES} attempts."
             logging.error(msg)
             raise Exception(msg)
 
-        logging.info(f"Infinity {infinity_uri} is healthy.")
+        logging.info(f"Infinity {infinity_uri} is healthy. Connection pool max_size={self.pool_max_size}")
 
     def get_conn_pool(self):
         return self.conn_pool
@@ -91,7 +126,7 @@ class InfinityConnectionPool:
             logging.error(str(e))
             if hasattr(self, "conn_pool") and self.conn_pool:
                 self.conn_pool.destroy()
-                self.conn_pool = ConnectionPool(self.infinity_uri, max_size=32)
+                self.conn_pool = ConnectionPool(self.infinity_uri, max_size=self.pool_max_size)
                 return self.conn_pool
 
     def __del__(self):

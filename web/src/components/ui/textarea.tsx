@@ -10,8 +10,10 @@ import {
   useRef,
   useState,
 } from 'react';
-interface TextareaProps
-  extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'autoSize'> {
+interface TextareaProps extends Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  'autoSize'
+> {
   autoSize?: {
     minRows?: number;
     maxRows?: number;
@@ -19,7 +21,7 @@ interface TextareaProps
   resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, autoSize, resize = 'none', ...props }, ref) => {
+  ({ className, autoSize, resize = 'vertical', ...props }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const manualHeightRef = useRef<number | null>(null);
     const isAdjustingRef = useRef(false);
@@ -95,9 +97,10 @@ const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         )}
         rows={autoSize?.minRows ?? props.rows ?? undefined}
         style={{
-          maxHeight: autoSize?.maxRows && !resizable
-            ? `${autoSize.maxRows * 20}px`
-            : undefined,
+          maxHeight:
+            autoSize?.maxRows && !resizable
+              ? `${autoSize.maxRows * 20}px`
+              : undefined,
           resize,
         }}
         ref={textareaRef}
@@ -118,7 +121,7 @@ export const BlurTextarea = forwardRef<
     value: Value;
     onChange(value: Value): void;
   }
->(({ value, onChange, ...props }, ref) => {
+>(function BlurTextarea({ value, onChange, ...props }, ref) {
   const [val, setVal] = useState<Value>();
 
   const handleChange: ChangeEventHandler<HTMLTextAreaElement> = useCallback(

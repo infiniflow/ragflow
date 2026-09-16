@@ -1,24 +1,27 @@
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 
 export interface IDocumentInfo {
-  chunk_num: number;
+  // chunk_num: number;
   create_date: string;
   create_time: number;
   created_by: string;
   nickname: string;
   id: string;
-  kb_id: string;
+  dataset_id: string;
   location: string;
   name: string;
   parser_config: IParserConfig;
-  parser_id: string;
+  // parser_id: string;
   pipeline_id: string;
   pipeline_name: string;
   process_begin_at?: string;
   process_duration: number;
   progress: number;
   progress_msg: string;
-  run: RunningStatus;
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus;
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string;
@@ -29,6 +32,8 @@ export interface IDocumentInfo {
   update_date: string;
   update_time: number;
   meta_fields?: Record<string, any>;
+  chunk_method: string;
+  chunk_count: number;
 }
 
 export interface IParserConfig {
@@ -39,7 +44,6 @@ export interface IParserConfig {
   chunk_token_num?: number;
   auto_keywords?: number;
   auto_questions?: number;
-  toc_extraction?: boolean;
   task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
@@ -58,6 +62,7 @@ export interface IParserConfig {
     enum?: string[];
   }>;
   enable_metadata?: boolean;
+  compilation_template_group_id?: string[];
 }
 
 interface Raptor {
@@ -65,6 +70,7 @@ interface Raptor {
 }
 
 interface GraphRag {
+  batch_chunk_token_size?: number;
   community?: boolean;
   entity_types?: string[];
   method?: string;

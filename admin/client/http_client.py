@@ -25,14 +25,14 @@ import requests
 
 class HttpClient:
     def __init__(
-            self,
-            host: str = "127.0.0.1",
-            port: int = 9381,
-            api_version: str = "v1",
-            api_key: Optional[str] = None,
-            connect_timeout: float = 5.0,
-            read_timeout: float = 60.0,
-            verify_ssl: bool = False,
+        self,
+        host: str = "127.0.0.1",
+        port: int = 9381,
+        api_version: str = "v1",
+        api_key: Optional[str] = None,
+        connect_timeout: float = 5.0,
+        read_timeout: float = 60.0,
+        verify_ssl: bool = False,
     ) -> None:
         self.host = host
         self.port = port
@@ -71,19 +71,19 @@ class HttpClient:
         return headers
 
     def request(
-            self,
-            method: str,
-            path: str,
-            *,
-            use_api_base: bool = True,
-            auth_kind: Optional[str] = "api",
-            headers: Optional[Dict[str, str]] = None,
-            json_body: Optional[Dict[str, Any]] = None,
-            data: Any = None,
-            files: Any = None,
-            params: Optional[Dict[str, Any]] = None,
-            stream: bool = False,
-            iterations: int = 1,
+        self,
+        method: str,
+        path: str,
+        *,
+        use_api_base: bool = True,
+        auth_kind: Optional[str] = "api",
+        headers: Optional[Dict[str, str]] = None,
+        json_body: Optional[Dict[str, Any]] = None,
+        data: Any = None,
+        files: Any = None,
+        params: Optional[Dict[str, Any]] = None,
+        stream: bool = False,
+        iterations: int = 1,
     ) -> requests.Response | dict:
         url = self.build_url(path, use_api_base=use_api_base)
         merged_headers = self._headers(auth_kind, headers)
@@ -144,18 +144,18 @@ class HttpClient:
             # )
 
     def request_json(
-            self,
-            method: str,
-            path: str,
-            *,
-            use_api_base: bool = True,
-            auth_kind: Optional[str] = "api",
-            headers: Optional[Dict[str, str]] = None,
-            json_body: Optional[Dict[str, Any]] = None,
-            data: Any = None,
-            files: Any = None,
-            params: Optional[Dict[str, Any]] = None,
-            stream: bool = False,
+        self,
+        method: str,
+        path: str,
+        *,
+        use_api_base: bool = True,
+        auth_kind: Optional[str] = "api",
+        headers: Optional[Dict[str, str]] = None,
+        json_body: Optional[Dict[str, Any]] = None,
+        data: Any = None,
+        files: Any = None,
+        params: Optional[Dict[str, Any]] = None,
+        stream: bool = False,
     ) -> Dict[str, Any]:
         response = self.request(
             method,

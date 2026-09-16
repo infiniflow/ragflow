@@ -1,51 +1,139 @@
 import { UploadFormSchemaType } from '@/components/file-upload-dialog';
+import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useRunDocument,
-  useUploadNextDocument,
+  useUploadDocument,
 } from '@/hooks/use-document-request';
-import { getUnSupportedFilesCount } from '@/utils/document-util';
+import { FileType } from '@/constants/file';
+import { IDocumentInfo } from '@/interfaces/database/document';
+import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { buildParserGapModalContent } from './parser-gap-content';
+import { useParserGapValidation } from './use-parser-gap-validation';
+import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
 
 export const useHandleUploadDocument = () => {
+  const { t } = useTranslation();
   const {
     visible: documentUploadVisible,
     hideModal: hideDocumentUploadModal,
     showModal: showDocumentUploadModal,
   } = useSetModalState();
-  const { uploadDocument, loading } = useUploadNextDocument();
+  const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
+  const { findParseGaps } = useParserGapValidation();
 
-  const onDocumentUploadOk = useCallback(
-    async ({ fileList, parseOnCreation }: UploadFormSchemaType) => {
-      if (fileList.length > 0) {
-        const ret = await uploadDocument(fileList);
-        if (typeof ret?.message !== 'string') {
-          return;
-        }
+  const proceedUpload = useCallback(
+    async (
+      {
+        fileList,
+        parseOnCreation,
+        tableColumnMode,
+        tableColumnRoles,
+      }: UploadFormSchemaType,
+      failingFileTypes: Set<FileType>,
+    ) => {
+      // Build parser_config if column roles are configured
+      let parserConfig: Record<string, any> | undefined;
+      if (
+        tableColumnMode === 'manual' &&
+        tableColumnRoles &&
+        Object.keys(tableColumnRoles).length > 0
+      ) {
+        parserConfig = {
+          table_column_mode: 'manual',
+          table_column_roles: tableColumnRoles,
+        };
+      }
 
-        if (ret.code === 0 && parseOnCreation) {
+      const ret = await uploadDocument(fileList as File[], parserConfig);
+
+      // Check for success (code === 0) or partial success (code === 500 with some files)
+      const isSuccess = ret?.code === 0;
+      const isPartialSuccess = ret?.code === 500 && ret?.message;
+
+      if (!isSuccess && !isPartialSuccess) {
+        return;
+      }
+
+      // Trigger parsing for both full and partial success when parseOnCreation
+      // is enabled; files whose required model is missing are uploaded but not
+      // auto-parsed.
+      if (
+        (isSuccess || isPartialSuccess) &&
+        parseOnCreation &&
+        ret.data?.length > 0
+      ) {
+        const runnableDocuments = (ret.data as IDocumentInfo[]).filter(
+          (doc) => {
+            const fileType = getFileTypeByExtension(getExtension(doc.name));
+            return !fileType || !failingFileTypes.has(fileType);
+          },
+        );
+        if (runnableDocuments.length > 0) {
           runDocumentByIds({
-            documentIds: ret.data.map((x) => x.id),
+            documentIds: runnableDocuments.map((x) => x.id),
             run: 1,
-            shouldDelete: false,
           });
         }
-
-        const count = getUnSupportedFilesCount(ret?.message);
-        /// 500 error code indicates that some file types are not supported
-        let code = ret?.code;
-        if (
-          ret?.code === 0 ||
-          (ret?.code === 500 && count !== fileList.length) // Some files were not uploaded successfully, but some were uploaded successfully.
-        ) {
-          code = 0;
-          hideDocumentUploadModal();
-        }
-        return code;
       }
+
+      if (isSuccess) {
+        hideDocumentUploadModal();
+        return 0;
+      }
+
+      // For partial success (code 500), check if any files were uploaded
+      const count = getUnSupportedFilesCount(ret?.message);
+      if (count !== fileList.length) {
+        hideDocumentUploadModal();
+        return 0;
+      }
+
+      return ret?.code;
     },
     [uploadDocument, runDocumentByIds, hideDocumentUploadModal],
+  );
+
+  const onDocumentUploadOk = useCallback(
+    async (values: UploadFormSchemaType) => {
+      const { fileList } = values;
+      if (fileList.length === 0) {
+        return;
+      }
+
+      const names = fileList.map((file) =>
+        file instanceof File ? file.name : file.file.name,
+      );
+      const gaps = findParseGaps(names);
+      if (gaps.length > 0) {
+        const failingFileTypes = new Set(gaps.map((gap) => gap.fileType));
+        Modal.warning({
+          title: t(
+            hasUnsupportedTypeGap(gaps)
+              ? 'knowledgeDetails.uploadUnsupportedTypesTitle'
+              : 'knowledgeDetails.uploadMissingModelsTitle',
+          ),
+          content: buildParserGapModalContent(
+            t,
+            gaps,
+            'knowledgeDetails.reselectParserAfterUploadHint',
+          ),
+          okText: t('knowledgeDetails.continueUpload'),
+          cancelText: t('common.cancel'),
+          closable: false,
+          onOk: () => {
+            proceedUpload(values, failingFileTypes);
+          },
+        });
+        return;
+      }
+
+      return proceedUpload(values, new Set());
+    },
+    [findParseGaps, proceedUpload, t],
   );
 
   return {

@@ -8,6 +8,7 @@ import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
+import { bindUnboundRetrieval } from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
@@ -44,10 +45,16 @@ export default function AgentTemplates() {
     async (payload: any) => {
       const dsl = template?.dsl;
       const canvasCategory = template?.canvas_category;
+      const datasetIds: string[] = payload?.dataset_ids ?? [];
+      const memoryIds: string[] = payload?.memory_ids ?? [];
+      const boundDsl =
+        dsl && (datasetIds.length > 0 || memoryIds.length > 0)
+          ? bindUnboundRetrieval(dsl, datasetIds, memoryIds)
+          : dsl;
 
       const ret = await setAgent({
         title: payload.name,
-        dsl,
+        dsl: boundDsl,
         avatar: template?.avatar,
         canvas_category: canvasCategory,
       });
@@ -78,11 +85,17 @@ export default function AgentTemplates() {
     if (!selectMenuItem) {
       return templateList;
     }
-    return templateList.filter(
-      (item) =>
-        item.canvas_type?.toLocaleLowerCase() ===
-        selectMenuItem?.toLocaleLowerCase(),
-    );
+    const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
+    return templateList.filter((item) => {
+      if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
+        return item.canvas_types.some(
+          (canvasType) =>
+            typeof canvasType === 'string' &&
+            canvasType.toLocaleLowerCase() === selectedCanvasType,
+        );
+      }
+      return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
+    });
   }, [selectMenuItem, templateList]);
 
   return (
@@ -110,6 +123,8 @@ export default function AgentTemplates() {
               loading={loading}
               visible={creatingVisible}
               hideModal={hideCreatingModal}
+              canvasCategory={template?.canvas_category as AgentCategory}
+              template={template}
               onOk={handleOk}
             ></CreateAgentDialog>
           )}

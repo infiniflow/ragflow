@@ -11,11 +11,11 @@ import { MessageEventType } from '@/hooks/use-send-message';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { upperFirst } from 'lodash';
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { BeginId } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
+import { getWebhookTraceStatus } from './status';
 import { WorkFlowTimeline } from './timeline';
 
 type RunSheetProps = IModalProps<any>;
@@ -28,7 +28,7 @@ enum WebhookTraceTabType {
 const WebhookSheet = ({ hideModal }: RunSheetProps) => {
   const { t } = useTranslation();
   const { id } = useParams();
-  const text = `${location.protocol}//${location.host}/api/v1/webhook_test/${id}`;
+  const text = `${location.protocol}//${location.host}/api/v1/agents/${id}/webhook/test`;
 
   const { data } = useFetchWebhookTrace(true);
 
@@ -38,28 +38,15 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
       event.data.component_id === BeginId,
   )?.data.inputs;
 
-  const latestOutput = data?.events?.findLast(
-    (event) =>
-      event.event === MessageEventType.NodeFinished &&
-      event.data.component_id !== BeginId,
-  )?.data.outputs;
+  const latestOutput = [...(data?.events ?? [])]
+    .reverse()
+    .find(
+      (event) =>
+        event.event === MessageEventType.NodeFinished &&
+        event.data.component_id !== BeginId,
+    )?.data.outputs;
 
-  const statusInfo = useMemo(() => {
-    if (data?.finished === false) {
-      return { status: 'running' };
-    }
-
-    let errorItem = data?.events.find(
-      (x) => x.event === 'error' || x.data?.error,
-    );
-    if (errorItem) {
-      return {
-        status: 'fail',
-        message: errorItem.data?.error || errorItem.message,
-      };
-    }
-    return { status: 'success' };
-  }, [data?.events, data?.finished]);
+  const statusInfo = getWebhookTraceStatus(data);
 
   return (
     <Sheet onOpenChange={hideModal} open modal={false}>

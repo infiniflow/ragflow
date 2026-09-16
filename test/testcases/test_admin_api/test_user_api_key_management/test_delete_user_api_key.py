@@ -151,13 +151,13 @@ class TestDeleteUserApiKey:
         user_name: str = EMAIL
 
         # create second user
-        url: str = HOST_ADDRESS + f"/{VERSION}/user/register"
+        url: str = HOST_ADDRESS + f"/api/{VERSION}/users"
         user2_email: str = "qa2@ragflow.io"
         register_data: dict[str, str] = {"email": user2_email, "nickname": "qa2", "password": PASSWORD}
         res: Any = requests.post(url=url, json=register_data)
         res: dict[str, Any] = res.json()
         if res.get("code") != 0 and "has already registered" not in res.get("message"):
-            raise Exception(f"Failed to create second user: {res.get("message")}")
+            raise Exception(f"Failed to create second user: {res.get('message')}")
 
         # Generate a token for the test user
         generate_response: dict[str, Any] = generate_user_api_key(admin_session, user_name)

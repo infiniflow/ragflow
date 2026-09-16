@@ -92,7 +92,7 @@
       {
         "kwd": {
           "match_pattern": "regex",
-          "match": "^(.*_(kwd|id|ids|uid|uids)|uid)$",
+          "match": "^(.*_(kwd|id|ids|uid|uids)|uid|id)$",
           "mapping": {
             "type": "keyword",
             "similarity": "boolean",

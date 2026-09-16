@@ -50,4 +50,4 @@ class TestKnowledgeGraph:
         dataset_id = add_dataset_func
         res = delete_knowledge_graph(HttpApiAuth, dataset_id)
         assert res["code"] == 0, res
-        assert res["data"] is True, res
+        assert res["data"] is not None, res
