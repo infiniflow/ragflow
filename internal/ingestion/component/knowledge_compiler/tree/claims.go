@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
@@ -19,14 +18,6 @@ import (
 // _CLAIM_BATCH_SIZE (raptor.py). Every chunk in the batch is a TARGET and the
 // model attributes each claim by chunk id.
 const claimBatchSize = 4
-
-// Retry budget for a transient LLM failure (rate limit, 5xx, timeout), mirroring
-// Python raptor._extract_claim_for_chunk: 3 attempts, 2s then 4s of back-off.
-const claimMaxAttempts = 3
-
-// claimRetryBaseDelay is a var (not a const) purely so tests can shorten the
-// wait; production always uses the 2s base.
-var claimRetryBaseDelay = 2 * time.Second
 
 // EvidenceGateMode decides what happens to a claim whose evidence all failed to
 // locate. Mirrors Python _EVIDENCE_GATE_MODES.
@@ -258,13 +249,24 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 		textByID[t.id] = t.text
 	}
 
-	raw, err := chatWithClaimRetry(ctx, deps, llmID, claimPrompt, renderClaimSource(batch), batch)
+	req := common.ChatRequest{
+		LLMID:           llmID,
+		SystemPrompt:    claimPrompt,
+		UserPrompt:      renderClaimSource(batch),
+		JSONMode:        true,
+		DisableThinking: true,
+	}
+	raw, err := common.GenJSON(ctx, deps.Chat, req)
 	if err != nil {
 		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
 		return nil
 	}
 
-	items := parseClaimItems(raw)
+	items, err := parseClaimItemsMap(raw)
+	if err != nil {
+		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
+		return nil
+	}
 	if len(items) == 0 {
 		return nil
 	}
@@ -357,64 +359,6 @@ func claimBatchLabel(batch []claimEntry) string {
 	return strings.Join(ids, ",")
 }
 
-// chatWithClaimRetry issues one claim-extraction call, retrying transient
-// provider failures (rate limits, 5xx, timeouts) with exponential back-off,
-// mirroring Python raptor._extract_claim_for_chunk. A cancelled context is never
-// retried.
-func chatWithClaimRetry(ctx context.Context, deps common.Deps, llmID, claimPrompt, prompt string, batch []claimEntry) (string, error) {
-	var lastErr error
-	for attempt := 1; attempt <= claimMaxAttempts; attempt++ {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		req := common.ChatRequest{
-			LLMID:           llmID,
-			SystemPrompt:    claimPrompt,
-			UserPrompt:      prompt,
-			JSONMode:        true,
-			DisableThinking: true,
-		}
-		logTreeLLMRequest("claim-extraction batch="+claimBatchLabel(batch), req, attempt)
-		resp, err := deps.Chat.Chat(ctx, req)
-		logTreeLLMResponse("claim-extraction batch="+claimBatchLabel(batch), attempt, resp, err)
-		if err == nil {
-			if resp == nil {
-				return "", nil
-			}
-			return resp.Content, nil
-		}
-		lastErr = err
-		if !isRetryableClaimErr(err) || attempt == claimMaxAttempts {
-			break
-		}
-		delay := claimRetryBaseDelay * time.Duration(1<<(attempt-1))
-		log.Printf("tree: claim extraction retry %d/%d after %s for batch %s: %v",
-			attempt, claimMaxAttempts, delay, claimBatchLabel(batch), err)
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-	}
-	return "", lastErr
-}
-
-// isRetryableClaimErr mirrors Python _RETRYABLE_LLM_ERR: capacity and transport
-// failures that back-off can clear, as opposed to a malformed request that no
-// amount of waiting would fix.
-func isRetryableClaimErr(err error) bool {
-	msg := strings.ToLower(err.Error())
-	for _, s := range []string{
-		"rate limit", "429", "tpm limit", "too many requests", "requests per minute",
-		"server", "503", "502", "504", "500", "unavailable", "timeout", "timed out",
-	} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
-}
-
 // parseClaimItems tolerates the model wrapping JSON in prose or fences.
 func parseClaimItems(raw string) []Claim {
 	s, err := common.RepairJSONText(raw)
@@ -422,20 +366,38 @@ func parseClaimItems(raw string) []Claim {
 		return nil
 	}
 
-	var out struct {
-		Items []Claim `json:"items"`
-	}
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(s), &payload); err != nil {
 		return nil
 	}
-	items := make([]Claim, 0, len(out.Items))
-	for _, it := range out.Items {
+	items, err := parseClaimItemsMap(payload)
+	if err != nil {
+		return nil
+	}
+	return items
+}
+
+func parseClaimItemsMap(raw map[string]any) ([]Claim, error) {
+	itemsRaw, ok := raw["items"]
+	if !ok {
+		return nil, fmt.Errorf(`claim response is missing "items"`)
+	}
+	b, err := json.Marshal(itemsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("claim items cannot be encoded: %w", err)
+	}
+	var items []Claim
+	if err := json.Unmarshal(b, &items); err != nil {
+		return nil, fmt.Errorf("claim items are invalid: %w", err)
+	}
+	filtered := make([]Claim, 0, len(items))
+	for _, it := range items {
 		if strings.TrimSpace(it.Name) == "" {
 			continue
 		}
-		items = append(items, it)
+		filtered = append(filtered, it)
 	}
-	return items
+	return filtered, nil
 }
 
 // ValidateClaims locates every quote in the chunk it cites and drops the ones

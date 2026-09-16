@@ -134,8 +134,9 @@ var raptorTruncationMarkerRE = regexp.MustCompile(
 	strings.Repeat("\u00b7", 6) + "\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?",
 )
 
-// resolveMaxToken returns the generation cap (max_tokens) for summaries. Python
-// uses max(self._max_token, 512) (raptor.py:403, issue #10235); we honour an
+// resolveMaxToken returns the target summary length and the input truncation
+// budget. It is a soft output-size guideline, not a provider max_tokens cap.
+// Python uses max(self._max_token, 512) (raptor.py:427); we honour an
 // extra["max_token"] override with the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
@@ -453,10 +454,12 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 //   - trims surrounding whitespace.
 //
 // systemText is the fully-built system prompt (helper + filled task template) and
-// userText is the user turn; the title instruction is passed as the user turn so
-// the model emits a one-line title on the first line of the summary.
+// userText is the user turn; the title instruction and soft length guideline are
+// passed as the user turn so the model emits a one-line title on the first line
+// of the summary. maxToken is deliberately not sent as MaxTokens: the provider
+// controls its own output budget, while the prompt guides the target length.
 func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, userText string, maxToken int) (string, error) {
-	mt := maxToken
+	userPrompt := fmt.Sprintf("%s Keep the summary concise and target approximately %d tokens.", userText, maxToken)
 	for attempt := 0; attempt < raptorMaxRetries; attempt++ {
 		if attempt > 0 {
 			select {
@@ -468,13 +471,10 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 		req := common.ChatRequest{
 			LLMID:           llmID,
 			SystemPrompt:    systemText,
-			UserPrompt:      userText,
-			MaxTokens:       &mt,
+			UserPrompt:      userPrompt,
 			DisableThinking: true,
 		}
-		logTreeLLMRequest("raptor-summary", req, attempt+1)
 		resp, err := deps.Chat.Chat(ctx, req)
-		logTreeLLMResponse("raptor-summary", attempt+1, resp, err)
 		if err != nil {
 			continue
 		}

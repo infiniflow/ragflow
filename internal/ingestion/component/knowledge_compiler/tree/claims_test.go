@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -53,6 +52,20 @@ func (f *flakyChatForClaims) Chat(ctx context.Context, req common.ChatRequest) (
 		return nil, fmt.Errorf("429 rate limit exceeded")
 	}
 	return &common.ChatResponse{Content: f.reply}, nil
+}
+
+type sequencedChatForClaims struct {
+	replies []string
+	calls   int
+}
+
+func (s *sequencedChatForClaims) Chat(_ context.Context, _ common.ChatRequest) (*common.ChatResponse, error) {
+	index := s.calls
+	s.calls++
+	if index >= len(s.replies) {
+		index = len(s.replies) - 1
+	}
+	return &common.ChatResponse{Content: s.replies[index]}, nil
 }
 
 func TestLocateEvidenceExactAndReflowed(t *testing.T) {
@@ -337,10 +350,6 @@ func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
 	// Mirrors Python _RETRYABLE_LLM_ERR: a rate-limit failure is worth waiting
 	// out instead of silently dropping the batch's claims.
-	old := claimRetryBaseDelay
-	claimRetryBaseDelay = time.Millisecond
-	t.Cleanup(func() { claimRetryBaseDelay = old })
-
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
@@ -352,6 +361,25 @@ func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
 	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft, "")
 	if len(got["c1"]) != 1 {
 		t.Fatalf("a retried call should still yield its claims, got %+v", got)
+	}
+}
+
+func TestExtractClaimsForChunksRetriesMalformedJSON(t *testing.T) {
+	reply, _ := json.Marshal(map[string]any{"items": []any{
+		map[string]any{
+			"name":             "a claim",
+			"source_chunk_ids": []any{"c1"},
+			"evidence":         []any{map[string]any{"quote": "alpha text", "chunk_id": "c1"}},
+		},
+	}})
+	chat := &sequencedChatForClaims{replies: []string{"not valid JSON", string(reply)}}
+	deps := common.Deps{Chat: chat, TenantID: "t"}
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft, "")
+	if len(got["c1"]) != 1 {
+		t.Fatalf("a malformed response should be retried, got %+v", got)
+	}
+	if chat.calls != 2 {
+		t.Fatalf("expected one retry after malformed JSON, got %d calls", chat.calls)
 	}
 }
 

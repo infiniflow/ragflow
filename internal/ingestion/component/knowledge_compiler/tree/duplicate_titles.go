@@ -149,9 +149,7 @@ func rewriteTitleGroup(ctx context.Context, deps common.Deps, llmID, title strin
 		JSONMode:     true,
 		Temperature:  &temp,
 	}
-	logTreeLLMRequest("duplicate-title-rewrite", req, 1)
 	resp, err := deps.Chat.Chat(ctx, req)
-	logTreeLLMResponse("duplicate-title-rewrite", 1, resp, err)
 	if err != nil {
 		return err
 	}
