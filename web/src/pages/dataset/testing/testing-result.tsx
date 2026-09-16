@@ -4,10 +4,10 @@ import { FilterButton } from '@/components/list-filter-bar';
 import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { Card } from '@/components/ui/card';
-import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/dataset';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
@@ -34,22 +34,13 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 type TestingResultProps = Pick<
   ReturnType<typeof useTestRetrieval>,
-  | 'data'
-  | 'filterValue'
-  | 'handleFilterSubmit'
-  | 'page'
-  | 'pageSize'
-  | 'onPaginationChange'
-  | 'loading'
+  'data' | 'filterValue' | 'handleFilterSubmit' | 'loading'
 >;
 
 export function TestingResult({
   filterValue,
   handleFilterSubmit,
-  page,
-  pageSize,
   loading,
-  onPaginationChange,
   data,
 }: TestingResultProps) {
   const filters: FilterCollection[] = useMemo(() => {
@@ -69,10 +60,13 @@ export function TestingResult({
 
   return (
     <article className="size-full flex flex-col">
-      <header className="flex-0 px-5 py-3 flex justify-between">
+      <header className="flex-0 px-5 py-3 flex justify-between items-center">
         <h2 className="font-semibold text-base leading-8">
           {t('knowledgeDetails.testResults')}
         </h2>
+        <span className="mr-auto text-sm text-text-secondary pl-2">
+          {t('common.total')}: {data.total}
+        </span>
 
         <FilterPopover
           filters={filters}
@@ -88,22 +82,24 @@ export function TestingResult({
           <>
             <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
               {data.chunks?.map((x) => (
-                <article key={x.chunk_id}>
+                <article key={x.id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
-                    <p className="!mt-2.5"> {x.content_with_weight}</p>
+                    <div
+                      className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtmlWithImagesAsText(
+                          x.highlight || x.content,
+                        ),
+                      }}
+                    />
+                    <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
+                      {x.document_keyword}
+                    </div>
                   </Card>
                 </article>
               ))}
             </section>
-            <div className="p-2">
-              <RAGFlowPagination
-                total={data.total}
-                onChange={onPaginationChange}
-                current={page}
-                pageSize={pageSize}
-              ></RAGFlowPagination>
-            </div>
           </>
         )}
         {!data.chunks?.length && !loading && (

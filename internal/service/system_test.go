@@ -10,7 +10,7 @@ func TestSystemServiceHealthzReportsUnhealthyDependencies(t *testing.T) {
 	if result.Status != "nok" {
 		t.Fatalf("status=%q, want nok", result.Status)
 	}
-	if result.DB != "nok" || result.Redis != "nok" || result.DocEngine != "nok" || result.Storage != "nok" {
+	if result.DB != "nok" || result.Redis != "nok" || result.DocEngine != "nok" || result.Storage != "nok" || result.MessageQueue != "nok" {
 		t.Fatalf("unexpected health result: %+v", result)
 	}
 	if len(result.Meta) == 0 {

@@ -1,0 +1,9 @@
+{
+ "case_id": "token__json_overlap",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "text": "RAGFlow chunks documents for retrieval.\nEach chunk fits a token budget.\nOverlap preserves context across boundaries.\nThe API exposes dataset and chat endpoints.\nA web UI manages knowledge bases.\nBatch ingestion processes large corpora."
+  }
+ ]
+}

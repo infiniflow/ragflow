@@ -6,6 +6,7 @@ import {
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
+import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
@@ -48,6 +49,7 @@ export const useSendSharedMessage = () => {
   } = useGetSharedChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
+  const { data: chatInfo } = useFetchExternalChatInfo();
   const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
   const {
     derivedMessages,
@@ -65,7 +67,7 @@ export const useSendSharedMessage = () => {
     async (
       message: Message,
       id?: string,
-      enableThinking?: boolean,
+      enableThinking?: string,
       enableInternet?: boolean,
     ) => {
       const res = await send(completionUrl, {
@@ -73,8 +75,9 @@ export const useSendSharedMessage = () => {
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-        reasoning: enableThinking,
+        reasoning: Number(enableThinking),
         internet: enableInternet,
+        ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
 
       if (isCompletionError(res)) {
@@ -90,13 +93,14 @@ export const useSendSharedMessage = () => {
       derivedMessages,
       setValue,
       removeLatestMessage,
+      chatInfo,
     ],
   );
 
   const handleSendMessage = useCallback(
     async (
       message: Message,
-      enableThinking?: boolean,
+      enableThinking?: string,
       enableInternet?: boolean,
     ) => {
       sendMessage(message, undefined, enableThinking, enableInternet);
@@ -108,7 +112,7 @@ export const useSendSharedMessage = () => {
     const payload = { question: '' };
     const ret = await send(completionUrl, { ...payload, ...data });
     if (isCompletionError(ret)) {
-      message.error(ret?.data.message);
+      message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
   }, [send, completionUrl]);
@@ -128,7 +132,7 @@ export const useSendSharedMessage = () => {
       enableThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
-      if (trim(value) === '') return;
+      if (trim(value) === '' || !done) return;
       const id = uuid();
       if (done) {
         setValue('');

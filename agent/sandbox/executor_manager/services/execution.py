@@ -230,9 +230,7 @@ async def execute_code(req: CodeExecutionRequest):
         if returncode != 0:
             raise RuntimeError(f"Directory creation failed: {stderr}")
 
-        tar_proc = await asyncio.create_subprocess_exec(
-            "tar", "czf", "-", "-C", workdir, code_name, runner_name, str(bundle["args_name"]), stdout=asyncio.subprocess.PIPE
-        )
+        tar_proc = await asyncio.create_subprocess_exec("tar", "czf", "-", "-C", workdir, code_name, runner_name, str(bundle["args_name"]), stdout=asyncio.subprocess.PIPE)
         tar_stdout, _ = await tar_proc.communicate()
 
         docker_proc = await asyncio.create_subprocess_exec(
@@ -264,6 +262,7 @@ async def execute_code(req: CodeExecutionRequest):
 
             if returncode == 0:
                 clean_stdout, structured_result = _extract_result_envelope(stdout)
+                await _promote_root_artifacts(container, task_id)
                 artifacts = await _collect_artifacts(container, task_id, workdir)
                 return CodeExecutionResult(
                     status=ResultStatus.SUCCESS,
@@ -331,18 +330,54 @@ MAX_ARTIFACT_SIZE = 10 * 1024 * 1024  # 10MB per file
 
 async def _collect_artifacts(container: str, task_id: str, host_workdir: str) -> list[ArtifactItem]:
     artifacts_path = f"/workspace/{task_id}/artifacts"
+    return await _collect_artifacts_from_path(container, artifacts_path)
+
+
+async def _promote_root_artifacts(container: str, task_id: str) -> None:
+    """Move allowlisted outputs into the request's artifacts directory."""
+    task_root = f"/workspace/{task_id}"
+    artifacts = f"{task_root}/artifacts"
+    excluded = {"main.py", "runner.py", "args.json"}
+    returncode, _, _ = await async_run_command("docker", "exec", container, "mkdir", "-p", artifacts, timeout=5)
+    if returncode != 0:
+        return
+    returncode, stdout, _ = await async_run_command("docker", "exec", container, "find", task_root, "-maxdepth", "1", "-type", "f", "-print0", timeout=5)
+    if returncode != 0:
+        return
+    for path in stdout.split("\0"):
+        name = path.rsplit("/", 1)[-1]
+        if not name or name in excluded or name.startswith(".") or any(ord(char) < 32 or ord(char) == 127 for char in name):
+            continue
+        if os.path.splitext(name)[1].lower() not in ALLOWED_ARTIFACT_EXTENSIONS:
+            continue
+        await async_run_command("docker", "exec", container, "mv", path, f"{artifacts}/{name}", timeout=5)
+
+
+async def _collect_artifacts_from_path(container: str, artifacts_path: str, excluded: set[str] | None = None) -> list[ArtifactItem]:
+    excluded = excluded or set()
 
     # List files in the artifacts directory inside the container
     returncode, stdout, _ = await async_run_command(
-        "docker", "exec", container, "find", artifacts_path,
-        "-maxdepth", "1", "-type", "f", timeout=5,
+        "docker",
+        "exec",
+        container,
+        "find",
+        artifacts_path,
+        "-maxdepth",
+        "1",
+        "-type",
+        "f",
+        "-print0",
+        timeout=5,
     )
     if returncode != 0 or not stdout.strip():
         return []
 
-    raw_names = [line.split("/")[-1] for line in stdout.strip().splitlines() if line.strip()]
+    raw_names = [path.rsplit("/", 1)[-1] for path in stdout.split("\0") if path]
     # Sanitize: reject names with path traversal or control characters
-    filenames = [n for n in raw_names if n and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".")]
+    filenames = [
+        n for n in raw_names if n and n not in excluded and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".") and not any(ord(char) < 32 or ord(char) == 127 for char in n)
+    ]
     if not filenames:
         return []
 
@@ -359,7 +394,14 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         # Check file size inside the container
         returncode, size_str, _ = await async_run_command(
-            "docker", "exec", container, "stat", "-c", "%s", file_path, timeout=5,
+            "docker",
+            "exec",
+            container,
+            "stat",
+            "-c",
+            "%s",
+            file_path,
+            timeout=5,
         )
         if returncode != 0:
             logger.warning(f"Failed to stat artifact {fname}")
@@ -374,7 +416,12 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         # Read file content via docker exec (docker cp doesn't work with gVisor tmpfs)
         returncode, content_b64, stderr = await async_run_command(
-            "docker", "exec", container, "base64", file_path, timeout=30,
+            "docker",
+            "exec",
+            container,
+            "base64",
+            file_path,
+            timeout=30,
         )
         if returncode != 0:
             logger.warning(f"Failed to read artifact {fname}: {stderr}")
@@ -382,12 +429,14 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         content_b64 = content_b64.replace("\n", "").strip()
 
-        items.append(ArtifactItem(
-            name=fname,
-            mime_type=mime_type,
-            size=file_size,
-            content_b64=content_b64,
-        ))
+        items.append(
+            ArtifactItem(
+                name=fname,
+                mime_type=mime_type,
+                size=file_size,
+                content_b64=content_b64,
+            )
+        )
         logger.info(f"Collected artifact: {fname} ({file_size} bytes, {mime_type})")
 
     return items

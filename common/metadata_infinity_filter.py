@@ -13,8 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Translate RAGflow document-metadata filter lists into Infinity SQL filter expressions.
-"""
+"""Translate RAGflow document-metadata filter lists into Infinity SQL filter expressions."""
 
 from __future__ import annotations
 
@@ -28,6 +27,7 @@ _KEY_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 def _validate_key(key: str, flt: Dict[str, Any]) -> None:
     if not _KEY_PATTERN.match(key):
         raise ValueError(f"invalid key format (must be identifier-like): {flt}")
+
 
 SUPPORTED_OPERATORS: frozenset[str] = frozenset(
     {
@@ -54,6 +54,21 @@ _RANGE_OPS: Dict[str, str] = {
     "≥": ">=",
     "≤": "<=",
 }
+
+# Negative operators whose legacy per-value-bucket semantics cannot be
+# reproduced by a single push-down predicate over a multi-valued metadata
+# field. ``meta_fields.<key>`` may hold a JSON array, and the in-memory
+# ``meta_filter`` matches a doc when ANY of its values satisfies the predicate;
+# e.g. a doc whose ``tag`` is ``[a, b]`` still matches ``tag ≠ a`` (via bucket
+# ``b``). ``NOT JSON_CONTAINS(...)`` instead means "the array contains no ``a``
+# at all", which would silently drop that doc. Without a cheap way to prove a
+# field is single-valued at query time we refuse push-down for these operators
+# and let the in-memory fallback handle them. Mirrors the identically named set
+# in ``metadata_es_filter``. ``not contains`` is intentionally excluded:
+# ``all(not contains)`` equals ``not any(contains)``, which the push-down
+# expresses correctly on both single- and multi-valued fields.
+MULTIVALUE_UNSAFE_NEGATIVE_OPS: frozenset[str] = frozenset({"≠", "not in"})
+
 
 class MetaFilterTranslator:
     """Translate one user filter clause at a time into Infinity SQL filter strings."""
@@ -207,6 +222,8 @@ def is_pushdown_supported(filters: Sequence[Dict[str, Any]]) -> bool:
     for flt in filters:
         op = flt.get("op")
         if op not in SUPPORTED_OPERATORS:
+            return False
+        if op in MULTIVALUE_UNSAFE_NEGATIVE_OPS:
             return False
         if not isinstance(flt.get("key"), str) or not flt.get("key"):
             return False

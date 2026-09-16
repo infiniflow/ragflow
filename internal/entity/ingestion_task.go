@@ -18,10 +18,24 @@ package entity
 
 type IngestionTask struct {
 	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
-	UserID     string  `gorm:"column:user_id;size:32;not null;" json:"user_id"`
-	Config     JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
-	TryCount   int     `gorm:"column:try_count;type:int;default:0" json:"try_count"`
+	UserID     string  `gorm:"column:user_id;size:32;not null" json:"user_id"`
+	DocumentID string  `gorm:"column:document_id;size:32;not null;uniqueIndex:idx_ingestion_task_document_id" json:"document_id"`
+	DatasetID  string  `gorm:"column:dataset_id;size:32;not null;index:idx_ingestion_task_dataset_status,priority:1" json:"dataset_id"`
+	Schema     JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
+	Status     string  `gorm:"column:status;size:32;not null;index:idx_ingestion_task_dataset_status,priority:2" json:"status"`
+	// ComponentTotal is the number of components in the task's DSL graph.
+	// It is the authoritative denominator for progress percentage so the
+	// frontend does not have to count DSL nodes itself. Written once the
+	// pipeline compiles the canvas (see pipeline.Run).
+	ComponentTotal int `gorm:"column:component_total;default:0" json:"component_total"`
+	// PipelineLogID is the id of the pipeline_operation_log row the task's
+	// current run owns. The service opens that row when the run is queued and
+	// binds it here, so the running advance and the terminal write update
+	// exactly this row instead of adopting whichever row happens to be open for
+	// the document. A superseded run keeps the id of its (deleted) row, so its
+	// late terminal write cannot touch the replacement run's row. nil for runs
+	// that never opened one.
+	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32" json:"-"`
 	BaseModel
 }
 
@@ -30,41 +44,17 @@ func (IngestionTask) TableName() string {
 	return "ingestion_task"
 }
 
-type IngestionTasklet struct {
-	ID       string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TaskID   string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Config   JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
-	TryCount int     `gorm:"column:try_count;type:int;default:0" json:"try_count"`
-	BaseModel
-}
-
-// TableName specify table name
-func (IngestionTasklet) TableName() string {
-	return "ingestion_tasklet"
-}
-
 type IngestionTaskLog struct {
 	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Stage      int     `gorm:"column:stage;type:int;default:0;not null;" json:"stage"`
-	DataSchema JSONMap `gorm:"column:config;type:longtext;not null" json:"data_schema"`
+	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
+	Phase      int     `gorm:"column:phase" json:"phase"`
+	Component  string  `gorm:"column:component;size:64;index" json:"component"`
+	Message    string  `gorm:"column:message;type:text" json:"message"`
 	BaseModel
 }
 
 // TableName specify table name
 func (IngestionTaskLog) TableName() string {
 	return "ingestion_task_log"
-}
-
-type IngestionTaskletLog struct {
-	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskletID  string  `gorm:"column:tasklet_id;size:32;not null;index" json:"task_id"`
-	Stage      int     `gorm:"column:stage;type:int;default:0;not null;" json:"stage"`
-	DataSchema JSONMap `gorm:"column:config;type:longtext;not null" json:"data_schema"`
-	BaseModel
-}
-
-// TableName specify table name
-func (IngestionTaskletLog) TableName() string {
-	return "ingestion_tasklet_log"
 }

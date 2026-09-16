@@ -31,6 +31,7 @@ values (with the empty-value normalization done in compare_chunks).
 All datasets and documents are created once at module level, then each test unit
 runs against the pre-built data. Cleanup happens automatically at module teardown.
 """
+
 import logging
 import os
 import sys
@@ -140,6 +141,8 @@ medical image analysis, climate science, material inspection and board game prog
 where they have produced results comparable to and in some cases surpassing human expert
 performance.
 """
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -168,9 +171,7 @@ def compare_chunks(python_chunk, go_chunk):
 
         if field in ("similarity", "term_similarity", "vector_similarity"):
             if p_val != g_val:
-                raise AssertionError(
-                    f"Field '{field}' differs: python={p_val}, go={g_val}, diff={abs(p_val - g_val)}"
-                )
+                raise AssertionError(f"Field '{field}' differs: python={p_val}, go={g_val}, diff={abs(p_val - g_val)}")
         elif isinstance(p_val, (list, dict)):
             if p_val != g_val:
                 raise AssertionError(f"Field '{field}' mismatch")
@@ -200,9 +201,17 @@ def search_and_compare(rest_client, dataset_ids, cfg):
         "top_k": cfg.get("top_k", 5),
     }
     optional_fields = [
-        "rerank_id", "search_id", "keyword", "vector_similarity_weight",
-        "similarity_threshold", "use_kg", "cross_languages", "page", "size",
-        "meta_data_filter", "doc_ids",
+        "rerank_id",
+        "search_id",
+        "keyword",
+        "vector_similarity_weight",
+        "similarity_threshold",
+        "use_kg",
+        "cross_languages",
+        "page",
+        "size",
+        "meta_data_filter",
+        "doc_ids",
     ]
     for field in optional_fields:
         value = cfg.get(field)
@@ -230,13 +239,12 @@ def search_and_compare(rest_client, dataset_ids, cfg):
     go_chunks = go_data["data"]["chunks"]
 
     logger.info(f"python_chunks={len(python_chunks)}, go_chunks={len(go_chunks)}")
-    logger.info(f"  Python chunks: {[(c.get('chunk_id','?'), c.get('similarity',0)) for c in python_chunks]}")
-    logger.info(f"  Go chunks:     {[(c.get('chunk_id','?'), c.get('similarity',0)) for c in go_chunks]}")
+    logger.info(f"  Python chunks: {[(c.get('chunk_id', '?'), c.get('similarity', 0)) for c in python_chunks]}")
+    logger.info(f"  Go chunks:     {[(c.get('chunk_id', '?'), c.get('similarity', 0)) for c in go_chunks]}")
 
     llm_involved = bool(cfg.get("rerank_id") or cfg.get("keyword") or cfg.get("cross_languages"))
     if not llm_involved:
-        assert len(python_chunks) == len(go_chunks), \
-            f"Chunk count differs: python={len(python_chunks)}, go={len(go_chunks)}"
+        assert len(python_chunks) == len(go_chunks), f"Chunk count differs: python={len(python_chunks)}, go={len(go_chunks)}"
         for i, (p_chunk, g_chunk) in enumerate(zip(python_chunks, go_chunks)):
             try:
                 compare_chunks(p_chunk, g_chunk)
@@ -252,11 +260,11 @@ def search_and_compare(rest_client, dataset_ids, cfg):
 
 def _upload_and_parse(rest_client, dataset_id, text, filename="doc.txt"):
     """Upload text as a file and wait for parsing to complete. Returns document_id."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
         f.write(text)
         temp_path = f.name
 
-    with open(temp_path, 'rb') as f:
+    with open(temp_path, "rb") as f:
         files = [("file", (filename, f))]
         upload_res = rest_client.post(f"/datasets/{dataset_id}/documents", files=files)
     assert upload_res.status_code == 200, f"Failed to upload {filename}: {upload_res.text}"
@@ -331,11 +339,14 @@ def all_datasets(rest_client):
     # -----------------------------------------------------------------------
     # 1) 1 dataset with 2 files (Chinese)
     # -----------------------------------------------------------------------
-    create_res = rest_client.post("/datasets", json={
-        "name": "consistency_chinese",
-        "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-        "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
-    })
+    create_res = rest_client.post(
+        "/datasets",
+        json={
+            "name": "consistency_chinese",
+            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
+        },
+    )
     assert create_res.status_code == 200, create_res.text
     assert create_res.json()["code"] == 0, create_res.json()
     ds_chinese_id = create_res.json()["data"]["id"]
@@ -357,11 +368,14 @@ def all_datasets(rest_client):
     # -----------------------------------------------------------------------
     # 2) 1 dataset with Three Kingdoms only
     # -----------------------------------------------------------------------
-    create_res = rest_client.post("/datasets", json={
-        "name": "consistency_three_kingdoms",
-        "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-        "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
-    })
+    create_res = rest_client.post(
+        "/datasets",
+        json={
+            "name": "consistency_three_kingdoms",
+            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
+        },
+    )
     assert create_res.status_code == 200, create_res.text
     assert create_res.json()["code"] == 0, create_res.json()
     ds_3k_id = create_res.json()["data"]["id"]
@@ -379,11 +393,14 @@ def all_datasets(rest_client):
     # -----------------------------------------------------------------------
     # 3) 1 dataset with English text
     # -----------------------------------------------------------------------
-    create_res = rest_client.post("/datasets", json={
-        "name": "consistency_english",
-        "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
-        "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
-    })
+    create_res = rest_client.post(
+        "/datasets",
+        json={
+            "name": "consistency_english",
+            "embedding_model": "BAAI/bge-small-en-v1.5@Builtin",
+            "parser_config": {"chunk_token_num": 1, "delimiter": "`\n\n`"},
+        },
+    )
     assert create_res.status_code == 200, create_res.text
     assert create_res.json()["code"] == 0, create_res.json()
     ds_en_id = create_res.json()["data"]["id"]
@@ -416,6 +433,7 @@ pytestmark = pytest.mark.skipif(
     os.getenv("CI") == "true",
     reason="GO server is not started in CI",
 )
+
 
 # ---------------------------------------------------------------------------
 # Test Unit 1: Search consistency — 1 dataset with 2 files
@@ -479,7 +497,7 @@ def test_search_datasets_consistency_metadata_filter(rest_client, all_datasets):
         {"question": "打虎", "meta_data_filter": {"method": "manual", "manual": [{"key": "era", "op": "≠", "value": 960}]}},
         {"question": "打虎", "meta_data_filter": {"method": "manual", "manual": [{"key": "era", "op": ">", "value": 220}]}},
         {"question": "曹操", "meta_data_filter": {"method": "manual", "manual": [{"key": "source", "op": "contains", "value": "luo"}]}},
-        {"question": "努力发展农业", "meta_data_filter": {"method": "manual", "manual": [{"key": "character", "op": "in", "value": ["曹操","孙权"]}]}},
+        {"question": "努力发展农业", "meta_data_filter": {"method": "manual", "manual": [{"key": "character", "op": "in", "value": ["曹操", "孙权"]}]}},
         {"question": "打虎", "meta_data_filter": {"method": "manual", "manual": [{"key": "character", "op": "=", "value": "武松"}]}},
     ]
 

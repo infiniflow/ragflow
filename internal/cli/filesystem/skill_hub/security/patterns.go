@@ -18,7 +18,7 @@ package security
 
 // ThreatPattern represents a security threat detection pattern
 // Inspired by hermes-agent's skills_guard.py
- type ThreatPattern struct {
+type ThreatPattern struct {
 	Pattern     string // Regular expression pattern
 	PatternID   string // Unique identifier for this pattern
 	Severity    string // critical | high | medium | low
@@ -271,9 +271,9 @@ var TrustedRepos = map[string]bool{
 // Format: [safe, caution, dangerous] -> action
 // Actions: allow, block, ask
 var InstallPolicy = map[string][3]string{
-	"builtin":   {"allow", "allow", "allow"},    // Official skills: always allow
-	"trusted":   {"allow", "allow", "block"},    // Trusted repos: caution allowed, dangerous blocked
-	"community": {"allow", "block", "block"},    // Community: only safe allowed
+	"builtin":   {"allow", "allow", "allow"}, // Official skills: always allow
+	"trusted":   {"allow", "allow", "block"}, // Trusted repos: caution allowed, dangerous blocked
+	"community": {"allow", "block", "block"}, // Community: only safe allowed
 }
 
 // VerdictIndex maps verdict to array index

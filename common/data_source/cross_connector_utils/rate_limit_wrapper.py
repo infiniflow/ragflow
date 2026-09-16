@@ -52,16 +52,11 @@ class _RateLimitDecorator:
             sleep_cnt = 0
             while len(self.call_history) == self.max_calls:
                 sleep_time = self.sleep_time * (self.sleep_backoff**sleep_cnt)
-                logging.warning(
-                    f"Rate limit exceeded for function {func.__name__}. "
-                    f"Waiting {sleep_time} seconds before retrying."
-                )
+                logging.warning(f"Rate limit exceeded for function {func.__name__}. Waiting {sleep_time} seconds before retrying.")
                 time.sleep(sleep_time)
                 sleep_cnt += 1
                 if self.max_num_sleep != 0 and sleep_cnt >= self.max_num_sleep:
-                    raise RateLimitTriedTooManyTimesError(
-                        f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'"
-                    )
+                    raise RateLimitTriedTooManyTimesError(f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'")
 
                 self._cleanup()
 
@@ -74,11 +69,7 @@ class _RateLimitDecorator:
     def _cleanup(self) -> None:
         curr_time = time.monotonic()
         time_to_expire_before = curr_time - self.period
-        self.call_history = [
-            call_time
-            for call_time in self.call_history
-            if call_time > time_to_expire_before
-        ]
+        self.call_history = [call_time for call_time in self.call_history if call_time > time_to_expire_before]
 
 
 rate_limit_builder = _RateLimitDecorator
@@ -90,17 +81,13 @@ use the following instead"""
 R = TypeVar("R", bound=Callable[..., requests.Response])
 
 
-def wrap_request_to_handle_ratelimiting(
-    request_fn: R, default_wait_time_sec: int = 30, max_waits: int = 30
-) -> R:
+def wrap_request_to_handle_ratelimiting(request_fn: R, default_wait_time_sec: int = 30, max_waits: int = 30) -> R:
     def wrapped_request(*args: list, **kwargs: dict[str, Any]) -> requests.Response:
         for _ in range(max_waits):
             response = request_fn(*args, **kwargs)
             if response.status_code == 429:
                 try:
-                    wait_time = int(
-                        response.headers.get("Retry-After", default_wait_time_sec)
-                    )
+                    wait_time = int(response.headers.get("Retry-After", default_wait_time_sec))
                 except ValueError:
                     wait_time = default_wait_time_sec
 

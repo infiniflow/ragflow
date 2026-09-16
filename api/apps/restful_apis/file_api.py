@@ -36,7 +36,7 @@ from api.utils.validation_utils import (
     validate_and_parse_json_request,
     validate_and_parse_request_args,
 )
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_download_file_response_headers
 from common import settings
 from common.misc_utils import thread_pool_exec
 from api.apps.services import file_api_service
@@ -69,11 +69,11 @@ async def create_or_upload(tenant_id: str = None):
             form = await request.form
             pf_id = form.get("parent_id")
             files = await request.files
-            if 'file' not in files:
+            if "file" not in files:
                 return get_error_argument_result("No file part!")
-            file_objs = files.getlist('file')
+            file_objs = files.getlist("file")
             for file_obj in file_objs:
-                if file_obj.filename == '':
+                if file_obj.filename == "":
                     return get_error_argument_result("No file selected!")
 
             success, result = await file_api_service.upload_file(tenant_id, pf_id, file_objs)
@@ -86,9 +86,7 @@ async def create_or_upload(tenant_id: str = None):
             if err is not None:
                 return get_error_argument_result(err)
 
-            success, result = await file_api_service.create_folder(
-                tenant_id, req["name"], req.get("parent_id"), req.get("type")
-            )
+            success, result = await file_api_service.create_folder(tenant_id, req["name"], req.get("parent_id"), req.get("type"))
             if success:
                 return get_result(data=result)
             else:
@@ -198,16 +196,13 @@ async def delete(tenant_id: str = None):
                 errors = result.get("errors", [])
                 return get_json_result(
                     code=RetCode.DATA_ERROR,
-                    message=f"Partially deleted {success_count} files with {len(errors)} errors"
-                    if success_count > 0
-                    else f"Deleted files failed with {len(errors)} errors",
+                    message=f"Partially deleted {success_count} files with {len(errors)} errors" if success_count > 0 else f"Deleted files failed with {len(errors)} errors",
                     data=result,
                 )
             return get_error_data_result(message=result)
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
-
 
 
 @manager.route("/files/move", methods=["POST"])  # noqa: F821
@@ -254,9 +249,7 @@ async def move(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        success, result = await file_api_service.move_files(
-            tenant_id, req["src_file_ids"], req.get("dest_file_id"), req.get("new_name")
-        )
+        success, result = await file_api_service.move_files(tenant_id, req["src_file_ids"], req.get("dest_file_id"), req.get("new_name"))
         if success:
             return get_result(data=result)
         else:
@@ -314,7 +307,7 @@ async def download(tenant_id: str = None, file_id: str = None):
         if ext:
             fallback_prefix = "image" if file.type == FileType.VISUAL.value else "application"
             content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
-        apply_safe_file_response_headers(response, content_type, ext)
+        apply_download_file_response_headers(response, content_type, ext, file.name)
         return response
     except Exception as e:
         logging.exception(e)

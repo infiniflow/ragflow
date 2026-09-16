@@ -17,12 +17,26 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+
 	"ragflow/internal/common"
+	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+// jsonInternalError logs the original error while returning a generic message
+// to avoid exposing internal implementation details in API responses.
+func jsonInternalError(c *gin.Context, err error) {
+	common.Warn("handler internal error",
+		zap.Error(err),
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.URL.Path),
+	)
+	common.ResponseWithCodeData(c, common.CodeServerError, nil, common.CodeServerError.Message())
+}
 
 // HandleNoRoute handles requests to undefined routes
 func HandleNoRoute(c *gin.Context) {
@@ -33,11 +47,7 @@ func HandleNoRoute(c *gin.Context) {
 	// NoRoute, so emit the same body here to keep the auth error paths
 	// byte-for-byte aligned.
 	if c.Request.Method == http.MethodGet && c.Request.URL.Path == "/api/v1/auth/login/" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeExceptionError,
-			"data":    nil,
-			"message": "<MethodNotAllowed '405: Method Not Allowed'>",
-		})
+		common.ResponseWithCodeData(c, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
 		return
 	}
 
@@ -57,4 +67,21 @@ func HandleNoRoute(c *gin.Context) {
 		"data":    nil,
 		"error":   "Not Found",
 	})
+}
+
+// IngestionTaskErrorCode maps ingestion-task service errors to common.ErrorCode
+// for HTTP responses.
+func IngestionTaskErrorCode(err error) common.ErrorCode {
+	var transitionErr *service.InvalidTaskTransitionError
+	if errors.As(err, &transitionErr) {
+		return common.CodeConflict
+	}
+	var conflictErr *service.TaskStatusConflictError
+	if errors.As(err, &conflictErr) {
+		return common.CodeConflict
+	}
+	if errors.Is(err, common.ErrTaskNotFound) {
+		return common.CodeNotFound
+	}
+	return common.CodeExceptionError
 }
