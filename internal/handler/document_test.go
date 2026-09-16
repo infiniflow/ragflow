@@ -2141,4 +2141,3 @@ func TestProbeTable_NoFile(t *testing.T) {
 		t.Fatalf("expected argument error code, got %v", resp["code"])
 	}
 }
-

@@ -377,5 +377,3 @@ func TestDocStateUpdater_PersistsTableColumnsAndFieldMap(t *testing.T) {
 		t.Errorf("SaveKBTableFieldMap not called properly: %+v", svc)
 	}
 }
-
-

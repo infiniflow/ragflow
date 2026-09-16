@@ -288,9 +288,9 @@ func TestParity_BlankMode_DefaultsToAuto(t *testing.T) {
 func TestParity_EmptyCells(t *testing.T) {
 	rows := [][]string{
 		{"A", "B", "C"},
-		{"1", "", "3"},      // B is empty
-		{"", "", ""},        // all empty row -> should be skipped
-		{"  ", "2", "  "},   // whitespace cells -> only B present
+		{"1", "", "3"},    // B is empty
+		{"", "", ""},      // all empty row -> should be skipped
+		{"  ", "2", "  "}, // whitespace cells -> only B present
 	}
 	items, _ := RenderRowsToJSONChunks(rows, "", "auto", nil)
 	if len(items) != 2 {

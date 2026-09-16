@@ -209,16 +209,17 @@ async def probe_table():
             reader = csv.reader(text_stream, delimiter=delimiter)
             for row in reader:
                 if any(cell.strip() for cell in row):
-                    headers = [cell.strip() or f"Column_{i+1}" for i, cell in enumerate(row)]
+                    headers = [cell.strip() or f"Column_{i + 1}" for i, cell in enumerate(row)]
                     break
         elif filename.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
             import openpyxl
+
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
             if wb.sheetnames:
                 ws = wb[wb.sheetnames[0]]
                 for row in ws.iter_rows(values_only=True):
                     if any(str(c or "").strip() for c in row):
-                        headers = [str(c or "").strip() or f"Column_{i+1}" for i, cell in enumerate(row)]
+                        headers = [str(cell or "").strip() or f"Column_{i + 1}" for i, cell in enumerate(row)]
                         break
             wb.close()
 

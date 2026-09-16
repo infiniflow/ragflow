@@ -168,4 +168,3 @@ func TestCSVParser_TSVSupport(t *testing.T) {
 		t.Errorf("chunk_data unexpected: %+v", chunkData)
 	}
 }
-

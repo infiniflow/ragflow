@@ -1410,4 +1410,3 @@ func syncTableFieldMapToKB(ctx context.Context, kbID string, names []string, par
 func saveKBTableFieldMap(ctx context.Context, kbID string, newFieldMap map[string]interface{}) error {
 	return documentpkg.NewDocumentService().SaveKBTableFieldMap(ctx, kbID, newFieldMap)
 }
-

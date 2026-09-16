@@ -320,4 +320,3 @@ func TestRenderRowsToJSONChunks_SkipLeadingEmptyRows(t *testing.T) {
 		t.Errorf("expected text to contain Alice, got %q", text)
 	}
 }
-

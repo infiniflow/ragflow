@@ -1387,7 +1387,6 @@ func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 	}
 }
 
-
 func TestMergeKBTableColumnFallback(t *testing.T) {
 	doc := map[string]interface{}{"table_column_mode": "manual"}
 	kb := map[string]interface{}{

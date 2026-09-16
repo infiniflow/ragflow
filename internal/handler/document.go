@@ -2050,4 +2050,3 @@ func (h *DocumentHandler) ProbeTable(c *gin.Context) {
 		"total_columns": len(cols),
 	}, "success")
 }
-
