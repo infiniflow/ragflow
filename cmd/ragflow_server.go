@@ -307,6 +307,9 @@ func parseArgs() (*serverArgs, error) {
 	if err := validateMCPArgs(args); err != nil {
 		return nil, err
 	}
+	if args.migrateDB && args.mode != nil {
+		return nil, errors.New("--migrate cannot be combined with a server mode")
+	}
 	return args, nil
 }
 
