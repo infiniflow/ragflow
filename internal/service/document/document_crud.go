@@ -197,27 +197,6 @@ func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string
 	})
 }
 
-// UpdateRunProgress mirrors a pipeline run's live progress into the document
-// row so the document-list endpoint (which reads document.progress/
-// progress_msg) reflects in-flight Go pipeline progress. Best-effort by
-// design; callers log and continue on error.
-func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, progressMsg string) error {
-	updates := map[string]interface{}{
-		"progress":     progress,
-		"progress_msg": progressMsg,
-	}
-	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
-		return err
-	} else if doc != nil && doc.ProcessBeginAt != nil {
-		duration := time.Since(*doc.ProcessBeginAt).Seconds()
-		if duration < 0 {
-			duration = 0
-		}
-		updates["process_duration"] = duration
-	}
-	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
-}
-
 // UpdateRunState mirrors live progress into the document row when
 // the existing progress log cannot be read. It intentionally leaves the log
 // untouched so a later event can retry seeding and append it safely.

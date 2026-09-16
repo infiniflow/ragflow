@@ -28,6 +28,11 @@ const (
 	ingestionEventSystem
 )
 
+const (
+	maxIngestionEventMessageChars = 4_000
+	maxIngestionEventMessageBytes = 16_384
+)
+
 type InvalidTaskTransitionError struct {
 	TaskID string
 	From   string
@@ -263,7 +268,8 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// Same reason as RequestStop's CREATED/SCHEDULED branch: the stop
 		// finalizes without a worker, so no terminal pipeline-log writer will
 		// close the open row. Close it here or it stays RUNNING forever.
-		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel), logMsgStopped)
+		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
+		s.recordRunTerminal(ctx, task, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -286,7 +292,8 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	}); err != nil {
 		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
 	}
-	s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning)
+	s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning))
+	s.recordRunMessage(ctx, task, "Task is running...")
 }
 
 func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
@@ -303,7 +310,8 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// The stop finalizes without a worker (no RUNNING phase, so no
 		// terminal pipeline-log writer will run). Advance the open row to
 		// CANCEL here, otherwise the detail page keeps a queued entry.
-		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel), logMsgStopped)
+		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
+		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
 		task, err = s.transition(ctx, taskID, common.STOPPING)
@@ -582,7 +590,8 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		if err != nil {
 			return nil, err
 		}
-		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
+		s.recordRunMessage(ctx, task, "Task is queued...")
 		return task, nil
 	}
 
@@ -641,7 +650,8 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 		return
 	}
 	task.Status = common.FAILED
-	s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusFail), "Task publish failed.")
+	s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusFail))
+	s.recordRunTerminal(ctx, task, "Task publish failed.")
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
@@ -660,13 +670,6 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 	}
 	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
 }
-
-// Messages the queued stages show on the dataset detail page.
-const (
-	logMsgQueued  = "Task is queued..."
-	logMsgRunning = "Task is running..."
-	logMsgStopped = "Task stopped by user."
-)
 
 // logFromUnstart and logFromUnstartOrScheduled are the operation_status values
 // an open pipeline-log row may carry when a stage advances it. Scoping each
@@ -767,7 +770,7 @@ func isTerminalIngestionTask(status string) bool {
 // advanceOpenLog moves a task's already-bound row to operationStatus. It never
 // creates or adopts a row, so a worker cannot repair a missing identity or
 // affect a newer run.
-func (s *IngestionTaskService) advanceOpenLog(ctx context.Context, task *entity.IngestionTask, fromStatuses []string, operationStatus, progressMsg string) {
+func (s *IngestionTaskService) advanceOpenLog(ctx context.Context, task *entity.IngestionTask, fromStatuses []string, operationStatus string) {
 	if task == nil || task.DocumentID == "" || s.pipelineLogDAO == nil {
 		return
 	}
@@ -779,8 +782,26 @@ func (s *IngestionTaskService) advanceOpenLog(ctx context.Context, task *entity.
 		common.Warn(fmt.Sprintf("advance open pipeline log for task %s: missing run identity", task.ID))
 		return
 	}
-	if err := s.pipelineLogDAO.AdvanceOpenLog(ctx, dao.DB, logID, fromStatuses, operationStatus, progressMsg); err != nil {
+	if err := s.pipelineLogDAO.AdvanceOpenLog(ctx, dao.DB, logID, fromStatuses, operationStatus); err != nil {
 		common.Warn(fmt.Sprintf("advance open pipeline log for document %s to %s: %v", task.DocumentID, operationStatus, err))
+	}
+}
+
+func (s *IngestionTaskService) recordRunMessage(ctx context.Context, task *entity.IngestionTask, message string) {
+	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
+		return
+	}
+	if err := s.RecordMessage(ctx, *task.PipelineLogID, task.ID, message); err != nil {
+		common.Warn(fmt.Sprintf("record run message for task %s: %v", task.ID, err))
+	}
+}
+
+func (s *IngestionTaskService) recordRunTerminal(ctx context.Context, task *entity.IngestionTask, message string) {
+	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
+		return
+	}
+	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, message); err != nil {
+		common.Warn(fmt.Sprintf("record run terminal event for task %s: %v", task.ID, err))
 	}
 }
 
@@ -909,6 +930,7 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 		component = ""
 		phase = 0
 	}
+	message = truncateIngestionEventMessage(message)
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
@@ -926,6 +948,38 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 		"update_time":     now.UnixMilli(),
 		"update_date":     now.Truncate(time.Second),
 	}).Error
+}
+
+// truncateIngestionEventMessage enforces both limits on the persisted text.
+// The marker is part of the limit, and the dropped count is measured in runes
+// so the result never splits a UTF-8 sequence or misreports multibyte text.
+func truncateIngestionEventMessage(message string) string {
+	if len([]rune(message)) <= maxIngestionEventMessageChars && len([]byte(message)) <= maxIngestionEventMessageBytes {
+		return message
+	}
+
+	runes := []rune(message)
+	prefixLen := len(runes)
+	if prefixLen > maxIngestionEventMessageChars {
+		prefixLen = maxIngestionEventMessageChars
+	}
+	for prefixLen >= 0 {
+		dropped := len(runes) - prefixLen
+		marker := fmt.Sprintf("… [truncated, %d chars dropped]", dropped)
+		candidate := string(runes[:prefixLen]) + marker
+		if len([]rune(candidate)) <= maxIngestionEventMessageChars && len([]byte(candidate)) <= maxIngestionEventMessageBytes {
+			return candidate
+		}
+		prefixLen--
+	}
+
+	// The marker is tiny relative to the configured limits for any practical
+	// input. Keep a defensive fallback for an unexpectedly huge rune count.
+	marker := fmt.Sprintf("… [truncated, %d chars dropped]", len(runes))
+	if len([]rune(marker)) > maxIngestionEventMessageChars {
+		return string([]rune(marker)[:maxIngestionEventMessageChars])
+	}
+	return marker
 }
 
 // AggregateTaskProgressByPipelineLogID returns component progress for one

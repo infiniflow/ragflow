@@ -71,8 +71,10 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 		return errors.New("boom")
 	}
 
+	runID := "run-" + taskID
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: &runID,
 	})
 
 	if !terminal {
@@ -86,6 +88,13 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 	if task.Status != common.FAILED {
 		t.Fatalf("task status = %s, want FAILED", task.Status)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, runID)
+	if err != nil {
+		t.Fatalf("list terminal events: %v", err)
+	}
+	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message == "" {
+		t.Fatalf("terminal events = %+v, want one terminal event", logs)
 	}
 }
 

@@ -799,10 +799,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			return false
 		}
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		e.markCancelProgress(task)
+		e.markTerminalProgress(task)
 		stopped := e.markStopped(context.Background(), task.ID)
 		if stopped {
-			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
+			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel), "Task stopped by user.")
 		}
 		return stopped
 	default:
@@ -829,26 +829,26 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 				return false
 			}
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
-			e.markCancelProgress(task)
+			e.markTerminalProgress(task)
 			stopped := e.markStopped(ctx, task.ID)
 			if stopped {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
 			}
 			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
-			e.markTimeoutProgress(task)
+			e.markTerminalProgress(task)
 			ok := e.markFailed(ctx, task.ID)
 			if ok {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
 		}
 		return ok
 	}
@@ -857,9 +857,24 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
 	}
+	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 	return true
+}
+
+// markTerminalProgress preserves the numeric document state used by existing
+// status projections without rewriting the legacy progress_msg column. The
+// human-readable explanation is written as a run-scoped terminal event.
+func (e *Ingestor) markTerminalProgress(task *entity.IngestionTask) {
+	if task == nil || task.DocumentID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), 5*time.Second)
+	defer cancel()
+	if err := documentpkg.NewDocumentService().UpdateRunState(ctx, task.DocumentID, -1); err != nil {
+		common.Warn(fmt.Sprintf("mark terminal progress for document %s: %v", task.DocumentID, err))
+	}
 }
 
 // completeTask persists the task's terminal status after a successful pipeline.
@@ -1059,41 +1074,6 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 	}
 }
 
-// markCancelProgress writes the cancelled-progress markers to the document
-// row: progress=-1 and an appended timestamped cancel message (progress_msg += cancelMsg).
-func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
-	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
-	if err != nil {
-		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
-		return
-	}
-	cancelMsg := fmt.Sprintf("\n%s Task stopped by user.", time.Now().Format("15:04:05"))
-	existingMsg := ""
-	if doc.ProgressMsg != nil {
-		existingMsg = *doc.ProgressMsg
-	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+cancelMsg)
-}
-
-// markTimeoutProgress writes the timeout-progress markers to the document
-// row. Unlike cancellation (markCancelProgress), this records a TIMEOUT
-// failure rather than a user-initiated stop.
-func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
-	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
-	if err != nil {
-		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
-		return
-	}
-	timeoutMsg := fmt.Sprintf("\n%s Task timed out.", time.Now().Format("15:04:05"))
-	existingMsg := ""
-	if doc.ProgressMsg != nil {
-		existingMsg = *doc.ProgressMsg
-	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, existingMsg+timeoutMsg)
-}
-
 // claimTask registers a worker claim on a task ID. Returns false if another
 // worker has already claimed it (e.g. MQ redelivery), true on first claim.
 // The claim is released by releaseTask when the worker finishes, so a future
@@ -1165,24 +1145,26 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	return nil
 }
 
-func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status string) {
+func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {
 	if ingestionTask == nil || status == "" {
 		return
 	}
 	ctx = context.WithoutCancel(ctx)
-	input := taskpkg.PipelineLogInput{
-		KbID:       ingestionTask.DatasetID,
-		DocumentID: ingestionTask.DocumentID,
-		Status:     status,
+	if ingestionTask.PipelineLogID == nil || *ingestionTask.PipelineLogID == "" {
+		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: missing run identity", ingestionTask.ID))
+		return
 	}
-	// Bind the write to this run's own row. A superseded run keeps the id of
-	// its (deleted or replaced) row, so its late terminal write can never reach
-	// into the replacement run's row.
-	if ingestionTask.PipelineLogID != nil {
-		input.PipelineLogID = *ingestionTask.PipelineLogID
+	input := taskpkg.PipelineLogInput{
+		KbID:          ingestionTask.DatasetID,
+		DocumentID:    ingestionTask.DocumentID,
+		Status:        status,
+		PipelineLogID: *ingestionTask.PipelineLogID,
 	}
 	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
+	}
+	if err := e.ingestionTaskSvc.RecordTerminal(ctx, *ingestionTask.PipelineLogID, ingestionTask.ID, message); err != nil {
+		common.Warn(fmt.Sprintf("record terminal event for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 	}
 }
 

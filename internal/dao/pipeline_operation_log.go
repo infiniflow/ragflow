@@ -287,17 +287,16 @@ func (dao *PipelineOperationLogDAO) NextRunCount(ctx context.Context, db *gorm.D
 // the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
 // queued write cannot regress a row a concurrent writer already advanced.
-// A row that already left the declared from-states is left untouched.
-func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus, progressMsg string) error {
+// A row that already left the declared from-states is left untouched. The
+// legacy progress_msg column is intentionally not updated; run text belongs
+// to ingestion_task_log events.
+func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) error {
 	if logID == "" || len(fromStatuses) == 0 {
 		return nil
 	}
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
-		Updates(map[string]interface{}{
-			"operation_status": operationStatus,
-			"progress_msg":     progressMsg,
-		}).Error
+		Update("operation_status", operationStatus).Error
 }
 
 // DeleteOpenLogByID removes only a legacy, unnumbered pre-terminal row. A

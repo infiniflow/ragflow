@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 
@@ -1104,6 +1105,116 @@ func TestIngestionTaskServiceAggregateTaskProgressByRunClassifiesByPhase(t *test
 	}
 }
 
+func TestIngestionTaskServiceRecordMessageClearsLifecycleFields(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	if err := NewIngestionTaskService().RecordMessage(t.Context(), "run-1", "task-1", "detail"); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
+	}
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if event.EventType != dao.EventTypeMessage || event.Component != "" || event.Phase != 0 || event.Message != "detail" {
+		t.Fatalf("event = %+v, want message with empty component and phase", event)
+	}
+}
+
+func TestIngestionTaskServiceRecordEventRejectsInvalidIdentityAndPhase(t *testing.T) {
+	svc := NewIngestionTaskService()
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{name: "missing pipeline log id", call: func() error {
+			return svc.RecordMessage(t.Context(), "", "task-1", "detail")
+		}},
+		{name: "missing task id", call: func() error {
+			return svc.RecordMessage(t.Context(), "run-1", "", "detail")
+		}},
+		{name: "missing lifecycle component", call: func() error {
+			return svc.RecordLifecycle(t.Context(), "run-1", "task-1", "", 0, "started")
+		}},
+		{name: "invalid lifecycle phase", call: func() error {
+			return svc.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 3, "bad")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.call(); err == nil {
+				t.Fatal("expected event validation error")
+			}
+		})
+	}
+}
+
+func TestIngestionTaskServiceEventMessageIsBoundedByRunesAndBytes(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	message := strings.Repeat("界", 10_000)
+	if err := NewIngestionTaskService().RecordMessage(t.Context(), "run-1", "task-1", message); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
+	}
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if got := len([]rune(event.Message)); got > 4_000 {
+		t.Fatalf("message rune length = %d, want <= 4000", got)
+	}
+	if got := len([]byte(event.Message)); got > 16_384 {
+		t.Fatalf("message byte length = %d, want <= 16384", got)
+	}
+	if !strings.Contains(event.Message, "… [truncated,") || !strings.HasSuffix(event.Message, " chars dropped]") {
+		t.Fatalf("message lacks truncation marker: %q", event.Message[len(event.Message)-64:])
+	}
+	if !utf8.ValidString(event.Message) {
+		t.Fatal("message is not valid UTF-8")
+	}
+}
+
+func TestIngestionTaskServiceAdvanceOpenLogLeavesLegacyMessageUntouched(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	legacy := "legacy value"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		ProgressMsg:     &legacy,
+	}).Error; err != nil {
+		t.Fatalf("insert pipeline operation log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind pipeline operation log: %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+
+	NewIngestionTaskService().advanceOpenLog(t.Context(), task, logFromUnstart, string(entity.TaskStatusSchedule))
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.ProgressMsg == nil || *run.ProgressMsg != legacy {
+		t.Fatalf("progress_msg = %v, want unchanged legacy value %q", run.ProgressMsg, legacy)
+	}
+}
+
 func TestIngestionTaskServiceMarkStoppedTransitionsStoppingTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1260,8 +1371,22 @@ func TestIngestionTaskServiceCreateForDocumentsOpensPreTerminalPipelineLog(t *te
 	if open.RunCount == nil || *open.RunCount != 1 {
 		t.Fatalf("run_count = %v, want 1", open.RunCount)
 	}
-	if open.ProgressMsg == nil || *open.ProgressMsg != "Task is queued..." {
-		t.Fatalf("ProgressMsg = %v, want queued message", open.ProgressMsg)
+	if open.ProgressMsg != nil {
+		t.Fatalf("ProgressMsg = %v, want legacy field untouched", open.ProgressMsg)
+	}
+	events, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, open.ID)
+	if err != nil {
+		t.Fatalf("list run events: %v", err)
+	}
+	var queuedMessage *entity.IngestionTaskLog
+	for _, event := range events {
+		if event.EventType == dao.EventTypeMessage && event.Message == "Task is queued..." {
+			queuedMessage = event
+			break
+		}
+	}
+	if queuedMessage == nil {
+		t.Fatalf("expected queued message event for run %s, events: %+v", open.ID, events)
 	}
 	if countPipelineLogs(t, db, "doc-1") != 1 {
 		t.Fatalf("expected exactly 1 pipeline log row for one run")
@@ -1654,7 +1779,6 @@ func TestIngestionTaskServiceDoesNotDeleteOpenLogOwnedByActiveTask(t *testing.T)
 	insertTestIngestionTaskWithStatus(t, "owner-task", "user-1", "doc-1", "kb-1", common.RUNNING)
 	insertTestIngestionTaskWithStatus(t, "new-task", "user-1", "doc-1", "kb-1", common.CREATED)
 
-	queuedMsg := logMsgRunning
 	ownedLog := &entity.PipelineOperationLog{
 		ID:              "owned-log",
 		DocumentID:      "doc-1",
@@ -1663,7 +1787,6 @@ func TestIngestionTaskServiceDoesNotDeleteOpenLogOwnedByActiveTask(t *testing.T)
 		ParserID:        "naive",
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		OperationStatus: string(entity.TaskStatusRunning),
-		ProgressMsg:     &queuedMsg,
 	}
 	if err := db.Create(ownedLog).Error; err != nil {
 		t.Fatalf("seed owned open log: %v", err)
@@ -1771,7 +1894,6 @@ func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
-	queuedMsg := "Task is queued..."
 	openLog := &entity.PipelineOperationLog{
 		ID:              "log-1",
 		DocumentID:      "doc-1",
@@ -1780,7 +1902,6 @@ func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 		ParserID:        "naive",
 		TaskType:        "Parse",
 		OperationStatus: string(entity.TaskStatusUnstart),
-		ProgressMsg:     &queuedMsg,
 	}
 	if err := dao.DB.Create(openLog).Error; err != nil {
 		t.Fatalf("seed open log: %v", err)
@@ -1796,16 +1917,16 @@ func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
 		t.Fatalf("load task: %v", err)
 	}
 
-	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusSchedule) {
 		t.Fatalf("after schedule = %q, want %q", got, string(entity.TaskStatusSchedule))
 	}
-	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning)
+	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning))
 	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusRunning) {
 		t.Fatalf("after start = %q, want %q", got, string(entity.TaskStatusRunning))
 	}
 	// The enqueue-time scheduled write lands late; it must not regress the row.
-	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
 	if open.OperationStatus != string(entity.TaskStatusRunning) {
 		t.Fatalf("late scheduled write regressed the row to %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
@@ -1834,7 +1955,7 @@ func TestIngestionTaskServiceAdvanceRejectsMissingIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load terminal task: %v", err)
 	}
-	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule))
 	if got := countPipelineLogs(t, db, "doc-terminal"); got != 0 {
 		t.Fatalf("terminal task resurrected %d queued row(s); want none", got)
 	}
@@ -1843,7 +1964,7 @@ func TestIngestionTaskServiceAdvanceRejectsMissingIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load live task: %v", err)
 	}
-	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule), logMsgQueued)
+	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule))
 	if got := countPipelineLogs(t, db, "doc-live"); got != 0 {
 		t.Fatalf("missing identity created %d pipeline log rows, want 0", got)
 	}

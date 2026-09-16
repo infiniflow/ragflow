@@ -698,8 +698,8 @@ func TestRecordPipelineLog_ReusesOpenPreTerminalRow(t *testing.T) {
 	if log.Progress != progress {
 		t.Fatalf("Progress = %v, want %v", log.Progress, progress)
 	}
-	if log.ProgressMsg == nil || *log.ProgressMsg != finalMsg {
-		t.Fatalf("ProgressMsg = %v, want final message", log.ProgressMsg)
+	if log.ProgressMsg == nil || *log.ProgressMsg != queuedMsg {
+		t.Fatalf("ProgressMsg = %v, want unchanged queued message", log.ProgressMsg)
 	}
 	if len(log.DSL) != 0 {
 		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)

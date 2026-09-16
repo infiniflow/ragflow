@@ -411,10 +411,8 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 }
 
 func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
-	progressMsg := ""
 	updates := map[string]interface{}{
-		"progress":     0,
-		"progress_msg": progressMsg,
+		"progress": 0,
 	}
 	if parserID != nil {
 		updates["parser_id"] = *parserID

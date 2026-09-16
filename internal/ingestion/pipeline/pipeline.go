@@ -47,10 +47,8 @@ type Pipeline struct {
 	// these bytes, so a stale checkpoint can be detected and discarded
 	// instead of being resumed against an incompatible graph.
 	rawDSL     []byte
-	documentID string // owning document; progress is mirrored back to the
-	// document table so the existing GET /api/v1/datasets/{dataset_id}/documents
-	// endpoint (which reads document.progress/run/progress_msg) reflects the
-	// live Go pipeline progress without a bespoke endpoint (plan §8).
+	documentID string // owning document; numeric progress is mirrored back to
+	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	store   canvas.CheckPointStore // optional injected; nil -> resolve at Run
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
@@ -99,9 +97,8 @@ func WithRequireResume() PipelineOption {
 	return func(p *Pipeline) { p.requireResume = true }
 }
 
-// WithDocumentID binds the pipeline's owning document so progress can be
-// mirrored back into the document table (document.progress / run /
-// progress_msg) — the canonical store the document-list endpoint serves.
+// WithDocumentID binds the pipeline's owning document so numeric progress can
+// be mirrored back into the document table.
 // Pass the empty string to disable the mirror (e.g. headless/test runs where
 // the document row is not materialized).
 func WithDocumentID(docID string) PipelineOption {

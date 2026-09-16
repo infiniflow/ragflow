@@ -141,10 +141,8 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 }
 
 // TestExecuteTask_CancelBeforePipeline verifies that when cancelCheck returns
-// true at task start, the task is cancelled before AdvanceStep,
-// runDocumentTask is never called, and document progress is set to -1 with a
-// cancel marker. Mirrors Python's cancel flow where has_canceled() returns
-// true in Pipeline.callback().
+// true at task start, the task is cancelled before the pipeline runs and the
+// legacy document progress message remains untouched.
 func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -181,7 +179,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	if doc.Progress != -1 {
 		t.Fatalf("document.progress = %v, want -1 (cancelled)", doc.Progress)
 	}
-	if doc.ProgressMsg == nil || *doc.ProgressMsg == "" {
-		t.Fatal("document.progress_msg should contain cancel marker, got empty")
+	if doc.ProgressMsg != nil && *doc.ProgressMsg != "" {
+		t.Fatalf("document.progress_msg was rewritten on cancel: %q", *doc.ProgressMsg)
 	}
 }
