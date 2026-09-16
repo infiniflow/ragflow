@@ -17,11 +17,10 @@ import (
 )
 
 // Accessible reports whether docID belongs to a knowledge base
-// reachable by userID. Used by agent endpoints (e.g. RerunAgent,
-// PR #15145) to gate destructive / run-again actions on a document
-// the caller has access to. Returns false on any lookup failure or
-// empty inputs so callers can treat a denial as a 404-equivalent
-// and avoid leaking whether the document exists at all.
+// reachable by userID. Used to gate actions on a document the caller
+// has access to. Returns false on any lookup failure or empty inputs
+// so callers can treat a denial as a 404-equivalent and avoid leaking
+// whether the document exists at all.
 func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) bool {
 	if docID == "" || userID == "" {
 		return false
