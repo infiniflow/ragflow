@@ -496,27 +496,47 @@ export function buildOperatorNode(
           // column_* on the spreadsheet setup, Python saves table_column_*
           // at the parser_config root. Accept both so the role selector
           // initializes on either backend without clobbering explicit values.
-          const columnModeValue = setup.column_mode || setup.table_column_mode;
+          //
+          // Priority (highest → lowest):
+          //   1. Root-level table_column_* — per-document user override set at
+          //      upload time or via the document parser dialog save.
+          //   2. setup.column_* — from the component entry in parser_config
+          //      (written when the dialog is saved under the Go backend).
+          //   3. setup.table_column_* — Python backend compat keys.
+          //   4. Fallback defaults (empty list / empty object / 'auto').
+          //
+          // The old code evaluated setup.column_mode first; because the DSL
+          // template always seeds column_mode:"auto" into the component entry,
+          // that truthy "auto" would short-circuit the root-level "manual",
+          // causing the dialog to always display "auto" even after the user
+          // had explicitly chosen "manual" at upload time.
+          const columnModeValue =
+            pipelineParserConfig.table_column_mode ||
+            setup.column_mode ||
+            setup.table_column_mode;
+          const rootNames = pipelineParserConfig.table_column_names;
           const columnNamesValue =
-            setup.column_names?.length > 0
-              ? setup.column_names
-              : Array.isArray(setup.table_column_names) &&
-                  setup.table_column_names.length > 0
-                ? setup.table_column_names
-                : undefined;
+            Array.isArray(rootNames) && rootNames.length > 0
+              ? rootNames
+              : setup.column_names?.length > 0
+                ? setup.column_names
+                : Array.isArray(setup.table_column_names) &&
+                    setup.table_column_names.length > 0
+                  ? setup.table_column_names
+                  : undefined;
+          const rootRoles = pipelineParserConfig.table_column_roles;
           const columnRolesValue =
-            setup.column_roles && Object.keys(setup.column_roles).length > 0
-              ? setup.column_roles
-              : setup.table_column_roles &&
-                  Object.keys(setup.table_column_roles).length > 0
-                ? setup.table_column_roles
-                : undefined;
-          const column_names =
-            columnNamesValue ?? pipelineParserConfig.table_column_names ?? [];
-          const column_mode =
-            columnModeValue || pipelineParserConfig.table_column_mode || 'auto';
-          const column_roles =
-            columnRolesValue ?? pipelineParserConfig.table_column_roles ?? {};
+            rootRoles && Object.keys(rootRoles).length > 0
+              ? rootRoles
+              : setup.column_roles && Object.keys(setup.column_roles).length > 0
+                ? setup.column_roles
+                : setup.table_column_roles &&
+                    Object.keys(setup.table_column_roles).length > 0
+                  ? setup.table_column_roles
+                  : undefined;
+          const column_names = columnNamesValue ?? [];
+          const column_mode = columnModeValue || 'auto';
+          const column_roles = columnRolesValue ?? {};
           return {
             ...setup,
             column_names,

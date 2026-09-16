@@ -142,3 +142,130 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     expect(form).not.toHaveProperty('metadata');
   });
 });
+
+// A minimal DSL-shaped Parser node where the component's spreadsheet config
+// carries column_mode:"auto" — the template default that was previously
+// masking the user's upload-time "manual" selection.
+const parserNodeWithAutoColumnMode = {
+  id: 'Parser:HipSignsRhyme',
+  data: {
+    form: {
+      setups: [
+        {
+          fileFormat: 'spreadsheet',
+          column_mode: 'auto', // ← DSL template default (always "auto")
+          column_names: [],
+          column_roles: {},
+          parse_method: 'DeepDOC',
+          output_format: 'json',
+        },
+      ],
+    },
+  },
+} as any;
+
+describe('buildOperatorNode spreadsheet column_mode priority', () => {
+  beforeEach(() => {
+    mockIsGoBackend = true;
+  });
+
+  // Regression test: before the fix, the DSL component's column_mode:"auto" was
+  // evaluated first (truthy), causing root-level table_column_mode:"manual" to
+  // be silently ignored and the dialog to always display "auto".
+  it('root-level table_column_mode wins over DSL component column_mode:"auto"', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: { column_mode: 'auto', column_names: [], column_roles: {} },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['col_a', 'col_b'],
+      table_column_roles: { col_a: 'indexing', col_b: 'both' },
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup).toBeDefined();
+    // Root-level "manual" must win over component-level "auto".
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_names).toEqual(['col_a', 'col_b']);
+    expect(spreadsheetSetup.column_roles).toEqual({
+      col_a: 'indexing',
+      col_b: 'both',
+    });
+  });
+
+  it('component-level column_mode wins when root level is absent', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['x'],
+          column_roles: { x: 'both' },
+        },
+      },
+      // no root-level table_column_mode
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBe('manual');
+    expect(spreadsheetSetup.column_names).toEqual(['x']);
+  });
+
+  it('falls back to "auto" when no column_mode is present anywhere', () => {
+    const node = buildOperatorNode(
+      {
+        id: 'Parser:HipSignsRhyme',
+        data: {
+          form: {
+            setups: [
+              {
+                fileFormat: 'spreadsheet',
+                // no column_mode at all
+                column_names: [],
+                column_roles: {},
+              },
+            ],
+          },
+        },
+      } as any,
+      {
+        'Parser:HipSignsRhyme': {
+          spreadsheet: { column_names: [], column_roles: {} },
+        },
+        // no table_column_mode
+      },
+    );
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_mode).toBe('auto');
+  });
+
+  it('root-level table_column_names wins over component-level column_names', () => {
+    const node = buildOperatorNode(parserNodeWithAutoColumnMode, {
+      'Parser:HipSignsRhyme': {
+        spreadsheet: {
+          column_mode: 'manual',
+          column_names: ['stale_col'],
+          column_roles: {},
+        },
+      },
+      table_column_mode: 'manual',
+      table_column_names: ['fresh_col_a', 'fresh_col_b'],
+    });
+
+    const form = (node.data as Record<string, any>).form;
+    const spreadsheetSetup = form.setups?.find(
+      (s: any) => s.fileFormat === 'spreadsheet',
+    );
+    expect(spreadsheetSetup.column_names).toEqual(['fresh_col_a', 'fresh_col_b']);
+  });
+});
+
