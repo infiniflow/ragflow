@@ -90,7 +90,7 @@ func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
 		// this avoids competing OpenCV findContours worker threads does NOT
 		// apply to this pure-Go port, where the postprocess runs fully
 		// synchronously after RunWithOptions returns. Re-confirm parity on the
-		// det fixtures before switching to 0 (all cores) to match DLA/TSR.
+		// det fixtures before switching to defaultIntraOpThreads().
 		return NewSession(modelPath, "x",
 			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0",
 			[]int64{1, 1, rh, rw}, 1)

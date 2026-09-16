@@ -89,11 +89,9 @@ type session struct {
 
 // NewSession opens modelPath. inShape/outShape describe the fixed tensor
 // dimensions; outSize is the total element count of the output tensor.
-// intraOpThreads controls ONNX Runtime's intra-op parallelism. DLA/TSR/OCR-rec
-// pass 0 to use all cores — matching deepdoc's Python onnxruntime
-// (intra_op_num_threads defaults to 0 = all cores); their Run path does no
-// contour extraction, so the parallel reduction order matches Python for
-// bit-stable parity.
+// intraOpThreads controls ONNX Runtime's intra-op parallelism. Callers typically
+// pass defaultIntraOpThreads() (backed by runtimeconfig.ORTThreads()) to share
+// available CPUs across concurrent inferences and honor DEEPDOC_ORT_NUM_THREADS.
 //
 // The DB text detector is currently pinned to 1 (single-threaded). NOTE: the
 // historical rationale for this — that a multi-threaded Run would leave ONNX
@@ -103,8 +101,8 @@ type session struct {
 // fully synchronous and only runs after RunWithOptions returns, so there is no
 // thread competition with the detector. The pin is preserved as-is because the
 // det pred map was verified at intraOpThreads=1 (mean|Δ|≈4e-5 vs the Python
-// reference); flipping it to 0 must be re-confirmed on the det integration
-// fixtures before landing, since the reduction order differs.
+// reference); flipping it to defaultIntraOpThreads() must be re-confirmed on
+// the det integration fixtures before landing, since the reduction order differs.
 // InitORT must have been called first.
 func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64, intraOpThreads int) (*session, error) {
 	in := make([]float32, prod(inShape))
@@ -124,10 +122,10 @@ func NewSession(modelPath, inName string, inShape []int64, outName string, outSh
 		outT.Destroy()
 		return nil, err
 	}
-	// intraOpThreads == 0 → all cores (mirrors Python's onnxruntime default);
-	// the DB detector passes 1, preserved as-is for verified det parity (see
-	// NewSession doc above — the old findContours/parallel_for_ rationale does
-	// not apply to this pure-Go port).
+	// intraOpThreads controls intra-op parallelism (callers typically pass
+	// defaultIntraOpThreads()); the DB detector passes 1, preserved as-is for
+	// verified det parity (see NewSession doc above — the old findContours/
+	// parallel_for_ rationale does not apply to this pure-Go port).
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
 		opts.Destroy()
 		inT.Destroy()

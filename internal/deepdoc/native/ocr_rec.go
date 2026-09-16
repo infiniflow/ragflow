@@ -315,9 +315,9 @@ func newRecSession(modelPath, inName string, inShape []int64, outName string, in
 		inT.Destroy()
 		return nil, err
 	}
-	// 0 → all cores (mirrors Python's onnxruntime default); OCR-rec does no
-	// contour extraction in the Run path, so parallelism is safe and matches
-	// deepdoc's reduction order for bit-stable parity.
+	// intraOpThreads controls intra-op parallelism (callers pass
+	// defaultIntraOpThreads()); OCR-rec does no contour extraction in the Run
+	// path, so parallelism is safe.
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
 		opts.Destroy()
 		inT.Destroy()
