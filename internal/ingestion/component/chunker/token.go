@@ -519,7 +519,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
-		ch.Text = removeTag(strings.TrimSpace(ch.Text))
+		setChunkText(&ch, removeTag(strings.TrimSpace(ch.Text)))
 		if ch.Text == "" {
 			continue
 		}
@@ -628,7 +628,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
-		m.Text = removeTag(m.Text)
+		setChunkText(&m, removeTag(m.Text))
 		// Drop a chunk only when nothing about it is retrievable. A media chunk
 		// may carry no body of its own and still be indexed through its
 		// surrounding context: Python's _finalize_json_chunks strips the merged
@@ -1558,12 +1558,11 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 				continue
 			}
 			cp := cloneChunkDoc(ck)
-			cp.Text = p
 			// The count describes the child's own text. The delimiter branch
 			// attaches the media context after this split, and that walk is
 			// charged with TKNums, so an inherited parent count would spend the
 			// configured window on the first neighbour.
-			cp.TKNums = intPtr(tokenizeStr(p))
+			setChunkText(&cp, p)
 			cp.Mom = mom
 			out = append(out, cp)
 		}
@@ -1599,16 +1598,13 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitDroppingDelim(t, pattern) {
-			if strings.TrimSpace(child) == "" {
+		for _, text := range splitDroppingDelim(t, pattern) {
+			if strings.TrimSpace(text) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{
-				Text:   child,
-				CKType: d.CKType,
-				TKNums: intPtr(tokenizeStr(child)),
-				Mom:    strings.TrimPrefix(t, "\n"),
-			})
+			child := schema.ChunkDoc{CKType: d.CKType, Mom: strings.TrimPrefix(t, "\n")}
+			setChunkText(&child, text)
+			out = append(out, child)
 		}
 	}
 	return out

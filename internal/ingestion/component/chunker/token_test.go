@@ -561,6 +561,30 @@ func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
 	assertMaterializedMediaContext(t, media, "gamma deltaalpha beta.")
 }
 
+// TestMaterializeMediaContextKeepsTokenCountInSync pins the invariant the fold
+// must preserve: once the context is folded into the body, TKNums describes
+// that body rather than the media payload it replaced. The count is read as a
+// budget by the merge and window walks and emitted as tk_nums on the chunk.
+func TestMaterializeMediaContextKeepsTokenCountInSync(t *testing.T) {
+	const body = "<table><tr><td>A</td></tr></table>"
+	ck := schema.ChunkDoc{
+		Text:         body,
+		DocType:      "table",
+		CKType:       "table",
+		TKNums:       intPtr(tokenizeStr(body)),
+		ContextAbove: "above",
+		ContextBelow: "below",
+	}
+
+	got := materializeMediaContext(ck)
+	if want := "above" + body + "below"; got.Text != want {
+		t.Fatalf("folded text = %q, want %q", got.Text, want)
+	}
+	if want := tokenizeStr(got.Text); intValue(got.TKNums) != want {
+		t.Errorf("tk_nums = %d, want %d (the folded body)", intValue(got.TKNums), want)
+	}
+}
+
 // TestTokenChunkerWindowTruncatesOnSentenceBoundary pins that a neighbour
 // larger than the remaining window is trimmed on a sentence boundary. A cut
 // inside the sentence would hand the index a fragment: the removed rune-level
