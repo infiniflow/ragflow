@@ -119,7 +119,7 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the OCR-rec Run path).
 	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", defaultIntraOpThreads())
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func recognizeLine(ctx context.Context, modelDir string, img *Image, maxWhRatio 
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the OCR-rec Run path).
 	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0", defaultIntraOpThreads())
 	if err != nil {
 		return OCRRecResult{}, err
 	}

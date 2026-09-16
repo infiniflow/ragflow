@@ -20,6 +20,8 @@ import (
 	"sync"
 
 	ort "github.com/infiniflow/onnxruntime_go"
+
+	"ragflow/internal/deepdoc/runtimeconfig"
 )
 
 var (
@@ -63,6 +65,13 @@ func InitORT() error {
 // been successfully initialized. The in-process DeepDoc backend uses this to
 // decide whether it can serve, degrading to an empty analyzer otherwise.
 func Initialized() bool { return ortReady }
+
+// defaultIntraOpThreads returns the thread count for ORT inference.
+// The default shares available CPUs across concurrent inference calls and can
+// be overridden via DEEPDOC_ORT_NUM_THREADS.
+func defaultIntraOpThreads() int {
+	return runtimeconfig.ORTThreads()
+}
 
 // session loads one ONNX model and runs single-input/single-output inference.
 type session struct {
