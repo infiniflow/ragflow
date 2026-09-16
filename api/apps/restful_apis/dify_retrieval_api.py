@@ -23,17 +23,17 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     QuartBadRequest = None
 
-from api.db.services.document_service import DocumentService
+from api.apps import login_required
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
-from common.metadata_utils import meta_filter, convert_conditions
-from api.apps import login_required
-from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
-from rag.app.tag import label_question
-from common.constants import RetCode, LLMType
+from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_json_result, get_request_json
 from common import settings
+from common.constants import LLMType, RetCode
+from common.metadata_utils import convert_conditions, meta_filter
+from rag.app.tag import label_question
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +99,10 @@ def _parse_retrieval_options(retrieval_setting):
     if retrieval_setting is None:
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
-        raise ValueError("retrieval_setting must be an object")
+        raise TypeError("retrieval_setting must be an object")
     raw_top = retrieval_setting.get("top_k", 1024)
     if isinstance(raw_top, bool):
-        raise ValueError("top_k must be an integer, not a boolean")
+        raise TypeError("top_k must be an integer, not a boolean")
     if isinstance(raw_top, float) and not raw_top.is_integer():
         raise ValueError("top_k must be a whole number")
     try:
@@ -234,7 +234,7 @@ async def retrieval(tenant_id):
         req = await _read_retrieval_request()
     except parse_exception_types as e:
         return build_error_result(
-            message=f"invalid or malformed arguments: {str(e)}; ",
+            message=f"invalid or malformed arguments: {e!s}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     missing = [field for field in ("knowledge_id", "query") if not req.get(field)]
@@ -250,7 +250,7 @@ async def retrieval(tenant_id):
         _, similarity_threshold, top = _parse_retrieval_options(req.get("retrieval_setting", {}))
     except ValueError as e:
         return build_error_result(
-            message=f"invalid or malformed arguments: {str(e)}; ",
+            message=f"invalid or malformed arguments: {e!s}; ",
             code=RetCode.ARGUMENT_ERROR,
         )
     metadata_condition = req.get("metadata_condition", {}) or {}
@@ -295,7 +295,7 @@ async def retrieval(tenant_id):
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
-        doc_ids = list(set([c["doc_id"] for c in ranks["chunks"]]))
+        doc_ids = list({c["doc_id"] for c in ranks["chunks"]})
         docs = DocumentService.get_by_ids(doc_ids)
         doc_map = {doc.id: doc for doc in docs}
         metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id) if doc_ids else {}
@@ -317,7 +317,7 @@ async def retrieval(tenant_id):
     except Exception as e:
         if "not_found" in str(e):
             return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
-        logger.exception(e)
+        logger.exception("Dify retrieval failed")
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 

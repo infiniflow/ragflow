@@ -55,7 +55,7 @@ def dify_module(monkeypatch):
         "api.apps",
         _module_stub(
             "api.apps",
-            login_required=lambda *a, **k: (a[0] if a and callable(a[0]) else (lambda f: f)),
+            login_required=lambda *a, **k: a[0] if a and callable(a[0]) else (lambda f: f),
         ),
     )
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", _module_stub("api.db.services.document_service", DocumentService=SimpleNamespace()))
@@ -75,7 +75,9 @@ def dify_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "rag.app.tag", _module_stub("rag.app.tag", label_question=None))
     monkeypatch.setitem(sys.modules, "common", _module_stub("common", settings=SimpleNamespace()))
-    monkeypatch.setitem(sys.modules, "common.constants", _module_stub("common.constants", LLMType=SimpleNamespace(), RetCode=SimpleNamespace(ARGUMENT_ERROR=101, NOT_FOUND=104, AUTHENTICATION_ERROR=109)))
+    monkeypatch.setitem(
+        sys.modules, "common.constants", _module_stub("common.constants", LLMType=SimpleNamespace(), RetCode=SimpleNamespace(ARGUMENT_ERROR=101, NOT_FOUND=104, AUTHENTICATION_ERROR=109))
+    )
 
     module_name = "test_dify_retrieval_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
