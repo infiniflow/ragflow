@@ -50,6 +50,18 @@ type TaskStatusConflictError struct {
 	ActualCurrent string
 }
 
+// InvalidRunIdentityError reports a durable invariant violation discovered
+// after a worker moves a task to RUNNING. Callers distinguish it from storage
+// errors: the former must be settled as FAILED, while the latter is retried.
+type InvalidRunIdentityError struct {
+	TaskID string
+	Reason string
+}
+
+func (e *InvalidRunIdentityError) Error() string {
+	return fmt.Sprintf("task %s has invalid run identity: %s", e.TaskID, e.Reason)
+}
+
 func (e *TaskStatusConflictError) Error() string {
 	return fmt.Sprintf("task %s status conflict: expected %s -> %s, actual current %s", e.TaskID, e.ExpectedFrom, e.AttemptedTo, e.ActualCurrent)
 }
@@ -221,7 +233,10 @@ func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[strin
 	return showTasks, nil
 }
 
-func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+// TransitionTaskToRunning performs only the task-state transition required
+// before worker identity validation. It intentionally does not reset the
+// document or advance a pipeline log.
+func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -232,19 +247,6 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		if err != nil {
 			return nil, err
 		}
-		// The task just started running: reset document progress counters to
-		// reflect real processing. Best-effort - a DB blip here must not fail
-		// the task transition and trigger a redelivery loop.
-		if err = s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
-			"progress":         float64(0),
-			"chunk_num":        int64(0),
-			"token_num":        int64(0),
-			"process_begin_at": time.Now(),
-			"progress_msg":     "",
-		}); err != nil {
-			common.Warn(fmt.Sprintf("StartRunning: mark document %s running for task %s: %v", task.DocumentID, taskID, err))
-		}
-		s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning)
 		return task, nil
 	case common.STOPPING:
 		task, err = s.transition(ctx, taskID, common.STOPPED)
@@ -266,6 +268,23 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 	default:
 		return task, fmt.Errorf("task %s has unsupported status %s", taskID, task.Status)
 	}
+}
+
+// PrepareValidatedRun performs the document and run-log initialization only
+// after ReloadAndValidateRunIdentity has accepted the task's captured binding.
+func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil {
+		return
+	}
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
+		"progress":         float64(0),
+		"chunk_num":        int64(0),
+		"token_num":        int64(0),
+		"process_begin_at": time.Now(),
+	}); err != nil {
+		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
+	}
+	s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning), logMsgRunning)
 }
 
 func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
@@ -363,6 +382,37 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 			return nil, common.ErrTaskNotFound
 		}
 		return nil, err
+	}
+	return task, nil
+}
+
+// ReloadAndValidateRunIdentity reloads a worker task and verifies that its
+// immutable run binding exists, belongs to the same document/dataset, and has
+// a positive Go-owned display number. It performs no writes and never creates
+// a replacement row; callers can safely retry transient database errors.
+func (s *IngestionTaskService) ReloadAndValidateRunIdentity(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.PipelineLogID == nil || *task.PipelineLogID == "" {
+		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "missing_pipeline_log_id"}
+	}
+	run, err := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "pipeline_log_not_found"}
+		}
+		return nil, err
+	}
+	if run.DocumentID != task.DocumentID {
+		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "pipeline_log_document_mismatch"}
+	}
+	if run.KbID != task.DatasetID {
+		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "pipeline_log_dataset_mismatch"}
+	}
+	if run.RunCount == nil || *run.RunCount <= 0 {
+		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "invalid_run_count"}
 	}
 	return task, nil
 }

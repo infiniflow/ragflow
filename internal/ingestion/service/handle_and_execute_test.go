@@ -160,6 +160,44 @@ func TestHandleAndExecute_StartRunningTransientErrorNacks(t *testing.T) {
 	}
 }
 
+func TestHandleAndExecute_InvalidRunIdentityFailsAndAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", nil).Error; err != nil {
+		t.Fatalf("remove run binding: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("schedule task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-invalid-run-identity", 1, []string{"pdf"})
+	pipelineRan := false
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+
+	ingestor.handleAndExecute(handle)
+
+	if pipelineRan {
+		t.Fatal("pipeline ran despite an invalid run identity")
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+}
+
 // TestHandleAndExecute_AlreadyTerminalTaskAcks verifies that tasks already in a
 // terminal state (COMPLETED, STOPPED, FAILED) are Ack-skipped without re-execution.
 func TestHandleAndExecute_AlreadyTerminalTaskAcks(t *testing.T) {

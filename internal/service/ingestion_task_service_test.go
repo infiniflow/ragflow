@@ -216,7 +216,7 @@ func TestIngestionTaskServiceStartRunningTransitionsScheduledTask(t *testing.T) 
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
-	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
+	task, err := NewIngestionTaskService().TransitionTaskToRunning(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -388,11 +388,9 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	}
 }
 
-// TestStartRunningResetsDocumentProgress locks in that starting a CREATED task
-// resets its document progress counters, with a fresh process_begin_at. The
-// document bookkeeping is owned by the task-lifecycle transition, not the
-// ingestion worker's execution path.
-func TestStartRunningResetsDocumentProgress(t *testing.T) {
+// TestPrepareValidatedRunResetsDocumentProgress verifies validation precedes
+// document initialization and leaves the legacy progress_msg untouched.
+func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -410,9 +408,11 @@ func TestStartRunningResetsDocumentProgress(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if _, err := svc.StartRunning(ctx, "task-1"); err != nil {
-		t.Fatalf("StartRunning failed: %v", err)
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("TransitionTaskToRunning failed: %v", err)
 	}
+	svc.PrepareValidatedRun(ctx, task)
 
 	var doc entity.Document
 	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
@@ -427,8 +427,8 @@ func TestStartRunningResetsDocumentProgress(t *testing.T) {
 	if doc.TokenNum != 0 {
 		t.Fatalf("token_num = %d, want 0", doc.TokenNum)
 	}
-	if doc.ProgressMsg != nil && *doc.ProgressMsg != "" {
-		t.Fatalf("progress_msg = %q, want empty", *doc.ProgressMsg)
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != "partial" {
+		t.Fatalf("progress_msg = %v, want the legacy value unchanged", doc.ProgressMsg)
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")
@@ -459,7 +459,7 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestStartRunningFinalizesStoppingTask(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -1476,9 +1476,11 @@ func TestIngestionTaskServiceStartRunningAdvancesPreTerminalPipelineLog(t *testi
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if _, err := svc.StartRunning(ctx, task.ID); err != nil {
-		t.Fatalf("StartRunning failed: %v", err)
+	task, err = svc.TransitionTaskToRunning(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("TransitionTaskToRunning failed: %v", err)
 	}
+	svc.PrepareValidatedRun(ctx, task)
 	open = loadOpenPipelineLog(t, ctx, db, "doc-1")
 	if open.OperationStatus != string(entity.TaskStatusRunning) {
 		t.Fatalf("OperationStatus after start = %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
@@ -1606,6 +1608,20 @@ func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskServiceReloadAndValidateRunIdentityRejectsMissingBinding(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	_, err := NewIngestionTaskService().ReloadAndValidateRunIdentity(t.Context(), "task-1")
+	var identityErr *InvalidRunIdentityError
+	if !errors.As(err, &identityErr) || identityErr.Reason != "missing_pipeline_log_id" {
+		t.Fatalf("error = %v, want missing pipeline-log identity error", err)
+	}
+}
+
 // TestIngestionTaskServiceOpensPreTerminalLogBeforePublish locks the ordering that
 // closes the orphan window: the run's row must exist before its message is
 // published, so a worker that claims and finishes the task immediately still
@@ -1674,7 +1690,7 @@ func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog
 	}
 
 	svc := NewIngestionTaskService()
-	task, err := svc.StartRunning(t.Context(), "task-1")
+	task, err := svc.TransitionTaskToRunning(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}

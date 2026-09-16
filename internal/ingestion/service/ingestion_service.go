@@ -485,7 +485,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		return
 	}
 
-	task, err := e.ingestionTaskSvc.StartRunning(e.ctx, taskMessage.TaskID)
+	task, err := e.ingestionTaskSvc.TransitionTaskToRunning(e.ctx, taskMessage.TaskID)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -508,6 +508,24 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		e.ackHandle(hb, handle, taskMessage.TaskID)
 		return
 	case common.RUNNING:
+		validatedTask, validateErr := e.ingestionTaskSvc.ReloadAndValidateRunIdentity(e.ctx, task.ID)
+		if validateErr != nil {
+			var identityErr *servicepkg.InvalidRunIdentityError
+			if errors.As(validateErr, &identityErr) {
+				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
+				if e.markFailed(e.ctx, task.ID) {
+					e.ackHandle(hb, handle, taskMessage.TaskID)
+				} else {
+					e.nackHandle(hb, handle, taskMessage.TaskID)
+				}
+				return
+			}
+			common.Error(fmt.Sprintf("validate run identity for task %s", task.ID), validateErr)
+			e.nackHandle(hb, handle, taskMessage.TaskID)
+			return
+		}
+		task = validatedTask
+		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
 		if !e.claimTask(task.ID) {
 			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
