@@ -1590,6 +1590,11 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			}
 			cp := cloneChunkDoc(ck)
 			cp.Text = p
+			// The count describes the child's own text. The delimiter branch
+			// attaches the media context after this split, and that walk is
+			// charged with TKNums, so an inherited parent count would spend the
+			// configured window on the first neighbour.
+			cp.TKNums = intPtr(tokenizeStr(p))
 			cp.Mom = mom
 			out = append(out, cp)
 		}
@@ -1632,6 +1637,7 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 			out = append(out, schema.ChunkDoc{
 				Text:   child,
 				CKType: d.CKType,
+				TKNums: intPtr(tokenizeStr(child)),
 				Mom:    strings.TrimPrefix(t, "\n"),
 			})
 		}

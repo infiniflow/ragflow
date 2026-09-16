@@ -519,6 +519,48 @@ func TestTokenChunkerDropsMediaChunkWithTagOnlyContext(t *testing.T) {
 	}
 }
 
+// TestTokenChunkerDelimiterWindowUsesChildTokenCounts pins the effect the
+// children's token counts have on the media window: the delimiter branch
+// attaches the context after the children split, so the budget walk is charged
+// with whatever count the children carry. A child that inherits its parent's
+// count spends the whole window on the first neighbour and the configured
+// window silently under-collects.
+func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
+	component, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":      "delimiter",
+		"delimiters":          []string{"`|`"},
+		"children_delimiters": []string{". "},
+		"chunk_token_size":    512,
+		"table_context_size":  7,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "fig.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "gamma delta. alpha beta.", "doc_type_kwd": "text"},
+			{"text": "", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var media map[string]any
+	for _, ck := range outputChunks(t, out) {
+		if ck["ck_type"] == "table" {
+			media = ck
+		}
+	}
+	if media == nil {
+		t.Fatalf("table chunk missing: %+v", out)
+	}
+	// Each child is 3 tokens, so the 7-token window holds both of them.
+	assertMaterializedMediaContext(t, media, "gamma deltaalpha beta.")
+}
+
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
 // payload 10 times under the race detector and asserts the chunk
 // list is identical every time.
@@ -985,6 +1027,50 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	}
 	if got := joined.String(); strings.Contains(got, "\n\n") {
 		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
+	}
+}
+
+// TestSplitByChildrenRecomputesTokenCounts pins that a child carries the count
+// of its own text. The count is a budget input for the media window in the
+// delimiter branch, where the attach runs after this split.
+func TestSplitByChildrenRecomputesTokenCounts(t *testing.T) {
+	const parentText = "gamma delta. alpha beta."
+	children := splitByChildren([]schema.ChunkDoc{{
+		Text:    parentText,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(parentText)),
+	}}, regexp.MustCompile(`\. `))
+
+	if len(children) != 2 {
+		t.Fatalf("children = %d, want 2", len(children))
+	}
+	for _, child := range children {
+		if got, want := intValue(child.TKNums), tokenizeStr(child.Text); got != want {
+			t.Errorf("child %q tk_nums = %d, want %d (its own text)", child.Text, got, want)
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_RecomputesTokenCounts pins that the text-path
+// children carry their own count, so a consumer that budgets with TKNums does
+// not read a stale or missing value.
+func TestApplyChildrenDelimText_RecomputesTokenCounts(t *testing.T) {
+	const parentText = "gamma delta. alpha beta."
+	out := applyChildrenDelimText([]schema.ChunkDoc{{
+		Text:    parentText,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(parentText)),
+	}}, regexp.MustCompile(`\. `))
+
+	if len(out) != 2 {
+		t.Fatalf("children = %d, want 2", len(out))
+	}
+	for _, child := range out {
+		if got, want := intValue(child.TKNums), tokenizeStr(child.Text); got != want {
+			t.Errorf("child %q tk_nums = %d, want %d (its own text)", child.Text, got, want)
+		}
 	}
 }
 
