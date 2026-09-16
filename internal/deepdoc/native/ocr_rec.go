@@ -116,10 +116,8 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		copy(batch[i*lineStride:(i+1)*lineStride], b)
 	}
 
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the OCR-rec Run path).
-	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, "rec.ort"), "x",
+		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0")
 	if err != nil {
 		return nil, err
 	}
@@ -159,10 +157,8 @@ func recognizeLine(ctx context.Context, modelDir string, img *Image, maxWhRatio 
 		resizedW = imgW
 	}
 	blob := ocrRecPreprocess(img, resizedW, imgW)
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the OCR-rec Run path).
-	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+	sess, release, err := getRecSession(ctx, filepath.Join(modelDir, "rec.ort"), "x",
+		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0")
 	if err != nil {
 		return OCRRecResult{}, err
 	}
@@ -304,7 +300,7 @@ type recSession struct {
 	poisoned bool
 }
 
-func newRecSession(modelPath, inName string, inShape []int64, outName string, intraOpThreads int) (*recSession, error) {
+func newRecSession(modelPath, inName string, inShape []int64, outName string) (*recSession, error) {
 	in := make([]float32, prod(inShape))
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), in)
 	if err != nil {
@@ -315,9 +311,8 @@ func newRecSession(modelPath, inName string, inShape []int64, outName string, in
 		inT.Destroy()
 		return nil, err
 	}
-	// 0 → all cores (mirrors Python's onnxruntime default); OCR-rec does no
-	// contour extraction in the Run path, so parallelism is safe and matches
-	// deepdoc's reduction order for bit-stable parity.
+	// One intra-op thread per session, matching NewSession: see the
+	// intraOpThreads constant in session.go.
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
 		opts.Destroy()
 		inT.Destroy()
