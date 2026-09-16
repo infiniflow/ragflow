@@ -497,13 +497,19 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        'RAGFlow 使用加权关键词相似度与加权向量余弦相似度的混合得分来衡量查询与文本块的相似程度，混合得分低于该阈值的文本块将被过滤。默认值为 0.2（即 20%），即只有混合得分不低于 20 的文本块才会被召回。',
+      similarityThresholdTipWithRerank:
+        '已选择 Rerank 模型：此时使用加权关键词相似度与加权 Rerank 得分的混合得分（Rerank 得分替代向量余弦相似度），低于该阈值的文本块将被过滤。默认值为 0.2（即 20%）。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '设置向量余弦相似度在混合相似度得分中的权重，剩余权重分配给关键词相似度，两者权重之和恒为 1.0。',
+      vectorSimilarityWeightTipWithRerank:
+        '已选择 Rerank 模型：此权重分配给替代向量余弦相似度的 Rerank 得分，剩余权重分配给关键词相似度，两者权重之和恒为 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
-        '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
+        '设置关键词相似度在混合相似度得分中的权重，剩余权重分配给向量余弦相似度，两者权重之和恒为 1.0。',
+      keywordSimilarityWeightTipWithRerank:
+        '已选择 Rerank 模型：此权重分配给关键词相似度，剩余权重分配给替代向量余弦相似度的 Rerank 得分，两者权重之和恒为 1.0。',
       testText: '测试文本',
       testTextPlaceholder: '请输入您的问题！',
       testingLabel: '运行',

@@ -555,13 +555,19 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow scores each retrieved chunk with weighted keyword similarity plus weighted vector cosine similarity, and filters out chunks whose combined score is below this threshold. By default, the threshold is 0.2 (20%), meaning only chunks scoring 20 or higher are retrieved.',
+      similarityThresholdTipWithRerank:
+        'A rerank model is selected, so chunks are scored with weighted keyword similarity plus the weighted reranking score, which replaces vector cosine similarity. Chunks scoring below this threshold are filtered out. By default, the threshold is 0.2 (20%).',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'Sets the weight of vector cosine similarity in the combined similarity score; the remaining weight applies to keyword similarity. The two weights always sum to 1.0.',
+      vectorSimilarityWeightTipWithRerank:
+        'A rerank model is selected, so this weight applies to the reranking score that replaces vector cosine similarity, and the remaining weight applies to keyword similarity. The two weights always sum to 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'Sets the weight of keyword similarity in the combined similarity score; the remaining weight applies to vector cosine similarity. The two weights always sum to 1.0.',
+      keywordSimilarityWeightTipWithRerank:
+        'A rerank model is selected, so this weight applies to keyword similarity and the remaining weight applies to the reranking score that replaces vector cosine similarity. The two weights always sum to 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Run',
