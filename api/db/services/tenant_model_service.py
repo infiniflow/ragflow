@@ -15,6 +15,7 @@
 #
 from api.db.db_models import DB, TenantModel
 from api.db.services.common_service import CommonService
+from api.utils.model_utils import calculate_model_type
 
 
 class TenantModelService(CommonService):
@@ -23,17 +24,21 @@ class TenantModelService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_provider_id_and_instance_id_and_model_name(cls, provider_id, instance_id, model_name):
-        return list(cls.model.select().where(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_name == model_name))
+        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_name == model_name)
 
     @classmethod
     @DB.connection_context()
     def get_by_provider_id_and_instance_id_and_model_type_and_model_name(cls, provider_id, instance_id, model_type, model_name):
-        return cls.model.get_or_none(
-            cls.model.provider_id == provider_id,
-            cls.model.instance_id == instance_id,
-            cls.model.model_type == model_type,
-            cls.model.model_name == model_name
-        )
+        if isinstance(model_type, str):
+            model_type = calculate_model_type([model_type])
+        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_type.bin_and(model_type) > 0, cls.model.model_name == model_name)
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_provider_id_and_instance_id_and_model_type(cls, provider_id, instance_id, model_type):
+        if isinstance(model_type, str):
+            model_type = calculate_model_type([model_type])
+        return cls.model.get_or_none(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_type.bin_and(model_type) > 0)
 
     @classmethod
     @DB.connection_context()
@@ -52,6 +57,20 @@ class TenantModelService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def update_model(cls, model_id, update_dict):
+        return cls.model.update(**update_dict).where(cls.model.id == model_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def batch_update_model_type(cls, model_ids, model_type):
+        if isinstance(model_type, str):
+            model_type = calculate_model_type([model_type])
+        elif isinstance(model_type, list):
+            model_type = calculate_model_type(model_type)
+        return cls.model.update(model_type=model_type).where(cls.model.id.in_(model_ids)).execute()
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_id(cls, model_id):
         return cls.model.delete().where(cls.model.id == model_id).execute()
 
@@ -59,3 +78,10 @@ class TenantModelService(CommonService):
     @DB.connection_context()
     def delete_by_instance_ids(cls, instance_ids):
         return cls.model.delete().where(cls.model.instance_id.in_(instance_ids)).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_ids(cls, model_ids):
+        if not model_ids:
+            return 0
+        return cls.model.delete().where(cls.model.id.in_(model_ids)).execute()

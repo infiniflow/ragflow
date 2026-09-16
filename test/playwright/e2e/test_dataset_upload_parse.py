@@ -27,10 +27,7 @@ RESULT_TIMEOUT_MS = 15000
 
 
 def make_test_png(path: Path) -> Path:
-    png_b64 = (
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
-        "/w8AAgMBAp6X6QAAAABJRU5ErkJggg=="
-    )
+    png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBAp6X6QAAAABJRU5ErkJggg=="
     path.write_bytes(base64.b64decode(png_b64))
     return path
 
@@ -101,9 +98,7 @@ def select_combobox_option(
             option.click(force=True)
 
     if preferred_text:
-        preferred_option = options.filter(
-            has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I)
-        )
+        preferred_option = options.filter(has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I))
         if preferred_option.count() > 0:
             click_option(preferred_option.first)
             return preferred_text
@@ -152,9 +147,7 @@ def select_ragflow_option(
     expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
     if preferred_text:
-        preferred_option = options.filter(
-            has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I)
-        )
+        preferred_option = options.filter(has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I))
         if preferred_option.count() > 0:
             preferred_option.first.click()
             return preferred_text
@@ -352,9 +345,7 @@ def step_03_create_dataset(
         except Exception:
             if created_kb_id:
                 page.goto(
-                    urljoin(
-                        base_url.rstrip("/") + "/", f"/dataset/dataset/{created_kb_id}"
-                    ),
+                    urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset/{created_kb_id}"),
                     wait_until="domcontentloaded",
                 )
             else:
@@ -388,47 +379,31 @@ def step_04_set_dataset_settings(
 
     with step("open dataset settings page"):
         page.goto(
-            urljoin(
-                base_url.rstrip("/") + "/", f"/dataset/dataset-setting/{dataset_id}"
-            ),
+            urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset-setting/{dataset_id}"),
             wait_until="domcontentloaded",
         )
-        expect(page.get_by_test_id("ds-settings-basic-name-input")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
-        expect(page.get_by_test_id("ds-settings-page-save-btn")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.get_by_test_id("ds-settings-basic-name-input")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.get_by_test_id("ds-settings-page-save-btn")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("dataset_settings_open")
 
     with step("fill base settings"):
-        page.get_by_test_id("ds-settings-basic-name-input").fill(
-            f"{dataset_name}-cfg"
-        )
-        select_combobox_option(
-            page, "ds-settings-basic-language-select", preferred_text="English"
-        )
+        page.get_by_test_id("ds-settings-basic-name-input").fill(f"{dataset_name}-cfg")
+        select_combobox_option(page, "ds-settings-basic-language-select", preferred_text="English")
 
         avatar_path = make_test_png(tmp_path / "avatar-test.png")
-        page.get_by_test_id("ds-settings-basic-avatar-upload").set_input_files(
-            str(avatar_path)
-        )
+        page.get_by_test_id("ds-settings-basic-avatar-upload").set_input_files(str(avatar_path))
         crop_modal = page.get_by_test_id("ds-settings-basic-avatar-crop-modal")
         expect(crop_modal).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         page.get_by_test_id("ds-settings-basic-avatar-crop-confirm-btn").click()
         expect(crop_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
-        page.get_by_test_id("ds-settings-basic-description-input").fill(
-            "Dataset setting playwright description"
-        )
+        page.get_by_test_id("ds-settings-basic-description-input").fill("Dataset setting playwright description")
         try:
             select_combobox_option(page, "ds-settings-basic-permissions-select")
         except Exception:
             page.keyboard.press("Escape")
 
-        embedding_trigger = page.get_by_test_id(
-            "ds-settings-basic-embedding-model-select"
-        ).first
+        embedding_trigger = page.get_by_test_id("ds-settings-basic-embedding-model-select").first
         expect(embedding_trigger).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         if not embedding_trigger.is_disabled():
             try:
@@ -438,14 +413,10 @@ def step_04_set_dataset_settings(
 
     with step("fill parser and metadata settings"):
         set_number_input(page, "ds-settings-parser-page-rank-input", 12)
-        select_combobox_option(
-            page, "ds-settings-parser-pdf-parser-select", preferred_text="Plain Text"
-        )
+        select_combobox_option(page, "ds-settings-parser-pdf-parser-select", preferred_text="Plain Text")
         set_number_input(page, "ds-settings-parser-recommended-chunk-size-input", 640)
         set_switch_state(page, "ds-settings-parser-child-chunk-switch", True)
-        expect(
-            page.get_by_test_id("ds-settings-parser-child-chunk-delimiter-input")
-        ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        expect(page.get_by_test_id("ds-settings-parser-child-chunk-delimiter-input")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         set_switch_state(page, "ds-settings-parser-page-index-switch", True)
         set_number_input(page, "ds-settings-parser-image-table-context-window-input", 16)
         set_switch_state(page, "ds-settings-metadata-switch", True)
@@ -480,9 +451,7 @@ def step_04_set_dataset_settings(
         page.get_by_test_id("ds-settings-metadata-modal-save-btn").click()
         expect(metadata_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
-        overlap_slider = page.get_by_test_id(
-            "ds-settings-parser-overlapped-percent-slider"
-        ).first
+        overlap_slider = page.get_by_test_id("ds-settings-parser-overlapped-percent-slider").first
         expect(overlap_slider).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         overlap_slider.focus()
         overlap_slider.press("ArrowRight")
@@ -496,20 +465,14 @@ def step_04_set_dataset_settings(
         expect(entity_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         entity_input.fill("playwright_entity")
         entity_input.press("Enter")
-        select_ragflow_option(
-            page, "ds-settings-graph-method-select", preferred_text="General"
-        )
+        select_ragflow_option(page, "ds-settings-graph-method-select", preferred_text="General")
         set_switch_state(page, "ds-settings-graph-entity-resolution-switch", True)
         set_switch_state(page, "ds-settings-graph-community-reports-switch", True)
 
-        raptor_scope_dataset = page.get_by_role(
-            "radio", name=re.compile(r"^Dataset$", re.I)
-        ).first
+        raptor_scope_dataset = page.get_by_role("radio", name=re.compile(r"^Dataset$", re.I)).first
         raptor_scope_dataset.check(force=True)
         expect(raptor_scope_dataset).to_be_checked(timeout=RESULT_TIMEOUT_MS)
-        page.get_by_test_id("ds-settings-raptor-prompt-textarea").fill(
-            "Playwright prompt for dataset settings"
-        )
+        page.get_by_test_id("ds-settings-raptor-prompt-textarea").fill("Playwright prompt for dataset settings")
         set_number_input(page, "ds-settings-raptor-max-token-input", 300)
         set_number_input(page, "ds-settings-raptor-threshold-input", 0.3)
         set_number_input(page, "ds-settings-raptor-max-cluster-input", 128)
@@ -546,23 +509,16 @@ def step_04_set_dataset_settings(
         assert 200 <= response.status < 400, f"Unexpected /api/v1/datasets update status={response.status}"
         response_payload = response.json()
         if isinstance(response_payload, dict):
-            assert response_payload.get("code") == 0, (
-                f"/api/v1/datasets update response code={response_payload.get('code')} "
-                f"message={response_payload.get('message')}"
-            )
+            assert response_payload.get("code") == 0, f"/api/v1/datasets update response code={response_payload.get('code')} message={response_payload.get('message')}"
 
         payload = get_request_json_payload(response)
         for key in ("name", "language", "parser_config"):
             assert key in payload, f"Expected key {key!r} in /api/v1/datasets update payload"
         parser_config = payload.get("parser_config") or {}
-        assert (
-            parser_config.get("image_table_context_window")
-            == parser_config.get("image_context_size")
-            == parser_config.get("table_context_size")
-        ), "Expected image/table context window transform keys to be aligned"
-        expect(page.locator("[data-sonner-toast]").first).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
+        assert parser_config.get("image_table_context_window") == parser_config.get("image_context_size") == parser_config.get("table_context_size"), (
+            "Expected image/table context window transform keys to be aligned"
         )
+        expect(page.locator("[data-sonner-toast]").first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
     with step("return to dataset detail for upload"):
         page.goto(
@@ -598,9 +554,7 @@ def step_05_upload_files(
     for idx, file_path in enumerate(file_paths):
         filename = file_path.name
         with step(f"open upload modal for {filename}"):
-            upload_modal = ensure_upload_modal_open(
-                page, expect, auth_click, timeout_ms=RESULT_TIMEOUT_MS
-            )
+            upload_modal = ensure_upload_modal_open(page, expect, auth_click, timeout_ms=RESULT_TIMEOUT_MS)
         if idx == 0:
             snap("upload_modal_open")
 
@@ -611,14 +565,10 @@ def step_05_upload_files(
 
         with step(f"upload file {filename}"):
             upload_file(page, expect, upload_modal, str(file_path), RESULT_TIMEOUT_MS)
-            expect(upload_modal.locator(f"text={filename}")).to_be_visible(
-                timeout=RESULT_TIMEOUT_MS
-            )
+            expect(upload_modal.locator(f"text={filename}")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         with step(f"submit upload {filename}"):
-            save_button = upload_modal.locator(
-                "button", has_text=re.compile("save", re.I)
-            ).first
+            save_button = upload_modal.locator("button", has_text=re.compile("save", re.I)).first
 
             def trigger():
                 save_button.click()
@@ -626,15 +576,12 @@ def step_05_upload_files(
             capture_response(
                 page,
                 trigger,
-                lambda resp: resp.request.method == "POST"
-                and "/v1/document/upload" in resp.url,
+                lambda resp: resp.request.method == "POST" and "/v1/document/upload" in resp.url,
             )
             expect(upload_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         snap(f"upload_{filename}_submitted")
 
-        row = page.locator(
-            f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]"
-        )
+        row = page.locator(f"[data-testid='document-row'][data-doc-name={json.dumps(filename)}]")
         expect(row).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
     flow_state["uploads_done"] = True
@@ -682,16 +629,8 @@ def step_07_delete_one_file(
     with step(f"delete uploaded file {delete_filename}"):
         delete_uploaded_file(page, expect, delete_filename, timeout_ms=RESULT_TIMEOUT_MS)
     snap("file_deleted_doc3")
-    expect(
-        page.locator(
-            f"[data-testid='document-row'][data-doc-name={json.dumps('Doc1.pdf')}]"
-        )
-    ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-    expect(
-        page.locator(
-            f"[data-testid='document-row'][data-doc-name={json.dumps('Doc2.pdf')}]"
-        )
-    ).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+    expect(page.locator(f"[data-testid='document-row'][data-doc-name={json.dumps('Doc1.pdf')}]")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+    expect(page.locator(f"[data-testid='document-row'][data-doc-name={json.dumps('Doc2.pdf')}]")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("success")
 
 

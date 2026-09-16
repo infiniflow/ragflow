@@ -21,8 +21,8 @@ This is the Go implementation of the RAGFlow command-line interface, compatible 
 ### Build and run
 
 ```bash
-go build -o ragflow_cli ./cmd/ragflow_cli.go
-./ragflow_cli
+go build -o ragflow-cli ./cmd/ragflow-cli.go
+./ragflow-cli
 ```
 
 ## Architecture
@@ -148,6 +148,10 @@ GRANT read,write ON datasets TO ROLE admin;
 CREATE DATASET 'my_dataset' WITH EMBEDDING 'text-embedding-ada-002' PARSER 'naive';
 LIST DATASETS;
 DROP DATASET 'my_dataset';
+
+-- Data sync logs
+LIST SYNC_LOGS;
+LIST DATASET 'my_dataset' SYNC_LOGS;
 
 -- Model configuration
 SET DEFAULT LLM 'gpt-4';

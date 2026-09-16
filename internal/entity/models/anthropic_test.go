@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -60,6 +61,7 @@ func TestAnthropicName(t *testing.T) {
 }
 
 func TestAnthropicChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "claude-sonnet-4-5-20250929" {
 			t.Errorf("model=%v", body["model"])
@@ -85,13 +87,16 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
 	resp, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"claude-sonnet-4-5-20250929",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		&ChatConfig{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -105,6 +110,7 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 }
 
 func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["system"] != "be concise" {
 			t.Errorf("system=%v, want be concise", body["system"])
@@ -155,6 +161,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
 	maxTokens := 64
@@ -162,6 +169,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 	topP := 0.8
 	stop := []string{"END"}
 	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"claude-opus-4-5-20251101",
 		[]Message{
 			{Role: "system", Content: "be concise"},
@@ -172,6 +180,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 		},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -179,6 +188,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 }
 
 func TestAnthropicChatMapsDataImageURL(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) == 0 {
@@ -213,15 +223,18 @@ func TestAnthropicChatMapsDataImageURL(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
 	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"claude-sonnet-4-5-20250929",
 		[]Message{{Role: "user", Content: []interface{}{
 			map[string]interface{}{"type": "image_url", "image_url": map[string]interface{}{"url": "data:image/png;base64,aGVsbG8="}},
 		}}},
 		&APIConfig{ApiKey: &apiKey},
-		nil,
+		&ChatConfig{},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -229,29 +242,33 @@ func TestAnthropicChatMapsDataImageURL(t *testing.T) {
 }
 
 func TestAnthropicChatValidationErrors(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
-	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: "x"}}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: "x"}}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("nil api config: got %v", err)
 	}
-	if _, err := m.ChatWithMessages("claude", nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
+	if _, err := m.ChatWithMessages(ctx, "claude", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("empty messages: got %v", err)
 	}
-	if _, err := m.ChatWithMessages("claude", []Message{{Role: "tool", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "tool", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
 		t.Errorf("bad role: got %v", err)
 	}
-	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "video_url"}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "unsupported content block type") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "video_url"}}}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported content block type") {
 		t.Errorf("bad block: got %v", err)
 	}
-	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "text", "text": 42}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "invalid text field") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "text", "text": 42}}}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "invalid text field") {
 		t.Errorf("bad text block: got %v", err)
 	}
-	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "image"}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "image block missing source") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "image"}}}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "image block missing source") {
 		t.Errorf("bad image block: got %v", err)
 	}
 }
 
 func TestAnthropicChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
@@ -259,26 +276,151 @@ func TestAnthropicChatRejectsHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newAnthropicForTest(srv.URL).ChatWithMessages("claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "bad key") {
 		t.Errorf("expected provider error, got %v", err)
 	}
 }
 
 func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"content": []map[string]interface{}{{"type": "tool_use"}}})
 	})
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newAnthropicForTest(srv.URL).ChatWithMessages("claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no text content") {
 		t.Errorf("expected no-text error, got %v", err)
 	}
 }
 
+func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["stream"] != true {
+			t.Errorf("stream=%v, want true", body["stream"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":5,"output_tokens":0}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"pondering"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"pong"}}`,
+			`{"type":"content_block_stop","index":1}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}`,
+			`{"type":"message_stop"}`,
+		}
+		for _, event := range events {
+			_, _ = w.Write([]byte("data: " + event + "\n\n"))
+		}
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	var answer, reasoning strings.Builder
+	sawDone := false
+	modelUsage := &common.ModelUsage{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		modelUsage,
+		func(text, reason *string) error {
+			if text != nil {
+				if *text == "[DONE]" {
+					sawDone = true
+				} else {
+					answer.WriteString(*text)
+				}
+			}
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if answer.String() != "pong" {
+		t.Errorf("answer=%q, want pong", answer.String())
+	}
+	if reasoning.String() != "pondering" {
+		t.Errorf("reasoning=%q, want pondering", reasoning.String())
+	}
+	if !sawDone {
+		t.Error("expected terminal [DONE] sender call")
+	}
+	if modelUsage.InputTokens != 5 {
+		t.Errorf("InputTokens=%d, want 5", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 2 {
+		t.Errorf("OutputTokens=%d, want 2", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 7 {
+		t.Errorf("TotalTokens=%d, want 7", modelUsage.TotalTokens)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "bad key") {
+		t.Errorf("expected provider error, got %v", err)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderRejectsStreamError(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"type":"error","error":{"message":"overloaded"}}` + "\n\n"))
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "overloaded") {
+		t.Errorf("expected stream error, got %v", err)
+	}
+}
+
 func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	var calls int
 	srv := newAnthropicServer(t, "/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		calls++
@@ -293,14 +435,14 @@ func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	m := newAnthropicForTest(srv.URL)
-	models, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001" {
 		t.Errorf("models=%v", models)
 	}
-	if err := m.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err = m.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection: %v", err)
 	}
 	if calls != 2 {
@@ -309,6 +451,8 @@ func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestAnthropicListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":"forbidden"}`))
@@ -316,7 +460,7 @@ func TestAnthropicListModelsRejectsProviderError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newAnthropicForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	_, err := newAnthropicForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "403") {
 		t.Errorf("expected 403 error, got %v", err)
 	}
@@ -333,51 +477,42 @@ func TestAnthropicFactoryRegistration(t *testing.T) {
 }
 
 func TestAnthropicUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "claude"
-	checks := []struct {
-		name string
-		err  error
-	}{
-		{"stream", m.ChatStreamlyWithSender(modelName, []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error { return nil })},
-	}
-	for _, check := range checks {
-		if check.err == nil || !strings.Contains(check.err.Error(), "no such method") {
-			t.Errorf("%s: want no such method, got %v", check.name, check.err)
-		}
-	}
-	if _, err := m.Embed(&modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &modelName, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: got %v", err)
 	}
-	if _, err := m.Rerank(&modelName, "q", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: got %v", err)
 	}
-	if _, err := m.Balance(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: got %v", err)
 	}
-	if _, err := m.TranscribeAudio(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.TranscribeAudio(ctx, &modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: got %v", err)
 	}
-	if err := m.TranscribeAudioWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.TranscribeAudioWithSender(ctx, &modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudioWithSender: got %v", err)
 	}
-	if _, err := m.AudioSpeech(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.AudioSpeech(ctx, &modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: got %v", err)
 	}
-	if err := m.AudioSpeechWithSender(&modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if err := m.AudioSpeechWithSender(ctx, &modelName, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeechWithSender: got %v", err)
 	}
-	if _, err := m.OCRFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: got %v", err)
 	}
-	if _, err := m.ParseFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ParseFile(ctx, &modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ParseFile: got %v", err)
 	}
-	if _, err := m.ListTasks(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ListTasks(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ListTasks: got %v", err)
 	}
-	if _, err := m.ShowTask("task-id", &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.ShowTask(ctx, "task-id", &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: got %v", err)
 	}
 }

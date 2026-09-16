@@ -26,14 +26,12 @@ import tempfile
 from abc import ABC
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import unquote, urljoin, urlparse
 
 from agent.component.base import ComponentBase
 from agent.component.llm import LLMParam
 from api.db import FileType
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
@@ -41,6 +39,10 @@ from common import settings
 from common.connection_utils import timeout
 from common.misc_utils import get_uuid
 from rag.llm import FACTORY_DEFAULT_BASE_URL
+
+# Mirrors MAX_IMAGE_REDIRECTS in rag/app/naive.py: cap the manually followed
+# redirect hops when fetching URL-sourced upload files.
+MAX_UPLOAD_URL_REDIRECTS = 5
 
 
 class BrowserParam(LLMParam):
@@ -172,31 +174,51 @@ class Browser(ComponentBase, ABC):
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
     @staticmethod
+    def _safe_url_filename(candidate: Any) -> str:
+        """Return a sanitized single path segment, or "" when none can be derived.
+
+        Percent-escapes are decoded BEFORE splitting path segments: "%2e%2e%2f"
+        is not a separator for os.path.basename(), but decodes to "../", which
+        previously escaped the upload directory on join (CWE-22). Backslashes
+        are normalized to forward slashes first so Windows-style traversal is
+        split the same way while legitimate names survive.
+        """
+        token = str(candidate or "").strip()
+        if not token:
+            return ""
+        token = os.path.basename(unquote(token).strip().replace("\\", "/")).strip()
+        if not token or token in {".", ".."}:
+            return ""
+        if "/" in token or "\\" in token or os.sep in token or (os.altsep and os.altsep in token):
+            return ""
+        return token
+
+    @staticmethod
     def _extract_url_filename(url: str, headers: Any) -> str:
         content_disposition = str(getattr(headers, "get", lambda *_args, **_kwargs: "")("Content-Disposition", "") or "")
         if content_disposition:
             # Prefer RFC 5987 encoded filename*=UTF-8''... when present.
             m = re.search(r"filename\*\s*=\s*(?:UTF-8''|utf-8'')?([^;]+)", content_disposition)
             if m:
-                name = unquote(m.group(1).strip().strip('"'))
+                name = Browser._safe_url_filename(m.group(1).strip().strip('"'))
                 if name:
-                    return os.path.basename(name)
+                    return name
             m = re.search(r'filename\s*=\s*"([^"]+)"', content_disposition)
             if m:
-                name = m.group(1).strip()
+                name = Browser._safe_url_filename(m.group(1).strip())
                 if name:
-                    return os.path.basename(name)
+                    return name
             m = re.search(r"filename\s*=\s*([^;]+)", content_disposition)
             if m:
-                name = m.group(1).strip().strip('"')
+                name = Browser._safe_url_filename(m.group(1).strip().strip('"'))
                 if name:
-                    return os.path.basename(name)
+                    return name
 
-        parsed = urlparse(url)
-        raw_name = os.path.basename(parsed.path or "")
-        name = unquote(raw_name).strip()
+        name = Browser._safe_url_filename(urlparse(url).path or "")
         if name:
             return name
+        # No safe name could be derived: fall back to a UUID with a fixed,
+        # whitelisted suffix so the result can never leave upload_dir.
         return f"url_file_{get_uuid()[:8]}.bin"
 
     @staticmethod
@@ -219,32 +241,73 @@ class Browser(ComponentBase, ABC):
         os.environ[key] = value
 
     def _prepare_upload_url_file(self, url: str, upload_dir: str) -> dict[str, Any] | None:
+        import requests
+
+        from common.ssrf_guard import assert_url_is_safe, pin_dns
+
         max_bytes = self._resolve_upload_url_max_bytes()
         local_path = ""
         local_name = ""
         total_size = 0
+        response = None
+        # Isolated session: upload URLs are untrusted, so the fetch must not
+        # honor ambient environment proxies (HTTP_PROXY/HTTPS_PROXY would let
+        # the proxy resolve the hostname, bypassing the pinned IP) and must not
+        # load .netrc credentials for the target.
+        session = requests.Session()
+        session.trust_env = False
         try:
-            req = Request(url, headers={"User-Agent": "RAGFlow-Browser-Node/1.0"})
-            with urlopen(req, timeout=30) as response:
-                local_name = self._extract_url_filename(url, response.headers)
+            # SSRF guard: upload URLs can come from untrusted canvas variables,
+            # so validate and DNS-pin every hop before connecting. Redirects are
+            # followed manually so each hop is re-validated, mirroring
+            # rag/app/naive.py load_images_from_urls. The thread-local pin_dns
+            # (not pin_dns_global) matches this synchronous fetch path, which
+            # resolves DNS in the calling thread.
+            current_hostname, current_ip = assert_url_is_safe(url)
+            current_url = url
+            for _ in range(MAX_UPLOAD_URL_REDIRECTS + 1):
+                # Release the previous hop before opening the next: with
+                # stream=True the connection isn't returned to the pool until
+                # the body is read or the response is closed.
+                if response is not None:
+                    response.close()
+                with pin_dns(current_hostname, current_ip):
+                    response = session.get(
+                        current_url,
+                        stream=True,
+                        timeout=30,
+                        allow_redirects=False,
+                        headers={"User-Agent": "RAGFlow-Browser-Node/1.0"},
+                    )
+                if response.status_code not in (301, 302, 303, 307, 308):
+                    break
+                location = response.headers.get("Location")
+                if not location:
+                    break
+                current_url = urljoin(current_url, location)
+                current_hostname, current_ip = assert_url_is_safe(current_url)
+            else:
+                raise ValueError(f"Exceeded {MAX_UPLOAD_URL_REDIRECTS} redirects fetching {url!r}")
+            response.raise_for_status()
 
-                local_path = os.path.join(upload_dir, local_name)
-                index = 1
-                while os.path.exists(local_path):
-                    stem, ext = os.path.splitext(local_name)
-                    local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
-                    index += 1
+            local_name = self._extract_url_filename(current_url, response.headers)
 
-                with open(local_path, "wb") as f:
-                    while True:
-                        chunk = response.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        total_size += len(chunk)
-                        if total_size > max_bytes:
-                            raise ValueError(f"upload url file exceeds max size limit: {max_bytes}")
-                        f.write(chunk)
-        except (HTTPError, URLError, OSError, TimeoutError, ValueError) as e:
+            local_path = os.path.join(upload_dir, local_name)
+            index = 1
+            while os.path.exists(local_path):
+                stem, ext = os.path.splitext(local_name)
+                local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
+                index += 1
+
+            with open(local_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    total_size += len(chunk)
+                    if total_size > max_bytes:
+                        raise ValueError(f"upload url file exceeds max size limit: {max_bytes}")
+                    f.write(chunk)
+        except (requests.RequestException, OSError, TimeoutError, ValueError) as e:
             if local_path and os.path.exists(local_path):
                 try:
                     os.remove(local_path)
@@ -252,6 +315,12 @@ class Browser(ComponentBase, ABC):
                     pass
             logging.warning("Browser failed to fetch upload url. url=%s, error=%s", url, e)
             return None
+        finally:
+            # Always release the final/streamed response, including the
+            # error paths where the body is never read.
+            if response is not None:
+                response.close()
+            session.close()
 
         if total_size <= 0:
             if local_path and os.path.exists(local_path):
@@ -371,9 +440,7 @@ class Browser(ComponentBase, ABC):
                 sort_keys=True,
                 ensure_ascii=False,
             )
-            raw_canvas_id = (
-                f"dsl_{hashlib.sha1(graph_text.encode('utf-8')).hexdigest()[:12]}"
-            )
+            raw_canvas_id = f"dsl_{hashlib.sha1(graph_text.encode('utf-8')).hexdigest()[:12]}"
         canvas_id = self._safe_path_segment(raw_canvas_id)
         node_id = self._safe_path_segment(self._id)
         return os.path.join(root, tenant, canvas_id, node_id)
@@ -402,9 +469,9 @@ class Browser(ComponentBase, ABC):
     def _build_browser_llm(self):
         from browser_use.llm import ChatBrowserUse, ChatOpenAI
 
-        chat_model_config = get_model_config_from_provider_instance(
+        chat_model_config = resolve_model_config(
             self._canvas.get_tenant_id(),
-            get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id),
+            resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id),
             self._param.llm_id,
         )
         cfg = self._as_model_config_dict(chat_model_config)
@@ -488,10 +555,7 @@ class Browser(ComponentBase, ABC):
                 # Keep browser-use watchdog fallback in sync with our resolved path.
                 os.environ["BROWSER_USE_BROWSER_BINARY_PATH"] = executable_path
             else:
-                logging.warning(
-                    "Browser no local browser executable found. "
-                    "Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install."
-                )
+                logging.warning("Browser no local browser executable found. Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install.")
             if profile_dir:
                 browser_kwargs["user_data_dir"] = profile_dir
                 # browser-use expects profile_directory to be a profile name
@@ -682,21 +746,13 @@ class Browser(ComponentBase, ABC):
         try:
             self._prepare_input_values()
             user_prompt = self._resolve_text(kwargs.get("prompts", self._param.prompts))
-            with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(
-                prefix="browser_use_download_"
-            ) as download_dir:
+            with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(prefix="browser_use_download_") as download_dir:
                 uploaded_files = self._prepare_upload_files(upload_dir)
 
-                upload_lines = [
-                    f"- file_id={item['file_id']}, name={item['name']}, local_path={item['local_path']}"
-                    for item in uploaded_files
-                ]
+                upload_lines = [f"- file_id={item['file_id']}, name={item['name']}, local_path={item['local_path']}" for item in uploaded_files]
                 task_text = user_prompt
                 if upload_lines:
-                    task_text += (
-                        "\n\nYou can upload files from these local paths when operating web pages:\n"
-                        + "\n".join(upload_lines)
-                    )
+                    task_text += "\n\nYou can upload files from these local paths when operating web pages:\n" + "\n".join(upload_lines)
 
                 upload_local_paths = [item.get("local_path", "") for item in uploaded_files if item.get("local_path")]
                 if persist_session:
@@ -707,11 +763,7 @@ class Browser(ComponentBase, ABC):
                         profile_dir = tempfile.mkdtemp(prefix="browser_use_profile_")
                     except OSError:
                         profile_dir = None
-                history = asyncio.run(
-                    self._run_browser_use_async(
-                        task_text, download_dir, upload_local_paths, profile_dir
-                    )
-                )
+                history = asyncio.run(self._run_browser_use_async(task_text, download_dir, upload_local_paths, profile_dir))
                 target_dir_id = FileService.get_root_folder(self._canvas.get_tenant_id())["id"]
                 downloaded_files = self._save_downloads(download_dir, target_dir_id)
 

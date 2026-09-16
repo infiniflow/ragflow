@@ -137,17 +137,10 @@ def step_05_filter_zhipu(
         expect(search_input).to_have_count(1)
         search_input.first.fill("zhipu")
         available_section = page.locator("[data-testid='available-models-section']")
-        provider = available_section.locator(
-            "[data-testid='available-model-card'][data-provider='ZHIPU-AI']"
-        ).first
+        provider = available_section.locator("[data-testid='available-model-card'][data-provider='ZHIPU-AI']").first
         if provider.count() == 0:
             added_section = page.locator("[data-testid='added-models-section']")
-            if (
-                added_section.locator(
-                    "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
-                ).count()
-                == 0
-            ):
+            if added_section.locator("[data-testid='added-model-card'][data-provider='ZHIPU-AI']").count() == 0:
                 raise AssertionError("ZHIPU-AI provider not found in available or added models.")
         else:
             expect(provider).to_be_visible()
@@ -169,18 +162,14 @@ def step_06_add_api_key(
     require(flow_state, "provider_filtered", "api_key")
     page = flow_page
     available_section = page.locator("[data-testid='available-models-section']")
-    provider = available_section.locator(
-        "[data-testid='available-model-card'][data-provider='ZHIPU-AI']"
-    ).first
+    provider = available_section.locator("[data-testid='available-model-card'][data-provider='ZHIPU-AI']").first
 
     with step("add ZHIPU-AI api key"):
         if provider.count() > 0:
             provider.click()
         else:
             added_section = page.locator("[data-testid='added-models-section']")
-            card = added_section.locator(
-                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
-            ).first
+            card = added_section.locator("[data-testid='added-model-card'][data-provider='ZHIPU-AI']").first
             api_key_button = card.locator("button", has_text=re.compile("API-?Key", re.I)).first
             expect(api_key_button).to_be_visible()
             api_key_button.click()
@@ -189,6 +178,7 @@ def step_06_add_api_key(
         api_input = modal.locator("[data-testid='apikey-input']").first
         save_button = modal.locator("[data-testid='apikey-save']").first
         try:
+
             def trigger():
                 api_input.fill(flow_state["api_key"])
                 save_button.click()
@@ -206,11 +196,7 @@ def step_06_add_api_key(
     with step("confirm added model"):
         added_section = page.locator("[data-testid='added-models-section']")
         expect(added_section).to_be_visible()
-        expect(
-            added_section.locator(
-                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
-            )
-        ).to_be_visible()
+        expect(added_section.locator("[data-testid='added-model-card'][data-provider='ZHIPU-AI']")).to_be_visible()
     flow_state["provider_added"] = True
     snap("provider_saved")
 
@@ -278,11 +264,7 @@ def step_08_verify_persist(
         expect(llm_combo).to_contain_text("glm-4-flash")
         expect(emb_combo).to_contain_text(flow_state.get("selected_emb_text") or "embedding-2")
         added_section = page.locator("[data-testid='added-models-section']")
-        expect(
-            added_section.locator(
-                "[data-testid='added-model-card'][data-provider='ZHIPU-AI']"
-            )
-        ).to_be_visible()
+        expect(added_section.locator("[data-testid='added-model-card'][data-provider='ZHIPU-AI']")).to_be_visible()
     snap("defaults_persisted")
     snap("success")
 

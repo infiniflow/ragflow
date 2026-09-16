@@ -1,0 +1,14 @@
+{
+ "case_id": "token__json_img_id",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "text": "Text before the image."
+  },
+  {
+   "doc_type_kwd": "image",
+   "img_id": "img-abc-123",
+   "text": "an image"
+  }
+ ]
+}

@@ -22,9 +22,9 @@ SET GLOBAL max_allowed_packet={}
 
 def get_opendal_config():
     try:
-        opendal_config = get_base_config('opendal', {})
-        if opendal_config.get("scheme", "mysql") == 'mysql':
-            mysql_config = get_base_config('mysql', {})
+        opendal_config = get_base_config("opendal", {})
+        if opendal_config.get("scheme", "mysql") == "mysql":
+            mysql_config = get_base_config("mysql", {})
             max_packet = mysql_config.get("max_allowed_packet", 134217728)
             kwargs = {
                 "scheme": "mysql",
@@ -34,10 +34,9 @@ def get_opendal_config():
                 "password": mysql_config.get("password", ""),
                 "database": mysql_config.get("name", "test_open_dal"),
                 "table": opendal_config.get("config", {}).get("oss_table", "opendal_storage"),
-                "max_allowed_packet": str(max_packet)
+                "max_allowed_packet": str(max_packet),
             }
-            kwargs[
-                "connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
+            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
         else:
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
@@ -66,8 +65,8 @@ def get_opendal_config():
 class OpenDALStorage:
     def __init__(self):
         self._kwargs = get_opendal_config()
-        self._scheme = self._kwargs.get('scheme', 'mysql')
-        if self._scheme == 'mysql':
+        self._scheme = self._kwargs.get("scheme", "mysql")
+        if self._scheme == "mysql":
             self.init_db_config()
             self.init_opendal_mysql_table()
         self._operator = opendal.Operator(**self._kwargs)
@@ -96,15 +95,9 @@ class OpenDALStorage:
 
     def init_db_config(self):
         try:
-            conn = pymysql.connect(
-                host=self._kwargs['host'],
-                port=int(self._kwargs['port']),
-                user=self._kwargs['user'],
-                password=self._kwargs['password'],
-                database=self._kwargs['database']
-            )
+            conn = pymysql.connect(host=self._kwargs["host"], port=int(self._kwargs["port"]), user=self._kwargs["user"], password=self._kwargs["password"], database=self._kwargs["database"])
             cursor = conn.cursor()
-            max_packet = self._kwargs.get('max_allowed_packet', 4194304)  # Default to 4MB if not specified
+            max_packet = self._kwargs.get("max_allowed_packet", 4194304)  # Default to 4MB if not specified
             # Ensure max_packet is a valid integer to prevent SQL injection
             cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(int(max_packet)))
             conn.commit()
@@ -116,18 +109,12 @@ class OpenDALStorage:
             raise
 
     def init_opendal_mysql_table(self):
-        table_name = self._kwargs['table']
+        table_name = self._kwargs["table"]
         # Validate table name to prevent SQL injection
-        if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+        if not re.match(r"^[a-zA-Z0-9_]+$", table_name):
             raise ValueError(f"Invalid table name: {table_name}")
 
-        conn = pymysql.connect(
-            host=self._kwargs['host'],
-            port=int(self._kwargs['port']),
-            user=self._kwargs['user'],
-            password=self._kwargs['password'],
-            database=self._kwargs['database']
-        )
+        conn = pymysql.connect(host=self._kwargs["host"], port=int(self._kwargs["port"]), user=self._kwargs["user"], password=self._kwargs["password"], database=self._kwargs["database"])
         cursor = conn.cursor()
         cursor.execute(CREATE_TABLE_SQL.format(table_name))
         conn.commit()

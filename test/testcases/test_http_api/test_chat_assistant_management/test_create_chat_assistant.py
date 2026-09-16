@@ -46,9 +46,9 @@ class TestChatAssistantCreate:
             ({"name": "valid_name"}, 0, ""),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            ({"name": ""}, 102, "`name` is required."),
-            ({"name": "duplicated_name"}, 102, "Duplicated chat name in creating chat."),
-            ({"name": "case insensitive"}, 102, "Duplicated chat name in creating chat."),
+            ({"name": ""}, 102, "`name` is required"),
+            ({"name": "duplicated_name"}, 102, "duplicated chat name in creating chat"),
+            ({"name": "case insensitive"}, 102, "duplicated chat name in creating chat"),
         ],
     )
     def test_name(self, HttpApiAuth, add_chunks, payload, expected_code, expected_message):
@@ -270,7 +270,7 @@ class TestChatAssistantCreate:
         tenant_payload = {"name": "guard-tenant-id", "dataset_ids": [], "tenant_id": "tenant-should-not-pass"}
         res = create_chat_assistant(HttpApiAuth, tenant_payload)
         assert res["code"] == 102
-        assert res["message"] == "`tenant_id` must not be provided."
+        assert res["message"] == "`tenant_id` must not be provided"
 
         rerank_payload = {
             "name": "guard-rerank-id",

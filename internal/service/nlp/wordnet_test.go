@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 )
@@ -27,6 +28,7 @@ import (
 var testWordNetDir string
 
 func TestNewWordNet(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -45,6 +47,7 @@ func TestNewWordNet(t *testing.T) {
 }
 
 func TestMorphy(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -71,6 +74,7 @@ func TestMorphy(t *testing.T) {
 }
 
 func TestSynsets(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -119,14 +123,7 @@ func TestSynsets(t *testing.T) {
 				names[i] = s.Name
 			}
 			for _, expectedName := range tt.checkNames {
-				found := false
-				for _, name := range names {
-					if name == expectedName {
-						found = true
-						break
-					}
-				}
-				if !found {
+				if !slices.Contains(names, expectedName) {
 					t.Errorf("Synsets(%q, %q) did not contain expected synset %q, got %v",
 						tt.lemma, tt.pos, expectedName, names)
 				}
@@ -141,6 +138,7 @@ func TestSynsets(t *testing.T) {
 }
 
 func TestSynsetsDetailed(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -171,6 +169,7 @@ func TestSynsetsDetailed(t *testing.T) {
 }
 
 func TestSynsetsConsistencyWithPython(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)
@@ -209,6 +208,7 @@ func TestSynsetsConsistencyWithPython(t *testing.T) {
 }
 
 func TestSynsetContent(t *testing.T) {
+	requireWordNetData(t)
 	wn, err := NewWordNet(testWordNetDir)
 	if err != nil {
 		t.Fatalf("Failed to create WordNet: %v", err)

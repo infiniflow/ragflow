@@ -16,7 +16,7 @@
 import random
 import pytest
 from ragflow_sdk import RAGFlow, Memory
-from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
 
 
 class TestAuthorization:
@@ -24,8 +24,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth,  expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
@@ -38,8 +38,7 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestForgetMessage:
-
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_forget_message(self, client):
         memory_id = self.memory_id
         memory = Memory(client, {"id": memory_id})

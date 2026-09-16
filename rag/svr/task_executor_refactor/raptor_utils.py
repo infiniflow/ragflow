@@ -38,11 +38,7 @@ async def get_raptor_chunk_field_map(doc_id: str, tenant_id: str, kb_id: str) ->
 
     async def search_fields(fields: list[str], condition: dict, order_by=None):
         """Search chunk fields in the current knowledge base."""
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields, [], condition, [], order_by or OrderByExpr(),
-            0, RAPTOR_METHOD_SEARCH_LIMIT, nlp_search.index_name(tenant_id), [kb_id]
-        )
+        res = await thread_pool_exec(settings.docStoreConn.search, fields, [], condition, [], order_by or OrderByExpr(), 0, RAPTOR_METHOD_SEARCH_LIMIT, nlp_search.index_name(tenant_id), [kb_id])
         return settings.docStoreConn.get_fields(res, fields)
 
     primary = await search_fields(["raptor_kwd", "extra"], {"doc_id": doc_id, "raptor_kwd": ["raptor"]})
@@ -65,11 +61,17 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
     if keep_method is None:
         logging.info(
             "delete_raptor_chunks: removing all RAPTOR summaries (doc=%s tenant=%s kb=%s)",
-            doc_id, tenant_id, kb_id,
+            doc_id,
+            tenant_id,
+            kb_id,
         )
+        # Sweep both row types — legacy per-summary (``raptor``, still
+        # used by the PSI builder) and the new single tree blob
+        # (``raptor_tree``) — so re-runs always start from a clean
+        # slate regardless of which path produced the prior state.
         await thread_pool_exec(
             settings.docStoreConn.delete,
-            {"doc_id": doc_id, "raptor_kwd": ["raptor"]},
+            {"doc_id": doc_id, "raptor_kwd": ["raptor", "raptor_tree"]},
             nlp_search.index_name(tenant_id),
             kb_id,
         )
@@ -80,13 +82,20 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
     if not chunk_ids:
         logging.debug(
             "delete_raptor_chunks: no stale RAPTOR chunks to remove (doc=%s tenant=%s kb=%s keep=%s)",
-            doc_id, tenant_id, kb_id, keep_method,
+            doc_id,
+            tenant_id,
+            kb_id,
+            keep_method,
         )
         return 0
 
     logging.info(
         "delete_raptor_chunks: removing %d stale RAPTOR chunks (doc=%s tenant=%s kb=%s keep=%s)",
-        len(chunk_ids), doc_id, tenant_id, kb_id, keep_method,
+        len(chunk_ids),
+        doc_id,
+        tenant_id,
+        kb_id,
+        keep_method,
     )
     await thread_pool_exec(
         settings.docStoreConn.delete,

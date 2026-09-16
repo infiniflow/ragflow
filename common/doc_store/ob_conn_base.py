@@ -20,6 +20,7 @@ import re
 import threading
 import time
 from abc import abstractmethod
+from collections.abc import Iterable
 from typing import Any
 
 from pymysql.converters import escape_string
@@ -36,7 +37,7 @@ index_name_template = "ix_%s_%s"
 fulltext_index_name_template = "fts_idx_%s"
 fulltext_search_template = "MATCH (%s) AGAINST ('%s' IN NATURAL LANGUAGE MODE)"
 vector_search_template = "cosine_distance(%s, '%s')"
-vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec")
+vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec$")
 
 # Document metadata table columns
 doc_meta_columns = [
@@ -65,6 +66,15 @@ def get_value_str(value: Any) -> str:
         return str(value)
 
 
+def validate_column_name(column_name: Any, valid_columns: Iterable[str] | None = None, pattern: re.Pattern | None = None) -> str:
+    """Validate a dynamic SQL identifier before it is interpolated into a query."""
+    if not isinstance(column_name, str) or not column_name.isidentifier():
+        raise ValueError(f"Invalid column name: {column_name!r}")
+    if valid_columns is not None and column_name not in valid_columns and not (pattern and pattern.match(column_name)):
+        raise ValueError(f"Invalid column name: {column_name!r}")
+    return column_name
+
+
 def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None):
     """Execute function with distributed lock."""
     if not timeout:
@@ -72,6 +82,7 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
 
     if not check_func():
         from rag.utils.redis_conn import RedisDistributedLock
+
         lock = RedisDistributedLock(lock_name)
         if lock.acquire():
             try:
@@ -97,7 +108,7 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
 class OBConnectionBase(DocStoreConnection):
     """Base class for OceanBase document store connections."""
 
-    def __init__(self, logger_name: str = 'ragflow.ob_conn'):
+    def __init__(self, logger_name: str = "ragflow.ob_conn"):
         from common.doc_store.ob_conn_pool import OB_CONN
 
         self.logger = logging.getLogger(logger_name)
@@ -119,13 +130,13 @@ class OBConnectionBase(DocStoreConnection):
 
     def _load_env_vars(self):
         def is_true(var: str, default: str) -> bool:
-            return os.getenv(var, default).lower() in ['true', '1', 'yes', 'y']
+            return os.getenv(var, default).lower() in ["true", "1", "yes", "y"]
 
-        self.enable_fulltext_search = is_true('ENABLE_FULLTEXT_SEARCH', 'true')
-        self.use_fulltext_hint = is_true('USE_FULLTEXT_HINT', 'true')
-        self.search_original_content = is_true("SEARCH_ORIGINAL_CONTENT", 'true')
-        self.enable_hybrid_search = is_true('ENABLE_HYBRID_SEARCH', 'false')
-        self.use_fulltext_first_fusion_search = is_true('USE_FULLTEXT_FIRST_FUSION_SEARCH', 'true')
+        self.enable_fulltext_search = is_true("ENABLE_FULLTEXT_SEARCH", "true")
+        self.use_fulltext_hint = is_true("USE_FULLTEXT_HINT", "true")
+        self.search_original_content = is_true("SEARCH_ORIGINAL_CONTENT", "true")
+        self.enable_hybrid_search = is_true("ENABLE_HYBRID_SEARCH", "false")
+        self.use_fulltext_first_fusion_search = is_true("USE_FULLTEXT_FIRST_FUSION_SEARCH", "true")
 
         # Adjust settings based on hybrid search availability
         if self.es is not None and self.search_original_content:
@@ -172,10 +183,7 @@ class OBConnectionBase(DocStoreConnection):
         return "oceanbase"
 
     def health(self) -> dict:
-        return {
-            "uri": self.uri,
-            "version_comment": self._get_variable_value("version_comment")
-        }
+        return {"uri": self.uri, "version_comment": self._get_variable_value("version_comment")}
 
     def _get_variable_value(self, var_name: str) -> Any:
         rows = self.client.perform_raw_text_sql(f"SHOW VARIABLES LIKE '{var_name}'")
@@ -241,8 +249,7 @@ class OBConnectionBase(DocStoreConnection):
             for column_name in self.get_index_columns():
                 _try_with_lock(
                     lock_name=f"{lock_prefix}add_idx_{table_name}_{column_name}",
-                    check_func=lambda cn=column_name: self._index_exists(table_name,
-                                                                         index_name_template % (table_name, cn)),
+                    check_func=lambda cn=column_name: self._index_exists(table_name, index_name_template % (table_name, cn)),
                     process_func=lambda cn=column_name: self._add_index(table_name, cn),
                 )
 
@@ -338,28 +345,34 @@ class OBConnectionBase(DocStoreConnection):
 
     def _get_count(self, table_name: str, filter_list: list[str] = None) -> int:
         where_clause = "WHERE " + " AND ".join(filter_list) if filter_list and len(filter_list) > 0 else ""
-        (count,) = self.client.perform_raw_text_sql(
-            f"SELECT COUNT(*) FROM {table_name} {where_clause}"
-        ).fetchone()
+        (count,) = self.client.perform_raw_text_sql(f"SELECT COUNT(*) FROM {table_name} {where_clause}").fetchone()
         return count
 
     def _column_exist(self, table_name: str, column_name: str) -> bool:
-        return self._get_count(
-            table_name="INFORMATION_SCHEMA.COLUMNS",
-            filter_list=[
-                f"TABLE_SCHEMA = '{self.db_name}'",
-                f"TABLE_NAME = '{table_name}'",
-                f"COLUMN_NAME = '{column_name}'",
-            ]) > 0
+        return (
+            self._get_count(
+                table_name="INFORMATION_SCHEMA.COLUMNS",
+                filter_list=[
+                    f"TABLE_SCHEMA = '{self.db_name}'",
+                    f"TABLE_NAME = '{table_name}'",
+                    f"COLUMN_NAME = '{column_name}'",
+                ],
+            )
+            > 0
+        )
 
     def _index_exists(self, table_name: str, idx_name: str) -> bool:
-        return self._get_count(
-            table_name="INFORMATION_SCHEMA.STATISTICS",
-            filter_list=[
-                f"TABLE_SCHEMA = '{self.db_name}'",
-                f"TABLE_NAME = '{table_name}'",
-                f"INDEX_NAME = '{idx_name}'",
-            ]) > 0
+        return (
+            self._get_count(
+                table_name="INFORMATION_SCHEMA.STATISTICS",
+                filter_list=[
+                    f"TABLE_SCHEMA = '{self.db_name}'",
+                    f"TABLE_NAME = '{table_name}'",
+                    f"INDEX_NAME = '{idx_name}'",
+                ],
+            )
+            > 0
+        )
 
     def _create_table_with_columns(self, table_name: str, columns: list[Column]):
         """Create table with specified columns."""
@@ -418,9 +431,7 @@ class OBConnectionBase(DocStoreConnection):
             column_names=[vector_field_name],
             vidx_params="distance=cosine, type=hnsw, lib=vsag",
         )
-        self.logger.info(
-            f"Created vector index '{vector_idx_name}' on table '{table_name}' with column '{vector_field_name}'."
-        )
+        self.logger.info(f"Created vector index '{vector_idx_name}' on table '{table_name}' with column '{vector_field_name}'.")
 
     def _add_column(self, table_name: str, column: Column):
         try:
@@ -496,11 +507,7 @@ class OBConnectionBase(DocStoreConnection):
         elapsed_time = time.time() - start_time
         return rows, elapsed_time
 
-    def _parse_fulltext_columns(
-        self,
-        fulltext_query: str,
-        fulltext_columns: list[str]
-    ) -> tuple[dict[str, str], dict[str, float]]:
+    def _parse_fulltext_columns(self, fulltext_query: str, fulltext_columns: list[str]) -> tuple[dict[str, str], dict[str, float]]:
         """
         Parse fulltext search columns with optional weight suffix and build search expressions.
 
@@ -538,16 +545,7 @@ class OBConnectionBase(DocStoreConnection):
         return fulltext_search_expr, fulltext_search_weight
 
     def _build_vector_search_sql(
-        self,
-        table_name: str,
-        fields_expr: str,
-        vector_search_score_expr: str,
-        filters_expr: str,
-        vector_search_filter: str,
-        vector_search_expr: str,
-        limit: int,
-        vector_topn: int,
-        offset: int = 0
+        self, table_name: str, fields_expr: str, vector_search_score_expr: str, filters_expr: str, vector_search_filter: str, vector_search_expr: str, limit: int, vector_topn: int, offset: int = 0
     ) -> str:
         sql = (
             f"SELECT {fields_expr}, {vector_search_score_expr} AS _score"
@@ -561,16 +559,7 @@ class OBConnectionBase(DocStoreConnection):
         return sql
 
     def _build_fulltext_search_sql(
-        self,
-        table_name: str,
-        fields_expr: str,
-        fulltext_search_score_expr: str,
-        filters_expr: str,
-        fulltext_search_filter: str,
-        offset: int,
-        limit: int,
-        fulltext_topn: int,
-        hint: str = ""
+        self, table_name: str, fields_expr: str, fulltext_search_score_expr: str, filters_expr: str, fulltext_search_filter: str, offset: int, limit: int, fulltext_topn: int, hint: str = ""
     ) -> str:
         hint_expr = f"{hint} " if hint else ""
         return (
@@ -581,28 +570,10 @@ class OBConnectionBase(DocStoreConnection):
             f"  LIMIT {offset}, {limit if limit != 0 else fulltext_topn}"
         )
 
-    def _build_filter_search_sql(
-        self,
-        table_name: str,
-        fields_expr: str,
-        filters_expr: str,
-        order_by_expr: str = "",
-        limit_expr: str = ""
-    ) -> str:
-        return (
-            f"SELECT {fields_expr}"
-            f"  FROM {table_name}"
-            f"  WHERE {filters_expr}"
-            f"  {order_by_expr} {limit_expr}"
-        )
+    def _build_filter_search_sql(self, table_name: str, fields_expr: str, filters_expr: str, order_by_expr: str = "", limit_expr: str = "") -> str:
+        return f"SELECT {fields_expr}  FROM {table_name}  WHERE {filters_expr}  {order_by_expr} {limit_expr}"
 
-    def _build_count_sql(
-        self,
-        table_name: str,
-        filters_expr: str,
-        extra_filter: str = "",
-        hint: str = ""
-    ) -> str:
+    def _build_count_sql(self, table_name: str, filters_expr: str, extra_filter: str = "", hint: str = "") -> str:
         hint_expr = f"{hint} " if hint else ""
         where_clause = f"{filters_expr} AND {extra_filter}" if extra_filter else filters_expr
         return f"SELECT {hint_expr}COUNT(id) FROM {table_name} WHERE {where_clause}"
@@ -620,10 +591,18 @@ class OBConnectionBase(DocStoreConnection):
         return "kb_id"
 
     def _get_filters(self, condition: dict) -> list[str]:
+        """Build SQL WHERE-clause fragments from a condition dict, validating every dynamic column name first."""
         filters: list[str] = []
         for k, v in condition.items():
             if not v:
                 continue
+            if k == "exists":
+                column_name = v
+            elif k == "must_not" and isinstance(v, dict) and "exists" in v:
+                column_name = v.get("exists")
+            else:
+                column_name = k
+            validate_column_name(column_name)
             if k == "exists":
                 filters.append(f"{v} IS NOT NULL")
             elif k == "must_not" and isinstance(v, dict) and "exists" in v:
@@ -662,6 +641,7 @@ class OBConnectionBase(DocStoreConnection):
             condition[self._get_dataset_id_field()] = dataset_id
         try:
             from sqlalchemy import text
+
             res = self.client.get(
                 table_name=index_name,
                 ids=None,
