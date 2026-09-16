@@ -367,6 +367,15 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 // ---------- SSE transport ----------
 
 func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client) ([]Tool, error) {
+	result, err := requestSSE(ctx, endpoint, headers, client, "tools/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseToolsResult(result)
+}
+
+// requestSSE initializes a session and performs one JSON-RPC request.
+func requestSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, method string, params any) (json.RawMessage, error) {
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build SSE request: %w", err)
@@ -420,7 +429,10 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 	}()
 
 	postOnce := func(payload jsonRPCRequest) error {
-		body, _ := json.Marshal(payload)
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("encode MCP SSE request: %w", err)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, postURL, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("build SSE POST: %w", err)
@@ -465,7 +477,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 	listWaiter := pending.register(1)
-	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: "tools/list"}); err != nil {
+	if err = postOnce(jsonRPCRequest{JSONRPC: jsonRPCVersion, ID: 1, Method: method, Params: params}); err != nil {
 		pending.cancel(1)
 		return nil, err
 	}
@@ -474,9 +486,9 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 	if listRes.Error != nil {
-		return nil, formatMCPError("tools/list", listRes.Error)
+		return nil, formatMCPError(method, listRes.Error)
 	}
-	return parseToolsResult(listRes.Result)
+	return listRes.Result, nil
 }
 
 // waitForEndpoint reads SSE events until an "endpoint" event arrives and

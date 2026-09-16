@@ -20,6 +20,7 @@ import {
   getInitialExtractorValues,
   initialCompilationValues,
   initialGoExtractorValues,
+  initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -28,6 +29,7 @@ import {
 import {
   transformCompilationParams,
   transformExtractorParams,
+  transformGeneralChunkerParams,
   transformParserParams,
   transformTitleChunkerParams,
   transformTokenChunkerParams,
@@ -254,6 +256,17 @@ function transformTokenChunkerConfigToForm(
   return result;
 }
 
+function transformGeneralChunkerConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformTokenChunkerConfigToForm(config);
+  result.table_context_size = Number(config?.table_context_size ?? 0);
+  result.image_context_size = Number(config?.image_context_size ?? 0);
+  delete result.image_table_context_window;
+  delete result.delimiter_mode;
+  return result;
+}
+
 /**
  * Converts TitleChunker config from API/DSL format to form format.
  * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
@@ -323,6 +336,8 @@ export function transformApiConfigToForm(
       return transformTokenizerConfigToForm(config);
     case Operator.TokenChunker:
       return transformTokenChunkerConfigToForm(config);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
@@ -388,6 +403,8 @@ export function transformFormConfigToApi(
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
       return transformTokenChunkerParams(config as any);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
     default:
@@ -419,6 +436,11 @@ export function normalizeOperatorForm(
     case Operator.TokenChunker:
       return {
         ...cloneDeep(initialTokenChunkerValues),
+        ...rawForm,
+      };
+    case Operator.GeneralChunker:
+      return {
+        ...cloneDeep(initialGeneralChunkerValues),
         ...rawForm,
       };
     case Operator.Extractor:

@@ -28,6 +28,17 @@ export const isPipelineParserConfig = (
   return Object.keys(parserConfig).some((key) => key.includes(':'));
 };
 
+const MinerUOptionKeys = [
+  'mineru_parse_method',
+  'mineru_formula_enable',
+  'mineru_table_enable',
+  'mineru_lang',
+] as const;
+
+const isMinerULayoutRecognize = (layoutRecognize: unknown): boolean =>
+  typeof layoutRecognize === 'string' &&
+  layoutRecognize.toLowerCase().includes('mineru');
+
 /**
  * Normalizes parser configuration before it is sent to the API.
  * @param parserConfig - The parser configuration object
@@ -56,6 +67,13 @@ export const normalizeParserConfig = (
   } = parserConfig;
   delete additionalParserConfig.graphrag;
   delete additionalParserConfig.raptor;
+  // Do not persist MinerU-only options when another layout recognizer is
+  // selected; leftover mineru_* keys used to falsely trigger MinerU fallback.
+  if (!isMinerULayoutRecognize(layout_recognize)) {
+    for (const key of MinerUOptionKeys) {
+      delete additionalParserConfig[key];
+    }
+  }
   return {
     auto_keywords,
     auto_questions,

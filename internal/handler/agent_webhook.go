@@ -605,7 +605,7 @@ func (h *AgentHandler) runWebhookSync(
 			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 		}
 		code, message := mapAgentError(err)
-		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code, err), message, sessionID)
+		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code), message, sessionID)
 	}
 
 	contents := []string{}
@@ -689,12 +689,10 @@ func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
 	}
 }
 
-func webhookHTTPStatusForAgentError(code common.ErrorCode, err error) int {
+func webhookHTTPStatusForAgentError(code common.ErrorCode) int {
 	switch {
 	case code == common.CodeServerError:
 		return http.StatusInternalServerError
-	case errors.Is(err, service.ErrAgentSessionBusy):
-		return http.StatusConflict
 	case code == common.CodeOperatingError:
 		return http.StatusForbidden
 	default:

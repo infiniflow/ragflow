@@ -5,8 +5,58 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
 )
+
+type recordingPageCommitter struct {
+	inputs []file.PageEditCommitInput
+}
+
+func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, input file.PageEditCommitInput) (*entity.FileCommit, error) {
+	c.inputs = append(c.inputs, input)
+	return &entity.FileCommit{ID: "commit-1"}, nil
+}
+
+func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
+	committer := &recordingPageCommitter{}
+	w := engineWriter{eng: &fakeEngine{}, commitService: committer}
+	products := []kccommon.Product{
+		{
+			Variant: kccommon.VariantWiki,
+			Content: "# Alpha\n\nBody",
+			Meta: map[string]any{
+				"kind":      "page",
+				"slug":      "entity/alpha",
+				"page_type": "entity",
+			},
+		},
+		{
+			Variant: kccommon.VariantWiki,
+			Content: "Body",
+			Meta: map[string]any{
+				"kind":      "section",
+				"slug":      "body",
+				"page_type": "entity",
+			},
+		},
+	}
+
+	if err := w.WriteMerged(t.Context(), "tenant-1", "kb-1", products); err != nil {
+		t.Fatalf("WriteMerged: %v", err)
+	}
+	if len(committer.inputs) != 1 {
+		t.Fatalf("generated page commits = %d, want 1", len(committer.inputs))
+	}
+	input := committer.inputs[0]
+	if input.DatasetID != "kb-1" || input.PageType != "entity" || input.Slug != "alpha" {
+		t.Fatalf("unexpected generated page identity: %+v", input)
+	}
+	if input.OldContent != "" || input.NewContent != "# Alpha\n\nBody" {
+		t.Fatalf("unexpected generated page content: %+v", input)
+	}
+}
 
 // TestMergedChunkMapKeepsWikiFields locks the fix for the merged-row metadata
 // gap: the dataset-level merged row written by mergedChunkMap must carry the

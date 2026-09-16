@@ -31,3 +31,21 @@ export const RunningStatusMap = {
 };
 
 export * from '@/constants/knowledge';
+
+/** Why a file cannot be parsed under the dataset's current Parser operator. */
+export enum ParserGapReason {
+  // The operator setups declare no entry for the file's type family at all.
+  UnsupportedType = 'unsupportedType',
+  // The family is declared, but its required model (audio/video) is not set.
+  MissingModel = 'missingModel',
+}
+
+/**
+ * Model capability a Parser operator setup needs for audio/video files.
+ * Values follow the parser-configuration vocabulary (the ModelTypeToField
+ * keys), not the LLM registry types (LlmModelType).
+ */
+export enum ParserModelKind {
+  Asr = 'asr',
+  Vision = 'vision',
+}

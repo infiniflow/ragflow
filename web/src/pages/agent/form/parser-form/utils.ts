@@ -1,32 +1,12 @@
-import { ParseDocumentType } from '@/components/layout-recognize-form-field';
+import { FileType } from '@/constants/file';
 import { cloneDeep } from 'lodash';
 import {
-  FileType,
   FileTypeDefaultModelFieldMap,
-  ImageParseMethod,
   initialParserValues,
 } from '../../constant/pipeline';
 
 export function buildFieldNameWithPrefix(name: string, prefix: string) {
   return `${prefix}.${name}`;
-}
-
-// Static parse-method values across all file types. LLM model ids from the
-// model tree are never in this set, so `isStaticParseMethod` can tell a
-// built-in method apart from a user-picked model.
-// Note: ParseDocumentType is a const enum — list members explicitly instead of
-// Object.values, which is not allowed on const enums (TS2475).
-const KnownStaticParseMethods = new Set<string>([
-  ParseDocumentType.DeepDOC,
-  ParseDocumentType.PlainText,
-  ParseDocumentType.Docling,
-  ParseDocumentType.OpenDataLoader,
-  ParseDocumentType.TCADPParser,
-  ImageParseMethod.OCR,
-]);
-
-export function isStaticParseMethod(value: unknown): value is string {
-  return typeof value === 'string' && KnownStaticParseMethods.has(value);
 }
 
 // Builds the default setup for a file type being added to the parser form,

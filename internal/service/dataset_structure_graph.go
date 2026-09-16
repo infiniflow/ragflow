@@ -34,6 +34,7 @@ var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -492,7 +493,8 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 			}
 		}
 		entities = dedupEntities(entities)
-		return entities, normalizeRelationEndpoints(entities, relations), nil
+		relations = normalizeRelationEndpoints(entities, relations)
+		return entities, relations, nil
 	}
 
 	// Large bucket: sample. A = top entities by mention_count_int desc.
@@ -811,7 +813,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			break
 		}
 	}
-
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	templateDAO := dao.NewCompilationTemplateDAO()
@@ -840,7 +841,6 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			bucketScopes[bid] = scope
 		}
 	}
-
 	grouped := map[string]DocumentStructureGraphTemplate{}
 	for bid, meta := range bucketMetas {
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)
@@ -1197,6 +1197,32 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			"knowledge_graph_kwd": []string{"entity"},
 		}
 	}
+	if templateMeta == nil {
+		templateMeta = map[string]map[string]interface{}{}
+	}
+	templateMetaLoaded := make(map[string]bool, len(templateMeta))
+	for templateID := range templateMeta {
+		templateMetaLoaded[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	resolveBucket := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+		templateID := rowTemplateID(row)
+		if templateID != "" && !templateMetaLoaded[templateID] {
+			// Pipeline-produced rows can carry a template id even when the
+			// document parser config does not contain the corresponding group.
+			// Resolve it here as well as in the normal path so keyword searches
+			// expose the user-visible template name instead of the opaque id.
+			templateMetaLoaded[templateID] = true
+			if template, err := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); err == nil && template != nil {
+				templateMeta[templateID] = map[string]interface{}{
+					"template_id":   templateID,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+		}
+		return resolveGraphBucket(row, templateMeta, documentID)
+	}
 	topFields := append(append([]string{}, graphEntityFields...), "compilation_template_ids", "compile_kwd", "compilation_template_kind_kwd")
 
 	textQuery := strings.TrimSpace(graphTextQueryRE.ReplaceAllString(keywords, " "))
@@ -1322,7 +1348,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 	}
 
 	scopeForTemplate := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
-		return resolveGraphBucket(row, templateMeta, documentID)
+		return resolveBucket(row)
 	}
 	bucketMeta, scope := scopeForTemplate(candidates[0].row)
 	bucketID := graphStr(bucketMeta["template_id"])

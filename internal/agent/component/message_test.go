@@ -382,6 +382,27 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 	}
 }
 
+func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-error", "task-deferred-error")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, _ runtime.AgentDeltaSink) (map[string]any, error) {
+			return map[string]any{"_ERROR": "**ERROR**: upstream 402"}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	completed := false
+	runtime.RegisterDeferredNode(ctx, "agent_0", func() { completed = true })
+
+	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
+		t.Fatalf("Invoke error = %v, want upstream 402", err)
+	}
+	if completed {
+		t.Fatal("deferred node completed after result _ERROR")
+	}
+}
+
 func TestMessage_FormalizedContentFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
