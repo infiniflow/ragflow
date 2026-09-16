@@ -80,3 +80,25 @@ func TestProbeTable_XLSX(t *testing.T) {
 		t.Fatalf("got %#v, want %#v", cols, want)
 	}
 }
+
+func TestProbeTable_XLS_Fallback(t *testing.T) {
+	svc := &DocumentService{}
+	cols, err := svc.ProbeTable(strings.NewReader("fake xls binary"), "data.xls")
+	if err == nil {
+		t.Fatalf("expected error for binary xls probe, got cols: %v", cols)
+	}
+	if !strings.Contains(err.Error(), "binary xls") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestProbeTable_UnsupportedFormat(t *testing.T) {
+	svc := &DocumentService{}
+	cols, err := svc.ProbeTable(strings.NewReader("pdf content"), "doc.pdf")
+	if err == nil {
+		t.Fatalf("expected error for pdf probe, got cols: %v", cols)
+	}
+	if !strings.Contains(err.Error(), "unsupported table format") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}

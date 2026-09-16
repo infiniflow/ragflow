@@ -193,7 +193,16 @@ async def probe_table():
         return get_error_argument_result("No file provided")
 
     filename = (file.filename or "").lower()
-    content = file.read()
+    max_text_probe_bytes = 1024 * 1024  # 1MB is sufficient for table header discovery
+    max_excel_probe_bytes = 32 * 1024 * 1024  # 32MB safety limit for Excel archives
+
+    if filename.endswith((".csv", ".tsv", ".txt")):
+        content = file.read(max_text_probe_bytes)
+    elif filename.endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
+        content = file.read(max_excel_probe_bytes)
+    else:
+        return get_error_argument_result(f"Unsupported or binary table format: {filename}")
+
     if not content:
         return get_result(data={"columns": [], "total_columns": 0})
 

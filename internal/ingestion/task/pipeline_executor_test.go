@@ -18,6 +18,7 @@ import (
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	documentpkg "ragflow/internal/service/document"
 )
 
 // =============================================================================
@@ -1160,7 +1161,7 @@ func TestSyncTableColumnNames_PersistsOnlyOnDocument(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	if err := saveDocumentTableColumns(t.Context(), doc.ID, []string{"Name", "City"}); err != nil {
+	if err := documentpkg.NewDocumentService().SaveDocumentTableColumns(t.Context(), doc.ID, []string{"Name", "City"}); err != nil {
 		t.Fatalf("sync discovered columns: %v", err)
 	}
 
@@ -1228,7 +1229,7 @@ func TestProcessOutput_PersistsDiscoveredColumnsFromPayload(t *testing.T) {
 	if !reflect.DeepEqual(res.DiscoveredColumns, wantNames) {
 		t.Fatalf("res.DiscoveredColumns = %#v, want %#v", res.DiscoveredColumns, wantNames)
 	}
-	if err := saveDocumentTableColumns(t.Context(), doc.ID, res.DiscoveredColumns); err != nil {
+	if err := documentpkg.NewDocumentService().SaveDocumentTableColumns(t.Context(), doc.ID, res.DiscoveredColumns); err != nil {
 		t.Fatalf("saveDocumentTableColumns: %v", err)
 	}
 	persisted, err := dao.NewDocumentDAO().GetByID(t.Context(), dao.DB, doc.ID)
@@ -1364,7 +1365,7 @@ func TestProcessOutput_SyncsFieldMapToKB(t *testing.T) {
 		t.Errorf("indexing-only column internal_seq must NOT be in FieldMapUpdates, got %v", res.FieldMapUpdates["internal_seq"])
 	}
 
-	if err := saveKBTableFieldMap(t.Context(), kb.ID, res.FieldMapUpdates); err != nil {
+	if err := documentpkg.NewDocumentService().SaveKBTableFieldMap(t.Context(), kb.ID, res.FieldMapUpdates); err != nil {
 		t.Fatalf("saveKBTableFieldMap: %v", err)
 	}
 

@@ -38,7 +38,6 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
-	documentpkg "ragflow/internal/service/document"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -1363,10 +1362,6 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 	return inputs
 }
 
-func saveDocumentTableColumns(ctx context.Context, docID string, newNames []string) error {
-	return documentpkg.NewDocumentService().SaveDocumentTableColumns(ctx, docID, newNames)
-}
-
 // tableColumnNamesFromPayload extracts the parser-discovered column names from
 // the terminal pipeline payload. The parser publishes them on its file
 // metadata (file.table_column_names); the chunker and tokenizer forward the
@@ -1393,20 +1388,4 @@ func tableColumnNamesFromPayload(pipelineOutput map[string]any) []string {
 	default:
 		return nil
 	}
-}
-
-func syncTableFieldMapToKB(ctx context.Context, kbID string, names []string, parserConfig map[string]interface{}) error {
-	profile := indexdoc.ResolveTableProfile(parserConfig)
-	if profile == nil {
-		profile = entity.NewTableProfile(entity.TableColumnModeAuto)
-	}
-	fieldMap := profile.BuildFieldMap(names)
-	if len(fieldMap) == 0 {
-		return nil
-	}
-	return saveKBTableFieldMap(ctx, kbID, fieldMap)
-}
-
-func saveKBTableFieldMap(ctx context.Context, kbID string, newFieldMap map[string]interface{}) error {
-	return documentpkg.NewDocumentService().SaveKBTableFieldMap(ctx, kbID, newFieldMap)
 }

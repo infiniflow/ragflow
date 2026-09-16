@@ -28,19 +28,23 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// ProbeTable extracts the column names from a table file (CSV, TSV, XLSX, XLS)
+// ProbeTable extracts the column names from a table file (CSV, TSV, XLSX)
 // by reading only the initial rows, skipping leading empty rows, and deduplicating
 // column headers with the exact same logic used during ingestion.
+// Binary XLS (BIFF8) is not supported for streaming probe and returns an error,
+// enabling client-side extraction fallback.
 func (s *DocumentService) ProbeTable(r io.Reader, filename string) ([]string, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".csv", ".tsv", ".txt":
-		return probeCSV(r, ext == ".tsv")
+		// Bound header probing to the first 1MB of text stream.
+		return probeCSV(io.LimitReader(r, 1024*1024), ext == ".tsv")
 	case ".xlsx", ".xlsm", ".xltx", ".xltm":
 		return probeXLSX(r)
+	case ".xls":
+		return nil, fmt.Errorf("server probe does not support binary xls format: fallback to client probe")
 	default:
-		// Try CSV first
-		return probeCSV(r, false)
+		return nil, fmt.Errorf("unsupported table format: %s", ext)
 	}
 }
 
