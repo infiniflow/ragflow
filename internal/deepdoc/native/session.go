@@ -20,9 +20,18 @@ import (
 	"sync"
 
 	ort "github.com/infiniflow/onnxruntime_go"
-
-	"ragflow/internal/deepdoc/runtimeconfig"
 )
+
+// intraOpThreads is the intra-op thread count every session is opened with.
+//
+// ONNX Runtime gives each session its own intra-op thread pool (the C API
+// never switches a session onto a shared/global pool), so the threads DeepDoc
+// inference occupies in this process are intraOpThreads × the number of
+// concurrently running sessions. Pinning it to 1 keeps every Run to a single
+// thread, which is what makes the process ceiling a plain concurrency budget:
+// the capacity registered in inference_limit.go bounds how many Runs may be in
+// flight, and each of them costs exactly one thread.
+const intraOpThreads = 1
 
 var (
 	ortOnce    sync.Once
@@ -66,13 +75,6 @@ func InitORT() error {
 // decide whether it can serve, degrading to an empty analyzer otherwise.
 func Initialized() bool { return ortReady }
 
-// defaultIntraOpThreads returns the thread count for ORT inference.
-// The default shares available CPUs across concurrent inference calls and can
-// be overridden via DEEPDOC_ORT_NUM_THREADS.
-func defaultIntraOpThreads() int {
-	return runtimeconfig.ORTThreads()
-}
-
 // session loads one ONNX model and runs single-input/single-output inference.
 type session struct {
 	inName  string
@@ -88,23 +90,12 @@ type session struct {
 }
 
 // NewSession opens modelPath. inShape/outShape describe the fixed tensor
-// dimensions; outSize is the total element count of the output tensor.
-// intraOpThreads controls ONNX Runtime's intra-op parallelism. Callers typically
-// pass defaultIntraOpThreads() (backed by runtimeconfig.ORTThreads()) to share
-// available CPUs across concurrent inferences and honor DEEPDOC_ORT_NUM_THREADS.
-//
-// The DB text detector is currently pinned to 1 (single-threaded). NOTE: the
-// historical rationale for this — that a multi-threaded Run would leave ONNX
-// Runtime worker threads settling while the postprocess's OpenCV findContours
-// ran its parallel_for_ and under-ran — does NOT apply to this pure-Go port.
-// Here the postprocess (hand-rolled findContours / boxScoreFast / fillPoly) is
-// fully synchronous and only runs after RunWithOptions returns, so there is no
-// thread competition with the detector. The pin is preserved as-is because the
-// det pred map was verified at intraOpThreads=1 (mean|Δ|≈4e-5 vs the Python
-// reference); flipping it to defaultIntraOpThreads() must be re-confirmed on
-// the det integration fixtures before landing, since the reduction order differs.
-// InitORT must have been called first.
-func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64, intraOpThreads int) (*session, error) {
+// dimensions; outSize is the total element count of the output tensor. The
+// session runs intraOpThreads intra-op threads (see the constant): one thread
+// per Run, with the process-wide ceiling owned by the inference budget the
+// process owner registers (see inference_limit.go). InitORT must have been
+// called first.
+func NewSession(modelPath, inName string, inShape []int64, outName string, outShape []int64) (*session, error) {
 	in := make([]float32, prod(inShape))
 	out := make([]float32, prod(outShape))
 	inT, err := ort.NewTensor(ort.NewShape(inShape...), in)
@@ -122,10 +113,9 @@ func NewSession(modelPath, inName string, inShape []int64, outName string, outSh
 		outT.Destroy()
 		return nil, err
 	}
-	// intraOpThreads controls intra-op parallelism (callers typically pass
-	// defaultIntraOpThreads()); the DB detector passes 1, preserved as-is for
-	// verified det parity (see NewSession doc above — the old findContours/
-	// parallel_for_ rationale does not apply to this pure-Go port).
+	// One intra-op thread per session: the session's Runs then cost one thread
+	// each, so the process-wide inference ceiling is exactly the number of
+	// concurrent Runs the caller admits (see the intraOpThreads constant).
 	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
 		opts.Destroy()
 		inT.Destroy()

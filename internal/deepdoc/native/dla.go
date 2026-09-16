@@ -57,11 +57,9 @@ var (
 // RunDLA runs layout detection on a page image.
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
-	// Uses defaultIntraOpThreads() (backed by runtimeconfig.ORTThreads()) to share
-	// available CPUs across concurrent inferences and honor DEEPDOC_ORT_NUM_THREADS.
-	sess, release, err := getModelSession(filepath.Join(modelDir, "layout.ort"), "images",
+	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "layout.ort"), "images",
 		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0",
-		[]int64{1, dlaMaxBoxes, 6}, defaultIntraOpThreads())
+		[]int64{1, dlaMaxBoxes, 6})
 	if err != nil {
 		return DLAResult{}, err
 	}

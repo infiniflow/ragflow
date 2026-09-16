@@ -7,18 +7,23 @@ import (
 	"sync"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/runtimeconfig"
 	"ragflow/internal/utility"
 )
 
-// ── Internal concurrency guards ──────────────────────────────────────────
+// ── Process inference budget ─────────────────────────────────────────────
 //
-// Real page parallelism exposes the parser to multiplicative DeepDoc
-// inference fan-out (DLA + TSR per table region + OCR per region).
-// deepInfLimiter (deepdoc inference limiter) bounds the worst-case
-// concurrent inference work a single document can drive. It is
-// parser-owned, not user-configurable, so callers do not have to reason
-// about the knob.
+// Real page parallelism exposes the parser to multiplicative DeepDoc inference
+// fan-out (DLA + TSR per table region + OCR per region). Every ONNX session runs
+// single-threaded (see the intraOpThreads constant in the native package), so the
+// threads DeepDoc inference occupies in this process are exactly the number of
+// Runs in flight at once — one number to bound.
+//
+// That number is decided here, by the caller: DeepDocConcurrency() is this
+// process's share of the CPUs, and it is (a) registered with the native gate
+// every inference call passes through (native.SetInferenceLimit, called by the
+// server's backend wiring) and (b) used to size the page worker pool. It is
+// deliberately not user-configurable, so callers never have to reason about the
+// knob.
 //
 // Native PDFium access (RenderPage / ExtractChars / PageSize / outlines)
 // is serialized by a process-wide mutex in package pdfsync, shared by
@@ -27,49 +32,23 @@ import (
 // mutex (not a per-Parser limiter) is the correct guard. See
 // pdfsync/pdfsync.go.
 
-// deepInfLimiter bounds concurrent DeepDoc (deepdoc) inference calls emitted
-// by per-page workers. acquire blocks until a slot is available or the
-// context is cancelled; release must be called in a defer.
-type deepInfLimiter struct {
-	sem chan struct{}
+// deepdocInferenceCPUShare is the share of the process's CPUs DeepDoc
+// inference may occupy. The remainder is headroom for the Go runtime, PDFium,
+// and I/O sharing the same cores.
+const deepdocInferenceCPUShare = 0.8
+
+// DeepDocConcurrency returns how many DeepDoc ONNX Runs this process may have in
+// flight at once — its inference budget. Sessions run single-threaded, so this
+// is also the number of threads inference occupies.
+//
+// The share is taken from GOMAXPROCS, not runtime.NumCPU: GOMAXPROCS is what
+// the process is actually allowed to use (it honours a cgroup CPU quota), while
+// NumCPU reports the host's cores inside a container.
+func DeepDocConcurrency() int {
+	return max(1, int(deepdocInferenceCPUShare*float64(runtime.GOMAXPROCS(0))))
 }
 
-func newdeepInfLimiter(capacity int) *deepInfLimiter {
-	return &deepInfLimiter{sem: make(chan struct{}, capacity)}
-}
-
-var processInferenceLimiter = newdeepInfLimiter(runtimeconfig.InferenceConcurrency())
-
-func (l *deepInfLimiter) acquire(ctx context.Context) error {
-	if l == nil {
-		return nil
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case l.sem <- struct{}{}:
-		return nil
-	}
-}
-
-func (l *deepInfLimiter) release() {
-	if l == nil {
-		return
-	}
-	<-l.sem
-}
-
-// withSlot acquires a slot, runs fn, and releases the slot. fn's error
-// is propagated unchanged.
-func (l *deepInfLimiter) withSlot(ctx context.Context, fn func() error) error {
-	if err := l.acquire(ctx); err != nil {
-		return err
-	}
-	defer l.release()
-	return fn()
-}
-
-// ── Parser-owned limiter accessors ────────────────────────────────────────
+// ── Page worker pool ─────────────────────────────────────────────────────
 
 // pageTask holds the per-page work handed to the shared worker pool.
 type pageTask struct {
@@ -87,8 +66,11 @@ var (
 	pagePool     *utility.WorkerPool[pageTask, pageResult]
 )
 
+// defaultPageWorkerCount sizes the shared page worker pool from the process
+// inference budget: workers beyond that budget only queue rendered bitmaps in
+// memory while they wait for an inference slot.
 func defaultPageWorkerCount() int {
-	return min(runtime.GOMAXPROCS(0), runtimeconfig.InferenceConcurrency()*2)
+	return min(runtime.GOMAXPROCS(0), DeepDocConcurrency())
 }
 
 func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
@@ -116,14 +98,12 @@ func SetPageWorkerPoolSize(workers int) {
 	parserPageWorkerPool().Resize(workers)
 }
 
-// limiters returns the process-wide DeepDoc inference limiter. Sharing one
-// budget across parsers prevents concurrent documents from multiplying the
-// number of ONNX calls competing for the same CPUs.
-func (p *Parser) limiters() *deepInfLimiter {
-	return processInferenceLimiter
-}
-
 // ── Wrapped calls used by the parser pipeline ─────────────────────────────
+//
+// These wrappers guard health and shape, not the process inference budget: that
+// budget is enforced inside the native backend, at the one boundary every ONNX
+// Run passes through (see native.inference_limit.go), so a call site cannot
+// escape it by not going through a wrapper.
 
 // renderPageToImage renders a page at the default DLA DPI. Native PDFium
 // access inside the engine is serialized by the process-wide pdfsync.Mu
@@ -138,82 +118,40 @@ func (p *Parser) renderAtDPI(ctx context.Context, eng pdf.PDFEngine, pageNum int
 	return eng.RenderPageImage(pageNum, dpi)
 }
 
-// inferDLA acquires the inference limiter slot before invoking the
-// per-page DLA call. Page workers and enrichOnePageWithDeepDoc callers
-// route through this wrapper so DLA fan-out cannot overwhelm the
-// DeepDoc service independently of the page worker pool size.
+// inferDLA invokes the per-page DLA call for a healthy analyzer. Page workers
+// and enrichOnePageWithDeepDoc callers route through this wrapper so an
+// unavailable analyzer degrades to "no regions" instead of an error.
 func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg image.Image) ([]pdf.DLARegion, error) {
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
-	var regions []pdf.DLARegion
-	err := p.limiters().withSlot(ctx, func() error {
-		r, callErr := doc.DLA(ctx, pageImg)
-		if callErr != nil {
-			return callErr
-		}
-		regions = r
-		return nil
-	})
-	return regions, err
+	return doc.DLA(ctx, pageImg)
 }
 
-// inferTSR acquires the inference limiter slot before invoking TSR for
-// a single cropped table region. TSR can be called once per detected
-// DLA table region, so without this wrapper the worst-case
-// (DlaRegion × pool worker count) fan-out could overwhelm the service.
+// inferTSR invokes TSR for a single cropped table region.
 func (p *Parser) inferTSR(ctx context.Context, tb pdf.TableBuilder, cropped image.Image) ([]pdf.TSRCell, error) {
 	if tb == nil {
 		return nil, nil
 	}
-	var cells []pdf.TSRCell
-	err := p.limiters().withSlot(ctx, func() error {
-		c, callErr := tb.DetectCells(ctx, cropped)
-		if callErr != nil {
-			return callErr
-		}
-		cells = c
-		return nil
-	})
-	return cells, err
+	return tb.DetectCells(ctx, cropped)
 }
 
-// inferOCRDetect routes doc.OCRDetect through the inference limiter.
-// ocrMergeChars and ocrDetectAndRecognize callers should funnel
-// through this helper.
+// inferOCRDetect invokes OCR detection for a healthy analyzer. ocrMergeChars and
+// ocrDetectAndRecognize callers funnel through this helper.
 func (p *Parser) inferOCRDetect(ctx context.Context, doc pdf.DocAnalyzer, pageImg image.Image) ([]pdf.OCRBox, error) {
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
-	var boxes []pdf.OCRBox
-	err := p.limiters().withSlot(ctx, func() error {
-		b, callErr := doc.OCRDetect(ctx, pageImg)
-		if callErr != nil {
-			return callErr
-		}
-		boxes = b
-		return nil
-	})
-	return boxes, err
+	return doc.OCRDetect(ctx, pageImg)
 }
 
-// inferOCRRecognize routes doc.OCRRecognize through the inference
-// limiter. Per-region OCR fallback paths (buildTextBoxes) should use this
-// wrapper so the per-region fan-out is bounded.
+// inferOCRRecognize invokes OCR recognition for a healthy analyzer.
+// Per-region OCR fallback paths (buildTextBoxes) use this wrapper.
 func (p *Parser) inferOCRRecognize(ctx context.Context, doc pdf.DocAnalyzer, cropped image.Image) ([]pdf.OCRText, error) {
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
-	var texts []pdf.OCRText
-	err := p.limiters().withSlot(ctx, func() error {
-		t, callErr := doc.OCRRecognize(ctx, cropped)
-		if callErr != nil {
-			return callErr
-		}
-		texts = t
-		return nil
-	})
-	return texts, err
+	return doc.OCRRecognize(ctx, cropped)
 }
 
 // batchRecognizer is an OPTIONAL capability a pdf.DocAnalyzer may implement to
@@ -229,11 +167,11 @@ type batchRecognizer interface {
 	OCRRecognizeBatch(ctx context.Context, imgs []image.Image) ([][]pdf.OCRText, error)
 }
 
-// inferOCRRecognizeBatch routes a batch of crops through the inference limiter
-// in a single slot. It is only safe to call after a type assertion confirms
-// doc implements batchRecognizer. The whole batch consumes one limiter slot
-// (instead of one per crop), which is both correct (one ONNX Run) and a
-// throughput win. An empty slice returns nil without touching the analyzer.
+// inferOCRRecognizeBatch recognizes a batch of crops in one call. It is only
+// safe to call after a type assertion confirms doc implements batchRecognizer.
+// The whole batch is a single ONNX Run, so it costs the process budget one
+// inference slot rather than one per crop — a throughput win as well. An empty
+// slice returns nil without touching the analyzer.
 func (p *Parser) inferOCRRecognizeBatch(ctx context.Context, doc pdf.DocAnalyzer, crops []image.Image) ([][]pdf.OCRText, error) {
 	br, ok := doc.(batchRecognizer)
 	if !ok || len(crops) == 0 {
@@ -242,16 +180,7 @@ func (p *Parser) inferOCRRecognizeBatch(ctx context.Context, doc pdf.DocAnalyzer
 	if doc == nil || !doc.Health() {
 		return nil, nil
 	}
-	var results [][]pdf.OCRText
-	err := p.limiters().withSlot(ctx, func() error {
-		r, callErr := br.OCRRecognizeBatch(ctx, crops)
-		if callErr != nil {
-			return callErr
-		}
-		results = r
-		return nil
-	})
-	return results, err
+	return br.OCRRecognizeBatch(ctx, crops)
 }
 
 // docSupportsBatchOCR reports whether doc implements the optional batched OCR

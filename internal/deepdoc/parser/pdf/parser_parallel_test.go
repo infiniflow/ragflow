@@ -8,11 +8,11 @@ import (
 	"image"
 	"image/png"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/runtimeconfig"
 )
 
 type recordingAnalyzer struct {
@@ -90,19 +90,19 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	}
 }
 
-func TestParsersShareInferenceLimiter(t *testing.T) {
-	first := NewParser(pdf.DefaultParserConfig())
-	second := NewParser(pdf.DefaultParserConfig())
-
-	if first.limiters() != second.limiters() {
-		t.Fatal("parsers have independent inference limiters; process concurrency is unbounded")
+func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
+	if got, budget := defaultPageWorkerCount(), DeepDocConcurrency(); got > budget {
+		t.Fatalf("got %d page workers, want at most %d (process inference budget)", got, budget)
 	}
 }
 
-func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
-	maxUsefulWorkers := runtimeconfig.InferenceConcurrency() * 2
-	if got := defaultPageWorkerCount(); got > maxUsefulWorkers {
-		t.Fatalf("got %d page workers, want at most %d", got, maxUsefulWorkers)
+// TestDeepDocConcurrencyShare pins the process budget rule: DeepDoc inference
+// may have floor(80% of the CPUs available to the process) Runs in flight.
+func TestDeepDocConcurrencyShare(t *testing.T) {
+	want := int(deepdocInferenceCPUShare * float64(runtime.GOMAXPROCS(0)))
+	if got := DeepDocConcurrency(); got != max(1, want) {
+		t.Fatalf("got %d concurrent Runs, want %d (GOMAXPROCS=%d)",
+			got, max(1, want), runtime.GOMAXPROCS(0))
 	}
 }
 
