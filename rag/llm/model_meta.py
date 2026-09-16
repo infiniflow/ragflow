@@ -1192,12 +1192,64 @@ class CheaperInference(OpenAIAPICompatible):
 
     ``conf/models/cheaperinference.json`` pins the catalog the gateway
     documents, which is what the model pickers show. This lister covers the
-    on-demand refresh: it reads the gateway's own ``/v1/models`` endpoint
-    (inherited behavior) so routes added after this file shipped are still
-    discoverable against the tenant's own key.
+    on-demand refresh: it reads the gateway's own ``/v1/models`` endpoint so
+    routes added after this file shipped are still discoverable against the
+    tenant's own key.
+
+    The listing is richer than the OpenAI shape the parent assumes: each entry
+    names the endpoint that serves it, its modality and its own capability
+    flags. The parent infers model types from the model id, which would file
+    the gateway's image-generation and video routes as chat models and would
+    miss image input on every id that carries no ``vl``/``vision`` hint, so the
+    entry's own fields are read instead. The endpoint publishes no tool-calling
+    flag, so ``is_tools`` follows the pinned catalog and is set for every chat
+    model.
     """
 
     _FACTORY_NAME = "Cheaper Inference"
+
+    _CHAT_ENDPOINT = "/v1/chat/completions"
+    _CHAT_MODALITY = "text"
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+
+            model_name = model.get("id") or model.get("name")
+            if not model_name:
+                continue
+
+            endpoint = model.get("endpoint")
+            if endpoint and endpoint != self._CHAT_ENDPOINT:
+                continue
+            modality = model.get("type")
+            if modality and modality != self._CHAT_MODALITY:
+                continue
+
+            capabilities = model.get("capabilities") or {}
+            model_types = [LLMType.CHAT.value]
+            if capabilities.get("vision"):
+                model_types.append(LLMType.VISION.value)
+            features = ["is_tools"]
+            if capabilities.get("reasoning"):
+                features.append("thinking")
+
+            model_list.append(
+                {
+                    "name": model_name,
+                    "model_types": model_types,
+                    "features": features,
+                    "max_tokens": model.get("context_length") or 8192,
+                }
+            )
+
+        return model_list
 
 
 class DaoXE(OpenAIAPICompatible):
