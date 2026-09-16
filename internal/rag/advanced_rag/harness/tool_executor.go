@@ -36,6 +36,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/service/nav"
@@ -132,15 +134,95 @@ func (e *searchExecutor) RunPattern(ctx context.Context, pattern string) []map[s
 // landed are classified, not errored: they report MISS (the tool is valid, this
 // call reached nothing) so the model falls back to a different tool instead of
 // stalling.
+//
+// One tool step is reported as its two halves: the invocation before dispatch
+// and the outcome after it, each to the developer log AND as a step (think text +
+// structured event). Python logs only the invocation (tool_decorator.py:311) and
+// hands the raw payload to the model, which leaves the visible trace one-sided —
+// a call that reached nothing reads exactly like one that found the answer, and
+// the reader cannot tell which evidence the answer was built from.
 func (e *searchExecutor) Execute(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
+	logger := e.deps.Logger
+	renderedArgs := RenderToolArgs(args)
 	// Mirror Python rag/llm/tool_decorator.py:tool "[Function tool] Running the
-	// {name} tool with: {args}", one of the three namespaces Python's
-	// _SCOPED_PREFIXES forwarded into the think block. Python emitted it from a
-	// root-logging handler; Go has no root logger, so it is logged through the
-	// wrapped deps.Logger, which thinkLogger forwards to the think block.
-	if logger := e.deps.Logger; logger != nil && name != "" {
-		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderToolArgs(args))
+	// {name} tool with: {args}". The log line and the step below are the same
+	// call site on purpose: a tool step is a step because this method says so,
+	// not because a tagged line matched a pattern.
+	//
+	// The two projections then part: the log and the event's Args keep the argument
+	// object Python logs and a developer greps, while the step reports the query
+	// (ToolCallLine) — see there for why.
+	if logger != nil && name != "" {
+		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderedArgs)
 	}
+	if name != "" {
+		StepsFrom(ctx).Emit(ThinkEvent{
+			Kind:    ThinkKindToolCall,
+			Stage:   thinkToolStage,
+			Tool:    name,
+			Args:    renderedArgs,
+			Summary: fmt.Sprintf("[%s] %s", thinkToolStage, ToolCallLine(name, args)),
+		})
+	}
+
+	started := time.Now()
+	// The tool's own work reports one level deeper: the search legs it runs (and
+	// anything they run) belong to the call line above, not to the caller's level.
+	// The result line below stays at the OUTER depth — it closes the call line, so
+	// it is a sibling of it, not a child.
+	outcome, err := e.dispatch(Nested(ctx), name, args)
+	// One sentence template, two labels: the query names the call for both
+	// audiences, and the fallback for a document-scoped call (no query argument)
+	// exists only on the developer side — the think copy says nothing rather than
+	// print an id a reader cannot use.
+	label := ArgsLabel(args)
+	human := renderToolOutcome(name, label, outcome, err)
+	dev := human
+	if label == "" {
+		if devLabel := docIDLabel(args); devLabel != "" {
+			dev = renderToolOutcome(name, devLabel, outcome, err)
+		}
+	}
+	if logger != nil && name != "" {
+		logger.Printf("[Function tool] %s", dev)
+	}
+	if name != "" {
+		status := outcome.Status
+		if err != nil && status == "" {
+			// A transport failure is an error even when the executor returned a
+			// zero ToolOutcome (its contract is to set one; this keeps a client
+			// from seeing an unset status).
+			status = StatusError
+		}
+		cause := outcome.Diagnostic
+		if cause == "" && err != nil {
+			cause = err.Error()
+		}
+		StepsFrom(ctx).Emit(ThinkEvent{
+			Kind:       ThinkKindToolResult,
+			Stage:      thinkToolStage,
+			Tool:       name,
+			Args:       renderedArgs,
+			Status:     status,
+			Reason:     outcome.Reason,
+			Cause:      cause,
+			Results:    len(outcome.Payload),
+			Documents:  len(payloadDocIDs(outcome.Payload)),
+			Sources:    eventSources(outcome, ThinkMaxSources),
+			DurationMS: time.Since(started).Milliseconds(),
+			Summary:    fmt.Sprintf("[%s] %s", thinkToolStage, human),
+		})
+	}
+	return outcome, err
+}
+
+// thinkToolStage is the stage every tool step is reported under. The two
+// sentences below are logged AND reported as steps here, so no other producer
+// synthesizes a stage event for them.
+const thinkToolStage = "Function tool"
+
+// dispatch routes one tool call to its implementation.
+func (e *searchExecutor) dispatch(ctx context.Context, name string, args map[string]any) (ToolOutcome, error) {
 	switch name {
 	case "retrieve", "search_chunks", "grep_search", "grep_chunks":
 		return e.search(ctx, name, args)
@@ -169,24 +251,369 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 			"note": fmt.Sprintf("%s is not wired in this deployment yet. Use retrieve, search_chunks, navigate_tree or navigate_structure.", name),
 		}},
 		Status:  StatusMiss,
-		Reason:  ReasonNoDoc,
+		Reason:  ReasonUnwired,
 		Metrics: map[string]any{},
 	}, nil
 }
 
-// renderToolArgs renders a tool's arguments for the "[Function tool]" think-log
-// line. Python interpolated the raw args dict; Go marshals to JSON so nested
-// values (scopes, tag maps) stay readable. Empty args render as "{}" to match
-// Python's look rather than an empty string.
-func renderToolArgs(args map[string]any) string {
+// RenderToolArgs renders a tool's arguments for the "[Function tool]" think-log
+// line and the event's Args field. Python interpolated the raw args dict; Go
+// marshals to JSON so nested values (scopes, tag maps) stay readable. Empty args
+// render as "{}" to match Python's look rather than an empty string.
+//
+// String values are capped (capForThink): this field is rendered for display, and
+// one uncapped slot-evidence query turns a single call into a paragraph repeated
+// on every line of its round.
+//
+// Exported because the outer react loop (advanced_rag.outerReactSession) logs the
+// same line for the tools it dispatches itself (rag / summarize_document).
+func RenderToolArgs(args map[string]any) string {
 	if len(args) == 0 {
 		return "{}"
 	}
-	b, err := json.Marshal(args)
+	b, err := json.Marshal(capArgs(args))
 	if err != nil {
 		return "{}"
 	}
 	return string(b)
+}
+
+// QueryLabel renders a tool call's query argument(s) as bare quoted text
+// ("\"曹操是谁\"" or "\"曹操的逝世日期\", \"曹操是谁\""), or "" when the call carries
+// none. It is the ONE place the query-ish keys are listed, so a tool that renames
+// its question field cannot make the think block and the result labels disagree
+// about which calls have a query.
+func QueryLabel(args map[string]any) string {
+	for _, key := range []string{"query", "queries", "question"} {
+		if label := quoteQueries(args[key]); label != "" {
+			return label
+		}
+	}
+	return ""
+}
+
+// ToolCallLine renders the think block's call step for a tool invocation:
+// "Running the retrieve tool with \"曹操是谁\"." — a sentence, not a label.
+//
+// It carries the query and NOTHING else. The arguments the model emitted are a
+// developer's record — document ids, nav hints, kind switches, scope lists — and
+// printing them put raw JSON in front of a reader who only needs to know what was
+// asked. A call with no query names only the tool ("Running the summarize_document
+// tool.") rather than trailing an empty "with" or a document id, and the log keeps
+// the full argument object for the developer who needs to correlate it.
+//
+// No colon after "with": the log line's colon (`with: {json}`, Python
+// tool_decorator.py:311) introduces a dump, and this introduces a name — the
+// sentence reads "running the tool with X". The log keeps its own punctuation.
+//
+// Exported because the outer react loop dispatches its own tools (rag /
+// summarize_document) and reports the same line.
+func ToolCallLine(name string, args map[string]any) string {
+	if q := QueryLabel(args); q != "" {
+		return fmt.Sprintf("Running the %s tool with %s.", name, q)
+	}
+	return fmt.Sprintf("Running the %s tool.", name)
+}
+
+// capArgs returns a copy of args with every string capped, walking the shapes a
+// tool argument actually takes: a string, a list of them (a query list), or a
+// nested object.
+func capArgs(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = capArgValue(v)
+	}
+	return out
+}
+
+// capArgValue caps one argument value, recursing through the container shapes.
+func capArgValue(v any) any {
+	switch val := v.(type) {
+	case string:
+		return capForThink(val)
+	case []string:
+		out := make([]string, len(val))
+		for i, s := range val {
+			out[i] = capForThink(s)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = capArgValue(item)
+		}
+		return out
+	case map[string]any:
+		return capArgs(val)
+	}
+	return v
+}
+
+// renderToolOutcome renders one tool call's result as a sentence for the think
+// block: the outcome status, how many results came back and — for passage-shaped
+// results — how many documents they came from. It closes the "[Function tool]"
+// narration opened by Execute, so one tool step reads as a whole.
+//
+// The sentence names the call's OWN arguments (the caller passes ArgsLabel, or
+// docIDLabel for the developer copy) because a round runs several tool calls
+// concurrently: with fan-out goals in flight, "Running navigate_tree with …" and
+// "The navigate_tree tool returned …" lines interleave, and a result that does not
+// say WHICH query it answers cannot be paired back to the call that produced it —
+// two goals that both returned 1 result from 1 document read identically, which is
+// exactly what a reader must be able to tell apart.
+//
+// The label is the ONLY thing that varies between the two audiences, so the
+// wording above is written once: the same template renders the think sentence and
+// the developer line, and they can never drift.
+//
+// The machine-readable reason is NOT spelled into the sentence. It stays in the
+// tool_result event (Reason/Cause): "no_structure" is a routing token for the
+// session's strike logic, while the sentence says what happened in words and, for
+// failures, carries the producer's own diagnostic via causeSuffix.
+func renderToolOutcome(name, label string, oc ToolOutcome, err error) string {
+	if err != nil {
+		return fmt.Sprintf("The %s tool failed%s: %v.", name, label, err)
+	}
+	results := CountOf(len(oc.Payload), "result")
+	switch oc.Status {
+	case StatusOK:
+		return fmt.Sprintf("The %s tool returned %s%s%s.", name, results, documentSuffix(oc.Payload), label)
+	case StatusRedundant:
+		return fmt.Sprintf("The %s tool returned %s%s, already in the evidence pool.", name, results, label)
+	case StatusMiss:
+		if oc.Reason == ReasonUnwired {
+			return fmt.Sprintf("The %s tool is not wired in this deployment, so nothing ran%s.", name, label)
+		}
+		return fmt.Sprintf("The %s tool matched nothing%s.", name, orForThisQuery(label))
+	case StatusEmpty:
+		if oc.Reason == ReasonNoStructure {
+			return fmt.Sprintf("The %s tool has no compiled structure to read%s%s.", name, label, causeSuffix(oc.Diagnostic))
+		}
+		return fmt.Sprintf("The %s tool found nothing available%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	case StatusPoor:
+		return fmt.Sprintf("The %s tool produced a result too weak to use%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	case StatusError:
+		return fmt.Sprintf("The %s tool could not run%s%s.", name, label, causeSuffix(oc.Diagnostic))
+	}
+	return fmt.Sprintf("The %s tool returned %s%s.", name, results, label)
+}
+
+// ArgsLabel renders a tool call's identifying arguments as a trailing clause
+// (" for \"曹操是谁\""), or "" when the call carries nothing that names it. It is
+// what pairs a result line with its call line: the query (or question) is what
+// distinguishes concurrent calls, and it is also the half a reader understands.
+// Exact pairing stays possible in every case because the tool_result event
+// carries the FULL arguments in Args.
+//
+// A document id is deliberately NOT a fallback here: it names nothing a reader
+// knows. Where a document-scoped call has no query, the human sentence simply
+// goes unlabelled and the developer copy uses docIDLabel.
+func ArgsLabel(args map[string]any) string {
+	if q := QueryLabel(args); q != "" {
+		return " for " + q
+	}
+	return ""
+}
+
+// docIDLabel is the developer-log fallback ArgsLabel refuses: " for document
+// 95a7aee3…" for a call that named a document and nothing else. It rides the log
+// copy of a sentence only (never the think block), so a developer can pair a
+// document-scoped call with the file it touched.
+func docIDLabel(args map[string]any) string {
+	if id, ok := args["doc_id"].(string); ok {
+		if id = strings.TrimSpace(id); id != "" {
+			return " for document " + id
+		}
+	}
+	return ""
+}
+
+// quoteQueries renders a query argument as a quoted label: a single string, or a
+// list of them rendered as a list. Each entry is capped (capForThink) because the
+// slot-research driver searches a paragraph of evidence as its "query". It returns
+// "" when the argument holds no text, so the caller falls back to the next
+// identifying field.
+func quoteQueries(raw any) string {
+	var items []string
+	switch v := raw.(type) {
+	case string:
+		items = []string{v}
+	case []string:
+		items = v
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				items = append(items, s)
+			}
+		}
+	default:
+		return ""
+	}
+	quoted := make([]string, 0, len(items))
+	for _, s := range items {
+		if strings.TrimSpace(s) != "" {
+			quoted = append(quoted, fmt.Sprintf("%q", capForThink(s)))
+		}
+	}
+	if len(quoted) == 0 {
+		return ""
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// orForThisQuery keeps a sentence from ending on a dangling preposition when the
+// call named no query: "matched nothing for \"q\"" once labelled, "matched nothing
+// for this query" otherwise.
+func orForThisQuery(label string) string {
+	if label == "" {
+		return " for this query"
+	}
+	return label
+}
+
+// causeSuffix renders a tool's own failure explanation as a trailing clause.
+// "reason: infra" answers WHICH bucket the failure fell in; this answers what
+// actually happened, which is the part a reader can act on.
+func causeSuffix(diagnostic string) string {
+	if strings.TrimSpace(diagnostic) == "" {
+		return ""
+	}
+	return ": " + diagnostic
+}
+
+// CountOf renders a count with a singular/plural noun ("1 result", "3 results").
+// Shared with the outer react loop's narration (advanced_rag.outerReactSession)
+// so both layers word their "[Function tool]" result lines identically.
+func CountOf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %s", n, pluralOf(noun))
+}
+
+// pluralOf pluralizes the LAST word of noun ("passage" → "passages"), including
+// the consonant+y rule: appending a bare "s" is what printed "3 first-hop querys"
+// and "3 targeted querys" in the trace.
+func pluralOf(noun string) string {
+	if len(noun) >= 2 && noun[len(noun)-1] == 'y' {
+		switch noun[len(noun)-2] {
+		case 'a', 'e', 'i', 'o', 'u':
+		default:
+			return noun[:len(noun)-1] + "ies"
+		}
+	}
+	return noun + "s"
+}
+
+// ThinkLabelMaxRunes caps the piece of ONE argument a step's sentence and a tool
+// call's rendering may carry.
+//
+// A tool's "query" is not always a question: the slot-research driver searches a
+// paragraph of slot evidence, and an uncapped label put the same 200 characters
+// on six lines of a single round (running / matched nothing / locate / searching
+// / returned …) until the round was unreadable. The cap is per VALUE, so the
+// sentence stays a sentence.
+const ThinkLabelMaxRunes = 60
+
+// capForThink caps one string for the think block: rune-safe (it never cuts a
+// character in half) and marked with an ellipsis when it was cut.
+func capForThink(s string) string {
+	if utf8.RuneCountInString(s) <= ThinkLabelMaxRunes {
+		return s
+	}
+	return truncateRunes(s, ThinkLabelMaxRunes) + "…"
+}
+
+// documentSuffix renders " from N document(s)" for the distinct doc ids a
+// payload carries, or "" when it names none (a computed number or a note has no
+// documents to name).
+func documentSuffix(payload []any) string {
+	n := len(payloadDocIDs(payload))
+	if n == 0 {
+		return ""
+	}
+	return " from " + CountOf(n, "document")
+}
+
+// payloadDocIDs lists the distinct documents a payload names, in first-seen
+// order. Retrieval payloads carry one doc id per passage ("doc_id");
+// navigate_tree's routed payload names the documents it routed to as a list
+// ("doc_ids"), which is the only thing that outcome reports about the corpus.
+// The structured event and the human sentence are both built from this, so the
+// count a client shows always matches the count in the sentence.
+func payloadDocIDs(payload []any) []string {
+	seen := make(map[string]struct{}, len(payload))
+	out := make([]string, 0, len(payload))
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, item := range payload {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, _ := m["doc_id"].(string); id != "" {
+			add(id)
+		}
+		for _, id := range payloadStringList(m["doc_ids"]) {
+			add(id)
+		}
+	}
+	return out
+}
+
+// eventSources lists the evidence anchors a tool outcome produced: the chunk ids
+// it admitted, or — for a tool that returns no passages (navigate_tree routes
+// documents, it does not quote them) — the documents it reached. Capped at
+// limit.
+func eventSources(oc ToolOutcome, limit int) []string {
+	seen := make(map[string]struct{}, len(oc.EvidenceIDs))
+	sources := make([]string, 0, len(oc.EvidenceIDs))
+	for _, s := range oc.EvidenceIDs {
+		if s == "" {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		sources = append(sources, s)
+	}
+	if len(sources) == 0 {
+		sources = payloadDocIDs(oc.Payload)
+	}
+	if limit > 0 && len(sources) > limit {
+		sources = sources[:limit]
+	}
+	return sources
+}
+
+// payloadStringList reads a string-list FIELD of a tool payload: the executor
+// builds it as []string, but a payload that made a round trip through a decoded
+// message carries []any. Unlike toolStringList (an ARG reader that also accepts a
+// lone string and coerces scalars), this is a payload read: only real strings
+// count, so a malformed entry is skipped instead of being stringified.
+func payloadStringList(raw any) []string {
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func (e *searchExecutor) fetchFullDocument(ctx context.Context, args map[string]any) (ToolOutcome, error) {
@@ -317,6 +744,9 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 			Payload: []any{},
 			Status:  ReasonStatus(res.EmptyReason),
 			Reason:  res.EmptyReason,
+			// Carry WHY the descent failed: the reason bucket alone ("infra")
+			// leaves a reader with nothing to act on.
+			Diagnostic: res.Diagnostic,
 		}, nil
 	}
 
@@ -359,6 +789,21 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 			TenantID:   tenantID,
 			DocScope:   docScope,
 			TopN:       topN,
+			// page_size here IS the pool (Python passes `pool` positionally as
+			// page_size, dataset_api_service.py:4106-4129), and the retrieval
+			// service refuses `page * page_size > rerank_candidates_count`
+			// (nlp/retrieval.go:126, mirroring rag/nlp/search.py:745). Python
+			// therefore raises the candidate count to the same pool for this
+			// leg (`rerank_candidates_count=pool`); omitting it left the default
+			// 64 against a 256-wide pool, so EVERY nav-tree descent failed with
+			// "rerank_candidates_count(64) must be greater than or equal to
+			// page(1) * page_size(256)" and reported infra.
+			RerankCandidatesCount: topN,
+			// `must_not={"exists": "compile_kwd"}` (_NAV_CHUNK_AGG_EXCLUDE_COMPILED
+			// = True): this leg aggregates ORIGINAL chunks per document, and a
+			// compiled product row would otherwise be attributed to a document
+			// as if it were a passage.
+			ExcludeCompiled: true,
 		})
 		if err != nil {
 			// Surface the failure instead of folding it into an empty result:
@@ -419,7 +864,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 			KbIDs:    e.deps.KbIDs,
 		})
 		if res.EmptyReason == ReasonInfra {
-			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason}, nil
+			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason, Diagnostic: res.Diagnostic}, nil
 		}
 		docIDs = res.DocIDs
 		if len(docIDs) > navTreeMaxDocs {

@@ -1096,8 +1096,13 @@ const (
 // It is a DUAL-CHANNEL search, and the two channels are deliberately different:
 //
 //   - channel A (exact): a keyword BM25 round over a wide pool (top_n=60) whose
-//     hits are then narrowed by the query's own terms — the precision path. A
-//     chunk only survives if it literally contains a query term.
+//     hits are then narrowed by the query's own terms — the precision path. What
+//     narrowing removes is TEXT, not candidates: a hit's body is cut down to the
+//     window around the term, while a chunk that contains no term passes through
+//     UNCHANGED (it was the keyword-only leg that put it in the pool, and
+//     narrow_by_terms has no mandate to second-guess that). Only the total-char
+//     budget drops anything, and it then cuts the tail in list order — never by
+//     relevance.
 //   - channel B (semantic bypass): a dense hybrid round (top_n=30) that
 //     deliberately SKIPS narrowing, so a paraphrase-only hit can still enter the
 //     pool. These are quarantined to a small per-fan-out quota
@@ -1211,7 +1216,12 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	for _, q := range qs {
 		select {
 		case <-ctx.Done():
-			return 0
+			// Cancelled between queries: report what already entered the pool
+			// rather than 0, because the caller narrates this number ("Added N new
+			// passages") and those chunks are in st.KB either way. The retrieval
+			// loop above returns 0 instead only because nothing is admitted that
+			// early.
+			return added
 		default:
 		}
 		if !harness.DatasetHasCompilation(ctx, sd) {
@@ -1449,10 +1459,10 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 	ctx, done := harness.Phase(ctx, "planner")
 	defer done()
 
-	logger.Printf("[Planner] Decomposing the question into first-hop fan-outs...")
 	fanouts := ExpandFanouts(ctx, deps, st.Question)
 	st.Plan = fanouts
 	st.CurrentQueries = append([]string(nil), fanouts...)
+	harness.StepsFrom(ctx).StageLine(logger, "Planner", fanoutSummary(st.Question, fanouts))
 
 	// Build the slot table right after fan-out decomposition so the research
 	// pass is slot-directed (each slot = one unknown to resolve).
@@ -1491,10 +1501,121 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		// First-round prefetch leaves drill slots free.
 		capacity = MaxSnippetPool - DrillReserve
 	}
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopN, capacity)
+	// The opening line brackets the leg lines below: FanoutSearch reports each leg
+	// under its own tag ("[BM25 search]", "[Hybrid search]") and its ONLY other
+	// caller — the query rewriter, further down this file — produces lines that
+	// look identical, so without this step a reader cannot tell which block the
+	// searches belong to. What is searched is said here; what came back is said
+	// after, and neither is repeated.
+	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
+	// The legs report one level deeper: they are what this prefetch runs, not
+	// sibling steps of it.
+	added := FanoutSearch(harness.Nested(callCtx), deps, st, queries, FanoutTopN, capacity)
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
+	// The upfront search is a phase of its own (Python surfaces it as
+	// "[Preliminary search]"): without this step the trace jumps from the plan
+	// straight to round 1, and the passages the pool already held look like they
+	// came from nowhere.
+	step(ctx, logger, "Prefetch", "Added %s to the evidence pool.", harness.CountOf(added, "new passage"))
+}
+
+// slotPrefillSummary renders what the evidence prefill left to research: how many
+// of the plan's slots the pool already answers, and how many still cost an action
+// session.
+//
+// The zero case is reported on purpose. "None of the 5 slots" is exactly what a
+// reader needs when the round then searches queries the upfront prefetch already
+// ran — it says the pooled evidence did not answer those slots, so re-searching
+// them is the pass doing its job rather than repeating work.
+//
+// The number it promises is the number of sessions that will actually RUN, not the
+// number of open slots: a round opens at most slotSessionsPerRound of them and the
+// rest are re-answered from the pooled evidence (BatchFillSlots). Promising the open
+// count ("researching all 6" over six open slots) read as six searches while three
+// ran, which is the one number a reader could not check anywhere else.
+func slotPrefillSummary(prefilled, total, remaining int) string {
+	sessions := min(remaining, slotSessionsPerRound)
+	switch {
+	case prefilled == 0:
+		return fmt.Sprintf("The pooled evidence answers none of the %d slots; opening %s this round.",
+			total, harness.CountOf(sessions, "research session"))
+	case remaining == 0:
+		return fmt.Sprintf("The pooled evidence already answers all %d slots; no session to run.", total)
+	}
+	return fmt.Sprintf("The pooled evidence already answers %d of the %d slots; opening %s for the rest.",
+		prefilled, total, harness.CountOf(sessions, "research session"))
+}
+
+// prefetchSummary renders what the upfront search is about to cover.
+//
+// The plan's decomposition and the queries prefetch runs are DIFFERENT things, and
+// in a high/ultra trace they print one after the other: the queries are the slot
+// table's own first_queries, which the slot-table model writes fresh (the plan's
+// sub-questions are only a HINT in that call, so it may reword them — a plan entry
+// "曹操 生平简介" comes back as the query "曹操 简介"). initialize_state caps them at
+// three; the rest stay on the plan as slots for later rounds. Naming the plan's
+// total here is what keeps "split into 5 sub-questions" followed by "searching 3
+// opening queries" from reading like two sub-questions were dropped.
+//
+// Calling those queries "the plan's sub-questions" claimed a subset relation that
+// does not hold: the two lines then contradicted each other, since the legs below
+// search the model's wording and not the plan's.
+func prefetchSummary(planned, searching int) string {
+	if planned <= searching {
+		return fmt.Sprintf("Searching %s up front.",
+			harness.CountOf(searching, "opening query"))
+	}
+	return fmt.Sprintf("The plan lists %d sub-questions; searching %s up front.",
+		planned, harness.CountOf(searching, "opening query"))
+}
+
+// fanoutSummary renders the planner's decomposition: the sub-questions the
+// question was split into.
+//
+// The step used to announce the decomposition without ever showing it
+// ("Decomposing the question into first-hop fan-outs."), which left "first-hop
+// fan-out" an internal phrase — the sub-questions themselves only surfaced later,
+// mixed into the prefetch legs as search queries. expandFanouts falls back to the
+// question itself when the model will not decompose, and the sentence says so
+// rather than presenting that fallback as a sub-question.
+//
+// "first-hop" is gone from the wording as well: it is fan-out jargon (a reader has
+// no "hop" to count) and these are simply the questions the plan set out to
+// research.
+func fanoutSummary(question string, fanouts []string) string {
+	switch {
+	case len(fanouts) == 0:
+		return "Could not decompose the question; searching it as asked."
+	case len(fanouts) == 1 && fanouts[0] == question:
+		return "The question is already a single searchable sub-question; searching it as asked."
+	}
+	quoted := make([]string, 0, len(fanouts))
+	for _, f := range fanouts {
+		quoted = append(quoted, fmt.Sprintf("%q", f))
+	}
+	return fmt.Sprintf("Split the question into %s to research: %s.",
+		harness.CountOf(len(fanouts), "sub-question"), strings.Join(quoted, ", "))
+}
+
+// ragRoundEndLine renders one research round's outcome: what the round added,
+// what the pool holds now, and what is still open.
+//
+// The last clause is phrased per count — "0 slots still unresolved" reads as a
+// double negative, so the zero case says it outright.
+//
+// It counts SLOTS, not the plan's sub-questions. The two are different numbers in
+// the same block (a 5-sub-question plan builds a 6-slot table), so saying
+// "sub-questions" here made a reader reconcile 5, 3 and 2 as one series — and read
+// a slot backlog as plan coverage.
+func ragRoundEndLine(roundNo, newPassages, pool, unresolved int) string {
+	clause := "and no unresolved slots"
+	if unresolved > 0 {
+		clause = "and " + harness.CountOf(unresolved, "slot") + " still unresolved"
+	}
+	return fmt.Sprintf("Round %d finished: %s added; the pool now holds %s, %s.",
+		roundNo, harness.CountOf(newPassages, "new passage"), harness.CountOf(pool, "passage"), clause)
 }
 
 // ragAgentNode mirrors the `rag_agent` node: one slot research pass.
@@ -1504,19 +1625,21 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 
 	timeLeft := st.RemainingS()
 	if timeLeft < MinRoundHeadroomS {
-		logger.Printf("[RAGAgent] only %.0fs left of the research budget; skipping further passes.", timeLeft)
+		step(ctx, logger, "RAGAgent", "Only %.0f seconds of the research budget are left, so no further research pass will run.", timeLeft)
 		return
 	}
 	roundNo := st.SearchRounds + 1
 	poolBefore := len(st.KB.Chunks)
-	logger.Printf("[RAGAgent] ROUND %d start (search_rounds=%d, time_left=%.0fs, pool=%d chunks)",
-		roundNo, st.SearchRounds, timeLeft, poolBefore)
+	// The round number already says how many passes preceded it (roundNo is
+	// st.SearchRounds+1), so the counter is not repeated here.
+	step(ctx, logger, "RAGAgent", "Round %d begins with %s in the evidence pool; %.0f seconds of research budget left.",
+		roundNo, harness.CountOf(poolBefore, "passage"), timeLeft)
 
 	t := max(20.0, min(PassTimeoutS, timeLeft-25.0))
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
 
-	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t)
+	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t, logger)
 	if res == nil {
 		// "Nothing to do" is still a ROUND, and the round's growth fact belongs to
 		// this round, not the previous one: leaving LastRoundNew alone made the
@@ -1552,8 +1675,8 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// on the state rather than only printed, so the routing decision reads the
 	// same number the log shows.
 	st.LastRoundNew = len(st.KB.Chunks) - poolBefore
-	logger.Printf("[RAGAgent] ROUND %d end (+%d new chunks, pool=%d, unresolved=%d)",
-		roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots))
+	harness.StepsFrom(ctx).StageLine(logger, "RAGAgent",
+		ragRoundEndLine(roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots)))
 }
 
 // draftNode mirrors the `draft` node: the intermediate draft that the
@@ -1574,7 +1697,8 @@ func draftNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log
 		st.KB.PreSummary = draftText
 	}
 	st.Draft = draftText
-	logger.Printf("[Draft] intermediate draft %d chars (evidence=%d chunks)", len(draftText), len(st.KB.Chunks))
+	step(ctx, logger, "Draft", "Drafted an intermediate answer of %d characters from %s.",
+		utf8.RuneCountInString(draftText), harness.CountOf(len(st.KB.Chunks), "passage"))
 }
 
 // scaNode mirrors the `sca` node: the Phase-3 quality-control review.
@@ -1649,7 +1773,8 @@ func scaNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.L
 	} else {
 		st.Verdict = VerdictInsufficient
 	}
-	logger.Printf("[SCA] verdict=%s (confidence=%.2f; view=%d/%d)", st.Verdict, res.Confidence, len(view), len(chunks))
+	step(ctx, logger, "SCA", "Evidence check: %s (confidence %.2f, reviewed %d of %s).",
+		st.Verdict, res.Confidence, len(view), harness.CountOf(len(chunks), "passage"))
 }
 
 // unresolvedClueGaps mirrors Python's gap fallback (action_session...:1114-1128,
@@ -1693,7 +1818,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 		gaps = unresolvedClueGaps(st)
 	}
 	if len(gaps) == 0 {
-		logger.Printf("[QueryRewriter] SCA insufficient but no concrete gap; accepting the draft.")
+		step(ctx, logger, "QueryRewriter", "The evidence check came back insufficient but named no concrete gap; accepting the draft.")
 		st.NoProgress = true
 		return
 	}
@@ -1736,7 +1861,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	}
 	queries = dedupe(queries)
 	if len(queries) == 0 {
-		logger.Printf("[QueryRewriter] no actionable query produced; accepting the draft.")
+		step(ctx, logger, "QueryRewriter", "No actionable query was produced; accepting the draft.")
 		st.NoProgress = true
 		return
 	}
@@ -1753,7 +1878,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
 	// snippets means further full research passes just burn latency.
 	if added == 0 && st.SearchRounds >= 1 {
-		logger.Printf("[QueryRewriter] retrieval saturated (0 new chunks after another insufficient round); stopping iteration.")
+		step(ctx, logger, "QueryRewriter", "Retrieval saturated: another insufficient round added no new passages, so iteration stops.")
 		st.NoProgress = true
 		st.CurrentQueries = queries
 		return
@@ -1802,12 +1927,13 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 		}
 		if promoted > 0 {
 			st.SlotTable.State = slots
-			logger.Printf("[QueryRewriter] decompose: %d gap(s) promoted to slots (depth=%d)", promoted, st.SlotTable.Depth)
+			step(ctx, logger, "QueryRewriter", "Promoted %s to research slots (depth %d).",
+				harness.CountOf(promoted, "gap"), st.SlotTable.Depth)
 		}
 	}
 
-	logger.Printf("[QueryRewriter] insufficient round %d → %d targeted query(s): %v",
-		st.SearchRounds+1, len(queries), queries)
+	step(ctx, logger, "QueryRewriter", "Round %d came back insufficient; rewriting it into %s: %v.",
+		st.SearchRounds+1, harness.CountOf(len(queries), "targeted query"), queries)
 	st.NoProgress = false
 	st.CurrentQueries = queries
 	st.SearchRounds++
@@ -1820,6 +1946,72 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 // (query_rewrite). The answer composition itself (Phase 5 synthesis) is out of
 // scope here — it needs the report prompt templates; the caller reads the
 // approved draft from st.KB.PreSummary.
+// finalizeSummary renders the finalize step's state as a sentence. The two flags
+// used to be printed as `partial=%v empty=%v`: a reader had to know what a
+// "partial" answer and an "empty" result mean before the line said anything.
+//
+// The evidence size is deliberately NOT here. This node decides the state; the
+// compose step that follows reports what the answer is built from — and compose
+// is also the only step on the paths that never reach this node (low mode, the
+// compose fallback), so the count belongs there and saying it here would only
+// repeat it one line later.
+// chunkCount is the pool size for a narration line, tolerant of a nil Kbinfos (a
+// graph that failed before the state was wired still reports Finalize).
+func chunkCount(kb *harness.Kbinfos) int {
+	if kb == nil {
+		return 0
+	}
+	return len(kb.Chunks)
+}
+
+// finalizeSummary renders the finalize step's state as a sentence. The verdict
+// comes first and the evidence it is built from last, so the line that closes the
+// research phase says both: this is the last trace line before the answer is
+// written, and the compose step no longer repeats the count.
+func finalizeSummary(partial, empty bool, chunks int) string {
+	switch {
+	case partial && empty:
+		return "Finalizing a partial answer with no supporting evidence: research exhausted its attempts."
+	case empty:
+		return "Finalizing with no supporting evidence: the answer will say so."
+	case partial:
+		return fmt.Sprintf("Finalizing a partial answer from %s; some gaps remain unanswered.",
+			harness.CountOf(chunks, "passage"))
+	}
+	return fmt.Sprintf("Finalizing a complete answer from %s.", harness.CountOf(chunks, "passage"))
+}
+
+// onOff renders a mode flag the way the sentence reads ("self-check on").
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+// finalizeAnnouncedKey marks a run whose research graph has already reported a
+// [Finalize] step for the composition that follows.
+//
+// It is what keeps the compose kickoff step from being a second copy of the same
+// numbers: the agentic graph's finalize node reports the verdict and the evidence
+// the answer is built from, and the compose right after it would repeat both. The
+// paths with NO such node — the low graph's last node, and every fallback that
+// composes because the graph never reached its finalize — have nothing else saying
+// an answer is being written, so they keep the kickoff step.
+type finalizeAnnouncedKey struct{}
+
+// markFinalizeAnnounced records that [Finalize] has been reported for this run's
+// composition.
+func markFinalizeAnnounced(ctx context.Context) context.Context {
+	return context.WithValue(ctx, finalizeAnnouncedKey{}, true)
+}
+
+// finalizeAnnounced reports whether [Finalize] was reported for this composition.
+func finalizeAnnounced(ctx context.Context) bool {
+	v, _ := ctx.Value(finalizeAnnouncedKey{}).(bool)
+	return v
+}
+
 func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
 	// The member ROLL CALL runs here — after the research, before the answer — because the
 	// write-back is the one step the evidence cannot do for itself: measured (2026-09-16,
@@ -1847,7 +2039,7 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 		st.PartialAnswer = true
 	}
 	st.EmptyResult = len(st.KB.Chunks) == 0
-	logger.Printf("[Finalize] partial=%v empty=%v chunks=%d", st.PartialAnswer, st.EmptyResult, len(st.KB.Chunks))
+	step(ctx, logger, "Finalize", "%s", finalizeSummary(st.PartialAnswer, st.EmptyResult, chunkCount(st.KB)))
 	// formalize_answer — the node itself composes and streams the answer
 	// (_compose_answer_from_evidence); it does not just flag the state.
 	// Python composes with THIS node's state values: partial_answer was set
@@ -1862,7 +2054,10 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 		// the formalize_question node wrote — composing from the outer tool
 		// argument instead collapses the final answer to the first completed
 		// sub-answer of a multi-hop question.
-		deps.Finalize(ctx, st.PartialAnswer, true, st.Question)
+		//
+		// Marked first: this node has just told the reader the verdict and the
+		// evidence, so the compose that follows suppresses its own kickoff step.
+		deps.Finalize(markFinalizeAnnounced(ctx), st.PartialAnswer, true, st.Question)
 	}
 }
 
@@ -3392,7 +3587,7 @@ func logCompletenessWindows(block string) {
 // Unresolved slots are worked concurrently under a semaphore; each session's
 // branches are folded back into the shared table. A nil result means "nothing to
 // do" (all slots already filled).
-func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harness.SessionDeps, question string, st *AgenticState, deadlineLeft float64) *SlotResearchResult {
+func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harness.SessionDeps, question string, st *AgenticState, deadlineLeft float64, logger *log.Logger) *SlotResearchResult {
 	slotTable := st.SlotTable
 	if len(slotTable.State) == 0 {
 		// No planner ran (medium single-pass, or the planner failed): build the
@@ -3416,9 +3611,14 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 	}
 	prefillN := PrefillSlotsFromEvidence(&slotTable, kb)
 	if prefillN > 0 {
-		_LOG.Printf("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefillN)
 		unresolved = slotTable.Unresolved()
 	}
+	// Reported even when the prefill answered NOTHING, and as a step rather than a
+	// log-only diagnostic (Python logs "[SlotResearch] evidence prefill answered %d
+	// slot(s)" only when it answered some): this is the line that explains why a
+	// round searches queries the upfront prefetch already ran — the pooled evidence
+	// did not answer those slots, so each one costs an action session.
+	step(ctx, logger, "RAGAgent", "%s", slotPrefillSummary(prefillN, len(slotTable.State), len(unresolved)))
 
 	// The directions this round works: one per unresolved slot, and — when the
 	// table is already filled — the gaps the REVIEW named.
@@ -3584,7 +3784,10 @@ func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harne
 
 			// Sessions share ONE Toolset; DisableTool mutates it, so the call is
 			// guarded here. The Kbinfos merge happens inside the executor.
-			res := harness.RunActionSession(sessionCtx, deps, d.text, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
+			//
+			// Nested: the session's tool calls (and their search legs) belong to the
+			// research round that launched them.
+			res := harness.RunActionSession(harness.Nested(sessionCtx), deps, d.text, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
 			mu.Lock()
 			results = append(results, outcome{slotID: d.slotID, result: res})
 			mu.Unlock()
@@ -4255,8 +4458,8 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	useFanout := spec.UseFanout
 	scaMaxRounds := spec.SCAMaxRounds
 
-	logger.Printf("[Agentic RAG] Starting research — mode=%s sca=%v fanouts=%v",
-		spec.Label, enableSCA, useFanout)
+	step(ctx, logger, "Agentic RAG", "Starting research in %s mode (self-check %s, question fan-out %s).",
+		spec.Label, onOff(enableSCA), onOff(useFanout))
 
 	// run_agentic_rag — there is NO whole-graph wall clock. Research stays
 	// bounded by the per-node timeouts (bounded / PassTimeoutS / SCATimeoutS…),
@@ -4515,11 +4718,10 @@ func NewAgenticLoop() AgenticLoop {
 			// The terminal composition is Python's formalize_answer node body; it
 			// must reach the graph even though this deps copy is rebuilt here.
 			Finalize: deps.Finalize,
-			// Progress is the caller's per-request sink for engine-stage lines
-			// (Python think_log). Rag already wraps `logger` with thinkLogger so
-			// tagged logger lines reach the think block; the sink itself is only
-			// threaded here for callers that re-wrap or inspect it.
-			Progress: deps.Progress,
+			// Steps is deliberately not copied here: Rag already bound the
+			// caller's reporter on ctx, and every stage and tool reads it from
+			// there (harness.StepsFrom), so a second copy on this rebuilt
+			// RAGTools would be dead weight that could drift.
 		}, req.Question, req.Keywords, 3, deps.Messages)
 
 		// run_agentic_rag — a graph exception is recorded separately from
@@ -4594,6 +4796,40 @@ func graphRecursionLimit(agentic bool, maxLoops int) int {
 	return lowRecursionLimitBase
 }
 
+// formalizeStepLine renders the formalize phase's user-visible step, or "" when
+// there is nothing to report at all.
+//
+// The phase used to announce `Formalized the question into %q` unconditionally,
+// which reads as a rewrite even when Formalize returned the question VERBATIM —
+// the common case: a single-turn run skips the rewrite entirely, and the
+// multi-turn prompt asks for the question unchanged "in most cases".
+//
+// Both outcomes are reported, because either way a reader wants to see the
+// question this turn was actually researched under: unchanged is "kept the
+// question as asked", a rewrite gets the pair — seeing the asked question NEXT TO
+// the searched one is what lets a reader check that a pronoun or an ellipsis was
+// resolved the way they meant. Only a formalize that produced no question at all
+// stays silent. No trailing period: the sentence ends on the quoted question,
+// which carries its own full-width "？".
+func formalizeStepLine(asAsked, standalone string) string {
+	asAsked = strings.TrimSpace(asAsked)
+	standalone = strings.TrimSpace(standalone)
+	if standalone == "" {
+		return ""
+	}
+	if standalone == asAsked {
+		if asAsked == "" {
+			return ""
+		}
+		return fmt.Sprintf("Kept the question as asked: %q", trunc(asAsked, 80))
+	}
+	if asAsked == "" {
+		return fmt.Sprintf("Standalone question for this turn: %q", trunc(standalone, 80))
+	}
+	return fmt.Sprintf("Rewrote the follow-up into a standalone question: %q → %q",
+		trunc(asAsked, 80), trunc(standalone, 80))
+}
+
 // formalizeQuestionNode is Python's formalize_question node of
 // build_agentic_graph. It resolves pronouns and ellipses from the
 // conversation into a standalone question plus search keywords, and arms the
@@ -4603,9 +4839,21 @@ func graphRecursionLimit(agentic bool, maxLoops int) int {
 // Single-turn input costs no LLM call (Formalize returns early), mirroring
 // Python's non-LLM fast path.
 func formalizeQuestionNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	// formalize_question — the budget is armed as the node returns, i.e. after any
-	// formalization work has already happened.
-	st.Deadline = time.Now().Add(time.Duration(TotalBudgetS * float64(time.Second)))
+	// formalize_question — the budget is armed as the node RETURNS, i.e. after any
+	// formalization work has already happened (Python stamps the deadline in this
+	// node's return dict, agentic_rag_graph.py:1061). Arming on ENTRY instead
+	// charged the formalization call — a full rewrite on multi-turn, a keyword
+	// extraction on single-turn — to the research budget, so every downstream
+	// timeout and the MinRoundHeadroomS guard saw a budget short by one LLM call.
+	//
+	// Deferred so that every return path arming it stays impossible to forget:
+	// Python's node has a single return (agentic_rag_graph.py:1041-1062, the
+	// deadline at :1061), so it arms the budget unconditionally — even for an empty
+	// conversation — and a Go early exit must not become the one path that leaves
+	// the graph with no deadline at all.
+	defer func() {
+		st.Deadline = time.Now().Add(time.Duration(TotalBudgetS * float64(time.Second)))
+	}()
 
 	if len(st.Messages) == 0 || deps.Model == nil {
 		return
@@ -4618,8 +4866,11 @@ func formalizeQuestionNode(ctx context.Context, deps RAGTools, st *AgenticState,
 	if kw != "" && st.Keywords == "" {
 		st.Keywords = kw
 	}
-	if logger != nil && q != "" {
-		logger.Printf("[Agentic RAG] formalized the question into %q", trunc(q, 80))
+	if logger != nil {
+		asAsked, _ := transcriptOf(st.Messages)
+		if line := formalizeStepLine(asAsked, q); line != "" {
+			harness.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+		}
 	}
 }
 
@@ -4648,8 +4899,11 @@ func formalizeQuestion(ctx context.Context, deps RAGTools, req *harness.RunReque
 	if kw != "" && req.Keywords == "" {
 		req.Keywords = kw
 	}
-	if logger != nil && q != "" {
-		logger.Printf("[Agentic RAG] formalized the question into %q", trunc(q, 80))
+	if logger != nil {
+		asAsked, _ := transcriptOf(deps.Messages)
+		if line := formalizeStepLine(asAsked, q); line != "" {
+			harness.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+		}
 	}
 }
 
@@ -4696,7 +4950,7 @@ func RunAgenticRAG(ctx context.Context, deps RAGTools, req harness.RunRequest, s
 	// itself failed. An empty result without a failure is not an error: that is
 	// EmptyResponse's job, and overwriting it here would hide the real reason.
 	if resp.GraphFailed && resp.Answer == "" && len(resp.Slots) == 0 {
-		logger.Printf("[Agentic RAG] research failed without producing anything")
+		step(ctx, logger, "Agentic RAG", "Research failed without producing anything; returning the fallback answer.")
 		resp.Answer = graphFailureFallback
 	}
 }
@@ -4866,24 +5120,28 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 	if logger == nil {
 		logger = _LOG
 	}
+	started := time.Now()
 	chunks := []map[string]any{}
 	if kb != nil {
 		chunks = kb.Chunks
 	}
-	note := ""
-	if partial {
-		note = " — partial answer, some gaps remain"
-	} else if abstain {
-		note = " — not enough evidence to answer"
+	// The kickoff step is suppressed when the graph already reported [Finalize]
+	// (finalizeAnnounced): the verdict and the evidence have been said, and a line
+	// repeating their numbers only made the block longer. The paths that have no
+	// [Finalize] — the low graph's last node, every fallback compose — keep it.
+	if !finalizeAnnounced(ctx) {
+		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+			harness.CountOf(len(chunks), "gathered passage"))
 	}
-	logger.Printf("[Composing the answer] Writing the final answer to %q from %d gathered passage(s)%s.",
-		trunc(question, 60), len(chunks), note)
+
+	// The step kept below either way is the no-evidence short circuit: "no model was
+	// called" is a fact no other line carries.
 
 	// 1. No-evidence short circuit.
 	// _compose_answer_from_evidence: no_evidence = abstain or empty_result or not chunks.
 	noEvidence := abstain || emptyResult || len(chunks) == 0
 	if noEvidence && deps.EmptyResponse != "" {
-		logger.Printf("[Composing the answer] No supporting evidence was found; returning the configured empty response without calling the answer model.")
+		step(ctx, logger, "Composing the answer", "No supporting evidence was found, so the configured empty response is returned without calling the model.")
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}
 	}
 	if deps.Model == nil {
@@ -4936,7 +5194,27 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *harness.Kbinfos
 		logger.Printf("[Composing the answer] composition failed: %v", err)
 		return AnswerResult{Answer: answerErrorFallback, Failed: true}
 	}
-	return AnswerResult{Answer: cleanAnswer(reply.Content), Partial: partial}
+	answer := cleanAnswer(reply.Content)
+	logComposeDone(logger, started, answer, len(chunks))
+	return AnswerResult{Answer: answer, Partial: partial}
+}
+
+// logComposeDone records how one compose call ended, for the DEVELOPER log.
+//
+// It is deliberately NOT a step. In the streaming path a compose finishes after
+// the answer has already started streaming, and the chat pipeline drops think
+// lines emitted past that point (its answer_streamed guard, so a thought block
+// never reopens after the answer) — a "composed …" step visible in the
+// non-streaming path but not the streaming one would be worse than none. "how
+// long, how much text" is developer material anyway; the user sees the answer.
+//
+// The count is in RUNES, not bytes: a Chinese answer is two to three times its
+// rune count in bytes, and this number is read as "how much text came out".
+func logComposeDone(logger *log.Logger, started time.Time, answer string, chunks int) {
+	logger.Printf("[Composing the answer] composed %s from %s in %.1fs",
+		harness.CountOf(utf8.RuneCountInString(answer), "char"),
+		harness.CountOf(chunks, "gathered passage"),
+		time.Since(started).Seconds())
 }
 
 // answerTemperature mirrors Python answer_conf's default sampling temperature:
@@ -5108,6 +5386,7 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	if model == nil {
 		return AnswerResult{Answer: "", Failed: true}, nil
 	}
+	started := time.Now()
 	chunks := []map[string]any{}
 	if kb != nil {
 		chunks = kb.Chunks
@@ -5115,15 +5394,11 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	// Same no-evidence rule as the one-shot path (_compose_answer_from_evidence): the prompt must carry
 	// the degradation instruction even when no empty_response short-circuits.
 	noEvidence := emptyResult || len(chunks) == 0
-	// Python _compose_answer_from_evidence:840 — the compose kickoff line. The
-	// streaming path has no separate `abstain` signal (Go threads only
-	// partial/emptyResult), so the abstain note term cannot fire here.
-	note := ""
-	if partial {
-		note = " — partial answer, some gaps remain"
+	// Same gated kickoff step as the one-shot path above (finalizeAnnounced).
+	if !finalizeAnnounced(ctx) {
+		step(ctx, logger, "Composing the answer", "Composing the answer from %s.",
+			harness.CountOf(len(chunks), "gathered passage"))
 	}
-	logger.Printf("[Composing the answer] Writing the final answer to %q from %d gathered passage(s)%s.",
-		trunc(question, 60), len(chunks), note)
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 	if noEvidence && deps.EmptyResponse != "" {
 		return AnswerResult{Answer: deps.EmptyResponse, NoEvidence: true}, nil
@@ -5175,7 +5450,9 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model harness.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	return AnswerResult{Answer: cleanAnswer(reply.Content), Partial: partial}, nil
+	answer := cleanAnswer(reply.Content)
+	logComposeDone(logger, started, answer, len(chunks))
+	return AnswerResult{Answer: answer, Partial: partial}, nil
 }
 
 // composeSystem builds the system prompt, mirroring Python's precedence rules.

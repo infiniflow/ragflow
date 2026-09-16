@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -271,27 +272,54 @@ func TestHybridSearchReturnsEmptyOnBackendError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNarrowOrKeepIsAllOrNothing(t *testing.T) {
+	var lines []string
+	ctx := WithSteps(context.Background(), StepReporter{
+		Text: func(line string) { lines = append(lines, line) },
+	})
+	var logged bytes.Buffer
 	chunks := []map[string]any{
 		{"content": "Culdcept was made by OmiyaSoft."},
 		{"content": "It was released in 1999."},
 	}
 	// Keywords hit -> narrowed subset (the non-matching chunk is dropped).
-	got := NarrowOrKeep(chunks, "culdcept", "test", nil)
+	got := NarrowOrKeep(ctx, chunks, "culdcept", "test", log.New(&logged, "", 0))
 	if len(got) != 1 || !strings.Contains(ChunkTextOf(got[0]), "Culdcept") {
 		t.Errorf("narrowed = %v, want only the matching chunk", got)
+	}
+	// How the filter resized the pool is a developer's diagnostic: it goes to the
+	// log with Python's own wording (text_processing.py:464) and NOT to the think
+	// block, where the leg's result line already reports what came back.
+	if !strings.Contains(logged.String(), "[test] Kept 1 of 2 passage(s) that actually mention the keywords.") {
+		t.Errorf("narrowed log line = %q", logged.String())
+	}
+	if len(lines) != 0 {
+		t.Errorf("narrowing must not reach the think block: %q", strings.Join(lines, "\n"))
 	}
 
 	// No keyword overlap -> ALL chunks kept (this is the whole point: the
 	// retriever already ranked them, and dropping everything produced empty
 	// results and unverified claims).
-	got = NarrowOrKeep(chunks, "zzz-no-match", "test", nil)
+	logged.Reset()
+	got = NarrowOrKeep(ctx, chunks, "zzz-no-match", "test", log.New(&logged, "", 0))
 	if len(got) != len(chunks) {
 		t.Errorf("no-match kept %d, want all %d", len(got), len(chunks))
 	}
+	if !strings.Contains(logged.String(),
+		"[test] Keyword narrowing matched nothing — keeping all 2 retrieved passage(s).") {
+		t.Errorf("no-match log line = %q", logged.String())
+	}
+	if len(lines) != 0 {
+		t.Errorf("the no-match line must not reach the think block either: %q", strings.Join(lines, "\n"))
+	}
 
-	// Empty keywords -> untouched.
-	if got := NarrowOrKeep(chunks, "", "test", nil); len(got) != len(chunks) {
+	// Empty keywords -> untouched, and silent: nothing was narrowed, so there is
+	// nothing to report.
+	logged.Reset()
+	if got := NarrowOrKeep(ctx, chunks, "", "test", log.New(&logged, "", 0)); len(got) != len(chunks) {
 		t.Error("empty keywords must return chunks unchanged")
+	}
+	if logged.Len() != 0 || len(lines) != 0 {
+		t.Errorf("empty keywords must report nothing; log = %q, think = %v", logged.String(), lines)
 	}
 }
 
@@ -605,6 +633,194 @@ func TestGrepSearchDelegatesToBM25(t *testing.T) {
 	}
 	if !req.ExcludeCompiled {
 		t.Error("grep search must exclude compiled rows")
+	}
+}
+
+// TestGrepSearchSearchingLineSplitsAudiences pins the split every leg now makes:
+// the think block says what the leg DOES ("Searching for the exact words …", in the
+// family the other legs use, without the phrase every leg shares — "the knowledge
+// base" — that separates nothing a reader can act on), while the log keeps Python's
+// own phrasing ("Keyword-first locate for …", search.py:418), so a log diff against
+// Python still lines up.
+func TestGrepSearchSearchingLineSplitsAudiences(t *testing.T) {
+	var logged bytes.Buffer
+	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "x"}}})
+	deps.Logger = log.New(&logged, "", 0)
+	var text []string
+	ctx := WithSteps(context.Background(), StepReporter{Text: func(line string) { text = append(text, line) }})
+
+	GrepSearch(ctx, deps, SearchParams{Question: "曹操是谁"})
+
+	think := strings.Join(text, "")
+	if !strings.Contains(think, `[Grep search] Searching for the exact words "曹操是谁".`) {
+		t.Errorf("think text = %q, want the reader's sentence", think)
+	}
+	if strings.Contains(think, "Keyword-first") {
+		t.Errorf("the implementation phrasing must not reach the think block: %q", think)
+	}
+	if !strings.Contains(logged.String(), `[Grep search] Keyword-first locate for "曹操是谁"`) {
+		t.Errorf("log = %q, want Python's line kept verbatim", logged.String())
+	}
+}
+
+// TestSearchLegsShareOneThinkSentenceFamily pins the wording of all five legs'
+// "searching" step in ONE place. They land in a single think block, so they have to
+// scan as one family ("Searching … for \"q\".") while still saying which leg
+// searched — the "[Hybrid search]" prefix is a developer's label, so the difference
+// has to be IN the sentence.
+//
+// "the knowledge base" is deliberately absent from every one of them: all five legs
+// search it, so the phrase distinguishes nothing a reader can act on. The LOG side
+// keeps Python's own wording (including that phrase where Python has it) — pinned by
+// TestGrepSearchSearchingLineSplitsAudiences and the log-diff tests, which is why it
+// is not repeated here.
+func TestSearchLegsShareOneThinkSentenceFamily(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func(ctx context.Context, deps SearchDeps)
+		want string
+	}{
+		{"hybrid", func(ctx context.Context, d SearchDeps) {
+			HybridSearch(ctx, d, SearchParams{Question: "q"})
+		},
+			`[Hybrid search] Searching by meaning and keyword for "q".`},
+		{"vector", func(ctx context.Context, d SearchDeps) {
+			VectorSearch(ctx, d, SearchParams{Question: "q"})
+		},
+			`[Vector search] Searching by meaning for "q".`},
+		{"bm25", func(ctx context.Context, d SearchDeps) {
+			BM25Search(ctx, d, SearchParams{Question: "q"})
+		},
+			`[BM25 search] Searching by keyword for "q".`},
+		{"retrieve", func(ctx context.Context, d SearchDeps) {
+			RetrieveSearch(ctx, d, SearchParams{Question: "q"})
+		},
+			`[Retrieve] Searching for "q".`},
+		{"grep", func(ctx context.Context, d SearchDeps) {
+			GrepSearch(ctx, d, SearchParams{Question: "q"})
+		},
+			`[Grep search] Searching for the exact words "q".`},
+	}
+	for _, tc := range cases {
+		deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "x"}}})
+		// VectorSearch is gated on a configured embedder (Python bm25/vector
+		// asymmetry): without this it returns before reporting anything.
+		deps.HasEmbedder = true
+		var text []string
+		ctx := WithSteps(context.Background(), StepReporter{Text: func(line string) { text = append(text, line) }})
+
+		tc.run(ctx, deps)
+
+		if got := strings.Join(text, ""); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: think = %q, want it to carry %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// captureLeg runs one search leg and returns what each audience saw: the developer
+// log and the think text.
+func captureLeg(chunks []map[string]any, run func(ctx context.Context, deps SearchDeps)) (logged, think string) {
+	var logBuf bytes.Buffer
+	deps, _ := newTestSearchDeps(&stubRetriever{chunks: chunks})
+	deps.Logger = log.New(&logBuf, "", 0)
+	// VectorSearch is gated on a configured embedder; set for every leg, harmless
+	// for the others.
+	deps.HasEmbedder = true
+	var text []string
+	ctx := WithSteps(context.Background(), StepReporter{Text: func(line string) { text = append(text, line) }})
+
+	run(ctx, deps)
+	return logBuf.String(), strings.Join(text, "")
+}
+
+// TestSearchLegResultLinesReportEveryOutcome pins the second half of a leg's step:
+// what it FOUND. Every exit reports one — an empty pool, an all-table pool and a term
+// window that matched nothing included — because a leg with no result line cannot be
+// told apart from a leg that found nothing, which is the one question the block is
+// read for.
+//
+// The fallbacks count the RETURNED set, not what the term window kept: when grep's
+// locate matches nothing it hands back the raw BM25 candidates, and that is what the
+// line says.
+func TestSearchLegResultLinesReportEveryOutcome(t *testing.T) {
+	const q = "曹操生平简介"
+	hit := []map[string]any{{"chunk_id": "c1", "doc_id": "d1", "content": "曹操，字孟德。"}}
+	// A >=3-row pipe table: IsTableChunk keeps it whole, so grep has no prose to
+	// locate in and returns it as-is.
+	table := []map[string]any{{"chunk_id": "t1", "doc_id": "d1",
+		"content": "a | b | c\nd | e | f\ng | h | i"}}
+	proseNoMatch := []map[string]any{{"chunk_id": "p1", "doc_id": "d1",
+		"content": "A completely unrelated sentence about weather and clouds."}}
+
+	cases := []struct {
+		name      string
+		chunks    []map[string]any
+		run       func(ctx context.Context, deps SearchDeps)
+		wantThink string
+		wantLog   string
+	}{
+		{
+			name: "bm25-hit", chunks: hit,
+			run:       func(ctx context.Context, d SearchDeps) { BM25Search(ctx, d, SearchParams{Question: q}) },
+			wantThink: `[BM25 search] Found 1 passage in 1 document for "` + q + `".`,
+			// The log keeps the hybrid/grep shape; on the bm25 leg this line is Go-only.
+			wantLog: `[BM25 search] "` + q + `" -> 1 chunk(s): d1:1chunk(`,
+		},
+		{
+			// The leg ran and came back empty: it says so in both projections, and the
+			// log line does not dangle a colon.
+			name: "bm25-empty", chunks: nil,
+			run:       func(ctx context.Context, d SearchDeps) { BM25Search(ctx, d, SearchParams{Question: q}) },
+			wantThink: `[BM25 search] Found nothing for "` + q + `".`,
+			wantLog:   `[BM25 search] "` + q + `" -> 0 chunk(s)`,
+		},
+		{
+			name: "vector-hit", chunks: hit,
+			run:       func(ctx context.Context, d SearchDeps) { VectorSearch(ctx, d, SearchParams{Question: q}) },
+			wantThink: `[Vector search] Found 1 passage in 1 document for "` + q + `".`,
+			wantLog:   `[Vector search] "` + q + `" -> 1 chunk(s): d1:1chunk(`,
+		},
+		{
+			// grep delegated to bm25 (which reported its own pool) and then found no
+			// prose to locate in: the tables ARE the evidence, so the line counts them.
+			name: "grep-all-tables", chunks: table,
+			run: func(ctx context.Context, d SearchDeps) {
+				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+			},
+			wantThink: `[Grep search] Found 1 passage in 1 document for "who made Culdcept?".`,
+			wantLog:   `[Grep search] "who made Culdcept?" -> 1 chunk(s): d1:1chunk(`,
+		},
+		{
+			// The term window matched nothing, so grep returns the raw BM25 candidates
+			// — and reports THAT, not "nothing".
+			name: "grep-no-match", chunks: proseNoMatch,
+			run: func(ctx context.Context, d SearchDeps) {
+				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+			},
+			wantThink: `[Grep search] Found 1 passage in 1 document for "who made Culdcept?".`,
+			wantLog:   `[Grep search] "who made Culdcept?" -> 1 chunk(s): d1:1chunk(`,
+		},
+		{
+			// Nothing to locate in and nothing returned: still reported.
+			name: "grep-empty-pool", chunks: nil,
+			run: func(ctx context.Context, d SearchDeps) {
+				GrepSearch(ctx, d, SearchParams{Question: "who made Culdcept?"})
+			},
+			wantThink: `[Grep search] Found nothing for "who made Culdcept?".`,
+			wantLog:   `[Grep search] "who made Culdcept?" -> 0 chunk(s)`,
+		},
+	}
+	for _, tc := range cases {
+		logged, think := captureLeg(tc.chunks, tc.run)
+		if !strings.Contains(think, tc.wantThink) {
+			t.Errorf("%s: think = %q, want it to carry %q", tc.name, think, tc.wantThink)
+		}
+		if !strings.Contains(logged, tc.wantLog) {
+			t.Errorf("%s: log = %q, want it to carry %q", tc.name, logged, tc.wantLog)
+		}
+		if strings.Contains(logged, "chunk(s): \n") {
+			t.Errorf("%s: a zero/empty result must not dangle a colon: %q", tc.name, logged)
+		}
 	}
 }
 

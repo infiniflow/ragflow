@@ -344,7 +344,6 @@ func (s *LLMUsageStats) Snapshot() map[string]map[string]any {
 
 type statsCtxKey struct{}
 type phaseCtxKey struct{}
-type progressCtxKey struct{}
 
 // WithStats binds stats to ctx so every LLM call beneath it is attributed there.
 func WithStats(ctx context.Context, stats *LLMUsageStats) context.Context {
@@ -355,21 +354,6 @@ func WithStats(ctx context.Context, stats *LLMUsageStats) context.Context {
 func CurrentStats(ctx context.Context) *LLMUsageStats {
 	if s, ok := ctx.Value(statsCtxKey{}).(*LLMUsageStats); ok {
 		return s
-	}
-	return nil
-}
-
-// WithProgress binds a per-request progress sink to ctx so every engine stage and
-// every search beneath it can forward tagged lines (Python think_log counterpart)
-// to the caller's live reasoning block. progress may be nil to disable.
-func WithProgress(ctx context.Context, progress func(string)) context.Context {
-	return context.WithValue(ctx, progressCtxKey{}, progress)
-}
-
-// CurrentProgress returns the progress sink bound to ctx, or nil.
-func CurrentProgress(ctx context.Context) func(string) {
-	if p, ok := ctx.Value(progressCtxKey{}).(func(string)); ok {
-		return p
 	}
 	return nil
 }
