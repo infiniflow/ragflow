@@ -1044,8 +1044,8 @@ const ProbeSeatTopN = 3
 // that match MANY of the named terms, so the rarest name — the reason the call
 // was made — is the one that loses. Measured (2026-09-15): a run named 29
 // queries, only 21 were executed (maxQ), every session query's candidates were
-// cut to `snippetsPerQuery`, and the answer stopped at twelve members with the
-// rare names missing while ES had returned 30-64 candidates per query.
+// cut to one flat per-query cap, and the answer stopped at twelve members with
+// the rare names missing while ES had returned 30-64 candidates per query.
 //
 // The term alone is the query, on the keyword leg only: no vector leg, no
 // compiled expansion, no model call — a few hundred milliseconds, which is what

@@ -624,12 +624,29 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// (_arg_query_list): retrieve=3, search_chunks=2. grep_search/grep_chunks
 	// are Go-internal tools (Python exposes no such session tool), so they are
 	// left uncapped.
+	//
+	// A direction assembling a SET/COUNT raises the ceiling. There the call's
+	// queries are facets of one list rather than rephrasings of one question, so
+	// a dropped query is not a spared repeat — it is a member nobody searched.
+	// The flag is set by the same gate that hands the model the set method (see
+	// Kbinfos.MarkSetDirection), so a VALUE direction keeps the small cap it had.
+	// Measured (2026-09-16, medium mode): every call asked 3-5 queries against
+	// these caps, nine calls were cut, and the names the run then failed to
+	// record had been named only in the dropped ones.
 	maxQ := len(queries)
 	switch name {
 	case "retrieve":
 		maxQ = 3
 	case "search_chunks":
 		maxQ = 2
+	}
+	if e.deps.KB.IsSetDirection() {
+		switch name {
+		case "retrieve":
+			maxQ = 6
+		case "search_chunks":
+			maxQ = 4
+		}
 	}
 	// The full list is kept: maxQ bounds how many EXPENSIVE queries run, but the
 	// terms of the dropped ones still get their own cheap seat below. Dropping a
@@ -638,8 +655,10 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// queries, 8 never executed, and those 8 included the only mentions of the
 	// names it was missing.
 	allQueries := queries
+	dropped := 0
 	if len(queries) > maxQ {
 		queries = queries[:maxQ]
+		dropped = len(allQueries) - maxQ
 		logger.Printf("[Action Session] %s asked %d quer(ies); running %d and taking named-term seats for the rest.", name, len(allQueries), maxQ)
 	}
 
@@ -770,18 +789,18 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			continue
 		}
 		// Computed on the LEG's candidates, not on the payload below: the payload is
-		// truncated to snippetsPerQuery, and a term whose window was cut is still a
-		// term this query reached.
+		// truncated to the per-query snippet cap, and a term whose window was cut is
+		// still a term this query reached.
 		if line := GrepReachLine(q, chunks, ReachTermsOf(q)); line != "" {
 			reachNotes = append(reachNotes, line)
 		}
-		// Only the first snippetsPerQuery hits of each query are considered
+		// Only the first snippetsPerQueryFor(mode) hits of each query are considered
 		// (Python cands[:_SNIPPETS_PER_QUERY]) — EXCEPT for a query that NAMES
 		// terms, which keeps one candidate per named term first. The locate step
-		// hands back one window per term, and a flat cut of four is what turns a
-		// six-name call into "the four names that matched most": the two rarest
-		// lose their seat to the four the ranking already preferred.
-		limit := snippetsPerQuery
+		// hands back one window per term, and a flat cut is what turns a six-name
+		// call into "the names that matched most": the rarest lose their seat to the
+		// ones the ranking already preferred.
+		limit := snippetsPerQueryFor(e.req.ThinkingMode)
 		if n := len(namedTermsOf([]string{q})); n > limit {
 			limit = n
 		}
@@ -927,6 +946,15 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		}
 	}
 
+	// A cut is a fact about the SEARCH, not about the corpus, and the model cannot
+	// read it off the passages: every dropped query's terms were seated above, so
+	// a name it asked about still came back, while the query's own wording never
+	// ran. Say so, so a dropped facet is re-asked instead of forgotten.
+	if dropped > 0 {
+		reachNotes = append(reachNotes, fmt.Sprintf(
+			"only %d of this call's %d queries were searched — %d were dropped, and a dropped query's own wording was never run (the terms it named were each probed on their own, so a term that came back is proven to occur). Re-ask a dropped one directly if you need its wording.",
+			maxQ, len(allQueries), dropped))
+	}
 	if len(payload) == 0 {
 		return ToolOutcome{
 			Payload:     []any{},

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -3051,10 +3052,16 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	}
 }
 
-// TestReconcileCountSlotsRaisesTheCountToTheEnumeratedSet pins the other half of
-// the same loss: the count slot and the list slots are written by different
-// sessions and nothing kept them in step. The number is only ever RAISED.
-func TestReconcileCountSlotsRaisesTheCountToTheEnumeratedSet(t *testing.T) {
+// TestReconcileCountSlotsTakesTheEnumeratedSize pins the other half of the same
+// loss: the count slot and the list slots are written by different sessions and
+// nothing kept them in step. The slot takes the DERIVED number in both directions,
+// because a count is a claim the table can check.
+//
+// The direction that matters is the one an answer repeats: measured (2026-09-16) a
+// count slot left holding a session's 28 against thirteen enumerated members
+// produced "killed 28 named people" over a list of a handful. An over-claim is kept
+// as an alternate clue, so the record still shows what was claimed.
+func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("10")},
 		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥")},
@@ -3067,16 +3074,56 @@ func TestReconcileCountSlotsRaisesTheCountToTheEnumeratedSet(t *testing.T) {
 		t.Fatalf("count slot = %q, want 12 (the list's size)", got)
 	}
 
-	// Monotone: a claim larger than what the table enumerates stands.
+	// An over-claim does not stand: the members are what the table can check, and
+	// the claim is kept beside them as an alternate.
 	bigger := harness.NewState([]harness.Variable{
 		{ID: 0, Type: "count", Candidate: strPtr("16人")},
 		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福")},
 	}, 0, nil)
-	if raised := reconcileCountSlots(&bigger); len(raised) != 0 {
-		t.Fatalf("raised = %v, want the larger claim to stand", raised)
+	if changed := reconcileCountSlots(&bigger); len(changed) != 1 {
+		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
 	}
-	if got := *bigger.ByID(0).Candidate; got != "16人" {
-		t.Fatalf("count slot = %q, want the claim kept, unit included", got)
+	if got := *bigger.ByID(0).Candidate; got != "6人" {
+		t.Fatalf("count slot = %q, want 6人 (the members' size, unit included)", got)
+	}
+	alts := alternateCandidatesOf(*bigger.ByID(0))
+	if len(alts) != 1 || alts[0] != "16人" {
+		t.Fatalf("alternates = %v, want the over-claim kept as the record's alternate", alts)
+	}
+
+	// A count that already agrees is left alone.
+	agreed := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("6")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福")},
+	}, 0, nil)
+	if changed := reconcileCountSlots(&agreed); len(changed) != 0 {
+		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
+	}
+}
+
+// TestMemberCountIgnoresProseFragments pins the count's unit: a member is a NAME,
+// not a fragment of the sentence around it.
+//
+// The fixture is a measured record shape — the slots held the right names wrapped
+// in chapter prose, SplitCandidateNames cut that prose at its separators, and the
+// enumerated size came out 28 against thirteen real names. That number was then
+// raised into the count slot and reported by the answer as its own.
+func TestMemberCountIgnoresProseFragments(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("28")},
+		{ID: 1, Type: "web", Candidate: strPtr("孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、五关：东岭关(孔秀)、洛阳(韩福、孟坦)、汜水关(卞喜)、荥阳(王植)、黄河渡口(秦琪)、六将：孔秀")},
+		{ID: 2, Type: "web", Candidate: strPtr("华雄、颜良、文丑、第五回（发矫诏诸镇应曹公、破关兵三英战吕布）、第二十五回（屯土山关公约三事、救白马曹操解重围）")},
+		{ID: 3, Type: "web", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、过五关斩六将中六人：孔秀、庞德")},
+	}, 0, nil)
+
+	// Eleven distinct real names: the prose pieces around them are not members.
+	if got := enumeratedSize(table); got != 11 {
+		t.Fatalf("enumerated size = %d, want 11 (the names, not the chapter prose)", got)
+	}
+	// And the count slot takes that number rather than the session's claim.
+	reconcileCountSlots(&table)
+	if got := *table.ByID(0).Candidate; got != "11" {
+		t.Fatalf("count slot = %q, want 11 (the enumerated members)", got)
 	}
 }
 
@@ -3153,12 +3200,23 @@ func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
 	if !strings.Contains(rec, "enumerated members across the slots above: 14") {
 		t.Fatalf("record = %q, want the enumerated size stated as a fact", rec)
 	}
-	// A count that disagrees with the members has to be SAID, not left for the
-	// answer to reconcile: this record once produced a nineteen-person answer out of
-	// a count slot reading 19, which the answer explained as seven more people "the
-	// material does not list".
+	// A count that disagrees with the members has to be SAID: this record once
+	// produced a nineteen-person answer out of a count slot reading 19, which the
+	// answer explained as seven more people "the material does not list".
 	if !strings.Contains(rec, "slot 0 [count] says 10 while the slots above enumerate 14") {
 		t.Fatalf("record = %q, want the disagreement stated", rec)
+	}
+	// Stated, not ordered: an order was tried and reverted — measured (2026-09-16,
+	// 三国/关羽) a record that said "take the number from the enumerated members" got
+	// exactly that number taken (nine), when its slots enumerated the wrong things and
+	// its sessions had found fourteen. Either number can be the wrong one, and only the
+	// passages decide, so the note must state the disagreement and leave the judgement
+	// to the stage that reads them.
+	if strings.Contains(rec, "take the number from") {
+		t.Fatalf("record = %q, must not order the answer to take either number", rec)
+	}
+	if !strings.Contains(rec, "disagree") {
+		t.Fatalf("record = %q, want the disagreement stated as a disagreement", rec)
 	}
 	facts := strings.Index(rec, "slot 1 [person]")
 	draft := strings.Index(rec, "One session's own draft answer")
@@ -3202,5 +3260,97 @@ func TestValueRecordCarriesNoEnumeratedMembers(t *testing.T) {
 		if !strings.Contains(rec, want) {
 			t.Errorf("record %q missing the slot fact %q", rec, want)
 		}
+	}
+}
+
+// TestUnionSetCandidatesIsOrderIndependent pins the bug that cost the most members
+// in the 2026-09-16 enumeration runs.
+//
+// The union must not depend on which side is the base: with the base the LONGER
+// list, "the union adds nothing to the base" was answered as "no conclusion", the
+// caller fell through to the strength rule, and a SHORTER list — the one the model
+// was sure of, so the one it called stronger — replaced the list containing it.
+//
+// Measured in the run this pins: twenty-four names probed and each reached, slot 1
+// holding thirteen members, a session patching its own eleven at 0.95 against the
+// base's 0.90, and a final record of eleven.
+func TestUnionSetCandidatesIsOrderIndependent(t *testing.T) {
+	eleven := "华雄、管亥、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"
+	thirteen := "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、庞德、成何、管亥"
+	members := func(list string) string {
+		items, _ := setItems(list)
+		sort.Strings(items)
+		return strings.Join(items, "、")
+	}
+	want := members(thirteen)
+
+	up, _, ok := unionSetCandidates(&eleven, &thirteen)
+	if !ok || members(up) != want {
+		t.Fatalf("small→big: union = %q ok = %v, want the thirteen-name superset", up, ok)
+	}
+	down, _, ok := unionSetCandidates(&thirteen, &eleven)
+	if !ok {
+		t.Fatal("big→small must resolve too: a subset is a resolution, not a tiebreaker for strength")
+	}
+	if members(down) != want {
+		t.Fatalf("big→small: union = %q, want the base kept whole (a subset adds nothing)", down)
+	}
+
+	// Two numbers keep the larger one, in both orders.
+	n13, n11 := "13", "11"
+	if got, _, ok := unionSetCandidates(&n13, &n11); !ok || got != "13" {
+		t.Fatalf("13→11 = %q ok=%v, want the larger count", got, ok)
+	}
+	if got, _, ok := unionSetCandidates(&n11, &n13); !ok || got != "13" {
+		t.Fatalf("11→13 = %q ok=%v, want the larger count", got, ok)
+	}
+}
+
+// TestMemberUnionDropsPlaceAndEventPhrases pins the last way a count inflates: a
+// piece that CONTAINS a member is not a second member.
+//
+// A session writing a place beside its owner (`洛阳关孟坦`) or an event beside its
+// object (`温酒斩华雄`) writes a token that is short, digit-free and unpunctuated —
+// it passes every shape test a name passes — while the member it names is already
+// in the table. Measured (2026-09-16): a record enumerating 21 names counted 25,
+// the four extra being place-qualified copies of names already listed.
+func TestMemberUnionDropsPlaceAndEventPhrases(t *testing.T) {
+	table := harness.NewState([]harness.Variable{
+		{ID: 1, Type: "person", Candidate: strPtr("程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德")},
+		{ID: 2, Type: "count", Candidate: strPtr("孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪")},
+	}, 0, nil)
+
+	union := memberUnion(&table)
+	if len(union) != 21 {
+		t.Fatalf("member count = %d, want the 21 names (place-qualified copies are not members): %v", len(union), union)
+	}
+	for _, extra := range []string{"洛阳关孟坦", "汜水关卞喜", "荥阳王植", "黄河渡口秦琪"} {
+		for _, item := range union {
+			if item == extra {
+				t.Errorf("member union kept %q, a name with its place attached", extra)
+			}
+		}
+	}
+	if got := enumeratedSize(table); got != 21 {
+		t.Fatalf("enumerated size = %d, want 21", got)
+	}
+}
+
+// TestLedgerQuoteCarriesTheWordsBehindAMember pins per-member evidence in the
+// answer-facing ledger: a name without the words behind it is a member nobody can
+// point at, and an answer handed names only cannot cite one passage per member.
+func TestLedgerQuoteCarriesTheWordsBehindAMember(t *testing.T) {
+	kb := &harness.Kbinfos{}
+	kb.Admit(func(p *harness.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "c1", "content": "关公马快，赶上文丑，脑后一刀，将文丑斩下马来。"})
+	})
+	kb.RecordReachedTerm("文丑", "c1")
+
+	ledger := probeLedger(kb)
+	if !strings.Contains(ledger, "文丑 — “") {
+		t.Fatalf("ledger = %q, want the member followed by the words that carry it", ledger)
+	}
+	if !strings.Contains(ledger, "斩下马来") {
+		t.Fatalf("ledger = %q, want the quoted passage itself", ledger)
 	}
 }

@@ -1045,3 +1045,62 @@ func TestSearchOutcomeCarriesTheReachLine(t *testing.T) {
 		t.Errorf("Note = %q, want no half-formed reach line", plain.Note)
 	}
 }
+
+// TestSetDirectionWidensTheQueryBudget pins the recall rule a SET/COUNT direction
+// buys, and it is deliberately written with NEUTRAL queries: nothing here depends
+// on a corpus, a language, or a name.
+//
+// A direction assembling a SET asks the corpus about one facet per query, so a
+// dropped query is a member nobody searched rather than a spared repeat. The
+// executor therefore runs more of them once the direction has declared itself
+// (Kbinfos.MarkSetDirection — set by the same gate that hands the model the set
+// method), and when it still cannot run them all it SAYS so in the tool result,
+// because a silent cut is invisible in the passages.
+//
+// Measured (2026-09-16, medium mode): every call asked 3-5 queries against caps of
+// 2 (search_chunks) / 3 (retrieve), nine calls were cut, and the members the run
+// then failed to record had been named only in the dropped ones.
+func TestSetDirectionWidensTheQueryBudget(t *testing.T) {
+	queries := []string{"term one", "term two", "term three", "term four"}
+
+	// A value direction keeps the small cap — and reports the cut.
+	valueDeps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
+	value := &stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}}
+	valueDeps.Backend = value
+	valueEx := NewSearchExecutor(valueDeps, RunRequest{DatasetIDs: []string{"kb1"}})
+	oc, err := valueEx.Execute(context.Background(), "retrieve", map[string]any{"query": queries})
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if !strings.Contains(oc.Note, "only 3 of this call's 4 queries were searched") {
+		t.Errorf("Note = %q, want it to name the dropped query", oc.Note)
+	}
+
+	// The same call on a SET direction runs every query and reports no cut.
+	setDeps, setKB := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
+	dropped := &stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}}
+	setDeps.Backend = dropped
+	setKB.MarkSetDirection()
+	if !setKB.IsSetDirection() {
+		t.Fatal("MarkSetDirection did not declare the direction")
+	}
+	setEx := NewSearchExecutor(setDeps, RunRequest{DatasetIDs: []string{"kb1"}})
+	oc2, err := setEx.Execute(context.Background(), "retrieve", map[string]any{"query": queries})
+	if err != nil {
+		t.Fatalf("retrieve (set): %v", err)
+	}
+	if strings.Contains(oc2.Note, "queries were searched") {
+		t.Errorf("Note = %q, want no cut on a set direction", oc2.Note)
+	}
+	if len(dropped.requests) <= len(value.requests) {
+		t.Errorf("set direction searched %d backend request(s), value direction %d: the set direction must search MORE of the caller's own queries",
+			len(dropped.requests), len(value.requests))
+	}
+
+	// A nil pool is not a set direction, and asking is safe.
+	var noPool *Kbinfos
+	if noPool.IsSetDirection() {
+		t.Error("a nil pool must not report a set direction")
+	}
+	noPool.MarkSetDirection()
+}

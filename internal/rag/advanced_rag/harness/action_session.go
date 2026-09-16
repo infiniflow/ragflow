@@ -925,11 +925,12 @@ var (
 		Type: "function",
 		Function: ToolFunction{
 			Name: "retrieve",
-			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets.` +
-				`DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document.` +
-				`ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it.` +
-				`OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there.` +
-				`IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch.`,
+			Description: `WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; cover different facets.` +
+				`ENUMERATING A SET: probe the NAMES themselves, alternated with | in ONE query — name1|name2|name3 — 4-6 per query. Hits are members; guess the next batch yourself (aliases, the minor members) rather than stopping at what you hold.` +
+				`DO NOT CALL: For reading a whole document (list_chunks); when no surface word matches (search_chunks).` +
+				`ARGUMENTS: query — array of 1-3 strings; a string may be names alternated with |, or a pattern: "A|B|C" asks several terms in ONE call, and "A.*B" keeps that order while skipping the words between — for a relation whose object you cannot name. Keep 4-6 terms — only a query's first ~10 snippets survive. doc_scope is NOT declared; do not pass it.` +
+				`OUTPUT: Exact-term snippets with doc_id and chunk id. ok = new evidence; redundant = seen.` +
+				`IF IT FAILS: a miss on an exact-term probe means the corpus lacks that term — in an enumeration that is a RESULT (record it as not a member, probe the next). Fuzzy miss: rephrase or search_chunks. redundant = stop and emit a state patch.`,
 			Parameters: arrayParam("", 1, 3),
 		},
 	}
@@ -1307,7 +1308,9 @@ const (
 	initTimeoutS = 45.0
 	// actionTimeoutS is the default per-session wall-clock budget.
 	actionTimeoutS = 75.0
-	// snippetsPerQuery caps snippets returned per query.
+	// snippetsPerQuery is the FALLBACK per-query snippet cap, used when the mode
+	// leaves ModeSpec.SnippetsPerQuery unset. The live value is
+	// snippetsPerQueryFor(RunRequest.ThinkingMode).
 	snippetsPerQuery = 4
 	// maxToolResponseChars bounds ONE tool payload.
 	maxToolResponseChars = 12000
@@ -1329,8 +1332,8 @@ const (
 	// paraphrases (Q30/Q759 timeout root cause).
 	skippedDupLimit = 2
 	// turnRunExtra is how many turns the MODEL may add beyond the mode's floor
-	// (see offerContinuation): medium/high run 4 → 8, ultra 6 → 10. It is the hard
-	// bound the runtime keeps while the decision itself is the model's, so an
+	// (see offerContinuation): medium/high run 8 → 12, ultra 10 → 14. It is the
+	// hard bound the runtime keeps while the decision itself is the model's, so an
 	// eager model cannot turn one session into a whole research programme.
 	turnRunExtra = 4
 	// turnAskFloorS is the session clock below which no further turn is offered:
@@ -1342,6 +1345,24 @@ const (
 	// minFinalizeTimeout is the floor for the salvage call.
 	minFinalizeTimeoutS = 15.0
 )
+
+// snippetsPerQueryFor resolves the per-query snippet cap for a thinking mode.
+//
+// The cap decides how much of ONE query's candidate list the session reads, and
+// that list is where a themed query's fact-bearing passage sits: the engine
+// returns 30-60 candidates per leg, and on a 64-candidate leg the passage that
+// carried the answer ranked 20th and 38th — both discarded by a cap of four,
+// while handing the model those same passages produced the complete list.
+//
+// It therefore rises with the mode (a deeper mode issues more queries and owns a
+// larger budget) and falls back to the flat snippetsPerQuery when the mode leaves
+// it unset, so a mode that never declared one behaves exactly as before.
+func snippetsPerQueryFor(mode string) int {
+	if spec := GetMode(mode); spec.SnippetsPerQuery > 0 {
+		return spec.SnippetsPerQuery
+	}
+	return snippetsPerQuery
+}
 
 // retrievalTools: near-duplicate suppression applies to these (Python
 // _RETRIEVAL_TOOLS). grep_chunks / grep_search are legacy names kept so a
@@ -1723,13 +1744,13 @@ type SessionState struct {
 	// ContinuationAsked is the Attempts value the continuation offer was appended
 	// for, so one turn never carries the offer twice.
 	ContinuationAsked int
-	// EnumerationProtocol is the SET-direction protocol this session MAY be handed,
-	// once it has shown that it is enumerating (see appendBatchProtocol). The text,
-	// not a loader: it is resolved at seed time, and appending one paragraph must not
-	// need the prompt loader.
+	// EnumerationProtocol is the SET-direction method this session MAY be handed:
+	// seeded when the table declared a set (see setProtocolFor), and appended once
+	// mid-session when the caller writes its first batch (see appendBatchProtocol).
+	// Resolved once at seed time so nothing mid-session needs the prompt loader.
 	EnumerationProtocol string
-	// BatchProtocolShown is whether that paragraph has been appended. Once per
-	// session: the protocol is method, and method repeated is prompt noise.
+	// BatchProtocolShown is whether the mid-session append has happened. Once per
+	// session: the method repeated is prompt noise.
 	BatchProtocolShown bool
 
 	Direction  string
@@ -2065,21 +2086,18 @@ func (s *SessionState) toolNode(ctx context.Context) error {
 	return nil
 }
 
-// appendBatchProtocol hands the enumeration protocol to a session that has SHOWN it
-// is enumerating, and only then.
+// appendBatchProtocol hands the set-direction method to a session that has SHOWN it
+// is enumerating — the second, and the only zero-false-positive, delivery.
 //
-// The protocol used to ride the SEED of every direction whose table looked like a
-// set, and that gate cannot be made to work: measured (2026-09-15) 11 of 20 FRAMES
-// sessions were handed it — 1644 characters each, budget exception included — for
-// questions whose answer is one number, and that run's rounds went 60 → 92 against
-// its own baseline. What survives contact instead is the caller's own writing: the
-// model writes a batch of names exactly when the direction is a set (measured the
-// same day, same server: 0 batches over 20 FRAMES questions, 15 over ONE 三国
-// question) and never on an English question.
+// A session seeded by setProtocolFor already has the text; this path exists for the
+// set direction whose planner typed its count slot `number` rather than `count` (the
+// same question was typed both ways on two runs of 2026-09-16), and the signal it
+// rides is the caller's own writing: the model writes a batch of items exactly when
+// the direction is a set — measured the same day, same server: 0 batches over 20
+// FRAMES questions, 18 over one 三国 question.
 //
 // It rides the tool result the model is about to read, like the record line, and is
-// appended at most once per session — the protocol is method, and method repeated is
-// prompt noise.
+// appended at most once per session.
 func (s *SessionState) appendBatchProtocol(ranAny bool) {
 	if s.BatchProtocolShown || !ranAny || s.EnumerationProtocol == "" || len(s.Messages) == 0 {
 		return
@@ -2093,7 +2111,12 @@ func (s *SessionState) appendBatchProtocol(ranAny bool) {
 	}
 	s.BatchProtocolShown = true
 	last.Content = strings.TrimRight(last.Content, "\n") + "\n\n" + s.EnumerationProtocol
-	_LOG.Printf("[Action Session] the caller wrote a batch — set-direction protocol appended to the turn (%d char(s))",
+	// The same signal widens the retrieval budget for the rest of the run: on a
+	// set direction a dropped query is a member nobody searched, and the batch
+	// the caller just wrote is the proof that this direction is assembling a set
+	// (see Kbinfos.MarkSetDirection).
+	s.KB.MarkSetDirection()
+	_LOG.Printf("[Action Session] the caller wrote a batch — set-direction method appended to the turn (%d char(s))",
 		len(s.EnumerationProtocol))
 }
 
@@ -2164,8 +2187,8 @@ func (s *SessionState) turnRunCap() int { return s.actionMaxTurns() + turnRunExt
 
 // offerContinuation asks the MODEL whether the session takes another turn.
 //
-// The mode's turn count used to end the session outright (ActionMaxTurns: 4 on
-// medium/high), and the measured cost is in the log: at 18:09:49 a session still
+// The mode's turn count used to end the session outright (ActionMaxTurns was 4 on
+// medium/high at the time), and the measured cost is in the log: at 18:09:49 a session still
 // turning named terms into evidence was finalized by `Attempts >= 4`
 // mid-enumeration, with 84s of its own clock unspent and a tool result the model
 // never read. Replacing that with a runtime heuristic ("did the record grow?")
@@ -2264,11 +2287,29 @@ func SetShaped(table State) bool {
 	return false
 }
 
-// enumerates is gone: the protocol's gate is the caller's own batch now (see
-// appendBatchProtocol). It read a slot table for a count/set/list type or a
-// list-shaped candidate, and both halves were measured wrong on FRAMES — the type
-// fired on "how much shorter is A than B" (a `[count]` slot), and the candidate half
-// fired on `San Antonio, Texas` (a comma, not a member list).
+// setProtocolFor returns the method a session sent on this direction is SEEDED with,
+// or "" when the direction is not assembling a set.
+//
+// The method is `action_set`, and both halves of when it is delivered are measured:
+// its FIRST instruction — propose more candidates than you expect — is a decision
+// taken before the first query, so a direction that has declared itself a set is
+// seeded (measured 2026-09-16, 三国/关羽: eighteen members with the method in the seed
+// of a `[count]` table, fourteen when it arrived a turn later); and a direction that
+// has not is handed it after the first batch it writes (see appendBatchProtocol),
+// which is the signal with no measured false positives.
+//
+// The gate is SetShaped — what the planner DECLARED (count/set/list) — and not the
+// permissive reading of a candidate. Measured (2026-09-16, FRAMES): the permissive
+// version seeded 44 of 67 sessions, 2777 characters of set strategy each, on questions
+// that assemble nothing (named-term seats 0, batch weaving 0), while the declared
+// version's false positives are the eleven-per-run handful whose tables really are
+// typed as a count.
+func setProtocolFor(table State, prompts PromptLoader) string {
+	if !SetShaped(table) {
+		return ""
+	}
+	return loadOptionalPrompt(prompts, "action_set")
+}
 
 // continuationAsk is the offer the model decides on: it names the hard bound, the
 // remaining turns, and the ONLY grounds on which another turn is granted — what
@@ -3423,14 +3464,29 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 	system := loadPrompt(deps.Prompts, "action_run")
 	seedUser := fmt.Sprintf("Direction: %s\n\nState:\n%s", direction, parent.RenderSlots())
 
-	// The enumeration protocol is NOT part of the seed — see appendBatchProtocol,
-	// which hands it to a session that has written a batch of names. Seeding it here
-	// could only be gated on the shape of the DIRECTION, and that gate cannot be made
-	// to work: measured (2026-09-15) 11 of 20 FRAMES sessions were handed 1644
-	// characters of set strategy for questions whose answer is one number, and that
-	// run's rounds went 60 → 92 against its own baseline. The protocol text is
-	// resolved here and carried by the session (EnumerationProtocol) so the decision
-	// to spend it is made where the evidence for it exists.
+	// A direction whose table DECLARED a set is seeded WITH THE METHOD, before its
+	// first turn.
+	//
+	// The method's first instruction is to propose more candidates than you expect,
+	// which is a decision taken BEFORE the first query — measured (2026-09-16,
+	// 三国/关羽): eighteen members with the method in the seed of a `[count]` table,
+	// fourteen when it arrived one turn later. The gate is what the planner declared
+	// (SetShaped) and not a reading of the candidates (see setProtocolFor for the
+	// forty-four-of-sixty-seven measurement that reverted the permissive version). A
+	// set direction whose table was NOT typed that way gets the method from
+	// appendBatchProtocol, on the first batch it writes.
+	seededMethod := setProtocolFor(parent, deps.Prompts)
+	if seededMethod != "" {
+		seedUser += "\n\n" + seededMethod
+		// The seeded direction also widens the retrieval budget (see
+		// Kbinfos.MarkSetDirection): on a set direction the caller's queries are
+		// facets of one list, so the executor must not drop them silently.
+		deps.KB.MarkSetDirection()
+		// Logged because a seeded method is text inside a prompt: without this line
+		// nothing distinguishes "the gate opened for the direction that needed it" from
+		// "the gate opened for every direction", which is the failure mode to watch.
+		_LOG.Printf("[Action Session] set-shaped direction — enumeration method added to the seed (%d char(s))", len(seededMethod))
+	}
 
 	// ALREADY RETRIEVED (mirrors Python run_action_session:1982-1984):
 	// surface the evidence already in the shared pool so the model fills slots
@@ -3478,9 +3534,15 @@ func RunActionSession(ctx context.Context, deps SessionDeps, direction string, p
 		ToolStrikes:          map[string]int{},
 		ToolOutcomes:         nil,
 		Direction:            direction,
-		// Resolved once, spent only if the session shows it is enumerating
-		// (see appendBatchProtocol). Empty when the loader carries no action_set.
+		// The method this session may be handed, resolved here so nothing mid-session
+		// needs the prompt loader. It arrives in the seed when the table declared a
+		// set (see setProtocolFor), or on the first batch the caller writes
+		// (appendBatchProtocol) — so it is loaded for every session, and shown at
+		// most ONCE: a seeded session is marked as already carrying it, because
+		// measured (2026-09-16, 三国) every session of one run had it twice, 2776
+		// characters each, once from the seed and once from the batch append.
 		EnumerationProtocol: loadOptionalPrompt(deps.Prompts, "action_set"),
+		BatchProtocolShown:  seededMethod != "",
 	}
 	if st.ToolCache == nil {
 		st.ToolCache = NewToolCache()

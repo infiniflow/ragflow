@@ -132,6 +132,10 @@ type Kbinfos struct {
 	// reach, each with the pool chunk that carries it (see RecordReachedTerm):
 	// the confirmed members, with their evidence. Guarded by ledgerMu.
 	Reached []ReachedTerm
+	// setDirection records that this run carries a SET/COUNT direction — a
+	// question whose answer is a list of members (see MarkSetDirection, which
+	// also says why the retrieval executor reads it). Guarded by ledgerMu.
+	setDirection bool
 	// cache is the per-request retrieval cache (Python tools.search_cache). It
 	// is initialised lazily via cacheOnce so a zero-value Kbinfos is usable.
 	cache     *searchCache
@@ -163,6 +167,24 @@ func (k *Kbinfos) PoolSize() int {
 // so the header it copies is stable). The maps themselves stay shared and must be
 // read only. Readers are also why this is a copy of the header and not the pool:
 // the pool keeps growing under them while they scan.
+// ChunkByID returns the pool chunk carrying this id, or nil.
+//
+// It takes the pool lock, so it must NOT be called from inside an Admit callback
+// (that mutex is not reentrant — see Admit's invariant).
+func (k *Kbinfos) ChunkByID(id string) map[string]any {
+	if k == nil || id == "" {
+		return nil
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	for _, c := range k.Chunks {
+		if ChunkIDOf(c) == id {
+			return c
+		}
+	}
+	return nil
+}
+
 func (k *Kbinfos) ChunksFrom(from, limit int) []map[string]any {
 	if k == nil || limit <= 0 {
 		return nil
@@ -351,6 +373,40 @@ func (k *Kbinfos) RecordReachedTerm(term, chunkID string) {
 		return
 	}
 	k.Reached = append(k.Reached, ReachedTerm{Term: term, ChunkID: chunkID})
+}
+
+// MarkSetDirection records that this run carries a SET/COUNT direction.
+//
+// It is set by the SAME gate that hands the model the set method — the declared
+// shape of the direction's table, or the first batch the caller writes, whichever
+// comes first — and read by the retrieval executor, which bounds how many of the
+// caller's queries run per call:
+//
+// on a direction whose answer is a LIST, the caller's queries are facets of that
+// list rather than rephrasings of one question, so a query that is dropped is not
+// a spared repeat — it is a member nobody searched. Measured (2026-09-16): a
+// medium-mode run asked 3-5 queries per call against a cap of 2 (search_chunks) /
+// 3 (retrieve); nine calls were cut, and the names it later turned out to be
+// missing had been named only in the dropped ones. On a VALUE direction the
+// queries ARE rephrasings of one question and the small cap stays.
+func (k *Kbinfos) MarkSetDirection() {
+	if k == nil {
+		return
+	}
+	k.ledgerMu.Lock()
+	k.setDirection = true
+	k.ledgerMu.Unlock()
+}
+
+// IsSetDirection reports whether a SET/COUNT direction has declared itself on this
+// run (see MarkSetDirection). Safe on a nil pool: a run with no pool is not one.
+func (k *Kbinfos) IsSetDirection() bool {
+	if k == nil {
+		return false
+	}
+	k.ledgerMu.Lock()
+	defer k.ledgerMu.Unlock()
+	return k.setDirection
 }
 
 // ReachedTerms returns a copy of the confirmed members and the chunk that carries

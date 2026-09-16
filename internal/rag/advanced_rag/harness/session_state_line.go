@@ -166,6 +166,48 @@ func (r SessionRecord) Brief() string {
 // as a list item rather than a clause (see SplitCandidateNames).
 const maxListedMemberRunes = 6
 
+// memberClauseGlue marks the punctuation a MEMBER NAME does not carry: annotation
+// brackets, a label colon, a terminator, a quote. SplitCandidateNames refuses to
+// cut a comma-separated SENTENCE, but a strong separator still cuts inside prose,
+// and the fragments land in the member count: a session writing
+// `name1: place(name2)、place(name3、name4)` yields `name1: place(name2)` and
+// `place(name3` as "members".
+const memberClauseGlue = "：:（）()「」『』【】〔〕〈〉《》。；;！？!?，,、\"'“”‘’…—"
+
+// LooksLikeMemberName reports whether one split piece reads as a member NAME
+// rather than a fragment of the sentence around it.
+//
+// A member name is SHORT and BARE: it fits in a few runes, carries no digits
+// (that is a reference or a quantity — see IsCountValue) and no clause
+// punctuation. The count a record stands behind is the union of the pieces that
+// pass this test, because a count inflated by prose is worse than a count missing
+// a member: it is the number the answer repeats.
+//
+// Measured (2026-09-16, a "how many named people did X kill" record): the slots
+// held the right names wrapped in chapter prose, SplitCandidateNames cut the
+// prose at its separators, and the enumerated size came out 28 against 13 real
+// names — a number the count slot was then raised to and the answer reported as
+// its own. With this filter the same record enumerates 14, and every real name
+// survives.
+//
+// It reads SHAPE, not language or vocabulary: nothing here says what a name is
+// called, only that one is short, digit-free and unpunctuated.
+func LooksLikeMemberName(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	if utf8.RuneCountInString(s) > maxListedMemberRunes {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsDigit(r) || strings.ContainsRune(memberClauseGlue, r) {
+			return false
+		}
+	}
+	return true
+}
+
 // SplitCandidateNames splits one slot candidate into the names it lists.
 //
 // Two classes of separator, because a candidate may be a LIST or a SENTENCE and

@@ -54,7 +54,16 @@ type ModeSpec struct {
 	SCAMaxRounds   int
 	UseFanout      bool
 	ActionMaxTurns int
-	Tools          map[string]bool
+	// SnippetsPerQuery caps how many hits of ONE query the session reads.
+	//
+	// It rises with the mode because a deeper mode issues more queries and can
+	// absorb more evidence per query, while one flat cap for every mode is what
+	// drops the long tail: the engine returns 30-60 candidates per leg, the
+	// fact-bearing passage of a themed query ranks far down that list, and a cap
+	// of four discards it even though the query DID reach it. Zero means "unset":
+	// the session falls back to snippetsPerQuery (see snippetsPerQueryFor).
+	SnippetsPerQuery int
+	Tools            map[string]bool
 }
 
 // toolsOf builds the tool set from names (mirrors Python _tools()).
@@ -82,22 +91,26 @@ var THINKING_MODES = map[string]ModeSpec{
 	"low": {
 		Label: "low", Agentic: false, EnableSCA: false,
 		SCAMaxRounds: 0, UseFanout: false, ActionMaxTurns: 4,
-		Tools: map[string]bool{},
+		SnippetsPerQuery: 0,
+		Tools:            map[string]bool{},
 	},
 	"medium": {
 		Label: "medium", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: false, ActionMaxTurns: 4,
-		Tools: allToolSet(),
+		SCAMaxRounds: 3, UseFanout: false, ActionMaxTurns: 8,
+		SnippetsPerQuery: 6,
+		Tools:            allToolSet(),
 	},
 	"high": {
 		Label: "high", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: true, ActionMaxTurns: 4,
-		Tools: allToolSet(),
+		SCAMaxRounds: 3, UseFanout: true, ActionMaxTurns: 8,
+		SnippetsPerQuery: 8,
+		Tools:            allToolSet(),
 	},
 	"ultra": {
 		Label: "ultra", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 5, UseFanout: true, ActionMaxTurns: 6,
-		Tools: toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
+		SCAMaxRounds: 5, UseFanout: true, ActionMaxTurns: 10,
+		SnippetsPerQuery: 10,
+		Tools:            toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
 	},
 }
 

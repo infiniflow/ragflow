@@ -2478,19 +2478,35 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 	// the record can stand behind.
 	if n := enumeratedSize(slotTable); setShaped && n > 0 {
 		lines = append(lines, fmt.Sprintf("- enumerated members across the slots above: %d", n))
+		// A set answer is only as good as what it can point at, member by member.
+		// Measured (2026-09-16): handed a list of names and no per-member evidence,
+		// an answer reported "21 listed, four counted but not listed" and cited ONE
+		// evidence range for all of them. The citation contract already forbids
+		// ranges; this states it where a set answer is assembled, together with the
+		// rule that keeps a count honest — a member nobody can point at a passage is
+		// not counted.
+		lines = append(lines, "State the count and the members TOGETHER: every member you list carries the words behind it (quoted above, or its own [ID:n]) — never one range for the list — and a member you cannot point at a passage for is left out of both the list and the count.")
 		// A count larger than the members it counts is a claim about members that
 		// are NOT in the record, and the answer has to be told that rather than left
 		// to reconcile it. Measured (2026-09-15): a record whose count slot read 19
 		// while its slots enumerated 12 produced an answer of nineteen people, which
 		// then explained the gap as "seven more whose details the material does not
 		// list" — seven members that never existed.
+		//
+		// The note STATES the disagreement; it does not order which number to take.
+		// An order was tried and reverted: measured (2026-09-16, 三国/关羽) a record
+		// whose enumerated number had been computed over the wrong slots said "take
+		// the number from the enumerated members", and the answer took it — nine, for
+		// a question whose sessions had enumerated fourteen. A count can be an
+		// over-claim and a list can be incomplete; only the passages decide between
+		// them, and the answer is the stage that reads them.
 		for _, v := range slotTable.State {
 			if v.Candidate == nil {
 				continue
 			}
 			if claimed, ok := countOf(*v.Candidate); ok && claimed != n {
 				lines = append(lines, fmt.Sprintf(
-					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — a count of members that are not listed is not evidence of them; take the number from the enumerated members.",
+					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
 					v.ID, v.Type, claimed, n))
 			}
 		}
@@ -2519,7 +2535,22 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 // enumeratedSize is how many distinct members the table's slots enumerate: the
 // union of every list-valued candidate, count values excluded (a number is a claim
 // about the set, not a member of it).
-func enumeratedSize(table harness.State) int {
+func enumeratedSize(table harness.State) int { return len(memberUnion(&table)) }
+
+// memberUnion is the set of member NAMES the table enumerates: every slot's
+// name-like pieces, deduped, minus the pieces that merely CONTAIN a member.
+//
+// The last clause is what keeps a phrase out of the count. A session writing a
+// place beside its owner (`洛阳关孟坦`) or an event beside its object
+// (`温酒斩华雄`) writes a token that is short, digit-free and unpunctuated — it
+// passes every shape test a name passes — yet it is not a second member: the
+// member it names is already in the table. Measured (2026-09-16): a record whose
+// slots enumerated 21 names counted 25, the four extra being `洛阳关孟坦`,
+// `汜水关卞喜`, `荥阳王植`, `黄河渡口秦琪`.
+func memberUnion(table *harness.State) []string {
+	if table == nil {
+		return nil
+	}
 	var items []string
 	for _, v := range table.State {
 		if v.Candidate == nil {
@@ -2529,7 +2560,24 @@ func enumeratedSize(table harness.State) int {
 			items = append(items, list...)
 		}
 	}
-	return len(dedupe(items))
+	items = dedupe(items)
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		contained := false
+		for _, other := range items {
+			if other == item || len([]rune(other)) >= len([]rune(item)) {
+				continue
+			}
+			if strings.Contains(item, other) {
+				contained = true
+				break
+			}
+		}
+		if !contained {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // composedRecord is the record block the ANSWER prompt carries: the slot record
@@ -2578,10 +2626,22 @@ func probeLedger(kb *harness.Kbinfos) string {
 	if reached := kb.ReachedTerms(); len(reached) > 0 {
 		terms := make([]string, 0, len(reached))
 		for _, rt := range reached {
+			// The name AND the words that prove it. Without the words the answer has
+			// a list of names and no way to point at a passage for any one of them,
+			// which is what a set answer needs to carry per member: measured
+			// (2026-09-16) an answer that was handed names only reported "21 listed,
+			// four counted but not listed" and cited one evidence RANGE for all of
+			// them, instead of one citation per member.
+			if len(terms) < ledgerQuoteMembers {
+				if quote := ledgerQuote(kb, rt.ChunkID, rt.Term); quote != "" {
+					terms = append(terms, fmt.Sprintf("%s — %s", rt.Term, quote))
+					continue
+				}
+			}
 			terms = append(terms, rt.Term)
 		}
-		fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded): %s",
-			strings.Join(terms, "、"))
+		fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded; the words behind each name are its evidence, and a member without words is a member nobody can point at): %s",
+			strings.Join(terms, "；"))
 	}
 	if absent := kb.ProbedAbsentTerms(); len(absent) > 0 {
 		if b.Len() > 0 {
@@ -2591,6 +2651,48 @@ func probeLedger(kb *harness.Kbinfos) string {
 			strings.Join(absent, "、"))
 	}
 	return b.String()
+}
+
+// ledgerQuoteRunes bounds one member's quoted evidence, and ledgerQuoteMembers
+// how many members carry a quote. Both are bounded because the ledger is part of
+// the ANSWER prompt: a couple of dozen members at a few dozen runes each is the
+// most a record may spend on evidence before it crowds out the question.
+const (
+	ledgerQuoteRunes   = 40
+	ledgerQuoteMembers = 24
+)
+
+// ledgerQuote is the words behind one reached term: a short window of the pool
+// chunk that carries it, in the reading order of that chunk.
+//
+// The ledger names the members; this is what lets an answer show, member by
+// member, the passage each one rests on — and lets a reader see which member has
+// no words behind it at all.
+func ledgerQuote(kb *harness.Kbinfos, chunkID, term string) string {
+	c := kb.ChunkByID(chunkID)
+	if c == nil {
+		return ""
+	}
+	text := harness.ChunkTextOf(c)
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	start := 0
+	if at := strings.Index(text, term); at > 0 {
+		if r := utf8.RuneCountInString(text[:at]) - ledgerQuoteRunes/3; r > 0 {
+			start = r
+		}
+	}
+	end := min(start+ledgerQuoteRunes, len(runes))
+	if end-start < ledgerQuoteRunes && end == len(runes) {
+		start = max(0, end-ledgerQuoteRunes)
+	}
+	q := strings.TrimSpace(strings.ReplaceAll(string(runes[start:end]), "\n", " "))
+	if q == "" {
+		return ""
+	}
+	return "“" + q + "”"
 }
 
 // recordSource names which block the answer prompt carried, so a log reader can
@@ -3351,7 +3453,7 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 	// (measured 2026-09-15: count slot read 10 while the sessions had enumerated
 	// twelve). Raised here, before the draft the answer is written from.
 	if raised := reconcileCountSlots(&slotTable); len(raised) > 0 {
-		_LOG.Printf("[SlotResearch] count slot(s) %v raised to the enumerated set's size", raised)
+		_LOG.Printf("[SlotResearch] count slot(s) %v set to the enumerated members' size", raised)
 	}
 
 	draft := RenderSlotDraft(slotTable, collected, sessionEvidence)
@@ -3530,9 +3632,17 @@ func unionSetCandidates(base, branch *string) (union, dropped string, ok bool) {
 	case baseIsCount && branchIsCount:
 		b, okB := countOf(*base)
 		c, okC := countOf(*branch)
-		if okB && okC && c > b {
+		if !okB || !okC {
+			return "", "", false
+		}
+		if c > b {
 			return strings.TrimSpace(*branch), strings.TrimSpace(*base), true
 		}
+		// Two numbers keep the LARGER one, so the base is the resolution when the
+		// branch is not larger. Saying so matters: "no conclusion" hands the slot to
+		// the strength rule, where the smaller number — which the model is likelier
+		// to be sure of — can win a comparison about a set's size.
+		return strings.TrimSpace(*base), "", true
 	case baseItems != nil && branchItems != nil:
 		merged := dedupe(append(append([]string(nil), baseItems...), branchItems...))
 		if len(merged) < 2 {
@@ -3540,7 +3650,18 @@ func unionSetCandidates(base, branch *string) (union, dropped string, ok bool) {
 		}
 		out := strings.Join(merged, "、")
 		if out == strings.TrimSpace(*base) {
-			return "", "", false
+			// The union adds nothing to the base — the branch is a SUBSET — and that
+			// is still a resolution: the union IS the base.
+			//
+			// Returning "no conclusion" here was a member-losing bug, because the
+			// caller then settles the slot by STRENGTH: a model calls a SHORT list it
+			// is sure of stronger than a long one that contains it, so the subset
+			// overwrote the superset. Measured (2026-09-16, a "how many named people
+			// did X kill" run, 24 names probed and reached): slot 1 held thirteen
+			// members, a session patched its own eleven at 0.95 against the base's
+			// 0.90, the union answered false, the base was replaced — and the answer
+			// reported eleven people.
+			return strings.TrimSpace(*base), "", true
 		}
 		return out, "", true
 	case baseIsCount && branchItems != nil:
@@ -3566,7 +3687,10 @@ func setItems(candidate string) ([]string, bool) {
 	}
 	items := make([]string, 0, 8)
 	for _, item := range harness.SplitCandidateNames(candidate) {
-		if carriesDigit(item) {
+		// A member NAME, not a fragment of the sentence around it: a slot holding
+		// the right names wrapped in chapter prose otherwise contributes the prose's
+		// pieces to the count (see harness.LooksLikeMemberName for the measurement).
+		if !harness.LooksLikeMemberName(item) {
 			continue
 		}
 		items = append(items, item)
@@ -3624,31 +3748,28 @@ func renderCountLike(sample string, n int) string {
 	return strconv.Itoa(n) + sample[last+1:]
 }
 
-// reconcileCountSlots raises every numeric slot to the size of the set the table
+// reconcileCountSlots sets every numeric slot to the size of the set the table
 // enumerated.
 //
 // A count slot holds a claim ABOUT the list slots, and the two are written by
 // different sessions, so nothing kept them in step: measured (2026-09-15), slot 0
 // [count] read 10 while the same table's sessions had enumerated twelve members,
-// and the answer was the 10. The number is only ever RAISED — the union of the
-// lists is what the framework can see, and a set that shrinks when a second
-// source agrees with it is a set that loses members.
+// and the answer was the 10.
+//
+// The slot takes the DERIVED number in both directions, because a count is a claim
+// the table can check and a smaller number is not the same failure as an invented
+// one: measured (2026-09-16, the same question) a slot left holding a session's 28
+// against thirteen enumerated members is the number the answer reported — "killed
+// 28 named people", listing a handful. An over-claim is kept as an alternate clue
+// rather than discarded, so the record still shows what was claimed beside what is
+// enumerated (see RenderSlotRecord's alternate lines).
 //
 // It returns the ids it changed, for the log.
 func reconcileCountSlots(table *harness.State) []int {
 	if table == nil || len(table.State) == 0 {
 		return nil
 	}
-	var items []string
-	for _, v := range table.State {
-		if v.Candidate == nil {
-			continue
-		}
-		if list, isCount := setItems(*v.Candidate); !isCount {
-			items = append(items, list...)
-		}
-	}
-	union := dedupe(items)
+	union := memberUnion(table)
 	if len(union) < 2 {
 		return nil
 	}
@@ -3659,12 +3780,21 @@ func reconcileCountSlots(table *harness.State) []int {
 			continue
 		}
 		n, ok := countOf(*v.Candidate)
-		if !ok || n >= len(union) {
+		if !ok || n == len(union) {
 			continue
 		}
 		cand := renderCountLike(*v.Candidate, len(union))
 		if cand == *v.Candidate {
 			continue
+		}
+		if n > len(union) {
+			// A count LARGER than the members it counts is a claim about members that
+			// are not in the record. The claim is kept (as an alternate, so the record
+			// still shows it) while the slot takes the DERIVED number: measured
+			// (2026-09-16, a "how many named people did X kill" record) an over-claim
+			// left standing in the slot is what an answer repeated — 28 people, for a
+			// table enumerating thirteen.
+			v.DiscoveredClues = append(v.DiscoveredClues, alternateClue(*v.Candidate))
 		}
 		v.Candidate = &cand
 		raised = append(raised, v.ID)

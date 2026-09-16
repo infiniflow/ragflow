@@ -1235,3 +1235,67 @@ func TestParseTerminalEmptyAnswerNotFound(t *testing.T) {
 		t.Errorf("empty answer with patch: branches = %+v, want one state with candidate 74", states)
 	}
 }
+
+// TestSnippetsPerQueryRisesWithModeAndFallsBack pins the per-query snippet cap.
+//
+// The cap decides how much of ONE query's candidate list the session reads, and
+// that list is where a themed query's fact-bearing passage sits: the engine
+// returns 30-60 candidates per leg, and on a 64-candidate leg the passage that
+// carried the answer ranked 20th and 38th — both discarded by a flat cap of four,
+// while handing the model those same passages produced the complete list.
+//
+// A deeper mode issues more queries and owns a larger budget, so it reads deeper;
+// a mode that declares no cap keeps the flat fallback, which is what every mode
+// did before this existed. Nothing here depends on a corpus or a language.
+func TestSnippetsPerQueryRisesWithModeAndFallsBack(t *testing.T) {
+	for _, mode := range []string{"medium", "high", "ultra"} {
+		spec := GetMode(mode)
+		if spec.SnippetsPerQuery <= snippetsPerQuery {
+			t.Errorf("%s cap = %d, want it above the flat fallback %d", mode, spec.SnippetsPerQuery, snippetsPerQuery)
+		}
+		if got := snippetsPerQueryFor(mode); got != spec.SnippetsPerQuery {
+			t.Errorf("snippetsPerQueryFor(%s) = %d, want %d", mode, got, spec.SnippetsPerQuery)
+		}
+	}
+	if GetMode("medium").SnippetsPerQuery >= GetMode("high").SnippetsPerQuery ||
+		GetMode("high").SnippetsPerQuery >= GetMode("ultra").SnippetsPerQuery {
+		t.Error("the per-query cap must rise with the mode")
+	}
+	// Unset (low, or an unknown label) falls back to the flat cap.
+	for _, mode := range []string{"low", "no-such-mode"} {
+		if got := snippetsPerQueryFor(mode); got != snippetsPerQuery {
+			t.Errorf("snippetsPerQueryFor(%q) = %d, want the fallback %d", mode, got, snippetsPerQuery)
+		}
+	}
+}
+
+// TestRetrieveDescriptionCarriesTheEnumerationContract pins the recall path in
+// the tool description the model reads while deciding how to call it.
+//
+// Measured (2026-09-16): the same corpus and question answered sixteen members
+// with this contract present and nine-to-fourteen without it, while the runtime
+// underneath was identical — the seats, the batch weaving and the reach notes
+// exist in BOTH trees. What the description carries is how to ASK: probe the
+// names themselves in an alternation, in small batches, guess the next batch
+// yourself, and read a miss as a RESULT rather than as silence.
+func TestRetrieveDescriptionCarriesTheEnumerationContract(t *testing.T) {
+	desc := ToolMap["retrieve"].Function.Description
+	for _, want := range []string{
+		"ENUMERATING A SET",
+		"alternated with |",
+		"4-6 per query",
+		"guess the next batch yourself",
+		"in an enumeration that is a RESULT",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("retrieve description is missing %q", want)
+		}
+	}
+	// It must not send the opposite instruction. "Do not conclude the corpus lacks
+	// the fact" is right for a fuzzy query and wrong for an exact-term probe: a
+	// model told that stops probing names and settles for the ones it already
+	// holds, which is the shape of the nine-member answer.
+	if strings.Contains(desc, "do not conclude the corpus lacks the fact") {
+		t.Error("retrieve description must not contradict the enumeration semantics of a miss")
+	}
+}

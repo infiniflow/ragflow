@@ -163,9 +163,18 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 // mode's floor the session does NOT stop, and it does not extend itself on a
 // runtime predicate either — the model is asked, once per turn, up to a hard cap.
 //
-// The cap is the part the runtime keeps: medium/high run 4 → 8, which is the
-// "maximum run" the session may never exceed however eager the model is.
+// The cap is the part the runtime keeps: medium/high run 8 → 12, ultra 10 → 14,
+// which is the "maximum run" the session may never exceed however eager the model
+// is. The floors are asserted here because the enumeration path walks them: a
+// session that is still turning names into evidence needs the turns these numbers
+// buy (see the measurement on offerContinuation).
 func TestOfferContinuationLetsTheModelDecide(t *testing.T) {
+	for mode, floor := range map[string]int{"medium": 8, "high": 8, "ultra": 10} {
+		if got := GetMode(mode).ActionMaxTurns; got != floor {
+			t.Errorf("%s turn floor = %d, want %d (cap = floor + %d)", mode, got, floor, turnRunExtra)
+		}
+	}
+
 	s := enumerationSession(4, 90)
 	if got := s.turnRunCap(); got != 8 {
 		t.Fatalf("run cap = %d, want 8 (the mode's floor 4 + the model's %d)", got, turnRunExtra)
@@ -392,56 +401,90 @@ func TestSetShapedFollowsThePlannersDeclaration(t *testing.T) {
 	}
 }
 
-// TestBatchProtocolFollowsTheCallersWriting pins the gate the enumeration protocol
-// now rides: the CALLER's own batch, appended once, mid-session.
+// TestSetDirectionIsSeededWithTheMethod pins WHERE the enumeration method is
+// delivered: in the seed, before the first turn, when the table DECLARED a set
+// (count/set/list).
 //
-// The protocol used to ride the seed of a direction whose table looked like a set,
-// and that gate is measurably wrong: 11 of 20 FRAMES sessions were handed 1644
-// characters of set strategy for questions whose answer is one number (rounds 60 →
-// 92 against that benchmark's own baseline), while the caller's own batch is written
-// zero times by those 20 questions and fifteen times by one 三国 question.
-func TestBatchProtocolFollowsTheCallersWriting(t *testing.T) {
-	protocol := "SET / COUNT directions — the member list IS the work"
+// Its first instruction — propose more candidates than you expect — is a decision
+// taken before the first query: measured (2026-09-16, 三国/关羽) the same question
+// answered eighteen members with the method in the seed of its `[count]` table and
+// fourteen when it arrived one turn later. A table that was NOT typed as a set is not
+// seeded here; it is handed the method by appendBatchProtocol on the first batch it
+// writes, and a single-value direction never sees it at all.
+func TestSetDirectionIsSeededWithTheMethod(t *testing.T) {
+	loader := StringPromptLoader{"action_set": "SET / COUNT directions — the member list IS the work"}
+	counted := State{State: []Variable{{ID: 0, Type: "count", Candidate: strPtr("18")}}}
+	if got := setProtocolFor(counted, loader); !strings.Contains(got, "SET / COUNT directions") {
+		t.Errorf("a declared set direction must be seeded with the method, got %q", got)
+	}
+	// `number` is the planner's label for a measured QUANTITY, and it typed the same
+	// question both ways on two runs of 2026-09-16: not a seed trigger, and exactly
+	// what the batch path exists for.
+	quantity := State{State: []Variable{{ID: 0, Type: "number", Candidate: strPtr("14")}}}
+	if got := setProtocolFor(quantity, loader); got != "" {
+		t.Errorf("a number-typed table must not be seeded, got %q", got)
+	}
+	// Nor is a candidate's punctuation a declaration: a list-shaped candidate under a
+	// scalar type is how the permissive gate seeded 44 of 67 FRAMES sessions.
+	prose := State{State: []Variable{{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦")}}}
+	if got := setProtocolFor(prose, loader); got != "" {
+		t.Errorf("a list-shaped candidate must not seed the method, got %q", got)
+	}
+	value := State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}
+	if got := setProtocolFor(value, loader); got != "" {
+		t.Errorf("a single-value direction must not be seeded, got %q", got)
+	}
+	// A loader that predates the template yields nothing rather than panicking (see
+	// loadOptionalPrompt): its sessions run exactly as they did before it existed.
+	if got := setProtocolFor(counted, StringPromptLoader{}); got != "" {
+		t.Errorf("a loader without action_set must yield nothing, got %q", got)
+	}
+}
+
+// TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch pins the second delivery:
+// the CALLER's own batch, appended once, mid-session.
+//
+// It is the path for a set direction whose table was typed `number` rather than
+// `count` — and the signal has no measured false positives: over one FRAMES run of 20
+// questions the caller wrote zero batches, while one 三国 question wrote eighteen.
+func TestUnseededSetDirectionIsHandedTheMethodOnItsFirstBatch(t *testing.T) {
+	method := "SET / COUNT directions — the member list IS the work"
 	newSession := func(queries ...string) *SessionState {
 		return &SessionState{
 			SearchQueries:       queries,
-			EnumerationProtocol: protocol,
+			EnumerationProtocol: method,
 			Messages:            []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
 		}
 	}
 
-	// An English question never writes a batch, so it is never handed the protocol.
+	// An English question never writes a batch, so it is never handed the method.
 	english := newSession("What was the age difference between Mike Tyson and Trevor Berbick")
-	english.ParentState = State{State: []Variable{{ID: 0, Type: "date", Candidate: strPtr("1986")}}}
 	english.appendBatchProtocol(true)
-	if strings.Contains(english.Messages[0].Content, protocol) {
-		t.Fatalf("tool message = %q, want no protocol on a question that wrote no batch", english.Messages[0].Content)
+	if strings.Contains(english.Messages[0].Content, method) {
+		t.Fatalf("tool message = %q, want no method on a question that wrote no batch", english.Messages[0].Content)
 	}
 	if english.BatchProtocolShown {
-		t.Fatal("the protocol must not be marked shown when it was not appended")
+		t.Fatal("the method must not be marked shown when it was not appended")
 	}
 
 	// A caller-written batch IS the tell (space-separated CJK, the shape the model
 	// actually writes — see callerBatch).
 	chinese := newSession("关羽 斩 杀 颜良 文丑 华雄 蔡阳")
 	chinese.appendBatchProtocol(true)
-	if !strings.Contains(chinese.Messages[0].Content, protocol) {
-		t.Fatalf("tool message = %q, want the protocol appended", chinese.Messages[0].Content)
-	}
-	if !chinese.BatchProtocolShown {
-		t.Fatal("the protocol must be marked shown")
+	if !strings.Contains(chinese.Messages[0].Content, method) {
+		t.Fatalf("tool message = %q, want the method appended", chinese.Messages[0].Content)
 	}
 	// Once per session: method repeated is prompt noise.
 	before := chinese.Messages[0].Content
 	chinese.appendBatchProtocol(true)
 	if chinese.Messages[0].Content != before {
-		t.Fatal("the protocol must be appended at most once")
+		t.Fatal("the method must be appended at most once")
 	}
 	// A turn that ran no tool call cannot carry it either.
 	quiet := newSession("关羽 斩 颜良")
 	quiet.appendBatchProtocol(false)
 	if quiet.BatchProtocolShown {
-		t.Fatal("a turn that ran no tool call must not carry the protocol")
+		t.Fatal("a turn that ran no tool call must not carry the method")
 	}
 }
 
@@ -472,5 +515,31 @@ func TestAppendRecordLineSkipsValueDirections(t *testing.T) {
 	// and only the model-facing line is skipped.
 	if s.Record.Pool != 1 {
 		t.Fatalf("record pool = %d, want the record still computed", s.Record.Pool)
+	}
+}
+
+// TestLooksLikeMemberNameSeparatesNamesFromProse pins the filter the member COUNT
+// runs on (see the doc comment for the measurement): a member name is short,
+// digit-free and unpunctuated, and a fragment cut out of the sentence around it —
+// a label, an annotation, a bracket, a whole clause — is none of those.
+//
+// Nothing here is vocabulary: the fixtures are shapes, not words the runtime knows.
+func TestLooksLikeMemberNameSeparatesNamesFromProse(t *testing.T) {
+	for _, name := range []string{"孔秀", "庞德", "Grace", "term", "Mary"} {
+		if !LooksLikeMemberName(name) {
+			t.Errorf("LooksLikeMemberName(%q) = false, want true", name)
+		}
+	}
+	for _, prose := range []string{
+		"五关：东岭关(孔秀)",   // a label carrying a name
+		"洛阳(韩福", "孟坦)", // an annotation cut in half by a separator
+		"过五关斩六将中六人：孔秀",         // a clause
+		"第五回（发矫诏诸镇应曹公",         // a reference
+		"破关兵三英战吕布", "Colonial", // a clause and a long word: too long for a name
+		"13", "16人", "", // a quantity (see IsCountValue) and nothing
+	} {
+		if LooksLikeMemberName(prose) {
+			t.Errorf("LooksLikeMemberName(%q) = true, want false", prose)
+		}
 	}
 }
