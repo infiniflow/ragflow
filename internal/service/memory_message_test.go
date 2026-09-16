@@ -125,13 +125,28 @@ func TestRequireMemoryAccessReturnsCanceledContext(t *testing.T) {
 
 type memoryMessageDocEngine struct {
 	fakeChatDocEngine
-	engineType  string
+	engineType string
+	// noChunkStore makes the fake report a missing message index, so a test can
+	// pin the "nothing saved yet" read path. The default is an existing index,
+	// as the message-logic tests assume a previous save created it.
+	noChunkStore bool
+	// existsBase/existsID record the pair ChunkStoreExists was asked about: it
+	// must be the write path's pair (tenant index name + memory id), because
+	// per-memory engines append the id themselves.
+	existsBase  string
+	existsID    string
 	searchReq   *enginetypes.SearchRequest
 	searchResp  *enginetypes.SearchResult
 	updateCond  map[string]interface{}
 	updateValue map[string]interface{}
 	updateBase  string
 	updateID    string
+}
+
+func (e *memoryMessageDocEngine) ChunkStoreExists(_ context.Context, baseName, datasetID string) (bool, error) {
+	e.existsBase = baseName
+	e.existsID = datasetID
+	return !e.noChunkStore, nil
 }
 
 func (e *memoryMessageDocEngine) Search(ctx context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
@@ -730,6 +745,13 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
 		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
 	}
+	// The existence probe must ask about the write path's pair: engines that
+	// shard a dataset into its own table (Infinity) append the id themselves, so
+	// a pre-suffixed name would probe "<index>_<id>_<id>" and read empty forever.
+	if docEngine.existsBase != "memory_user-1" || docEngine.existsID != "mem-owned" {
+		t.Fatalf("ChunkStoreExists(%q, %q), want (memory_user-1, mem-owned)",
+			docEngine.existsBase, docEngine.existsID)
+	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)
 	}
@@ -840,5 +862,65 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	}
 	if docEngine.updateValue["status"] != 1 {
 		t.Fatalf("status update = %+v, want status 1", docEngine.updateValue)
+	}
+}
+
+// TestMemoryReadsSkipIndicesThatDoNotExistYet: a memory whose messages were never
+// saved has no message index, and that is an EMPTY answer — the read must not even
+// query the engine. Python's memory connector filters the index list the same way
+// before searching (memory/utils/es_conn.py:135-137), while its chunk connector
+// has no such filter and raises, which is why the engine now reports a missing
+// index as types.ErrIndexNotFound instead of swallowing it.
+func TestMemoryReadsSkipIndicesThatDoNotExistYet(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	seedMemoryMessages(t)
+
+	docEngine := &memoryMessageDocEngine{
+		noChunkStore: true,
+		searchResp: &enginetypes.SearchResult{
+			Total:  1,
+			Chunks: []map[string]interface{}{{"content": "must not be read"}},
+		},
+	}
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
+
+	got, code, err := svc.SearchMessage(t.Context(), "user-1",
+		map[string]interface{}{"memory_id": []string{"mem-owned"}},
+		map[string]interface{}{"query": "hello", "top_n": 5})
+	if err != nil {
+		t.Fatalf("SearchMessage error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+	if len(got) != 0 {
+		t.Fatalf("search result = %+v, want empty", got)
+	}
+
+	recent, code, err := svc.GetMessages(t.Context(), []string{"mem-owned"}, "user-1", "", "", 3)
+	if err != nil {
+		t.Fatalf("GetMessages error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+	if len(recent) != 0 {
+		t.Fatalf("recent messages = %+v, want empty", recent)
+	}
+
+	page, err := svc.listMemoryMessages(t.Context(),
+		&entity.Memory{ID: "mem-owned", TenantID: "user-1"}, nil, "", 1, 10)
+	if err != nil {
+		t.Fatalf("listMemoryMessages error: %v", err)
+	}
+	if total, _ := page["total_count"].(int64); total != 0 {
+		t.Fatalf("total_count = %v, want 0", page["total_count"])
+	}
+	if list, _ := page["message_list"].([]map[string]interface{}); len(list) != 0 {
+		t.Fatalf("message_list = %v, want empty", page["message_list"])
+	}
+
+	if docEngine.searchReq != nil {
+		t.Fatalf("engine was queried despite no memory index existing: %+v", docEngine.searchReq)
 	}
 }

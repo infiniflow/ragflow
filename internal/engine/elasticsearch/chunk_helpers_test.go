@@ -2,6 +2,7 @@ package elasticsearch
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -717,4 +718,103 @@ func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
 		t.Fatalf("tokenized_content_ltks = %#v, want refreshed tokenized string", doc["tokenized_content_ltks"])
 	}
 	assertEqual(t, doc["status_int"], 0)
+}
+
+// newSearchTestEngine spins up a mock ES that always answers with status and
+// body, and returns an engine pointed at it.
+func newSearchTestEngine(t *testing.T, status int, body string) *Engine {
+	t.Helper()
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	return &Engine{client: client}
+}
+
+// TestSearchReturnsErrorForRejectedQuery: an ES rejection is a defect in the
+// REQUEST, not an empty corpus. Swallowing it kept the tag vocabulary empty for
+// as long as the query stayed broken (observed: from+size 100000 beyond
+// index.max_result_window).
+func TestSearchReturnsErrorForRejectedQuery(t *testing.T) {
+	engine := newSearchTestEngine(t, http.StatusBadRequest, `{"error":{"root_cause":[{"type":"illegal_argument_exception","reason":"Result window is too large, from + size must be less than or equal to: [10000] but was [100000]"}],"type":"search_phase_execution_exception","reason":"all shards failed"}}`)
+
+	res, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		Limit:      100000,
+	})
+	if err == nil {
+		t.Fatalf("Search = %#v, nil; want an error for a rejected query", res)
+	}
+	if !strings.Contains(err.Error(), "Result window is too large") {
+		t.Fatalf("Search error = %v, want the ES reason", err)
+	}
+}
+
+// TestSearchReturnsIndexNotFoundError: a missing index is the caller's state to
+// rule out (readers that can legitimately run before the index exists ask first
+// — SearchMetadata, skill search, ListTags, memory), so Search reports it as the
+// typed error instead of reading it as "no results".
+func TestSearchReturnsIndexNotFoundError(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{
+			name:   "404",
+			status: http.StatusNotFound,
+			body:   `{"error":{"root_cause":[{"type":"index_not_found_exception","reason":"no such index [ragflow_tenant]"}],"type":"index_not_found_exception","reason":"no such index [ragflow_tenant]"}}`,
+		},
+		{
+			// ES reports a missing index inside a multi-index request as a 400.
+			name:   "400 with index_not_found_exception",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"type":"index_not_found_exception","reason":"no such index [ragflow_tenant]"}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := newSearchTestEngine(t, tc.status, tc.body)
+			res, err := engine.Search(t.Context(), &types.SearchRequest{
+				IndexNames: []string{"ragflow_tenant"},
+				Limit:      10,
+			})
+			if !errors.Is(err, types.ErrIndexNotFound) {
+				t.Fatalf("Search error = %v, want types.ErrIndexNotFound", err)
+			}
+			if res == nil || len(res.Chunks) != 0 || res.Total != 0 {
+				t.Fatalf("Search = %#v, want an empty result alongside the error", res)
+			}
+		})
+	}
+}
+
+// TestSearchReturnsErrorForTimedOutResponse: a timed-out search carries a
+// PARTIAL hit set; Python's connector raises for it, and reading it as the whole
+// corpus would silently drop evidence.
+func TestSearchReturnsErrorForTimedOutResponse(t *testing.T) {
+	engine := newSearchTestEngine(t, http.StatusOK, `{"timed_out":true,"hits":{"total":{"value":9},"hits":[]}}`)
+
+	res, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		Limit:      10,
+	})
+	if err == nil {
+		t.Fatalf("Search = %#v, nil; want an error for a timed-out search", res)
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Search error = %v, want a timeout", err)
+	}
 }

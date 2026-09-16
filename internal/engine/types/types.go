@@ -133,9 +133,11 @@ type FusionExpr struct {
 	FusionParams map[string]interface{} // Fusion parameters (e.g., {"weights": "0.05,0.95"})
 }
 
-// LogSearchRequest logs SearchRequest in debug mode
+// LogSearchRequest logs SearchRequest
 func LogSearchRequest(engineName string, req *SearchRequest) {
 	if !common.IsDebugEnabled() {
+		common.Info(fmt.Sprintf("%s search: indexNames=%v, KbIDs=%v, offset=%d, limit=%d, SelectFields=%v, RankFeature=%v",
+			engineName, req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.RankFeature))
 		return
 	}
 
@@ -153,7 +155,7 @@ func LogSearchRequest(engineName string, req *SearchRequest) {
 		}
 	}
 
-	common.Debug(fmt.Sprintf("Search request:\n"+
+	common.Debug(fmt.Sprintf("%s search:\n"+
 		"    indexNames=%v\n"+
 		"    KbIDs=%v\n"+
 		"    offset=%d, limit=%d\n"+
@@ -161,5 +163,5 @@ func LogSearchRequest(engineName string, req *SearchRequest) {
 		"    Filter=%v\n"+
 		"    MatchExprs:\n%s    orderBy=%v\n"+
 		"    RankFeature=%v",
-		req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.Filter, matchExprsStr, req.OrderBy, req.RankFeature))
+		engineName, req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.Filter, matchExprsStr, req.OrderBy, req.RankFeature))
 }

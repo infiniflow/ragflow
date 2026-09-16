@@ -200,11 +200,13 @@ type RetrieveRequest struct {
 	// (Python tools.meta_data_filter). Nil means no filtering.
 	MetaDataFilter map[string]any
 	// RankFeature mirrors Python RAGTools.retrieve's `rank_feature` argument
-	// (agentic_rag.py:retrieve): question-type tags produced by
-	// label_question(question, self.kbs) that the retriever uses to boost
-	// matching chunks. The Go engine consumes it as a tag → weight map (matching
-	// internal/engine/types and the chat pipeline), so it is map[string]float64,
-	// not a bare list. Nil means no rank feature (Python passes None).
+	// (agentic_rag.py:723): question-type tags from label_question(question,
+	// self.kbs) that boost matching chunks, consumed by the engine as a
+	// tag → weight map. Three states, because Python's retrieval() tells them
+	// apart (rag/nlp/search.py:722): nil = argument omitted (the
+	// hybrid/vector/bm25 legs), keeping the retriever's {PAGERANK_FLD: 10}
+	// default; empty non-nil = "no tag feature" (Python's None), which suppresses
+	// that default; otherwise the tag weights.
 	RankFeature map[string]float64
 	// ExcludeCompiled excludes compiled-product rows from plain retrieval
 	// (Python hybrid_search passes must_not={"exists": "compile_kwd"},
@@ -781,14 +783,19 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 
 	// 4. Retrieve.
 	// rank_feature ONLY on the retrieve leg (Python RAGTools.retrieve:
-	// rank_feature=label_question(question, self.kbs), agentic_rag.py:668).
-	// search.py's hybrid/vector/bm25 legs never pass it (:158-173/:223-238/
-	// :260-275), so the other entry points leave the request's RankFeature nil.
-	// Go computes it from the KB objects via the injected Tagger; nil Tagger ⇒
-	// no boost (Python's label_question returns None).
+	// rank_feature=label_question(question, self.kbs), agentic_rag.py:723); the
+	// hybrid/vector/bm25 legs never pass the argument, which is the nil below.
 	var rankFeature map[string]float64
-	if opts.rankFeature && deps.Tagger != nil {
-		rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
+	if opts.rankFeature {
+		if deps.Tagger != nil {
+			rankFeature = deps.Tagger.LabelQuestion(ctx, effectiveQuery, deps.KBs)
+		}
+		// A nil result (no Tagger, no tag vocabulary) is a value, not an
+		// omission: Python hands that None straight to retrieval(), which
+		// suppresses the default instead of re-enabling it.
+		if rankFeature == nil {
+			rankFeature = map[string]float64{}
+		}
 	}
 	// Neither of the leg's two lines is emitted here: the searching line is above
 	// and the result line at the end (reportSearchResult). Emitting either one here

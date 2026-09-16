@@ -73,12 +73,21 @@ type RetrievalRequest struct {
 	CrossLanguages      []string
 	TOCEnhance          bool
 	// RankFeature mirrors Python RAGTools.retrieve's rank_feature argument:
-	// question-type tags (from label_question) the retriever uses to boost
-	// matching chunks. The Go engine consumes it as a tag → weight map, so it
-	// is *map[string]float64. Nil means no tag boost (fall back to enhancer).
-	RankFeature    *map[string]float64
-	MetaDataFilter map[string]any
-	RetrievalFrom  string
+	// question-type tags (from label_question) that boost matching chunks,
+	// consumed by the engine as a tag → weight map. Three states, as in Python
+	// (rag/nlp/search.py:722): nil = argument omitted, so the nlp layer applies
+	// its own default; a non-nil pointer to an EMPTY map = "no tag feature",
+	// which suppresses that default (Python's None); a populated map = the
+	// weights.
+	RankFeature *map[string]float64
+	// ResolveRankFeature asks the backend to compute the tag feature itself
+	// (Python label_question) when RankFeature carries no value. Only the canvas
+	// retrieval tool sets it (agent/tools/retrieval.py:245 passes
+	// rank_feature=label_question unconditionally); the harness legs leave it
+	// unset because Python's harness/tools/search.py passes no rank_feature.
+	ResolveRankFeature bool
+	MetaDataFilter     map[string]any
+	RetrievalFrom      string
 	// DocScope restricts retrieval to a set of document ids (from document_ids
 	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
 	DocScope []string

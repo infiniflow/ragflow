@@ -255,15 +255,9 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	}
 	query = retrievalUserPrefixPattern.ReplaceAllString(query, "")
 	// rank_feature (Python retrieve: rank_feature=label_question(question,
-	// self.kbs)). Prefer a feature supplied on the request (computed by RAGTools
-	// from its own KB objects) so the agentic tool stays authoritative; fall
-	// back to the enhancer, which resolves the KB objects itself.
-	var rankFeature map[string]float64
-	if req.RankFeature != nil && len(*req.RankFeature) > 0 {
-		rankFeature = *req.RankFeature
-	} else if a.enhancer != nil {
-		rankFeature = a.enhancer.LabelQuestion(ctx, query, datasets.kbs)
-	}
+	// self.kbs)). A feature supplied on the request stays authoritative; the
+	// enhancer resolves it only for callers that asked for it.
+	rankFeature := resolveRankFeature(ctx, req, a.enhancer, query, datasets.kbs)
 	rerankModel, err := a.resolveRerankModel(ctx, req, datasets.kbs[0].TenantID)
 	if err != nil {
 		return nil, err
@@ -274,6 +268,9 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	preparedReq.DatasetIDs = append([]string(nil), datasets.kbIDs...)
 	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
 	nlpReq.RerankModel = rerankModel
+	// Passed verbatim — an empty feature included, which is how "explicitly no
+	// tag feature" reaches the nlp layer and keeps its {PAGERANK_FLD: 10}
+	// default out of the query.
 	if rankFeature != nil {
 		nlpReq.RankFeature = &rankFeature
 	}
@@ -312,6 +309,40 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		out = append(out, translateChunk(raw))
 	}
 	return out, nil
+}
+
+// resolveRankFeature decides the tag-based rank feature for one retrieval,
+// mirroring who computes it in Python:
+//
+//   - RAGTools.retrieve passes the value it computed (agentic_rag.py:723) — an
+//     empty one included, so a value on the request always wins;
+//   - the canvas retrieval tool always asks for label_question
+//     (agent/tools/retrieval.py:245), which ResolveRankFeature marks; a nil
+//     result (no tag source) is Python's None — explicitly no feature;
+//   - the harness legs pass nothing (harness/tools/search.py), so nil here
+//     preserves retrieval()'s own {PAGERANK_FLD: 10} default.
+func resolveRankFeature(
+	ctx context.Context,
+	req RetrievalRequest,
+	enhancer retrievalEnhancer,
+	query string,
+	kbs []*entity.Knowledgebase,
+) map[string]float64 {
+	if req.RankFeature != nil {
+		return *req.RankFeature
+	}
+	if req.ResolveRankFeature {
+		if enhancer != nil {
+			if resolved := enhancer.LabelQuestion(ctx, query, kbs); resolved != nil {
+				return resolved
+			}
+		}
+		// label_question found nothing (rag/app/tag.py:126-139 returns None
+		// without a tag source): an explicit empty feature, not an omission, so
+		// the nlp layer keeps its default out of the query.
+		return map[string]float64{}
+	}
+	return nil
 }
 
 func nlpRequestFromRetrieval(

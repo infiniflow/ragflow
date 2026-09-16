@@ -53,7 +53,7 @@ type parsedMatch struct {
 // req.KbIDs with a kb_id filter. Because all datasets share one table, BM25 is
 // scored over the whole tenant corpus.
 func (e *serenedbEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	types.LogSearchRequest("serenedb", req)
+	types.LogSearchRequest("SereneDB", req)
 
 	pm := parseMatchExprs(req.MatchExprs)
 	outputFields := resolveOutputFields(req.SelectFields)

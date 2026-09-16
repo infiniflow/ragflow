@@ -1100,6 +1100,15 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	if s.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("message store is not initialized")
 	}
+	indexNames, err := s.existingMemorySearchIndexNames(ctx, memories)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(indexNames) == 0 {
+		// Nothing here has ever saved a message: an empty answer, not a failure
+		// (Python's memory connector returns (None, 0) for this state).
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
 
 	topN := memoryIntParam(params["top_n"], 5)
 	if topN <= 0 {
@@ -1157,7 +1166,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	}
 
 	searchReq := &enginetypes.SearchRequest{
-		IndexNames:   memorySearchIndexNames(memories),
+		IndexNames:   indexNames,
 		Offset:       0,
 		Limit:        topN,
 		SelectFields: memoryMessageSelectFields(),
@@ -1341,24 +1350,51 @@ func memoryIndexName(tenantID string) string {
 	return fmt.Sprintf("memory_%s_%s", prefix, tenantID)
 }
 
-func memorySearchIndexNames(memories []*entity.Memory) []string {
+// memoryIndexNameFor returns the index holding one memory's messages: per tenant
+// for ES/OpenSearch, per memory for Infinity — the same name the write path
+// creates (memory_message_service.embedAndSaveMessages).
+func memoryIndexNameFor(memory *entity.Memory) string {
+	indexName := memoryIndexName(memory.TenantID)
+	if engine.GetEngineType() == "infinity" {
+		indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
+	}
+	return indexName
+}
+
+// existingMemorySearchIndexNames keeps only the message indices that exist: a
+// memory's index is created on its FIRST save, so a read against one whose
+// messages were never saved is an empty answer, not a failure — the filter
+// Python's memory connector applies before querying (memory/utils/es_conn.py:
+// 135-137), unlike the chunk connector, which raises. That difference is why the
+// engine returns types.ErrIndexNotFound instead of swallowing it.
+func (s *MemoryService) existingMemorySearchIndexNames(ctx context.Context, memories []*entity.Memory) ([]string, error) {
 	seen := make(map[string]struct{}, len(memories))
 	indexNames := make([]string, 0, len(memories))
 	for _, memory := range memories {
 		if memory == nil {
 			continue
 		}
-		indexName := memoryIndexName(memory.TenantID)
-		if engine.GetEngineType() == "infinity" {
-			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
-		}
+		indexName := memoryIndexNameFor(memory)
 		if _, ok := seen[indexName]; ok {
 			continue
 		}
 		seen[indexName] = struct{}{}
+		// Probe with the SAME pair the write path passes
+		// (memory_message_service.embedAndSaveMessages): per-tenant index name plus
+		// memory id. Engines that shard per memory (Infinity) append the id
+		// themselves, so passing the already-suffixed search name here would ask
+		// for "<index>_<id>_<id>" and every read would look empty.
+		exists, err := s.docEngine.ChunkStoreExists(ctx, memoryIndexName(memory.TenantID), memory.ID)
+		if err != nil {
+			return nil, fmt.Errorf("check memory message index %q: %w", indexName, err)
+		}
+		if !exists {
+			slog.Debug("Memory message index absent, skipping it", "index", indexName)
+			continue
+		}
 		indexNames = append(indexNames, indexName)
 	}
-	return indexNames
+	return indexNames, nil
 }
 
 func memoryMessageTextExpr(question string, similarityThreshold float64) *enginetypes.MatchTextExpr {
@@ -1443,12 +1479,20 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	if s.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("doc engine is nil")
 	}
+	indexNames, err := s.existingMemorySearchIndexNames(ctx, memories)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(indexNames) == 0 {
+		// No memory here has ever saved a message: an empty answer, not a
+		// failure (Python's memory connector returns (None, 0) for this state).
+		return []map[string]interface{}{}, common.CodeSuccess, nil
+	}
 	if limit <= 0 {
 		limit = defaultMessageLimit
 	} else if limit > maxMessageLimit {
 		limit = maxMessageLimit
 	}
-	indexNames := memorySearchIndexNames(memories)
 	memoryIDs := make([]string, 0, len(memories))
 	for _, memory := range memories {
 		if memory == nil || strings.TrimSpace(memory.ID) == "" {
@@ -1779,7 +1823,19 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		filter["session_id"] = keywords
 	}
 	filter["memory_id"] = []string{memoryID}
-	indexNames := memorySearchIndexNames([]*entity.Memory{memory})
+	messages := map[string]interface{}{
+		"message_list": []map[string]interface{}{},
+		"total_count":  int64(0),
+	}
+	indexNames, err := s.existingMemorySearchIndexNames(ctx, []*entity.Memory{memory})
+	if err != nil {
+		return nil, err
+	}
+	if len(indexNames) == 0 {
+		// Never saved a message, so its index does not exist yet: an empty page,
+		// not a failure (Python's memory connector returns (None, 0)).
+		return messages, nil
+	}
 
 	rawReq := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,
@@ -1795,10 +1851,6 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		return nil, err
 	}
 
-	messages := map[string]interface{}{
-		"message_list": []map[string]interface{}{},
-		"total_count":  int64(0),
-	}
 	if rawResult != nil {
 		messages["total_count"] = rawResult.Total
 	}

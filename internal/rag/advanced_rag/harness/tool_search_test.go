@@ -183,8 +183,10 @@ func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
 		t.Errorf("RetrieveSearch RankFeature = %v, want %v", got, want)
 	}
 
-	// Nil Tagger -> empty rank feature even on the retrieve leg (Python
-	// label_question returning None).
+	// Nil Tagger: the retrieve leg passes label_question's RESULT, and Python's
+	// None there is a value — an explicit empty feature that suppresses
+	// retrieval()'s pagerank default. Nil would mean "argument omitted", i.e.
+	// the legs' value, so this must stay a non-nil empty map.
 	r3 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
 	deps3, _ := newTestSearchDeps(r3)
 	deps3.UsingEmbedding = true
@@ -192,13 +194,33 @@ func TestRankFeatureOnlyOnRetrieveLeg(t *testing.T) {
 	if len(r3.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(r3.requests))
 	}
-	if len(r3.requests[0].RankFeature) != 0 {
-		t.Errorf("RankFeature = %v, want empty for nil Tagger", r3.requests[0].RankFeature)
+	if got := r3.requests[0].RankFeature; got == nil || len(got) != 0 {
+		t.Errorf("RankFeature = %v, want a non-nil empty map for a nil Tagger", got)
+	}
+
+	// A Tagger that resolves nothing (dataset without tag values) behaves the
+	// same: Python's label_question returns None there too.
+	r4 := &stubRetriever{chunks: []map[string]any{{"content": "hit"}}}
+	deps4, _ := newTestSearchDeps(r4)
+	deps4.KBs = []*entity.Knowledgebase{{}}
+	deps4.Tagger = stubTagger{t: t, empty: true}
+	deps4.UsingEmbedding = true
+	RetrieveSearch(context.Background(), deps4, SearchParams{Question: "who made it?"})
+	if len(r4.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(r4.requests))
+	}
+	if got := r4.requests[0].RankFeature; got == nil || len(got) != 0 {
+		t.Errorf("RankFeature = %v, want a non-nil empty map when label_question finds nothing", got)
 	}
 }
 
 // stubTagger implements QuestionLabeler for TestHybridSearchPassesRankFeature.
-type stubTagger struct{ t *testing.T }
+type stubTagger struct {
+	t *testing.T
+	// empty makes LabelQuestion resolve nothing, which is Python's
+	// label_question returning None for a dataset with no tag source.
+	empty bool
+}
 
 func (s stubTagger) LabelQuestion(_ context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
 	if question != "who made it?" {
@@ -206,6 +228,9 @@ func (s stubTagger) LabelQuestion(_ context.Context, question string, kbs []*ent
 	}
 	if len(kbs) != 1 {
 		s.t.Errorf("LabelQuestion called with %d kbs, want 1", len(kbs))
+	}
+	if s.empty {
+		return nil
 	}
 	return map[string]float64{"definition": 1.0, "entity": 1.0}
 }
