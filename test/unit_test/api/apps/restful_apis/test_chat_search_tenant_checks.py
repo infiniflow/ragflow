@@ -227,13 +227,13 @@ def _load_bot_api(monkeypatch, *, kb_accessible, search_accessible, search_detai
         UserTenantService=SimpleNamespace(),
     )
     _stub(monkeypatch, "api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=lambda *_a, **_k: {}, resolve_model_config=lambda *_a, **_k: {})
+
     def _apply_meta_data_filter(*_args, **kwargs):
         calls.setdefault("apply_meta_data_filter", []).append(sorted(kwargs.get("kb_ids") or []))
         loader = kwargs.get("metas_loader")
         if loader is not None:
             loader()
             calls.setdefault("metas_loaded", []).append(True)
-        return None
 
     _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=_apply_meta_data_filter)
     _stub(monkeypatch, "common.misc_utils", get_uuid=lambda: "uuid", thread_pool_exec=_thread_pool_exec)
