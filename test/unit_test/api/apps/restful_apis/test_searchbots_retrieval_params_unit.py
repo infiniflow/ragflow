@@ -62,7 +62,7 @@ def _load_bot_api(monkeypatch):
         _module_stub(
             "api.apps",
             AUTH_BETA="beta",
-            login_required=lambda *a, **k: (a[0] if a and callable(a[0]) else (lambda f: f)),
+            login_required=lambda *a, **k: a[0] if a and callable(a[0]) else (lambda f: f),
         ),
     )
     monkeypatch.setitem(sys.modules, "api.db.services.api_service", _module_stub("api.db.services.api_service", API4ConversationService=SimpleNamespace()))
@@ -74,14 +74,18 @@ def _load_bot_api(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", _module_stub("api.db.services.llm_service", LLMBundle=None, resolve_llm_setting=None))
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", _module_stub("api.db.services.user_service", TenantService=SimpleNamespace(), UserTenantService=SimpleNamespace()))
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", _module_stub("api.db.services.search_service", SearchService=SimpleNamespace()))
-    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", _module_stub("api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=None, resolve_model_config=None))
+    monkeypatch.setitem(
+        sys.modules, "api.db.joint_services.tenant_model_service", _module_stub("api.db.joint_services.tenant_model_service", get_tenant_default_model_by_type=None, resolve_model_config=None)
+    )
     monkeypatch.setitem(sys.modules, "common.metadata_utils", _module_stub("common.metadata_utils", apply_meta_data_filter=None))
     monkeypatch.setitem(sys.modules, "common.misc_utils", _module_stub("common.misc_utils", thread_pool_exec=None))
     monkeypatch.setitem(sys.modules, "rag.app.tag", _module_stub("rag.app.tag", label_question=None))
     monkeypatch.setitem(sys.modules, "rag.prompts.template", _module_stub("rag.prompts.template", load_prompt=None))
     monkeypatch.setitem(sys.modules, "rag.prompts.generator", _module_stub("rag.prompts.generator", cross_languages=None, keyword_extraction=None))
     monkeypatch.setitem(sys.modules, "rag.utils.web_search_conn", _module_stub("rag.utils.web_search_conn", has_web_search_provider=None))
-    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", _module_stub("api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=None, resolve_reference_metadata_preferences=None))
+    monkeypatch.setitem(
+        sys.modules, "api.utils.reference_metadata_utils", _module_stub("api.utils.reference_metadata_utils", enrich_chunks_with_document_metadata=None, resolve_reference_metadata_preferences=None)
+    )
     monkeypatch.setitem(
         sys.modules,
         "api.utils.pagination_utils",
@@ -98,13 +102,15 @@ def _load_bot_api(monkeypatch):
             add_tenant_id_to_kwargs=lambda f: f,
             get_request_json=lambda: asyncio.sleep(0, result=REQUEST_JSON),
             server_error_response=lambda e: _envelope(None, str(e), 100),
-            validate_request=lambda *_a, **_k: (lambda f: f),
+            validate_request=lambda *_a, **_k: lambda f: f,
         ),
     )
     monkeypatch.setitem(
         sys.modules,
         "common.constants",
-        _module_stub("common.constants", RetCode=SimpleNamespace(DATA_ERROR=102, ARGUMENT_ERROR=101), LLMType=SimpleNamespace(CHAT="chat"), StatusEnum=SimpleNamespace(VALID=SimpleNamespace(value="1"))),
+        _module_stub(
+            "common.constants", RetCode=SimpleNamespace(DATA_ERROR=102, ARGUMENT_ERROR=101), LLMType=SimpleNamespace(CHAT="chat"), StatusEnum=SimpleNamespace(VALID=SimpleNamespace(value="1"))
+        ),
     )
     monkeypatch.setitem(sys.modules, "common", _module_stub("common", settings=SimpleNamespace()))
 
