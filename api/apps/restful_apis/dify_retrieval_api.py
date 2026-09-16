@@ -99,10 +99,10 @@ def _parse_retrieval_options(retrieval_setting):
     if retrieval_setting is None:
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
-        raise TypeError("retrieval_setting must be an object")
+        raise ValueError("retrieval_setting must be an object")  # noqa: TRY004
     raw_top = retrieval_setting.get("top_k", 1024)
     if isinstance(raw_top, bool):
-        raise TypeError("top_k must be an integer, not a boolean")
+        raise ValueError("top_k must be an integer, not a boolean")  # noqa: TRY004
     if isinstance(raw_top, float) and not raw_top.is_integer():
         raise ValueError("top_k must be a whole number")
     try:
