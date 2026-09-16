@@ -20,6 +20,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/advanced_rag/harness"
+	"ragflow/internal/rag/advanced_rag/slots"
 )
 
 // ---------------------------------------------------------------------------
@@ -741,7 +742,7 @@ func TestRunSlotResearchPassLedgerRecordsSessionHint(t *testing.T) {
 		Tools: &harness.Toolset{Exec: sessionStubExec{}},
 		KB:    &harness.Kbinfos{},
 	}
-	res := RunSlotResearchPass(context.Background(), deps, "who opened it?", st, 60)
+	res := RunSlotResearchPass(context.Background(), context.Background(), deps, "who opened it?", st, 60)
 	if res == nil {
 		t.Fatal("RunSlotResearchPass returned nil")
 	}
@@ -779,7 +780,7 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 		Tools: &harness.Toolset{Exec: sessionStubExec{}},
 		KB:    &harness.Kbinfos{},
 	}
-	if res := RunSlotResearchPass(context.Background(), deps, "who opened it?", st, 60); res == nil {
+	if res := RunSlotResearchPass(context.Background(), context.Background(), deps, "who opened it?", st, 60); res == nil {
 		t.Fatal("RunSlotResearchPass returned nil")
 	}
 	if !strings.Contains(buf.String(), "slot evidence bound") {
@@ -3003,10 +3004,10 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	// A list beats a NUMBER: the number is a claim ABOUT the list, and the list is
 	// the members. The number is not lost — it stays as an alternate clue.
 	base := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "count", Candidate: strPtr("10"), CandidateStrength: &strong},
+		typedCountVar(1, "count", 10, strong),
 	}, 0, nil)
 	enumeration := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "count", Candidate: strPtr("华雄、颜良、管亥、车胄、蔡阳"), CandidateStrength: &weak},
+		typedMembersVarS(1, "count", weak, "华雄", "颜良", "管亥", "车胄", "蔡阳"),
 	}, 0, nil)
 	merged := MergeSlotPatch(base, enumeration)
 	if merged == nil {
@@ -3022,10 +3023,10 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	// Two lists union, and neither side's members are dropped.
 	twoLists := MergeSlotPatch(
 		harness.NewState([]harness.Variable{
-			{ID: 1, Type: "entity", Candidate: strPtr("孔秀、孟坦"), CandidateStrength: &strong},
+			typedMembersVarS(1, "entity", strong, "孔秀", "孟坦"),
 		}, 0, nil),
 		harness.NewState([]harness.Variable{
-			{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
+			typedMembersVarS(1, "entity", weak, "华雄", "颜良", "庞德"),
 		}, 0, nil),
 	)
 	if twoLists == nil {
@@ -3041,10 +3042,10 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	// with it is a set that loses members.
 	numbers := MergeSlotPatch(
 		harness.NewState([]harness.Variable{
-			{ID: 1, Type: "count", Candidate: strPtr("10"), CandidateStrength: &strong},
+			typedCountVar(1, "count", 10, strong),
 		}, 0, nil),
 		harness.NewState([]harness.Variable{
-			{ID: 1, Type: "count", Candidate: strPtr("12"), CandidateStrength: &weak},
+			typedCountVar(1, "count", 12, weak),
 		}, 0, nil),
 	)
 	if numbers == nil || *numbers.ByID(1).Candidate != "12" {
@@ -3063,8 +3064,8 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 // as an alternate clue, so the record still shows what was claimed.
 func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("10")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥")},
+		typedCountVar(0, "count", 10, 0),
+		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
 	}, 0, nil)
 	raised := reconcileCountSlots(&table)
 	if len(raised) != 1 || raised[0] != 0 {
@@ -3077,27 +3078,52 @@ func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 	// An over-claim does not stand: the members are what the table can check, and
 	// the claim is kept beside them as an alternate.
 	bigger := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("16人")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福")},
+		typedCountVar(0, "count", 16, 0),
+		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
 	if changed := reconcileCountSlots(&bigger); len(changed) != 1 {
 		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
 	}
-	if got := *bigger.ByID(0).Candidate; got != "6人" {
-		t.Fatalf("count slot = %q, want 6人 (the members' size, unit included)", got)
+	if got := *bigger.ByID(0).Candidate; got != "6" {
+		t.Fatalf("count slot = %q, want 6 (the members' size)", got)
 	}
 	alts := alternateCandidatesOf(*bigger.ByID(0))
-	if len(alts) != 1 || alts[0] != "16人" {
+	if len(alts) != 1 || alts[0] != "16" {
 		t.Fatalf("alternates = %v, want the over-claim kept as the record's alternate", alts)
 	}
 
 	// A count that already agrees is left alone.
 	agreed := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("6")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福")},
+		typedCountVar(0, "count", 6, 0),
+		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
 	}, 0, nil)
 	if changed := reconcileCountSlots(&agreed); len(changed) != 0 {
 		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
+	}
+
+	// A count slot that carries NO number at all is given the derived one: measured
+	// (2026-09-16, 三国/关羽) a session wrote "约 17-19 人" into it, the qualifiers and
+	// the digits ended up in neither a member nor a number, and the record was left
+	// with a count nobody could reconstruct.
+	unreadable := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
+		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
+	}, 0, nil)
+	if changed := reconcileCountSlots(&unreadable); len(changed) != 1 {
+		t.Fatalf("changed = %v, want the unreadable count healed from the members", changed)
+	}
+	if got := *unreadable.ByID(0).Candidate; got != "6" {
+		t.Fatalf("count slot = %q, want 6 (the derived number)", got)
+	}
+
+	// The count of a table whose member slot is TEXT is left alone: prose claims no
+	// number and no members, and nothing here guesses at either.
+	textOnly := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑")},
+	}, 0, nil)
+	if changed := reconcileCountSlots(&textOnly); len(changed) != 0 {
+		t.Fatalf("changed = %v, want nothing derived from text", changed)
 	}
 }
 
@@ -3109,16 +3135,20 @@ func TestReconcileCountSlotsTakesTheEnumeratedSize(t *testing.T) {
 // enumerated size came out 28 against thirteen real names. That number was then
 // raised into the count slot and reported by the answer as its own.
 func TestMemberCountIgnoresProseFragments(t *testing.T) {
+	// The prose is Text and the names are declared members. The fixture that used to
+	// prove this (names wrapped in chapter prose, with the parser cutting the prose
+	// into "members") cannot be written any more: an undeclared slot contributes
+	// nothing, so the count is the members or it is nothing.
 	table := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("28")},
-		{ID: 1, Type: "web", Candidate: strPtr("孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、五关：东岭关(孔秀)、洛阳(韩福、孟坦)、汜水关(卞喜)、荥阳(王植)、黄河渡口(秦琪)、六将：孔秀")},
-		{ID: 2, Type: "web", Candidate: strPtr("华雄、颜良、文丑、第五回（发矫诏诸镇应曹公、破关兵三英战吕布）、第二十五回（屯土山关公约三事、救白马曹操解重围）")},
-		{ID: 3, Type: "web", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、过五关斩六将中六人：孔秀、庞德")},
+		typedCountVar(0, "count", 28, 0),
+		typedMembersVar(1, "web", "孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"),
+		{ID: 2, Type: "web", Candidate: strPtr("第五回（发矫诏诸镇应曹公、破关兵三英战吕布）、第二十五回（屯土山关公约三事、救白马曹操解重围）")},
+		typedMembersVar(3, "web", "华雄、颜良、文丑、庞德"),
 	}, 0, nil)
 
 	// Eleven distinct real names: the prose pieces around them are not members.
 	if got := enumeratedSize(table); got != 11 {
-		t.Fatalf("enumerated size = %d, want 11 (the names, not the chapter prose)", got)
+		t.Fatalf("enumerated size = %d, want 11 (the declared names, not the chapter prose)", got)
 	}
 	// And the count slot takes that number rather than the session's claim.
 	reconcileCountSlots(&table)
@@ -3188,11 +3218,11 @@ func TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate(t *testing.T) {
 // members, not the record.
 func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("10")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德")},
-		// A second slot of the same table holds REFERENCES, not members. Counting
-		// them as members is how this record once answered its own count with a
-		// nineteen on a twelve-member list.
+		typedCountVar(0, "count", 10, 0),
+		typedMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德"),
+		// A second slot of the same table holds REFERENCES, not members — and it is
+		// TEXT, so it contributes none: counting them is how this record once
+		// answered its own count with a nineteen on a twelve-member list.
 		{ID: 2, Type: "dataset", Candidate: strPtr("第5回(华雄)、第21回(车胄)、第25回(颜良)、第27回(五关六将)、第74回(庞德)")},
 	}, 0, nil)
 	rec := RenderSlotRecord(table, "关羽在《三国演义》中斩杀的有姓名人物共10人，名单如下：……")
@@ -3274,35 +3304,94 @@ func TestValueRecordCarriesNoEnumeratedMembers(t *testing.T) {
 // Measured in the run this pins: twenty-four names probed and each reached, slot 1
 // holding thirteen members, a session patching its own eleven at 0.95 against the
 // base's 0.90, and a final record of eleven.
-func TestUnionSetCandidatesIsOrderIndependent(t *testing.T) {
-	eleven := "华雄、管亥、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"
-	thirteen := "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、庞德、成何、管亥"
-	members := func(list string) string {
-		items, _ := setItems(list)
-		sort.Strings(items)
-		return strings.Join(items, "、")
+// typedMembersValue is a slot value that DECLARES a member list — the only shape the
+// runtime counts (see package slots): names with no declared kind are opaque text.
+func typedMembersValue(list string) slots.Value {
+	items := strings.Split(list, "、")
+	members := make([]slots.Member, 0, len(items))
+	for _, n := range items {
+		members = append(members, slots.Member{Name: strings.TrimSpace(n)})
 	}
-	want := members(thirteen)
+	return slots.Members(members...)
+}
 
-	up, _, ok := unionSetCandidates(&eleven, &thirteen)
-	if !ok || members(up) != want {
-		t.Fatalf("small→big: union = %q ok = %v, want the thirteen-name superset", up, ok)
+// typedMembersVar is typedMembersValue as the slot variable a session would patch.
+func typedMembersVar(id int, typ, list string) harness.Variable {
+	return typedMembersVarS(id, typ, 0, strings.Split(list, "、")...)
+}
+
+// typedMembersVarS is the same with an explicit strength, the way a session's patch
+// carries one.
+func typedMembersVarS(id int, typ string, strength float64, names ...string) harness.Variable {
+	items := make([]slots.Member, 0, len(names))
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n != "" {
+			items = append(items, slots.Member{Name: n})
+		}
 	}
-	down, _, ok := unionSetCandidates(&thirteen, &eleven)
+	v := slots.Members(items...)
+	rendered := slots.Render(v)
+	out := harness.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
+	if strength > 0 {
+		out.CandidateStrength = &strength
+	}
+	return out
+}
+
+func typedCountVar(id int, typ string, n int, strength float64) harness.Variable {
+	v := slots.Number(n)
+	rendered := slots.Render(v)
+	out := harness.Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
+	if strength > 0 {
+		out.CandidateStrength = &strength
+	}
+	return out
+}
+
+func TestUnionIsOrderIndependent(t *testing.T) {
+	eleven := typedMembersValue("华雄、管亥、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳")
+	thirteen := typedMembersValue("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、庞德、成何、管亥")
+	names := func(v slots.Value) string {
+		out := v.Names()
+		sort.Strings(out)
+		return strings.Join(out, "、")
+	}
+	want := names(thirteen)
+
+	up, _, ok := slots.Union(eleven, thirteen)
+	if !ok || names(up) != want {
+		t.Fatalf("small→big: union = %q ok = %v, want the thirteen-name superset", slots.Render(up), ok)
+	}
+	down, _, ok := slots.Union(thirteen, eleven)
 	if !ok {
 		t.Fatal("big→small must resolve too: a subset is a resolution, not a tiebreaker for strength")
 	}
-	if members(down) != want {
-		t.Fatalf("big→small: union = %q, want the base kept whole (a subset adds nothing)", down)
+	if names(down) != want {
+		t.Fatalf("big→small: union = %q, want the base kept whole (a subset adds nothing)", slots.Render(down))
 	}
 
 	// Two numbers keep the larger one, in both orders.
-	n13, n11 := "13", "11"
-	if got, _, ok := unionSetCandidates(&n13, &n11); !ok || got != "13" {
-		t.Fatalf("13→11 = %q ok=%v, want the larger count", got, ok)
+	if got, _, ok := slots.Union(slots.Number(13), slots.Number(11)); !ok || got.Count != 13 {
+		t.Fatalf("13→11 = %v ok=%v, want the larger count", got, ok)
 	}
-	if got, _, ok := unionSetCandidates(&n11, &n13); !ok || got != "13" {
-		t.Fatalf("11→13 = %q ok=%v, want the larger count", got, ok)
+	if got, _, ok := slots.Union(slots.Number(11), slots.Number(13)); !ok || got.Count != 13 {
+		t.Fatalf("11→13 = %v ok=%v, want the larger count", got, ok)
+	}
+
+	// A number never outvotes the members it counts: the number is the claim that
+	// loses, kept as the dropped value.
+	union, dropped, ok := slots.Union(thirteen, slots.Number(11))
+	if !ok || union.Kind != slots.KindMembers {
+		t.Fatalf("members vs count = %v ok=%v, want the members", union, ok)
+	}
+	if dropped.Count != 11 {
+		t.Fatalf("dropped = %v, want the losing count", dropped)
+	}
+
+	// Text is not the union's business: a value question merges by strength, exactly
+	// as it did before values were typed.
+	if _, _, ok := slots.Union(slots.Text("1858"), slots.Text("1849")); ok {
+		t.Error("text must not merge by union — that is what keeps a value question on its strength rule")
 	}
 }
 
@@ -3316,8 +3405,8 @@ func TestUnionSetCandidatesIsOrderIndependent(t *testing.T) {
 // the four extra being place-qualified copies of names already listed.
 func TestMemberUnionDropsPlaceAndEventPhrases(t *testing.T) {
 	table := harness.NewState([]harness.Variable{
-		{ID: 1, Type: "person", Candidate: strPtr("程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德")},
-		{ID: 2, Type: "count", Candidate: strPtr("孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪")},
+		typedMembersVar(1, "person", "程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德"),
+		typedMembersVar(2, "person", "孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪"),
 	}, 0, nil)
 
 	union := memberUnion(&table)
@@ -3346,11 +3435,195 @@ func TestLedgerQuoteCarriesTheWordsBehindAMember(t *testing.T) {
 	})
 	kb.RecordReachedTerm("文丑", "c1")
 
+	// The names are in the ledger either way; the words ride the set gate, so a
+	// value direction does not pay for them.
+	if ledger := probeLedger(kb); strings.Contains(ledger, "斩下马来") {
+		t.Fatalf("ledger = %q, want no per-member quotes before a set direction declares itself", ledger)
+	}
+
+	kb.MarkSetDirection()
 	ledger := probeLedger(kb)
 	if !strings.Contains(ledger, "文丑 — “") {
 		t.Fatalf("ledger = %q, want the member followed by the words that carry it", ledger)
 	}
 	if !strings.Contains(ledger, "斩下马来") {
 		t.Fatalf("ledger = %q, want the quoted passage itself", ledger)
+	}
+}
+
+// TestRecordContractStatesTheSettledValueIsTheAnswer pins the half of the record
+// contract that the measured "not found" answer needed: a record that is only a
+// check is droppable when the passages do not repeat its value.
+//
+// Measured (2026-09-16, FRAMES, mode high): the slot table held
+// `slot 0 [person]: Colin Beashel and Richard Coxon (Australia, Star class 1984
+// Olympics)` and the composed answer was "not found in the knowledge base" — the
+// passages around it were about other competitions, and the chat configuration
+// requires that sentence when the information is unavailable. The record has to
+// outrank the absence, or the research that found the answer is discarded.
+func TestRecordContractStatesTheSettledValueIsTheAnswer(t *testing.T) {
+	for _, want := range []string{
+		"that value IS the answer",
+		"do not report that the answer was not found while a slot holds one",
+		"evidence plainly contradicts a settled value",
+		"NEVER quote these lines",
+		"probed-and-answered",
+	} {
+		if !strings.Contains(recordContract, want) {
+			t.Errorf("recordContract is missing %q", want)
+		}
+	}
+}
+
+// TestBudgetExtensionIsBoughtOncePerQuestion pins the one-shot budget extension a
+// set-shaped pass buys.
+//
+// The budget fits ONE pass, and an enumeration needs a second one to pick up the
+// members a cut first pass never patched (measured 2026-09-16, 三国/关羽: the run
+// ended at `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone).
+// One extension, not a per-round top-up: the point is a second look, not an
+// unbounded run for any table that keeps declaring a set.
+func TestBudgetExtensionIsBoughtOncePerQuestion(t *testing.T) {
+	st := &AgenticState{Deadline: time.Now().Add(30 * time.Second)}
+	before := st.RemainingS()
+	if !st.ExtendDeadline(SetBudgetExtensionS) {
+		t.Fatal("the first extension must apply")
+	}
+	after := st.RemainingS()
+	if after < before+SetBudgetExtensionS-1 {
+		t.Errorf("remaining %.0fs after the extension, want ~%.0fs", after, before+SetBudgetExtensionS)
+	}
+	if st.ExtendDeadline(SetBudgetExtensionS) {
+		t.Error("a second extension must be refused: the budget is bought once per question")
+	}
+	if got := st.RemainingS(); got > after+1 {
+		t.Errorf("remaining %.0fs after the refused extension, want ~%.0f", got, after)
+	}
+}
+
+// sweepExec is an executor that can sweep: the graph's sweep is a runtime job over an
+// optional capability, so a test double only has to provide that one method.
+type sweepExec struct {
+	harness.ToolExecutor
+	byTerm map[string][]map[string]any
+	// asked records the subject each term was swept with, so a test can prove the
+	// round still offers the direction's subject to the sweep (the executor uses it as
+	// a fallback, not as a query prefix — see harness.ScanSweeper).
+	asked map[string]string
+}
+
+func (e *sweepExec) ScanTerm(_ context.Context, subject, term string, _ int) []map[string]any {
+	if e.asked == nil {
+		e.asked = map[string]string{}
+	}
+	e.asked[term] = subject
+	return e.byTerm[term]
+}
+
+// TestScanSweepTurnsDeclaredActWordsIntoAReadingList pins S3's core: a direction that
+// DECLARED the words its source uses for the act gets those words swept once by the
+// runtime, and the matches become the round's reading list with coverage counts.
+//
+// Measured (2026-09-16, 三国/关羽, four runs of one question): the answer missed 2-4
+// members each time and the missing names differed every run — 程远志 / 管亥 / 荀正 /
+// 车胄 appeared ZERO times in one run's log — because a session can only probe the names
+// it thinks of, while the corpus holds the truth.
+func TestScanSweepTurnsDeclaredActWordsIntoAReadingList(t *testing.T) {
+	exec := &sweepExec{byTerm: map[string][]map[string]any{
+		"斩": {{"chunk_id": "c1", "content": "云长提华雄之头"}, {"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"}},
+		"杀": {{"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"}, {"chunk_id": "c3", "content": "关公刀起，秦琪头落"}},
+	}}
+	kb := &harness.Kbinfos{}
+	st := &AgenticState{KB: kb}
+	table := harness.NewState([]harness.Variable{
+		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽"},
+		{ID: 1, Type: "person"},
+	}, 0, nil)
+
+	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, st, table)
+	if exec.asked["斩"] != "关羽" {
+		t.Fatalf("sweep asked %q for 斩, want the declared subject", exec.asked["斩"])
+	}
+
+	matched, read := kb.ScanCoverage()
+	if matched != 3 || read != 0 {
+		t.Fatalf("coverage = %d/%d, want 0/3 read: three distinct passages were matched", read, matched)
+	}
+	if terms := kb.DeclaredScanTerms(); len(terms) != 2 || terms[0] != "斩" {
+		t.Fatalf("declared terms = %v, want the act words the table declared", terms)
+	}
+
+	// A second pass over the same table adds nothing (the terms are already declared)
+	// — the sweep is bounded, not repeated.
+	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, st, table)
+	if matched, _ = kb.ScanCoverage(); matched != 3 {
+		t.Fatalf("matched = %d after a second sweep, want the same three passages", matched)
+	}
+
+	// The record states what the corpus covers, so an answer can say what it covers.
+	line := scanCoverageLine("record", kb)
+	for _, want := range []string{"matching passage(s)", "0 read", "have NOT been read", "斩、杀"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("coverage line = %q, missing %q", line, want)
+		}
+	}
+	kb.UnreadScan(harness.ScanItemsMax)
+	line = scanCoverageLine("record", kb)
+	if !strings.Contains(line, "Every passage the act matched has been read.") {
+		t.Errorf("coverage line = %q, want the complete-coverage wording", line)
+	}
+
+	// No declaration, no sweep: a value question pays nothing for this machinery.
+	plain := &harness.Kbinfos{}
+	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{Exec: exec}}, &AgenticState{KB: plain},
+		harness.NewState([]harness.Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}, 0, nil))
+	if matched, read := plain.ScanCoverage(); matched != 0 || read != 0 {
+		t.Fatalf("coverage = %d/%d on a table with no declared act words, want 0/0", read, matched)
+	}
+	if line := scanCoverageLine("record", plain); line != "record" {
+		t.Errorf("coverage line = %q, want the record untouched", line)
+	}
+
+	// An executor that cannot sweep leaves the round exactly as it was (here: no
+	// executor at all, which is also the low-mode shape).
+	noSweep := &harness.Kbinfos{}
+	runScanSweep(context.Background(), harness.SessionDeps{Tools: &harness.Toolset{}},
+		&AgenticState{KB: noSweep}, table)
+	if matched, _ := noSweep.ScanCoverage(); matched != 0 {
+		t.Fatalf("matched = %d with an executor that cannot sweep, want 0", matched)
+	}
+	if terms := noSweep.DeclaredScanTerms(); len(terms) != 2 {
+		t.Errorf("declared terms = %v, want them recorded even without a sweep", terms)
+	}
+}
+
+// TestRoutingCountsUnreadSweepMatchesAsWork pins the coverage stop rule at the loop
+// level: a round that read part of the sweep's reading list has WORK LEFT even when
+// every slot is filled and the review named no gap.
+//
+// Measured (2026-09-16, 三国/关羽): the sweep matched 56 passages, the sessions read
+// 38, the table reported unresolved=0 — and the run closed out with 18 matching
+// passages nobody had looked at, because nothing in the loop read the coverage.
+func TestRoutingCountsUnreadSweepMatchesAsWork(t *testing.T) {
+	kb := &harness.Kbinfos{}
+	kb.DeclareScanTerms([]string{"斩"})
+	kb.AddScanItems("斩", []map[string]any{
+		{"chunk_id": "c1", "content": "云长提华雄之头"},
+		{"chunk_id": "c2", "content": "刀起处，蔡阳头已落地"},
+	})
+	st := &AgenticState{
+		KB:           kb,
+		LastRoundNew: 3, // the round learned something, so "work left" is enough
+		Verdict:      VerdictSufficient,
+		Deadline:     time.Now().Add(120 * time.Second),
+	}
+	if got := routeSCA(st, true, 3); got != nodeQueryRewrite {
+		t.Fatalf("route = %v with two unread swept passages, want another round", got)
+	}
+
+	// Read them and the same state closes out: coverage is the reason it asked.
+	kb.UnreadScan(harness.ScanItemsMax)
+	if got := routeSCA(st, true, 3); got != nodeFormalizeAnswer {
+		t.Fatalf("route = %v with the sweep fully read, want the answer", got)
 	}
 }

@@ -521,7 +521,20 @@ func argString(args map[string]any, key string) string {
 // Claim pseudo-chunks BYPASS this cap: Python's _claim_prefetch appends them
 // directly to kbinfos["chunks"] (:755), and the cap check (:657) only guards
 // _admit_evidence's regular chunks.
-const evidencePoolCap = 120
+//
+// 200, not Python's 120. The 120 was sized for a consumer that no longer exists —
+// the round-level sweep that rendered the WHOLE pool into one prompt, where the cap
+// and that prompt's budget were the same number. Nothing renders the pool whole any
+// more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
+// digest, the draft is bounded), so the cap is a storage-discipline number again —
+// and on an enumeration it is the NEXT ceiling rather than a prompt limit. Measured
+// (2026-09-14, fixrecall): a round of batch name probing ended at 117 chunks, three
+// below the cap, with the question's members still arriving; at 200 the same shape
+// reached seventeen. Measured here (2026-09-16, 三国/关羽): the run's own line
+// `pool at the cap 120 but the batch asked about "管亥"; admitting the passage that
+// reaches it (pool 121, novelty slack 1/40)` — the tail members' passages are what
+// the cap refuses.
+const evidencePoolCap = 200
 
 // The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
 // the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
@@ -990,6 +1003,62 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
+}
+
+// ScanTerm implements ScanSweeper: the runtime's coverage sweep asks the keyword leg
+// for ONE declared act term, without a model asking (see scan.go for why).
+//
+// It runs the same leg a batched retrieve runs per term, which is the point: the
+// sweep must reach what a probe would reach, so that a member the model did not think
+// of is still in the reading list. It admits nothing to the pool — the reading list is
+// its own structure — so a sweep cannot displace the evidence a session is working
+// from.
+func (e *searchExecutor) ScanTerm(ctx context.Context, subject, term string, limit int) []map[string]any {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = ScanPerTerm
+	}
+	// The query is the act word ALONE; the subject is a fallback, not a prefix.
+	//
+	// A coverage sweep wants RECALL, and the leg ANDs the words it is given, so an
+	// alias-prone subject SUBTRACTS from it: measured (2026-09-16, 三国/关羽, one run)
+	// the act word 劈 swept as `关羽 劈` returned ZERO passages — a corpus whose text
+	// says 劈管亥于马下 and whose actor is called 云长 there carries no chunk with both
+	// words, so the one act word the members nobody thought of are worded with was the
+	// one act word the reading list never covered (the sweep log shows the leg running
+	// and the list getting nothing: `scan sweep "劈": 0 new`). Precision is not this
+	// call's job — every passage is filtered by the term below — so the subject could
+	// only ever re-rank, at the price of the recall the sweep exists for. It is still
+	// tried once, when the term alone reaches nothing.
+	chunks, _ := BM25Search(ctx, e.deps, SearchParams{Question: term, Keywords: term, TopN: limit})
+	out := termMatches(chunks, term)
+	if len(out) == 0 {
+		if s := strings.TrimSpace(subject); s != "" {
+			chunks, _ = BM25Search(ctx, e.deps, SearchParams{Question: s + " " + term, Keywords: term, TopN: limit})
+			out = termMatches(chunks, term)
+		}
+	}
+	return out
+}
+
+// termMatches keeps only the passages that carry term.
+//
+// A sweep's matches must be REAL: the leg ranks, and a ranking is a preference, so a
+// passage that does not carry the act word is not one of the passages the act matched.
+// Dropping them here is what makes the coverage counts mean what they say — and it is
+// also what makes the query's recall orientation safe, since nothing that does not
+// carry the term can enter the list from any ranking.
+func termMatches(chunks []map[string]any, term string) []map[string]any {
+	out := make([]map[string]any, 0, len(chunks))
+	for _, c := range chunks {
+		if strings.Contains(ChunkTextOf(c), term) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // calculate mirrors Python's calculate tool (action_session.py:_exec_calculate): derive a

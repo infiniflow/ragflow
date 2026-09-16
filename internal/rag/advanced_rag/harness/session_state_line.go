@@ -3,9 +3,9 @@ package harness
 import (
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
+	"ragflow/internal/rag/advanced_rag/slots"
 	"ragflow/internal/tokenizer"
 )
 
@@ -44,6 +44,14 @@ type SessionRecord struct {
 	// Undecided are confirmed members (Reached) that the slot table does not
 	// mention at all: the evidence exists, the decision does not.
 	Undecided []string
+	// ScanMatched / ScanRead are the coverage of the runtime's own sweep for the act
+	// words a direction declared (see scan.go): how many corpus passages match the
+	// act, and how many a session has been shown. They are the enumeration's stop
+	// rule — "complete" is a property of the corpus, not of the model's patience.
+	ScanMatched int
+	ScanRead    int
+	// ScanTerms are the act words declared for this table, in declaration order.
+	ScanTerms []string
 }
 
 // CollectSessionRecord gathers the record from the live pool plus the session's
@@ -60,21 +68,20 @@ func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
 			r.Reached = append(r.Reached, rt.Term)
 		}
 		r.Absent = kb.ProbedAbsentTerms()
+		r.ScanMatched, r.ScanRead = kb.ScanCoverage()
+		r.ScanTerms = kb.DeclaredScanTerms()
 	}
-	// Members come from the candidates, split on the separators a list answer
-	// uses, so a multi-name candidate reads as its members.
+	// Members come from the slots that DECLARE members (slots.KindMembers), each
+	// item carrying its evidence. Nothing is split out of text: a slot holding a
+	// sentence, a date or a count contributes no members, and the text is never
+	// inspected to find out whether it might have been a list (see package slots for
+	// the measurement that made this fail closed).
 	seen := map[string]bool{}
 	for _, v := range table.State {
-		if v.Candidate == nil {
+		if v.Typed().Kind != slots.KindMembers {
 			continue
 		}
-		for _, name := range SplitCandidateNames(*v.Candidate) {
-			// A count is not a member. The slot that holds the answer to "how
-			// many" is a number, and counting it here would both inflate the
-			// members and put a digit in the list the model reads.
-			if IsCountValue(name) {
-				continue
-			}
+		for _, name := range v.Typed().Names() {
 			key := strings.ToLower(name)
 			if seen[key] {
 				continue
@@ -113,6 +120,15 @@ func (r SessionRecord) Line() string {
 	}
 	if len(r.Undecided) > 0 {
 		fmt.Fprintf(&b, " | FOUND BUT NOT RECORDED=%s", shortList(r.Undecided, 4))
+	}
+	// Coverage of the runtime's own sweep: the act words were declared, so "how much
+	// of what the corpus says about the act have you read" is a number the model can
+	// act on — the one stop rule that is not a guess about its appetite.
+	if r.ScanMatched > 0 {
+		fmt.Fprintf(&b, " | scan=%d/%d read", r.ScanRead, r.ScanMatched)
+		if r.ScanRead < r.ScanMatched {
+			b.WriteString(" (unread matches: members nobody has looked at)")
+		}
 	}
 	fmt.Fprintf(&b, " | pool=%d", r.Pool)
 	return b.String()
@@ -158,166 +174,15 @@ func (s *SessionState) workingTable() State {
 
 // Brief is the record's counts, for logs.
 func (r SessionRecord) Brief() string {
-	return fmt.Sprintf("members=%d reached=%d absent=%d undecided=%d",
+	out := fmt.Sprintf("members=%d reached=%d absent=%d undecided=%d",
 		len(r.Members), len(r.Reached), len(r.Absent), len(r.Undecided))
-}
-
-// maxListedMemberRunes is how long a comma-separated piece may be and still read
-// as a list item rather than a clause (see SplitCandidateNames).
-const maxListedMemberRunes = 6
-
-// memberClauseGlue marks the punctuation a MEMBER NAME does not carry: annotation
-// brackets, a label colon, a terminator, a quote. SplitCandidateNames refuses to
-// cut a comma-separated SENTENCE, but a strong separator still cuts inside prose,
-// and the fragments land in the member count: a session writing
-// `name1: place(name2)、place(name3、name4)` yields `name1: place(name2)` and
-// `place(name3` as "members".
-const memberClauseGlue = "：:（）()「」『』【】〔〕〈〉《》。；;！？!?，,、\"'“”‘’…—"
-
-// LooksLikeMemberName reports whether one split piece reads as a member NAME
-// rather than a fragment of the sentence around it.
-//
-// A member name is SHORT and BARE: it fits in a few runes, carries no digits
-// (that is a reference or a quantity — see IsCountValue) and no clause
-// punctuation. The count a record stands behind is the union of the pieces that
-// pass this test, because a count inflated by prose is worse than a count missing
-// a member: it is the number the answer repeats.
-//
-// Measured (2026-09-16, a "how many named people did X kill" record): the slots
-// held the right names wrapped in chapter prose, SplitCandidateNames cut the
-// prose at its separators, and the enumerated size came out 28 against 13 real
-// names — a number the count slot was then raised to and the answer reported as
-// its own. With this filter the same record enumerates 14, and every real name
-// survives.
-//
-// It reads SHAPE, not language or vocabulary: nothing here says what a name is
-// called, only that one is short, digit-free and unpunctuated.
-func LooksLikeMemberName(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return false
-	}
-	if utf8.RuneCountInString(s) > maxListedMemberRunes {
-		return false
-	}
-	for _, r := range s {
-		if unicode.IsDigit(r) || strings.ContainsRune(memberClauseGlue, r) {
-			return false
-		}
-	}
-	return true
-}
-
-// SplitCandidateNames splits one slot candidate into the names it lists.
-//
-// Two classes of separator, because a candidate may be a LIST or a SENTENCE and
-// the two must not be confused (a member count inflated by prose is worse than a
-// missing one — it is the number the model steers by):
-//
-//   - strong separators (、；;/| and whitespace) always split;
-//   - a comma splits only when EVERY comma-separated piece is short. "华雄,车胄"
-//     is a list; "庞德被周仓生擒，非关羽所杀" is the model explaining a decision,
-//     and cutting it would enter half a sentence as a member.
-//
-// A candidate with no separator at all is returned whole: guessing further would
-// invent members.
-func SplitCandidateNames(candidate string) []string {
-	candidate = strings.TrimSpace(candidate)
-	if candidate == "" {
-		return nil
-	}
-	var out []string
-	for _, field := range strings.FieldsFunc(candidate, isStrongListSeparator) {
-		field = strings.TrimSpace(field)
-		if field == "" {
-			continue
-		}
-		out = append(out, splitIfShortList(field)...)
-	}
-	if len(out) == 0 {
-		return []string{candidate}
+	// Unread sweep matches belong in the brief because the brief is what the
+	// continuation offer judges "is anything still missing?" by: a direction with 18
+	// unread matching passages has work left that no member count can show.
+	if unread := r.ScanMatched - r.ScanRead; unread > 0 {
+		out += fmt.Sprintf(" scan-unread=%d", unread)
 	}
 	return out
-}
-
-// splitIfShortList splits one strong-separated piece on commas when the piece
-// reads as a list (every part short), and otherwise keeps it whole.
-func splitIfShortList(field string) []string {
-	if !strings.ContainsAny(field, ",，") {
-		if m := trimMemberSuffix(field); m != "" {
-			return []string{m}
-		}
-		return nil
-	}
-	parts := strings.FieldsFunc(field, func(r rune) bool { return r == ',' || r == '，' })
-	for _, p := range parts {
-		if len([]rune(strings.TrimSpace(p))) > maxListedMemberRunes {
-			if m := trimMemberSuffix(field); m != "" {
-				return []string{m}
-			}
-			return nil
-		}
-	}
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if m := trimMemberSuffix(strings.TrimSpace(p)); m != "" {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func isStrongListSeparator(r rune) bool {
-	switch r {
-	case '、', ';', '；', '/', '／', '|', '\n', '\t', ' ':
-		return true
-	}
-	return false
-}
-
-// trimMemberSuffix drops the trailing "etc." marker a list answer ends with
-// (「… 等」), which is not part of any member. A piece that is ONLY the marker
-// becomes empty — there is no member there — and the caller drops it.
-func trimMemberSuffix(s string) string {
-	s = strings.TrimSpace(s)
-	for _, suffix := range []string{"等等", "等"} {
-		if s == suffix {
-			return ""
-		}
-		if strings.HasSuffix(s, suffix) {
-			return strings.TrimSpace(strings.TrimSuffix(s, suffix))
-		}
-	}
-	return s
-}
-
-// IsCountValue reports whether a candidate is a quantity rather than a name.
-//
-// It reads DIGITS, not language: the slot that answers "how many" holds a number
-// (13, 13人, 13个), and a number is not a member of the list it counts.
-// Non-numeric quantity words (十三) stay in, because recognising those needs the
-// corpus's language — which the framework does not have, and must not pretend to.
-//
-// Exported because the merge (advanced_rag.MergeSlotPatch) needs the same
-// reading when it decides whether a candidate is a CLAIM about a set or a member
-// of it — the two must not disagree about what a number is.
-func IsCountValue(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return false
-	}
-	digits := 0
-	for _, r := range s {
-		switch {
-		case unicode.IsDigit(r):
-			digits++
-		case r == '.' || r == ',' || r == '%' || r == '个' || r == '人' || r == '名' ||
-			r == '位' || r == '次' || r == '条' || r == '岁' || r == '年' || r == '月':
-		default:
-			return false
-		}
-	}
-	return digits > 0
 }
 
 // poolExcerptRunes bounds how much pool text one turn may add to the model's

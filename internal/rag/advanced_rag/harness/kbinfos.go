@@ -136,6 +136,16 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
+	// The COVERAGE SWEEP of an enumeration (see scan.go): the act words a direction
+	// declared, and the passages the runtime's own sweep matched for them with
+	// whether a session has been shown each one. Guarded by scanMu — its own lock,
+	// for the same reason the ledger has one: the sweep runs while sessions run, and
+	// a lock shared with the pool would make handing a passage over wait on an
+	// unrelated admit batch.
+	scanMu    sync.Mutex
+	scanTerms []string
+	scanItems []ScanItem
+	scanIndex map[string]int
 	// cache is the per-request retrieval cache (Python tools.search_cache). It
 	// is initialised lazily via cacheOnce so a zero-value Kbinfos is usable.
 	cache     *searchCache

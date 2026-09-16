@@ -6,28 +6,27 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/rag/advanced_rag/slots"
 )
 
-// TestSplitCandidateNames pins the one parsing rule the state line depends on: a
-// list candidate reads as its members, and a candidate with no separator is left
-// whole — guessing further would invent members.
-func TestSplitCandidateNames(t *testing.T) {
-	got := SplitCandidateNames("孔秀、孟坦、韩福、卞喜")
-	if len(got) != 4 || got[0] != "孔秀" || got[3] != "卞喜" {
-		t.Fatalf("list candidate = %v, want 孔秀/孟坦/韩福/卞喜", got)
+// typedMembersSlot / typedCountSlot build the slots the record reads: a slot holds
+// members or a number because the model DECLARED it (see package slots), so these are
+// what a patch now produces.
+func typedMembersSlot(id int, typ string, names ...string) Variable {
+	items := make([]slots.Member, 0, len(names))
+	for _, n := range names {
+		items = append(items, slots.Member{Name: n})
 	}
-	got = SplitCandidateNames("华雄,车胄 蔡阳")
-	if len(got) != 3 {
-		t.Fatalf("mixed separators = %v, want 3 members", got)
-	}
-	got = SplitCandidateNames("颜良、文丑 等")
-	if len(got) != 2 || got[1] != "文丑" {
-		t.Fatalf("trailing 等 = %v, want 颜良/文丑", got)
-	}
-	got = SplitCandidateNames("庞德被周仓生擒，非关羽所杀")
-	if len(got) != 1 {
-		t.Fatalf("separator-free candidate = %v, want the candidate whole", got)
-	}
+	v := slots.Members(items...)
+	rendered := slots.Render(v)
+	return Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
+}
+
+func typedCountSlot(id int, typ string, n int) Variable {
+	v := slots.Number(n)
+	rendered := slots.Render(v)
+	return Variable{ID: id, Type: typ, Candidate: &rendered, Value: &v}
 }
 
 // TestCollectSessionRecordFlagsFoundButNotRecorded is the defect this record
@@ -49,8 +48,8 @@ func TestCollectSessionRecordFlagsFoundButNotRecorded(t *testing.T) {
 	kb.RecordProbedAbsent("杨龄")
 
 	table := State{State: []Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("13")},
-		{ID: 1, Type: "person", Candidate: strPtr("孔秀、孟坦、荀正")},
+		typedCountSlot(0, "count", 13),
+		typedMembersSlot(1, "person", "孔秀", "孟坦", "荀正"),
 	}}
 	rec := CollectSessionRecord(table, kb)
 	// 13 is the COUNT, not a member: a member count inflated by the answer slot is
@@ -126,8 +125,8 @@ func TestAppendRecordLineRidesOnTheLastToolMessage(t *testing.T) {
 	s := &SessionState{
 		KB: kb,
 		ParentState: State{State: []Variable{
-			{ID: 0, Type: "count", Candidate: strPtr("13")},
-			{ID: 1, Type: "person", Candidate: strPtr("孔秀、孟坦")},
+			typedCountSlot(0, "count", 13),
+			typedMembersSlot(1, "person", "孔秀", "孟坦"),
 		}},
 		Messages: []schema.Message{*schema.ToolMessage(`{"passages": []}`, "call_1")},
 	}
@@ -515,31 +514,5 @@ func TestAppendRecordLineSkipsValueDirections(t *testing.T) {
 	// and only the model-facing line is skipped.
 	if s.Record.Pool != 1 {
 		t.Fatalf("record pool = %d, want the record still computed", s.Record.Pool)
-	}
-}
-
-// TestLooksLikeMemberNameSeparatesNamesFromProse pins the filter the member COUNT
-// runs on (see the doc comment for the measurement): a member name is short,
-// digit-free and unpunctuated, and a fragment cut out of the sentence around it —
-// a label, an annotation, a bracket, a whole clause — is none of those.
-//
-// Nothing here is vocabulary: the fixtures are shapes, not words the runtime knows.
-func TestLooksLikeMemberNameSeparatesNamesFromProse(t *testing.T) {
-	for _, name := range []string{"孔秀", "庞德", "Grace", "term", "Mary"} {
-		if !LooksLikeMemberName(name) {
-			t.Errorf("LooksLikeMemberName(%q) = false, want true", name)
-		}
-	}
-	for _, prose := range []string{
-		"五关：东岭关(孔秀)",   // a label carrying a name
-		"洛阳(韩福", "孟坦)", // an annotation cut in half by a separator
-		"过五关斩六将中六人：孔秀",         // a clause
-		"第五回（发矫诏诸镇应曹公",         // a reference
-		"破关兵三英战吕布", "Colonial", // a clause and a long word: too long for a name
-		"13", "16人", "", // a quantity (see IsCountValue) and nothing
-	} {
-		if LooksLikeMemberName(prose) {
-			t.Errorf("LooksLikeMemberName(%q) = true, want false", prose)
-		}
 	}
 }

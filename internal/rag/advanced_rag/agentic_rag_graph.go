@@ -59,6 +59,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/rag/advanced_rag/harness"
 	"ragflow/internal/rag/advanced_rag/harness/orchestrator"
+	"ragflow/internal/rag/advanced_rag/slots"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/tokenizer"
 )
@@ -78,10 +79,35 @@ const (
 	TotalBudgetS      = 180.0 // whole-graph wall-clock ceiling per question
 	MinRoundHeadroomS = 50.0  // need at least this much left to start a new round
 	PassTimeoutS      = 120.0 // slot research pass wall-clock
-	PrefetchTimeoutS  = 90.0  // programmatic fan-out fetch
-	DraftTimeoutS     = 60.0  // fallback draft synthesis
-	SCATimeoutS       = 60.0  // sufficient-context review call
-	RewriteTimeoutS   = 45.0  // gap → query rewrite call
+	// SetBudgetExtensionS is added ONCE to a question's research budget when its
+	// table declares a set (see RunSlotResearchPass).
+	//
+	// The question budget is sized for one pass (TotalBudgetS 180 ⊃ PassTimeoutS
+	// 120) and an enumeration needs a second one: its first pass spends the wall
+	// clock on batches of names, so a member that a cut session never patched has
+	// nowhere to be picked up — measured (2026-09-16, 三国/关羽) the run ended at
+	// `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone. The
+	// extension is what lets the round AFTER that one start at all: a spent pass
+	// leaves ~35s and MinRoundHeadroomS is 50.
+	SetBudgetExtensionS = 120.0
+	// setSessionSlackS is added to the session clock a set-shaped pass hands its
+	// sessions, so a session's own finalize/salvage step still fits inside the
+	// context the pass derived it from.
+	setSessionSlackS = 20.0
+	// downstreamReserveS is what the steps AFTER research need: the SCA review
+	// (SCATimeoutS), the draft and the composed answer. The budget extension is only
+	// bought when the caller's own context still holds it — otherwise the second
+	// research round would spend the time the answer needs, turning a missing member
+	// into a timed-out question, which is strictly worse.
+	downstreamReserveS = 90.0
+	// minBudgetExtensionS is the smallest extension worth buying: less than this and
+	// the following round could not start anyway (MinRoundHeadroomS), so the budget
+	// would be widened without anything being able to use it.
+	minBudgetExtensionS = 40.0
+	PrefetchTimeoutS    = 90.0 // programmatic fan-out fetch
+	DraftTimeoutS       = 60.0 // fallback draft synthesis
+	SCATimeoutS         = 60.0 // sufficient-context review call
+	RewriteTimeoutS     = 45.0 // gap → query rewrite call
 	// SCAViewCap: 24 of 225 hid the answer-bearing table chunk from the SCA.
 	SCAViewCap = 60
 	// MaxSnippetPool is the storage ceiling of the snippet pool across ALL
@@ -449,6 +475,45 @@ func (s *AgenticState) RemainingS() float64 {
 	return d
 }
 
+// ExtendDeadline adds seconds to the research budget, and reports whether THIS call
+// was the one that did it. At most one extension per question.
+//
+// Only a set-shaped table asks for it (see RunSlotResearchPass), and for a measured
+// reason: the budget fits one pass, an enumeration needs two, and the members a cut
+// first pass never patched are exactly what the second pass picks up. One extension
+// rather than a per-round top-up is deliberate — the point is to give the mislaid
+// members a second look, not to let a table that keeps declaring a set run forever.
+func (s *AgenticState) ExtendDeadline(seconds float64) bool {
+	if s.DeadlineExtended || seconds <= 0 {
+		return false
+	}
+	s.DeadlineExtended = true
+	if s.Deadline.IsZero() {
+		s.Deadline = time.Now()
+	}
+	s.Deadline = s.Deadline.Add(time.Duration(seconds * float64(time.Second)))
+	return true
+}
+
+// ctxRoomS reports how many seconds a context still has, and whether it is bounded
+// at all: an unbounded caller owns no deadline, so nothing here can overrun it.
+func ctxRoomS(ctx context.Context) (float64, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return 0, false
+	}
+	return time.Until(dl).Seconds(), true
+}
+
+// ctxLeftS is ctxRoomS for a log line: seconds left, zero when unbounded.
+func ctxLeftS(ctx context.Context) float64 {
+	room, _ := ctxRoomS(ctx)
+	return room
+}
+
 // bounded mirrors Python _bounded: run fn under a wall-clock bound.
 // On expiry it logs and returns the zero value, so one slow step never stalls
 // the whole question. A non-positive bound means "no bound".
@@ -515,12 +580,17 @@ type AgenticState struct {
 	SCA             map[string]any
 
 	// ── budgets & counters ──
-	MaxLoops     int
-	Deadline     time.Time // wall-clock expiry of the research budget
-	SearchRounds int       // completed SCA→query_rewrite iterations
-	SCAViewID    string    // identity of the last SCA review view
-	Attempted    []map[string]any
-	NoProgress   bool
+	MaxLoops int
+	Deadline time.Time // wall-clock expiry of the research budget
+	// DeadlineExtended records that a set-shaped table already bought the one-shot
+	// budget extension (see ExtendDeadline). It belongs to the QUESTION, not to a
+	// single round: applying it per round would let a table that keeps declaring a
+	// set buy round after round on a budget sized for one.
+	DeadlineExtended bool
+	SearchRounds     int    // completed SCA→query_rewrite iterations
+	SCAViewID        string // identity of the last SCA review view
+	Attempted        []map[string]any
+	NoProgress       bool
 	// LastRoundNew is how many chunks the last research round ADDED to the pool.
 	//
 	// It is the loop's one non-subjective signal about whether to keep going: a
@@ -1443,7 +1513,7 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
 
-	res := RunSlotResearchPass(callCtx, deps.sessionDeps(), st.Question, st, t)
+	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t)
 	if res == nil {
 		// "Nothing to do" is still a ROUND, and the round's growth fact belongs to
 		// this round, not the previous one: leaving LastRoundNew alone made the
@@ -2309,13 +2379,27 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 		gapList = unresolvedClueGaps(st)
 	}
 	gaps := len(gapList)
-	work := gaps > 0 || len(st.UnresolvedSlots) > 0
+	// COVERAGE LEFT — the third record that can ask for a round: a direction that
+	// DECLARED act words has a reading list the runtime swept for it (harness/scan.go),
+	// and an unread matching passage is a member nobody has looked at.
+	//
+	// Measured (2026-09-16, 三国/关羽): the sweep matched 56 passages, the round's
+	// sessions read 38, the table reported `unresolved=0` — and the run closed out
+	// with 18 matching passages the answer could not account for. Nothing in the loop
+	// read the coverage, so nothing asked for the round that would have read them.
+	scanUnread := 0
+	if st.KB != nil {
+		if matched, read := st.KB.ScanCoverage(); matched > read {
+			scanUnread = matched - read
+		}
+	}
+	work := gaps > 0 || len(st.UnresolvedSlots) > 0 || scanUnread > 0
 	grew := st.LastRoundNew > 0
 	verdictAsks := st.Verdict == VerdictInsufficient && work
 	wants := work && (grew || verdictAsks)
 	if !wants {
-		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s).",
-			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict)
+		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, scan-unread=%d, +%d chunks this round, verdict=%s).",
+			len(st.UnresolvedSlots), gaps, scanUnread, st.LastRoundNew, st.Verdict)
 		return nodeFormalizeAnswer
 	}
 	if st.SearchRounds >= scaMaxRounds {
@@ -2336,8 +2420,8 @@ func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
 		_LOG.Printf("[SCA] pool holds %d chunk(s) (>= view cap %d) but this round's review view CHANGED; the new evidence is readable, so another round is worth its budget.",
 			len(st.KB.Chunks), SCAViewCap)
 	}
-	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
-		len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
+	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, scan-unread=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
+		len(st.UnresolvedSlots), gaps, scanUnread, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
 	return nodeQueryRewrite
 }
 
@@ -2501,10 +2585,10 @@ func RenderSlotRecord(slotTable harness.State, collectedAnswer string) string {
 		// over-claim and a list can be incomplete; only the passages decide between
 		// them, and the answer is the stage that reads them.
 		for _, v := range slotTable.State {
-			if v.Candidate == nil {
-				continue
-			}
-			if claimed, ok := countOf(*v.Candidate); ok && claimed != n {
+			// A DECLARED number (slots.KindCount / KindRange) compared with the members
+			// above. Text claims no number, so prose can no longer masquerade as a
+			// count here (or as a member list on the other side of the comparison).
+			if claimed, ok := v.Typed().Number(); ok && claimed != n {
 				lines = append(lines, fmt.Sprintf(
 					"- NOTE: slot %d [%s] says %d while the slots above enumerate %d — the count and the members listed disagree. Reconcile them against the evidence before answering: a count larger than the members that are listed is not evidence of members, and a list is only as complete as the passages behind it.",
 					v.ID, v.Type, claimed, n))
@@ -2553,12 +2637,17 @@ func memberUnion(table *harness.State) []string {
 	}
 	var items []string
 	for _, v := range table.State {
-		if v.Candidate == nil {
+		// DECLARED members only (slots.KindMembers). Nothing is parsed to find them:
+		// a slot holds members because the model said so, each with its evidence, and
+		// a slot holding text — a phrase, a sentence, a count, a date — contributes
+		// none. That is what makes the count derived and the members accountable: with
+		// no text inspection there is no rule left to misfire (measured 2026-09-16,
+		// 三国/关羽: a count slot holding "约 17-19 人" was split into "约、人" and
+		// counted as two members while fifteen real names sat in another slot).
+		if v.Typed().Kind != slots.KindMembers {
 			continue
 		}
-		if list, isCount := setItems(*v.Candidate); !isCount {
-			items = append(items, list...)
-		}
+		items = append(items, v.Typed().Names()...)
 	}
 	items = dedupe(items)
 	out := make([]string, 0, len(items))
@@ -2624,6 +2713,13 @@ func probeLedger(kb *harness.Kbinfos) string {
 	}
 	var b strings.Builder
 	if reached := kb.ReachedTerms(); len(reached) > 0 {
+		// Per-member quotes are for a SET answer, which is the only answer that has
+		// to point at a passage per item. On a value direction they would be prompt
+		// tokens bought for nothing, so the quotes ride the same shape gate as the
+		// rest of the set machinery (the direction declares itself once, see
+		// Kbinfos.MarkSetDirection). The names stay in both cases: they are what the
+		// ledger has always been.
+		quoted := kb.IsSetDirection()
 		terms := make([]string, 0, len(reached))
 		for _, rt := range reached {
 			// The name AND the words that prove it. Without the words the answer has
@@ -2632,7 +2728,7 @@ func probeLedger(kb *harness.Kbinfos) string {
 			// (2026-09-16) an answer that was handed names only reported "21 listed,
 			// four counted but not listed" and cited one evidence RANGE for all of
 			// them, instead of one citation per member.
-			if len(terms) < ledgerQuoteMembers {
+			if quoted && len(terms) < ledgerQuoteMembers {
 				if quote := ledgerQuote(kb, rt.ChunkID, rt.Term); quote != "" {
 					terms = append(terms, fmt.Sprintf("%s — %s", rt.Term, quote))
 					continue
@@ -2711,9 +2807,23 @@ func recordSource(record string) string {
 // runtime record as evidence: the model then treated its lines as findings and
 // copied them. A record is not evidence — it is what the research settled — and
 // the prompt has to say so, or the labels end up in the answer.
+//
+// "the value IS the answer" is the other half, and it is measured. A record that is
+// only a check is a record the answer may drop when the passages do not repeat it,
+// and the RUN's passages often do not: they were gathered to FIND the value, so the
+// session that found it recorded it while the chunk that carried it never entered
+// the cited evidence. Measured (2026-09-16, FRAMES, mode high): the slot table held
+// `slot 0 [person]: Colin Beashel and Richard Coxon (Australia, Star class 1984
+// Olympics)` — the answer — and the composed answer was "not found in the knowledge
+// base", because the passages around it were about other competitions and the chat
+// configuration requires that sentence when the information is unavailable (see
+// web/src/locales/zh.ts).
 const recordContract = "Research Record (INTERNAL — your own slot table plus the terms your probes " +
-	"reached, not evidence and not answer text). Use it only to check your answer against what the " +
-	"research settled. NEVER quote these lines, their `slot N [type]` labels, or any id into the answer. " +
+	"reached; NEVER quote these lines, their `slot N [type]` labels, or any id into the answer). " +
+	"The slots are what the research SETTLED: when a slot holds a value for what the question asks, " +
+	"that value IS the answer — state it, and do not report that the answer was not found while a " +
+	"slot holds one; a passage that merely fails to repeat the value does not contradict it. If the " +
+	"evidence plainly contradicts a settled value, answer what the evidence supports and say so. " +
 	"A name listed as probed-and-answered is one the corpus was asked about and produced: if the answer " +
 	"is a list or a count and that name is not in it, say why."
 
@@ -3247,7 +3357,7 @@ func PrefillSlotsFromEvidence(slotTable *harness.State, kb *harness.Kbinfos) int
 // Unresolved slots are worked concurrently under a semaphore; each session's
 // branches are folded back into the shared table. A nil result means "nothing to
 // do" (all slots already filled).
-func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question string, st *AgenticState, deadlineLeft float64) *SlotResearchResult {
+func RunSlotResearchPass(ctx context.Context, parent context.Context, deps harness.SessionDeps, question string, st *AgenticState, deadlineLeft float64) *SlotResearchResult {
 	slotTable := st.SlotTable
 	if len(slotTable.State) == 0 {
 		// No planner ran (medium single-pass, or the planner failed): build the
@@ -3313,6 +3423,19 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 			// review never named.
 			dirs = append(dirs, direction{slotID: -1, text: text})
 		}
+		if len(dirs) == 0 && kb != nil {
+			// A declared sweep with passages still unread is work no SLOT names: the
+			// reading list belongs to the corpus, not to the table (harness/scan.go),
+			// so a round whose table is full and whose review named no gap still has
+			// something to do — read it. Measured (2026-09-16, 三国/关羽): the round
+			// ended with 18 matching passages unread, and nothing in the loop could
+			// ask for the reading that would have covered them.
+			if matched, read := kb.ScanCoverage(); matched > read {
+				_LOG.Printf("[SlotResearch] table full and no gap named, but %d of %d swept passage(s) are unread; running a reading session.",
+					matched-read, matched)
+				dirs = append(dirs, direction{slotID: -1, text: question})
+			}
+		}
 		if len(dirs) == 0 {
 			// Nothing for a session to do. A PREFILL still counts as work — it
 			// edited the table — so its result must travel back to the caller;
@@ -3340,7 +3463,53 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 	}
 	results := make([]outcome, 0, slotSessionsPerRound)
 	limit := min(len(dirs), slotSessionsPerRound)
+
+	// The direction's SHAPE is only known here, after the table was built — and the
+	// round's own context was fixed before that, by a caller that could not know it.
+	// A session therefore cannot ride this round's clock, or the enumeration it is
+	// midway through is cut before it can patch: measured (2026-09-16, 三国/关羽) the
+	// pass timeout cancelled a session at the deadline one millisecond before its
+	// patch, and the member it had already reached (管亥, three passages, admitted to
+	// the shared pool by the session's own batch) died with it. So a set-shaped pass
+	// hangs its sessions off the PARENT context with the shape's own clock
+	// (harness.SessionWallS), and buys the question the one-shot budget extension
+	// that lets the NEXT round start and pick up whatever this one could not record.
+	sessionCtx := ctx
 	sessionBudget := max(20.0, deadlineLeft-10.0)
+	if harness.SetShaped(slotTable) {
+		sessionBudget = max(sessionBudget, harness.SessionWallS(slotTable))
+		// The SWEEP: for each act word the table DECLARED, ask the store once and keep
+		// the matches as this round's reading list (see harness/scan.go). Declared,
+		// never inferred — and it is what makes an enumeration's tail a property of
+		// the corpus instead of the model's memory: measured (2026-09-16, 三国/关羽)
+		// four runs of one question missed 2-4 members each, and the missing names
+		// appeared ZERO times in one run's log because no session ever named them.
+		runScanSweep(ctx, deps, st, slotTable)
+		if parent != nil {
+			var cancelSessions context.CancelFunc
+			sessionCtx, cancelSessions = context.WithTimeout(parent, deadlineToDuration(sessionBudget+setSessionSlackS))
+			defer cancelSessions()
+		}
+		// The extension must leave room for what FOLLOWS the research — the review,
+		// the draft, the composed answer (downstreamReserveS) — inside the caller's own
+		// deadline: buying time the answer then lacks is the one way this change could
+		// make a question worse (a timed-out request instead of a missing member). So
+		// the request's remaining room decides, not the extension's own size, and an
+		// extension too small to let a round start is not worth buying at all.
+		ext := SetBudgetExtensionS
+		if room, bounded := ctxRoomS(parent); bounded {
+			ext = min(ext, room-st.RemainingS()-downstreamReserveS)
+		}
+		if ext >= minBudgetExtensionS {
+			if st.ExtendDeadline(ext) {
+				_LOG.Printf("[SlotResearch] set-shaped table: session clock %.0fs, research budget extended by %.0fs so a following round can pick up what this one could not record.",
+					sessionBudget, ext)
+			}
+		} else {
+			_LOG.Printf("[SlotResearch] set-shaped table: session clock %.0fs; research budget NOT extended (only %.0fs of the request is left, and %.0fs is reserved for the review, the draft and the answer).",
+				sessionBudget, ctxLeftS(parent), downstreamReserveS)
+		}
+	}
 
 	for i := 0; i < limit; i++ {
 		d := dirs[i]
@@ -3352,7 +3521,7 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 
 			// Sessions share ONE Toolset; DisableTool mutates it, so the call is
 			// guarded here. The Kbinfos merge happens inside the executor.
-			res := harness.RunActionSession(ctx, deps, d.text, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
+			res := harness.RunActionSession(sessionCtx, deps, d.text, slotTable, sessionBudget, "", sharedToolCache, sharedSearchQueries)
 			mu.Lock()
 			results = append(results, outcome{slotID: d.slotID, result: res})
 			mu.Unlock()
@@ -3469,9 +3638,90 @@ func RunSlotResearchPass(ctx context.Context, deps harness.SessionDeps, question
 		SlotDraft:       draft,
 		// The answer-facing record (no machine fields) is rendered here, next to
 		// the SCA-facing draft, so the two can never drift apart.
-		SlotRecord: RenderSlotRecord(slotTable, collected),
+		SlotRecord: scanCoverageLine(RenderSlotRecord(slotTable, collected), st.KB),
 		Attempted:  ledger,
 	}
+}
+
+// runScanSweep turns the act words a table DECLARED into a reading list: one store
+// query per term, deduped into the sweep ledger (see harness/scan.go), which the
+// sessions then read through and which the record reports coverage over.
+//
+// It is a runtime job, not a model one, for the reason the whole sweep exists: the
+// model can only probe names it thinks of, and the members a run misses are exactly
+// the ones it did not think of.
+func runScanSweep(ctx context.Context, deps harness.SessionDeps, st *AgenticState, table harness.State) {
+	kb := st.KB
+	if kb == nil {
+		return
+	}
+	var terms []string
+	subject := ""
+	for _, v := range table.State {
+		terms = append(terms, v.Terms...)
+		if subject == "" {
+			subject = strings.TrimSpace(v.Subject)
+		}
+	}
+	if len(terms) == 0 {
+		return
+	}
+	if added := kb.DeclareScanTerms(terms); len(added) == 0 {
+		return
+	}
+	sweeper, _ := deps.Tools.Exec.(harness.ScanSweeper)
+	if sweeper == nil {
+		// No store to sweep: the round proceeds exactly as it did before, with the
+		// declared terms recorded so the record can still say what was asked for.
+		_LOG.Printf("[SlotResearch] scan terms declared (%s) but this executor cannot sweep the corpus.", strings.Join(kb.DeclaredScanTerms(), "、"))
+		return
+	}
+	// Sweep every declared term first, then admit the results into the reading list
+	// ROUND-ROBIN (see AddScanResults): the list is capped, so the order it is filled in
+	// decides which act words it covers, and admitting term by term lets the first
+	// declared words spend the whole cap before the rare ones are even asked for. The
+	// per-term log keeps the difference visible — matched is what the corpus returned,
+	// added is what the cap had room for.
+	results := make([]harness.SweepResult, 0, len(kb.DeclaredScanTerms()))
+	for _, term := range kb.DeclaredScanTerms() {
+		chunks := sweeper.ScanTerm(ctx, subject, term, harness.ScanPerTerm)
+		_LOG.Printf("[SlotResearch] scan sweep %q: %d matching passage(s).", term, len(chunks))
+		results = append(results, harness.SweepResult{Term: term, Chunks: chunks})
+	}
+	if added := kb.AddScanResults(results); added > 0 {
+		_LOG.Printf("[SlotResearch] scan reading list: +%d passage(s) (one per act word per pass).", added)
+	}
+	matched, read := kb.ScanCoverage()
+	_LOG.Printf("[SlotResearch] scan coverage: %d matching passage(s) for %s, %d read so far.",
+		matched, strings.Join(kb.DeclaredScanTerms(), "、"), read)
+}
+
+// scanCoverageLine appends the run's sweep coverage to the answer-facing record.
+//
+// An enumeration's completeness is a fact about the corpus (see harness/scan.go):
+// how many passages match the act words the direction declared, and how many a
+// session has read. Stating it lets the answer say what it actually covers —
+// "these are the members, and every passage the act matched has been read" — instead
+// of implying completeness it cannot demonstrate, or hiding the passages that were
+// never opened.
+func scanCoverageLine(record string, kb *harness.Kbinfos) string {
+	if kb == nil {
+		return record
+	}
+	matched, read := kb.ScanCoverage()
+	if matched == 0 {
+		return record
+	}
+	clause := "Every passage the act matched has been read."
+	if read < matched {
+		clause = fmt.Sprintf("%d matching passage(s) have NOT been read — a member nobody has looked at cannot be ruled out.", matched-read)
+	}
+	if record != "" {
+		record += "\n"
+	}
+	return record + fmt.Sprintf(
+		"- corpus coverage for the act words this direction declared (%s): %d matching passage(s), %d read. %s",
+		strings.Join(kb.DeclaredScanTerms(), "、"), matched, read, clause)
 }
 
 // MergeSlotPatch mirrors Python _merge_slot_patch: fold a session's new-state
@@ -3539,17 +3789,27 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			continue
 		}
 		// A slot holding a SET merges by UNION; a slot holding one VALUE is still
-		// settled by strength (see unionSetCandidates for why, and for the measured
-		// run where a count outvoted the members it was counting).
+		// settled by strength (see slots.Union for why, and for the measured run
+		// where a count outvoted the members it was counting).
+		//
+		// The union is over TYPED values: members union by name, a membership claim
+		// beats a number, two numbers keep the larger. Text is not the union's
+		// business (invariant I1), which is what keeps a value question merging by
+		// strength exactly as it always did.
 		var cand *string
+		var value *slots.Value
 		strength := v.CandidateStrength
 		var loser string
-		if union, dropped, ok := unionSetCandidates(v.Candidate, bv.Candidate); ok {
-			cand = &union
+		if union, dropped, ok := slots.Union(v.Typed(), bv.Typed()); ok {
+			rendered := slots.Render(union)
+			cand = &rendered
+			value = &union
 			if strengthOf(bv) > strengthOf(v) {
 				strength = bv.CandidateStrength
 			}
-			loser = dropped
+			if !dropped.IsZero() {
+				loser = slots.Render(dropped)
+			}
 		} else {
 			// Adopt the branch candidate only when STRONGER. Sessions run
 			// concurrently and their branches fold in completion order, so an
@@ -3559,8 +3819,10 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			adoptBranch := bv.Candidate != nil && *bv.Candidate != "" &&
 				(v.Candidate == nil || *v.Candidate == "" || strengthOf(bv) > strengthOf(v))
 			cand = v.Candidate
+			value = v.Value
 			if adoptBranch {
 				cand, strength = bv.Candidate, bv.CandidateStrength
+				value = bv.Value
 			}
 			// ONE slot holds ONE candidate, so the claim that lost the comparison used
 			// to leave no trace at all: not in the table, not in the draft, not in the
@@ -3593,6 +3855,7 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 			DiscoveredClues:   clues,
 			Candidate:         cand,
 			CandidateStrength: strength,
+			Value:             value,
 		})
 	}
 	if !changed {
@@ -3602,167 +3865,20 @@ func MergeSlotPatch(base, branch harness.State) *harness.State {
 	return &out
 }
 
-// unionSetCandidates merges a SET-valued slot's two candidates the only way a set
-// may be merged: by UNION.
-//
-// "The stronger candidate wins" is right for a slot that holds ONE value and
-// wrong for a slot that holds a set. Two sessions enumerate the same question
-// from different angles, each writes its own list, and the merge keeps whichever
-// list the model happened to call stronger — the other list's members are gone
-// even when their passages are in the pool this same round. Measured
-// (2026-09-15, 三国演义/关羽): one session enumerated twelve members into slot 0,
-// a second session had already written "10" there at strength 0.90, the twelve
-// lost at 0.85, and the answer was the 10 — while two of the twelve (管亥, 车胄)
-// had each returned ten passages of their own.
-//
-// Three shapes union, and no claim is lost: two lists union; a list beats a bare
-// NUMBER (a number is a claim ABOUT the list, and it comes back as dropped so the
-// caller can keep it as an alternate); two numbers keep the larger, because a set
-// that shrinks when a second source agrees with it is a set that loses members.
-// Any other pair — a phrase, a single name, a date — stays with the strength rule.
-//
-// ok is false when nothing changed, so the caller falls back to that rule.
-func unionSetCandidates(base, branch *string) (union, dropped string, ok bool) {
-	if base == nil || branch == nil || *base == "" || *branch == "" || *base == *branch {
-		return "", "", false
-	}
-	baseItems, baseIsCount := setItems(*base)
-	branchItems, branchIsCount := setItems(*branch)
-	switch {
-	case baseIsCount && branchIsCount:
-		b, okB := countOf(*base)
-		c, okC := countOf(*branch)
-		if !okB || !okC {
-			return "", "", false
-		}
-		if c > b {
-			return strings.TrimSpace(*branch), strings.TrimSpace(*base), true
-		}
-		// Two numbers keep the LARGER one, so the base is the resolution when the
-		// branch is not larger. Saying so matters: "no conclusion" hands the slot to
-		// the strength rule, where the smaller number — which the model is likelier
-		// to be sure of — can win a comparison about a set's size.
-		return strings.TrimSpace(*base), "", true
-	case baseItems != nil && branchItems != nil:
-		merged := dedupe(append(append([]string(nil), baseItems...), branchItems...))
-		if len(merged) < 2 {
-			return "", "", false
-		}
-		out := strings.Join(merged, "、")
-		if out == strings.TrimSpace(*base) {
-			// The union adds nothing to the base — the branch is a SUBSET — and that
-			// is still a resolution: the union IS the base.
-			//
-			// Returning "no conclusion" here was a member-losing bug, because the
-			// caller then settles the slot by STRENGTH: a model calls a SHORT list it
-			// is sure of stronger than a long one that contains it, so the subset
-			// overwrote the superset. Measured (2026-09-16, a "how many named people
-			// did X kill" run, 24 names probed and reached): slot 1 held thirteen
-			// members, a session patched its own eleven at 0.95 against the base's
-			// 0.90, the union answered false, the base was replaced — and the answer
-			// reported eleven people.
-			return strings.TrimSpace(*base), "", true
-		}
-		return out, "", true
-	case baseIsCount && branchItems != nil:
-		return strings.Join(branchItems, "、"), strings.TrimSpace(*base), true
-	case branchIsCount && baseItems != nil:
-		return strings.Join(baseItems, "、"), strings.TrimSpace(*branch), true
-	}
-	return "", "", false
-}
-
-// setItems reads a candidate as a LIST of items, or reports that it is instead a
-// bare quantity. Anything that is neither (a phrase, one name) returns nil items
-// and isCount false, so the caller leaves it to the single-value rule.
-//
-// An item carrying a DIGIT is a reference or a quantity, not a member. Measured
-// (2026-09-15): one question's table held `第5回(华雄) / 第21回(车胄) / …` in a
-// dataset slot beside a twelve-member list in another, the union counted those
-// seven references as members, and the record then answered its own count with
-// nineteen — a number the answer had to reconcile against nothing.
-func setItems(candidate string) ([]string, bool) {
-	if harness.IsCountValue(candidate) {
-		return nil, true
-	}
-	items := make([]string, 0, 8)
-	for _, item := range harness.SplitCandidateNames(candidate) {
-		// A member NAME, not a fragment of the sentence around it: a slot holding
-		// the right names wrapped in chapter prose otherwise contributes the prose's
-		// pieces to the count (see harness.LooksLikeMemberName for the measurement).
-		if !harness.LooksLikeMemberName(item) {
-			continue
-		}
-		items = append(items, item)
-	}
-	if len(items) < 2 {
-		return nil, false
-	}
-	return items, false
-}
-
-// carriesDigit reports whether a string carries a decimal digit — the one shape
-// test that separates a member from a reference ("第27回(五关六将)") or a quantity
-// ("12人"), without asking what the corpus's language calls anything.
-func carriesDigit(s string) bool {
-	for _, r := range s {
-		if unicode.IsDigit(r) {
-			return true
-		}
-	}
-	return false
-}
-
-// countOf reads the number out of a quantity-shaped candidate ("10", "13人").
-func countOf(candidate string) (int, bool) {
-	candidate = strings.TrimSpace(candidate)
-	if !harness.IsCountValue(candidate) {
-		return 0, false
-	}
-	n, digits := 0, 0
-	for _, r := range candidate {
-		if !unicode.IsDigit(r) {
-			continue
-		}
-		n = n*10 + int(r-'0')
-		digits++
-		if digits > 6 {
-			return 0, false
-		}
-	}
-	return n, digits > 0
-}
-
-// renderCountLike rewrites a quantity-shaped candidate with a new number, keeping
-// whatever unit it carried ("13人" → "16人").
-func renderCountLike(sample string, n int) string {
-	last := -1
-	for i, r := range sample {
-		if unicode.IsDigit(r) {
-			last = i
-		}
-	}
-	if last < 0 || last+1 >= len(sample) {
-		return strconv.Itoa(n)
-	}
-	return strconv.Itoa(n) + sample[last+1:]
-}
-
-// reconcileCountSlots sets every numeric slot to the size of the set the table
-// enumerated.
+// reconcileCountSlots writes the table's OWN count into every slot that claims one.
 //
 // A count slot holds a claim ABOUT the list slots, and the two are written by
 // different sessions, so nothing kept them in step: measured (2026-09-15), slot 0
-// [count] read 10 while the same table's sessions had enumerated twelve members,
-// and the answer was the 10.
+// [count] read 10 while the same table's sessions had enumerated twelve members, and
+// the answer was the 10.
 //
-// The slot takes the DERIVED number in both directions, because a count is a claim
-// the table can check and a smaller number is not the same failure as an invented
-// one: measured (2026-09-16, the same question) a slot left holding a session's 28
-// against thirteen enumerated members is the number the answer reported — "killed
-// 28 named people", listing a handful. An over-claim is kept as an alternate clue
-// rather than discarded, so the record still shows what was claimed beside what is
-// enumerated (see RenderSlotRecord's alternate lines).
+// The number is DERIVED: len(members) over the declared member lists. A slot that
+// claims a different number takes the derived one (the claim is kept as an alternate
+// clue, so the record still shows what was claimed beside what is enumerated), and a
+// slot that claims NO number while the table enumerates a set — measured (2026-09-16,
+// 三国/关羽): a session wrote "约 17-19 人" into the count slot and the slot ended up
+// holding neither a number nor members — is given the derived one, so the count can
+// never be the part of the record nobody can reconstruct.
 //
 // It returns the ids it changed, for the log.
 func reconcileCountSlots(table *harness.State) []int {
@@ -3776,30 +3892,41 @@ func reconcileCountSlots(table *harness.State) []int {
 	var raised []int
 	for i := range table.State {
 		v := &table.State[i]
-		if v.Candidate == nil {
+		if !countTypedSlot(v) {
+			// Only a slot that ASKS FOR A NUMBER. A member list is not overwritten by
+			// the count of the set it belongs to, and a text slot is opaque: it may
+			// hold a date, a phrase or a sentence, and nothing here can tell (nor
+			// needs to).
 			continue
 		}
-		n, ok := countOf(*v.Candidate)
-		if !ok || n == len(union) {
+		claimed, ok := v.Typed().Number()
+		if ok && claimed == len(union) {
 			continue
 		}
-		cand := renderCountLike(*v.Candidate, len(union))
-		if cand == *v.Candidate {
-			continue
+		if ok {
+			// The claim loses either way — a count larger than the members listed is
+			// not evidence of members, and a smaller one is a set that lost some.
+			// Measured (2026-09-16): a slot left holding a session's 28 against
+			// thirteen enumerated members is the number the answer reported.
+			v.DiscoveredClues = append(v.DiscoveredClues, alternateClue(slots.Render(v.Typed())))
 		}
-		if n > len(union) {
-			// A count LARGER than the members it counts is a claim about members that
-			// are not in the record. The claim is kept (as an alternate, so the record
-			// still shows it) while the slot takes the DERIVED number: measured
-			// (2026-09-16, a "how many named people did X kill" record) an over-claim
-			// left standing in the slot is what an answer repeated — 28 people, for a
-			// table enumerating thirteen.
-			v.DiscoveredClues = append(v.DiscoveredClues, alternateClue(*v.Candidate))
-		}
-		v.Candidate = &cand
+		derived := slots.Number(len(union))
+		v.Value = &derived
+		rendered := slots.Render(derived)
+		v.Candidate = &rendered
 		raised = append(raised, v.ID)
 	}
 	return raised
+}
+
+// countTypedSlot reports whether a slot is one that ANSWERS WITH A NUMBER — the only
+// slots the derived count may be written into.
+func countTypedSlot(v *harness.Variable) bool {
+	switch strings.ToLower(strings.TrimSpace(v.Type)) {
+	case "count", "number", "quantity":
+		return true
+	}
+	return false
 }
 
 // pythonMessageListPrefix reproduces Python's `str(messages)[:n]` for a langchain

@@ -7,7 +7,11 @@ Your Direction asks for a SET of named things: a batch of names is a NEW fact, n
 3. One batch before you stop is of the names you are LEAST sure of — the ones you saw once, half-remember, or doubt. A batch of the names you are certain of proves nothing: the doubtful batch is where the tail is.
 4. When you cannot name the object at all, batch the RELATION instead — `verb1|verb2|verb3`, how the source words the act — and read the matches for names.
 5. Read every returned passage for members the batch did not name, and probe those too — the corpus names the tail, not your memory. A `miss` means this corpus does not carry that name: record it as "not a member" and continue. A snippet means the name IS a member: record it with its passage.
-6. Record as you go, so a timeout cannot lose what you found.
+6. Record as you go, so a timeout cannot lose what you found. Record a member as a
+   MEMBER: `{"id": <list slot>, "kind": "members", "items": [{"name": "华雄",
+   "chunk_id": "<its passage>"}]}` — one patch may carry every member you have, and a
+   name written inside a sentence is not a member (the runtime counts declared items
+   only, and it will not read a list out of prose).
 7. Stop when two consecutive batches add no member you did not have.
 
 ## What the results now carry
