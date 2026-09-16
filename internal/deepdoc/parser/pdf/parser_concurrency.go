@@ -93,8 +93,15 @@ func PageWorkerPoolStats() utility.WorkerPoolStats {
 	return parserPageWorkerPool().Stats()
 }
 
-// SetPageWorkerPoolSize adjusts the process-wide PDF page worker pool size.
+// SetPageWorkerPoolSize adjusts the process-wide PDF page worker pool size,
+// clamped to the process inference budget. Workers beyond that budget have no
+// throughput to gain — rendering is serialized by pdfsync.Mu and inference by
+// the native gate — so they only add CPU contention and hold more rendered
+// bitmaps while they wait. A size of zero or less still panics, as in Resize.
 func SetPageWorkerPoolSize(workers int) {
+	if budget := DeepDocConcurrency(); workers > budget {
+		workers = budget
+	}
 	parserPageWorkerPool().Resize(workers)
 }
 
