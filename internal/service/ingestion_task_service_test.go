@@ -1179,6 +1179,33 @@ func TestIngestionTaskServiceEventMessageIsBoundedByRunesAndBytes(t *testing.T) 
 	}
 }
 
+func TestIngestionTaskServiceUsesConfiguredEventMessageLimits(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := NewIngestionTaskService()
+	if err := svc.SetIngestionLogSettings(IngestionLogSettings{
+		MaxRowsPerRun:      5,
+		MaxRowsPerDocument: 20,
+		MaxMessageChars:    8,
+		MaxMessageBytes:    16,
+	}); err != nil {
+		t.Fatalf("SetIngestionLogSettings failed: %v", err)
+	}
+	if err := svc.RecordMessage(t.Context(), "run-1", "task-1", "abcdefghijk"); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
+	}
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if got := len([]rune(event.Message)); got > 8 || len([]byte(event.Message)) > 16 {
+		t.Fatalf("message limits = %d runes/%d bytes, want <= 8/16: %q", got, len([]byte(event.Message)), event.Message)
+	}
+}
+
 func TestIngestionTaskServiceAdvanceOpenLogLeavesLegacyMessageUntouched(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

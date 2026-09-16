@@ -28,11 +28,6 @@ const (
 	ingestionEventSystem
 )
 
-const (
-	maxIngestionEventMessageChars = 4_000
-	maxIngestionEventMessageBytes = 16_384
-)
-
 type InvalidTaskTransitionError struct {
 	TaskID string
 	From   string
@@ -75,6 +70,7 @@ type IngestionTaskService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	userCanvasDAO       *dao.UserCanvasDAO
 	taskPublisher       TaskPublisher
+	logSettings         IngestionLogSettings
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -87,6 +83,7 @@ func NewIngestionTaskService() *IngestionTaskService {
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		userCanvasDAO:       dao.NewUserCanvasDAO(),
 		taskPublisher:       NewMessageQueueTaskPublisher(),
+		logSettings:         DefaultIngestionLogSettings(),
 	}
 }
 
@@ -930,7 +927,7 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 		component = ""
 		phase = 0
 	}
-	message = truncateIngestionEventMessage(message)
+	message = s.truncateIngestionEventMessage(message)
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
@@ -953,21 +950,25 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 // truncateIngestionEventMessage enforces both limits on the persisted text.
 // The marker is part of the limit, and the dropped count is measured in runes
 // so the result never splits a UTF-8 sequence or misreports multibyte text.
-func truncateIngestionEventMessage(message string) string {
-	if len([]rune(message)) <= maxIngestionEventMessageChars && len([]byte(message)) <= maxIngestionEventMessageBytes {
+func (s *IngestionTaskService) truncateIngestionEventMessage(message string) string {
+	limits := s.logSettings
+	if limits.MaxMessageChars <= 0 || limits.MaxMessageBytes <= 0 {
+		limits = DefaultIngestionLogSettings()
+	}
+	if len([]rune(message)) <= limits.MaxMessageChars && len([]byte(message)) <= limits.MaxMessageBytes {
 		return message
 	}
 
 	runes := []rune(message)
 	prefixLen := len(runes)
-	if prefixLen > maxIngestionEventMessageChars {
-		prefixLen = maxIngestionEventMessageChars
+	if prefixLen > limits.MaxMessageChars {
+		prefixLen = limits.MaxMessageChars
 	}
 	for prefixLen >= 0 {
 		dropped := len(runes) - prefixLen
 		marker := fmt.Sprintf("… [truncated, %d chars dropped]", dropped)
 		candidate := string(runes[:prefixLen]) + marker
-		if len([]rune(candidate)) <= maxIngestionEventMessageChars && len([]byte(candidate)) <= maxIngestionEventMessageBytes {
+		if len([]rune(candidate)) <= limits.MaxMessageChars && len([]byte(candidate)) <= limits.MaxMessageBytes {
 			return candidate
 		}
 		prefixLen--
@@ -976,8 +977,8 @@ func truncateIngestionEventMessage(message string) string {
 	// The marker is tiny relative to the configured limits for any practical
 	// input. Keep a defensive fallback for an unexpectedly huge rune count.
 	marker := fmt.Sprintf("… [truncated, %d chars dropped]", len(runes))
-	if len([]rune(marker)) > maxIngestionEventMessageChars {
-		return string([]rune(marker)[:maxIngestionEventMessageChars])
+	if len([]rune(marker)) > limits.MaxMessageChars {
+		return string([]rune(marker)[:limits.MaxMessageChars])
 	}
 	return marker
 }
